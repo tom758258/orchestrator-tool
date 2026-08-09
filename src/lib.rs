@@ -3,6 +3,8 @@
 //! The core is intentionally independent of CLI and desktop presentation
 //! layers so both can reuse the same orchestration behavior.
 
+pub mod tool;
+
 /// Product name shared by application frontends.
 pub const PRODUCT_NAME: &str = "orchestrator-tool";
 
