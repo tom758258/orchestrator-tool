@@ -1,0 +1,43 @@
+# Rust / Cargo
+target/
+*.rs.bk
+
+# Environment / local configuration
+.env
+.env.local
+.env.*
+!.env.example
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs and generated runtime artifacts
+*.log
+logs/
+artifacts/
+reports/
+captures/
+*.jsonl
+*.csv
+
+# Build / distribution directories
+dist/
+build/
+release/
+
+# Tauri desktop frontend dependencies / caches
+node_modules/
+.vite/
+
+# Notebook / local workspace files
+.obsidian
+
+# Data files
+data/
+
+# Local / private project notes
+Local/
