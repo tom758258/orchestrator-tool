@@ -1,10 +1,5 @@
-[workspace]
-members = [
-    "crates/orchestrator-core",
-    "crates/orchestrator-cli",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "orchestrator-tool"
 version = "0.1.0"
 edition = "2024"
+publish = false

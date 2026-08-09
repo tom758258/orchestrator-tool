@@ -1,5 +1,0 @@
-[package]
-name = "orchestrator-core"
-version.workspace = true
-edition.workspace = true
-publish = false

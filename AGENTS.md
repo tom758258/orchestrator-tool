@@ -11,8 +11,8 @@ These instructions define long-term, repository-specific boundaries for agents w
 
 ## 2. Architecture Boundaries
 
-- `orchestrator-core` owns shared orchestration and domain behavior.
-- `orchestrator-cli` may depend on Core. Core must not depend on CLI.
+- The root `orchestrator-tool` Cargo package contains the Core library in `src/lib.rs` and the CLI binary in `src/main.rs`.
+- The CLI may depend on Core. Core must not contain CLI-specific behavior.
 - The future Desktop/Tauri application may depend on Core. Core must not depend on Tauri, frontend frameworks, TypeScript, or WebView APIs.
 - Keep Tauri commands thin. Tool discovery, process management, workflow validation, scheduling, template semantics, and instrument adapters belong in Core when those features are introduced.
 - Do not introduce WebUI, an HTTP server, VISA/SCPI control, embedded Python, instrument contracts, IPC schemas, workflow schemas, or plugin systems without a concrete requirement.
@@ -27,17 +27,17 @@ These instructions define long-term, repository-specific boundaries for agents w
 
 - Development and deployment are Windows-first, but use Rust path and process abstractions that do not unnecessarily hard-code Windows behavior in Core.
 - Do not add a pinned Rust toolchain, minimum Rust version, Tauri dependencies, async runtime, serialization framework, or other dependency until the implementation needs it.
-- Keep the Cargo workspace small. Add crates only when a real component boundary requires them.
+- Keep Core and CLI in the same Cargo package unless a real component boundary requires another package.
 
 ## 5. Testing And Validation
 
 - Default tests and validation must not require real instruments.
-- Run the narrowest relevant checks first, then the workspace checks when practical.
+- Run the narrowest relevant checks first, then the package checks when practical.
 - Repository baseline checks are:
   - `cargo fmt --all --check`
-  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-  - `cargo test --workspace`
-  - `cargo build --workspace`
+  - `cargo clippy --locked --all-targets --all-features -- -D warnings`
+  - `cargo test --locked`
+  - `cargo build --locked`
 - Report failed, skipped, blocked, or unexecuted verification steps rather than implying they passed.
 
 ## 6. Scope Control

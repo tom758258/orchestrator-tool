@@ -3,12 +3,5 @@
 version = 4
 
 [[package]]
-name = "orchestrator-cli"
-version = "0.1.0"
-dependencies = [
- "orchestrator-core",
-]
-
-[[package]]
-name = "orchestrator-core"
+name = "orchestrator-tool"
 version = "0.1.0"
