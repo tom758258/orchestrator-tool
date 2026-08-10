@@ -10,6 +10,17 @@
 
 專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。儀器合約、IPC、Workflow 執行與 Tauri 整合會等到對應開發階段再加入，不在初始骨架預先實作。
 
+## Executable 設定
+
+Core 可以載入由呼叫端指定的 TOML 設定檔，並用它覆寫 built-in portable executable path：
+
+```toml
+[tools]
+meters = "D:/tools/meters-tool.exe"
+```
+
+Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。目前 CLI 尚未載入設定檔。
+
 ## 開發
 
 使用 stable Rust，並在 repository 根目錄執行：

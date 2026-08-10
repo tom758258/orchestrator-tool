@@ -3,6 +3,7 @@
 //! The core is intentionally independent of CLI and desktop presentation
 //! layers so both can reuse the same orchestration behavior.
 
+pub mod config;
 pub mod discovery;
 pub mod tool;
 

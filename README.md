@@ -10,6 +10,17 @@
 
 The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Instrument contracts, IPC, workflow execution, and Tauri integration are intentionally deferred until their respective implementation work begins.
 
+## Executable configuration
+
+Core can load a TOML configuration file selected by its caller and use it to override built-in portable executable paths:
+
+```toml
+[tools]
+meters = "D:/tools/meters-tool.exe"
+```
+
+Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. The CLI does not load configuration files yet.
+
 ## Development
 
 Use stable Rust and run checks from the repository root:
