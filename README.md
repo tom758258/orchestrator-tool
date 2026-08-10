@@ -21,6 +21,12 @@ meters = "D:/tools/meters-tool.exe"
 
 Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. The CLI does not load configuration files yet.
 
+## External process management
+
+Core can start generic external processes with arguments and expose their process ID, non-blocking status checks, waiting, and forced termination. Standard input, output, and error remain inherited. A managed process performs best-effort termination and cleanup when dropped.
+
+The CLI does not expose process management yet, and IPC and instrument-specific contracts remain deferred.
+
 ## Development
 
 Use stable Rust and run checks from the repository root:

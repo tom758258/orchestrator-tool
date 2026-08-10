@@ -21,6 +21,12 @@ meters = "D:/tools/meters-tool.exe"
 
 Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。目前 CLI 尚未載入設定檔。
 
+## External process 管理
+
+Core 可以使用 arguments 啟動 generic external process，並提供 process ID、非阻塞狀態檢查、等待與強制終止能力。Standard input、output 與 error 維持 inherited。Managed process 被 Drop 時會 best-effort 終止並清理 child process。
+
+目前 CLI 尚未提供 process management，IPC 與 instrument-specific contract 仍留待後續階段實作。
+
 ## 開發
 
 使用 stable Rust，並在 repository 根目錄執行：

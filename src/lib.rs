@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod discovery;
+pub mod process;
 pub mod tool;
 
 /// Product name shared by application frontends.
