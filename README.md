@@ -19,7 +19,7 @@ Core can load a TOML configuration file selected by its caller and use it to ove
 meters = "D:/tools/meters-tool.exe"
 ```
 
-Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. The CLI accepts a caller-supplied configuration path, but P5-A handlers do not load it yet.
+Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
 ## External process management
 
@@ -29,7 +29,7 @@ The CLI does not expose process management yet, and IPC and instrument-specific 
 
 ## CLI
 
-P5-A establishes the command framework:
+P5-A established the command framework, and P5-B implements external tool listing:
 
 ```text
 orchestrator-tool --help
@@ -40,7 +40,9 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-The `doctor` diagnostics and `tools list` discovery output are not implemented in P5-A. These commands currently report that they are unavailable and return a non-zero exit code.
+`tools list` lists the four built-in external tools and reports each executable's `configured` or `portable` source and `available`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
+
+`doctor` diagnostics are not implemented yet, and the CLI still does not expose process management.
 
 ## Development
 
@@ -53,4 +55,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-The CLI currently provides the P5-A command framework without P5-B tool listing or P5-C diagnostics.
+The CLI currently provides P5-B tool listing; P5-C diagnostics remain deferred.

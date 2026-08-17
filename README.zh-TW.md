@@ -19,7 +19,7 @@ Core 可以載入由呼叫端指定的 TOML 設定檔，並用它覆寫 built-in
 meters = "D:/tools/meters-tool.exe"
 ```
 
-Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。CLI 可以接收由呼叫端指定的設定檔路徑，但 P5-A handler 尚未載入設定檔。
+Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
 ## External process 管理
 
@@ -29,7 +29,7 @@ Core 可以使用 arguments 啟動 generic external process，並提供 process 
 
 ## CLI
 
-P5-A 建立以下 command framework：
+P5-A 建立 command framework，P5-B 已實作 external tool listing：
 
 ```text
 orchestrator-tool --help
@@ -40,7 +40,9 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-P5-A 尚未實作 `doctor` diagnostics 與 `tools list` discovery output。這些 command 目前會明確回報尚未提供，並回傳非 0 exit code。
+`tools list` 會列出四個 built-in external tools，並顯示 executable path 的 `configured` 或 `portable` source，以及 `available`、`missing` 或 `not-file` status。Missing tools 是正常的 discovery 結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
+
+`doctor` diagnostics 尚未實作，CLI 目前也仍未暴露 process management。
 
 ## 開發
 
@@ -53,4 +55,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-目前 CLI 僅提供 P5-A command framework，尚未包含 P5-B tool listing 或 P5-C diagnostics。
+目前 CLI 已提供 P5-B tool listing；P5-C diagnostics 尚待後續實作。
