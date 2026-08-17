@@ -85,3 +85,57 @@ fn tools_list_fails_when_config_cannot_be_read() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config read error"), "stderr: {stderr}");
 }
+
+#[test]
+fn doctor_succeeds_and_reports_environment_sections() {
+    let output = run_cli(&["doctor"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for section in ["Application", "Configuration", "External tools", "Summary"] {
+        assert!(
+            stdout.contains(section),
+            "missing {section} in output: {stdout}"
+        );
+    }
+    for tool_id in ["meters", "powers", "scopes", "wavegen"] {
+        assert!(
+            stdout.contains(tool_id),
+            "missing {tool_id} in output: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn doctor_uses_valid_config() {
+    let test_dir = TestDir::new();
+    let config_path = test_dir.path().join("orchestrator.toml");
+    fs::write(
+        &config_path,
+        "[tools]\nmeters = \"configured-meters.exe\"\n",
+    )
+    .unwrap();
+
+    let output = run_cli(&["--config", config_path.to_str().unwrap(), "doctor"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Configuration"), "output: {stdout}");
+    assert!(
+        stdout.contains(&format!("path: {}", config_path.display())),
+        "output: {stdout}"
+    );
+    assert!(stdout.contains("status: ok"), "output: {stdout}");
+}
+
+#[test]
+fn doctor_fails_when_config_cannot_be_read() {
+    let test_dir = TestDir::new();
+    let config_path = test_dir.path().join("missing.toml");
+
+    let output = run_cli(&["--config", config_path.to_str().unwrap(), "doctor"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("config read error"), "stderr: {stderr}");
+}

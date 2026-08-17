@@ -29,7 +29,7 @@ The CLI does not expose process management yet, and IPC and instrument-specific 
 
 ## CLI
 
-P5-A established the command framework, and P5-B implements external tool listing:
+P5-A established the command framework, P5-B implemented external tool listing, and P5-C implements environment diagnostics:
 
 ```text
 orchestrator-tool --help
@@ -42,7 +42,9 @@ orchestrator-tool --config <PATH> tools list
 
 `tools list` lists the four built-in external tools and reports each executable's `configured` or `portable` source and `available`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
 
-`doctor` diagnostics are not implemented yet, and the CLI still does not expose process management.
+`doctor` reports the application directory, configuration state, the status of the four built-in external tools, and summary counts. Missing and not-file tools are normal diagnostic results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code. It does not perform instrument-level diagnostics.
+
+The CLI still does not expose process management, and instrument-specific contracts and IPC remain deferred.
 
 ## Development
 
@@ -55,4 +57,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-The CLI currently provides P5-B tool listing; P5-C diagnostics remain deferred.
+The CLI currently provides P5-B tool listing and P5-C environment diagnostics. Instrument-level diagnostics remain deferred.

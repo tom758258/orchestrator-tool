@@ -29,7 +29,7 @@ Core 可以使用 arguments 啟動 generic external process，並提供 process 
 
 ## CLI
 
-P5-A 建立 command framework，P5-B 已實作 external tool listing：
+P5-A 建立 command framework，P5-B 已實作 external tool listing，P5-C 已實作 environment diagnostics：
 
 ```text
 orchestrator-tool --help
@@ -42,7 +42,9 @@ orchestrator-tool --config <PATH> tools list
 
 `tools list` 會列出四個 built-in external tools，並顯示 executable path 的 `configured` 或 `portable` source，以及 `available`、`missing` 或 `not-file` status。Missing tools 是正常的 discovery 結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
 
-`doctor` diagnostics 尚未實作，CLI 目前也仍未暴露 process management。
+`doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
+
+CLI 目前仍未暴露 process management，instrument-specific contract 與 IPC 也尚待後續實作。
 
 ## 開發
 
@@ -55,4 +57,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-目前 CLI 已提供 P5-B tool listing；P5-C diagnostics 尚待後續實作。
+目前 CLI 已提供 P5-B tool listing 與 P5-C environment diagnostics；instrument-level diagnostics 尚待後續實作。
