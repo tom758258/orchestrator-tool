@@ -1,0 +1,11 @@
+[package]
+name = "orchestrator-tool-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = [] }
