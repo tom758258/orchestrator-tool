@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod discovery;
+pub mod inspection;
 pub mod process;
 pub mod tool;
 

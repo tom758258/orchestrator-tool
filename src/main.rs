@@ -1,5 +1,4 @@
 use std::{
-    io,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -8,11 +7,8 @@ use clap::{Parser, Subcommand};
 use orchestrator_tool::{
     PRODUCT_NAME, VERSION,
     config::{Config, ConfigError},
-    discovery::{
-        ExecutablePathSource, ExecutableStatus, ResolvedExecutable, ToolDefinition,
-        built_in_tool_definitions, current_application_dir, resolve_executable_path,
-        validate_executable_path,
-    },
+    discovery::{ExecutablePathSource, ExecutableStatus, current_application_dir},
+    inspection::inspect_built_in_tools,
 };
 
 /// Coordinates external instrument tools.
@@ -90,25 +86,27 @@ fn doctor(config_path: Option<&Path>) -> ExitCode {
     let mut missing = 0;
     let mut not_file = 0;
 
-    for definition in built_in_tool_definitions() {
-        let (_resolved, status) =
-            match resolve_and_validate_tool(&application_dir, &config, &definition) {
-                Ok(result) => result,
-                Err(error) => {
-                    eprintln!(
-                        "{PRODUCT_NAME}: failed to validate {} executable: {error}",
-                        definition.id()
-                    );
-                    return ExitCode::FAILURE;
-                }
-            };
+    let inspections = match inspect_built_in_tools(&application_dir, &config) {
+        Ok(inspections) => inspections,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    for inspection in &inspections {
+        let status = inspection.status();
 
         match status {
             ExecutableStatus::Available => available += 1,
             ExecutableStatus::Missing => missing += 1,
             ExecutableStatus::NotFile => not_file += 1,
         }
-        println!("  {:<11}{}", doctor_status_label(status), definition.id());
+        println!(
+            "  {:<11}{}",
+            doctor_status_label(status),
+            inspection.resolved().tool_id()
+        );
     }
 
     println!("\nSummary");
@@ -124,21 +122,6 @@ fn load_config(config_path: Option<&Path>) -> Result<Config, ConfigError> {
         Some(path) => Config::load(path),
         None => Ok(Config::default()),
     }
-}
-
-fn resolve_and_validate_tool(
-    application_dir: &Path,
-    config: &Config,
-    definition: &ToolDefinition,
-) -> io::Result<(ResolvedExecutable, ExecutableStatus)> {
-    let resolved = resolve_executable_path(
-        application_dir,
-        definition,
-        config.executable_path(definition.id()),
-    );
-    let status = validate_executable_path(resolved.path())?;
-
-    Ok((resolved, status))
 }
 
 fn tools_list(config_path: Option<&Path>) -> ExitCode {
@@ -157,25 +140,21 @@ fn tools_list(config_path: Option<&Path>) -> ExitCode {
         }
     };
 
-    for definition in built_in_tool_definitions() {
-        let (resolved, status) =
-            match resolve_and_validate_tool(&application_dir, &config, &definition) {
-                Ok(result) => result,
-                Err(error) => {
-                    eprintln!(
-                        "{PRODUCT_NAME}: failed to validate {} executable: {error}",
-                        definition.id()
-                    );
-                    return ExitCode::FAILURE;
-                }
-            };
+    let inspections = match inspect_built_in_tools(&application_dir, &config) {
+        Ok(inspections) => inspections,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
 
+    for inspection in &inspections {
         println!(
             "{}\n  status: {}\n  source: {}\n  path: {}\n",
-            definition.id(),
-            executable_status_label(status),
-            executable_source_label(resolved.source()),
-            resolved.path().display()
+            inspection.resolved().tool_id(),
+            executable_status_label(inspection.status()),
+            executable_source_label(inspection.resolved().source()),
+            inspection.resolved().path().display()
         );
     }
 
