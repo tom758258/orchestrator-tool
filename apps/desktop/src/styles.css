@@ -10,10 +10,112 @@ body {
 }
 
 .app {
-  min-height: 100vh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.app-header h2 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #5a6270;
+}
+
+.app-header button {
+  margin-top: 12px;
+  padding: 6px 16px;
+  font-size: 0.9rem;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2430;
+  cursor: pointer;
+}
+
+.app-header button:hover:not(:disabled) {
+  background: #f0f2f5;
+}
+
+.app-header button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.error {
+  padding: 10px 14px;
+  margin-top: 20px;
+  border: 1px solid #e4b6b3;
+  border-radius: 8px;
+  background: #fdf3f2;
+  color: #a12b21;
+  overflow-wrap: anywhere;
+}
+
+.tool-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 20px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  gap: 12px;
+}
+
+.tool-card {
+  padding: 12px 16px;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.tool-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool-id {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.status {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.status-available {
+  background: #e7f4e8;
+  color: #226b2c;
+}
+
+.status-missing {
+  background: #fdeceb;
+  color: #a12b21;
+}
+
+.status-not-file {
+  background: #fdf3e0;
+  color: #8a5a00;
+}
+
+.tool-source {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #5a6270;
+}
+
+.tool-path {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #5a6270;
+  overflow-wrap: anywhere;
 }
