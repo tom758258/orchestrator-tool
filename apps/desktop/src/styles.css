@@ -107,6 +107,51 @@ body {
   color: #8a5a00;
 }
 
+.status-error {
+  background: #fdeceb;
+  color: #a12b21;
+}
+
+.tool-details {
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-row {
+  display: flex;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.detail-label {
+  min-width: 120px;
+  color: #5a6270;
+  font-weight: 500;
+}
+
+.detail-value {
+  flex: 1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.compatibility-compatible {
+  color: #226b2c;
+  font-weight: 600;
+}
+
+.compatibility-incompatible {
+  color: #a12b21;
+  font-weight: 600;
+}
+
+.compatibility-error {
+  color: #a12b21;
+  font-weight: 600;
+}
+
 .tool-source {
   margin: 6px 0 0;
   font-size: 0.85rem;
@@ -114,8 +159,10 @@ body {
 }
 
 .tool-path {
-  margin: 4px 0 0;
-  font-size: 0.85rem;
-  color: #5a6270;
   overflow-wrap: anywhere;
+}
+
+.tool-reason {
+  overflow-wrap: anywhere;
+  color: #a12b21;
 }

@@ -9,6 +9,7 @@ pub mod inspection;
 pub mod manifest;
 pub mod manifest_probe;
 pub mod process;
+pub mod status;
 pub mod tool;
 
 /// Product name shared by application frontends.

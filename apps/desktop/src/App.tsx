@@ -3,20 +3,39 @@ import { invoke } from '@tauri-apps/api/core'
 
 type ToolStatus = {
   tool_id: string
-  path: string
-  source: string
-  status: string
+  path: string | null
+  source: string | null
+  executable_status: string
+  compatibility: string
+  tool_version: string | null
+  worker_schema_versions: number[]
+  reason: string | null
 }
 
-const STATUS_LABELS: Record<string, string> = {
+const EXECUTABLE_LABELS: Record<string, string> = {
   available: 'Available',
   missing: 'Missing',
   'not-file': 'Not a file',
+  error: 'Error',
+}
+
+const COMPATIBILITY_LABELS: Record<string, string> = {
+  compatible: 'Compatible',
+  incompatible: 'Incompatible',
+  'not-probed': '—',
+  error: 'Error',
 }
 
 const SOURCE_LABELS: Record<string, string> = {
   configured: 'Configured',
   portable: 'Portable',
+}
+
+function formatWorkerSchemas(versions: number[]): string {
+  if (versions.length === 0) {
+    return '—'
+  }
+  return versions.join(', ')
 }
 
 function App() {
@@ -65,12 +84,50 @@ function App() {
             <li key={tool.tool_id} className="tool-card">
               <div className="tool-title">
                 <span className="tool-id">{tool.tool_id}</span>
-                <span className={`status status-${tool.status}`}>
-                  {STATUS_LABELS[tool.status] ?? tool.status}
+                <span className={`status status-${tool.executable_status}`}>
+                  {EXECUTABLE_LABELS[tool.executable_status] ?? tool.executable_status}
                 </span>
               </div>
-              <p className="tool-source">{SOURCE_LABELS[tool.source] ?? tool.source}</p>
-              <p className="tool-path">{tool.path}</p>
+              <dl className="tool-details">
+                <div className="detail-row">
+                  <dt className="detail-label">Executable</dt>
+                  <dd className="detail-value">
+                    {EXECUTABLE_LABELS[tool.executable_status] ?? tool.executable_status}
+                  </dd>
+                </div>
+                <div className="detail-row">
+                  <dt className="detail-label">Compatibility</dt>
+                  <dd className={`detail-value compatibility-${tool.compatibility}`}>
+                    {COMPATIBILITY_LABELS[tool.compatibility] ?? tool.compatibility}
+                  </dd>
+                </div>
+                <div className="detail-row">
+                  <dt className="detail-label">Version</dt>
+                  <dd className="detail-value">{tool.tool_version ?? '—'}</dd>
+                </div>
+                <div className="detail-row">
+                  <dt className="detail-label">Worker Schema</dt>
+                  <dd className="detail-value">
+                    {formatWorkerSchemas(tool.worker_schema_versions)}
+                  </dd>
+                </div>
+                <div className="detail-row">
+                  <dt className="detail-label">Source</dt>
+                  <dd className="detail-value">
+                    {tool.source ? (SOURCE_LABELS[tool.source] ?? tool.source) : '—'}
+                  </dd>
+                </div>
+                <div className="detail-row">
+                  <dt className="detail-label">Path</dt>
+                  <dd className="detail-value tool-path">{tool.path ?? '—'}</dd>
+                </div>
+                {tool.reason && (
+                  <div className="detail-row">
+                    <dt className="detail-label">Reason</dt>
+                    <dd className="detail-value tool-reason">{tool.reason}</dd>
+                  </div>
+                )}
+              </dl>
             </li>
           ))}
         </ul>
