@@ -147,8 +147,11 @@ where
         }
     };
 
-    let stdout = join_reader(stdout_handle, "stdout")?;
-    let stderr = join_reader(stderr_handle, "stderr")?;
+    let stdout_result = join_reader(stdout_handle, "stdout");
+    let stderr_result = join_reader(stderr_handle, "stderr");
+
+    let stdout = stdout_result?;
+    let stderr = stderr_result?;
 
     Ok(CapturedOutput {
         stdout,
