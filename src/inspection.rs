@@ -3,8 +3,8 @@ use std::{io, path::Path};
 use crate::{
     config::Config,
     discovery::{
-        ExecutableStatus, ResolvedExecutable, built_in_tool_definitions, resolve_executable_path,
-        validate_executable_path,
+        ExecutableStatus, ResolvedExecutable, ToolDefinition, built_in_tool_definitions,
+        resolve_executable_path, validate_executable_path,
     },
 };
 
@@ -27,6 +27,27 @@ impl ToolInspection {
     }
 }
 
+/// Inspects a single built-in tool's executable.
+pub fn inspect_tool(
+    application_dir: impl AsRef<Path>,
+    config: &Config,
+    definition: &ToolDefinition,
+) -> io::Result<ToolInspection> {
+    let resolved = resolve_executable_path(
+        application_dir.as_ref(),
+        definition,
+        config.executable_path(definition.id()),
+    );
+    let status = validate_executable_path(resolved.path()).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("failed to validate {} executable: {error}", definition.id()),
+        )
+    })?;
+
+    Ok(ToolInspection { resolved, status })
+}
+
 /// Inspects every built-in tool's executable under an application directory.
 ///
 /// The returned inspections follow `built_in_tool_definitions` order.
@@ -38,19 +59,7 @@ pub fn inspect_built_in_tools(
     let mut inspections = Vec::new();
 
     for definition in built_in_tool_definitions() {
-        let resolved = resolve_executable_path(
-            application_dir,
-            &definition,
-            config.executable_path(definition.id()),
-        );
-        let status = validate_executable_path(resolved.path()).map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!("failed to validate {} executable: {error}", definition.id()),
-            )
-        })?;
-
-        inspections.push(ToolInspection { resolved, status });
+        inspections.push(inspect_tool(application_dir, config, &definition)?);
     }
 
     Ok(inspections)

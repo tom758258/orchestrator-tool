@@ -139,3 +139,71 @@ fn doctor_fails_when_config_cannot_be_read() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("config read error"), "stderr: {stderr}");
 }
+
+#[test]
+fn tools_inspect_reports_missing_without_probe() {
+    let test_dir = TestDir::new();
+    let missing_path = test_dir.path().join("missing-meters.exe");
+    let config_path = test_dir.path().join("orchestrator.toml");
+    let config_value = format!("{:?}", missing_path.to_string_lossy().to_string());
+    fs::write(&config_path, format!("[tools]\nmeters = {config_value}\n")).unwrap();
+
+    let output = run_cli(&[
+        "--config",
+        config_path.to_str().unwrap(),
+        "tools",
+        "inspect",
+        "meters",
+    ]);
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("meters"), "output: {stdout}");
+    assert!(stdout.contains("missing"), "output: {stdout}");
+    assert!(stdout.contains("not-probed"), "output: {stdout}");
+}
+
+#[test]
+fn tools_inspect_rejects_unknown_tool_id() {
+    let output = run_cli(&["tools", "inspect", "electronic-load"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown tool ID"), "stderr: {stderr}");
+}
+
+#[test]
+fn tools_inspect_reports_non_zero_probe() {
+    let test_dir = TestDir::new();
+    let config_path = test_dir.path().join("orchestrator.toml");
+    let current_exe = env!("CARGO_BIN_EXE_orchestrator-tool");
+    let config_value = format!("{:?}", current_exe);
+    fs::write(&config_path, format!("[tools]\nmeters = {config_value}\n")).unwrap();
+
+    let output = run_cli(&[
+        "--config",
+        config_path.to_str().unwrap(),
+        "tools",
+        "inspect",
+        "meters",
+    ]);
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        stdout.contains("available"),
+        "stdout should show available: {stdout}"
+    );
+    assert!(
+        combined.contains("manifest probe failed")
+            || combined.contains("non-zero")
+            || combined.contains("error"),
+        "combined: {combined}"
+    );
+}
