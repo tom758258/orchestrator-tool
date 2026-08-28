@@ -75,6 +75,19 @@ pub(crate) enum CaptureError {
     Timeout,
 }
 
+fn join_reader(
+    handle: thread::JoinHandle<io::Result<Vec<u8>>>,
+    stream: &str,
+) -> Result<Vec<u8>, CaptureError> {
+    match handle.join() {
+        Ok(Ok(buf)) => Ok(buf),
+        Ok(Err(error)) => Err(CaptureError::Io(error)),
+        Err(_) => Err(CaptureError::Io(io::Error::other(format!(
+            "{stream} reader thread panicked"
+        )))),
+    }
+}
+
 /// Runs a process, captures stdout/stderr, and enforces a timeout.
 pub(crate) fn run_output_with_timeout<I, S>(
     executable: impl AsRef<Path>,
@@ -95,26 +108,26 @@ where
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let stdout_handle = thread::spawn(move || {
+    let stdout_handle = thread::spawn(move || -> io::Result<Vec<u8>> {
         let mut buf = Vec::new();
         if let Some(mut pipe) = stdout {
-            let _ = pipe.read_to_end(&mut buf);
+            pipe.read_to_end(&mut buf)?;
         }
-        buf
+        Ok(buf)
     });
-    let stderr_handle = thread::spawn(move || {
+    let stderr_handle = thread::spawn(move || -> io::Result<Vec<u8>> {
         let mut buf = Vec::new();
         if let Some(mut pipe) = stderr {
-            let _ = pipe.read_to_end(&mut buf);
+            pipe.read_to_end(&mut buf)?;
         }
-        buf
+        Ok(buf)
     });
 
     let deadline = Instant::now() + timeout;
     let status = loop {
-        match child.try_wait().map_err(CaptureError::Io)? {
-            Some(status) => break status,
-            None => {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -124,11 +137,18 @@ where
                 }
                 thread::sleep(Duration::from_millis(10));
             }
+            Err(original) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                return Err(CaptureError::Io(original));
+            }
         }
     };
 
-    let stdout = stdout_handle.join().unwrap_or_default();
-    let stderr = stderr_handle.join().unwrap_or_default();
+    let stdout = join_reader(stdout_handle, "stdout")?;
+    let stderr = join_reader(stderr_handle, "stderr")?;
 
     Ok(CapturedOutput {
         stdout,
