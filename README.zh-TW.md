@@ -25,17 +25,20 @@ Configured path 的優先順序高於 portable path。Configured path 不存在�
 
 Core 可以使用 arguments 啟動 generic external process，並提供 process ID、非阻塞狀態檢查、等待與強制終止能力。Standard input、output 與 error 維持 inherited。Managed process 被 Drop 時會 best-effort 終止並清理 child process。
 
-目前 CLI 尚未提供 process management，IPC 與 instrument-specific contract 仍留待後續階段實作。
+Core 已提供 Common Worker process/session 與 local HTTP IPC 支援，CLI 已透過 `tools worker-check` 暴露針對 Powers 與 Meters 的 Worker diagnostic，Core 仍持有 process lifecycle 與 cleanup 責任。
 
 ## CLI
 
-P5-A 建立 command framework，P5-B 已實作 external tool listing，P5-C 已實作 environment diagnostics：
+P5-A 建立 command framework，P5-B 實作 external tool listing，P5-C 實作 environment diagnostics：
 
 ```text
 orchestrator-tool --help
 orchestrator-tool --version
 orchestrator-tool doctor
 orchestrator-tool tools list
+orchestrator-tool tools inspect <TOOL_ID>
+orchestrator-tool tools worker-check powers
+orchestrator-tool tools worker-check meters
 orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
@@ -44,7 +47,7 @@ orchestrator-tool --config <PATH> tools list
 
 `doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
 
-CLI 目前仍未暴露 process management，instrument-specific contract 與 IPC 也尚待後續實作。
+`tools worker-check powers` 會驗證 configured Powers executable 與 manifest，並執行 bounded simulate-mode `read-status` Worker diagnostic，不需要真實硬體。`tools worker-check meters` 執行相同的 executable 與 manifest 驗證，並執行 bounded simulate-mode software-trigger diagnostic，同樣不需要真實硬體。
 
 ## 開發
 
@@ -57,4 +60,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-目前 CLI 已提供 P5-B tool listing 與 P5-C environment diagnostics；instrument-level diagnostics 尚待後續實作。
+目前 CLI 已提供 tool listing、manifest inspection、environment diagnostics，以及針對 Powers 與 Meters 的 Worker diagnostic。
