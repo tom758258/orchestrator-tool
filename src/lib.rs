@@ -11,6 +11,7 @@ pub mod manifest;
 pub mod manifest_probe;
 pub mod process;
 pub mod status;
+pub mod template;
 pub mod tool;
 pub mod worker;
 pub mod worker_http;
