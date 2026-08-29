@@ -6,7 +6,7 @@
 
 - Core library（`src/lib.rs`）：共用調度與領域邏輯，不依賴 CLI 或 Desktop 顯示層。
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
-- Desktop 應用程式：規劃採用 Tauri 2，負責視覺化 Workflow 編輯、Template、執行與監控；P0 尚未建立 Desktop。
+- Desktop 應用程式：採用 Tauri 2，未來負責視覺化 Workflow 編輯、Template、執行與監控；目前 Desktop shell 已提供 external tool 狀態與相容性顯示。
 
 專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template 與 per-step result domain，workflow execution 仍延後。
 
@@ -47,7 +47,7 @@ orchestrator-tool --config <PATH> tools list
 
 `doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
 
-`tools worker-check powers` 會驗證 configured Powers executable 與 manifest，並執行 bounded simulate-mode `read-status` Worker diagnostic，不需要真實硬體。`tools worker-check meters` 執行相同的 executable 與 manifest 驗證，並執行 bounded simulate-mode software-trigger diagnostic，同樣不需要真實硬體。
+`tools worker-check powers` 會驗證解析出的 Powers executable 與 manifest，並執行 bounded simulate-mode `read-status` Worker diagnostic，不需要真實硬體。`tools worker-check meters` 會驗證解析出的 Meters executable 與 manifest，並執行 bounded simulate-mode software-trigger diagnostic，同樣不需要真實硬體。
 
 ## 開發
 
