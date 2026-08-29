@@ -165,6 +165,38 @@ impl fmt::Display for WorkflowError {
 
 impl Error for WorkflowError {}
 
+/// The result of executing a single workflow step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepResult {
+    step_id: StepId,
+    outcome: StepOutcome,
+}
+
+impl StepResult {
+    /// Creates a step result.
+    pub fn new(step_id: StepId, outcome: StepOutcome) -> Self {
+        Self { step_id, outcome }
+    }
+
+    /// Returns the step ID associated with this result.
+    pub fn step_id(&self) -> &StepId {
+        &self.step_id
+    }
+
+    /// Returns the execution outcome.
+    pub fn outcome(&self) -> &StepOutcome {
+        &self.outcome
+    }
+}
+
+/// The execution outcome of a workflow step.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StepOutcome {
+    Succeeded { output: Value },
+    Failed { message: String },
+    Cancelled,
+}
+
 fn is_valid_identifier(value: &str) -> bool {
     value.split('-').all(|segment| {
         !segment.is_empty()
@@ -178,7 +210,9 @@ fn is_valid_identifier(value: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{ActionId, Step, StepId, StepKind, Workflow, WorkflowError};
+    use super::{
+        ActionId, Step, StepId, StepKind, StepOutcome, StepResult, Workflow, WorkflowError,
+    };
     use crate::tool::ToolId;
 
     #[test]
@@ -246,5 +280,49 @@ mod tests {
         for value in ["", "Output-On", "software_trigger"] {
             assert!(ActionId::new(value).is_err(), "{value:?} should be invalid");
         }
+    }
+
+    #[test]
+    fn step_result_succeeded_preserves_output() {
+        let step_id = StepId::new("meter-read-1").unwrap();
+        let output = json!({ "value": 3.3012, "unit": "V" });
+        let result = StepResult::new(
+            step_id.clone(),
+            StepOutcome::Succeeded {
+                output: output.clone(),
+            },
+        );
+
+        assert_eq!(result.step_id(), &step_id);
+        assert_eq!(
+            result.outcome(),
+            &StepOutcome::Succeeded {
+                output: output.clone()
+            }
+        );
+        assert_eq!(
+            result,
+            StepResult::new(step_id, StepOutcome::Succeeded { output })
+        );
+    }
+
+    #[test]
+    fn step_result_failed_and_cancelled() {
+        let failed = StepResult::new(
+            StepId::new("meter-read-1").unwrap(),
+            StepOutcome::Failed {
+                message: "instrument timeout".to_owned(),
+            },
+        );
+        assert_eq!(failed.step_id().as_str(), "meter-read-1");
+        assert_eq!(
+            failed.outcome(),
+            &StepOutcome::Failed {
+                message: "instrument timeout".to_owned()
+            }
+        );
+
+        let cancelled = StepResult::new(StepId::new("wait-1").unwrap(), StepOutcome::Cancelled);
+        assert_eq!(cancelled.outcome(), &StepOutcome::Cancelled);
     }
 }
