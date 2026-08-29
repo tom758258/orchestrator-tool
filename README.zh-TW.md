@@ -8,7 +8,7 @@
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
 - Desktop 應用程式：規劃採用 Tauri 2，負責視覺化 Workflow 編輯、Template、執行與監控；P0 尚未建立 Desktop。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。儀器合約、IPC、Workflow 執行與 Tauri 整合會等到對應開發階段再加入，不在初始骨架預先實作。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template 與 per-step result domain，workflow execution 仍延後。
 
 ## Executable 設定
 
