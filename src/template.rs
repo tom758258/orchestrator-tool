@@ -44,15 +44,17 @@ impl Template {
 
     /// Deserializes a template from JSON text.
     pub fn from_json_str(json: &str) -> Result<Self, TemplateError> {
-        let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
+        let version_wire: TemplateVersionWire =
+            serde_json::from_str(json).map_err(TemplateError::Json)?;
 
-        if wire.schema_version != TEMPLATE_SCHEMA_VERSION {
+        if version_wire.schema_version != TEMPLATE_SCHEMA_VERSION {
             return Err(TemplateError::UnsupportedSchemaVersion {
                 expected: TEMPLATE_SCHEMA_VERSION,
-                found: wire.schema_version,
+                found: version_wire.schema_version,
             });
         }
 
+        let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
         let workflow = workflow_from_wire(wire.workflow)?;
         Ok(Self {
             name: wire.name,
@@ -148,6 +150,11 @@ impl Error for TemplateError {
             Self::Workflow(source) => Some(source),
         }
     }
+}
+
+#[derive(Deserialize)]
+struct TemplateVersionWire {
+    schema_version: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -382,8 +389,8 @@ mod tests {
     fn unsupported_schema_version_is_rejected() {
         let json = json!({
             "schema_version": 99,
-            "name": "Future",
-            "workflow": { "steps": [] }
+            "future_field": true,
+            "workflow_v99": { "nodes": [] }
         })
         .to_string();
 
