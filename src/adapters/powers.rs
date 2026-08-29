@@ -53,6 +53,12 @@ pub fn run_worker_smoke(
         (Ok(()), Ok(status)) if status.success() => Ok(()),
         (Ok(()), Ok(status)) => Err(PowersSmokeError::WorkerExit(status)),
         (Ok(()), Err(error)) => Err(PowersSmokeError::Shutdown(error)),
+        (Err(operation), Ok(status)) if !status.success() => {
+            Err(PowersSmokeError::OperationAndWorkerExit {
+                operation: operation.to_string(),
+                status,
+            })
+        }
         (Err(error), Ok(_)) => Err(error),
         (Err(operation), Err(shutdown)) => Err(PowersSmokeError::OperationAndShutdown {
             operation: operation.to_string(),
@@ -101,7 +107,10 @@ fn run_smoke_operation(
                     ));
                 }
                 "failed" | "cancelled" => {
-                    return Err(PowersSmokeError::TerminalFailure(last_job.status));
+                    return Err(PowersSmokeError::TerminalFailure {
+                        status: last_job.status,
+                        detail: diagnostic_detail(last_job.error.as_ref()),
+                    });
                 }
                 status => {
                     return Err(PowersSmokeError::InvalidResponse(format!(
@@ -143,6 +152,9 @@ struct StatusResponse {
     schema_version: u32,
     service: String,
     run_id: String,
+    status: String,
+    #[serde(default)]
+    fatal_error: Option<DiagnosticError>,
     #[serde(default)]
     last_job: Option<LastJob>,
 }
@@ -153,11 +165,21 @@ struct LastJob {
     status: String,
     #[serde(default)]
     result: Option<JobResult>,
+    #[serde(default)]
+    error: Option<DiagnosticError>,
 }
 
 #[derive(Deserialize)]
 struct JobResult {
     ok: bool,
+}
+
+#[derive(Deserialize)]
+struct DiagnosticError {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -195,8 +217,46 @@ fn parse_status(value: Value, ready: &WorkerReady) -> Result<StatusResponse, Pow
             ready.run_id()
         )));
     }
+    validate_worker_health(&status)?;
 
     Ok(status)
+}
+
+fn validate_worker_health(status: &StatusResponse) -> Result<(), PowersSmokeError> {
+    let has_fatal_error = status.fatal_error.is_some();
+    if status.status != "error" && !has_fatal_error {
+        return Ok(());
+    }
+
+    let detail = diagnostic_detail(status.fatal_error.as_ref()).unwrap_or_else(|| {
+        if status.status == "error" {
+            "Worker status is error".to_owned()
+        } else {
+            "Worker status contained fatal_error".to_owned()
+        }
+    });
+    Err(PowersSmokeError::WorkerFatal(detail))
+}
+
+fn diagnostic_detail(error: Option<&DiagnosticError>) -> Option<String> {
+    let error = error?;
+    let code = error
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let message = error
+        .message
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match (code, message) {
+        (Some(code), Some(message)) => Some(format!("{code}: {message}")),
+        (Some(code), None) => Some(code.to_owned()),
+        (None, Some(message)) => Some(message.to_owned()),
+        (None, None) => None,
+    }
 }
 
 fn validate_accepted_response(http_status: u16, value: Value) -> Result<String, PowersSmokeError> {
@@ -227,10 +287,18 @@ pub enum PowersSmokeError {
     Startup(WorkerStartError),
     Http(WorkerHttpError),
     InvalidResponse(String),
-    TerminalFailure(String),
+    TerminalFailure {
+        status: String,
+        detail: Option<String>,
+    },
+    WorkerFatal(String),
     OperationTimeout(Duration),
     Shutdown(WorkerShutdownError),
     WorkerExit(ExitStatus),
+    OperationAndWorkerExit {
+        operation: String,
+        status: ExitStatus,
+    },
     OperationAndShutdown {
         operation: String,
         shutdown: WorkerShutdownError,
@@ -245,14 +313,23 @@ impl fmt::Display for PowersSmokeError {
             Self::InvalidResponse(reason) => {
                 write!(formatter, "invalid Powers Worker response: {reason}")
             }
-            Self::TerminalFailure(status) => {
-                write!(formatter, "Powers read-status job ended with {status}")
+            Self::TerminalFailure { status, detail } => {
+                write!(formatter, "Powers read-status job ended with {status}")?;
+                if let Some(detail) = detail {
+                    write!(formatter, ": {detail}")?;
+                }
+                Ok(())
             }
+            Self::WorkerFatal(detail) => write!(formatter, "Powers Worker fatal error: {detail}"),
             Self::OperationTimeout(timeout) => {
                 write!(formatter, "Powers Worker check timed out after {timeout:?}")
             }
             Self::Shutdown(error) => write!(formatter, "Powers Worker shutdown failed: {error}"),
             Self::WorkerExit(status) => write!(formatter, "Powers Worker exited with {status}"),
+            Self::OperationAndWorkerExit { operation, status } => write!(
+                formatter,
+                "Powers Worker check failed: {operation}; Worker also exited with {status}"
+            ),
             Self::OperationAndShutdown {
                 operation,
                 shutdown,
@@ -272,9 +349,11 @@ impl Error for PowersSmokeError {
             Self::Shutdown(source) => Some(source),
             Self::OperationAndShutdown { shutdown, .. } => Some(shutdown),
             Self::InvalidResponse(_)
-            | Self::TerminalFailure(_)
+            | Self::TerminalFailure { .. }
+            | Self::WorkerFatal(_)
             | Self::OperationTimeout(_)
-            | Self::WorkerExit(_) => None,
+            | Self::WorkerExit(_)
+            | Self::OperationAndWorkerExit { .. } => None,
         }
     }
 }
@@ -285,7 +364,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{read_status_request, simulate_worker_launch_spec};
+    use super::{
+        PowersSmokeError, StatusResponse, read_status_request, simulate_worker_launch_spec,
+        validate_worker_health,
+    };
 
     #[test]
     fn powers_simulate_contract_shape_is_correct() {
@@ -315,6 +397,23 @@ mod tests {
                     "planning_model_id": "keysight-e36312a"
                 }
             })
+        );
+    }
+
+    #[test]
+    fn worker_error_status_fails_fast_without_fatal_detail() {
+        let status: StatusResponse = serde_json::from_value(json!({
+            "schema_version": 2,
+            "service": "powers-tool",
+            "run_id": "run-123",
+            "status": "error"
+        }))
+        .unwrap();
+
+        let error = validate_worker_health(&status).unwrap_err();
+
+        assert!(
+            matches!(error, PowersSmokeError::WorkerFatal(detail) if detail == "Worker status is error")
         );
     }
 }

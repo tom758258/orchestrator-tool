@@ -3,12 +3,12 @@ use std::{
     ffi::{OsStr, OsString},
     io::{self, BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
-    thread,
+    process, thread,
     time::{Duration, Instant},
 };
 
 use orchestrator_tool::{
-    adapters::powers::run_worker_smoke,
+    adapters::powers::{PowersSmokeError, run_worker_smoke},
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
 };
@@ -24,6 +24,7 @@ const POWERS_WORKER_ARGUMENTS: [&str; 7] = [
     "--artifact-mode",
     "memory",
 ];
+const POWERS_FIXTURE_SCENARIO_ENV: &str = "ORCHESTRATOR_TEST_POWERS_SCENARIO";
 
 fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
@@ -50,9 +51,12 @@ fn main() {
     graceful_shutdown_reaps_worker();
     shutdown_timeout_forces_cleanup();
     powers_worker_smoke_correlates_terminal_job();
+    powers_operation_failure_preserves_nonzero_worker_exit();
+    powers_terminal_failure_preserves_diagnostic_detail();
 }
 
 fn run_powers_worker_fixture() {
+    let scenario = env::var(POWERS_FIXTURE_SCENARIO_ENV).unwrap_or_else(|_| "success".to_owned());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "powers-smoke-run";
@@ -80,10 +84,29 @@ fn run_powers_worker_fixture() {
             "schema_version": 2,
             "service": "powers-tool",
             "run_id": run_id,
+            "status": if scenario == "fatal-nonzero" { "error" } else { "ready" },
+            "fatal_error": if scenario == "fatal-nonzero" {
+                Some(json!({
+                    "code": "worker_fault",
+                    "message": "simulated fatal failure"
+                }))
+            } else {
+                None
+            },
             "last_job": null
         })
         .to_string(),
     );
+
+    if scenario == "fatal-nonzero" {
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("POST", "/stop")
+        );
+        write_response(request.stream, 200, r#"{"ok":true}"#);
+        process::exit(7);
+    }
 
     let request = accept_request(&listener);
     assert_eq!(
@@ -108,7 +131,31 @@ fn run_powers_worker_fixture() {
         r#"{"schema_version":2,"status":"accepted","command":"read-status","worker_job_id":"job-current"}"#,
     );
 
-    for worker_job_id in ["job-previous", "job-current"] {
+    let jobs = if scenario == "terminal-failure" {
+        vec![json!({
+            "worker_job_id": "job-current",
+            "status": "failed",
+            "error": {
+                "code": "connection_failed",
+                "message": "simulated diagnostic failure"
+            }
+        })]
+    } else {
+        vec![
+            json!({
+                "worker_job_id": "job-previous",
+                "status": "succeeded",
+                "result": { "ok": true }
+            }),
+            json!({
+                "worker_job_id": "job-current",
+                "status": "succeeded",
+                "result": { "ok": true }
+            }),
+        ]
+    };
+
+    for last_job in jobs {
         let request = accept_request(&listener);
         assert_eq!(
             (request.method.as_str(), request.path.as_str()),
@@ -121,11 +168,9 @@ fn run_powers_worker_fixture() {
                 "schema_version": 2,
                 "service": "powers-tool",
                 "run_id": run_id,
-                "last_job": {
-                    "worker_job_id": worker_job_id,
-                    "status": "succeeded",
-                    "result": { "ok": true }
-                }
+                "status": "ready",
+                "fatal_error": null,
+                "last_job": last_job
             })
             .to_string(),
         );
@@ -405,11 +450,54 @@ fn shutdown_timeout_forces_cleanup() {
 }
 
 fn powers_worker_smoke_correlates_terminal_job() {
-    run_worker_smoke(
+    run_powers_fixture_scenario("success").unwrap();
+}
+
+fn powers_operation_failure_preserves_nonzero_worker_exit() {
+    let error = run_powers_fixture_scenario("fatal-nonzero").unwrap_err();
+    let message = error.to_string();
+
+    assert!(matches!(
+        error,
+        PowersSmokeError::OperationAndWorkerExit { status, .. } if !status.success()
+    ));
+    assert!(message.contains("worker_fault"), "error: {message}");
+    assert!(
+        message.contains("simulated fatal failure"),
+        "error: {message}"
+    );
+}
+
+fn powers_terminal_failure_preserves_diagnostic_detail() {
+    let error = run_powers_fixture_scenario("terminal-failure").unwrap_err();
+    let message = error.to_string();
+
+    assert!(matches!(
+        error,
+        PowersSmokeError::TerminalFailure {
+            ref status,
+            ref detail,
+        } if status == "failed"
+            && detail.as_deref() == Some("connection_failed: simulated diagnostic failure")
+    ));
+    assert!(message.contains("connection_failed"), "error: {message}");
+    assert!(
+        message.contains("simulated diagnostic failure"),
+        "error: {message}"
+    );
+}
+
+fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
+    // SAFETY: this harness runs scenarios sequentially and changes the variable only
+    // while no fixture child or stdout reader thread is alive.
+    unsafe { env::set_var(POWERS_FIXTURE_SCENARIO_ENV, scenario) };
+    let result = run_worker_smoke(
         env::current_exe().unwrap(),
         Duration::from_secs(5),
         Duration::from_secs(5),
         Duration::from_secs(5),
-    )
-    .unwrap();
+    );
+    // SAFETY: the Worker session has completed cleanup before this mutation.
+    unsafe { env::remove_var(POWERS_FIXTURE_SCENARIO_ENV) };
+    result
 }
