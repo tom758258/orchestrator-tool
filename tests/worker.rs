@@ -74,6 +74,8 @@ fn main() {
     non_2xx_http_response_is_rejected();
     graceful_shutdown_reaps_worker();
     shutdown_timeout_forces_cleanup();
+    runtime_events_are_available_after_ready();
+    runtime_event_receive_times_out_when_no_event();
     powers_worker_smoke_correlates_terminal_job();
     powers_operation_failure_preserves_nonzero_worker_exit();
     powers_terminal_failure_preserves_diagnostic_detail();
@@ -306,6 +308,48 @@ fn run_fixture(scenario: &OsStr) {
         ),
         "exit-before-ready" => {}
         "no-ready" => thread::sleep(Duration::from_secs(30)),
+        "ready-with-runtime-events" => {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            print_json_line("");
+            print_json_line(r#"{"event":"boot","message":"starting"}"#);
+            print_json_line(
+                &json!({
+                    "event": "ready",
+                    "schema_version": 2,
+                    "run_id": "run-123",
+                    "status_url": format!("{base_url}/status"),
+                    "command_url": format!("{base_url}/command"),
+                    "stop_url": format!("{base_url}/stop"),
+                    "future_optional_field": true
+                })
+                .to_string(),
+            );
+            print_json_line("");
+            print_json_line(r#"{"event":"sample","seq":1}"#);
+            print_json_line(r#"{"event":"summary","count":1}"#);
+            let request = accept_request(&listener);
+            assert_eq!(request.path, "/stop");
+            write_response(request.stream, 200, r#"{"ok":true}"#);
+        }
+        "ready-no-events" => {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            print_json_line(
+                &json!({
+                    "event": "ready",
+                    "schema_version": 2,
+                    "run_id": "run-123",
+                    "status_url": format!("{base_url}/status"),
+                    "command_url": format!("{base_url}/command"),
+                    "stop_url": format!("{base_url}/stop")
+                })
+                .to_string(),
+            );
+            let request = accept_request(&listener);
+            assert_eq!(request.path, "/stop");
+            write_response(request.stream, 200, r#"{"ok":true}"#);
+        }
         "http-round-trip" | "http-non-2xx" | "shutdown-graceful" | "shutdown-timeout" => {
             run_http_fixture(scenario.to_str().unwrap())
         }
@@ -553,6 +597,39 @@ fn shutdown_timeout_forces_cleanup() {
         start.elapsed() < Duration::from_secs(5),
         "forced shutdown cleanup should not hang"
     );
+}
+
+fn runtime_events_are_available_after_ready() {
+    let session = start_worker(
+        &fixture_spec("ready-with-runtime-events"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    let sample = session
+        .recv_event(Duration::from_secs(2))
+        .expect("first runtime event should be sample");
+    assert_eq!(sample, json!({"event":"sample","seq":1}));
+
+    let summary = session
+        .recv_event(Duration::from_secs(2))
+        .expect("second runtime event should be summary");
+    assert_eq!(summary, json!({"event":"summary","count":1}));
+
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn runtime_event_receive_times_out_when_no_event() {
+    let session = start_worker(&fixture_spec("ready-no-events"), Duration::from_secs(5)).unwrap();
+    let timeout = Duration::from_millis(200);
+    let error = session.recv_event(timeout).unwrap_err();
+
+    assert!(
+        matches!(error, orchestrator_tool::worker::WorkerEventError::Timeout(value) if value == timeout),
+        "unexpected error: {error:?}"
+    );
+
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
 fn powers_worker_smoke_correlates_terminal_job() {

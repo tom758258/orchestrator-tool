@@ -108,6 +108,7 @@ pub struct WorkerSession {
     process: Option<ManagedProcess>,
     ready: WorkerReady,
     stdout_reader: Option<JoinHandle<io::Result<()>>>,
+    event_receiver: Option<Receiver<StdoutMessage>>,
 }
 
 impl WorkerSession {
@@ -122,6 +123,41 @@ impl WorkerSession {
     /// Returns the validated ready information.
     pub fn ready(&self) -> &WorkerReady {
         &self.ready
+    }
+
+    /// Receives the next runtime JSON event from the Worker with a bounded timeout.
+    ///
+    /// The startup `ready` event is consumed during `start_worker` and is not
+    /// returned by this method. Events are generic `serde_json::Value` objects.
+    pub fn recv_event(&self, timeout: Duration) -> Result<serde_json::Value, WorkerEventError> {
+        let Some(receiver) = self.event_receiver.as_ref() else {
+            return Err(WorkerEventError::Disconnected);
+        };
+
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(WorkerEventError::Timeout(timeout));
+            }
+
+            match receiver.recv_timeout(remaining) {
+                Ok(StdoutMessage::Line(line)) => {
+                    if line.iter().all(|byte| byte.is_ascii_whitespace()) {
+                        continue;
+                    }
+                    match serde_json::from_slice::<serde_json::Value>(&line) {
+                        Ok(value) => return Ok(value),
+                        Err(error) => return Err(WorkerEventError::InvalidJson(error)),
+                    }
+                }
+                Ok(StdoutMessage::Eof) => return Err(WorkerEventError::Disconnected),
+                Ok(StdoutMessage::Error(error)) => return Err(WorkerEventError::Io(error)),
+                Err(RecvTimeoutError::Timeout) => return Err(WorkerEventError::Timeout(timeout)),
+                Err(RecvTimeoutError::Disconnected) => return Err(WorkerEventError::Disconnected),
+            }
+        }
     }
 
     /// Requests a graceful stop and waits within the caller-provided timeout.
@@ -147,6 +183,7 @@ impl WorkerSession {
                 .map_err(WorkerShutdownError::ProcessIo)?
             {
                 self.process.take();
+                drop(self.event_receiver.take());
                 self.join_stdout_reader()?;
                 return Ok(status);
             }
@@ -187,6 +224,9 @@ impl WorkerSession {
         }
 
         self.process.take();
+        // Worker termination closes stdout; dropping the event receiver allows the
+        // reader thread to switch to its existing drain path before joining.
+        drop(self.event_receiver.take());
         self.join_stdout_reader()
     }
 
@@ -208,6 +248,7 @@ impl WorkerSession {
 impl Drop for WorkerSession {
     fn drop(&mut self) {
         drop(self.process.take());
+        drop(self.event_receiver.take());
         if let Some(reader) = self.stdout_reader.take() {
             let _ = reader.join();
         }
@@ -286,6 +327,43 @@ impl Error for WorkerShutdownError {
             Self::Stop(source) => Some(source),
             Self::ProcessIo(source) | Self::Reader(source) => Some(source),
             Self::GracefulTimeout(_) => None,
+        }
+    }
+}
+
+/// Errors produced while receiving a runtime Worker event.
+#[derive(Debug)]
+pub enum WorkerEventError {
+    Timeout(Duration),
+    Disconnected,
+    Io(io::Error),
+    InvalidJson(serde_json::Error),
+}
+
+impl fmt::Display for WorkerEventError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Timeout(timeout) => {
+                write!(
+                    formatter,
+                    "Worker event receive timed out after {timeout:?}"
+                )
+            }
+            Self::Disconnected => write!(formatter, "Worker event channel disconnected"),
+            Self::Io(error) => write!(formatter, "Worker event I/O error: {error}"),
+            Self::InvalidJson(error) => {
+                write!(formatter, "Worker event contained invalid JSON: {error}")
+            }
+        }
+    }
+}
+
+impl Error for WorkerEventError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(source) => Some(source),
+            Self::InvalidJson(source) => Some(source),
+            Self::Timeout(_) | Self::Disconnected => None,
         }
     }
 }
@@ -455,11 +533,11 @@ pub fn start_worker(
             return Err(error);
         }
     };
-    drop(receiver);
 
     Ok(WorkerSession {
         process: Some(process),
         ready,
         stdout_reader: Some(stdout_reader),
+        event_receiver: Some(receiver),
     })
 }
