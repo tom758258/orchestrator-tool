@@ -7,6 +7,10 @@ use crate::tool::{InvalidToolId, ToolId};
 const SUPPORTED_MANIFEST_SCHEMA_VERSION: u32 = 2;
 const SUPPORTED_WORKER_SCHEMA_VERSIONS: &[u32] = &[2];
 
+pub(crate) fn supports_worker_schema_version(version: u32) -> bool {
+    SUPPORTED_WORKER_SCHEMA_VERSIONS.contains(&version)
+}
+
 #[derive(Deserialize)]
 struct RawToolManifest {
     event: String,
@@ -58,7 +62,7 @@ impl ToolManifest {
             .worker_protocol
             .schema_versions
             .iter()
-            .any(|version| SUPPORTED_WORKER_SCHEMA_VERSIONS.contains(version));
+            .any(|version| supports_worker_schema_version(*version));
 
         if compatible {
             WorkerCompatibility::Compatible

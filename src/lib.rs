@@ -11,6 +11,7 @@ pub mod manifest_probe;
 pub mod process;
 pub mod status;
 pub mod tool;
+pub mod worker;
 
 /// Product name shared by application frontends.
 pub const PRODUCT_NAME: &str = "orchestrator-tool";

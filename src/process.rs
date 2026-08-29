@@ -2,7 +2,7 @@ use std::{
     ffi::OsStr,
     io::{self, Read},
     path::Path,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Child, ChildStdout, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -58,6 +58,29 @@ where
     let child = Command::new(executable.as_ref()).args(args).spawn()?;
 
     Ok(ManagedProcess { child })
+}
+
+/// Starts a managed process and returns ownership of its piped stdout.
+pub(crate) fn spawn_with_piped_stdout<I, S>(
+    executable: impl AsRef<Path>,
+    args: I,
+) -> io::Result<(ManagedProcess, ChildStdout)>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let child = Command::new(executable.as_ref())
+        .args(args)
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let mut process = ManagedProcess { child };
+    let stdout = process
+        .child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("child stdout was not piped"))?;
+
+    Ok((process, stdout))
 }
 
 /// Captured output from a one-shot process.
