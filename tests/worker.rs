@@ -8,7 +8,10 @@ use std::{
 };
 
 use orchestrator_tool::{
-    adapters::powers::{PowersSmokeError, run_worker_smoke},
+    adapters::{
+        meters::run_worker_smoke as run_meters_worker_smoke,
+        powers::{PowersSmokeError, run_worker_smoke as run_powers_worker_smoke},
+    },
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
 };
@@ -24,6 +27,23 @@ const POWERS_WORKER_ARGUMENTS: [&str; 7] = [
     "--artifact-mode",
     "memory",
 ];
+const METERS_WORKER_ARGUMENTS: [&str; 15] = [
+    "start-trigger-record",
+    "--resource",
+    "SIM::34461A",
+    "--simulate",
+    "--measurement",
+    "voltage-dc",
+    "--trigger-mode",
+    "software",
+    "--max-samples",
+    "2",
+    "--status-format",
+    "jsonl",
+    "--sw-trigger-port",
+    "0",
+    "--no-csv",
+];
 const POWERS_FIXTURE_SCENARIO_ENV: &str = "ORCHESTRATOR_TEST_POWERS_SCENARIO";
 
 fn main() {
@@ -31,6 +51,10 @@ fn main() {
 
     if arguments == POWERS_WORKER_ARGUMENTS.map(OsString::from) {
         run_powers_worker_fixture();
+        return;
+    }
+    if arguments == METERS_WORKER_ARGUMENTS.map(OsString::from) {
+        run_meters_worker_fixture();
         return;
     }
 
@@ -53,6 +77,7 @@ fn main() {
     powers_worker_smoke_correlates_terminal_job();
     powers_operation_failure_preserves_nonzero_worker_exit();
     powers_terminal_failure_preserves_diagnostic_detail();
+    meters_worker_smoke_captures_sample_and_shuts_down();
 }
 
 fn run_powers_worker_fixture() {
@@ -182,6 +207,87 @@ fn run_powers_worker_fixture() {
         ("POST", "/stop")
     );
     write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
+fn run_meters_worker_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "meters-smoke-run";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("GET", "/status")
+    );
+    write_response(
+        request.stream,
+        200,
+        &json!({
+            "schema_version": 2,
+            "service": "keysight-meter",
+            "run_id": run_id,
+            "status": "running",
+            "captured": 0,
+            "fatal_error": null
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/command")
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
+        json!({
+            "schema_version": 2,
+            "command": "software_trigger",
+            "job_id": "orchestrator-meter-smoke"
+        })
+    );
+    write_response(
+        request.stream,
+        202,
+        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":"orchestrator-meter-smoke"}"#,
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("GET", "/status")
+    );
+    write_response(
+        request.stream,
+        200,
+        &json!({
+            "schema_version": 2,
+            "service": "keysight-meter",
+            "run_id": run_id,
+            "status": "running",
+            "captured": 1,
+            "fatal_error": null
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop")
+    );
+    write_response(request.stream, 202, "");
 }
 
 fn run_fixture(scenario: &OsStr) {
@@ -453,6 +559,16 @@ fn powers_worker_smoke_correlates_terminal_job() {
     run_powers_fixture_scenario("success").unwrap();
 }
 
+fn meters_worker_smoke_captures_sample_and_shuts_down() {
+    run_meters_worker_smoke(
+        env::current_exe().unwrap(),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+}
+
 fn powers_operation_failure_preserves_nonzero_worker_exit() {
     let error = run_powers_fixture_scenario("fatal-nonzero").unwrap_err();
     let message = error.to_string();
@@ -491,7 +607,7 @@ fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
     // SAFETY: this harness runs scenarios sequentially and changes the variable only
     // while no fixture child or stdout reader thread is alive.
     unsafe { env::set_var(POWERS_FIXTURE_SCENARIO_ENV, scenario) };
-    let result = run_worker_smoke(
+    let result = run_powers_worker_smoke(
         env::current_exe().unwrap(),
         Duration::from_secs(5),
         Duration::from_secs(5),

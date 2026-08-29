@@ -8,7 +8,7 @@
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
 - Desktop application: planned Tauri 2 frontend for visual workflow editing, templates, execution, and monitoring. It is intentionally not part of P0. The current Desktop shell displays built-in external-tool availability on a read-only status screen.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus a focused Powers Worker diagnostic; workflow execution and Tauri runtime integration remain deferred.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics; workflow execution and Tauri runtime integration remain deferred.
 
 ## Executable configuration
 
@@ -25,7 +25,7 @@ Configured paths take priority over portable paths. A missing configured path is
 
 Core can start generic external processes with arguments and expose their process ID, non-blocking status checks, waiting, and forced termination. Standard input, output, and error remain inherited. A managed process performs best-effort termination and cleanup when dropped.
 
-The CLI exposes a focused Powers Worker diagnostic while Core retains process ownership and cleanup.
+The CLI exposes focused Powers and Meters Worker diagnostics while Core retains process ownership and cleanup.
 
 ## CLI
 
@@ -38,6 +38,7 @@ orchestrator-tool doctor
 orchestrator-tool tools list
 orchestrator-tool tools inspect <TOOL_ID>
 orchestrator-tool tools worker-check powers
+orchestrator-tool tools worker-check meters
 orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
@@ -46,7 +47,7 @@ orchestrator-tool --config <PATH> tools list
 
 `doctor` reports the application directory, configuration state, the status of the four built-in external tools, and summary counts. Missing and not-file tools are normal diagnostic results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code. It does not perform instrument-level diagnostics.
 
-`tools worker-check powers` validates the configured Powers executable and manifest, then runs a bounded simulate-mode `read-status` Worker check without requiring hardware.
+`tools worker-check powers` validates the configured Powers executable and manifest, then runs a bounded simulate-mode `read-status` Worker check without requiring hardware. `tools worker-check meters` performs the same executable and manifest validation, then runs a bounded simulate-mode software-trigger check without requiring hardware.
 
 ## Development
 
@@ -59,4 +60,4 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 ```
 
-The CLI provides tool listing, manifest inspection, environment diagnostics, and the focused Powers Worker check.
+The CLI provides tool listing, manifest inspection, environment diagnostics, and focused Powers and Meters Worker checks.
