@@ -1,11 +1,13 @@
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
+    time::Duration,
 };
 
 use clap::{Parser, Subcommand};
 use orchestrator_tool::{
     PRODUCT_NAME, VERSION,
+    adapters::powers::run_worker_smoke,
     config::{Config, ConfigError},
     discovery::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
@@ -47,6 +49,11 @@ enum ToolsCommand {
         /// Tool ID to inspect.
         tool_id: String,
     },
+    /// Runs a Worker diagnostic for one external tool.
+    WorkerCheck {
+        /// Tool ID to check.
+        tool_id: String,
+    },
 }
 
 fn dispatch(cli: Cli) -> ExitCode {
@@ -60,7 +67,82 @@ fn dispatch(cli: Cli) -> ExitCode {
         CliCommand::Tools {
             command: ToolsCommand::Inspect { tool_id },
         } => tools_inspect(config.as_deref(), &tool_id),
+        CliCommand::Tools {
+            command: ToolsCommand::WorkerCheck { tool_id },
+        } => tools_worker_check(config.as_deref(), &tool_id),
     }
+}
+
+fn tools_worker_check(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode {
+    if raw_tool_id != "powers" {
+        eprintln!("{PRODUCT_NAME}: worker check is not supported for tool {raw_tool_id:?}");
+        return ExitCode::FAILURE;
+    }
+
+    let tool_id = ToolId::powers();
+    let definition = built_in_tool_definitions()
+        .into_iter()
+        .find(|definition| definition.id() == &tool_id)
+        .expect("powers must be a built-in tool");
+    let config = match load_config(config_path) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let application_dir = match current_application_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: could not determine application directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let inspection = match inspect_tool(&application_dir, &config, &definition) {
+        Ok(inspection) => inspection,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if inspection.status() != ExecutableStatus::Available {
+        eprintln!(
+            "{PRODUCT_NAME}: powers executable is {}: {}",
+            executable_status_label(inspection.status()),
+            inspection.resolved().path().display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let probe = match probe_manifest(inspection.resolved().path(), &tool_id) {
+        Ok(probe) => probe,
+        Err(error) => {
+            eprintln!("{PRODUCT_NAME}: powers manifest probe failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
+        eprintln!("{PRODUCT_NAME}: powers Worker protocol is incompatible");
+        return ExitCode::FAILURE;
+    }
+
+    if let Err(error) = run_worker_smoke(
+        inspection.resolved().path(),
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+        Duration::from_secs(5),
+    ) {
+        eprintln!("{PRODUCT_NAME}: {error}");
+        return ExitCode::FAILURE;
+    }
+
+    println!("powers\n");
+    println!("  executable: available");
+    println!("  manifest: compatible");
+    println!("  worker-check: passed\n");
+    println!("Worker check passed.");
+    ExitCode::SUCCESS
 }
 
 fn doctor(config_path: Option<&Path>) -> ExitCode {
@@ -380,6 +462,20 @@ mod tests {
             CliCommand::Tools {
                 command: ToolsCommand::Inspect { tool_id },
             } => assert_eq!(tool_id, "meters"),
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn tools_worker_check_powers_command_parses() {
+        let cli =
+            Cli::try_parse_from(["orchestrator-tool", "tools", "worker-check", "powers"]).unwrap();
+
+        assert!(cli.config.is_none());
+        match cli.command {
+            CliCommand::Tools {
+                command: ToolsCommand::WorkerCheck { tool_id },
+            } => assert_eq!(tool_id, "powers"),
             _ => panic!("unexpected command"),
         }
     }

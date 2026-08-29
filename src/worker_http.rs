@@ -31,22 +31,12 @@ impl WorkerClient {
 
     /// Gets the current generic Worker status payload.
     pub fn status(&self) -> Result<Value, WorkerHttpError> {
-        let response = self
-            .agent
-            .get(&self.status_url)
-            .call()
-            .map_err(WorkerHttpError::Request)?;
-        required_json_response(response)
+        self.status_response().map(|(_, value)| value)
     }
 
     /// Sends a generic JSON command payload to the Worker.
     pub fn command(&self, payload: &Value) -> Result<Value, WorkerHttpError> {
-        let response = self
-            .agent
-            .post(&self.command_url)
-            .send_json(payload)
-            .map_err(WorkerHttpError::Request)?;
-        required_json_response(response)
+        self.command_response(payload).map(|(_, value)| value)
     }
 
     /// Requests that the Worker stop.
@@ -73,6 +63,52 @@ impl WorkerClient {
             .map_err(WorkerHttpError::Request)?;
         optional_json_response(response)
     }
+
+    pub(crate) fn status_with_timeout(&self, timeout: Duration) -> Result<Value, WorkerHttpError> {
+        let response = self
+            .agent
+            .get(&self.status_url)
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
+            .call()
+            .map_err(WorkerHttpError::Request)?;
+        required_json_response(response)
+    }
+
+    pub(crate) fn command_with_timeout(
+        &self,
+        payload: &Value,
+        timeout: Duration,
+    ) -> Result<(u16, Value), WorkerHttpError> {
+        let response = self
+            .agent
+            .post(&self.command_url)
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
+            .send_json(payload)
+            .map_err(WorkerHttpError::Request)?;
+        required_json_response_with_status(response)
+    }
+
+    fn status_response(&self) -> Result<(u16, Value), WorkerHttpError> {
+        let response = self
+            .agent
+            .get(&self.status_url)
+            .call()
+            .map_err(WorkerHttpError::Request)?;
+        required_json_response_with_status(response)
+    }
+
+    fn command_response(&self, payload: &Value) -> Result<(u16, Value), WorkerHttpError> {
+        let response = self
+            .agent
+            .post(&self.command_url)
+            .send_json(payload)
+            .map_err(WorkerHttpError::Request)?;
+        required_json_response_with_status(response)
+    }
 }
 
 fn response_body(
@@ -92,8 +128,16 @@ fn response_body(
 fn required_json_response(
     response: ureq::http::Response<ureq::Body>,
 ) -> Result<Value, WorkerHttpError> {
+    required_json_response_with_status(response).map(|(_, value)| value)
+}
+
+fn required_json_response_with_status(
+    response: ureq::http::Response<ureq::Body>,
+) -> Result<(u16, Value), WorkerHttpError> {
+    let status = response.status().as_u16();
     let body = response_body(response)?;
-    serde_json::from_str(&body).map_err(WorkerHttpError::InvalidJson)
+    let value = serde_json::from_str(&body).map_err(WorkerHttpError::InvalidJson)?;
+    Ok((status, value))
 }
 
 fn optional_json_response(

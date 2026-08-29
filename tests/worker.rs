@@ -8,22 +8,36 @@ use std::{
 };
 
 use orchestrator_tool::{
+    adapters::powers::run_worker_smoke,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
 };
 use serde_json::json;
 
 const FIXTURE_ARGUMENT: &str = "--worker-fixture";
+const POWERS_WORKER_ARGUMENTS: [&str; 7] = [
+    "worker",
+    "--mode",
+    "simulate",
+    "--control-port",
+    "0",
+    "--artifact-mode",
+    "memory",
+];
 
 fn main() {
-    let mut arguments = env::args_os();
-    let _ = arguments.next();
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
 
-    if arguments.next().as_deref() == Some(OsStr::new(FIXTURE_ARGUMENT)) {
+    if arguments == POWERS_WORKER_ARGUMENTS.map(OsString::from) {
+        run_powers_worker_fixture();
+        return;
+    }
+
+    if arguments.first().map(OsString::as_os_str) == Some(OsStr::new(FIXTURE_ARGUMENT)) {
         let scenario = arguments
-            .next()
+            .get(1)
             .expect("Worker fixture scenario is required");
-        run_fixture(&scenario);
+        run_fixture(scenario);
         return;
     }
 
@@ -35,6 +49,94 @@ fn main() {
     non_2xx_http_response_is_rejected();
     graceful_shutdown_reaps_worker();
     shutdown_timeout_forces_cleanup();
+    powers_worker_smoke_correlates_terminal_job();
+}
+
+fn run_powers_worker_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "powers-smoke-run";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("GET", "/status")
+    );
+    write_response(
+        request.stream,
+        200,
+        &json!({
+            "schema_version": 2,
+            "service": "powers-tool",
+            "run_id": run_id,
+            "last_job": null
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/command")
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
+        json!({
+            "schema_version": 2,
+            "command": "read-status",
+            "arguments": { "channel": "all" },
+            "context": {
+                "mode": "simulate",
+                "planning_model_id": "keysight-e36312a"
+            }
+        })
+    );
+    write_response(
+        request.stream,
+        202,
+        r#"{"schema_version":2,"status":"accepted","command":"read-status","worker_job_id":"job-current"}"#,
+    );
+
+    for worker_job_id in ["job-previous", "job-current"] {
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("GET", "/status")
+        );
+        write_response(
+            request.stream,
+            200,
+            &json!({
+                "schema_version": 2,
+                "service": "powers-tool",
+                "run_id": run_id,
+                "last_job": {
+                    "worker_job_id": worker_job_id,
+                    "status": "succeeded",
+                    "result": { "ok": true }
+                }
+            })
+            .to_string(),
+        );
+    }
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop")
+    );
+    write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
 fn run_fixture(scenario: &OsStr) {
@@ -300,4 +402,14 @@ fn shutdown_timeout_forces_cleanup() {
         start.elapsed() < Duration::from_secs(5),
         "forced shutdown cleanup should not hang"
     );
+}
+
+fn powers_worker_smoke_correlates_terminal_job() {
+    run_worker_smoke(
+        env::current_exe().unwrap(),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
 }
