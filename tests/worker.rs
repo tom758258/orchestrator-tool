@@ -1,12 +1,17 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
-    io::{self, Write},
+    io::{self, BufRead, BufReader, Read, Write},
+    net::{TcpListener, TcpStream},
     thread,
     time::{Duration, Instant},
 };
 
-use orchestrator_tool::worker::{WorkerLaunchSpec, WorkerStartError, start_worker};
+use orchestrator_tool::{
+    worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
+    worker_http::{WorkerClient, WorkerHttpError},
+};
+use serde_json::json;
 
 const FIXTURE_ARGUMENT: &str = "--worker-fixture";
 
@@ -26,6 +31,10 @@ fn main() {
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
     startup_timeout_terminates_worker();
+    common_worker_http_round_trip();
+    non_2xx_http_response_is_rejected();
+    graceful_shutdown_reaps_worker();
+    shutdown_timeout_forces_cleanup();
 }
 
 fn run_fixture(scenario: &OsStr) {
@@ -44,8 +53,141 @@ fn run_fixture(scenario: &OsStr) {
         ),
         "exit-before-ready" => {}
         "no-ready" => thread::sleep(Duration::from_secs(30)),
+        "http-round-trip" | "http-non-2xx" | "shutdown-graceful" | "shutdown-timeout" => {
+            run_http_fixture(scenario.to_str().unwrap())
+        }
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
+}
+
+fn run_http_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": format!("{scenario}-run"),
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    match scenario {
+        "http-round-trip" => {
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "GET");
+            assert_eq!(request.path, "/status");
+            write_response(request.stream, 200, r#"{"state":"idle"}"#);
+
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "POST");
+            assert_eq!(request.path, "/command");
+            assert!(
+                request
+                    .content_type
+                    .as_deref()
+                    .is_some_and(|value| value.starts_with("application/json"))
+            );
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
+                json!({"action": "measure", "value": 7})
+            );
+            write_response(request.stream, 202, r#"{"accepted":true}"#);
+
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "POST");
+            assert_eq!(request.path, "/stop");
+            assert!(request.body.is_empty());
+            write_response(request.stream, 200, r#"{"ok":true}"#);
+        }
+        "http-non-2xx" => {
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "GET");
+            assert_eq!(request.path, "/status");
+            write_response(request.stream, 503, r#"{"error":"unavailable"}"#);
+            thread::sleep(Duration::from_secs(30));
+        }
+        "shutdown-graceful" => {
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "POST");
+            assert_eq!(request.path, "/stop");
+            write_response(request.stream, 202, "");
+        }
+        "shutdown-timeout" => {
+            let request = accept_request(&listener);
+            assert_eq!(request.method, "POST");
+            assert_eq!(request.path, "/stop");
+            write_response(request.stream, 202, "");
+            thread::sleep(Duration::from_secs(30));
+        }
+        _ => unreachable!(),
+    }
+}
+
+struct TestRequest {
+    stream: TcpStream,
+    method: String,
+    path: String,
+    content_type: Option<String>,
+    body: Vec<u8>,
+}
+
+fn accept_request(listener: &TcpListener) -> TestRequest {
+    let (stream, _) = listener.accept().unwrap();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).unwrap();
+    let mut request_parts = request_line.split_ascii_whitespace();
+    let method = request_parts.next().unwrap().to_owned();
+    let path = request_parts.next().unwrap().to_owned();
+    let mut content_length = 0;
+    let mut content_type = None;
+
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+
+        let (name, value) = line.split_once(':').unwrap();
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-length") {
+            content_length = value.parse().unwrap();
+        } else if name.eq_ignore_ascii_case("content-type") {
+            content_type = Some(value.to_owned());
+        }
+    }
+
+    let mut body = vec![0; content_length];
+    reader.read_exact(&mut body).unwrap();
+
+    TestRequest {
+        stream,
+        method,
+        path,
+        content_type,
+        body,
+    }
+}
+
+fn write_response(mut stream: TcpStream, status: u16, body: &str) {
+    let reason = match status {
+        200 => "OK",
+        202 => "Accepted",
+        503 => "Service Unavailable",
+        _ => unreachable!(),
+    };
+    write!(
+        stream,
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+    stream.flush().unwrap();
 }
 
 fn print_json_line(line: &str) {
@@ -117,5 +259,45 @@ fn startup_timeout_terminates_worker() {
     assert!(
         start.elapsed() < Duration::from_secs(5),
         "startup timeout cleanup should not hang"
+    );
+}
+
+fn common_worker_http_round_trip() {
+    let session = start_worker(&fixture_spec("http-round-trip"), Duration::from_secs(5)).unwrap();
+    let client = WorkerClient::new(session.ready());
+
+    assert_eq!(client.status().unwrap(), json!({"state": "idle"}));
+    assert_eq!(
+        client
+            .command(&json!({"action": "measure", "value": 7}))
+            .unwrap(),
+        json!({"accepted": true})
+    );
+    assert_eq!(client.stop().unwrap(), Some(json!({"ok": true})));
+}
+
+fn non_2xx_http_response_is_rejected() {
+    let session = start_worker(&fixture_spec("http-non-2xx"), Duration::from_secs(5)).unwrap();
+    let error = WorkerClient::new(session.ready()).status().unwrap_err();
+
+    assert!(matches!(error, WorkerHttpError::Non2xx(503)));
+}
+
+fn graceful_shutdown_reaps_worker() {
+    let session = start_worker(&fixture_spec("shutdown-graceful"), Duration::from_secs(5)).unwrap();
+
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn shutdown_timeout_forces_cleanup() {
+    let session = start_worker(&fixture_spec("shutdown-timeout"), Duration::from_secs(5)).unwrap();
+    let timeout = Duration::from_millis(100);
+    let start = Instant::now();
+    let error = session.shutdown(timeout).unwrap_err();
+
+    assert!(matches!(error, WorkerShutdownError::GracefulTimeout(value) if value == timeout));
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "forced shutdown cleanup should not hang"
     );
 }

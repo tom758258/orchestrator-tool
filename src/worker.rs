@@ -15,9 +15,11 @@ use serde::Deserialize;
 use crate::{
     manifest::supports_worker_schema_version,
     process::{ManagedProcess, spawn_with_piped_stdout},
+    worker_http::{WorkerClient, WorkerHttpError},
 };
 
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Generic launch details for an external Worker process.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,6 +123,86 @@ impl WorkerSession {
     pub fn ready(&self) -> &WorkerReady {
         &self.ready
     }
+
+    /// Requests a graceful stop and waits within the caller-provided timeout.
+    pub fn shutdown(mut self, timeout: Duration) -> Result<ExitStatus, WorkerShutdownError> {
+        let deadline = Instant::now() + timeout;
+        let now = Instant::now();
+
+        if now >= deadline {
+            self.force_cleanup()?;
+            return Err(WorkerShutdownError::GracefulTimeout(timeout));
+        }
+
+        let client = WorkerClient::new(&self.ready);
+        if let Err(error) = client.stop_with_timeout(deadline.saturating_duration_since(now)) {
+            self.force_cleanup()?;
+            return Err(WorkerShutdownError::Stop(error));
+        }
+
+        loop {
+            if let Some(status) = self
+                .process_mut()
+                .try_wait()
+                .map_err(WorkerShutdownError::ProcessIo)?
+            {
+                self.process.take();
+                self.join_stdout_reader()?;
+                return Ok(status);
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                self.force_cleanup()?;
+                return Err(WorkerShutdownError::GracefulTimeout(timeout));
+            }
+
+            thread::sleep(SHUTDOWN_POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
+        }
+    }
+
+    fn process_mut(&mut self) -> &mut ManagedProcess {
+        self.process
+            .as_mut()
+            .expect("WorkerSession process must exist")
+    }
+
+    fn force_cleanup(&mut self) -> Result<(), WorkerShutdownError> {
+        let process = self.process_mut();
+        match process.try_wait().map_err(WorkerShutdownError::ProcessIo)? {
+            Some(_) => {}
+            None => {
+                if let Err(kill_error) = process.kill() {
+                    if process
+                        .try_wait()
+                        .map_err(WorkerShutdownError::ProcessIo)?
+                        .is_none()
+                    {
+                        return Err(WorkerShutdownError::ProcessIo(kill_error));
+                    }
+                } else {
+                    process.wait().map_err(WorkerShutdownError::ProcessIo)?;
+                }
+            }
+        }
+
+        self.process.take();
+        self.join_stdout_reader()
+    }
+
+    fn join_stdout_reader(&mut self) -> Result<(), WorkerShutdownError> {
+        let Some(reader) = self.stdout_reader.take() else {
+            return Ok(());
+        };
+
+        match reader.join() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(WorkerShutdownError::Reader(error)),
+            Err(_) => Err(WorkerShutdownError::Reader(io::Error::other(
+                "Worker stdout reader thread panicked",
+            ))),
+        }
+    }
 }
 
 impl Drop for WorkerSession {
@@ -172,6 +254,38 @@ impl Error for WorkerStartError {
             Self::StartupTimeout(_)
             | Self::ExitedBeforeReady(_)
             | Self::UnsupportedSchemaVersion(_) => None,
+        }
+    }
+}
+
+/// Errors produced while shutting down a Worker session.
+#[derive(Debug)]
+pub enum WorkerShutdownError {
+    Stop(WorkerHttpError),
+    GracefulTimeout(Duration),
+    ProcessIo(io::Error),
+    Reader(io::Error),
+}
+
+impl fmt::Display for WorkerShutdownError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Stop(error) => write!(formatter, "failed to stop Worker: {error}"),
+            Self::GracefulTimeout(timeout) => {
+                write!(formatter, "Worker did not stop within {timeout:?}")
+            }
+            Self::ProcessIo(error) => write!(formatter, "Worker process I/O error: {error}"),
+            Self::Reader(error) => write!(formatter, "Worker stdout reader error: {error}"),
+        }
+    }
+}
+
+impl Error for WorkerShutdownError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Stop(source) => Some(source),
+            Self::ProcessIo(source) | Self::Reader(source) => Some(source),
+            Self::GracefulTimeout(_) => None,
         }
     }
 }
