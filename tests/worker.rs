@@ -31,15 +31,14 @@ fn main() {
 fn run_fixture(scenario: &OsStr) {
     match scenario.to_str().expect("fixture scenario must be UTF-8") {
         "valid-ready" => {
+            print_json_line("");
+            print_json_line(r#"{"event":"boot","message":"starting"}"#);
             print_json_line(
                 r#"{"event":"ready","schema_version":2,"run_id":"run-123","status_url":"http://127.0.0.1/status","command_url":"http://127.0.0.1/command","stop_url":"http://127.0.0.1/stop","future_optional_field":true}"#,
             );
             thread::sleep(Duration::from_secs(30));
         }
         "malformed-json" => print_json_line("{ not json }"),
-        "wrong-event" => print_json_line(
-            r#"{"event":"status","schema_version":2,"run_id":"run-123","status_url":"status","command_url":"command","stop_url":"stop"}"#,
-        ),
         "unsupported-schema" => print_json_line(
             r#"{"event":"ready","schema_version":3,"run_id":"run-123","status_url":"status","command_url":"command","stop_url":"stop"}"#,
         ),
@@ -75,7 +74,7 @@ fn valid_ready_starts_worker_session() {
 }
 
 fn invalid_ready_protocol_is_rejected() {
-    for scenario in ["malformed-json", "wrong-event", "unsupported-schema"] {
+    for scenario in ["malformed-json", "unsupported-schema"] {
         let error = start_worker(&fixture_spec(scenario), Duration::from_secs(5))
             .err()
             .expect("invalid ready should fail startup");
@@ -84,7 +83,6 @@ fn invalid_ready_protocol_is_rejected() {
             matches!(
                 (scenario, error),
                 ("malformed-json", WorkerStartError::InvalidReady(_))
-                    | ("wrong-event", WorkerStartError::UnexpectedEvent(_))
                     | (
                         "unsupported-schema",
                         WorkerStartError::UnsupportedSchemaVersion(3)

@@ -51,8 +51,12 @@ impl WorkerLaunchSpec {
 }
 
 #[derive(Deserialize)]
-struct RawWorkerReady {
+struct RawWorkerEvent {
     event: String,
+}
+
+#[derive(Deserialize)]
+struct RawWorkerReady {
     schema_version: u32,
     run_id: String,
     status_url: String,
@@ -137,7 +141,6 @@ pub enum WorkerStartError {
     StartupTimeout(Duration),
     ExitedBeforeReady(ExitStatus),
     InvalidReady(serde_json::Error),
-    UnexpectedEvent(String),
     UnsupportedSchemaVersion(u32),
 }
 
@@ -154,7 +157,6 @@ impl fmt::Display for WorkerStartError {
                 write!(formatter, "Worker exited before ready with {status}")
             }
             Self::InvalidReady(error) => write!(formatter, "invalid Worker ready payload: {error}"),
-            Self::UnexpectedEvent(event) => write!(formatter, "unexpected Worker event {event:?}"),
             Self::UnsupportedSchemaVersion(version) => {
                 write!(formatter, "unsupported Worker schema version {version}")
             }
@@ -169,7 +171,6 @@ impl Error for WorkerStartError {
             Self::InvalidReady(source) => Some(source),
             Self::StartupTimeout(_)
             | Self::ExitedBeforeReady(_)
-            | Self::UnexpectedEvent(_)
             | Self::UnsupportedSchemaVersion(_) => None,
         }
     }
@@ -188,19 +189,25 @@ fn read_and_drain_stdout(
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
 
-    match reader.read_until(b'\n', &mut line) {
-        Ok(0) => {
-            let _ = sender.send(StdoutMessage::Eof);
-            return Ok(());
-        }
-        Ok(_) => {
-            if sender.send(StdoutMessage::Line(line)).is_err() {
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) => {
+                let _ = sender.send(StdoutMessage::Eof);
                 return Ok(());
             }
-        }
-        Err(error) => {
-            let _ = sender.send(StdoutMessage::Error(error));
-            return Ok(());
+            Ok(_) => {
+                if sender
+                    .send(StdoutMessage::Line(std::mem::take(&mut line)))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            Err(error) => {
+                let _ = sender.send(StdoutMessage::Error(error));
+                return Ok(());
+            }
         }
     }
 
@@ -208,13 +215,19 @@ fn read_and_drain_stdout(
     Ok(())
 }
 
-fn parse_ready(line: &[u8]) -> Result<WorkerReady, WorkerStartError> {
+fn parse_ready(line: &[u8]) -> Result<Option<WorkerReady>, WorkerStartError> {
+    if line.iter().all(|byte| byte.is_ascii_whitespace()) {
+        return Ok(None);
+    }
+
+    let event: RawWorkerEvent =
+        serde_json::from_slice(line).map_err(WorkerStartError::InvalidReady)?;
+    if event.event != "ready" {
+        return Ok(None);
+    }
+
     let raw: RawWorkerReady =
         serde_json::from_slice(line).map_err(WorkerStartError::InvalidReady)?;
-
-    if raw.event != "ready" {
-        return Err(WorkerStartError::UnexpectedEvent(raw.event));
-    }
 
     if !supports_worker_schema_version(raw.schema_version) {
         return Err(WorkerStartError::UnsupportedSchemaVersion(
@@ -222,13 +235,13 @@ fn parse_ready(line: &[u8]) -> Result<WorkerReady, WorkerStartError> {
         ));
     }
 
-    Ok(WorkerReady {
+    Ok(Some(WorkerReady {
         schema_version: raw.schema_version,
         run_id: raw.run_id,
         status_url: raw.status_url,
         command_url: raw.command_url,
         stop_url: raw.stop_url,
-    })
+    }))
 }
 
 fn disconnected_reader_error() -> WorkerStartError {
@@ -248,7 +261,11 @@ fn wait_for_ready(
     loop {
         if !stdout_closed {
             match receiver.try_recv() {
-                Ok(StdoutMessage::Line(line)) => return parse_ready(&line),
+                Ok(StdoutMessage::Line(line)) => {
+                    if let Some(ready) = parse_ready(&line)? {
+                        return Ok(ready);
+                    }
+                }
                 Ok(StdoutMessage::Error(error)) => {
                     return Err(WorkerStartError::Reader(error));
                 }
@@ -261,7 +278,12 @@ fn wait_for_ready(
         if let Some(status) = process.try_wait().map_err(WorkerStartError::ProcessIo)? {
             if !stdout_closed {
                 match receiver.recv_timeout(STARTUP_POLL_INTERVAL) {
-                    Ok(StdoutMessage::Line(line)) => return parse_ready(&line),
+                    Ok(StdoutMessage::Line(line)) => {
+                        if let Some(ready) = parse_ready(&line)? {
+                            return Ok(ready);
+                        }
+                        continue;
+                    }
                     Ok(StdoutMessage::Error(error)) => {
                         return Err(WorkerStartError::Reader(error));
                     }
@@ -285,7 +307,11 @@ fn wait_for_ready(
         }
 
         match receiver.recv_timeout(wait) {
-            Ok(StdoutMessage::Line(line)) => return parse_ready(&line),
+            Ok(StdoutMessage::Line(line)) => {
+                if let Some(ready) = parse_ready(&line)? {
+                    return Ok(ready);
+                }
+            }
             Ok(StdoutMessage::Error(error)) => return Err(WorkerStartError::Reader(error)),
             Ok(StdoutMessage::Eof) => stdout_closed = true,
             Err(RecvTimeoutError::Timeout) => {}
@@ -315,6 +341,7 @@ pub fn start_worker(
             return Err(error);
         }
     };
+    drop(receiver);
 
     Ok(WorkerSession {
         process: Some(process),
