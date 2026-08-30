@@ -490,35 +490,50 @@ fn run_powers_runtime_fixture() {
         ),
     );
 
-    // Cover non-terminal polling: running -> succeeded.
-    for last_job in [
-        json!({
-            "worker_job_id": "job-runtime-001",
-            "status": "running"
-        }),
-        json!({
-            "worker_job_id": "job-runtime-001",
-            "status": "succeeded",
-            "result": { "channel": 1, "voltage": 5.0 }
-        }),
-    ] {
-        let request = accept_request(&listener);
-        assert_eq!(request.method, "GET");
-        assert_eq!(request.path, "/status");
-        write_response(
-            request.stream,
-            200,
-            &json!({
-                "schema_version": 2,
-                "service": "powers-tool",
-                "run_id": run_id,
-                "status": "ready",
-                "fatal_error": null,
-                "last_job": last_job
-            })
-            .to_string(),
-        );
-    }
+    // First poll: job still running (busy + active_job), proves adapter continues polling.
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.path, "/status");
+    write_response(
+        request.stream,
+        200,
+        &json!({
+            "schema_version": 2,
+            "service": "powers-tool",
+            "run_id": run_id,
+            "status": "busy",
+            "fatal_error": null,
+            "active_job": {
+                "worker_job_id": "job-runtime-001",
+                "status": "running"
+            },
+            "last_job": null
+        })
+        .to_string(),
+    );
+
+    // Second poll: terminal succeeded last_job.
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.path, "/status");
+    write_response(
+        request.stream,
+        200,
+        &json!({
+            "schema_version": 2,
+            "service": "powers-tool",
+            "run_id": run_id,
+            "status": "ready",
+            "fatal_error": null,
+            "active_job": null,
+            "last_job": {
+                "worker_job_id": "job-runtime-001",
+                "status": "succeeded",
+                "result": { "channel": 1, "voltage": 5.0 }
+            }
+        })
+        .to_string(),
+    );
 
     let request = accept_request(&listener);
     assert_eq!(request.method, "POST");

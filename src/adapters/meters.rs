@@ -280,7 +280,7 @@ impl Error for MetersSmokeError {
 /// Runs a single runtime Meters action on an already-started Worker session.
 ///
 /// Supported action: `measure` → `software_trigger`.
-/// The request contains no `context` field and uses `job_id: null`.
+/// The request contains no `context` or `job_id` field.
 pub fn run_action(
     session: &WorkerSession,
     action: &ActionId,
@@ -377,20 +377,6 @@ struct RuntimeAcceptedResponse {
     #[serde(default)]
     #[allow(dead_code)]
     job_id: Option<String>,
-}
-
-#[allow(dead_code)]
-fn is_matching_sample(value: &Value, expected_run_id: &str) -> bool {
-    let Some(object) = value.as_object() else {
-        return false;
-    };
-    if object.get("event").and_then(Value::as_str) != Some("sample") {
-        return false;
-    }
-    if let Some(run_id) = object.get("run_id").and_then(Value::as_str) {
-        return run_id == expected_run_id;
-    }
-    false
 }
 
 enum MetersEventDecision {
