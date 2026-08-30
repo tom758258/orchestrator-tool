@@ -261,6 +261,11 @@ body {
   background: #fafafa;
 }
 
+.workflow-step-card-selected {
+  border-color: #7b8798;
+  background: #f0f2f5;
+}
+
 .workflow-step-number {
   color: #5a6270;
 }
@@ -290,6 +295,57 @@ body {
 
 .workflow-step-actions .action-button {
   padding: 4px 10px;
+}
+
+.step-properties {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e3e6ea;
+}
+
+.step-properties h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.step-properties-empty {
+  margin: 12px 0 0;
+  color: #5a6270;
+}
+
+.step-properties-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.step-property-readonly,
+.step-property-field {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.step-property-label {
+  color: #5a6270;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.step-property-field input {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2430;
+  font: inherit;
+}
+
+.step-property-field input:disabled {
+  opacity: 0.55;
 }
 
 .workflow-actions {

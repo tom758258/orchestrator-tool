@@ -150,6 +150,19 @@ function stepLabel(step: WorkflowStep): string {
   return TOOL_ACTION_LABELS[`${step.tool}/${step.action}`] ?? `${step.tool} / ${step.action}`
 }
 
+function numericArgument(step: ToolActionStep, name: string): number | '' {
+  const value = step.arguments[name]
+  return typeof value === 'number' && Number.isFinite(value) ? value : ''
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 1
+}
+
+function isNonNegativeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -161,6 +174,7 @@ function App() {
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | null>(null)
   const [selectedPreset, setSelectedPreset] = useState<StepPreset>('power-set-voltage')
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -181,9 +195,11 @@ function App() {
       const canonicalJson = await invoke<string>('create_workflow_draft')
       const draft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(draft)
+      setSelectedStepId(null)
       setDraftCreationError(null)
     } catch (message) {
       setWorkflowDraft(null)
+      setSelectedStepId(null)
       setDraftCreationError(String(message))
     } finally {
       setDraftLoading(false)
@@ -229,10 +245,39 @@ function App() {
   }, [selectedPreset, updateSteps])
 
   const deleteStep = useCallback(
-    (index: number) => {
-      updateSteps((steps) => steps.filter((_, stepIndex) => stepIndex !== index))
+    (stepId: string) => {
+      updateSteps((steps) => steps.filter((step) => step.id !== stepId))
+      setSelectedStepId((current) => (current === stepId ? null : current))
     },
     [updateSteps],
+  )
+
+  const updateStep = useCallback(
+    (stepId: string, update: (step: WorkflowStep) => WorkflowStep) => {
+      updateSteps((steps) =>
+        steps.map((step) => (step.id === stepId ? update(step) : step)),
+      )
+    },
+    [updateSteps],
+  )
+
+  const updateToolArgument = useCallback(
+    (stepId: string, name: string, value: number) => {
+      updateStep(stepId, (step) => {
+        if (step.type !== 'tool-action') {
+          return step
+        }
+
+        return {
+          ...step,
+          arguments: {
+            ...step.arguments,
+            [name]: value,
+          },
+        }
+      })
+    },
+    [updateStep],
   )
 
   const moveStep = useCallback(
@@ -266,12 +311,29 @@ function App() {
       })
       const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(canonicalDraft)
+      setSelectedStepId((current) =>
+        current && canonicalDraft.workflow.steps.some((step) => step.id === current)
+          ? current
+          : null,
+      )
       setValidationStatus('valid')
     } catch (message) {
       setValidationStatus('idle')
       setValidationError(String(message))
     }
   }, [workflowDraft])
+
+  const selectedStep = workflowDraft?.workflow.steps.find(
+    (step) => step.id === selectedStepId,
+  )
+  const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
+  const selectedAction = selectedToolAction
+    ? `${selectedToolAction.tool}/${selectedToolAction.action}`
+    : null
+  const selectedPowersAction =
+    selectedAction === 'powers/set-voltage' ||
+    selectedAction === 'powers/output-on' ||
+    selectedAction === 'powers/output-off'
 
   return (
     <main className="app">
@@ -441,13 +503,26 @@ function App() {
               {workflowDraft.workflow.steps.length > 0 && (
                 <ol className="workflow-step-list">
                   {workflowDraft.workflow.steps.map((step, index) => (
-                    <li key={step.id} className="workflow-step-card">
+                    <li
+                      key={step.id}
+                      className={`workflow-step-card ${
+                        selectedStepId === step.id ? 'workflow-step-card-selected' : ''
+                      }`}
+                    >
                       <span className="workflow-step-number">{index + 1}.</span>
                       <div className="workflow-step-info">
                         <span className="workflow-step-label">{stepLabel(step)}</span>
                         <code className="workflow-step-id">{step.id}</code>
                       </div>
                       <div className="workflow-step-actions">
+                        <button
+                          className="action-button"
+                          type="button"
+                          aria-pressed={selectedStepId === step.id}
+                          onClick={() => setSelectedStepId(step.id)}
+                        >
+                          Edit
+                        </button>
                         <button
                           className="action-button"
                           type="button"
@@ -470,7 +545,7 @@ function App() {
                         <button
                           className="action-button"
                           type="button"
-                          onClick={() => deleteStep(index)}
+                          onClick={() => deleteStep(step.id)}
                           disabled={validationStatus === 'validating'}
                         >
                           Delete
@@ -480,6 +555,97 @@ function App() {
                   ))}
                 </ol>
               )}
+
+              <section className="step-properties" aria-labelledby="step-properties-title">
+                <h3 id="step-properties-title">Properties</h3>
+
+                {!selectedStep && (
+                  <p className="step-properties-empty">Select a step to edit its properties.</p>
+                )}
+
+                {selectedStep && (
+                  <div className="step-properties-fields">
+                    <div className="step-property-readonly">
+                      <span className="step-property-label">Step ID</span>
+                      <code className="workflow-step-id">{selectedStep.id}</code>
+                    </div>
+
+                    {selectedStep.type === 'wait' && (
+                      <label className="step-property-field">
+                        <span className="step-property-label">Duration (ms)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={selectedStep.duration_ms}
+                          disabled={validationStatus === 'validating'}
+                          onChange={(event) => {
+                            const durationMs = event.currentTarget.valueAsNumber
+                            if (!isNonNegativeInteger(durationMs)) {
+                              return
+                            }
+
+                            updateStep(selectedStep.id, (step) =>
+                              step.type === 'wait'
+                                ? { ...step, duration_ms: durationMs }
+                                : step,
+                            )
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {selectedToolAction && selectedPowersAction && (
+                      <label className="step-property-field">
+                        <span className="step-property-label">Channel</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={numericArgument(selectedToolAction, 'channel')}
+                          disabled={validationStatus === 'validating'}
+                          onChange={(event) => {
+                            const channel = event.currentTarget.valueAsNumber
+                            if (isPositiveInteger(channel)) {
+                              updateToolArgument(selectedToolAction.id, 'channel', channel)
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {selectedToolAction && selectedAction === 'powers/set-voltage' && (
+                      <label className="step-property-field">
+                        <span className="step-property-label">Voltage</span>
+                        <input
+                          type="number"
+                          step="any"
+                          value={numericArgument(selectedToolAction, 'voltage')}
+                          disabled={validationStatus === 'validating'}
+                          onChange={(event) => {
+                            const voltage = event.currentTarget.valueAsNumber
+                            if (Number.isFinite(voltage)) {
+                              updateToolArgument(selectedToolAction.id, 'voltage', voltage)
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {selectedAction === 'meters/measure' && (
+                      <p className="step-properties-empty">No editable parameters.</p>
+                    )}
+
+                    {selectedToolAction &&
+                      !selectedPowersAction &&
+                      selectedAction !== 'meters/measure' && (
+                        <p className="step-properties-empty">
+                          No editable properties are available for this step.
+                        </p>
+                      )}
+                  </div>
+                )}
+              </section>
 
               <div className="workflow-actions">
                 <button
