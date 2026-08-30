@@ -298,7 +298,7 @@ pub fn run_action(
     let request = json!({
         "schema_version": WORKER_SCHEMA_VERSION,
         "command": SOFTWARE_TRIGGER_COMMAND,
-        "job_id": Value::Null
+        "arguments": {}
     });
 
     let remaining = remaining_duration(deadline).ok_or(MetersActionError::Timeout(timeout))?;
@@ -312,13 +312,13 @@ pub fn run_action(
             return Err(MetersActionError::Timeout(timeout));
         };
         match session.recv_event(remaining) {
-            Ok(value) => {
-                if is_matching_sample(&value, session.ready().run_id()) {
-                    return Ok(value);
-                }
-            }
-            Err(WorkerEventError::Timeout(original)) => {
-                return Err(MetersActionError::Timeout(original));
+            Ok(value) => match classify_meters_event(&value, session.ready().run_id()) {
+                MetersEventDecision::Continue => {}
+                MetersEventDecision::Success(sample) => return Ok(sample),
+                MetersEventDecision::Failure(error) => return Err(error),
+            },
+            Err(WorkerEventError::Timeout(_)) => {
+                return Err(MetersActionError::Timeout(timeout));
             }
             Err(WorkerEventError::Disconnected) => {
                 return Err(MetersActionError::Disconnected);
@@ -374,10 +374,12 @@ struct RuntimeAcceptedResponse {
     schema_version: u32,
     status: String,
     command: String,
+    #[serde(default)]
     #[allow(dead_code)]
-    job_id: Value,
+    job_id: Option<String>,
 }
 
+#[allow(dead_code)]
 fn is_matching_sample(value: &Value, expected_run_id: &str) -> bool {
     let Some(object) = value.as_object() else {
         return false;
@@ -385,12 +387,84 @@ fn is_matching_sample(value: &Value, expected_run_id: &str) -> bool {
     if object.get("event").and_then(Value::as_str) != Some("sample") {
         return false;
     }
-    // Correlate on run_id == session.ready().run_id() when present.
     if let Some(run_id) = object.get("run_id").and_then(Value::as_str) {
         return run_id == expected_run_id;
     }
-    // If run_id is absent, do not treat as matching to avoid cross-run contamination.
     false
+}
+
+enum MetersEventDecision {
+    Continue,
+    Success(Value),
+    Failure(MetersActionError),
+}
+
+fn classify_meters_event(value: &Value, expected_run_id: &str) -> MetersEventDecision {
+    let event = value.get("event").and_then(Value::as_str).unwrap_or("");
+    match event {
+        "sample" => match value.get("run_id").and_then(Value::as_str) {
+            Some(run_id) if run_id == expected_run_id => {
+                MetersEventDecision::Success(value.clone())
+            }
+            Some(run_id) => MetersEventDecision::Failure(MetersActionError::InvalidResponse(
+                format!("sample run_id mismatch: expected {expected_run_id:?}, got {run_id:?}"),
+            )),
+            None => MetersEventDecision::Failure(MetersActionError::InvalidResponse(
+                "sample missing run_id".to_owned(),
+            )),
+        },
+        "error" => {
+            let detail = extract_meters_diagnostic(value)
+                .unwrap_or_else(|| "Meters Worker reported error".to_owned());
+            MetersEventDecision::Failure(MetersActionError::WorkerFatal(detail))
+        }
+        "summary" => {
+            if let Some(detail) = extract_meters_diagnostic(value) {
+                MetersEventDecision::Failure(MetersActionError::WorkerFatal(detail))
+            } else {
+                MetersEventDecision::Failure(MetersActionError::InvalidResponse(
+                    "Meters Worker ended before producing a sample".to_owned(),
+                ))
+            }
+        }
+        "status" | "message" => MetersEventDecision::Continue,
+        _ => MetersEventDecision::Continue,
+    }
+}
+
+fn extract_meters_diagnostic(value: &Value) -> Option<String> {
+    if let Some(message) = value
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(message.to_owned());
+    }
+    if let Some(fatal) = value.get("fatal_error") {
+        if let Some(text) = fatal.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(text.to_owned());
+        }
+        if let Some(object) = fatal.as_object() {
+            if let Some(message) = object
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                return Some(message.to_owned());
+            }
+            if let Some(code) = object
+                .get("code")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                return Some(code.to_owned());
+            }
+        }
+    }
+    None
 }
 
 fn remaining_duration(deadline: Instant) -> Option<Duration> {
@@ -462,7 +536,105 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{simulate_worker_launch_spec, software_trigger_request};
+    use super::{
+        MetersActionError, MetersEventDecision, classify_meters_event, simulate_worker_launch_spec,
+        software_trigger_request,
+    };
+
+    #[test]
+    fn meters_event_matching_sample_is_success() {
+        let value = json!({
+            "event": "sample",
+            "run_id": "run-123",
+            "value": 1.23
+        });
+        assert!(matches!(
+            classify_meters_event(&value, "run-123"),
+            MetersEventDecision::Success(v) if v["event"] == "sample"
+        ));
+    }
+
+    #[test]
+    fn meters_event_mismatched_and_missing_run_id_are_invalid_response() {
+        let mismatched = json!({
+            "event": "sample",
+            "run_id": "other-run",
+            "value": 1.23
+        });
+        assert!(matches!(
+            classify_meters_event(&mismatched, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::InvalidResponse(_))
+        ));
+
+        let missing = json!({
+            "event": "sample",
+            "value": 1.23
+        });
+        assert!(matches!(
+            classify_meters_event(&missing, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::InvalidResponse(_))
+        ));
+    }
+
+    #[test]
+    fn meters_event_error_is_worker_fatal() {
+        let value = json!({
+            "event": "error",
+            "message": "sensor fault",
+            "run_id": "run-123"
+        });
+        assert!(matches!(
+            classify_meters_event(&value, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::WorkerFatal(msg)) if msg.contains("sensor fault")
+        ));
+
+        let with_fatal = json!({
+            "event": "error",
+            "fatal_error": "fatal sensor error",
+            "run_id": "run-123"
+        });
+        assert!(matches!(
+            classify_meters_event(&with_fatal, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::WorkerFatal(_))
+        ));
+    }
+
+    #[test]
+    fn meters_event_summary_before_sample_is_failure() {
+        let summary = json!({
+            "event": "summary",
+            "run_id": "run-123",
+            "count": 0
+        });
+        assert!(matches!(
+            classify_meters_event(&summary, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::InvalidResponse(msg)) if msg.contains("before producing a sample")
+        ));
+
+        let summary_with_fatal = json!({
+            "event": "summary",
+            "run_id": "run-123",
+            "fatal_error": "early termination"
+        });
+        assert!(matches!(
+            classify_meters_event(&summary_with_fatal, "run-123"),
+            MetersEventDecision::Failure(MetersActionError::WorkerFatal(msg)) if msg.contains("early termination")
+        ));
+    }
+
+    #[test]
+    fn meters_event_harmless_events_are_ignored() {
+        for value in [
+            json!({"event": "status", "run_id": "run-123"}),
+            json!({"event": "message", "run_id": "run-123", "message": "calibrating"}),
+            json!({"event": "heartbeat", "run_id": "run-123"}),
+        ] {
+            assert!(matches!(
+                classify_meters_event(&value, "run-123"),
+                MetersEventDecision::Continue
+            ));
+        }
+    }
 
     #[test]
     fn meters_simulate_contract_shape_is_correct() {

@@ -435,7 +435,17 @@ fn run_runtime_operation(
         if let Some(last_job) = parsed.last_job.as_ref()
             && last_job.worker_job_id == worker_job_id
         {
-            return terminal_result(last_job, timeout);
+            match last_job.status.as_str() {
+                "accepted" | "queued" | "running" => {}
+                "succeeded" | "failed" | "cancelled" => {
+                    return terminal_result(last_job, timeout);
+                }
+                other => {
+                    return Err(PowersActionError::InvalidResponse(format!(
+                        "job had unknown status {other:?}"
+                    )));
+                }
+            }
         }
 
         let remaining = remaining_duration(deadline, timeout).unwrap_or(Duration::ZERO);
@@ -446,7 +456,12 @@ fn run_runtime_operation(
 
 fn terminal_result(last_job: &LastJob, _timeout: Duration) -> Result<Value, PowersActionError> {
     match last_job.status.as_str() {
-        "succeeded" => Ok(last_job.result.clone().unwrap_or(Value::Null)),
+        "succeeded" => match last_job.result.clone() {
+            Some(value) => Ok(value),
+            None => Err(PowersActionError::InvalidResponse(
+                "succeeded job missing result".to_owned(),
+            )),
+        },
         "failed" | "cancelled" => Err(PowersActionError::WorkerFailure {
             status: last_job.status.clone(),
             detail: diagnostic_detail(last_job.error.as_ref()),
@@ -555,10 +570,17 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
         ));
     }
 
-    Ok(json!({
-        "channel": channel,
-        "voltage": object.get("voltage").cloned()
-    }))
+    if action == "set-voltage" {
+        let voltage = object.get("voltage").cloned().expect("voltage validated");
+        Ok(json!({
+            "channel": channel,
+            "voltage": voltage
+        }))
+    } else {
+        Ok(json!({
+            "channel": channel
+        }))
+    }
 }
 
 /// Errors from Powers runtime action execution.
@@ -682,10 +704,10 @@ mod tests {
         assert_eq!(set_voltage, json!({ "channel": 1, "voltage": 5.0 }));
 
         let output_on = validate_arguments("output-on", &json!({ "channel": 2 })).unwrap();
-        assert_eq!(output_on, json!({ "channel": 2, "voltage": null }));
+        assert_eq!(output_on, json!({ "channel": 2 }));
 
         let output_off = validate_arguments("output-off", &json!({ "channel": 1 })).unwrap();
-        assert_eq!(output_off, json!({ "channel": 1, "voltage": null }));
+        assert_eq!(output_off, json!({ "channel": 1 }));
     }
 
     #[test]

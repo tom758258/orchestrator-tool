@@ -490,26 +490,21 @@ fn run_powers_runtime_fixture() {
         ),
     );
 
-    // Simulate polling: first status without terminal job, then succeeded.
-    for (idx, last_job) in [
+    // Cover non-terminal polling: running -> succeeded.
+    for last_job in [
         json!({
-            "worker_job_id": "job-previous",
-            "status": "succeeded",
-            "result": { "ok": true }
+            "worker_job_id": "job-runtime-001",
+            "status": "running"
         }),
         json!({
             "worker_job_id": "job-runtime-001",
             "status": "succeeded",
             "result": { "channel": 1, "voltage": 5.0 }
         }),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let request = accept_request(&listener);
         assert_eq!(request.method, "GET");
         assert_eq!(request.path, "/status");
-        // Allow powers runtime to validate service/run_id fields.
         write_response(
             request.stream,
             200,
@@ -523,7 +518,6 @@ fn run_powers_runtime_fixture() {
             })
             .to_string(),
         );
-        let _ = idx;
     }
 
     let request = accept_request(&listener);
@@ -554,15 +548,18 @@ fn run_meters_runtime_fixture() {
     let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
     assert_eq!(body["schema_version"], 2);
     assert_eq!(body["command"], "software_trigger");
-    // Runtime must allow job_id null and must NOT include context.
+    assert_eq!(body["arguments"], json!({}));
     assert!(
         body.get("context").is_none(),
         "meters runtime must not send context"
     );
-    assert!(body.get("job_id").is_some());
     assert!(
-        body["job_id"].is_null() || body["job_id"].is_string(),
-        "job_id must be null or string"
+        body.get("job_id").is_none(),
+        "meters runtime must omit job_id"
+    );
+    assert!(
+        body.get("metadata").is_none(),
+        "meters runtime must not send metadata"
     );
     write_response(
         request.stream,
