@@ -11,6 +11,7 @@ pub mod inspection;
 pub mod manifest;
 pub mod manifest_probe;
 pub mod process;
+pub mod run;
 pub mod status;
 pub mod template;
 pub mod tool;

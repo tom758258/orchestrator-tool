@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     env,
     ffi::{OsStr, OsString},
+    fs,
     io::{self, BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     process, thread,
@@ -16,7 +17,7 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
-    executor::execute_workflow,
+    run::{SimulatedRunError, run_simulated_workflow},
     tool::ToolId,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
@@ -52,6 +53,7 @@ const METERS_WORKER_ARGUMENTS: [&str; 15] = [
     "--no-csv",
 ];
 const POWERS_FIXTURE_SCENARIO_ENV: &str = "ORCHESTRATOR_TEST_POWERS_SCENARIO";
+const CLEANUP_MARKER_ENV: &str = "ORCHESTRATOR_TEST_CLEANUP_MARKER";
 
 fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
@@ -90,6 +92,7 @@ fn main() {
     powers_runtime_action_succeeds();
     meters_runtime_measure_returns_sample();
     powers_and_meters_workflow_executes_end_to_end();
+    partial_startup_failure_shuts_down_started_worker();
 }
 
 fn run_powers_worker_fixture() {
@@ -358,6 +361,29 @@ fn run_fixture(scenario: &OsStr) {
             );
             let request = accept_request(&listener);
             assert_eq!(request.path, "/stop");
+            write_response(request.stream, 200, r#"{"ok":true}"#);
+        }
+        "partial-startup-cleanup" => {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            print_json_line(
+                &json!({
+                    "event": "ready",
+                    "schema_version": 2,
+                    "run_id": "partial-startup-cleanup-run",
+                    "status_url": format!("{base_url}/status"),
+                    "command_url": format!("{base_url}/command"),
+                    "stop_url": format!("{base_url}/stop")
+                })
+                .to_string(),
+            );
+            let request = accept_request(&listener);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("POST", "/stop")
+            );
+            let marker = env::var_os(CLEANUP_MARKER_ENV).expect("cleanup marker path is required");
+            fs::write(marker, "stopped").unwrap();
             write_response(request.stream, 200, r#"{"ok":true}"#);
         }
         "http-round-trip" | "http-non-2xx" | "shutdown-graceful" | "shutdown-timeout" => {
@@ -988,16 +1014,6 @@ fn meters_runtime_measure_returns_sample() {
 }
 
 fn powers_and_meters_workflow_executes_end_to_end() {
-    let powers_session = start_worker(
-        &fixture_spec("powers-workflow-runtime"),
-        Duration::from_secs(5),
-    )
-    .unwrap();
-    let meters_session = start_worker(
-        &fixture_spec("meters-runtime-measure"),
-        Duration::from_secs(5),
-    )
-    .unwrap();
     let workflow = Workflow::new(vec![
         Step::new(
             StepId::new("power-set-1").unwrap(),
@@ -1037,12 +1053,19 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         ),
     ])
     .unwrap();
-    let sessions = HashMap::from([
-        (ToolId::powers(), &powers_session),
-        (ToolId::meters(), &meters_session),
+    let launch_specs = HashMap::from([
+        (ToolId::powers(), fixture_spec("powers-workflow-runtime")),
+        (ToolId::meters(), fixture_spec("meters-runtime-measure")),
     ]);
 
-    let results = execute_workflow(&workflow, &sessions, Duration::from_secs(5)).unwrap();
+    let results = run_simulated_workflow(
+        &workflow,
+        &launch_specs,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
 
     assert_eq!(results.len(), 5);
     assert_eq!(
@@ -1069,20 +1092,64 @@ fn powers_and_meters_workflow_executes_end_to_end() {
     assert_eq!(output["event"], "sample");
     assert_eq!(output["value"], 3.3);
     assert_eq!(output["unit"], "V");
+}
 
-    drop(sessions);
-    assert!(
-        powers_session
-            .shutdown(Duration::from_secs(5))
-            .unwrap()
-            .success()
+fn partial_startup_failure_shuts_down_started_worker() {
+    let marker = env::temp_dir().join(format!(
+        "orchestrator-tool-partial-startup-cleanup-{}",
+        process::id()
+    ));
+    if let Err(error) = fs::remove_file(&marker) {
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+    // SAFETY: this harness runs scenarios sequentially, and fixture children
+    // inherit the variable before it is removed after lifecycle cleanup.
+    unsafe { env::set_var(CLEANUP_MARKER_ENV, &marker) };
+
+    let workflow = Workflow::new(vec![
+        Step::new(
+            StepId::new("power-set-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::powers(),
+                action: ActionId::new("set-voltage").unwrap(),
+                arguments: json!({ "channel": 1, "voltage": 5.0 }),
+            },
+        ),
+        Step::new(
+            StepId::new("meter-read-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::meters(),
+                action: ActionId::new("measure").unwrap(),
+                arguments: json!({}),
+            },
+        ),
+    ])
+    .unwrap();
+    let launch_specs = HashMap::from([
+        (ToolId::powers(), fixture_spec("partial-startup-cleanup")),
+        (ToolId::meters(), fixture_spec("exit-before-ready")),
+    ]);
+
+    let result = run_simulated_workflow(
+        &workflow,
+        &launch_specs,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
     );
-    assert!(
-        meters_session
-            .shutdown(Duration::from_secs(5))
-            .unwrap()
-            .success()
-    );
+    // SAFETY: all fixture children have exited before the lifecycle call returns.
+    unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
+    let marker_contents = fs::read_to_string(&marker).unwrap();
+    fs::remove_file(&marker).unwrap();
+
+    assert!(matches!(
+        result,
+        Err(SimulatedRunError::WorkerStartup {
+            tool,
+            source: WorkerStartError::ExitedBeforeReady(status),
+        }) if tool == ToolId::meters() && status.success()
+    ));
+    assert_eq!(marker_contents, "stopped");
 }
 
 fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
