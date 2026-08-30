@@ -6,6 +6,7 @@
 pub mod adapters;
 pub mod config;
 pub mod discovery;
+pub mod executor;
 pub mod inspection;
 pub mod manifest;
 pub mod manifest_probe;
