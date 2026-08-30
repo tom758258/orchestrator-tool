@@ -12,16 +12,59 @@ type ToolStatus = {
   reason: string | null
 }
 
+type WaitStep = {
+  type: 'wait'
+  id: string
+  duration_ms: number
+}
+
+type ToolActionStep = {
+  type: 'tool-action'
+  id: string
+  tool: string
+  action: string
+  arguments: Record<string, unknown>
+}
+
+type WorkflowStep = WaitStep | ToolActionStep
+
 type WorkflowDraft = {
   schema_version: number
   name: string
   workflow: {
-    steps: unknown[]
+    steps: WorkflowStep[]
   }
 }
 
 type ActiveTab = 'tools' | 'workflow'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
+type StepPreset =
+  | 'power-set-voltage'
+  | 'power-output-on'
+  | 'wait'
+  | 'meter-measure'
+  | 'power-output-off'
+
+type StepPresetOption = {
+  value: StepPreset
+  label: string
+  prefix: string
+}
+
+const STEP_PRESETS: StepPresetOption[] = [
+  { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set' },
+  { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on' },
+  { value: 'wait', label: 'Wait', prefix: 'wait' },
+  { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read' },
+  { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off' },
+]
+
+const TOOL_ACTION_LABELS: Record<string, string> = {
+  'powers/set-voltage': 'Power Set Voltage',
+  'powers/output-on': 'Power Output ON',
+  'meters/measure': 'Meter Measure',
+  'powers/output-off': 'Power Output OFF',
+}
 
 const EXECUTABLE_LABELS: Record<string, string> = {
   available: 'Available',
@@ -49,6 +92,64 @@ function formatWorkerSchemas(versions: number[]): string {
   return versions.join(', ')
 }
 
+function nextStepId(prefix: string, steps: WorkflowStep[]): string {
+  const existingIds = new Set(steps.map((step) => step.id))
+  let sequence = 1
+
+  while (existingIds.has(`${prefix}-${sequence}`)) {
+    sequence += 1
+  }
+
+  return `${prefix}-${sequence}`
+}
+
+function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
+  switch (preset) {
+    case 'power-set-voltage':
+      return {
+        type: 'tool-action',
+        id,
+        tool: 'powers',
+        action: 'set-voltage',
+        arguments: { channel: 1, voltage: 5.0 },
+      }
+    case 'power-output-on':
+      return {
+        type: 'tool-action',
+        id,
+        tool: 'powers',
+        action: 'output-on',
+        arguments: { channel: 1 },
+      }
+    case 'wait':
+      return { type: 'wait', id, duration_ms: 500 }
+    case 'meter-measure':
+      return {
+        type: 'tool-action',
+        id,
+        tool: 'meters',
+        action: 'measure',
+        arguments: {},
+      }
+    case 'power-output-off':
+      return {
+        type: 'tool-action',
+        id,
+        tool: 'powers',
+        action: 'output-off',
+        arguments: { channel: 1 },
+      }
+  }
+}
+
+function stepLabel(step: WorkflowStep): string {
+  if (step.type === 'wait') {
+    return 'Wait'
+  }
+
+  return TOOL_ACTION_LABELS[`${step.tool}/${step.action}`] ?? `${step.tool} / ${step.action}`
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -59,6 +160,7 @@ function App() {
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [selectedPreset, setSelectedPreset] = useState<StepPreset>('power-set-voltage')
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -92,6 +194,64 @@ function App() {
     void refresh()
     void createDraft()
   }, [createDraft, refresh])
+
+  const updateSteps = useCallback(
+    (update: (steps: WorkflowStep[]) => WorkflowStep[]) => {
+      setWorkflowDraft((current) => {
+        if (!current) {
+          return current
+        }
+
+        return {
+          ...current,
+          workflow: {
+            ...current.workflow,
+            steps: update(current.workflow.steps),
+          },
+        }
+      })
+      setValidationStatus('idle')
+      setValidationError(null)
+    },
+    [],
+  )
+
+  const addStep = useCallback(() => {
+    updateSteps((steps) => {
+      const preset = STEP_PRESETS.find((option) => option.value === selectedPreset)
+      if (!preset) {
+        return steps
+      }
+
+      const id = nextStepId(preset.prefix, steps)
+      return [...steps, createPresetStep(selectedPreset, id)]
+    })
+  }, [selectedPreset, updateSteps])
+
+  const deleteStep = useCallback(
+    (index: number) => {
+      updateSteps((steps) => steps.filter((_, stepIndex) => stepIndex !== index))
+    },
+    [updateSteps],
+  )
+
+  const moveStep = useCallback(
+    (index: number, offset: -1 | 1) => {
+      updateSteps((steps) => {
+        const targetIndex = index + offset
+        if (targetIndex < 0 || targetIndex >= steps.length) {
+          return steps
+        }
+
+        const reordered = [...steps]
+        const currentStep = reordered[index]
+        reordered[index] = reordered[targetIndex]
+        reordered[targetIndex] = currentStep
+        return reordered
+      })
+    },
+    [updateSteps],
+  )
 
   const validateDraft = useCallback(async () => {
     if (!workflowDraft) {
@@ -250,8 +410,75 @@ function App() {
                 </div>
               </dl>
 
+              <div className="add-step-controls">
+                <select
+                  className="step-preset-select"
+                  aria-label="Step type"
+                  value={selectedPreset}
+                  onChange={(event) => setSelectedPreset(event.target.value as StepPreset)}
+                  disabled={validationStatus === 'validating'}
+                >
+                  {STEP_PRESETS.map((preset) => (
+                    <option key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={addStep}
+                  disabled={validationStatus === 'validating'}
+                >
+                  Add Step
+                </button>
+              </div>
+
               {workflowDraft.workflow.steps.length === 0 && (
                 <p className="empty-workflow">Empty workflow</p>
+              )}
+
+              {workflowDraft.workflow.steps.length > 0 && (
+                <ol className="workflow-step-list">
+                  {workflowDraft.workflow.steps.map((step, index) => (
+                    <li key={step.id} className="workflow-step-card">
+                      <span className="workflow-step-number">{index + 1}.</span>
+                      <div className="workflow-step-info">
+                        <span className="workflow-step-label">{stepLabel(step)}</span>
+                        <code className="workflow-step-id">{step.id}</code>
+                      </div>
+                      <div className="workflow-step-actions">
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => moveStep(index, -1)}
+                          disabled={index === 0 || validationStatus === 'validating'}
+                        >
+                          Move Up
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => moveStep(index, 1)}
+                          disabled={
+                            index === workflowDraft.workflow.steps.length - 1 ||
+                            validationStatus === 'validating'
+                          }
+                        >
+                          Move Down
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => deleteStep(index)}
+                          disabled={validationStatus === 'validating'}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
               )}
 
               <div className="workflow-actions">

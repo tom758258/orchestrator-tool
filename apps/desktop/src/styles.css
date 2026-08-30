@@ -220,6 +220,78 @@ body {
   color: #5a6270;
 }
 
+.add-step-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.step-preset-select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2430;
+  font: inherit;
+}
+
+.step-preset-select:disabled {
+  opacity: 0.55;
+}
+
+.workflow-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-step-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.workflow-step-number {
+  color: #5a6270;
+}
+
+.workflow-step-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workflow-step-label {
+  font-weight: 600;
+}
+
+.workflow-step-id {
+  color: #5a6270;
+  overflow-wrap: anywhere;
+}
+
+.workflow-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.workflow-step-actions .action-button {
+  padding: 4px 10px;
+}
+
 .workflow-actions {
   margin-top: 16px;
 }
