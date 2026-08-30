@@ -4,6 +4,8 @@ use orchestrator_tool::{
     config::Config,
     discovery::{ExecutableStatus, current_application_dir},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
+    template::Template,
+    workflow::Workflow,
 };
 use serde::Serialize;
 
@@ -74,9 +76,12 @@ async fn get_tool_status() -> Result<Vec<ToolStatusDto>, String> {
                                 None,
                             )
                         }
-                        ManifestStatus::Error(error) => {
-                            ("error".to_owned(), None, Vec::new(), Some(error.to_string()))
-                        }
+                        ManifestStatus::Error(error) => (
+                            "error".to_owned(),
+                            None,
+                            Vec::new(),
+                            Some(error.to_string()),
+                        ),
                     };
 
                 let final_reason = reason.or(manifest_reason);
@@ -100,9 +105,63 @@ async fn get_tool_status() -> Result<Vec<ToolStatusDto>, String> {
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+fn create_workflow_draft() -> Result<String, String> {
+    let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
+    Template::new("Untitled".to_owned(), workflow)
+        .to_json_string()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn validate_workflow_draft(template_json: String) -> Result<String, String> {
+    Template::from_json_str(&template_json)
+        .and_then(|template| template.to_json_string())
+        .map_err(|error| error.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_tool_status])
+        .invoke_handler(tauri::generate_handler![
+            get_tool_status,
+            create_workflow_draft,
+            validate_workflow_draft
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{create_workflow_draft, validate_workflow_draft};
+    use orchestrator_tool::template::Template;
+
+    #[test]
+    fn create_workflow_draft_returns_restorable_empty_template() {
+        let json = create_workflow_draft().unwrap();
+        let template = Template::from_json_str(&json).unwrap();
+
+        assert_eq!(template.name(), "Untitled");
+        assert!(template.workflow().steps().is_empty());
+    }
+
+    #[test]
+    fn validate_workflow_draft_rejects_invalid_step_id() {
+        let invalid = r#"{
+            "schema_version": 1,
+            "name": "Invalid",
+            "workflow": {
+                "steps": [
+                    { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
+                ]
+            }
+        }"#;
+
+        let error = validate_workflow_draft(invalid.to_owned()).unwrap_err();
+
+        assert!(
+            error.contains("invalid step ID"),
+            "unexpected error: {error}"
+        );
+    }
 }
