@@ -40,6 +40,14 @@ type WorkflowDraft = {
 type ActiveTab = 'tools' | 'workflow'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
+type RunStatus = 'idle' | 'running'
+type StepResultStatus = 'succeeded' | 'failed' | 'cancelled'
+type StepResultDto = {
+  step_id: string
+  status: StepResultStatus
+  output: unknown | null
+  message: string | null
+}
 type StepPreset =
   | 'power-set-voltage'
   | 'power-output-on'
@@ -165,6 +173,20 @@ function isNonNegativeInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0
 }
 
+function formatMeasurement(output: unknown): string | null {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return null
+  }
+
+  const value = (output as Record<string, unknown>).value
+  const unit = (output as Record<string, unknown>).unit
+  if (typeof value !== 'number' || !Number.isFinite(value) || typeof unit !== 'string') {
+    return null
+  }
+
+  return `${value} ${unit}`
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -180,6 +202,9 @@ function App() {
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
+  const [runStatus, setRunStatus] = useState<RunStatus>('idle')
+  const [runResults, setRunResults] = useState<StepResultDto[] | null>(null)
+  const [runError, setRunError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -202,10 +227,14 @@ function App() {
       setWorkflowDraft(draft)
       setSelectedStepId(null)
       setDraftCreationError(null)
+      setRunResults(null)
+      setRunError(null)
     } catch (message) {
       setWorkflowDraft(null)
       setSelectedStepId(null)
       setDraftCreationError(String(message))
+      setRunResults(null)
+      setRunError(null)
     } finally {
       setDraftLoading(false)
     }
@@ -233,6 +262,8 @@ function App() {
       })
       setValidationStatus('idle')
       setValidationError(null)
+      setRunResults(null)
+      setRunError(null)
     },
     [],
   )
@@ -350,6 +381,8 @@ function App() {
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
+      setRunResults(null)
+      setRunError(null)
       setTemplateIoMessage('Template loaded.')
       setTemplateIoStatus('idle')
     } catch (message) {
@@ -395,8 +428,28 @@ function App() {
     }
   }, [workflowDraft])
 
+  const runSimulation = useCallback(async () => {
+    if (!workflowDraft) {
+      return
+    }
+
+    setRunStatus('running')
+    setRunResults(null)
+    setRunError(null)
+    try {
+      const results = await invoke<StepResultDto[]>('run_workflow_simulation', {
+        templateJson: JSON.stringify(workflowDraft),
+      })
+      setRunResults(results)
+    } catch (message) {
+      setRunError(String(message))
+    } finally {
+      setRunStatus('idle')
+    }
+  }, [workflowDraft])
+
   const workflowBusy =
-    validationStatus === 'validating' || templateIoStatus !== 'idle'
+    validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running'
 
   const selectedStep = workflowDraft?.workflow.steps.find(
     (step) => step.id === selectedStepId,
@@ -746,6 +799,14 @@ function App() {
                 >
                   {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
                 </button>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() => void runSimulation()}
+                  disabled={workflowBusy}
+                >
+                  {runStatus === 'running' ? 'Running…' : 'Run Simulation'}
+                </button>
               </div>
 
               {templateIoStatus === 'saving' && (
@@ -777,6 +838,60 @@ function App() {
                 <p className="error" role="alert">
                   Validation failed: {validationError}
                 </p>
+              )}
+
+              {runError && (
+                <p className="error" role="alert">
+                  Simulation failed: {runError}
+                </p>
+              )}
+
+              {runResults && (
+                <section className="simulation-results" aria-labelledby="simulation-results-title">
+                  <h3 id="simulation-results-title">Simulation Results</h3>
+                  <ol className="simulation-result-list">
+                    {runResults.map((result) => {
+                      const measurement = formatMeasurement(result.output)
+                      const statusLabel =
+                        result.status === 'succeeded'
+                          ? 'Success'
+                          : result.status === 'failed'
+                            ? 'Failed'
+                            : 'Cancelled'
+                      const statusMark =
+                        result.status === 'succeeded'
+                          ? '✓'
+                          : result.status === 'failed'
+                            ? '✕'
+                            : '—'
+
+                      return (
+                        <li key={result.step_id} className="simulation-result-card">
+                          <span
+                            className={`simulation-result-mark simulation-result-${result.status}`}
+                            aria-hidden="true"
+                          >
+                            {statusMark}
+                          </span>
+                          <div className="simulation-result-content">
+                            <div className="simulation-result-summary">
+                              <code className="workflow-step-id">{result.step_id}</code>
+                              <span className={`simulation-result-status simulation-result-${result.status}`}>
+                                {statusLabel}
+                              </span>
+                              {measurement && (
+                                <span className="simulation-result-measurement">{measurement}</span>
+                              )}
+                            </div>
+                            {result.status === 'failed' && result.message && (
+                              <p className="simulation-result-message">{result.message}</p>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </section>
               )}
             </div>
           )}

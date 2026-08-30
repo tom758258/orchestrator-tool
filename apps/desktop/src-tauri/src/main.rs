@@ -1,13 +1,27 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::{collections::HashMap, path::Path, time::Duration};
+
 use orchestrator_tool::{
+    adapters::{meters, powers},
     config::Config,
-    discovery::{ExecutableStatus, current_application_dir},
+    discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
+    inspection::inspect_tool,
+    manifest::WorkerCompatibility,
+    manifest_probe::probe_manifest,
+    run::run_simulated_workflow,
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
-    workflow::Workflow,
+    tool::ToolId,
+    worker::WorkerLaunchSpec,
+    workflow::{StepKind, StepOutcome, StepResult, Workflow},
 };
 use serde::Serialize;
+use serde_json::Value;
+
+const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
+const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Serialize)]
 struct ToolStatusDto {
@@ -19,6 +33,14 @@ struct ToolStatusDto {
     tool_version: Option<String>,
     worker_schema_versions: Vec<u32>,
     reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct StepResultDto {
+    step_id: String,
+    status: String,
+    output: Option<Value>,
+    message: Option<String>,
 }
 
 #[tauri::command]
@@ -106,6 +128,113 @@ async fn get_tool_status() -> Result<Vec<ToolStatusDto>, String> {
 }
 
 #[tauri::command]
+async fn run_workflow_simulation(template_json: String) -> Result<Vec<StepResultDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let template =
+            Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir()
+            .map_err(|error| format!("could not determine application directory: {error}"))?;
+        let launch_specs = prepare_simulate_launch_specs(
+            template.workflow(),
+            &application_dir,
+            &Config::default(),
+        )?;
+        let results = run_simulated_workflow(
+            template.workflow(),
+            &launch_specs,
+            RUN_STARTUP_TIMEOUT,
+            RUN_ACTION_TIMEOUT,
+            RUN_SHUTDOWN_TIMEOUT,
+        )
+        .map_err(|error| error.to_string())?;
+
+        Ok(results.iter().map(step_result_dto).collect())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn referenced_simulation_tools(workflow: &Workflow) -> Vec<ToolId> {
+    let mut tools = Vec::new();
+
+    for step in workflow.steps() {
+        let StepKind::ToolAction { tool, .. } = step.kind() else {
+            continue;
+        };
+        if matches!(tool.as_str(), "powers" | "meters") && !tools.contains(tool) {
+            tools.push(tool.clone());
+        }
+    }
+
+    tools
+}
+
+fn prepare_simulate_launch_specs(
+    workflow: &Workflow,
+    application_dir: &Path,
+    config: &Config,
+) -> Result<HashMap<ToolId, WorkerLaunchSpec>, String> {
+    let definitions = built_in_tool_definitions();
+    let mut launch_specs = HashMap::new();
+
+    for tool in referenced_simulation_tools(workflow) {
+        let definition = definitions
+            .iter()
+            .find(|definition| definition.id() == &tool)
+            .expect("supported simulation tool must be built in");
+        let inspection = inspect_tool(application_dir, config, definition)
+            .map_err(|error| format!("{tool} executable inspection failed: {error}"))?;
+
+        match inspection.status() {
+            ExecutableStatus::Available => {}
+            ExecutableStatus::Missing => {
+                return Err(format!(
+                    "{tool} executable is missing: {}",
+                    inspection.resolved().path().display()
+                ));
+            }
+            ExecutableStatus::NotFile => {
+                return Err(format!(
+                    "{tool} executable is not a file: {}",
+                    inspection.resolved().path().display()
+                ));
+            }
+        }
+
+        let executable = inspection.resolved().path();
+        let probe = probe_manifest(executable, &tool)
+            .map_err(|error| format!("{tool} manifest probe failed: {error}"))?;
+        if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
+            return Err(format!("{tool} Worker protocol is incompatible"));
+        }
+
+        let spec = match tool.as_str() {
+            "powers" => powers::simulate_worker_launch_spec(executable),
+            "meters" => meters::simulate_worker_launch_spec(executable),
+            _ => unreachable!("referenced simulation tools are filtered"),
+        };
+        launch_specs.insert(tool, spec);
+    }
+
+    Ok(launch_specs)
+}
+
+fn step_result_dto(result: &StepResult) -> StepResultDto {
+    let (status, output, message) = match result.outcome() {
+        StepOutcome::Succeeded { output } => ("succeeded".to_owned(), Some(output.clone()), None),
+        StepOutcome::Failed { message } => ("failed".to_owned(), None, Some(message.clone())),
+        StepOutcome::Cancelled => ("cancelled".to_owned(), None, None),
+    };
+
+    StepResultDto {
+        step_id: result.step_id().as_str().to_owned(),
+        status,
+        output,
+        message,
+    }
+}
+
+#[tauri::command]
 fn create_workflow_draft() -> Result<String, String> {
     let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
     Template::new("Untitled".to_owned(), workflow)
@@ -140,6 +269,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
+            run_workflow_simulation,
             create_workflow_draft,
             validate_workflow_draft,
             save_workflow_template,
@@ -152,10 +282,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_workflow_draft, load_workflow_template, save_workflow_template,
-        validate_workflow_draft,
+        create_workflow_draft, load_workflow_template, referenced_simulation_tools,
+        save_workflow_template, step_result_dto, validate_workflow_draft,
     };
-    use orchestrator_tool::template::Template;
+    use orchestrator_tool::{
+        template::Template,
+        tool::ToolId,
+        workflow::{StepId, StepOutcome, StepResult},
+    };
+    use serde_json::json;
 
     #[test]
     fn create_workflow_draft_returns_restorable_empty_template() {
@@ -234,5 +369,62 @@ mod tests {
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn step_result_dto_preserves_outcome_data() {
+        let succeeded = step_result_dto(&StepResult::new(
+            StepId::new("meter-read-1").unwrap(),
+            StepOutcome::Succeeded {
+                output: json!({"event": "sample", "value": 3.3, "unit": "V"}),
+            },
+        ));
+        assert_eq!(succeeded.step_id, "meter-read-1");
+        assert_eq!(succeeded.status, "succeeded");
+        assert_eq!(succeeded.output.as_ref().unwrap()["value"], 3.3);
+        assert_eq!(succeeded.output.as_ref().unwrap()["unit"], "V");
+        assert!(succeeded.message.is_none());
+
+        let failed = step_result_dto(&StepResult::new(
+            StepId::new("meter-read-2").unwrap(),
+            StepOutcome::Failed {
+                message: "measurement failed".to_owned(),
+            },
+        ));
+        assert_eq!(failed.status, "failed");
+        assert_eq!(failed.message.as_deref(), Some("measurement failed"));
+        assert!(failed.output.is_none());
+
+        let cancelled = step_result_dto(&StepResult::new(
+            StepId::new("wait-1").unwrap(),
+            StepOutcome::Cancelled,
+        ));
+        assert_eq!(cancelled.status, "cancelled");
+        assert!(cancelled.output.is_none());
+        assert!(cancelled.message.is_none());
+    }
+
+    #[test]
+    fn referenced_simulation_tools_only_selects_used_supported_tools() {
+        let template = Template::from_json_str(
+            r#"{
+                "schema_version": 1,
+                "name": "Meters Only",
+                "workflow": {
+                    "steps": [
+                        { "type": "wait", "id": "wait-1", "duration_ms": 1 },
+                        { "type": "tool-action", "id": "meter-read-1", "tool": "meters", "action": "measure", "arguments": {} },
+                        { "type": "tool-action", "id": "scope-read-1", "tool": "scopes", "action": "capture", "arguments": {} },
+                        { "type": "tool-action", "id": "meter-read-2", "tool": "meters", "action": "measure", "arguments": {} }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            referenced_simulation_tools(template.workflow()),
+            vec![ToolId::meters()]
+        );
     }
 }

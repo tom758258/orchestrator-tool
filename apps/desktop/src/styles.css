@@ -360,3 +360,76 @@ body {
   color: #226b2c;
   font-weight: 600;
 }
+
+.simulation-results {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e3e6ea;
+}
+
+.simulation-results h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.simulation-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.simulation-result-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.simulation-result-mark {
+  font-weight: 700;
+}
+
+.simulation-result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.simulation-result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.simulation-result-status {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.simulation-result-succeeded {
+  color: #226b2c;
+}
+
+.simulation-result-failed {
+  color: #a12b21;
+}
+
+.simulation-result-cancelled {
+  color: #5a6270;
+}
+
+.simulation-result-measurement {
+  color: #1f2430;
+  font-weight: 600;
+}
+
+.simulation-result-message {
+  margin: 6px 0 0;
+  color: #a12b21;
+  overflow-wrap: anywhere;
+}

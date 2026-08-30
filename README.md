@@ -6,9 +6,9 @@
 
 - Core library (`src/lib.rs`): shared orchestration and domain logic. It must remain independent of CLI and desktop presentation layers.
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
-- Desktop application: planned Tauri 2 frontend for visual workflow editing, templates, execution, and monitoring. It is intentionally not part of P0. The current Desktop shell displays built-in external-tool availability on a read-only status screen.
+- Desktop application: Tauri 2 frontend with built-in external-tool status, linear workflow and parameter editing, template load/save, simulated workflow runs, and step-result display.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core now defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. A Powers and Meters simulate-mode vertical slice exercises workflow execution through Worker HTTP and stdout events into step results. Execution remains a Core capability: the CLI does not provide a workflow run command, Desktop does not yet provide a complete Workflow Builder or Run UI, and live-hardware workflow execution is not enabled.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. A Powers and Meters simulate-mode vertical slice exercises workflow execution through Worker HTTP and stdout events into step results, and Desktop can run that simulation and display its results. The visual canvas is not yet implemented, the CLI does not provide a workflow run command, and live-hardware workflow execution is not enabled.
 
 ## Executable configuration
 
