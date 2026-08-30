@@ -8,7 +8,7 @@
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
 - Desktop 應用程式：採用 Tauri 2，未來負責視覺化 Workflow 編輯、Template、執行與監控；目前 Desktop shell 已提供 external tool 狀態與相容性顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template 與 per-step result domain，workflow execution 仍延後。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Powers 與 Meters 的 simulate-mode vertical slice 已涵蓋從 Worker HTTP 與 stdout event 到 step result 的 workflow execution。目前 execution 仍是 Core capability：CLI 不提供 workflow run command，Desktop 尚未提供完整的 Workflow Builder 或 Run UI，live-hardware workflow execution 也尚未開放。
 
 ## Executable 設定
 

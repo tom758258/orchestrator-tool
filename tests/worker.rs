@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env,
     ffi::{OsStr, OsString},
     io::{self, BufRead, BufReader, Read, Write},
@@ -15,9 +16,11 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
+    executor::execute_workflow,
+    tool::ToolId,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
-    workflow::ActionId,
+    workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
 };
 use serde_json::json;
 
@@ -86,6 +89,7 @@ fn main() {
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
     meters_runtime_measure_returns_sample();
+    powers_and_meters_workflow_executes_end_to_end();
 }
 
 fn run_powers_worker_fixture() {
@@ -360,6 +364,7 @@ fn run_fixture(scenario: &OsStr) {
             run_http_fixture(scenario.to_str().unwrap())
         }
         "powers-runtime-success" => run_powers_runtime_fixture(),
+        "powers-workflow-runtime" => run_powers_workflow_fixture(),
         "meters-runtime-measure" => run_meters_runtime_fixture(),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
@@ -538,6 +543,93 @@ fn run_powers_runtime_fixture() {
     let request = accept_request(&listener);
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, "/stop");
+    write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
+fn run_powers_workflow_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "powers-workflow-runtime-run";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    for (command, arguments, worker_job_id) in [
+        (
+            "set",
+            json!({ "channel": 1, "voltage": 5.0 }),
+            "job-workflow-001",
+        ),
+        ("output-on", json!({ "channel": 1 }), "job-workflow-002"),
+        ("output-off", json!({ "channel": 1 }), "job-workflow-003"),
+    ] {
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("POST", "/command")
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
+            json!({
+                "schema_version": 2,
+                "command": command,
+                "arguments": arguments,
+                "context": {
+                    "mode": "simulate",
+                    "planning_model_id": "keysight-e36312a"
+                }
+            })
+        );
+        write_response(
+            request.stream,
+            202,
+            &json!({
+                "schema_version": 2,
+                "status": "accepted",
+                "command": command,
+                "worker_job_id": worker_job_id
+            })
+            .to_string(),
+        );
+
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("GET", "/status")
+        );
+        write_response(
+            request.stream,
+            200,
+            &json!({
+                "schema_version": 2,
+                "service": "powers-tool",
+                "run_id": run_id,
+                "status": "ready",
+                "fatal_error": null,
+                "active_job": null,
+                "last_job": {
+                    "worker_job_id": worker_job_id,
+                    "status": "succeeded",
+                    "result": { "ok": true }
+                }
+            })
+            .to_string(),
+        );
+    }
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop")
+    );
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
@@ -893,6 +985,104 @@ fn meters_runtime_measure_returns_sample() {
     assert_eq!(result["run_id"], session.ready().run_id());
     assert_eq!(result["value"], 3.3);
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn powers_and_meters_workflow_executes_end_to_end() {
+    let powers_session = start_worker(
+        &fixture_spec("powers-workflow-runtime"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let meters_session = start_worker(
+        &fixture_spec("meters-runtime-measure"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let workflow = Workflow::new(vec![
+        Step::new(
+            StepId::new("power-set-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::powers(),
+                action: ActionId::new("set-voltage").unwrap(),
+                arguments: json!({ "channel": 1, "voltage": 5.0 }),
+            },
+        ),
+        Step::new(
+            StepId::new("power-on-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::powers(),
+                action: ActionId::new("output-on").unwrap(),
+                arguments: json!({ "channel": 1 }),
+            },
+        ),
+        Step::new(
+            StepId::new("wait-1").unwrap(),
+            StepKind::Wait { duration_ms: 1 },
+        ),
+        Step::new(
+            StepId::new("meter-read-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::meters(),
+                action: ActionId::new("measure").unwrap(),
+                arguments: json!({}),
+            },
+        ),
+        Step::new(
+            StepId::new("power-off-1").unwrap(),
+            StepKind::ToolAction {
+                tool: ToolId::powers(),
+                action: ActionId::new("output-off").unwrap(),
+                arguments: json!({ "channel": 1 }),
+            },
+        ),
+    ])
+    .unwrap();
+    let sessions = HashMap::from([
+        (ToolId::powers(), &powers_session),
+        (ToolId::meters(), &meters_session),
+    ]);
+
+    let results = execute_workflow(&workflow, &sessions, Duration::from_secs(5)).unwrap();
+
+    assert_eq!(results.len(), 5);
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.step_id().as_str())
+            .collect::<Vec<_>>(),
+        [
+            "power-set-1",
+            "power-on-1",
+            "wait-1",
+            "meter-read-1",
+            "power-off-1"
+        ]
+    );
+    assert!(
+        results
+            .iter()
+            .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    let StepOutcome::Succeeded { output } = results[3].outcome() else {
+        unreachable!("meter-read-1 outcome was already checked as succeeded");
+    };
+    assert_eq!(output["event"], "sample");
+    assert_eq!(output["value"], 3.3);
+    assert_eq!(output["unit"], "V");
+
+    drop(sessions);
+    assert!(
+        powers_session
+            .shutdown(Duration::from_secs(5))
+            .unwrap()
+            .success()
+    );
+    assert!(
+        meters_session
+            .shutdown(Duration::from_secs(5))
+            .unwrap()
+            .success()
+    );
 }
 
 fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
