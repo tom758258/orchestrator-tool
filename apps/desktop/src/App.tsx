@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { open, save } from '@tauri-apps/plugin-dialog'
 
 type ToolStatus = {
   tool_id: string
@@ -38,6 +39,7 @@ type WorkflowDraft = {
 
 type ActiveTab = 'tools' | 'workflow'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
+type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type StepPreset =
   | 'power-set-voltage'
   | 'power-output-on'
@@ -175,6 +177,9 @@ function App() {
   const [validationError, setValidationError] = useState<string | null>(null)
   const [selectedPreset, setSelectedPreset] = useState<StepPreset>('power-set-voltage')
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
+  const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
+  const [templateIoError, setTemplateIoError] = useState<string | null>(null)
+  const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -322,6 +327,76 @@ function App() {
       setValidationError(String(message))
     }
   }, [workflowDraft])
+
+  const handleLoadTemplate = useCallback(async () => {
+    setTemplateIoStatus('loading')
+    setTemplateIoError(null)
+    setTemplateIoMessage(null)
+    try {
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'JSON Template', extensions: ['json'] }],
+      })
+      if (!path || Array.isArray(path)) {
+        setTemplateIoStatus('idle')
+        return
+      }
+      const canonicalJson = await invoke<string>('load_workflow_template', {
+        path,
+      })
+      const loadedDraft = JSON.parse(canonicalJson) as WorkflowDraft
+      setWorkflowDraft(loadedDraft)
+      setSelectedStepId(null)
+      setValidationStatus('valid')
+      setValidationError(null)
+      setTemplateIoMessage('Template loaded.')
+      setTemplateIoStatus('idle')
+    } catch (message) {
+      setTemplateIoError(String(message))
+      setTemplateIoStatus('idle')
+    }
+  }, [])
+
+  const handleSaveTemplate = useCallback(async () => {
+    if (!workflowDraft) {
+      return
+    }
+
+    setTemplateIoStatus('saving')
+    setTemplateIoError(null)
+    setTemplateIoMessage(null)
+    try {
+      const path = await save({
+        filters: [{ name: 'JSON Template', extensions: ['json'] }],
+      })
+      if (!path) {
+        setTemplateIoStatus('idle')
+        return
+      }
+      const canonicalJson = await invoke<string>('save_workflow_template', {
+        path,
+        templateJson: JSON.stringify(workflowDraft),
+      })
+      const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
+      setWorkflowDraft(canonicalDraft)
+      setSelectedStepId((current) =>
+        current && canonicalDraft.workflow.steps.some((step) => step.id === current)
+          ? current
+          : null,
+      )
+      setValidationStatus('valid')
+      setValidationError(null)
+      setTemplateIoMessage('Template saved.')
+      setTemplateIoStatus('idle')
+    } catch (message) {
+      setTemplateIoError(String(message))
+      setTemplateIoStatus('idle')
+    }
+  }, [workflowDraft])
+
+  const workflowBusy =
+    validationStatus === 'validating' || templateIoStatus !== 'idle'
 
   const selectedStep = workflowDraft?.workflow.steps.find(
     (step) => step.id === selectedStepId,
@@ -478,7 +553,7 @@ function App() {
                   aria-label="Step type"
                   value={selectedPreset}
                   onChange={(event) => setSelectedPreset(event.target.value as StepPreset)}
-                  disabled={validationStatus === 'validating'}
+                  disabled={workflowBusy}
                 >
                   {STEP_PRESETS.map((preset) => (
                     <option key={preset.value} value={preset.value}>
@@ -490,7 +565,7 @@ function App() {
                   className="action-button"
                   type="button"
                   onClick={addStep}
-                  disabled={validationStatus === 'validating'}
+                  disabled={workflowBusy}
                 >
                   Add Step
                 </button>
@@ -527,7 +602,7 @@ function App() {
                           className="action-button"
                           type="button"
                           onClick={() => moveStep(index, -1)}
-                          disabled={index === 0 || validationStatus === 'validating'}
+                          disabled={index === 0 || workflowBusy}
                         >
                           Move Up
                         </button>
@@ -536,8 +611,7 @@ function App() {
                           type="button"
                           onClick={() => moveStep(index, 1)}
                           disabled={
-                            index === workflowDraft.workflow.steps.length - 1 ||
-                            validationStatus === 'validating'
+                            index === workflowDraft.workflow.steps.length - 1 || workflowBusy
                           }
                         >
                           Move Down
@@ -546,7 +620,7 @@ function App() {
                           className="action-button"
                           type="button"
                           onClick={() => deleteStep(step.id)}
-                          disabled={validationStatus === 'validating'}
+                          disabled={workflowBusy}
                         >
                           Delete
                         </button>
@@ -578,7 +652,7 @@ function App() {
                           min="0"
                           step="1"
                           value={selectedStep.duration_ms}
-                          disabled={validationStatus === 'validating'}
+                          disabled={workflowBusy}
                           onChange={(event) => {
                             const durationMs = event.currentTarget.valueAsNumber
                             if (!isNonNegativeInteger(durationMs)) {
@@ -603,7 +677,7 @@ function App() {
                           min="1"
                           step="1"
                           value={numericArgument(selectedToolAction, 'channel')}
-                          disabled={validationStatus === 'validating'}
+                          disabled={workflowBusy}
                           onChange={(event) => {
                             const channel = event.currentTarget.valueAsNumber
                             if (isPositiveInteger(channel)) {
@@ -621,7 +695,7 @@ function App() {
                           type="number"
                           step="any"
                           value={numericArgument(selectedToolAction, 'voltage')}
-                          disabled={validationStatus === 'validating'}
+                          disabled={workflowBusy}
                           onChange={(event) => {
                             const voltage = event.currentTarget.valueAsNumber
                             if (Number.isFinite(voltage)) {
@@ -651,12 +725,47 @@ function App() {
                 <button
                   className="action-button"
                   type="button"
+                  onClick={() => void handleLoadTemplate()}
+                  disabled={workflowBusy}
+                >
+                  Load Template
+                </button>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() => void handleSaveTemplate()}
+                  disabled={!workflowDraft || workflowBusy}
+                >
+                  Save Template
+                </button>
+                <button
+                  className="action-button"
+                  type="button"
                   onClick={() => void validateDraft()}
-                  disabled={validationStatus === 'validating'}
+                  disabled={workflowBusy}
                 >
                   {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
                 </button>
               </div>
+
+              {templateIoStatus === 'saving' && (
+                <p role="status">Saving…</p>
+              )}
+              {templateIoStatus === 'loading' && (
+                <p role="status">Loading…</p>
+              )}
+
+              {templateIoMessage && templateIoStatus === 'idle' && (
+                <p className="validation-success" role="status">
+                  {templateIoMessage}
+                </p>
+              )}
+
+              {templateIoError && (
+                <p className="error" role="alert">
+                  Template I/O failed: {templateIoError}
+                </p>
+              )}
 
               {validationStatus === 'valid' && (
                 <p className="validation-success" role="status">

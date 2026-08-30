@@ -120,12 +120,30 @@ fn validate_workflow_draft(template_json: String) -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn save_workflow_template(path: String, template_json: String) -> Result<String, String> {
+    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+    template
+        .save_to_file(&path)
+        .map_err(|error| error.to_string())?;
+    template.to_json_string().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn load_workflow_template(path: String) -> Result<String, String> {
+    let template = Template::load_from_file(&path).map_err(|error| error.to_string())?;
+    template.to_json_string().map_err(|error| error.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
             create_workflow_draft,
-            validate_workflow_draft
+            validate_workflow_draft,
+            save_workflow_template,
+            load_workflow_template
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -133,7 +151,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_workflow_draft, validate_workflow_draft};
+    use super::{
+        create_workflow_draft, load_workflow_template, save_workflow_template,
+        validate_workflow_draft,
+    };
     use orchestrator_tool::template::Template;
 
     #[test]
@@ -163,5 +184,55 @@ mod tests {
             error.contains("invalid step ID"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn save_and_load_workflow_template_round_trip() {
+        use std::{
+            fs, process,
+            sync::atomic::{AtomicU64, Ordering},
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let dir = std::env::temp_dir().join(format!(
+            "orchestrator-tool-desktop-test-{}-{timestamp}-{id}",
+            process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("template.json");
+
+        let template_json = r#"{
+            "schema_version": 1,
+            "name": "Round Trip",
+            "workflow": {
+                "steps": [
+                    { "type": "tool-action", "id": "power-set-1", "tool": "powers", "action": "set-voltage", "arguments": { "channel": 1, "voltage": 5.0 } },
+                    { "type": "wait", "id": "wait-1", "duration_ms": 500 }
+                ]
+            }
+        }"#;
+
+        let saved_canonical =
+            save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
+
+        let loaded_canonical = load_workflow_template(path.display().to_string()).unwrap();
+
+        assert_eq!(saved_canonical, loaded_canonical);
+
+        let template = Template::from_json_str(&loaded_canonical).unwrap();
+        assert_eq!(template.name(), "Round Trip");
+        assert_eq!(template.workflow().steps().len(), 2);
+        assert_eq!(template.workflow().steps()[0].id().as_str(), "power-set-1");
+        assert_eq!(template.workflow().steps()[1].id().as_str(), "wait-1");
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
     }
 }

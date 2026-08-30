@@ -11,3 +11,4 @@ tauri-build = { version = "2.6", features = [] }
 orchestrator-tool = { path = "../../.." }
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.11", features = [] }
+tauri-plugin-dialog = "2.7"
