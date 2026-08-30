@@ -12,8 +12,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    worker::{WorkerLaunchSpec, WorkerReady, WorkerShutdownError, WorkerStartError, start_worker},
+    worker::{
+        WorkerEventError, WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError,
+        WorkerStartError, start_worker,
+    },
     worker_http::{WorkerClient, WorkerHttpError},
+    workflow::ActionId,
 };
 
 const WORKER_SCHEMA_VERSION: u32 = 2;
@@ -269,6 +273,185 @@ impl Error for MetersSmokeError {
             | Self::OperationTimeout(_)
             | Self::WorkerExit(_)
             | Self::OperationAndWorkerExit { .. } => None,
+        }
+    }
+}
+
+/// Runs a single runtime Meters action on an already-started Worker session.
+///
+/// Supported action: `measure` → `software_trigger`.
+/// The request contains no `context` field and uses `job_id: null`.
+pub fn run_action(
+    session: &WorkerSession,
+    action: &ActionId,
+    arguments: &Value,
+    timeout: Duration,
+) -> Result<Value, MetersActionError> {
+    if action.as_str() != "measure" {
+        return Err(MetersActionError::UnsupportedAction(action.clone()));
+    }
+    validate_measure_arguments(arguments)?;
+
+    let deadline = Instant::now() + timeout;
+    let client = WorkerClient::new(session.ready());
+
+    let request = json!({
+        "schema_version": WORKER_SCHEMA_VERSION,
+        "command": SOFTWARE_TRIGGER_COMMAND,
+        "job_id": Value::Null
+    });
+
+    let remaining = remaining_duration(deadline).ok_or(MetersActionError::Timeout(timeout))?;
+    let (http_status, response) = client
+        .command_with_timeout(&request, remaining)
+        .map_err(MetersActionError::Http)?;
+    validate_runtime_accepted_response(http_status, response)?;
+
+    loop {
+        let Some(remaining) = remaining_duration(deadline) else {
+            return Err(MetersActionError::Timeout(timeout));
+        };
+        match session.recv_event(remaining) {
+            Ok(value) => {
+                if is_matching_sample(&value, session.ready().run_id()) {
+                    return Ok(value);
+                }
+            }
+            Err(WorkerEventError::Timeout(original)) => {
+                return Err(MetersActionError::Timeout(original));
+            }
+            Err(WorkerEventError::Disconnected) => {
+                return Err(MetersActionError::Disconnected);
+            }
+            Err(WorkerEventError::Io(error)) => {
+                return Err(MetersActionError::Io(error));
+            }
+            Err(WorkerEventError::InvalidJson(error)) => {
+                return Err(MetersActionError::InvalidResponse(error.to_string()));
+            }
+        }
+    }
+}
+
+fn validate_measure_arguments(arguments: &Value) -> Result<(), MetersActionError> {
+    let object = arguments.as_object().ok_or_else(|| {
+        MetersActionError::InvalidArguments("arguments must be a JSON object".to_owned())
+    })?;
+    if !object.is_empty() {
+        return Err(MetersActionError::InvalidArguments(
+            "unexpected argument field".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_runtime_accepted_response(
+    http_status: u16,
+    value: Value,
+) -> Result<(), MetersActionError> {
+    if http_status != 202 {
+        return Err(MetersActionError::InvalidResponse(format!(
+            "software_trigger returned HTTP {http_status}, expected 202"
+        )));
+    }
+    // Allow job_id to be null or string for runtime; only validate common fields.
+    let accepted: RuntimeAcceptedResponse = serde_json::from_value(value)
+        .map_err(|error| MetersActionError::InvalidResponse(error.to_string()))?;
+    if accepted.schema_version != WORKER_SCHEMA_VERSION
+        || accepted.status != "accepted"
+        || accepted.command != SOFTWARE_TRIGGER_COMMAND
+    {
+        return Err(MetersActionError::InvalidResponse(
+            "software_trigger acceptance payload did not match the Meters Worker contract"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct RuntimeAcceptedResponse {
+    schema_version: u32,
+    status: String,
+    command: String,
+    #[allow(dead_code)]
+    job_id: Value,
+}
+
+fn is_matching_sample(value: &Value, expected_run_id: &str) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object.get("event").and_then(Value::as_str) != Some("sample") {
+        return false;
+    }
+    // Correlate on run_id == session.ready().run_id() when present.
+    if let Some(run_id) = object.get("run_id").and_then(Value::as_str) {
+        return run_id == expected_run_id;
+    }
+    // If run_id is absent, do not treat as matching to avoid cross-run contamination.
+    false
+}
+
+fn remaining_duration(deadline: Instant) -> Option<Duration> {
+    let now = Instant::now();
+    if now >= deadline {
+        None
+    } else {
+        Some(deadline.saturating_duration_since(now))
+    }
+}
+
+/// Errors from Meters runtime action execution.
+#[derive(Debug)]
+pub enum MetersActionError {
+    UnsupportedAction(ActionId),
+    InvalidArguments(String),
+    Http(WorkerHttpError),
+    InvalidResponse(String),
+    Timeout(Duration),
+    Disconnected,
+    Io(std::io::Error),
+    WorkerFatal(String),
+}
+
+impl fmt::Display for MetersActionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedAction(action) => {
+                write!(formatter, "unsupported Meters action {action}")
+            }
+            Self::InvalidArguments(reason) => {
+                write!(formatter, "invalid Meters arguments: {reason}")
+            }
+            Self::Http(error) => write!(formatter, "Meters Worker HTTP failed: {error}"),
+            Self::InvalidResponse(reason) => {
+                write!(formatter, "invalid Meters Worker response: {reason}")
+            }
+            Self::Timeout(timeout) => {
+                write!(
+                    formatter,
+                    "Meters runtime action timed out after {timeout:?}"
+                )
+            }
+            Self::Disconnected => write!(formatter, "Meters Worker event channel disconnected"),
+            Self::Io(error) => write!(formatter, "Meters Worker event I/O error: {error}"),
+            Self::WorkerFatal(detail) => write!(formatter, "Meters Worker fatal error: {detail}"),
+        }
+    }
+}
+
+impl Error for MetersActionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Http(source) => Some(source),
+            Self::Io(source) => Some(source),
+            Self::UnsupportedAction(_)
+            | Self::InvalidArguments(_)
+            | Self::InvalidResponse(_)
+            | Self::Timeout(_)
+            | Self::Disconnected
+            | Self::WorkerFatal(_) => None,
         }
     }
 }

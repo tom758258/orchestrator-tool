@@ -9,11 +9,15 @@ use std::{
 
 use orchestrator_tool::{
     adapters::{
-        meters::run_worker_smoke as run_meters_worker_smoke,
-        powers::{PowersSmokeError, run_worker_smoke as run_powers_worker_smoke},
+        meters::{run_action as run_meters_action, run_worker_smoke as run_meters_worker_smoke},
+        powers::{
+            PowersSmokeError, run_action as run_powers_action,
+            run_worker_smoke as run_powers_worker_smoke,
+        },
     },
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
+    workflow::ActionId,
 };
 use serde_json::json;
 
@@ -80,6 +84,8 @@ fn main() {
     powers_operation_failure_preserves_nonzero_worker_exit();
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
+    powers_runtime_action_succeeds();
+    meters_runtime_measure_returns_sample();
 }
 
 fn run_powers_worker_fixture() {
@@ -353,6 +359,8 @@ fn run_fixture(scenario: &OsStr) {
         "http-round-trip" | "http-non-2xx" | "shutdown-graceful" | "shutdown-timeout" => {
             run_http_fixture(scenario.to_str().unwrap())
         }
+        "powers-runtime-success" => run_powers_runtime_fixture(),
+        "meters-runtime-measure" => run_meters_runtime_fixture(),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
 }
@@ -422,6 +430,169 @@ fn run_http_fixture(scenario: &str) {
         }
         _ => unreachable!(),
     }
+}
+
+fn run_powers_runtime_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "powers-runtime-run";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    // Expect runtime powers command.
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/command");
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["schema_version"], 2);
+    let command = body["command"].as_str().unwrap().to_owned();
+    assert!(matches!(
+        command.as_str(),
+        "set" | "output-on" | "output-off"
+    ));
+    assert_eq!(
+        body["context"],
+        json!({
+            "mode": "simulate",
+            "planning_model_id": "keysight-e36312a"
+        })
+    );
+    // Validate channel present.
+    assert!(body["arguments"]["channel"].is_number());
+    if command == "set" {
+        assert!(body["arguments"]["voltage"].is_number());
+    }
+    // No extra argument fields beyond expected.
+    let args = body["arguments"].as_object().unwrap();
+    let expected_keys: Vec<&str> = if command == "set" {
+        vec!["channel", "voltage"]
+    } else {
+        vec!["channel"]
+    };
+    assert_eq!(args.len(), expected_keys.len());
+    for key in expected_keys {
+        assert!(args.contains_key(key));
+    }
+    write_response(
+        request.stream,
+        202,
+        &format!(
+            r#"{{"schema_version":2,"status":"accepted","command":"{command}","worker_job_id":"job-runtime-001"}}"#
+        ),
+    );
+
+    // Simulate polling: first status without terminal job, then succeeded.
+    for (idx, last_job) in [
+        json!({
+            "worker_job_id": "job-previous",
+            "status": "succeeded",
+            "result": { "ok": true }
+        }),
+        json!({
+            "worker_job_id": "job-runtime-001",
+            "status": "succeeded",
+            "result": { "channel": 1, "voltage": 5.0 }
+        }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request = accept_request(&listener);
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/status");
+        // Allow powers runtime to validate service/run_id fields.
+        write_response(
+            request.stream,
+            200,
+            &json!({
+                "schema_version": 2,
+                "service": "powers-tool",
+                "run_id": run_id,
+                "status": "ready",
+                "fatal_error": null,
+                "last_job": last_job
+            })
+            .to_string(),
+        );
+        let _ = idx;
+    }
+
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/stop");
+    write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
+fn run_meters_runtime_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "meters-runtime-run";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/command");
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["schema_version"], 2);
+    assert_eq!(body["command"], "software_trigger");
+    // Runtime must allow job_id null and must NOT include context.
+    assert!(
+        body.get("context").is_none(),
+        "meters runtime must not send context"
+    );
+    assert!(body.get("job_id").is_some());
+    assert!(
+        body["job_id"].is_null() || body["job_id"].is_string(),
+        "job_id must be null or string"
+    );
+    write_response(
+        request.stream,
+        202,
+        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
+    );
+
+    // Emit a non-matching event first, then the matching sample.
+    print_json_line(
+        &json!({
+            "event": "heartbeat",
+            "run_id": run_id,
+            "status": "running"
+        })
+        .to_string(),
+    );
+    print_json_line(
+        &json!({
+            "event": "sample",
+            "run_id": run_id,
+            "value": 3.3,
+            "unit": "V"
+        })
+        .to_string(),
+    );
+
+    let request = accept_request(&listener);
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/stop");
+    write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
 struct TestRequest {
@@ -678,6 +849,38 @@ fn powers_terminal_failure_preserves_diagnostic_detail() {
         message.contains("simulated diagnostic failure"),
         "error: {message}"
     );
+}
+
+fn powers_runtime_action_succeeds() {
+    let session = start_worker(
+        &fixture_spec("powers-runtime-success"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let action = ActionId::new("set-voltage").unwrap();
+    let result = run_powers_action(
+        &session,
+        &action,
+        &json!({ "channel": 1, "voltage": 5.0 }),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(result, json!({ "channel": 1, "voltage": 5.0 }));
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn meters_runtime_measure_returns_sample() {
+    let session = start_worker(
+        &fixture_spec("meters-runtime-measure"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let action = ActionId::new("measure").unwrap();
+    let result = run_meters_action(&session, &action, &json!({}), Duration::from_secs(5)).unwrap();
+    assert_eq!(result["event"], "sample");
+    assert_eq!(result["run_id"], session.ready().run_id());
+    assert_eq!(result["value"], 3.3);
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
 fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {

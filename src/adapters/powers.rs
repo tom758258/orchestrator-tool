@@ -12,8 +12,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    worker::{WorkerLaunchSpec, WorkerReady, WorkerShutdownError, WorkerStartError, start_worker},
+    worker::{
+        WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError, WorkerStartError,
+        start_worker,
+    },
     worker_http::{WorkerClient, WorkerHttpError},
+    workflow::ActionId,
 };
 
 const WORKER_SCHEMA_VERSION: u32 = 2;
@@ -85,7 +89,7 @@ fn run_smoke_operation(
             remaining(deadline, operation_timeout)?,
         )
         .map_err(PowersSmokeError::Http)?;
-    let worker_job_id = validate_accepted_response(http_status, response)?;
+    let worker_job_id = validate_accepted_response(http_status, response, READ_STATUS_COMMAND)?;
 
     loop {
         let status = client
@@ -99,7 +103,10 @@ fn run_smoke_operation(
             match last_job.status.as_str() {
                 "accepted" | "queued" | "running" => {}
                 "succeeded" => {
-                    if last_job.result.is_some_and(|result| result.ok) {
+                    if last_job
+                        .result
+                        .is_some_and(|result| result.get("ok") == Some(&Value::Bool(true)))
+                    {
                         return Ok(());
                     }
                     return Err(PowersSmokeError::InvalidResponse(
@@ -164,14 +171,9 @@ struct LastJob {
     worker_job_id: String,
     status: String,
     #[serde(default)]
-    result: Option<JobResult>,
+    result: Option<Value>,
     #[serde(default)]
     error: Option<DiagnosticError>,
-}
-
-#[derive(Deserialize)]
-struct JobResult {
-    ok: bool,
 }
 
 #[derive(Deserialize)]
@@ -259,10 +261,18 @@ fn diagnostic_detail(error: Option<&DiagnosticError>) -> Option<String> {
     }
 }
 
-fn validate_accepted_response(http_status: u16, value: Value) -> Result<String, PowersSmokeError> {
+/// Validates that the Worker returned an accepted command response with a job ID.
+///
+/// `command_name` is the expected command field for diagnostic error messages;
+/// use an empty string to skip command validation (runtime actions).
+fn validate_accepted_response(
+    http_status: u16,
+    value: Value,
+    command_name: &str,
+) -> Result<String, PowersSmokeError> {
     if http_status != 202 {
         return Err(PowersSmokeError::InvalidResponse(format!(
-            "read-status returned HTTP {http_status}, expected 202"
+            "{command_name} returned HTTP {http_status}, expected 202"
         )));
     }
 
@@ -270,12 +280,12 @@ fn validate_accepted_response(http_status: u16, value: Value) -> Result<String, 
         .map_err(|error| PowersSmokeError::InvalidResponse(error.to_string()))?;
     if accepted.schema_version != WORKER_SCHEMA_VERSION
         || accepted.status != "accepted"
-        || accepted.command != READ_STATUS_COMMAND
+        || (!command_name.is_empty() && accepted.command != command_name)
         || accepted.worker_job_id.is_empty()
     {
-        return Err(PowersSmokeError::InvalidResponse(
-            "read-status acceptance payload did not match the Powers Worker contract".to_owned(),
-        ));
+        return Err(PowersSmokeError::InvalidResponse(format!(
+            "{command_name} acceptance payload did not match the Powers Worker contract",
+        )));
     }
 
     Ok(accepted.worker_job_id)
@@ -358,6 +368,254 @@ impl Error for PowersSmokeError {
     }
 }
 
+/// Runs a single runtime Powers action on an already-started Worker session.
+///
+/// Supported actions: `set-voltage`, `output-on`, `output-off`.
+/// The Worker schema and context are fixed to the simulate contract.
+pub fn run_action(
+    session: &WorkerSession,
+    action: &ActionId,
+    arguments: &Value,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    let deadline = Instant::now() + timeout;
+    let client = WorkerClient::new(session.ready());
+
+    let worker_command = match action.as_str() {
+        "set-voltage" => "set",
+        "output-on" => "output-on",
+        "output-off" => "output-off",
+        _ => {
+            return Err(PowersActionError::UnsupportedAction(action.clone()));
+        }
+    };
+
+    let validated_arguments = validate_arguments(action.as_str(), arguments)?;
+
+    let request = json!({
+        "schema_version": WORKER_SCHEMA_VERSION,
+        "command": worker_command,
+        "arguments": validated_arguments,
+        "context": {
+            "mode": "simulate",
+            "planning_model_id": "keysight-e36312a"
+        }
+    });
+
+    let remaining =
+        remaining_duration(deadline, timeout).ok_or(PowersActionError::Timeout(timeout))?;
+
+    let (http_status, response) = client
+        .command_with_timeout(&request, remaining)
+        .map_err(PowersActionError::Http)?;
+    let worker_job_id = validate_accepted_response(http_status, response, worker_command)
+        .map_err(|error| PowersActionError::InvalidResponse(error.to_string()))?;
+
+    run_runtime_operation(&client, session.ready(), &worker_job_id, deadline, timeout)
+}
+
+fn run_runtime_operation(
+    client: &WorkerClient,
+    ready: &WorkerReady,
+    worker_job_id: &str,
+    deadline: Instant,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    loop {
+        let remaining = match remaining_duration(deadline, timeout) {
+            Some(duration) => duration,
+            None => return Err(PowersActionError::Timeout(timeout)),
+        };
+
+        let status = client
+            .status_with_timeout(remaining)
+            .map_err(PowersActionError::Http)?;
+        let parsed = parse_runtime_status(status, ready)?;
+
+        if let Some(last_job) = parsed.last_job.as_ref()
+            && last_job.worker_job_id == worker_job_id
+        {
+            return terminal_result(last_job, timeout);
+        }
+
+        let remaining = remaining_duration(deadline, timeout).unwrap_or(Duration::ZERO);
+        let wait = POLL_INTERVAL.min(remaining);
+        thread::sleep(wait);
+    }
+}
+
+fn terminal_result(last_job: &LastJob, _timeout: Duration) -> Result<Value, PowersActionError> {
+    match last_job.status.as_str() {
+        "succeeded" => Ok(last_job.result.clone().unwrap_or(Value::Null)),
+        "failed" | "cancelled" => Err(PowersActionError::WorkerFailure {
+            status: last_job.status.clone(),
+            detail: diagnostic_detail(last_job.error.as_ref()),
+        }),
+        other => Err(PowersActionError::InvalidResponse(format!(
+            "job had unknown status {other:?}"
+        ))),
+    }
+}
+
+fn parse_runtime_status(
+    value: Value,
+    ready: &WorkerReady,
+) -> Result<StatusResponse, PowersActionError> {
+    let parsed: StatusResponse = serde_json::from_value(value)
+        .map_err(|error| PowersActionError::InvalidResponse(error.to_string()))?;
+    if parsed.schema_version != WORKER_SCHEMA_VERSION {
+        return Err(PowersActionError::InvalidResponse(format!(
+            "status schema_version was {}, expected {WORKER_SCHEMA_VERSION}",
+            parsed.schema_version
+        )));
+    }
+    if parsed.service != SERVICE_NAME {
+        return Err(PowersActionError::InvalidResponse(format!(
+            "status service was {:?}, expected {SERVICE_NAME:?}",
+            parsed.service
+        )));
+    }
+    if parsed.run_id != ready.run_id() {
+        return Err(PowersActionError::InvalidResponse(format!(
+            "status run_id was {:?}, expected {:?}",
+            parsed.run_id,
+            ready.run_id()
+        )));
+    }
+    if let Some(ref fatal) = parsed.fatal_error
+        && let Some(detail) = diagnostic_detail(Some(fatal))
+    {
+        return Err(PowersActionError::WorkerFatal(detail));
+    }
+    if parsed.status == "error" {
+        return Err(PowersActionError::WorkerFatal(
+            "Worker status is error".to_owned(),
+        ));
+    }
+
+    Ok(parsed)
+}
+
+fn remaining_duration(deadline: Instant, _timeout: Duration) -> Option<Duration> {
+    let now = Instant::now();
+    if now >= deadline {
+        None
+    } else {
+        Some(deadline.saturating_duration_since(now))
+    }
+}
+
+fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersActionError> {
+    let object = arguments.as_object().ok_or_else(|| {
+        PowersActionError::InvalidArguments("arguments must be a JSON object".to_owned())
+    })?;
+
+    let expected_fields: &[&str] = match action {
+        "set-voltage" => &["channel", "voltage"],
+        "output-on" | "output-off" => &["channel"],
+        _ => {
+            return Err(PowersActionError::InvalidArguments(format!(
+                "unsupported action {action:?}"
+            )));
+        }
+    };
+
+    for &field in expected_fields {
+        if !object.contains_key(field) {
+            return Err(PowersActionError::InvalidArguments(format!(
+                "missing required field {field:?}"
+            )));
+        }
+    }
+
+    if object
+        .keys()
+        .any(|key| !expected_fields.contains(&key.as_str()))
+    {
+        return Err(PowersActionError::InvalidArguments(
+            "unexpected argument field".to_owned(),
+        ));
+    }
+
+    let channel = object
+        .get("channel")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            PowersActionError::InvalidArguments("channel must be a positive integer".to_owned())
+        })?;
+    if channel == 0 {
+        return Err(PowersActionError::InvalidArguments(
+            "channel must be a positive integer".to_owned(),
+        ));
+    }
+
+    if action == "set-voltage" && !object["voltage"].is_number() {
+        return Err(PowersActionError::InvalidArguments(
+            "voltage must be a number".to_owned(),
+        ));
+    }
+
+    Ok(json!({
+        "channel": channel,
+        "voltage": object.get("voltage").cloned()
+    }))
+}
+
+/// Errors from Powers runtime action execution.
+#[derive(Debug)]
+pub enum PowersActionError {
+    UnsupportedAction(ActionId),
+    InvalidArguments(String),
+    Http(WorkerHttpError),
+    InvalidResponse(String),
+    WorkerFailure {
+        status: String,
+        detail: Option<String>,
+    },
+    WorkerFatal(String),
+    Timeout(Duration),
+}
+
+impl fmt::Display for PowersActionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedAction(action) => {
+                write!(formatter, "unsupported Powers action {action}")
+            }
+            Self::InvalidArguments(reason) => {
+                write!(formatter, "invalid Powers arguments: {reason}")
+            }
+            Self::Http(error) => write!(formatter, "Powers Worker HTTP failed: {error}"),
+            Self::InvalidResponse(reason) => {
+                write!(formatter, "invalid Powers Worker response: {reason}")
+            }
+            Self::WorkerFailure { status, detail } => {
+                write!(formatter, "Powers job ended with {status}")?;
+                if let Some(detail) = detail {
+                    write!(formatter, ": {detail}")?;
+                }
+                Ok(())
+            }
+            Self::WorkerFatal(detail) => write!(formatter, "Powers Worker fatal error: {detail}"),
+            Self::Timeout(timeout) => {
+                write!(
+                    formatter,
+                    "Powers runtime action timed out after {timeout:?}"
+                )
+            }
+        }
+    }
+}
+
+impl Error for PowersActionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Http(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{ffi::OsString, path::Path};
@@ -365,8 +623,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        PowersSmokeError, StatusResponse, read_status_request, simulate_worker_launch_spec,
-        validate_worker_health,
+        PowersActionError, PowersSmokeError, StatusResponse, read_status_request,
+        simulate_worker_launch_spec, validate_arguments, validate_worker_health,
     };
 
     #[test]
@@ -415,5 +673,42 @@ mod tests {
         assert!(
             matches!(error, PowersSmokeError::WorkerFatal(detail) if detail == "Worker status is error")
         );
+    }
+
+    #[test]
+    fn powers_action_mapping_and_argument_validation() {
+        let set_voltage =
+            validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": 5.0 })).unwrap();
+        assert_eq!(set_voltage, json!({ "channel": 1, "voltage": 5.0 }));
+
+        let output_on = validate_arguments("output-on", &json!({ "channel": 2 })).unwrap();
+        assert_eq!(output_on, json!({ "channel": 2, "voltage": null }));
+
+        let output_off = validate_arguments("output-off", &json!({ "channel": 1 })).unwrap();
+        assert_eq!(output_off, json!({ "channel": 1, "voltage": null }));
+    }
+
+    #[test]
+    fn powers_unsupported_action_and_invalid_arguments_are_rejected() {
+        let error = validate_arguments("unknown-action", &json!({ "channel": 1 })).unwrap_err();
+        assert!(matches!(error, PowersActionError::InvalidArguments(_)));
+
+        let error = validate_arguments("set-voltage", &json!({ "channel": 0, "voltage": 5.0 }))
+            .unwrap_err();
+        assert!(matches!(error, PowersActionError::InvalidArguments(_)));
+
+        let error = validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": "high" }))
+            .unwrap_err();
+        assert!(matches!(error, PowersActionError::InvalidArguments(_)));
+
+        let error = validate_arguments(
+            "set-voltage",
+            &json!({ "channel": 1, "voltage": 5.0, "extra": true }),
+        )
+        .unwrap_err();
+        assert!(matches!(error, PowersActionError::InvalidArguments(_)));
+
+        let error = validate_arguments("set-voltage", &json!("not-an-object")).unwrap_err();
+        assert!(matches!(error, PowersActionError::InvalidArguments(_)));
     }
 }
