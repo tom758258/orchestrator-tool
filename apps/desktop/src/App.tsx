@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import WorkflowCanvas, {
+  createCanvasPositions,
+  reconcileCanvasPositions,
+  type CanvasPositionChange,
+  type CanvasPositionMap,
+} from './WorkflowCanvas'
 
 type ToolStatus = {
   tool_id: string
@@ -205,6 +211,8 @@ function App() {
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runResults, setRunResults] = useState<StepResultDto[] | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [canvasPositions, setCanvasPositions] = useState<CanvasPositionMap>({})
+  const [canvasLayoutRevision, setCanvasLayoutRevision] = useState(0)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -225,12 +233,15 @@ function App() {
       const canonicalJson = await invoke<string>('create_workflow_draft')
       const draft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(draft)
+      setCanvasPositions(createCanvasPositions(draft.workflow.steps))
+      setCanvasLayoutRevision((current) => current + 1)
       setSelectedStepId(null)
       setDraftCreationError(null)
       setRunResults(null)
       setRunError(null)
     } catch (message) {
       setWorkflowDraft(null)
+      setCanvasPositions({})
       setSelectedStepId(null)
       setDraftCreationError(String(message))
       setRunResults(null)
@@ -244,6 +255,12 @@ function App() {
     void refresh()
     void createDraft()
   }, [createDraft, refresh])
+
+  useEffect(() => {
+    setCanvasPositions((current) =>
+      reconcileCanvasPositions(workflowDraft?.workflow.steps ?? [], current),
+    )
+  }, [workflowDraft?.workflow.steps])
 
   const updateSteps = useCallback(
     (update: (steps: WorkflowStep[]) => WorkflowStep[]) => {
@@ -334,6 +351,26 @@ function App() {
     [updateSteps],
   )
 
+  const updateCanvasPositions = useCallback((changes: CanvasPositionChange[]) => {
+    setCanvasPositions((current) => {
+      let next = current
+
+      changes.forEach((change) => {
+        const previous = next[change.id]
+        if (previous?.x === change.position.x && previous.y === change.position.y) {
+          return
+        }
+
+        if (next === current) {
+          next = { ...current }
+        }
+        next[change.id] = change.position
+      })
+
+      return next
+    })
+  }, [])
+
   const validateDraft = useCallback(async () => {
     if (!workflowDraft) {
       return
@@ -378,6 +415,8 @@ function App() {
       })
       const loadedDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(loadedDraft)
+      setCanvasPositions(createCanvasPositions(loadedDraft.workflow.steps))
+      setCanvasLayoutRevision((current) => current + 1)
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
@@ -624,9 +663,17 @@ function App() {
                 </button>
               </div>
 
-              {workflowDraft.workflow.steps.length === 0 && (
-                <p className="empty-workflow">Empty workflow</p>
-              )}
+              <WorkflowCanvas
+                steps={workflowDraft.workflow.steps.map((step) => ({
+                  id: step.id,
+                  label: stepLabel(step),
+                }))}
+                positions={canvasPositions}
+                selectedStepId={selectedStepId}
+                layoutRevision={canvasLayoutRevision}
+                onPositionChanges={updateCanvasPositions}
+                onSelectStep={setSelectedStepId}
+              />
 
               {workflowDraft.workflow.steps.length > 0 && (
                 <ol className="workflow-step-list">

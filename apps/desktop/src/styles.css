@@ -215,11 +215,6 @@ body {
   gap: 6px;
 }
 
-.empty-workflow {
-  margin: 16px 0 0;
-  color: #5a6270;
-}
-
 .add-step-controls {
   display: flex;
   gap: 8px;
@@ -239,6 +234,53 @@ body {
 
 .step-preset-select:disabled {
   opacity: 0.55;
+}
+
+.workflow-canvas {
+  position: relative;
+  height: 420px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.workflow-canvas .react-flow__node-default {
+  min-width: 180px;
+  padding: 10px 14px;
+  border-color: #c9ced6;
+  border-radius: 6px;
+  color: #1f2430;
+}
+
+.workflow-canvas .react-flow__node-default.selected {
+  border-color: #5a6270;
+  box-shadow: 0 0 0 2px rgb(90 98 112 / 20%);
+}
+
+.workflow-canvas-node-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.workflow-canvas-node-label code {
+  color: #5a6270;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.workflow-canvas-empty {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  margin: 0;
+  place-items: center;
+  color: #5a6270;
+  pointer-events: none;
 }
 
 .workflow-step-list {
