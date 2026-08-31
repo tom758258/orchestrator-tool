@@ -6,9 +6,9 @@
 
 - Core library（`src/lib.rs`）：共用調度與領域邏輯，不依賴 CLI 或 Desktop 顯示層。
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
-- Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、線性 Workflow 與參數編輯、僅限目前 session 的視覺化 Workflow Canvas、Template 載入／儲存、simulate Workflow 執行及 StepResult 顯示。
+- Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的視覺化 Workflow Builder、點擊新增的 Step Palette、線性 Canvas、Node 執行順序控制與結果狀態、參數編輯、Template 載入／儲存、simulate Workflow 執行及完整 StepResult 顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Powers 與 Meters 的 simulate-mode vertical slice 已涵蓋從 Worker HTTP 與 stdout event 到 step result 的 workflow execution，Desktop 也能執行此 simulation 並顯示結果。Desktop 會在僅限目前 session 的 Canvas 上呈現線性 Workflow；CLI 不提供 workflow run command，live-hardware workflow execution 也尚未開放。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Powers 與 Meters 的 simulate-mode vertical slice 已涵蓋從 Worker HTTP 與 stdout event 到 step result 的 workflow execution，Desktop 也能執行此 simulation 並顯示結果。Desktop 透過僅限目前 session 的視覺化 Canvas 建立線性 Workflow；Canvas 位置不會保存至 Template，CLI 不提供 workflow run command，live-hardware workflow execution 也尚未開放。
 
 ## Executable 設定
 

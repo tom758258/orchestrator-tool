@@ -21,6 +21,10 @@ export type CanvasPositionChange = {
 type WorkflowCanvasStep = {
   id: string
   label: string
+  result: {
+    status: 'succeeded' | 'failed' | 'cancelled'
+    measurement: string | null
+  } | null
 }
 
 type WorkflowCanvasProps = {
@@ -28,14 +32,17 @@ type WorkflowCanvasProps = {
   positions: CanvasPositionMap
   selectedStepId: string | null
   layoutRevision: number
+  workflowBusy: boolean
   onPositionChanges: (changes: CanvasPositionChange[]) => void
   onSelectStep: (stepId: string) => void
+  onMoveStep: (stepId: string, offset: -1 | 1) => void
+  onDeleteStep: (stepId: string) => void
 }
 
 type WorkflowCanvasNode = Node<{ label: ReactNode }>
 
 function defaultPosition(index: number): XYPosition {
-  return { x: 180, y: 40 + index * 120 }
+  return { x: 180, y: 40 + index * 200 }
 }
 
 export function createCanvasPositions(
@@ -70,8 +77,11 @@ function WorkflowCanvas({
   positions,
   selectedStepId,
   layoutRevision,
+  workflowBusy,
   onPositionChanges,
   onSelectStep,
+  onMoveStep,
+  onDeleteStep,
 }: WorkflowCanvasProps) {
   const nodes = useMemo<WorkflowCanvasNode[]>(
     () =>
@@ -80,20 +90,91 @@ function WorkflowCanvas({
         position: positions[step.id] ?? defaultPosition(index),
         data: {
           label: (
-            <div className="workflow-canvas-node-label">
-              <span>{step.label}</span>
-              <code>{step.id}</code>
+            <div className="workflow-canvas-node-content">
+              <div className="workflow-canvas-node-heading">
+                <span className="workflow-canvas-node-order">{index + 1}</span>
+                <div className="workflow-canvas-node-identity">
+                  <span className="workflow-canvas-node-title">
+                    {step.result && (
+                      <span aria-hidden="true">
+                        {step.result.status === 'succeeded'
+                          ? '✓ '
+                          : step.result.status === 'failed'
+                            ? '✕ '
+                            : '— '}
+                      </span>
+                    )}
+                    {step.label}
+                  </span>
+                  <code>{step.id}</code>
+                </div>
+              </div>
+
+              {step.result && (
+                <div
+                  className={`workflow-canvas-node-result workflow-canvas-node-result-${step.result.status}`}
+                >
+                  <span>
+                    {step.result.status === 'succeeded'
+                      ? 'Success'
+                      : step.result.status === 'failed'
+                        ? 'Failed'
+                        : 'Cancelled'}
+                  </span>
+                  {step.result.measurement && (
+                    <span className="workflow-canvas-node-measurement">
+                      {step.result.measurement}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className="workflow-canvas-node-actions nodrag nopan">
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onMoveStep(step.id, -1)
+                  }}
+                  disabled={index === 0 || workflowBusy}
+                >
+                  Earlier
+                </button>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onMoveStep(step.id, 1)
+                  }}
+                  disabled={index === steps.length - 1 || workflowBusy}
+                >
+                  Later
+                </button>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onDeleteStep(step.id)
+                  }}
+                  disabled={workflowBusy}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ),
         },
-        ariaLabel: `${step.label}, ${step.id}`,
+        ariaLabel: `Step ${index + 1}: ${step.label}, ${step.id}`,
         connectable: false,
         deletable: false,
         selected: selectedStepId === step.id,
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
       })),
-    [positions, selectedStepId, steps],
+    [onDeleteStep, onMoveStep, positions, selectedStepId, steps, workflowBusy],
   )
 
   const edges = useMemo<Edge[]>(

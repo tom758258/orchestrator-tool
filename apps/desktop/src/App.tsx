@@ -203,7 +203,6 @@ function App() {
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | null>(null)
-  const [selectedPreset, setSelectedPreset] = useState<StepPreset>('power-set-voltage')
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
@@ -285,17 +284,12 @@ function App() {
     [],
   )
 
-  const addStep = useCallback(() => {
+  const addStep = useCallback((preset: StepPresetOption) => {
     updateSteps((steps) => {
-      const preset = STEP_PRESETS.find((option) => option.value === selectedPreset)
-      if (!preset) {
-        return steps
-      }
-
       const id = nextStepId(preset.prefix, steps)
-      return [...steps, createPresetStep(selectedPreset, id)]
+      return [...steps, createPresetStep(preset.value, id)]
     })
-  }, [selectedPreset, updateSteps])
+  }, [updateSteps])
 
   const deleteStep = useCallback(
     (stepId: string) => {
@@ -334,8 +328,13 @@ function App() {
   )
 
   const moveStep = useCallback(
-    (index: number, offset: -1 | 1) => {
+    (stepId: string, offset: -1 | 1) => {
       updateSteps((steps) => {
+        const index = steps.findIndex((step) => step.id === stepId)
+        if (index < 0) {
+          return steps
+        }
+
         const targetIndex = index + offset
         if (targetIndex < 0 || targetIndex >= steps.length) {
           return steps
@@ -501,6 +500,15 @@ function App() {
     selectedAction === 'powers/set-voltage' ||
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
+  const canvasResultsByStepId = new Map(
+    (runResults ?? []).map((result) => [
+      result.step_id,
+      {
+        status: result.status,
+        measurement: formatMeasurement(result.output),
+      },
+    ]),
+  )
 
   return (
     <main className="app">
@@ -639,96 +647,40 @@ function App() {
                 </div>
               </dl>
 
-              <div className="add-step-controls">
-                <select
-                  className="step-preset-select"
-                  aria-label="Step type"
-                  value={selectedPreset}
-                  onChange={(event) => setSelectedPreset(event.target.value as StepPreset)}
-                  disabled={workflowBusy}
-                >
-                  {STEP_PRESETS.map((preset) => (
-                    <option key={preset.value} value={preset.value}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="action-button"
-                  type="button"
-                  onClick={addStep}
-                  disabled={workflowBusy}
-                >
-                  Add Step
-                </button>
+              <div className="workflow-builder">
+                <aside className="step-palette" aria-labelledby="step-palette-title">
+                  <h3 id="step-palette-title">Steps</h3>
+                  <div className="step-palette-items">
+                    {STEP_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        className="action-button step-palette-button"
+                        type="button"
+                        onClick={() => addStep(preset)}
+                        disabled={workflowBusy}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+
+                <WorkflowCanvas
+                  steps={workflowDraft.workflow.steps.map((step) => ({
+                    id: step.id,
+                    label: stepLabel(step),
+                    result: canvasResultsByStepId.get(step.id) ?? null,
+                  }))}
+                  positions={canvasPositions}
+                  selectedStepId={selectedStepId}
+                  layoutRevision={canvasLayoutRevision}
+                  workflowBusy={workflowBusy}
+                  onPositionChanges={updateCanvasPositions}
+                  onSelectStep={setSelectedStepId}
+                  onMoveStep={moveStep}
+                  onDeleteStep={deleteStep}
+                />
               </div>
-
-              <WorkflowCanvas
-                steps={workflowDraft.workflow.steps.map((step) => ({
-                  id: step.id,
-                  label: stepLabel(step),
-                }))}
-                positions={canvasPositions}
-                selectedStepId={selectedStepId}
-                layoutRevision={canvasLayoutRevision}
-                onPositionChanges={updateCanvasPositions}
-                onSelectStep={setSelectedStepId}
-              />
-
-              {workflowDraft.workflow.steps.length > 0 && (
-                <ol className="workflow-step-list">
-                  {workflowDraft.workflow.steps.map((step, index) => (
-                    <li
-                      key={step.id}
-                      className={`workflow-step-card ${
-                        selectedStepId === step.id ? 'workflow-step-card-selected' : ''
-                      }`}
-                    >
-                      <span className="workflow-step-number">{index + 1}.</span>
-                      <div className="workflow-step-info">
-                        <span className="workflow-step-label">{stepLabel(step)}</span>
-                        <code className="workflow-step-id">{step.id}</code>
-                      </div>
-                      <div className="workflow-step-actions">
-                        <button
-                          className="action-button"
-                          type="button"
-                          aria-pressed={selectedStepId === step.id}
-                          onClick={() => setSelectedStepId(step.id)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          onClick={() => moveStep(index, -1)}
-                          disabled={index === 0 || workflowBusy}
-                        >
-                          Move Up
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          onClick={() => moveStep(index, 1)}
-                          disabled={
-                            index === workflowDraft.workflow.steps.length - 1 || workflowBusy
-                          }
-                        >
-                          Move Down
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          onClick={() => deleteStep(step.id)}
-                          disabled={workflowBusy}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
 
               <section className="step-properties" aria-labelledby="step-properties-title">
                 <h3 id="step-properties-title">Properties</h3>
