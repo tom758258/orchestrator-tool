@@ -147,7 +147,7 @@ function WorkflowCanvas({
         fitViewOptions={{ padding: 0.2 }}
       >
         <Background />
-        <Controls />
+        <Controls showInteractive={false} />
       </ReactFlow>
 
       {steps.length === 0 && <p className="workflow-canvas-empty">No workflow steps yet.</p>}
