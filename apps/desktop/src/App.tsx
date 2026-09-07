@@ -198,6 +198,8 @@ function App() {
   const [tools, setTools] = useState<ToolStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
+  const [toolConfigError, setToolConfigError] = useState<string | null>(null)
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null)
   const [draftLoading, setDraftLoading] = useState(true)
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
@@ -466,6 +468,54 @@ function App() {
     }
   }, [workflowDraft])
 
+  const handleBrowseToolExecutable = useCallback(
+    async (toolId: string) => {
+      if (toolConfigBusy !== null) {
+        return
+      }
+
+      setToolConfigBusy(toolId)
+      setToolConfigError(null)
+      try {
+        const selected = await open({
+          multiple: false,
+          directory: false,
+          filters: [{ name: 'Executables', extensions: ['exe'] }],
+        })
+        if (!selected || Array.isArray(selected)) {
+          return
+        }
+        await invoke('set_tool_executable', { toolId, path: selected })
+        await refresh()
+      } catch (message) {
+        setToolConfigError(String(message))
+      } finally {
+        setToolConfigBusy(null)
+      }
+    },
+    [refresh, toolConfigBusy],
+  )
+
+  const handleResetToolExecutable = useCallback(
+    async (toolId: string) => {
+      if (toolConfigBusy !== null) {
+        return
+      }
+
+      setToolConfigBusy(toolId)
+      setToolConfigError(null)
+      try {
+        await invoke('reset_tool_executable', { toolId })
+        await refresh()
+      } catch (message) {
+        setToolConfigError(String(message))
+      } finally {
+        setToolConfigBusy(null)
+      }
+    },
+    [refresh, toolConfigBusy],
+  )
+
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
       return
@@ -561,6 +611,12 @@ function App() {
             </p>
           )}
 
+          {toolConfigError && (
+            <p className="error" role="alert">
+              Failed to update tool configuration: {toolConfigError}
+            </p>
+          )}
+
           {loading && tools.length === 0 && !error && <p>Loading tool status…</p>}
 
           {!error && tools.length > 0 && (
@@ -613,6 +669,24 @@ function App() {
                       </div>
                     )}
                   </dl>
+                  <div className="tool-actions">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => void handleBrowseToolExecutable(tool.tool_id)}
+                      disabled={toolConfigBusy !== null}
+                    >
+                      Browse...
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => void handleResetToolExecutable(tool.tool_id)}
+                      disabled={toolConfigBusy !== null || tool.source !== 'configured'}
+                    >
+                      Use Portable Default
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

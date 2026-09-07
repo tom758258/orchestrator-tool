@@ -1,10 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use orchestrator_tool::{
     adapters::{meters, powers},
-    config::Config,
+    config::{Config, ConfigError},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
@@ -18,10 +22,12 @@ use orchestrator_tool::{
 };
 use serde::Serialize;
 use serde_json::Value;
+use tauri::{AppHandle, Manager};
 
 const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
 #[derive(Serialize)]
 struct ToolStatusDto {
@@ -44,10 +50,11 @@ struct StepResultDto {
 }
 
 #[tauri::command]
-async fn get_tool_status() -> Result<Vec<ToolStatusDto>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let statuses = inspect_built_in_tool_statuses(application_dir, &Config::default());
+        let config = load_desktop_config(&app)?;
+        let statuses = inspect_built_in_tool_statuses(application_dir, &config);
 
         let dtos = statuses
             .iter()
@@ -128,17 +135,18 @@ async fn get_tool_status() -> Result<Vec<ToolStatusDto>, String> {
 }
 
 #[tauri::command]
-async fn run_workflow_simulation(template_json: String) -> Result<Vec<StepResultDto>, String> {
+async fn run_workflow_simulation(
+    app: AppHandle,
+    template_json: String,
+) -> Result<Vec<StepResultDto>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir()
             .map_err(|error| format!("could not determine application directory: {error}"))?;
-        let launch_specs = prepare_simulate_launch_specs(
-            template.workflow(),
-            &application_dir,
-            &Config::default(),
-        )?;
+        let config = load_desktop_config(&app)?;
+        let launch_specs =
+            prepare_simulate_launch_specs(template.workflow(), &application_dir, &config)?;
         let results = run_simulated_workflow(
             template.workflow(),
             &launch_specs,
@@ -155,6 +163,7 @@ async fn run_workflow_simulation(template_json: String) -> Result<Vec<StepResult
 }
 
 fn referenced_simulation_tools(workflow: &Workflow) -> Vec<ToolId> {
+
     let mut tools = Vec::new();
 
     for step in workflow.steps() {
@@ -219,6 +228,89 @@ fn prepare_simulate_launch_specs(
     Ok(launch_specs)
 }
 
+/// Returns the persisted Desktop configuration file path.
+fn desktop_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("could not determine application config directory: {error}"))?;
+
+    Ok(dir.join(DESKTOP_CONFIG_FILENAME))
+}
+
+/// Loads the persisted Desktop configuration.
+///
+/// A missing file falls back to portable behavior; any other load failure is
+/// reported instead of being silently ignored.
+fn load_desktop_config(app: &AppHandle) -> Result<Config, String> {
+    let path = desktop_config_path(app)?;
+
+    load_desktop_config_from_path(&path)
+}
+
+fn load_desktop_config_from_path(path: &Path) -> Result<Config, String> {
+    match Config::load(path) {
+        Ok(config) => Ok(config),
+        Err(ConfigError::Read { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            Ok(Config::default())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Validates a caller-supplied tool ID against the built-in registry.
+fn resolve_built_in_tool_id(raw_tool_id: &str) -> Result<ToolId, String> {
+    let tool_id = ToolId::new(raw_tool_id)
+        .map_err(|error| format!("invalid tool ID {raw_tool_id:?}: {error}"))?;
+
+    if built_in_tool_definitions()
+        .iter()
+        .any(|definition| definition.id() == &tool_id)
+    {
+        Ok(tool_id)
+    } else {
+        Err(format!("unknown tool ID {raw_tool_id:?}"))
+    }
+}
+
+fn set_desktop_tool_executable(
+    config_path: &Path,
+    tool_id: &ToolId,
+    executable_path: &Path,
+) -> Result<(), String> {
+    let mut config = load_desktop_config_from_path(config_path)?;
+    config.set_executable_path(tool_id, executable_path);
+    config
+        .save(config_path)
+        .map_err(|error| error.to_string())
+}
+
+fn reset_desktop_tool_executable(config_path: &Path, tool_id: &ToolId) -> Result<(), String> {
+    let mut config = load_desktop_config_from_path(config_path)?;
+    config.remove_executable_path(tool_id);
+    config
+        .save(config_path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_tool_executable(app: AppHandle, tool_id: String, path: String) -> Result<(), String> {
+    let tool_id = resolve_built_in_tool_id(&tool_id)?;
+    let config_path = desktop_config_path(&app)?;
+
+    set_desktop_tool_executable(&config_path, &tool_id, Path::new(&path))
+}
+
+#[tauri::command]
+fn reset_tool_executable(app: AppHandle, tool_id: String) -> Result<(), String> {
+    let tool_id = resolve_built_in_tool_id(&tool_id)?;
+    let config_path = desktop_config_path(&app)?;
+
+    reset_desktop_tool_executable(&config_path, &tool_id)
+}
+
 fn step_result_dto(result: &StepResult) -> StepResultDto {
     let (status, output, message) = match result.outcome() {
         StepOutcome::Succeeded { output } => ("succeeded".to_owned(), Some(output.clone()), None),
@@ -270,6 +362,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
             run_workflow_simulation,
+            set_tool_executable,
+            reset_tool_executable,
             create_workflow_draft,
             validate_workflow_draft,
             save_workflow_template,
@@ -282,8 +376,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_workflow_draft, load_workflow_template, referenced_simulation_tools,
-        save_workflow_template, step_result_dto, validate_workflow_draft,
+        create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
+        referenced_simulation_tools, reset_desktop_tool_executable, resolve_built_in_tool_id,
+        save_workflow_template, set_desktop_tool_executable, step_result_dto,
+        validate_workflow_draft,
     };
     use orchestrator_tool::{
         template::Template,
@@ -426,5 +522,69 @@ mod tests {
             referenced_simulation_tools(template.workflow()),
             vec![ToolId::meters()]
         );
+    }
+
+    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+        use std::{
+            process,
+            sync::atomic::{AtomicU64, Ordering},
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let dir =
+            std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn desktop_tool_config_set_load_reset_round_trip() {
+        let dir = unique_test_dir("orchestrator-tool-desktop-config-test");
+        let config_path = dir.join("orchestrator.toml");
+        let meters_exe = dir.join("meters-tool.exe");
+        let powers_exe = dir.join("powers-tool.exe");
+
+        let config = load_desktop_config_from_path(&config_path).unwrap();
+        assert_eq!(config.executable_path(&ToolId::meters()), None);
+
+        set_desktop_tool_executable(&config_path, &ToolId::meters(), &meters_exe).unwrap();
+        set_desktop_tool_executable(&config_path, &ToolId::powers(), &powers_exe).unwrap();
+
+        let config = load_desktop_config_from_path(&config_path).unwrap();
+        assert_eq!(
+            config.executable_path(&ToolId::meters()),
+            Some(meters_exe.as_path())
+        );
+        assert_eq!(
+            config.executable_path(&ToolId::powers()),
+            Some(powers_exe.as_path())
+        );
+
+        reset_desktop_tool_executable(&config_path, &ToolId::meters()).unwrap();
+
+        let config = load_desktop_config_from_path(&config_path).unwrap();
+        assert_eq!(config.executable_path(&ToolId::meters()), None);
+        assert_eq!(
+            config.executable_path(&ToolId::powers()),
+            Some(powers_exe.as_path())
+        );
+
+        std::fs::write(&config_path, "[tools\n").unwrap();
+        assert!(load_desktop_config_from_path(&config_path).is_err());
+
+        assert_eq!(
+            resolve_built_in_tool_id("meters").unwrap(),
+            ToolId::meters()
+        );
+        assert!(resolve_built_in_tool_id("foobar").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

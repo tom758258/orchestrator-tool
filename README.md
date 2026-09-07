@@ -21,6 +21,8 @@ meters = "D:/tools/meters-tool.exe"
 
 Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
+The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. The Desktop persists these overrides in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status and Run Simulation load the same persisted configuration, so the executables shown in the Tools tab are the ones used for simulated runs. A missing config file simply means portable behavior.
+
 ## External process management
 
 Core can start generic external processes with arguments and expose their process ID, non-blocking status checks, waiting, and forced termination. Standard input, output, and error remain inherited. A managed process performs best-effort termination and cleanup when dropped.

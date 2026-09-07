@@ -200,6 +200,13 @@ body {
   color: #a12b21;
 }
 
+.tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .workflow-summary {
   margin-top: 20px;
   padding: 16px;

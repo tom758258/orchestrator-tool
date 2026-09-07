@@ -21,6 +21,8 @@ meters = "D:/tools/meters-tool.exe"
 
 Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
+Desktop 應用程式透過 Tools tab 暴露相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Desktop 會把這些 override 保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status 與 Run Simulation 讀取同一份 persisted configuration，因此 Tools tab 顯示的 executable 就是 simulated run 實際使用的 executable。設定檔不存在時即為 portable 行為。
+
 ## External process 管理
 
 Core 可以使用 arguments 啟動 generic external process，並提供 process ID、非阻塞狀態檢查、等待與強制終止能力。Standard input、output 與 error 維持 inherited。Managed process 被 Drop 時會 best-effort 終止並清理 child process。

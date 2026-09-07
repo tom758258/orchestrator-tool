@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{discovery::built_in_tool_definitions, tool::ToolId};
 
@@ -68,9 +68,49 @@ impl Config {
     pub fn executable_path(&self, tool_id: &ToolId) -> Option<&Path> {
         self.tools.get(tool_id.as_str()).map(PathBuf::as_path)
     }
+
+    /// Overrides the executable path for a tool.
+    ///
+    /// Callers must only pass IDs from the built-in tool registry: saving an
+    /// unknown tool ID produces a file that [`Config::load`] will reject.
+    pub fn set_executable_path(&mut self, tool_id: &ToolId, path: impl AsRef<Path>) {
+        self.tools
+            .insert(tool_id.as_str().to_owned(), path.as_ref().to_path_buf());
+    }
+
+    /// Removes the executable path override for a tool.
+    ///
+    /// Returns false when no override was present.
+    pub fn remove_executable_path(&mut self, tool_id: &ToolId) -> bool {
+        self.tools.remove(tool_id.as_str()).is_some()
+    }
+
+    /// Saves the configuration as TOML, creating parent directories as needed.
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        let supplied_path = path.as_ref();
+        let raw = RawConfig {
+            tools: self.tools.clone(),
+        };
+        let contents = toml::to_string(&raw).map_err(|source| ConfigError::Serialize {
+            path: supplied_path.to_path_buf(),
+            source,
+        })?;
+        if let Some(parent) = supplied_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).map_err(|source| ConfigError::Write {
+                path: supplied_path.to_path_buf(),
+                source,
+            })?;
+        }
+        fs::write(supplied_path, contents).map_err(|source| ConfigError::Write {
+            path: supplied_path.to_path_buf(),
+            source,
+        })
+    }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
@@ -89,6 +129,13 @@ pub enum ConfigError {
     },
     /// The configuration names a tool outside the built-in registry.
     UnknownTool { path: PathBuf, tool_id: String },
+    /// The configuration could not be serialized to TOML.
+    Serialize {
+        path: PathBuf,
+        source: toml::ser::Error,
+    },
+    /// The configuration file could not be written.
+    Write { path: PathBuf, source: io::Error },
 }
 
 impl fmt::Display for ConfigError {
@@ -113,6 +160,20 @@ impl fmt::Display for ConfigError {
                 "config error in {}: unknown tool ID {tool_id:?}",
                 path.display()
             ),
+            Self::Serialize { path, source } => {
+                write!(
+                    formatter,
+                    "config serialize error for {}: {source}",
+                    path.display()
+                )
+            }
+            Self::Write { path, source } => {
+                write!(
+                    formatter,
+                    "config write error for {}: {source}",
+                    path.display()
+                )
+            }
         }
     }
 }
@@ -123,6 +184,8 @@ impl Error for ConfigError {
             Self::Read { source, .. } => Some(source),
             Self::Parse { source, .. } => Some(source),
             Self::UnknownTool { .. } => None,
+            Self::Serialize { source, .. } => Some(source),
+            Self::Write { source, .. } => Some(source),
         }
     }
 }
@@ -219,5 +282,45 @@ mod tests {
             error,
             ConfigError::UnknownTool { tool_id, .. } if tool_id == "electronic-load"
         ));
+    }
+
+    #[test]
+    fn set_save_load_round_trip_and_remove_clears_override() {
+        let test_dir = TestDir::new();
+        let config_path = test_dir.path().join("orchestrator.toml");
+        let meters_exe = test_dir.path().join("my-meter-build.exe");
+        fs::write(&meters_exe, []).unwrap();
+
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::meters(), &meters_exe);
+        config.save(&config_path).unwrap();
+
+        let loaded = Config::load(&config_path).unwrap();
+        assert_eq!(
+            loaded.executable_path(&ToolId::meters()),
+            Some(meters_exe.as_path())
+        );
+        assert_eq!(loaded.executable_path(&ToolId::powers()), None);
+
+        let mut updated = loaded;
+        assert!(updated.remove_executable_path(&ToolId::meters()));
+        assert!(!updated.remove_executable_path(&ToolId::meters()));
+        assert_eq!(updated.executable_path(&ToolId::meters()), None);
+        updated.save(&config_path).unwrap();
+
+        let reloaded = Config::load(&config_path).unwrap();
+        assert_eq!(reloaded.executable_path(&ToolId::meters()), None);
+
+        let empty_path = test_dir.path().join("empty.toml");
+        Config::default().save(&empty_path).unwrap();
+        let empty = Config::load(&empty_path).unwrap();
+        for tool_id in [
+            ToolId::meters(),
+            ToolId::powers(),
+            ToolId::scopes(),
+            ToolId::wavegen(),
+        ] {
+            assert_eq!(empty.executable_path(&tool_id), None);
+        }
     }
 }
