@@ -17,7 +17,7 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
-    run::{SimulatedRunError, run_simulated_workflow},
+    run::{WorkflowRunError, run_simulated_workflow},
     tool::ToolId,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
@@ -1144,7 +1144,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
 
     assert!(matches!(
         result,
-        Err(SimulatedRunError::WorkerStartup {
+        Err(WorkflowRunError::WorkerStartup {
             tool,
             source: WorkerStartError::ExitedBeforeReady(status),
         }) if tool == ToolId::meters() && status.success()
