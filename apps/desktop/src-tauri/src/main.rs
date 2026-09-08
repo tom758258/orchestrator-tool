@@ -13,7 +13,7 @@ use orchestrator_tool::{
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
-    run::{ExecutionMode, run_simulated_workflow},
+    run::{ExecutionMode, run_simulated_workflow, run_workflow},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
     tool::ToolId,
@@ -39,6 +39,7 @@ struct ToolStatusDto {
     tool_version: Option<String>,
     worker_schema_versions: Vec<u32>,
     reason: Option<String>,
+    live_resource: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,6 +125,7 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
                     tool_version,
                     worker_schema_versions,
                     reason: final_reason,
+                    live_resource: config.live_resource(status.tool_id()).map(str::to_owned),
                 }
             })
             .collect();
@@ -166,6 +168,89 @@ async fn run_workflow_simulation(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+async fn run_workflow_live(
+    app: AppHandle,
+    template_json: String,
+) -> Result<Vec<StepResultDto>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let template =
+            Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        let mut launch_specs = prepare_worker_launch_specs(
+            template.workflow(),
+            ExecutionMode::Live,
+            &application_dir,
+            &config,
+        )?;
+        let _authorization = if let Some(spec) = launch_specs.get_mut(&ToolId::powers()) {
+            let dir = app
+                .path()
+                .app_cache_dir()
+                .map_err(|error| error.to_string())?;
+            Some(PowersWriteAuthorization::prepare(&dir, spec)?)
+        } else {
+            None
+        };
+        let results = run_workflow(
+            template.workflow(),
+            ExecutionMode::Live,
+            &launch_specs,
+            RUN_STARTUP_TIMEOUT,
+            RUN_ACTION_TIMEOUT,
+            RUN_SHUTDOWN_TIMEOUT,
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(results.iter().map(step_result_dto).collect())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+struct PowersWriteAuthorization(PathBuf);
+
+impl PowersWriteAuthorization {
+    fn prepare(dir: &Path, spec: &mut WorkerLaunchSpec) -> Result<Self, String> {
+        use std::{
+            fs::{self, OpenOptions},
+            io::Write,
+            sync::atomic::{AtomicU64, Ordering},
+        };
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos();
+        let path = dir.join(format!(
+            "powers-write-{}-{timestamp}-{}.json",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| format!("could not create Powers write authorization: {error}"))?;
+        let authorization = Self(path);
+        let written = file.write_all(br#"{"settings":{"allow_output_writes":true}}"#);
+        drop(file);
+        written.map_err(|error| format!("could not write Powers authorization: {error}"))?;
+        let mut arguments = spec.arguments().to_vec();
+        arguments.push("--config".into());
+        arguments.push(authorization.0.as_os_str().to_owned());
+        *spec = WorkerLaunchSpec::new(spec.executable(), arguments);
+        Ok(authorization)
+    }
+}
+
+impl Drop for PowersWriteAuthorization {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 fn referenced_workflow_tools(workflow: &Workflow) -> Vec<ToolId> {
     let mut tools = Vec::new();
 
@@ -193,7 +278,10 @@ fn prepare_worker_launch_specs(
     let tools = referenced_workflow_tools(workflow);
     if execution_mode == ExecutionMode::Live {
         for tool in &tools {
-            if config.live_resource(tool).is_none() {
+            if config
+                .live_resource(tool)
+                .is_none_or(|resource| resource.trim().is_empty())
+            {
                 return Err(format!("{tool} live resource is not configured"));
             }
         }
@@ -336,6 +424,38 @@ fn reset_tool_executable(app: AppHandle, tool_id: String) -> Result<(), String> 
     reset_desktop_tool_executable(&config_path, &tool_id)
 }
 
+fn edit_desktop_live_resource(
+    config_path: &Path,
+    raw_tool_id: &str,
+    resource: Option<&str>,
+) -> Result<(), String> {
+    let tool_id = resolve_built_in_tool_id(raw_tool_id)?;
+    if !matches!(tool_id.as_str(), "powers" | "meters") {
+        return Err(format!("{tool_id} live resource editing is not supported"));
+    }
+    if resource.is_some_and(|value| value.trim().is_empty()) {
+        return Err(format!("{tool_id} live resource must not be blank"));
+    }
+    let mut config = load_desktop_config_from_path(config_path)?;
+    match resource {
+        Some(value) => config.set_live_resource(&tool_id, value),
+        None => {
+            config.remove_live_resource(&tool_id);
+        }
+    }
+    config.save(config_path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_live_resource(app: AppHandle, tool_id: String, resource: String) -> Result<(), String> {
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &tool_id, Some(&resource))
+}
+
+#[tauri::command]
+fn remove_live_resource(app: AppHandle, tool_id: String) -> Result<(), String> {
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &tool_id, None)
+}
+
 fn step_result_dto(result: &StepResult) -> StepResultDto {
     let (status, output, message) = match result.outcome() {
         StepOutcome::Succeeded { output } => ("succeeded".to_owned(), Some(output.clone()), None),
@@ -387,6 +507,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
             run_workflow_simulation,
+            run_workflow_live,
+            set_live_resource,
+            remove_live_resource,
             set_tool_executable,
             reset_tool_executable,
             create_workflow_draft,
@@ -427,19 +550,85 @@ mod tests {
                 },
             )])
             .unwrap();
-            let error = prepare_worker_launch_specs(
-                &workflow,
-                ExecutionMode::Live,
-                std::path::Path::new("unused"),
-                &Config::default(),
-            )
-            .unwrap_err();
-            assert!(error.contains(tool.as_str()), "{error}");
-            assert!(
-                error.contains("live resource") && error.contains("not configured"),
-                "{error}"
-            );
+            for resource in [None, Some(""), Some(" \t\r\n")] {
+                let mut config = Config::default();
+                if let Some(value) = resource {
+                    config.set_live_resource(&tool, value);
+                }
+                let error = prepare_worker_launch_specs(
+                    &workflow,
+                    ExecutionMode::Live,
+                    std::path::Path::new("unused"),
+                    &config,
+                )
+                .unwrap_err();
+                assert!(error.contains(tool.as_str()), "{error}");
+                assert!(
+                    error.contains("live resource") && error.contains("not configured"),
+                    "{error}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {
+        let dir = unique_test_dir("orchestrator-live-resource-test");
+        let path = dir.join("orchestrator.toml");
+        let powers = " USB0::Power Serial::INSTR ";
+        let meters = " TCPIP0::MeterHost::inst0::INSTR ";
+        super::edit_desktop_live_resource(&path, "powers", Some(powers)).unwrap();
+        super::edit_desktop_live_resource(&path, "meters", Some(meters)).unwrap();
+        let loaded = load_desktop_config_from_path(&path).unwrap();
+        assert_eq!(loaded.live_resource(&ToolId::powers()), Some(powers));
+        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        for resource in ["", " ", "\t\r\n"] {
+            assert!(super::edit_desktop_live_resource(&path, "powers", Some(resource)).is_err());
+        }
+        for tool in ["scopes", "wavegen", "unknown"] {
+            assert!(super::edit_desktop_live_resource(&path, tool, Some(powers)).is_err());
+            assert!(super::edit_desktop_live_resource(&path, tool, None).is_err());
+        }
+        super::edit_desktop_live_resource(&path, "powers", None).unwrap();
+        let loaded = load_desktop_config_from_path(&path).unwrap();
+        assert_eq!(loaded.live_resource(&ToolId::powers()), None);
+        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn powers_live_launch_authorization_is_scoped_to_run() {
+        use std::ffi::OsString;
+        let dir = unique_test_dir("orchestrator-powers-authorization-test");
+        let resource = " USB0::Power Serial::INSTR ";
+        let mut spec = super::powers::live_worker_launch_spec("powers-tool.exe", resource);
+        let authorization = super::PowersWriteAuthorization::prepare(&dir, &mut spec).unwrap();
+        let path = authorization.0.clone();
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            value,
+            json!({ "settings": { "allow_output_writes": true } })
+        );
+        assert_eq!(
+            spec.arguments(),
+            [
+                OsString::from("worker"),
+                OsString::from("--mode"),
+                OsString::from("live"),
+                OsString::from("--resource"),
+                OsString::from(resource),
+                OsString::from("--control-port"),
+                OsString::from("0"),
+                OsString::from("--artifact-mode"),
+                OsString::from("memory"),
+                OsString::from("--config"),
+                path.as_os_str().to_owned(),
+            ]
+        );
+        drop(authorization);
+        assert!(!path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

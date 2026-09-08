@@ -438,18 +438,18 @@ body {
   font-weight: 600;
 }
 
-.simulation-results {
+.run-results {
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid #e3e6ea;
 }
 
-.simulation-results h3 {
+.run-results h3 {
   margin: 0;
   font-size: 1rem;
 }
 
-.simulation-result-list {
+.run-result-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -458,7 +458,7 @@ body {
   list-style: none;
 }
 
-.simulation-result-card {
+.run-result-card {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
@@ -467,46 +467,50 @@ body {
   background: #fafafa;
 }
 
-.simulation-result-mark {
+.run-result-mark {
   font-weight: 700;
 }
 
-.simulation-result-content {
+.run-result-content {
   flex: 1;
   min-width: 0;
 }
 
-.simulation-result-summary {
+.run-result-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px 12px;
 }
 
-.simulation-result-status {
+.run-result-status {
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.simulation-result-succeeded {
+.run-result-succeeded {
   color: #226b2c;
 }
 
-.simulation-result-failed {
+.run-result-failed {
   color: #a12b21;
 }
 
-.simulation-result-cancelled {
+.run-result-cancelled {
   color: #5a6270;
 }
 
-.simulation-result-measurement {
+.run-result-measurement {
   color: #1f2430;
   font-weight: 600;
 }
 
-.simulation-result-message {
+.run-result-message {
   margin: 6px 0 0;
   color: #a12b21;
   overflow-wrap: anywhere;
+}
+
+.live-resource {
+  margin-top: 16px;
 }

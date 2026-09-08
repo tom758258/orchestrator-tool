@@ -6,9 +6,9 @@
 
 - Core library (`src/lib.rs`): shared orchestration and domain logic. It must remain independent of CLI and desktop presentation layers.
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
-- Desktop application: Tauri 2 frontend with built-in external-tool status, a session-only visual workflow builder with a click-to-add step palette, a linear canvas, node execution controls and result status, parameter editing, template load/save, simulated workflow runs, and full step-result display.
+- Desktop application: Tauri 2 frontend with built-in external-tool status, a session-only visual workflow builder with a click-to-add step palette, a linear canvas, node execution controls and result status, parameter editing, template load/save, simulation and live workflow runs, and full step-result display.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. A Powers and Meters simulate-mode vertical slice exercises workflow execution through Worker HTTP and stdout events into step results, and Desktop can run that simulation and display its results. Desktop builds the linear workflow through a session-only visual canvas; canvas positions are not persisted in templates, the CLI does not provide a workflow run command, and live-hardware workflow execution is not enabled.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, safety cleanup, or canvas positions. The CLI does not provide a workflow run command.
 
 ## Executable configuration
 
@@ -26,9 +26,15 @@ powers = "USB0::VENDOR::POWER_SERIAL::INSTR"
 
 Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
-The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. The Desktop persists these overrides in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status and Run Simulation load the same persisted configuration, so the executables shown in the Tools tab are the ones used for simulated runs. A missing config file simply means portable behavior.
+The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. Powers and Meters also offer Live Resource with Save Resource and Clear Resource. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. A missing config file uses portable executable paths.
 
-The optional `live_resources` table stores exact resource strings without path resolution, scanning, or fallback. Core adapters and Desktop preparation can build live Worker launch details; live workflow execution remains disabled. Simulation behavior is unchanged.
+The optional `live_resources` table preserves exact non-empty resource strings without path resolution, scanning, or fallback. Live preparation rejects missing or whitespace-only resources and validates executables, manifests, and Worker compatibility before starting any Worker. Simulation remains available without live resources.
+
+Run Live requires operator confirmation showing the referenced resources and warning that real instruments will be controlled and power outputs may change. Powers live writes use both authorization gates: a short-lived Desktop runtime config sets Worker `settings.allow_output_writes=true`, and the runtime adapter injects `arguments.confirm_output=true` into live output-affecting requests. This support file is removed best-effort after the run.
+
+Every live run with a started Powers Worker attempts bounded `safe-off` for all channels before Worker shutdown, including after workflow failure or a later Worker startup failure. An explicit Output OFF step does not replace this safety cleanup. Cleanup failure makes the run fail and preserves any original workflow failure in the error; Worker shutdown is still attempted. Simulation does not perform this additional live cleanup.
+
+Physical hardware support remains subject to each external instrument tool's manifest and product support policy. Real-hardware end-to-end testing has not been performed for this implementation. Scopes and Wavegen live workflows are not supported.
 
 ## External process management
 

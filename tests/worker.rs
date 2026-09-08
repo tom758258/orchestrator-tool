@@ -17,7 +17,7 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
-    run::{WorkflowRunError, run_simulated_workflow},
+    run::{ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow},
     tool::ToolId,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
@@ -93,6 +93,7 @@ fn main() {
     meters_runtime_measure_returns_sample();
     powers_and_meters_workflow_executes_end_to_end();
     partial_startup_failure_shuts_down_started_worker();
+    live_workflow_cleanup_lifecycle();
 }
 
 fn run_powers_worker_fixture() {
@@ -390,7 +391,12 @@ fn run_fixture(scenario: &OsStr) {
             run_http_fixture(scenario.to_str().unwrap())
         }
         "powers-runtime-success" => run_powers_runtime_fixture(),
-        "powers-workflow-runtime" => run_powers_workflow_fixture(),
+        "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
+        "live-success"
+        | "live-step-failure"
+        | "live-cleanup-failure"
+        | "live-both-failed"
+        | "live-startup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
         "meters-runtime-measure" => run_meters_runtime_fixture(),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
@@ -572,7 +578,10 @@ fn run_powers_runtime_fixture() {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
-fn run_powers_workflow_fixture() {
+fn run_powers_workflow_fixture(scenario: &str) {
+    let live = scenario != "simulate";
+    let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
+    let cleanup_failed = matches!(scenario, "live-cleanup-failure" | "live-both-failed");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "powers-workflow-runtime-run";
@@ -588,7 +597,7 @@ fn run_powers_workflow_fixture() {
         .to_string(),
     );
 
-    for (command, arguments, worker_job_id) in [
+    let mut commands = vec![
         (
             "set",
             json!({ "channel": 1, "voltage": 5.0 }),
@@ -596,7 +605,23 @@ fn run_powers_workflow_fixture() {
         ),
         ("output-on", json!({ "channel": 1 }), "job-workflow-002"),
         ("output-off", json!({ "channel": 1 }), "job-workflow-003"),
-    ] {
+    ];
+    if step_failed {
+        commands.truncate(2);
+    }
+    if scenario == "live-startup-failure" {
+        commands.clear();
+    }
+    if live {
+        commands.push(("safe-off", json!({ "channel": "all" }), "job-cleanup"));
+    }
+    for (command, mut arguments, worker_job_id) in commands {
+        let context = if live {
+            arguments["confirm_output"] = json!(true);
+            json!({ "mode": "live" })
+        } else {
+            json!({ "mode": "simulate", "planning_model_id": "keysight-e36312a" })
+        };
         let request = accept_request(&listener);
         assert_eq!(
             (request.method.as_str(), request.path.as_str()),
@@ -608,12 +633,12 @@ fn run_powers_workflow_fixture() {
                 "schema_version": 2,
                 "command": command,
                 "arguments": arguments,
-                "context": {
-                    "mode": "simulate",
-                    "planning_model_id": "keysight-e36312a"
-                }
+                "context": context
             })
         );
+        if live {
+            record_live_event(command);
+        }
         write_response(
             request.stream,
             202,
@@ -643,7 +668,8 @@ fn run_powers_workflow_fixture() {
                 "active_job": null,
                 "last_job": {
                     "worker_job_id": worker_job_id,
-                    "status": "succeeded",
+                    "status": if (step_failed && command == "output-on") || (cleanup_failed && command == "safe-off") { "failed" } else { "succeeded" },
+                    "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
                     "result": { "ok": true }
                 }
             })
@@ -656,6 +682,9 @@ fn run_powers_workflow_fixture() {
         (request.method.as_str(), request.path.as_str()),
         ("POST", "/stop")
     );
+    if live {
+        record_live_event("stop");
+    }
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
@@ -992,6 +1021,7 @@ fn powers_runtime_action_succeeds() {
         &session,
         &action,
         &json!({ "channel": 1, "voltage": 5.0 }),
+        ExecutionMode::Simulate,
         Duration::from_secs(5),
     )
     .unwrap();
@@ -1165,4 +1195,127 @@ fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
     // SAFETY: the Worker session has completed cleanup before this mutation.
     unsafe { env::remove_var(POWERS_FIXTURE_SCENARIO_ENV) };
     result
+}
+
+fn record_live_event(event: &str) {
+    let marker = env::var_os(CLEANUP_MARKER_ENV).expect("cleanup marker required");
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(marker)
+        .unwrap();
+    writeln!(file, "{event}").unwrap();
+}
+
+fn live_workflow_cleanup_lifecycle() {
+    for scenario in [
+        "live-success",
+        "live-step-failure",
+        "live-cleanup-failure",
+        "live-both-failed",
+        "live-startup-failure",
+    ] {
+        let marker = env::temp_dir().join(format!(
+            "orchestrator-live-cleanup-{}-{scenario}",
+            process::id()
+        ));
+        let _ = fs::remove_file(&marker);
+        // SAFETY: fixtures run sequentially and all child sessions are reaped before removal.
+        unsafe { env::set_var(CLEANUP_MARKER_ENV, &marker) };
+        let mut steps = vec![
+            Step::new(
+                StepId::new("set-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: ToolId::powers(),
+                    action: ActionId::new("set-voltage").unwrap(),
+                    arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                },
+            ),
+            Step::new(
+                StepId::new("on-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: ToolId::powers(),
+                    action: ActionId::new("output-on").unwrap(),
+                    arguments: json!({ "channel": 1 }),
+                },
+            ),
+            Step::new(
+                StepId::new("off-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: ToolId::powers(),
+                    action: ActionId::new("output-off").unwrap(),
+                    arguments: json!({ "channel": 1 }),
+                },
+            ),
+        ];
+        let mut specs = HashMap::from([(ToolId::powers(), fixture_spec(scenario))]);
+        if scenario == "live-startup-failure" {
+            steps.push(Step::new(
+                StepId::new("measure-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: ToolId::meters(),
+                    action: ActionId::new("measure").unwrap(),
+                    arguments: json!({}),
+                },
+            ));
+            specs.insert(ToolId::meters(), fixture_spec("exit-before-ready"));
+        }
+        let workflow = Workflow::new(steps).unwrap();
+        let result = run_workflow(
+            &workflow,
+            ExecutionMode::Live,
+            &specs,
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+        );
+        // SAFETY: lifecycle has reaped all child sessions.
+        unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
+        let events = fs::read_to_string(&marker).unwrap();
+        fs::remove_file(&marker).unwrap();
+        match scenario {
+            "live-success" => {
+                let results = result.unwrap();
+                assert_eq!(results.len(), 3);
+                assert!(
+                    results
+                        .iter()
+                        .all(|r| matches!(r.outcome(), StepOutcome::Succeeded { .. }))
+                );
+                assert_eq!(events, "set\noutput-on\noutput-off\nsafe-off\nstop\n");
+            }
+            "live-step-failure" => {
+                let results = result.unwrap();
+                assert_eq!(results.len(), 2);
+                assert!(
+                    matches!(results[1].outcome(), StepOutcome::Failed { message } if message.contains("fixture action failure"))
+                );
+                assert_eq!(events, "set\noutput-on\nsafe-off\nstop\n");
+            }
+            "live-startup-failure" => {
+                assert!(matches!(
+                    result,
+                    Err(WorkflowRunError::WorkerStartup { .. })
+                ));
+                assert_eq!(events, "safe-off\nstop\n");
+            }
+            _ => {
+                let error = result.unwrap_err();
+                assert!(matches!(error, WorkflowRunError::SafetyCleanup { .. }));
+                let message = error.to_string();
+                assert!(
+                    message.contains("Power safety cleanup failed")
+                        && message.contains("fixture cleanup failure"),
+                    "{message}"
+                );
+                if scenario == "live-both-failed" {
+                    assert!(
+                        message.contains("on-1") && message.contains("fixture action failure"),
+                        "{message}"
+                    );
+                }
+                assert!(events.ends_with("safe-off\nstop\n"), "{events}");
+            }
+        }
+    }
 }

@@ -1,12 +1,13 @@
 use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Duration};
 
 use crate::{
+    adapters::powers::{PowersActionError, safe_off_all},
     executor::{WorkflowExecutionError, execute_workflow},
     tool::ToolId,
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepKind, StepResult, Workflow},
+    workflow::{StepKind, StepOutcome, StepResult, Workflow},
 };
 
 /// Runtime execution mode for a workflow run.
@@ -37,15 +38,6 @@ pub fn run_workflow(
     action_timeout: Duration,
     shutdown_timeout: Duration,
 ) -> Result<Vec<StepResult>, WorkflowRunError> {
-    match execution_mode {
-        ExecutionMode::Simulate => {}
-        ExecutionMode::Live => {
-            return Err(WorkflowRunError::ExecutionModeUnavailable {
-                mode: execution_mode,
-            });
-        }
-    }
-
     let referenced_tools = referenced_supported_tools(workflow);
     let referenced_specs = referenced_tools
         .into_iter()
@@ -62,8 +54,16 @@ pub fn run_workflow(
         match start_worker(spec, startup_timeout) {
             Ok(session) => sessions.push((tool, session)),
             Err(source) => {
+                let cleanup = cleanup_power(&sessions, execution_mode, action_timeout);
                 let _ = shutdown_workers(sessions, shutdown_timeout);
-                return Err(WorkflowRunError::WorkerStartup { tool, source });
+                let startup = WorkflowRunError::WorkerStartup { tool, source };
+                return Err(match cleanup {
+                    Some(source) => WorkflowRunError::SafetyCleanup {
+                        prior_failure: Some(startup.to_string()),
+                        source,
+                    },
+                    None => startup,
+                });
             }
         }
     }
@@ -72,10 +72,27 @@ pub fn run_workflow(
         .iter()
         .map(|(tool, session)| (tool.clone(), session))
         .collect();
-    let execution = execute_workflow(workflow, &session_refs, action_timeout);
+    let execution = execute_workflow(workflow, &session_refs, execution_mode, action_timeout);
     drop(session_refs);
 
+    let cleanup = cleanup_power(&sessions, execution_mode, action_timeout);
     let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
+    if let Some(source) = cleanup {
+        let prior_failure = match &execution {
+            Err(error) => Some(error.to_string()),
+            Ok(results) => results.iter().find_map(|result| match result.outcome() {
+                StepOutcome::Failed { message } => {
+                    Some(format!("step {} failed: {message}", result.step_id()))
+                }
+                _ => None,
+            }),
+        }
+        .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
+        return Err(WorkflowRunError::SafetyCleanup {
+            prior_failure,
+            source,
+        });
+    }
     match (execution, shutdown_error) {
         (Err(error), _) => Err(WorkflowRunError::WorkflowExecution(error)),
         (Ok(_), Some(error)) => Err(error),
@@ -116,6 +133,20 @@ fn referenced_supported_tools(workflow: &Workflow) -> Vec<ToolId> {
     tools
 }
 
+fn cleanup_power(
+    sessions: &[(ToolId, WorkerSession)],
+    execution_mode: ExecutionMode,
+    timeout: Duration,
+) -> Option<PowersActionError> {
+    if execution_mode != ExecutionMode::Live {
+        return None;
+    }
+    sessions
+        .iter()
+        .find(|(tool, _)| tool == &ToolId::powers())
+        .and_then(|(_, session)| safe_off_all(session, timeout).err())
+}
+
 fn shutdown_workers(
     sessions: Vec<(ToolId, WorkerSession)>,
     shutdown_timeout: Duration,
@@ -139,8 +170,9 @@ fn shutdown_workers(
 /// Errors produced while managing a workflow run.
 #[derive(Debug)]
 pub enum WorkflowRunError {
-    ExecutionModeUnavailable {
-        mode: ExecutionMode,
+    SafetyCleanup {
+        prior_failure: Option<String>,
+        source: PowersActionError,
     },
     MissingLaunchSpec {
         tool: ToolId,
@@ -163,8 +195,14 @@ pub enum WorkflowRunError {
 impl fmt::Display for WorkflowRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ExecutionModeUnavailable { mode } => {
-                write!(formatter, "{mode} workflow execution is not enabled")
+            Self::SafetyCleanup {
+                prior_failure,
+                source,
+            } => {
+                if let Some(prior) = prior_failure {
+                    write!(formatter, "{prior}; ")?;
+                }
+                write!(formatter, "Power safety cleanup failed: {source}")
             }
             Self::MissingLaunchSpec { tool } => {
                 write!(formatter, "missing Worker launch spec for tool {tool}")
@@ -191,9 +229,8 @@ impl Error for WorkflowRunError {
             Self::WorkerStartup { source, .. } => Some(source),
             Self::WorkflowExecution(source) => Some(source),
             Self::WorkerShutdown { source, .. } => Some(source),
-            Self::ExecutionModeUnavailable { .. }
-            | Self::MissingLaunchSpec { .. }
-            | Self::WorkerExit { .. } => None,
+            Self::SafetyCleanup { source, .. } => Some(source),
+            Self::MissingLaunchSpec { .. } | Self::WorkerExit { .. } => None,
         }
     }
 }
@@ -235,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn live_mode_is_rejected_before_worker_startup() {
+    fn live_mode_requires_referenced_launch_specs() {
         let workflow = Workflow::new(vec![Step::new(
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
@@ -256,12 +293,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(
-            error,
-            WorkflowRunError::ExecutionModeUnavailable {
-                mode: ExecutionMode::Live,
-            }
-        ));
-        assert_eq!(error.to_string(), "live workflow execution is not enabled");
+        assert!(matches!(error, WorkflowRunError::MissingLaunchSpec { .. }));
+        assert!(error.to_string().contains("missing Worker launch spec"));
     }
 }

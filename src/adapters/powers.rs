@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
+    run::ExecutionMode,
     worker::{
         WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError, WorkerStartError,
         start_worker,
@@ -389,16 +390,14 @@ impl Error for PowersSmokeError {
 /// Runs a single runtime Powers action on an already-started Worker session.
 ///
 /// Supported actions: `set-voltage`, `output-on`, `output-off`.
-/// The Worker schema and context are fixed to the simulate contract.
+/// Execution context and output confirmation are runtime-only.
 pub fn run_action(
     session: &WorkerSession,
     action: &ActionId,
     arguments: &Value,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
-    let deadline = Instant::now() + timeout;
-    let client = WorkerClient::new(session.ready());
-
     let worker_command = match action.as_str() {
         "set-voltage" => "set",
         "output-on" => "output-on",
@@ -408,16 +407,49 @@ pub fn run_action(
         }
     };
 
-    let validated_arguments = validate_arguments(action.as_str(), arguments)?;
+    let arguments = validate_arguments(action.as_str(), arguments)?;
+    run_command(session, worker_command, arguments, execution_mode, timeout)
+}
+
+/// Requests bounded live safe-off for every Powers channel before shutdown.
+pub fn safe_off_all(
+    session: &WorkerSession,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    run_command(
+        session,
+        "safe-off",
+        json!({ "channel": "all" }),
+        ExecutionMode::Live,
+        timeout,
+    )
+}
+
+fn run_command(
+    session: &WorkerSession,
+    worker_command: &str,
+    mut arguments: Value,
+    execution_mode: ExecutionMode,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    let deadline = Instant::now() + timeout;
+    let client = WorkerClient::new(session.ready());
+    let context = match execution_mode {
+        ExecutionMode::Simulate => json!({
+            "mode": "simulate",
+            "planning_model_id": "keysight-e36312a"
+        }),
+        ExecutionMode::Live => {
+            arguments["confirm_output"] = json!(true);
+            json!({ "mode": "live" })
+        }
+    };
 
     let request = json!({
         "schema_version": WORKER_SCHEMA_VERSION,
         "command": worker_command,
-        "arguments": validated_arguments,
-        "context": {
-            "mode": "simulate",
-            "planning_model_id": "keysight-e36312a"
-        }
+        "arguments": arguments,
+        "context": context
     });
 
     let remaining =

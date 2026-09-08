@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import WorkflowCanvas, {
   createCanvasPositions,
   reconcileCanvasPositions,
@@ -17,6 +17,7 @@ type ToolStatus = {
   tool_version: string | null
   worker_schema_versions: number[]
   reason: string | null
+  live_resource: string | null
 }
 
 type WaitStep = {
@@ -196,6 +197,7 @@ function formatMeasurement(output: unknown): string | null {
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
@@ -220,6 +222,7 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
+      setResourceDrafts(Object.fromEntries(statuses.map((tool) => [tool.tool_id, tool.live_resource ?? ''])))
       setError(null)
     } catch (message) {
       setError(String(message))
@@ -516,6 +519,63 @@ function App() {
     [refresh, toolConfigBusy],
   )
 
+  const handleResource = useCallback(async (toolId: string, clear: boolean) => {
+    if (toolConfigBusy !== null) {
+      return
+    }
+    setToolConfigBusy(toolId)
+    setToolConfigError(null)
+    try {
+      await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
+        toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '' }),
+      })
+      await refresh()
+    } catch (message) {
+      setToolConfigError(String(message))
+    } finally {
+      setToolConfigBusy(null)
+    }
+  }, [refresh, resourceDrafts, toolConfigBusy])
+
+  const runLive = useCallback(async () => {
+    if (!workflowDraft) {
+      return
+    }
+    setRunStatus('running')
+    setRunError(null)
+    try {
+      const statuses = await invoke<ToolStatus[]>('get_tool_status')
+      setTools(statuses)
+      const referenced = ['powers', 'meters'].filter((toolId) =>
+        workflowDraft.workflow.steps.some((step) => step.type === 'tool-action' && step.tool === toolId),
+      )
+      const resources = referenced.map((toolId) => {
+        const resource = statuses.find((tool) => tool.tool_id === toolId)?.live_resource
+        const label = toolId === 'powers' ? 'Powers' : 'Meters'
+        if (!resource || !resource.trim()) {
+          throw new Error(label + ' live resource is not configured.')
+        }
+        return label + ':\n' + resource
+      })
+      const approved = await confirm(
+        [...resources, 'This workflow will control real instruments and may change power outputs.'].join('\n\n'),
+        { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
+      )
+      if (!approved) {
+        return
+      }
+      setRunResults(null)
+      const results = await invoke<StepResultDto[]>('run_workflow_live', {
+        templateJson: JSON.stringify(workflowDraft),
+      })
+      setRunResults(results)
+    } catch (message) {
+      setRunError(String(message))
+    } finally {
+      setRunStatus('idle')
+    }
+  }, [workflowDraft])
+
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
       return
@@ -674,7 +734,7 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => void handleBrowseToolExecutable(tool.tool_id)}
-                      disabled={toolConfigBusy !== null}
+                      disabled={toolConfigBusy !== null || workflowBusy}
                     >
                       Browse...
                     </button>
@@ -682,11 +742,44 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
-                      disabled={toolConfigBusy !== null || tool.source !== 'configured'}
+                      disabled={toolConfigBusy !== null || workflowBusy || tool.source !== 'configured'}
                     >
                       Use Portable Default
                     </button>
                   </div>
+                  {(tool.tool_id === 'powers' || tool.tool_id === 'meters') && (
+                    <div className="live-resource">
+                      <label className="step-property-field">
+                        <span className="step-property-label">Live Resource</span>
+                        <input
+                          type="text"
+                          value={resourceDrafts[tool.tool_id] ?? ''}
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onChange={(event) => setResourceDrafts((current) => ({
+                            ...current, [tool.tool_id]: event.target.value,
+                          }))}
+                        />
+                      </label>
+                      <div className="tool-actions">
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onClick={() => void handleResource(tool.tool_id, false)}
+                        >
+                          Save Resource
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy || tool.live_resource === null}
+                          onClick={() => void handleResource(tool.tool_id, true)}
+                        >
+                          Clear Resource
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -878,9 +971,19 @@ function App() {
                   onClick={() => void runSimulation()}
                   disabled={workflowBusy}
                 >
-                  {runStatus === 'running' ? 'Running…' : 'Run Simulation'}
+                  Run Simulation
+                </button>
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() => void runLive()}
+                  disabled={workflowBusy || toolConfigBusy !== null || loading}
+                >
+                  Run Live
                 </button>
               </div>
+
+              {runStatus === 'running' && <p role="status">Running…</p>}
 
               {templateIoStatus === 'saving' && (
                 <p role="status">Saving…</p>
@@ -915,14 +1018,14 @@ function App() {
 
               {runError && (
                 <p className="error" role="alert">
-                  Simulation failed: {runError}
+                  Run failed: {runError}
                 </p>
               )}
 
               {runResults && (
-                <section className="simulation-results" aria-labelledby="simulation-results-title">
-                  <h3 id="simulation-results-title">Simulation Results</h3>
-                  <ol className="simulation-result-list">
+                <section className="run-results" aria-labelledby="run-results-title">
+                  <h3 id="run-results-title">Run Results</h3>
+                  <ol className="run-result-list">
                     {runResults.map((result) => {
                       const measurement = formatMeasurement(result.output)
                       const statusLabel =
@@ -939,25 +1042,25 @@ function App() {
                             : '—'
 
                       return (
-                        <li key={result.step_id} className="simulation-result-card">
+                        <li key={result.step_id} className="run-result-card">
                           <span
-                            className={`simulation-result-mark simulation-result-${result.status}`}
+                            className={`run-result-mark run-result-${result.status}`}
                             aria-hidden="true"
                           >
                             {statusMark}
                           </span>
-                          <div className="simulation-result-content">
-                            <div className="simulation-result-summary">
+                          <div className="run-result-content">
+                            <div className="run-result-summary">
                               <code className="workflow-step-id">{result.step_id}</code>
-                              <span className={`simulation-result-status simulation-result-${result.status}`}>
+                              <span className={`run-result-status run-result-${result.status}`}>
                                 {statusLabel}
                               </span>
                               {measurement && (
-                                <span className="simulation-result-measurement">{measurement}</span>
+                                <span className="run-result-measurement">{measurement}</span>
                               )}
                             </div>
                             {result.status === 'failed' && result.message && (
-                              <p className="simulation-result-message">{result.message}</p>
+                              <p className="run-result-message">{result.message}</p>
                             )}
                           </div>
                         </li>

@@ -3,6 +3,7 @@ use std::{collections::HashMap, error::Error, fmt, thread, time::Duration};
 use serde_json::Value;
 
 use crate::{
+    run::ExecutionMode,
     tool::ToolId,
     worker::WorkerSession,
     workflow::{StepKind, StepOutcome, StepResult, Workflow},
@@ -31,6 +32,7 @@ impl Error for WorkflowExecutionError {}
 pub fn execute_workflow(
     workflow: &Workflow,
     sessions: &HashMap<ToolId, &WorkerSession>,
+    execution_mode: ExecutionMode,
     action_timeout: Duration,
 ) -> Result<Vec<StepResult>, WorkflowExecutionError> {
     if workflow.steps().is_empty() {
@@ -53,7 +55,14 @@ pub fn execute_workflow(
                 tool,
                 action,
                 arguments,
-            } => dispatch_tool_action(tool, action, arguments, sessions, action_timeout),
+            } => dispatch_tool_action(
+                tool,
+                action,
+                arguments,
+                sessions,
+                execution_mode,
+                action_timeout,
+            ),
         };
 
         let is_failed = matches!(outcome, StepOutcome::Failed { .. });
@@ -71,6 +80,7 @@ fn dispatch_tool_action(
     action: &crate::workflow::ActionId,
     arguments: &Value,
     sessions: &HashMap<ToolId, &WorkerSession>,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> StepOutcome {
     let is_powers = tool == &ToolId::powers();
@@ -89,7 +99,13 @@ fn dispatch_tool_action(
     };
 
     if is_powers {
-        match crate::adapters::powers::run_action(session, action, arguments, timeout) {
+        match crate::adapters::powers::run_action(
+            session,
+            action,
+            arguments,
+            execution_mode,
+            timeout,
+        ) {
             Ok(output) => StepOutcome::Succeeded { output },
             Err(error) => StepOutcome::Failed {
                 message: error.to_string(),
@@ -113,6 +129,7 @@ mod tests {
 
     use super::{WorkflowExecutionError, execute_workflow};
     use crate::{
+        run::ExecutionMode,
         tool::ToolId,
         workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
     };
@@ -121,7 +138,13 @@ mod tests {
     fn empty_workflow_is_rejected_for_execution() {
         let workflow = Workflow::new(Vec::new()).unwrap();
         let sessions = HashMap::new();
-        let error = execute_workflow(&workflow, &sessions, Duration::from_secs(5)).unwrap_err();
+        let error = execute_workflow(
+            &workflow,
+            &sessions,
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap_err();
         assert!(matches!(error, WorkflowExecutionError::EmptyWorkflow));
     }
 
@@ -148,7 +171,13 @@ mod tests {
         .unwrap();
 
         let sessions = HashMap::new();
-        let results = execute_workflow(&workflow, &sessions, Duration::from_secs(5)).unwrap();
+        let results = execute_workflow(
+            &workflow,
+            &sessions,
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].step_id().as_str(), "wait-1");

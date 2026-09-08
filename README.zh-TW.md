@@ -6,9 +6,9 @@
 
 - Core library（`src/lib.rs`）：共用調度與領域邏輯，不依賴 CLI 或 Desktop 顯示層。
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
-- Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的視覺化 Workflow Builder、點擊新增的 Step Palette、線性 Canvas、Node 執行順序控制與結果狀態、參數編輯、Template 載入／儲存、simulate Workflow 執行及完整 StepResult 顯示。
+- Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的視覺化 Workflow Builder、點擊新增的 Step Palette、線性 Canvas、Node 執行順序控制與結果狀態、參數編輯、Template 載入／儲存、Simulation 與 Live Workflow 執行及完整 StepResult 顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Powers 與 Meters 的 simulate-mode vertical slice 已涵蓋從 Worker HTTP 與 stdout event 到 step result 的 workflow execution，Desktop 也能執行此 simulation 並顯示結果。Desktop 透過僅限目前 session 的視覺化 Canvas 建立線性 Workflow；Canvas 位置不會保存至 Template，CLI 不提供 workflow run command，live-hardware workflow execution 也尚未開放。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 StepResult。Template schema version 1 與線性 Workflow 不保存 execution mode、resource、output authorization、safety cleanup 或 Canvas 位置。CLI 不提供 workflow run command。
 
 ## Executable 設定
 
@@ -26,9 +26,15 @@ powers = "USB0::VENDOR::POWER_SERIAL::INSTR"
 
 Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
-Desktop 應用程式透過 Tools tab 暴露相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Desktop 會把這些 override 保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status 與 Run Simulation 讀取同一份 persisted configuration，因此 Tools tab 顯示的 executable 就是 simulated run 實際使用的 executable。設定檔不存在時即為 portable 行為。
+Desktop 應用程式透過 Tools tab 提供相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Powers 與 Meters 另提供 Live Resource，以及 Save Resource／Clear Resource 操作。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。設定檔不存在時使用 portable executable path。
 
-可選的 `live_resources` table 會原樣保存 resource 字串，不做 path 解析、掃描或 fallback。Core adapter 與 Desktop preparation 已可建立 live Worker 啟動資訊；live workflow execution 仍維持停用，Simulation 行為不變。
+可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
+
+Run Live 必須先經過操作人員確認，對話框會列出 Workflow 引用的 resource，並警告即將控制真實儀器、可能改變電源輸出。Powers live writes 同時使用兩道授權：短生命週期的 Desktop runtime config 設定 Worker `settings.allow_output_writes=true`，runtime adapter 則為 Live output-affecting request 注入 `arguments.confirm_output=true`。執行結束後會 best-effort 刪除此支援檔案。
+
+只要 Live run 已啟動 Powers Worker，就會在 Worker shutdown 前嘗試 bounded `safe-off`，關閉所有通道，包括 Workflow 失敗或後續其他 Worker 啟動失敗的情況。Workflow 中明確的 Output OFF step 不會取代這道安全清理。Cleanup 失敗會讓 run 回報失敗，錯誤中同時保留原有 Workflow failure；Worker shutdown 仍會嘗試執行。Simulation 不會額外執行這項 Live cleanup。
+
+實體硬體支援仍受各 external instrument tool 的 manifest 與 product support policy 約束。本次實作尚未進行真實硬體端到端測試。Scopes 與 Wavegen 尚不支援 Live Workflow。
 
 ## External process 管理
 
