@@ -6,7 +6,8 @@ use serde_json::Value;
 use crate::{
     tool::{InvalidToolId, ToolId},
     workflow::{
-        ActionId, InvalidActionId, InvalidStepId, Step, StepId, StepKind, Workflow, WorkflowError,
+        ActionId, InputValue, InvalidActionId, InvalidStepId, InvalidVariableId, Step, StepId,
+        StepKind, StepOutputReference, VariableId, Workflow, WorkflowError,
     },
 };
 
@@ -38,7 +39,7 @@ impl Template {
 
     /// Serializes the template to pretty JSON.
     pub fn to_json_string(&self) -> Result<String, TemplateError> {
-        let wire = TemplateWire::from_template(self)?;
+        let wire = TemplateWire::from_template(self);
         serde_json::to_string_pretty(&wire).map_err(TemplateError::Json)
     }
 
@@ -85,8 +86,9 @@ impl Template {
 
 #[derive(Debug)]
 pub enum TemplateError {
-    UnsupportedStep {
-        step_id: StepId,
+    InvalidVariableId {
+        value: String,
+        source: InvalidVariableId,
     },
     Io {
         path: std::path::PathBuf,
@@ -115,10 +117,9 @@ pub enum TemplateError {
 impl fmt::Display for TemplateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedStep { step_id } => write!(
-                formatter,
-                "template schema version {TEMPLATE_SCHEMA_VERSION} does not support workflow step {step_id}"
-            ),
+            Self::InvalidVariableId { value, source } => {
+                write!(formatter, "invalid variable ID {value:?}: {source}")
+            }
             Self::Io { path, source } => {
                 write!(
                     formatter,
@@ -148,7 +149,7 @@ impl fmt::Display for TemplateError {
 impl Error for TemplateError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::UnsupportedStep { .. } => None,
+            Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
             Self::UnsupportedSchemaVersion { .. } => None,
@@ -174,12 +175,12 @@ struct TemplateWire {
 }
 
 impl TemplateWire {
-    fn from_template(template: &Template) -> Result<Self, TemplateError> {
-        Ok(Self {
+    fn from_template(template: &Template) -> Self {
+        Self {
             schema_version: TEMPLATE_SCHEMA_VERSION,
             name: template.name.clone(),
-            workflow: WorkflowWire::from_workflow(template.workflow())?,
-        })
+            workflow: WorkflowWire::from_workflow(template.workflow()),
+        }
     }
 }
 
@@ -190,20 +191,25 @@ struct WorkflowWire {
 }
 
 impl WorkflowWire {
-    fn from_workflow(workflow: &Workflow) -> Result<Self, TemplateError> {
-        Ok(Self {
-            steps: workflow
-                .steps()
-                .iter()
-                .map(StepWire::from_step)
-                .collect::<Result<_, _>>()?,
-        })
+    fn from_workflow(workflow: &Workflow) -> Self {
+        Self {
+            steps: workflow.steps().iter().map(StepWire::from_step).collect(),
+        }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
+    SetVariable {
+        id: String,
+        variable: String,
+        value: InputValueWire,
+    },
+    Output {
+        id: String,
+        value: InputValueWire,
+    },
     Wait {
         id: String,
         duration_ms: u64,
@@ -217,13 +223,17 @@ enum StepWire {
 }
 
 impl StepWire {
-    fn from_step(step: &Step) -> Result<Self, TemplateError> {
-        Ok(match step.kind() {
-            StepKind::SetVariable { .. } | StepKind::Output { .. } => {
-                return Err(TemplateError::UnsupportedStep {
-                    step_id: step.id().clone(),
-                });
-            }
+    fn from_step(step: &Step) -> Self {
+        match step.kind() {
+            StepKind::SetVariable { variable, value } => Self::SetVariable {
+                id: step.id().as_str().to_owned(),
+                variable: variable.as_str().to_owned(),
+                value: InputValueWire::from_input(value),
+            },
+            StepKind::Output { value } => Self::Output {
+                id: step.id().as_str().to_owned(),
+                value: InputValueWire::from_input(value),
+            },
             StepKind::Wait { duration_ms } => Self::Wait {
                 id: step.id().as_str().to_owned(),
                 duration_ms: *duration_ms,
@@ -238,7 +248,55 @@ impl StepWire {
                 action: action.as_str().to_owned(),
                 arguments: arguments.clone(),
             },
-        })
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
+enum InputValueWire {
+    Literal { value: Value },
+    Variable { variable: String },
+    StepOutput { step_id: String, pointer: String },
+}
+
+impl InputValueWire {
+    fn from_input(input: &InputValue) -> Self {
+        match input {
+            InputValue::Literal(value) => Self::Literal {
+                value: value.clone(),
+            },
+            InputValue::Variable(variable) => Self::Variable {
+                variable: variable.as_str().to_owned(),
+            },
+            InputValue::StepOutput(reference) => Self::StepOutput {
+                step_id: reference.step_id().as_str().to_owned(),
+                pointer: reference.pointer().to_owned(),
+            },
+        }
+    }
+}
+
+fn input_from_wire(wire: InputValueWire) -> Result<InputValue, TemplateError> {
+    match wire {
+        InputValueWire::Literal { value } => Ok(InputValue::Literal(value)),
+        InputValueWire::Variable { variable } => {
+            let variable =
+                VariableId::new(&variable).map_err(|source| TemplateError::InvalidVariableId {
+                    value: variable,
+                    source,
+                })?;
+            Ok(InputValue::Variable(variable))
+        }
+        InputValueWire::StepOutput { step_id, pointer } => {
+            let step_id = StepId::new(&step_id).map_err(|source| TemplateError::InvalidStepId {
+                value: step_id,
+                source,
+            })?;
+            Ok(InputValue::StepOutput(StepOutputReference::new(
+                step_id, pointer,
+            )))
+        }
     }
 }
 
@@ -255,6 +313,36 @@ fn workflow_from_wire(wire: WorkflowWire) -> Result<Workflow, TemplateError> {
 
 fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
     match wire {
+        StepWire::SetVariable {
+            id,
+            variable,
+            value,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let variable =
+                VariableId::new(&variable).map_err(|source| TemplateError::InvalidVariableId {
+                    value: variable,
+                    source,
+                })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::SetVariable {
+                    variable,
+                    value: input_from_wire(value)?,
+                },
+            ))
+        }
+        StepWire::Output { id, value } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::Output {
+                    value: input_from_wire(value)?,
+                },
+            ))
+        }
         StepWire::Wait { id, duration_ms } => {
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
@@ -303,7 +391,9 @@ mod tests {
     use super::{TEMPLATE_SCHEMA_VERSION, Template, TemplateError};
     use crate::{
         tool::ToolId,
-        workflow::{ActionId, Step, StepId, StepKind, Workflow},
+        workflow::{
+            ActionId, InputValue, Step, StepId, StepKind, StepOutputReference, VariableId, Workflow,
+        },
     };
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
@@ -479,21 +569,61 @@ mod tests {
     }
 
     #[test]
-    fn runtime_step_is_rejected_for_serialization() {
-        let step_id = StepId::new("output-value").unwrap();
-        let workflow = Workflow::new(vec![Step::new(
-            step_id.clone(),
-            StepKind::Output {
-                value: crate::workflow::InputValue::Literal(json!(5.0)),
-            },
-        )])
+    fn dataflow_template_round_trip_preserves_domain_and_wire_shape() {
+        let variable = VariableId::new("x").unwrap();
+        let step_id = StepId::new("set-x").unwrap();
+        let workflow = Workflow::new(vec![
+            Step::new(
+                step_id.clone(),
+                StepKind::SetVariable {
+                    variable: variable.clone(),
+                    value: InputValue::Literal(json!(5.0)),
+                },
+            ),
+            Step::new(
+                StepId::new("output-variable").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Variable(variable),
+                },
+            ),
+            Step::new(
+                StepId::new("output-step").unwrap(),
+                StepKind::Output {
+                    value: InputValue::StepOutput(StepOutputReference::new(step_id, "")),
+                },
+            ),
+        ])
         .unwrap();
-        let template = Template::new("Runtime output".to_owned(), workflow);
-        let error = template.to_json_string().unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "template schema version 1 does not support workflow step output-value"
+        let original = Template::new("Dataflow".to_owned(), workflow);
+        let json = original.to_json_string().unwrap();
+        let value: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        let steps = &value["workflow"]["steps"];
+        assert_eq!(steps[0]["type"], "set-variable");
+        assert_eq!(steps[0]["value"]["source"], "literal");
+        assert_eq!(steps[1]["value"]["source"], "variable");
+        assert_eq!(steps[2]["type"], "output");
+        assert_eq!(steps[2]["value"]["source"], "step-output");
+        assert_eq!(steps[2]["value"]["step_id"], "set-x");
+        assert_eq!(steps[2]["value"]["pointer"], "");
+        assert_eq!(Template::from_json_str(&json).unwrap(), original);
+    }
+
+    #[test]
+    fn invalid_variable_id_is_rejected_from_json() {
+        let json = json!({
+            "schema_version": 1,
+            "name": "Invalid variable",
+            "workflow": { "steps": [{
+                "type": "set-variable", "id": "set-x", "variable": "Bad_Name",
+                "value": { "source": "literal", "value": 5.0 }
+            }] }
+        })
+        .to_string();
+        let error = Template::from_json_str(&json).unwrap_err();
+        assert!(error.to_string().contains("invalid variable ID"));
+        assert!(
+            matches!(error, TemplateError::InvalidVariableId { value, .. } if value == "Bad_Name")
         );
-        assert!(matches!(error, TemplateError::UnsupportedStep { step_id: id } if id == step_id));
     }
 }
