@@ -66,6 +66,8 @@ orchestrator-tool --config <PATH> tools list
 
 ## 開發
 
+### Rust checks
+
 使用 stable Rust，並在 repository 根目錄執行：
 
 ```text
@@ -73,6 +75,40 @@ cargo build --locked
 cargo test --locked
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
+```
+
+### Desktop 開發
+
+Desktop 應用程式位於 `apps/desktop`。
+
+第一次設定 Desktop 應用程式，或 dependencies 變更後，請從 repository root 執行以下指令安裝 frontend dependencies：
+
+```powershell
+cd apps\desktop
+npm.cmd install
+```
+
+每次啟動 Desktop 應用程式前不需要重新執行 `npm.cmd install`。
+
+若只需啟動 frontend-only 開發伺服器，請在 `apps/desktop` 執行：
+
+```powershell
+npm.cmd run dev
+```
+
+`npm.cmd run dev` 只會啟動 Vite frontend development server。若要啟動完整的 Tauri Desktop 應用程式，請執行：
+
+```powershell
+npm.cmd run tauri dev
+```
+
+Tauri commands、dialogs、configuration 與 workflow execution 等完整 Desktop 功能，請使用 `npm.cmd run tauri dev` 驗證。
+
+在 `apps/desktop` 執行以下 frontend static checks：
+
+```powershell
+npx.cmd tsc --noEmit
+npm.cmd run build
 ```
 
 目前 CLI 已提供 tool listing、manifest inspection、environment diagnostics，以及針對 Powers 與 Meters 的 Worker diagnostic。

@@ -66,6 +66,8 @@ orchestrator-tool --config <PATH> tools list
 
 ## Development
 
+### Rust checks
+
 Use stable Rust and run checks from the repository root:
 
 ```text
@@ -73,6 +75,40 @@ cargo build --locked
 cargo test --locked
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
+```
+
+### Desktop development
+
+The Desktop application is located in `apps/desktop`.
+
+From the repository root, install frontend dependencies the first time you set up the Desktop application, or after its dependencies change:
+
+```powershell
+cd apps\desktop
+npm.cmd install
+```
+
+You do not need to run `npm.cmd install` every time you start the Desktop application.
+
+To start the frontend-only development server from `apps/desktop`:
+
+```powershell
+npm.cmd run dev
+```
+
+`npm.cmd run dev` starts only the Vite frontend development server. To start the complete Tauri Desktop application, run:
+
+```powershell
+npm.cmd run tauri dev
+```
+
+Use `npm.cmd run tauri dev` to validate complete Desktop functionality, including Tauri commands, dialogs, configuration, and workflow execution.
+
+Common frontend static checks from `apps/desktop` are:
+
+```powershell
+npx.cmd tsc --noEmit
+npm.cmd run build
 ```
 
 The CLI provides tool listing, manifest inspection, environment diagnostics, and focused Powers and Meters Worker checks.
