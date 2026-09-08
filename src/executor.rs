@@ -3,6 +3,7 @@ use std::{collections::HashMap, error::Error, fmt, thread, time::Duration};
 use serde_json::Value;
 
 use crate::{
+    data_context::DataContext,
     run::ExecutionMode,
     tool::ToolId,
     worker::WorkerSession,
@@ -39,6 +40,7 @@ pub fn execute_workflow(
         return Err(WorkflowExecutionError::EmptyWorkflow);
     }
 
+    let mut data_context = DataContext::new();
     let mut results = Vec::new();
 
     for step in workflow.steps() {
@@ -64,6 +66,10 @@ pub fn execute_workflow(
                 action_timeout,
             ),
         };
+
+        if let StepOutcome::Succeeded { output } = &outcome {
+            data_context.set_step_output(step.id().clone(), output.clone());
+        }
 
         let is_failed = matches!(outcome, StepOutcome::Failed { .. });
         results.push(StepResult::new(step.id().clone(), outcome));
