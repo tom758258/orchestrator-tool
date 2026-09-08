@@ -84,6 +84,81 @@ impl fmt::Display for InvalidActionId {
 
 impl Error for InvalidActionId {}
 
+/// A validated identifier for a workflow variable.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct VariableId(String);
+
+impl VariableId {
+    /// Creates a variable ID from a lowercase kebab-case string.
+    pub fn new(value: impl AsRef<str>) -> Result<Self, InvalidVariableId> {
+        let value = value.as_ref();
+
+        if is_valid_identifier(value) {
+            Ok(Self(value.to_owned()))
+        } else {
+            Err(InvalidVariableId)
+        }
+    }
+
+    /// Returns the variable ID as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for VariableId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// The supplied value is not a valid variable ID.
+#[derive(Debug)]
+pub struct InvalidVariableId;
+
+impl fmt::Display for InvalidVariableId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("variable ID must match [a-z0-9]+(-[a-z0-9]+)*")
+    }
+}
+
+impl Error for InvalidVariableId {}
+
+/// A reference to a value produced by a workflow step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepOutputReference {
+    step_id: StepId,
+    pointer: String,
+}
+
+impl StepOutputReference {
+    /// Creates a step output reference using JSON Pointer semantics.
+    pub fn new(step_id: StepId, pointer: impl Into<String>) -> Self {
+        Self {
+            step_id,
+            pointer: pointer.into(),
+        }
+    }
+
+    /// Returns the referenced step ID.
+    pub fn step_id(&self) -> &StepId {
+        &self.step_id
+    }
+
+    /// Returns the JSON Pointer into the step output.
+    pub fn pointer(&self) -> &str {
+        &self.pointer
+    }
+}
+
+/// A workflow input value and its source.
+#[derive(Clone, Debug, PartialEq)]
+pub enum InputValue {
+    Literal(Value),
+    Variable(VariableId),
+    StepOutput(StepOutputReference),
+}
+
 /// A single step in a workflow.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step {
@@ -211,7 +286,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ActionId, Step, StepId, StepKind, StepOutcome, StepResult, Workflow, WorkflowError,
+        ActionId, InputValue, Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult,
+        VariableId, Workflow, WorkflowError,
     };
     use crate::tool::ToolId;
 
@@ -279,6 +355,52 @@ mod tests {
 
         for value in ["", "Output-On", "software_trigger"] {
             assert!(ActionId::new(value).is_err(), "{value:?} should be invalid");
+        }
+    }
+
+    #[test]
+    fn variable_id_validation_matches_existing_identifier_rule() {
+        for value in ["x", "voltage", "target-voltage", "value1"] {
+            assert!(VariableId::new(value).is_ok(), "{value:?} should be valid");
+        }
+
+        for value in [
+            "",
+            "X",
+            "target_voltage",
+            "-target",
+            "target-",
+            "target--voltage",
+        ] {
+            assert!(
+                VariableId::new(value).is_err(),
+                "{value:?} should be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn input_value_variants_preserve_data() {
+        let literal = json!({ "value": 5.0 });
+        let variable_id = VariableId::new("target-voltage").unwrap();
+        let step_id = StepId::new("meter-read-1").unwrap();
+        let reference = StepOutputReference::new(step_id.clone(), "/data/samples/0/value");
+
+        let values = [
+            InputValue::Literal(literal.clone()),
+            InputValue::Variable(variable_id.clone()),
+            InputValue::StepOutput(reference.clone()),
+        ];
+
+        assert_eq!(values[0], InputValue::Literal(literal));
+        assert_eq!(values[1], InputValue::Variable(variable_id));
+        assert_eq!(values[2], InputValue::StepOutput(reference));
+
+        if let InputValue::StepOutput(output_reference) = &values[2] {
+            assert_eq!(output_reference.step_id(), &step_id);
+            assert_eq!(output_reference.pointer(), "/data/samples/0/value");
+        } else {
+            panic!("expected a step output reference");
         }
     }
 
