@@ -96,7 +96,7 @@ To start the frontend-only development server from `apps/desktop`:
 npm.cmd run dev
 ```
 
-`npm.cmd run dev` starts only the Vite frontend development server. To start the complete Tauri Desktop application, run:
+`npm.cmd run dev` starts only the Vite frontend development server. To start the complete Tauri Desktop application from the repository root, run:
 
 ```powershell
 cd apps\desktop

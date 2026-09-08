@@ -96,7 +96,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-`npm.cmd run dev` 只會啟動 Vite frontend development server。若要啟動完整的 Tauri Desktop 應用程式，請執行：
+`npm.cmd run dev` 只會啟動 Vite frontend development server。若要從 repository root 啟動完整的 Tauri Desktop 應用程式，請執行：
 
 ```powershell
 cd apps\desktop
