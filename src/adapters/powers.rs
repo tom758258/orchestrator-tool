@@ -41,6 +41,24 @@ pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunch
     )
 }
 
+/// Builds live Worker launch details using the exact caller-supplied resource.
+pub fn live_worker_launch_spec(executable: impl AsRef<Path>, resource: &str) -> WorkerLaunchSpec {
+    WorkerLaunchSpec::new(
+        executable.as_ref(),
+        [
+            OsString::from("worker"),
+            OsString::from("--mode"),
+            OsString::from("live"),
+            OsString::from("--resource"),
+            OsString::from(resource),
+            OsString::from("--control-port"),
+            OsString::from("0"),
+            OsString::from("--artifact-mode"),
+            OsString::from("memory"),
+        ],
+    )
+}
+
 /// Runs the bounded Powers simulate Worker diagnostic.
 pub fn run_worker_smoke(
     executable: impl AsRef<Path>,
@@ -648,6 +666,27 @@ mod tests {
         PowersActionError, PowersSmokeError, StatusResponse, read_status_request,
         simulate_worker_launch_spec, validate_arguments, validate_worker_health,
     };
+
+    #[test]
+    fn powers_live_contract_shape_is_correct() {
+        let resource = " USB0::Vendor::Serial With Spaces::INSTR ";
+        let spec = super::live_worker_launch_spec("powers-tool.exe", resource);
+        assert_eq!(spec.executable(), Path::new("powers-tool.exe"));
+        assert_eq!(
+            spec.arguments(),
+            [
+                OsString::from("worker"),
+                OsString::from("--mode"),
+                OsString::from("live"),
+                OsString::from("--resource"),
+                OsString::from(resource),
+                OsString::from("--control-port"),
+                OsString::from("0"),
+                OsString::from("--artifact-mode"),
+                OsString::from("memory"),
+            ]
+        );
+    }
 
     #[test]
     fn powers_simulate_contract_shape_is_correct() {

@@ -50,6 +50,29 @@ pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunch
     )
 }
 
+/// Builds live Worker launch details using the exact caller-supplied resource.
+pub fn live_worker_launch_spec(executable: impl AsRef<Path>, resource: &str) -> WorkerLaunchSpec {
+    WorkerLaunchSpec::new(
+        executable.as_ref(),
+        [
+            OsString::from("start-trigger-record"),
+            OsString::from("--resource"),
+            OsString::from(resource),
+            OsString::from("--measurement"),
+            OsString::from("voltage-dc"),
+            OsString::from("--trigger-mode"),
+            OsString::from("software"),
+            OsString::from("--max-samples"),
+            OsString::from("2"),
+            OsString::from("--status-format"),
+            OsString::from("jsonl"),
+            OsString::from("--sw-trigger-port"),
+            OsString::from("0"),
+            OsString::from("--no-csv"),
+        ],
+    )
+}
+
 /// Runs the bounded Meters simulate Worker diagnostic.
 pub fn run_worker_smoke(
     executable: impl AsRef<Path>,
@@ -526,6 +549,32 @@ mod tests {
         MetersActionError, MetersEventDecision, classify_meters_event, simulate_worker_launch_spec,
         software_trigger_request,
     };
+
+    #[test]
+    fn meters_live_contract_shape_is_correct() {
+        let resource = " USB0::Vendor::Serial With Spaces::INSTR ";
+        let spec = super::live_worker_launch_spec("meters-tool.exe", resource);
+        assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
+        assert_eq!(
+            spec.arguments(),
+            [
+                OsString::from("start-trigger-record"),
+                OsString::from("--resource"),
+                OsString::from(resource),
+                OsString::from("--measurement"),
+                OsString::from("voltage-dc"),
+                OsString::from("--trigger-mode"),
+                OsString::from("software"),
+                OsString::from("--max-samples"),
+                OsString::from("2"),
+                OsString::from("--status-format"),
+                OsString::from("jsonl"),
+                OsString::from("--sw-trigger-port"),
+                OsString::from("0"),
+                OsString::from("--no-csv"),
+            ]
+        );
+    }
 
     #[test]
     fn meters_event_matching_sample_is_success() {

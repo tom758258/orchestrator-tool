@@ -17,11 +17,18 @@ Core can load a TOML configuration file selected by its caller and use it to ove
 ```toml
 [tools]
 meters = "D:/tools/meters-tool.exe"
+powers = "D:/tools/powers-tool.exe"
+
+[live_resources]
+meters = "USB0::VENDOR::METER_SERIAL::INSTR"
+powers = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
 Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
 The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. The Desktop persists these overrides in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status and Run Simulation load the same persisted configuration, so the executables shown in the Tools tab are the ones used for simulated runs. A missing config file simply means portable behavior.
+
+The optional `live_resources` table stores exact resource strings without path resolution, scanning, or fallback. Core adapters and Desktop preparation can build live Worker launch details; live workflow execution remains disabled. Simulation behavior is unchanged.
 
 ## External process management
 
@@ -31,7 +38,7 @@ The CLI exposes focused Powers and Meters Worker diagnostics while Core retains 
 
 ## CLI
 
-P5-A established the command framework, P5-B implemented external tool listing, and P5-C implements environment diagnostics:
+The CLI provides command discovery, external tool listing, and environment diagnostics:
 
 ```text
 orchestrator-tool --help

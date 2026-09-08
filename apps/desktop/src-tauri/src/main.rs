@@ -13,7 +13,7 @@ use orchestrator_tool::{
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
-    run::run_simulated_workflow,
+    run::{ExecutionMode, run_simulated_workflow},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
     tool::ToolId,
@@ -145,8 +145,12 @@ async fn run_workflow_simulation(
         let application_dir = current_application_dir()
             .map_err(|error| format!("could not determine application directory: {error}"))?;
         let config = load_desktop_config(&app)?;
-        let launch_specs =
-            prepare_simulate_launch_specs(template.workflow(), &application_dir, &config)?;
+        let launch_specs = prepare_worker_launch_specs(
+            template.workflow(),
+            ExecutionMode::Simulate,
+            &application_dir,
+            &config,
+        )?;
         let results = run_simulated_workflow(
             template.workflow(),
             &launch_specs,
@@ -162,8 +166,7 @@ async fn run_workflow_simulation(
     .map_err(|error| error.to_string())?
 }
 
-fn referenced_simulation_tools(workflow: &Workflow) -> Vec<ToolId> {
-
+fn referenced_workflow_tools(workflow: &Workflow) -> Vec<ToolId> {
     let mut tools = Vec::new();
 
     for step in workflow.steps() {
@@ -178,19 +181,29 @@ fn referenced_simulation_tools(workflow: &Workflow) -> Vec<ToolId> {
     tools
 }
 
-fn prepare_simulate_launch_specs(
+fn prepare_worker_launch_specs(
     workflow: &Workflow,
+    execution_mode: ExecutionMode,
     application_dir: &Path,
     config: &Config,
 ) -> Result<HashMap<ToolId, WorkerLaunchSpec>, String> {
     let definitions = built_in_tool_definitions();
     let mut launch_specs = HashMap::new();
 
-    for tool in referenced_simulation_tools(workflow) {
+    let tools = referenced_workflow_tools(workflow);
+    if execution_mode == ExecutionMode::Live {
+        for tool in &tools {
+            if config.live_resource(tool).is_none() {
+                return Err(format!("{tool} live resource is not configured"));
+            }
+        }
+    }
+
+    for tool in tools {
         let definition = definitions
             .iter()
             .find(|definition| definition.id() == &tool)
-            .expect("supported simulation tool must be built in");
+            .expect("supported workflow tool must be built in");
         let inspection = inspect_tool(application_dir, config, definition)
             .map_err(|error| format!("{tool} executable inspection failed: {error}"))?;
 
@@ -217,10 +230,22 @@ fn prepare_simulate_launch_specs(
             return Err(format!("{tool} Worker protocol is incompatible"));
         }
 
-        let spec = match tool.as_str() {
-            "powers" => powers::simulate_worker_launch_spec(executable),
-            "meters" => meters::simulate_worker_launch_spec(executable),
-            _ => unreachable!("referenced simulation tools are filtered"),
+        let spec = match (execution_mode, tool.as_str()) {
+            (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
+            (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(executable),
+            (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
+                executable,
+                config
+                    .live_resource(&tool)
+                    .expect("live resources were validated"),
+            ),
+            (ExecutionMode::Live, "meters") => meters::live_worker_launch_spec(
+                executable,
+                config
+                    .live_resource(&tool)
+                    .expect("live resources were validated"),
+            ),
+            _ => unreachable!("referenced workflow tools are filtered"),
         };
         launch_specs.insert(tool, spec);
     }
@@ -377,7 +402,7 @@ fn main() {
 mod tests {
     use super::{
         create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
-        referenced_simulation_tools, reset_desktop_tool_executable, resolve_built_in_tool_id,
+        referenced_workflow_tools, reset_desktop_tool_executable, resolve_built_in_tool_id,
         save_workflow_template, set_desktop_tool_executable, step_result_dto,
         validate_workflow_draft,
     };
@@ -387,6 +412,35 @@ mod tests {
         workflow::{StepId, StepOutcome, StepResult},
     };
     use serde_json::json;
+
+    #[test]
+    fn live_preparation_requires_resources_before_executable_probing() {
+        use super::{Config, ExecutionMode, prepare_worker_launch_specs};
+        use orchestrator_tool::workflow::{ActionId, Step, StepKind, Workflow};
+        for tool in [ToolId::powers(), ToolId::meters()] {
+            let workflow = Workflow::new(vec![Step::new(
+                StepId::new("action-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: tool.clone(),
+                    action: ActionId::new("measure").unwrap(),
+                    arguments: json!({}),
+                },
+            )])
+            .unwrap();
+            let error = prepare_worker_launch_specs(
+                &workflow,
+                ExecutionMode::Live,
+                std::path::Path::new("unused"),
+                &Config::default(),
+            )
+            .unwrap_err();
+            assert!(error.contains(tool.as_str()), "{error}");
+            assert!(
+                error.contains("live resource") && error.contains("not configured"),
+                "{error}"
+            );
+        }
+    }
 
     #[test]
     fn create_workflow_draft_returns_restorable_empty_template() {
@@ -501,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn referenced_simulation_tools_only_selects_used_supported_tools() {
+    fn referenced_workflow_tools_only_selects_used_supported_tools() {
         let template = Template::from_json_str(
             r#"{
                 "schema_version": 1,
@@ -519,7 +573,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            referenced_simulation_tools(template.workflow()),
+            referenced_workflow_tools(template.workflow()),
             vec![ToolId::meters()]
         );
     }

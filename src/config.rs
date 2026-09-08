@@ -9,10 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{discovery::built_in_tool_definitions, tool::ToolId};
 
-/// Executable path overrides loaded from an orchestrator configuration file.
+/// Executable path overrides and exact live resources loaded from an orchestrator configuration file.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Config {
     tools: BTreeMap<String, PathBuf>,
+    live_resources: BTreeMap<String, String>,
 }
 
 impl Config {
@@ -61,7 +62,21 @@ impl Config {
             tools.insert(tool_id, path);
         }
 
-        Ok(Self { tools })
+        for tool_id in raw.live_resources.keys() {
+            if !definitions
+                .iter()
+                .any(|definition| definition.id().as_str() == tool_id)
+            {
+                return Err(ConfigError::UnknownTool {
+                    path: config_path,
+                    tool_id: tool_id.clone(),
+                });
+            }
+        }
+        Ok(Self {
+            tools,
+            live_resources: raw.live_resources,
+        })
     }
 
     /// Returns the configured executable path for a tool, if present.
@@ -85,11 +100,32 @@ impl Config {
         self.tools.remove(tool_id.as_str()).is_some()
     }
 
+    /// Returns the exact configured live resource for a tool, if present.
+    pub fn live_resource(&self, tool_id: &ToolId) -> Option<&str> {
+        self.live_resources
+            .get(tool_id.as_str())
+            .map(String::as_str)
+    }
+
+    /// Sets an opaque live resource without path resolution or normalization.
+    ///
+    /// Callers must use built-in tool IDs, as with executable path overrides.
+    pub fn set_live_resource(&mut self, tool_id: &ToolId, resource: impl Into<String>) {
+        self.live_resources
+            .insert(tool_id.as_str().to_owned(), resource.into());
+    }
+
+    /// Removes a live resource, returning false when none was present.
+    pub fn remove_live_resource(&mut self, tool_id: &ToolId) -> bool {
+        self.live_resources.remove(tool_id.as_str()).is_some()
+    }
+
     /// Saves the configuration as TOML, creating parent directories as needed.
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
         let supplied_path = path.as_ref();
         let raw = RawConfig {
             tools: self.tools.clone(),
+            live_resources: self.live_resources.clone(),
         };
         let contents = toml::to_string(&raw).map_err(|source| ConfigError::Serialize {
             path: supplied_path.to_path_buf(),
@@ -115,6 +151,8 @@ impl Config {
 struct RawConfig {
     #[serde(default)]
     tools: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    live_resources: BTreeMap<String, String>,
 }
 
 /// An error produced while loading an orchestrator configuration file.
@@ -229,6 +267,53 @@ mod tests {
     }
 
     #[test]
+    fn live_resources_round_trip_preserves_exact_strings_and_independent_bindings() {
+        let test_dir = TestDir::new();
+        let path = test_dir.path().join("orchestrator.toml");
+        let executable = test_dir.path().join("powers-tool.exe");
+        let powers = " USB0::Vendor::Power serial::INSTR ";
+        let meters = "TCPIP0::MeterHost::inst0::INSTR";
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::powers(), &executable);
+        config.set_live_resource(&ToolId::powers(), powers);
+        config.set_live_resource(&ToolId::meters(), meters);
+        config.save(&path).unwrap();
+        let mut loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.live_resource(&ToolId::powers()), Some(powers));
+        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            loaded.executable_path(&ToolId::powers()),
+            Some(executable.as_path())
+        );
+        assert!(loaded.remove_live_resource(&ToolId::powers()));
+        assert!(!loaded.remove_live_resource(&ToolId::powers()));
+        assert_eq!(loaded.live_resource(&ToolId::powers()), None);
+        loaded.save(&path).unwrap();
+        let reloaded = Config::load(&path).unwrap();
+        assert_eq!(reloaded.live_resource(&ToolId::powers()), None);
+        assert_eq!(reloaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            reloaded.executable_path(&ToolId::powers()),
+            Some(executable.as_path())
+        );
+    }
+
+    #[test]
+    fn unknown_live_resource_tool_id_is_rejected() {
+        let test_dir = TestDir::new();
+        let path = test_dir.path().join("orchestrator.toml");
+        fs::write(
+            &path,
+            "[live_resources]\nelectronic-load = \"USB0::load\"\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            Config::load(path),
+            Err(ConfigError::UnknownTool { .. })
+        ));
+    }
+
+    #[test]
     fn relative_executable_path_uses_config_directory() {
         let test_dir = TestDir::new();
         let config_dir = test_dir.path().join("config");
@@ -241,6 +326,7 @@ mod tests {
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
+        assert_eq!(config.live_resource(&ToolId::meters()), None);
 
         assert_eq!(
             config.executable_path(&ToolId::meters()),

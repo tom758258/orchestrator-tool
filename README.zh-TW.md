@@ -17,11 +17,18 @@ Core 可以載入由呼叫端指定的 TOML 設定檔，並用它覆寫 built-in
 ```toml
 [tools]
 meters = "D:/tools/meters-tool.exe"
+powers = "D:/tools/powers-tool.exe"
+
+[live_resources]
+meters = "USB0::VENDOR::METER_SERIAL::INSTR"
+powers = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
 Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
 Desktop 應用程式透過 Tools tab 暴露相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Desktop 會把這些 override 保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status 與 Run Simulation 讀取同一份 persisted configuration，因此 Tools tab 顯示的 executable 就是 simulated run 實際使用的 executable。設定檔不存在時即為 portable 行為。
+
+The optional `live_resources` table stores exact resource strings without path resolution, scanning, or fallback. Core adapters and Desktop preparation can build live Worker launch details; live workflow execution remains disabled. Simulation behavior is unchanged.
 
 ## External process 管理
 
@@ -31,7 +38,7 @@ Core 已提供 Common Worker process/session 與 local HTTP IPC 支援，CLI 已
 
 ## CLI
 
-P5-A 建立 command framework，P5-B 實作 external tool listing，P5-C 實作 environment diagnostics：
+The CLI provides command discovery, external tool listing, and environment diagnostics:
 
 ```text
 orchestrator-tool --help

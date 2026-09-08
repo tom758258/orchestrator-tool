@@ -31,7 +31,7 @@ fn workflow_template_step_result_integration() {
     ])
     .unwrap();
 
-    let template = Template::new("P9-D Integration".to_owned(), workflow);
+    let template = Template::new("Workflow Integration".to_owned(), workflow);
     let json = template.to_json_string().unwrap();
     let restored = Template::from_json_str(&json).unwrap();
 
