@@ -28,7 +28,7 @@ Configured path 的優先順序高於 portable path。Configured path 不存在�
 
 Desktop 應用程式透過 Tools tab 暴露相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Desktop 會把這些 override 保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status 與 Run Simulation 讀取同一份 persisted configuration，因此 Tools tab 顯示的 executable 就是 simulated run 實際使用的 executable。設定檔不存在時即為 portable 行為。
 
-The optional `live_resources` table stores exact resource strings without path resolution, scanning, or fallback. Core adapters and Desktop preparation can build live Worker launch details; live workflow execution remains disabled. Simulation behavior is unchanged.
+可選的 `live_resources` table 會原樣保存 resource 字串，不做 path 解析、掃描或 fallback。Core adapter 與 Desktop preparation 已可建立 live Worker 啟動資訊；live workflow execution 仍維持停用，Simulation 行為不變。
 
 ## External process 管理
 
@@ -38,7 +38,7 @@ Core 已提供 Common Worker process/session 與 local HTTP IPC 支援，CLI 已
 
 ## CLI
 
-The CLI provides command discovery, external tool listing, and environment diagnostics:
+CLI 提供 command discovery、external tool listing 與 environment diagnostics：
 
 ```text
 orchestrator-tool --help
