@@ -8,6 +8,7 @@ pub mod config;
 pub mod discovery;
 pub mod executor;
 pub mod inspection;
+pub mod live_resources;
 pub mod manifest;
 pub mod manifest_probe;
 pub mod process;

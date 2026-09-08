@@ -29,6 +29,18 @@ const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
+#[tauri::command]
+async fn list_live_resources(app: AppHandle, tool_id: String) -> Result<Vec<String>, String> {
+    let tool = resolve_built_in_tool_id(&tool_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::live_resources::list_live_resources(&application_dir, &config, &tool)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[derive(Serialize)]
 struct ToolStatusDto {
     tool_id: String,
@@ -552,6 +564,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
+            list_live_resources,
             run_workflow_simulation,
             run_workflow_live,
             set_live_resource,

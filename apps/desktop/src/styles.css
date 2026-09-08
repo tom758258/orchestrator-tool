@@ -411,7 +411,8 @@ body {
   font-weight: 500;
 }
 
-.step-property-field input {
+.step-property-field input,
+.step-property-field select {
   min-width: 0;
   padding: 6px 10px;
   border: 1px solid #c9ced6;
@@ -421,7 +422,8 @@ body {
   font: inherit;
 }
 
-.step-property-field input:disabled {
+.step-property-field input:disabled,
+.step-property-field select:disabled {
   opacity: 0.55;
 }
 
@@ -513,4 +515,8 @@ body {
 
 .live-resource {
   margin-top: 16px;
+}
+
+.discovered-resources {
+  margin-top: 12px;
 }

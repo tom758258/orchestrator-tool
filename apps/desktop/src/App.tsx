@@ -198,6 +198,8 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
+  const [discoveredResources, setDiscoveredResources] = useState<Record<string, string[] | undefined>>({})
+  const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
@@ -537,6 +539,23 @@ function App() {
     }
   }, [refresh, resourceDrafts, toolConfigBusy])
 
+  const handleListResources = useCallback(async (toolId: string) => {
+    if (toolConfigBusy !== null) {
+      return
+    }
+    setToolConfigBusy(toolId)
+    setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
+    setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
+    try {
+      const resources = await invoke<string[]>('list_live_resources', { toolId })
+      setDiscoveredResources((current) => ({ ...current, [toolId]: resources }))
+    } catch (message) {
+      setDiscoveryErrors((current) => ({ ...current, [toolId]: String(message) }))
+    } finally {
+      setToolConfigBusy(null)
+    }
+  }, [toolConfigBusy])
+
   const runLive = useCallback(async () => {
     if (!workflowDraft) {
       return
@@ -769,6 +788,14 @@ function App() {
                           className="action-button"
                           type="button"
                           disabled={toolConfigBusy !== null || workflowBusy}
+                          onClick={() => void handleListResources(tool.tool_id)}
+                        >
+                          List Resources
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy}
                           onClick={() => void handleResource(tool.tool_id, false)}
                         >
                           Save Resource
@@ -782,6 +809,34 @@ function App() {
                           Clear Resource
                         </button>
                       </div>
+                      {discoveryErrors[tool.tool_id] && (
+                        <p className="error" role="alert">
+                          {discoveryErrors[tool.tool_id]}
+                        </p>
+                      )}
+                      {discoveredResources[tool.tool_id]?.length === 0 && (
+                        <p role="status">No live resources found.</p>
+                      )}
+                      {(discoveredResources[tool.tool_id]?.length ?? 0) > 0 && (
+                        <label className="step-property-field discovered-resources">
+                          <span className="step-property-label">Discovered Resources</span>
+                          <select
+                            value=""
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onChange={(event) => {
+                              const resource = event.target.value
+                              if (resource) {
+                                setResourceDrafts((current) => ({ ...current, [tool.tool_id]: resource }))
+                              }
+                            }}
+                          >
+                            <option value="">Select discovered resource...</option>
+                            {discoveredResources[tool.tool_id]?.map((resource, index) => (
+                              <option key={index} value={resource}>{resource}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                     </div>
                   )}
                 </li>
