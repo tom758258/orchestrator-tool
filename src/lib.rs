@@ -5,6 +5,7 @@
 
 pub mod adapters;
 pub mod config;
+pub mod data_context;
 pub mod discovery;
 pub mod executor;
 pub mod inspection;
