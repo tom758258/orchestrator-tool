@@ -20,6 +20,26 @@ type ToolStatus = {
   live_resource: string | null
 }
 
+type LiveResourceCandidate = {
+  resource: string
+  manufacturer: string | null
+  model: string | null
+  serial: string | null
+  identity: string | null
+}
+
+function formatResourceCandidate(candidate: LiveResourceCandidate): string {
+  const manufacturer = candidate.manufacturer?.trim()
+  const model = candidate.model?.trim()
+  const serial = candidate.serial?.trim()
+  if (manufacturer && model) {
+    return `${manufacturer} ${model}${serial ? ` [${serial}]` : ''} — ${candidate.resource}`
+  }
+  return candidate.identity?.trim()
+    ? `${candidate.identity} — ${candidate.resource}`
+    : candidate.resource
+}
+
 type WaitStep = {
   type: 'wait'
   id: string
@@ -198,7 +218,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
-  const [discoveredResources, setDiscoveredResources] = useState<Record<string, string[] | undefined>>({})
+  const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -491,6 +511,8 @@ function App() {
           return
         }
         await invoke('set_tool_executable', { toolId, path: selected })
+        setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
+        setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
         await refresh()
       } catch (message) {
         setToolConfigError(String(message))
@@ -511,6 +533,8 @@ function App() {
       setToolConfigError(null)
       try {
         await invoke('reset_tool_executable', { toolId })
+        setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
+        setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
         await refresh()
       } catch (message) {
         setToolConfigError(String(message))
@@ -547,7 +571,7 @@ function App() {
     setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
     setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
     try {
-      const resources = await invoke<string[]>('list_live_resources', { toolId })
+      const resources = await invoke<LiveResourceCandidate[]>('list_live_resources', { toolId })
       setDiscoveredResources((current) => ({ ...current, [toolId]: resources }))
     } catch (message) {
       setDiscoveryErrors((current) => ({ ...current, [toolId]: String(message) }))
@@ -831,8 +855,8 @@ function App() {
                             }}
                           >
                             <option value="">Select discovered resource...</option>
-                            {discoveredResources[tool.tool_id]?.map((resource, index) => (
-                              <option key={index} value={resource}>{resource}</option>
+                            {discoveredResources[tool.tool_id]?.map((candidate, index) => (
+                              <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
                             ))}
                           </select>
                         </label>

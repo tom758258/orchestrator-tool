@@ -2,6 +2,7 @@
 
 use std::{path::Path, time::Duration};
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
@@ -14,12 +15,22 @@ use crate::{
     tool::ToolId,
 };
 
+/// Discovery-time presentation metadata; only the resource address is configuration.
+#[derive(Debug, Serialize)]
+pub struct LiveResourceCandidate {
+    pub resource: String,
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+    pub serial: Option<String>,
+    pub identity: Option<String>,
+}
+
 /// Lists live resources without changing configuration or selecting a resource.
 pub fn list_live_resources(
     application_dir: &Path,
     config: &Config,
     tool: &ToolId,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<LiveResourceCandidate>, String> {
     resource_field(tool)?;
     let definition = built_in_tool_definitions()
         .into_iter()
@@ -56,6 +67,16 @@ pub fn list_live_resources(
         CaptureError::Timeout => format!("{tool} resource discovery timed out after 60 seconds"),
     })?;
     if !output.status.success() {
+        if tool == &ToolId::powers() {
+            let detail = powers_error_detail(&output.stdout).or_else(|| {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+                (!stderr.is_empty()).then_some(stderr)
+            });
+            return Err(match detail {
+                Some(detail) => format!("{tool} resource discovery failed: {detail}"),
+                None => format!("{tool} resource discovery failed with {}", output.status),
+            });
+        }
         return Err(format!(
             "{tool} resource discovery failed with {}: {}",
             output.status,
@@ -73,7 +94,7 @@ fn resource_field(tool: &ToolId) -> Result<&'static str, String> {
     }
 }
 
-fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<String>, String> {
+fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandidate>, String> {
     let field = resource_field(tool)?;
     let response: Value = serde_json::from_slice(stdout)
         .map_err(|error| format!("{tool} resource discovery returned invalid JSON: {error}"))?;
@@ -106,7 +127,7 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<String>, String> 
         .iter()
         .enumerate()
         .map(|(index, row)| {
-            row[field]
+            let resource = row[field]
                 .as_str()
                 .filter(|value| !value.trim().is_empty())
                 .map(str::to_owned)
@@ -114,9 +135,59 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<String>, String> 
                     format!(
                         "{tool} resource discovery item {index} has no non-empty {field} string"
                     )
-                })
+                })?;
+            let mut candidate = LiveResourceCandidate {
+                resource,
+                manufacturer: None,
+                model: None,
+                serial: None,
+                identity: None,
+            };
+            if tool == &ToolId::meters() {
+                candidate.identity = row["detail"].as_str().map(str::to_owned);
+                parse_meters_identity(&mut candidate);
+            } else {
+                let idn = &row["idn"];
+                candidate.manufacturer = idn["manufacturer"].as_str().map(str::to_owned);
+                candidate.model = idn["model"].as_str().map(str::to_owned);
+                candidate.serial = idn["serial"].as_str().map(str::to_owned);
+                candidate.identity = idn["raw"].as_str().map(str::to_owned);
+            }
+            Ok(candidate)
         })
         .collect()
+}
+
+fn parse_meters_identity(candidate: &mut LiveResourceCandidate) {
+    let Some(identity) = candidate.identity.as_deref() else {
+        return;
+    };
+    let fields: Vec<_> = identity.split(',').map(str::trim).collect();
+    if let [manufacturer, model, serial, _firmware] = fields.as_slice()
+        && !manufacturer.is_empty()
+        && !model.is_empty()
+    {
+        candidate.manufacturer = Some((*manufacturer).to_owned());
+        candidate.model = Some((*model).to_owned());
+        candidate.serial = (!serial.is_empty()).then(|| (*serial).to_owned());
+    }
+}
+
+fn powers_error_detail(stdout: &[u8]) -> Option<String> {
+    let response: Value = serde_json::from_slice(stdout).ok()?;
+    if response["schema_version"].as_u64() != Some(2)
+        || response["ok"] != false
+        || response["status"] != "error"
+        || response["command"]["name"] != "list-resources"
+    {
+        return None;
+    }
+    let code = response["error"]["code"].as_str()?.trim();
+    let message = response["error"]["message"].as_str()?.trim();
+    if code.is_empty() || message.is_empty() {
+        return None;
+    }
+    Some(format!("{code}: {message}"))
 }
 
 #[cfg(test)]
@@ -146,8 +217,8 @@ mod tests {
             let mut value = response(&tool);
             value["future_field"] = json!({"anything": true});
             assert_eq!(
-                parse_resources(&tool, value.to_string().as_bytes()).unwrap(),
-                [expected]
+                parse_resources(&tool, value.to_string().as_bytes()).unwrap()[0].resource,
+                expected
             );
             let rows = if tool == ToolId::meters() {
                 &mut value["resources"]
@@ -161,6 +232,108 @@ mod tests {
                     .is_empty()
             );
         }
+    }
+
+    #[test]
+    fn powers_preserves_identity_without_supported_model_metadata() {
+        let mut value = response(&ToolId::powers());
+        value["data"]["resources"] = json!([{
+            "name": "USB0::POWER::INSTR", "reachable": true,
+            "vendor_id": null, "model_id": null,
+            "idn": {"manufacturer": "KEYSIGHT", "model": "E36312A",
+                "serial": "MY123", "raw": "KEYSIGHT,E36312A,MY123,1.0",
+                "firmware": "1.0", "future_field": true}
+        }]);
+        let candidates = parse_resources(&ToolId::powers(), value.to_string().as_bytes()).unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        assert_eq!(candidate.resource, "USB0::POWER::INSTR");
+        assert_eq!(candidate.manufacturer.as_deref(), Some("KEYSIGHT"));
+        assert_eq!(candidate.model.as_deref(), Some("E36312A"));
+        assert_eq!(candidate.serial.as_deref(), Some("MY123"));
+        assert_eq!(
+            candidate.identity.as_deref(),
+            Some("KEYSIGHT,E36312A,MY123,1.0")
+        );
+
+        value["data"]["resources"][0]["idn"] = Value::Null;
+        let candidates = parse_resources(&ToolId::powers(), value.to_string().as_bytes()).unwrap();
+        assert_eq!(candidates[0].resource, "USB0::POWER::INSTR");
+        assert!(candidates[0].manufacturer.is_none());
+        assert!(candidates[0].model.is_none());
+        assert!(candidates[0].serial.is_none());
+        assert!(candidates[0].identity.is_none());
+    }
+
+    #[test]
+    fn meters_parses_trimmed_identity_and_optional_serial() {
+        for (identity, serial) in [
+            ("Keysight Technologies,34461A,MY456,1.0", Some("MY456")),
+            (
+                " Keysight Technologies , 34461A , MY456 , 1.0 ",
+                Some("MY456"),
+            ),
+            ("Keysight Technologies,34461A,,1.0", None),
+        ] {
+            let mut value = response(&ToolId::meters());
+            value["resources"][0]["resource"] = json!("USB0::METER::INSTR");
+            value["resources"][0]["detail"] = json!(identity);
+            let candidates =
+                parse_resources(&ToolId::meters(), value.to_string().as_bytes()).unwrap();
+            let candidate = &candidates[0];
+            assert_eq!(candidate.resource, "USB0::METER::INSTR");
+            assert_eq!(
+                candidate.manufacturer.as_deref(),
+                Some("Keysight Technologies")
+            );
+            assert_eq!(candidate.model.as_deref(), Some("34461A"));
+            assert_eq!(candidate.serial.as_deref(), serial);
+            assert_eq!(candidate.identity.as_deref(), Some(identity));
+        }
+    }
+
+    #[test]
+    fn malformed_meters_identity_preserves_resource_and_raw_detail() {
+        for identity in [
+            "unexpected identity",
+            "",
+            ",34461A,MY456,1.0",
+            "Keysight, ,MY456,1.0",
+            "Keysight,34461A",
+            "A,B,C,D,E",
+        ] {
+            let mut value = response(&ToolId::meters());
+            value["resources"][0]["detail"] = json!(identity);
+            let candidates =
+                parse_resources(&ToolId::meters(), value.to_string().as_bytes()).unwrap();
+            let candidate = &candidates[0];
+            assert_eq!(candidate.resource, " USB0::Meter Serial::INSTR ");
+            assert_eq!(candidate.identity.as_deref(), Some(identity));
+            assert!(candidate.manufacturer.is_none());
+            assert!(candidate.model.is_none());
+            assert!(candidate.serial.is_none());
+        }
+    }
+
+    #[test]
+    fn powers_structured_error_extracts_code_and_message() {
+        let mut value = json!({"schema_version": 2, "ok": false, "status": "error",
+            "command": {"name": "list-resources"}, "data": null,
+            "error": {"type": "connection", "code": "resource_list_failed",
+                "message": "Could not list VISA resources: backend unavailable", "retryable": true},
+            "future_field": true});
+        assert_eq!(
+            powers_error_detail(value.to_string().as_bytes()).as_deref(),
+            Some("resource_list_failed: Could not list VISA resources: backend unavailable")
+        );
+        for invalid in [Value::Null, json!(" "), json!(42)] {
+            value["error"]["message"] = invalid;
+            assert!(powers_error_detail(value.to_string().as_bytes()).is_none());
+        }
+        for bytes in [b"not json".as_slice(), b"{}", b""] {
+            assert!(powers_error_detail(bytes).is_none());
+        }
+        assert!(powers_error_detail(response(&ToolId::powers()).to_string().as_bytes()).is_none());
     }
 
     #[test]

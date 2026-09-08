@@ -11,6 +11,7 @@ use orchestrator_tool::{
     config::{Config, ConfigError},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     inspection::inspect_tool,
+    live_resources::LiveResourceCandidate,
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
     run::{ExecutionMode, run_simulated_workflow, run_workflow},
@@ -30,7 +31,10 @@ const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
 #[tauri::command]
-async fn list_live_resources(app: AppHandle, tool_id: String) -> Result<Vec<String>, String> {
+async fn list_live_resources(
+    app: AppHandle,
+    tool_id: String,
+) -> Result<Vec<LiveResourceCandidate>, String> {
     let tool = resolve_built_in_tool_id(&tool_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
