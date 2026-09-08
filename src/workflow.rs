@@ -186,6 +186,13 @@ impl Step {
 /// The behavior represented by a workflow step.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StepKind {
+    SetVariable {
+        variable: VariableId,
+        value: InputValue,
+    },
+    Output {
+        value: InputValue,
+    },
     Wait {
         duration_ms: u64,
     },

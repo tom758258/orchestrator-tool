@@ -45,6 +45,21 @@ pub fn execute_workflow(
 
     for step in workflow.steps() {
         let outcome = match step.kind() {
+            StepKind::SetVariable { variable, value } => match data_context.resolve(value) {
+                Ok(output) => {
+                    data_context.set_variable(variable.clone(), output.clone());
+                    StepOutcome::Succeeded { output }
+                }
+                Err(error) => StepOutcome::Failed {
+                    message: error.to_string(),
+                },
+            },
+            StepKind::Output { value } => match data_context.resolve(value) {
+                Ok(output) => StepOutcome::Succeeded { output },
+                Err(error) => StepOutcome::Failed {
+                    message: error.to_string(),
+                },
+            },
             StepKind::Wait { duration_ms } => {
                 if *duration_ms > 0 {
                     thread::sleep(Duration::from_millis(*duration_ms));
@@ -137,8 +152,115 @@ mod tests {
     use crate::{
         run::ExecutionMode,
         tool::ToolId,
-        workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
+        workflow::{
+            ActionId, InputValue, Step, StepId, StepKind, StepOutcome, StepOutputReference,
+            VariableId, Workflow,
+        },
     };
+
+    #[test]
+    fn variable_is_available_to_later_output() {
+        let variable = VariableId::new("x").unwrap();
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("set-x").unwrap(),
+                StepKind::SetVariable {
+                    variable: variable.clone(),
+                    value: InputValue::Literal(json!(5.0)),
+                },
+            ),
+            Step::new(
+                StepId::new("output-x").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Variable(variable),
+                },
+            ),
+        ])
+        .unwrap();
+        let results = execute_workflow(
+            &workflow,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+        for result in results {
+            assert_eq!(
+                result.outcome(),
+                &StepOutcome::Succeeded { output: json!(5.0) }
+            );
+        }
+    }
+
+    #[test]
+    fn successful_step_output_is_available_to_later_output() {
+        let step_id = StepId::new("set-x").unwrap();
+        let workflow = Workflow::new(vec![
+            Step::new(
+                step_id.clone(),
+                StepKind::SetVariable {
+                    variable: VariableId::new("x").unwrap(),
+                    value: InputValue::Literal(json!(5.0)),
+                },
+            ),
+            Step::new(
+                StepId::new("output-x").unwrap(),
+                StepKind::Output {
+                    value: InputValue::StepOutput(StepOutputReference::new(step_id, "")),
+                },
+            ),
+        ])
+        .unwrap();
+        let results = execute_workflow(
+            &workflow,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+        for result in results {
+            assert_eq!(
+                result.outcome(),
+                &StepOutcome::Succeeded { output: json!(5.0) }
+            );
+        }
+    }
+
+    #[test]
+    fn resolution_failure_stops_later_steps() {
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("missing-output").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Variable(VariableId::new("missing").unwrap()),
+                },
+            ),
+            Step::new(
+                StepId::new("later-output").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Literal(json!(5.0)),
+                },
+            ),
+        ])
+        .unwrap();
+        let results = execute_workflow(
+            &workflow,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].step_id().as_str(), "missing-output");
+        assert_eq!(
+            results[0].outcome(),
+            &StepOutcome::Failed {
+                message: "missing variable missing".to_owned()
+            }
+        );
+    }
 
     #[test]
     fn empty_workflow_is_rejected_for_execution() {

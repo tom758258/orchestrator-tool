@@ -38,7 +38,7 @@ impl Template {
 
     /// Serializes the template to pretty JSON.
     pub fn to_json_string(&self) -> Result<String, TemplateError> {
-        let wire = TemplateWire::from_template(self);
+        let wire = TemplateWire::from_template(self)?;
         serde_json::to_string_pretty(&wire).map_err(TemplateError::Json)
     }
 
@@ -85,6 +85,9 @@ impl Template {
 
 #[derive(Debug)]
 pub enum TemplateError {
+    UnsupportedStep {
+        step_id: StepId,
+    },
     Io {
         path: std::path::PathBuf,
         source: io::Error,
@@ -112,6 +115,10 @@ pub enum TemplateError {
 impl fmt::Display for TemplateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedStep { step_id } => write!(
+                formatter,
+                "template schema version {TEMPLATE_SCHEMA_VERSION} does not support workflow step {step_id}"
+            ),
             Self::Io { path, source } => {
                 write!(
                     formatter,
@@ -141,6 +148,7 @@ impl fmt::Display for TemplateError {
 impl Error for TemplateError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::UnsupportedStep { .. } => None,
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
             Self::UnsupportedSchemaVersion { .. } => None,
@@ -166,12 +174,12 @@ struct TemplateWire {
 }
 
 impl TemplateWire {
-    fn from_template(template: &Template) -> Self {
-        Self {
+    fn from_template(template: &Template) -> Result<Self, TemplateError> {
+        Ok(Self {
             schema_version: TEMPLATE_SCHEMA_VERSION,
             name: template.name.clone(),
-            workflow: WorkflowWire::from_workflow(template.workflow()),
-        }
+            workflow: WorkflowWire::from_workflow(template.workflow())?,
+        })
     }
 }
 
@@ -182,10 +190,14 @@ struct WorkflowWire {
 }
 
 impl WorkflowWire {
-    fn from_workflow(workflow: &Workflow) -> Self {
-        Self {
-            steps: workflow.steps().iter().map(StepWire::from_step).collect(),
-        }
+    fn from_workflow(workflow: &Workflow) -> Result<Self, TemplateError> {
+        Ok(Self {
+            steps: workflow
+                .steps()
+                .iter()
+                .map(StepWire::from_step)
+                .collect::<Result<_, _>>()?,
+        })
     }
 }
 
@@ -205,8 +217,13 @@ enum StepWire {
 }
 
 impl StepWire {
-    fn from_step(step: &Step) -> Self {
-        match step.kind() {
+    fn from_step(step: &Step) -> Result<Self, TemplateError> {
+        Ok(match step.kind() {
+            StepKind::SetVariable { .. } | StepKind::Output { .. } => {
+                return Err(TemplateError::UnsupportedStep {
+                    step_id: step.id().clone(),
+                });
+            }
             StepKind::Wait { duration_ms } => Self::Wait {
                 id: step.id().as_str().to_owned(),
                 duration_ms: *duration_ms,
@@ -221,7 +238,7 @@ impl StepWire {
                 action: action.as_str().to_owned(),
                 arguments: arguments.clone(),
             },
-        }
+        })
     }
 }
 
@@ -459,5 +476,24 @@ mod tests {
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(restored, template);
         assert!(restored.workflow().steps().is_empty());
+    }
+
+    #[test]
+    fn runtime_step_is_rejected_for_serialization() {
+        let step_id = StepId::new("output-value").unwrap();
+        let workflow = Workflow::new(vec![Step::new(
+            step_id.clone(),
+            StepKind::Output {
+                value: crate::workflow::InputValue::Literal(json!(5.0)),
+            },
+        )])
+        .unwrap();
+        let template = Template::new("Runtime output".to_owned(), workflow);
+        let error = template.to_json_string().unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "template schema version 1 does not support workflow step output-value"
+        );
+        assert!(matches!(error, TemplateError::UnsupportedStep { step_id: id } if id == step_id));
     }
 }
