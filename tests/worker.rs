@@ -67,6 +67,19 @@ fn main() {
         return;
     }
 
+    if arguments.first().map(OsString::as_os_str) == Some(OsStr::new("start-trigger-record")) {
+        let bound = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--max-samples")
+            .unwrap()[1]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        run_meters_runtime_fixture(3, bound);
+        return;
+    }
+
     if arguments.first().map(OsString::as_os_str) == Some(OsStr::new(FIXTURE_ARGUMENT)) {
         let scenario = arguments
             .get(1)
@@ -92,6 +105,7 @@ fn main() {
     powers_runtime_action_succeeds();
     meters_runtime_measure_returns_sample();
     powers_and_meters_workflow_executes_end_to_end();
+    three_meter_measurements_shutdown_normally();
     partial_startup_failure_shuts_down_started_worker();
     live_workflow_cleanup_lifecycle();
 }
@@ -397,7 +411,7 @@ fn run_fixture(scenario: &OsStr) {
         | "live-cleanup-failure"
         | "live-both-failed"
         | "live-startup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
-        "meters-runtime-measure" => run_meters_runtime_fixture(),
+        "meters-runtime-measure" => run_meters_runtime_fixture(1, 2),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
 }
@@ -688,7 +702,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
-fn run_meters_runtime_fixture() {
+fn run_meters_runtime_fixture(measurements: usize, max_samples: usize) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "meters-runtime-run";
@@ -704,49 +718,56 @@ fn run_meters_runtime_fixture() {
         .to_string(),
     );
 
-    let request = accept_request(&listener);
-    assert_eq!(request.method, "POST");
-    assert_eq!(request.path, "/command");
-    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-    assert_eq!(body["schema_version"], 2);
-    assert_eq!(body["command"], "software_trigger");
-    assert_eq!(body["arguments"], json!({}));
-    assert!(
-        body.get("context").is_none(),
-        "meters runtime must not send context"
-    );
-    assert!(
-        body.get("job_id").is_none(),
-        "meters runtime must omit job_id"
-    );
-    assert!(
-        body.get("metadata").is_none(),
-        "meters runtime must not send metadata"
-    );
-    write_response(
-        request.stream,
-        202,
-        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
-    );
+    for sequence in 1..=measurements {
+        let request = accept_request(&listener);
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/command");
+        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["schema_version"], 2);
+        assert_eq!(body["command"], "software_trigger");
+        assert_eq!(body["arguments"], json!({}));
+        assert!(
+            body.get("context").is_none(),
+            "meters runtime must not send context"
+        );
+        assert!(
+            body.get("job_id").is_none(),
+            "meters runtime must omit job_id"
+        );
+        assert!(
+            body.get("metadata").is_none(),
+            "meters runtime must not send metadata"
+        );
+        write_response(
+            request.stream,
+            202,
+            r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
+        );
 
-    // Emit a non-matching event first, then the matching sample.
-    print_json_line(
-        &json!({
-            "event": "heartbeat",
-            "run_id": run_id,
-            "status": "running"
-        })
-        .to_string(),
-    );
-    print_json_line(
-        &json!({
-            "event": "sample",
-            "run_id": run_id,
-            "value": 3.3,
-            "unit": "V"
-        })
-        .to_string(),
-    );
+        // Emit a non-matching event first, then the matching sample.
+        print_json_line(
+            &json!({
+                "event": "heartbeat",
+                "run_id": run_id,
+                "status": "running"
+            })
+            .to_string(),
+        );
+        print_json_line(
+            &json!({
+                "event": "sample",
+                "run_id": run_id,
+                "value": 3.3,
+                "sequence": sequence,
+                "unit": "V"
+            })
+            .to_string(),
+        );
+
+        if sequence >= max_samples {
+            return;
+        }
+    }
 
     let request = accept_request(&listener);
     assert_eq!(request.method, "POST");
@@ -1122,6 +1143,44 @@ fn powers_and_meters_workflow_executes_end_to_end() {
     assert_eq!(output["event"], "sample");
     assert_eq!(output["value"], 3.3);
     assert_eq!(output["unit"], "V");
+}
+
+fn three_meter_measurements_shutdown_normally() {
+    let workflow = Workflow::new(
+        (1..=3)
+            .map(|sequence| {
+                Step::new(
+                    StepId::new(format!("read-{sequence}")).unwrap(),
+                    StepKind::ToolAction {
+                        tool: ToolId::meters(),
+                        action: ActionId::new("measure").unwrap(),
+                        arguments: json!({}),
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    let spec = orchestrator_tool::adapters::meters::simulate_worker_launch_spec(
+        env::current_exe().unwrap(),
+        4,
+    );
+    let results = run_simulated_workflow(
+        &workflow,
+        &HashMap::from([(ToolId::meters(), spec)]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(results.len(), 3);
+    for (index, result) in results.iter().enumerate() {
+        assert_eq!(result.step_id().as_str(), format!("read-{}", index + 1));
+        let StepOutcome::Succeeded { output } = result.outcome() else {
+            panic!("measurement failed: {:?}", result.outcome());
+        };
+        assert_eq!(output["sequence"], index + 1);
+    }
 }
 
 fn partial_startup_failure_shuts_down_started_worker() {

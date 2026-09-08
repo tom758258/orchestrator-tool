@@ -172,12 +172,20 @@ async fn run_workflow_simulation(
 async fn run_workflow_live(
     app: AppHandle,
     template_json: String,
+    confirmed_powers_resource: Option<String>,
+    confirmed_meters_resource: Option<String>,
 ) -> Result<Vec<StepResultDto>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;
+        validate_confirmed_live_resources(
+            template.workflow(),
+            &config,
+            confirmed_powers_resource.as_deref(),
+            confirmed_meters_resource.as_deref(),
+        )?;
         let mut launch_specs = prepare_worker_launch_specs(
             template.workflow(),
             ExecutionMode::Live,
@@ -266,12 +274,47 @@ fn referenced_workflow_tools(workflow: &Workflow) -> Vec<ToolId> {
     tools
 }
 
+fn validate_confirmed_live_resources(
+    workflow: &Workflow,
+    config: &Config,
+    confirmed_powers_resource: Option<&str>,
+    confirmed_meters_resource: Option<&str>,
+) -> Result<(), String> {
+    for tool in referenced_workflow_tools(workflow) {
+        let (label, confirmed) = match tool.as_str() {
+            "powers" => ("Powers", confirmed_powers_resource),
+            "meters" => ("Meters", confirmed_meters_resource),
+            _ => unreachable!("referenced workflow tools are filtered"),
+        };
+        let current = config.live_resource(&tool);
+        if confirmed.is_none_or(|resource| resource.trim().is_empty())
+            || current.is_none_or(|resource| resource.trim().is_empty())
+            || confirmed != current
+        {
+            return Err(format!(
+                "{label} live resource changed after confirmation; confirm the live run again"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn prepare_worker_launch_specs(
     workflow: &Workflow,
     execution_mode: ExecutionMode,
     application_dir: &Path,
     config: &Config,
 ) -> Result<HashMap<ToolId, WorkerLaunchSpec>, String> {
+    // Keep the Worker alive after the final measurement until orchestrator shutdown.
+    let meters_max_samples = workflow
+        .steps()
+        .iter()
+        .filter(|step| {
+            matches!(step.kind(), StepKind::ToolAction { tool, action, .. }
+            if tool.as_str() == "meters" && action.as_str() == "measure")
+        })
+        .count()
+        + 1;
     let definitions = built_in_tool_definitions();
     let mut launch_specs = HashMap::new();
 
@@ -320,7 +363,9 @@ fn prepare_worker_launch_specs(
 
         let spec = match (execution_mode, tool.as_str()) {
             (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
-            (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(executable),
+            (ExecutionMode::Simulate, "meters") => {
+                meters::simulate_worker_launch_spec(executable, meters_max_samples)
+            }
             (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
                 executable,
                 config
@@ -332,6 +377,7 @@ fn prepare_worker_launch_specs(
                 config
                     .live_resource(&tool)
                     .expect("live resources were validated"),
+                meters_max_samples,
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
         };
@@ -535,6 +581,121 @@ mod tests {
         workflow::{StepId, StepOutcome, StepResult},
     };
     use serde_json::json;
+
+    #[test]
+    fn confirmed_live_resources_require_exact_current_values() {
+        use super::{Config, validate_confirmed_live_resources};
+        use orchestrator_tool::workflow::{ActionId, Step, StepKind, Workflow};
+        let resource = " USB0::Serial With Spaces::INSTR ";
+        for tool in [ToolId::powers(), ToolId::meters()] {
+            let workflow = Workflow::new(vec![Step::new(
+                StepId::new("action-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: tool.clone(),
+                    action: ActionId::new(if tool == ToolId::powers() {
+                        "output-on"
+                    } else {
+                        "measure"
+                    })
+                    .unwrap(),
+                    arguments: json!({}),
+                },
+            )])
+            .unwrap();
+            let mut config = Config::default();
+            config.set_live_resource(&tool, resource);
+            let (powers, meters) = if tool == ToolId::powers() {
+                (Some(resource), None)
+            } else {
+                (None, Some(resource))
+            };
+            validate_confirmed_live_resources(&workflow, &config, powers, meters).unwrap();
+            if tool == ToolId::powers() {
+                for confirmed in [None, Some(resource.trim()), Some("USB0::Other::INSTR")] {
+                    let error =
+                        validate_confirmed_live_resources(&workflow, &config, confirmed, None)
+                            .unwrap_err();
+                    assert_eq!(
+                        error,
+                        "Powers live resource changed after confirmation; confirm the live run again"
+                    );
+                }
+                config.remove_live_resource(&tool);
+                assert!(
+                    validate_confirmed_live_resources(&workflow, &config, powers, meters).is_err()
+                );
+                config.set_live_resource(&tool, " ");
+                assert!(
+                    validate_confirmed_live_resources(&workflow, &config, Some(" "), None).is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn meters_workflow_launch_reserves_capacity_after_three_measurements() {
+        use super::{Config, ExecutionMode, prepare_worker_launch_specs};
+        use std::{ffi::OsString, fs};
+        let dir = unique_test_dir("orchestrator-meters-launch-test");
+        let manifest = json!({
+            "event": "tool_manifest", "schema_version": 2, "tool_id": "meters",
+            "tool_version": "test", "worker_protocol": {
+                "compatibility_policy": "exact", "schema_versions": [2]
+            }
+        });
+        #[cfg(windows)]
+        let executable = {
+            let path = dir.join("meters-tool.cmd");
+            fs::write(&path, format!("@echo off\r\necho {manifest}\r\n")).unwrap();
+            path
+        };
+        #[cfg(unix)]
+        let executable = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("meters-tool");
+            fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' '{manifest}'\n")).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            path
+        };
+        let template = Template::from_json_str(&json!({
+            "schema_version": 1, "name": "Three measurements", "workflow": { "steps": [
+                {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}},
+                {"type": "wait", "id": "wait-1", "duration_ms": 0},
+                {"type": "tool-action", "id": "read-2", "tool": "meters", "action": "measure", "arguments": {}},
+                {"type": "tool-action", "id": "other-1", "tool": "meters", "action": "unsupported", "arguments": {}},
+                {"type": "tool-action", "id": "read-3", "tool": "meters", "action": "measure", "arguments": {}}
+            ]}
+        }).to_string()).unwrap();
+        let resource = " USB0::Meter Serial::INSTR ";
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::meters(), &executable);
+        config.set_live_resource(&ToolId::meters(), resource);
+        for mode in [ExecutionMode::Live, ExecutionMode::Simulate] {
+            let specs =
+                prepare_worker_launch_specs(template.workflow(), mode, &dir, &config).unwrap();
+            assert_eq!(specs.len(), 1);
+            let args = specs[&ToolId::meters()].arguments();
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair == [OsString::from("--max-samples"), OsString::from("4")])
+            );
+            let expected_resource = if mode == ExecutionMode::Live {
+                resource
+            } else {
+                "SIM::34461A"
+            };
+            assert!(args.windows(2).any(|pair| pair
+                == [
+                    OsString::from("--resource"),
+                    OsString::from(expected_resource)
+                ]));
+            assert_eq!(
+                args.contains(&OsString::from("--simulate")),
+                mode == ExecutionMode::Simulate
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn live_preparation_requires_resources_before_executable_probing() {

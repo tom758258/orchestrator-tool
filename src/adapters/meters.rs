@@ -27,7 +27,10 @@ const SMOKE_JOB_ID: &str = "orchestrator-meter-smoke";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Builds the Meters Worker launch specification used for simulate diagnostics.
-pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunchSpec {
+pub fn simulate_worker_launch_spec(
+    executable: impl AsRef<Path>,
+    max_samples: usize,
+) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
         [
@@ -40,7 +43,7 @@ pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunch
             OsString::from("--trigger-mode"),
             OsString::from("software"),
             OsString::from("--max-samples"),
-            OsString::from("2"),
+            OsString::from(max_samples.to_string()),
             OsString::from("--status-format"),
             OsString::from("jsonl"),
             OsString::from("--sw-trigger-port"),
@@ -51,7 +54,11 @@ pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunch
 }
 
 /// Builds live Worker launch details using the exact caller-supplied resource.
-pub fn live_worker_launch_spec(executable: impl AsRef<Path>, resource: &str) -> WorkerLaunchSpec {
+pub fn live_worker_launch_spec(
+    executable: impl AsRef<Path>,
+    resource: &str,
+    max_samples: usize,
+) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
         [
@@ -63,7 +70,7 @@ pub fn live_worker_launch_spec(executable: impl AsRef<Path>, resource: &str) -> 
             OsString::from("--trigger-mode"),
             OsString::from("software"),
             OsString::from("--max-samples"),
-            OsString::from("2"),
+            OsString::from(max_samples.to_string()),
             OsString::from("--status-format"),
             OsString::from("jsonl"),
             OsString::from("--sw-trigger-port"),
@@ -80,7 +87,7 @@ pub fn run_worker_smoke(
     operation_timeout: Duration,
     shutdown_timeout: Duration,
 ) -> Result<(), MetersSmokeError> {
-    let spec = simulate_worker_launch_spec(executable);
+    let spec = simulate_worker_launch_spec(executable, 2);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
     let operation = run_smoke_operation(session.ready(), operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);
@@ -553,7 +560,7 @@ mod tests {
     #[test]
     fn meters_live_contract_shape_is_correct() {
         let resource = " USB0::Vendor::Serial With Spaces::INSTR ";
-        let spec = super::live_worker_launch_spec("meters-tool.exe", resource);
+        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, 2);
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(
             spec.arguments(),
@@ -673,7 +680,7 @@ mod tests {
 
     #[test]
     fn meters_simulate_contract_shape_is_correct() {
-        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"));
+        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), 2);
 
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(

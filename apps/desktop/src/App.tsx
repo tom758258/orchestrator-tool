@@ -549,12 +549,14 @@ function App() {
       const referenced = ['powers', 'meters'].filter((toolId) =>
         workflowDraft.workflow.steps.some((step) => step.type === 'tool-action' && step.tool === toolId),
       )
+      const confirmedResources: Record<string, string> = {}
       const resources = referenced.map((toolId) => {
         const resource = statuses.find((tool) => tool.tool_id === toolId)?.live_resource
         const label = toolId === 'powers' ? 'Powers' : 'Meters'
         if (!resource || !resource.trim()) {
           throw new Error(label + ' live resource is not configured.')
         }
+        confirmedResources[toolId] = resource
         return label + ':\n' + resource
       })
       const approved = await confirm(
@@ -567,6 +569,8 @@ function App() {
       setRunResults(null)
       const results = await invoke<StepResultDto[]>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
+        confirmedPowersResource: confirmedResources.powers ?? null,
+        confirmedMetersResource: confirmedResources.meters ?? null,
       })
       setRunResults(results)
     } catch (message) {
