@@ -99,6 +99,7 @@ npm.cmd run dev
 `npm.cmd run dev` starts only the Vite frontend development server. To start the complete Tauri Desktop application, run:
 
 ```powershell
+cd apps\desktop
 npm.cmd run tauri dev
 ```
 
