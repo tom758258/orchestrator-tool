@@ -41,6 +41,7 @@ impl DataContext {
     /// An empty JSON Pointer selects the complete step output.
     pub fn resolve(&self, input: &InputValue) -> Result<Value, ResolveError> {
         match input {
+            InputValue::Expression(_) => Err(ResolveError::UnsupportedExpression),
             InputValue::Literal(value) => Ok(value.clone()),
             InputValue::Variable(variable_id) => self
                 .variable(variable_id)
@@ -64,6 +65,7 @@ impl DataContext {
 /// Missing runtime data encountered while resolving an input.
 #[derive(Debug)]
 pub enum ResolveError {
+    UnsupportedExpression,
     MissingVariable(VariableId),
     MissingStepOutput(StepId),
     MissingStepOutputPath { step_id: StepId, pointer: String },
@@ -72,6 +74,9 @@ pub enum ResolveError {
 impl fmt::Display for ResolveError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedExpression => {
+                formatter.write_str("expression resolution is not supported")
+            }
             Self::MissingVariable(variable_id) => {
                 write!(formatter, "missing variable {variable_id}")
             }
@@ -95,7 +100,23 @@ mod tests {
     use serde_json::json;
 
     use super::{DataContext, ResolveError};
-    use crate::workflow::{InputValue, StepId, StepOutputReference, VariableId};
+    use crate::workflow::{
+        Expression, ExpressionOperand, ExpressionOperator, InputValue, StepId, StepOutputReference,
+        VariableId,
+    };
+
+    #[test]
+    fn expression_resolution_is_explicitly_unsupported() {
+        let input = InputValue::Expression(Expression::new(
+            ExpressionOperand::Variable(VariableId::new("x").unwrap()),
+            ExpressionOperator::Multiply,
+            ExpressionOperand::Literal(json!(2)),
+        ));
+        let error = DataContext::new().resolve(&input).unwrap_err();
+
+        assert!(matches!(error, ResolveError::UnsupportedExpression));
+        assert_eq!(error.to_string(), "expression resolution is not supported");
+    }
 
     #[test]
     fn literal_resolves_without_changing_input() {

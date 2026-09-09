@@ -161,6 +161,60 @@ pub enum InputValue {
     Literal(Value),
     Variable(VariableId),
     StepOutput(StepOutputReference),
+    Expression(Expression),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Expression {
+    left: ExpressionOperand,
+    operator: ExpressionOperator,
+    right: ExpressionOperand,
+}
+
+impl Expression {
+    pub fn new(
+        left: ExpressionOperand,
+        operator: ExpressionOperator,
+        right: ExpressionOperand,
+    ) -> Self {
+        Self {
+            left,
+            operator,
+            right,
+        }
+    }
+
+    pub fn left(&self) -> &ExpressionOperand {
+        &self.left
+    }
+
+    pub fn operator(&self) -> ExpressionOperator {
+        self.operator
+    }
+
+    pub fn right(&self) -> &ExpressionOperand {
+        &self.right
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExpressionOperand {
+    Literal(Value),
+    Variable(VariableId),
+    StepOutput(StepOutputReference),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpressionOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
 }
 
 /// A single step in a workflow.
@@ -327,8 +381,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ActionId, InputValue, Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult,
-        VariableId, Workflow, WorkflowError,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
+        StepKind, StepOutcome, StepOutputReference, StepResult, VariableId, Workflow,
+        WorkflowError,
     };
     use crate::tool::ToolId;
 
@@ -488,6 +543,36 @@ mod tests {
         } else {
             panic!("expected a step output reference");
         }
+    }
+
+    #[test]
+    fn arithmetic_expression_preserves_operands_and_operator() {
+        let left = ExpressionOperand::Variable(VariableId::new("x").unwrap());
+        let right = ExpressionOperand::Literal(json!(2));
+        let expression = Expression::new(left.clone(), ExpressionOperator::Multiply, right.clone());
+
+        assert_eq!(expression.left(), &left);
+        assert_eq!(expression.operator(), ExpressionOperator::Multiply);
+        assert_eq!(expression.right(), &right);
+        assert!(matches!(
+            InputValue::Expression(expression),
+            InputValue::Expression(_)
+        ));
+    }
+
+    #[test]
+    fn comparison_expression_preserves_operands_and_operator() {
+        let left = ExpressionOperand::StepOutput(StepOutputReference::new(
+            StepId::new("measurement").unwrap(),
+            "/value",
+        ));
+        let right = ExpressionOperand::Variable(VariableId::new("threshold").unwrap());
+        let expression =
+            Expression::new(left.clone(), ExpressionOperator::GreaterThan, right.clone());
+
+        assert_eq!(expression.left(), &left);
+        assert_eq!(expression.operator(), ExpressionOperator::GreaterThan);
+        assert_eq!(expression.right(), &right);
     }
 
     #[test]

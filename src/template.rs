@@ -6,8 +6,9 @@ use serde_json::Value;
 use crate::{
     tool::{InvalidToolId, ToolId},
     workflow::{
-        ActionId, InputValue, InvalidActionId, InvalidStepId, InvalidVariableId, Step, StepId,
-        StepKind, StepOutputReference, VariableId, Workflow, WorkflowError,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, InvalidActionId,
+        InvalidStepId, InvalidVariableId, Step, StepId, StepKind, StepOutputReference, VariableId,
+        Workflow, WorkflowError,
     },
 };
 
@@ -262,14 +263,79 @@ impl StepWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
 enum InputValueWire {
+    Literal {
+        value: Value,
+    },
+    Variable {
+        variable: String,
+    },
+    StepOutput {
+        step_id: String,
+        pointer: String,
+    },
+    Expression {
+        left: ExpressionOperandWire,
+        operator: ExpressionOperator,
+        right: ExpressionOperandWire,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
+enum ExpressionOperandWire {
     Literal { value: Value },
     Variable { variable: String },
     StepOutput { step_id: String, pointer: String },
 }
 
+impl ExpressionOperandWire {
+    fn from_operand(operand: &ExpressionOperand) -> Self {
+        match operand {
+            ExpressionOperand::Literal(value) => Self::Literal {
+                value: value.clone(),
+            },
+            ExpressionOperand::Variable(variable) => Self::Variable {
+                variable: variable.as_str().to_owned(),
+            },
+            ExpressionOperand::StepOutput(reference) => Self::StepOutput {
+                step_id: reference.step_id().as_str().to_owned(),
+                pointer: reference.pointer().to_owned(),
+            },
+        }
+    }
+}
+
+fn operand_from_wire(wire: ExpressionOperandWire) -> Result<ExpressionOperand, TemplateError> {
+    match wire {
+        ExpressionOperandWire::Literal { value } => Ok(ExpressionOperand::Literal(value)),
+        ExpressionOperandWire::Variable { variable } => {
+            let variable =
+                VariableId::new(&variable).map_err(|source| TemplateError::InvalidVariableId {
+                    value: variable,
+                    source,
+                })?;
+            Ok(ExpressionOperand::Variable(variable))
+        }
+        ExpressionOperandWire::StepOutput { step_id, pointer } => {
+            let step_id = StepId::new(&step_id).map_err(|source| TemplateError::InvalidStepId {
+                value: step_id,
+                source,
+            })?;
+            Ok(ExpressionOperand::StepOutput(StepOutputReference::new(
+                step_id, pointer,
+            )))
+        }
+    }
+}
+
 impl InputValueWire {
     fn from_input(input: &InputValue) -> Self {
         match input {
+            InputValue::Expression(expression) => Self::Expression {
+                left: ExpressionOperandWire::from_operand(expression.left()),
+                operator: expression.operator(),
+                right: ExpressionOperandWire::from_operand(expression.right()),
+            },
             InputValue::Literal(value) => Self::Literal {
                 value: value.clone(),
             },
@@ -286,6 +352,15 @@ impl InputValueWire {
 
 fn input_from_wire(wire: InputValueWire) -> Result<InputValue, TemplateError> {
     match wire {
+        InputValueWire::Expression {
+            left,
+            operator,
+            right,
+        } => Ok(InputValue::Expression(Expression::new(
+            operand_from_wire(left)?,
+            operator,
+            operand_from_wire(right)?,
+        ))),
         InputValueWire::Literal { value } => Ok(InputValue::Literal(value)),
         InputValueWire::Variable { variable } => {
             let variable =
@@ -404,7 +479,8 @@ mod tests {
     use crate::{
         tool::ToolId,
         workflow::{
-            ActionId, InputValue, Step, StepId, StepKind, StepOutputReference, VariableId, Workflow,
+            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
+            StepKind, StepOutputReference, VariableId, Workflow,
         },
     };
 
@@ -669,5 +745,75 @@ mod tests {
         assert!(
             matches!(error, TemplateError::InvalidVariableId { value, .. } if value == "Bad_Name")
         );
+    }
+
+    #[test]
+    fn expression_template_round_trip_preserves_domain_and_wire_shape() {
+        let cases = [
+            (
+                ExpressionOperand::Variable(VariableId::new("x").unwrap()),
+                ExpressionOperand::Literal(json!(2)),
+                json!({ "source": "variable", "variable": "x" }),
+                json!({ "source": "literal", "value": 2 }),
+            ),
+            (
+                ExpressionOperand::StepOutput(StepOutputReference::new(
+                    StepId::new("measurement").unwrap(),
+                    "/value",
+                )),
+                ExpressionOperand::Variable(VariableId::new("threshold").unwrap()),
+                json!({ "source": "step-output", "step_id": "measurement", "pointer": "/value" }),
+                json!({ "source": "variable", "variable": "threshold" }),
+            ),
+        ];
+        for (operator, name) in [
+            (ExpressionOperator::Add, "add"),
+            (ExpressionOperator::Subtract, "subtract"),
+            (ExpressionOperator::Multiply, "multiply"),
+            (ExpressionOperator::Divide, "divide"),
+            (ExpressionOperator::GreaterThan, "greater-than"),
+            (
+                ExpressionOperator::GreaterThanOrEqual,
+                "greater-than-or-equal",
+            ),
+            (ExpressionOperator::LessThan, "less-than"),
+            (ExpressionOperator::LessThanOrEqual, "less-than-or-equal"),
+        ] {
+            for (left, right, left_wire, right_wire) in &cases {
+                let original = Template::new(
+                    "Expression".to_owned(),
+                    Workflow::new(vec![
+                        Step::new(
+                            StepId::new("measurement").unwrap(),
+                            StepKind::Output {
+                                value: InputValue::Literal(json!({ "value": 3 })),
+                            },
+                        ),
+                        Step::new(
+                            StepId::new("output-expression").unwrap(),
+                            StepKind::Output {
+                                value: InputValue::Expression(Expression::new(
+                                    left.clone(),
+                                    operator,
+                                    right.clone(),
+                                )),
+                            },
+                        ),
+                    ])
+                    .unwrap(),
+                );
+                let json = original.to_json_string().unwrap();
+                let wire: Value = serde_json::from_str(&json).unwrap();
+                assert_eq!(wire["schema_version"], 1);
+                assert_eq!(
+                    wire["workflow"]["steps"][1]["value"],
+                    json!({
+                        "source": "expression", "left": left_wire,
+                        "operator": name, "right": right_wire,
+                    })
+                );
+                assert_eq!(Template::from_json_str(&json).unwrap(), original);
+            }
+        }
     }
 }
