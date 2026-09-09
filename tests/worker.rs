@@ -18,10 +18,12 @@ use orchestrator_tool::{
         },
     },
     run::{ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow},
+    template::Template,
     tool::ToolId,
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
     workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
+    workflow_csv::serialize_workflow_outputs_csv,
 };
 use serde_json::json;
 
@@ -76,7 +78,7 @@ fn main() {
             .unwrap()
             .parse()
             .unwrap();
-        run_meters_runtime_fixture(3, bound);
+        run_meters_runtime_fixture(3, bound, json!(3.3));
         return;
     }
 
@@ -105,6 +107,7 @@ fn main() {
     powers_runtime_action_succeeds();
     meters_runtime_measure_returns_sample();
     powers_and_meters_workflow_executes_end_to_end();
+    simulated_measurement_dataflow_exports_csv();
     three_meter_measurements_shutdown_normally();
     partial_startup_failure_shuts_down_started_worker();
     live_workflow_cleanup_lifecycle();
@@ -411,7 +414,8 @@ fn run_fixture(scenario: &OsStr) {
         | "live-cleanup-failure"
         | "live-both-failed"
         | "live-startup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
-        "meters-runtime-measure" => run_meters_runtime_fixture(1, 2),
+        "meters-runtime-measure" => run_meters_runtime_fixture(1, 2, json!(3.3)),
+        "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
 }
@@ -702,7 +706,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
-fn run_meters_runtime_fixture(measurements: usize, max_samples: usize) {
+fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: serde_json::Value) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "meters-runtime-run";
@@ -757,7 +761,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize) {
             &json!({
                 "event": "sample",
                 "run_id": run_id,
-                "value": 3.3,
+                "value": value,
                 "sequence": sequence,
                 "unit": "V"
             })
@@ -1122,6 +1126,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
     )
     .unwrap();
 
+    assert!(workflow.project_outputs(&results).unwrap().is_empty());
     assert_eq!(results.len(), 5);
     assert_eq!(
         results
@@ -1147,6 +1152,69 @@ fn powers_and_meters_workflow_executes_end_to_end() {
     assert_eq!(output["event"], "sample");
     assert_eq!(output["value"], 3.3);
     assert_eq!(output["unit"], "V");
+}
+
+fn simulated_measurement_dataflow_exports_csv() {
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version": 1,
+            "name": "Measurement CSV",
+            "workflow": { "steps": [
+                {
+                    "type": "set-variable", "id": "set-threshold", "variable": "threshold",
+                    "value": { "source": "literal", "value": 3 }
+                },
+                {
+                    "type": "tool-action", "id": "meter-read-1", "tool": "meters",
+                    "action": "measure", "arguments": {}
+                },
+                {
+                    "type": "output", "id": "output-voltage", "name": "voltage",
+                    "value": { "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" }
+                },
+                {
+                    "type": "output", "id": "output-passed", "name": "passed",
+                    "value": {
+                        "source": "expression",
+                        "left": { "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" },
+                        "operator": "greater-than",
+                        "right": { "source": "variable", "variable": "threshold" }
+                    }
+                }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let definition_before_run = template.to_json_string().unwrap();
+    let results = run_simulated_workflow(
+        template.workflow(),
+        &HashMap::from([(ToolId::meters(), fixture_spec("meters-csv-measure"))]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    assert_eq!(results.len(), 4);
+    assert_eq!(results[1].step_id().as_str(), "meter-read-1");
+    let StepOutcome::Succeeded { output } = results[1].outcome() else {
+        panic!("measurement failed: {:?}", results[1].outcome());
+    };
+    assert_eq!(output["value"], 5);
+    let outputs = template.workflow().project_outputs(&results).unwrap();
+    assert_eq!(
+        serialize_workflow_outputs_csv(&outputs).unwrap(),
+        "voltage,passed\n5,true\n"
+    );
+
+    let saved = template.to_json_string().unwrap();
+    assert_eq!(saved, definition_before_run);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&saved).unwrap()["schema_version"],
+        1
+    );
+    assert_eq!(Template::from_json_str(&saved).unwrap(), template);
 }
 
 fn three_meter_measurements_shutdown_normally() {
