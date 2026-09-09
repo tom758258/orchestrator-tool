@@ -543,11 +543,24 @@ body {
   list-style: none;
 }
 
+.sequence-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sequence-step-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
 .sequence-step-card {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   width: 100%;
+  min-width: 0;
   padding: 12px;
   border: 1px solid #c9ced6;
   border-radius: 6px;
@@ -587,6 +600,7 @@ body {
 .sequence-step-identity {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 3px;
   overflow-wrap: anywhere;
@@ -594,6 +608,22 @@ body {
 
 .sequence-step-label {
   font-weight: 600;
+}
+
+.sequence-step-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .sequence-step-row {
+    flex-wrap: wrap;
+  }
+
+  .sequence-step-actions {
+    margin-left: auto;
+  }
 }
 
 .sequence-step-identity code {

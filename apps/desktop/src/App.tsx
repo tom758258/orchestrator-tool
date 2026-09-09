@@ -346,11 +346,18 @@ function App() {
   )
 
   const addStep = useCallback((preset: StepPresetOption) => {
+    if (!workflowDraft) {
+      return
+    }
+    const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
+    const newStep = createPresetStep(preset.value, id)
     updateSteps((steps) => {
-      const id = nextStepId(preset.prefix, steps)
-      return [...steps, createPresetStep(preset.value, id)]
+      const selectedIndex = steps.findIndex((step) => step.id === selectedStepId)
+      const insertIndex = selectedIndex < 0 ? steps.length : selectedIndex + 1
+      return [...steps.slice(0, insertIndex), newStep, ...steps.slice(insertIndex)]
     })
-  }, [updateSteps])
+    setSelectedStepId(id)
+  }, [workflowDraft, selectedStepId, updateSteps])
 
   const deleteStep = useCallback(
     (stepId: string) => {
@@ -1002,6 +1009,9 @@ function App() {
                 selectedStepId={selectedStepId}
                 onSelectStep={setSelectedStepId}
                 stepLabel={stepLabel}
+                workflowBusy={workflowBusy}
+                onMoveStep={moveStep}
+                onDeleteStep={deleteStep}
               />
 
               <section className="step-properties" aria-labelledby="step-properties-title">
