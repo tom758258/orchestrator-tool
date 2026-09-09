@@ -1,8 +1,8 @@
 use std::{collections::HashMap, error::Error, fmt};
 
-use serde_json::Value;
+use serde_json::{Number, Value};
 
-use crate::workflow::{InputValue, StepId, VariableId};
+use crate::workflow::{ExpressionOperand, ExpressionOperator, InputValue, StepId, VariableId};
 
 /// Runtime values for one workflow run, never persisted in templates or config.
 #[derive(Debug, Default)]
@@ -39,9 +39,33 @@ impl DataContext {
 
     /// Resolves an input to an owned value without changing the input or context.
     /// An empty JSON Pointer selects the complete step output.
+    /// Expressions require JSON numbers and use f64 arithmetic and comparisons.
     pub fn resolve(&self, input: &InputValue) -> Result<Value, ResolveError> {
         match input {
-            InputValue::Expression(_) => Err(ResolveError::UnsupportedExpression),
+            InputValue::Expression(expression) => {
+                let left = self.resolve_expression_operand(expression.left())?;
+                let right = self.resolve_expression_operand(expression.right())?;
+                let result = match expression.operator() {
+                    ExpressionOperator::Add => left + right,
+                    ExpressionOperator::Subtract => left - right,
+                    ExpressionOperator::Multiply => left * right,
+                    ExpressionOperator::Divide => {
+                        if right == 0.0 {
+                            return Err(ResolveError::DivisionByZero);
+                        }
+                        left / right
+                    }
+                    ExpressionOperator::GreaterThan => return Ok(Value::Bool(left > right)),
+                    ExpressionOperator::GreaterThanOrEqual => {
+                        return Ok(Value::Bool(left >= right));
+                    }
+                    ExpressionOperator::LessThan => return Ok(Value::Bool(left < right)),
+                    ExpressionOperator::LessThanOrEqual => return Ok(Value::Bool(left <= right)),
+                };
+                Number::from_f64(result)
+                    .map(Value::Number)
+                    .ok_or(ResolveError::InvalidNumericResult)
+            }
             InputValue::Literal(value) => Ok(value.clone()),
             InputValue::Variable(variable_id) => self
                 .variable(variable_id)
@@ -60,12 +84,25 @@ impl DataContext {
             }
         }
     }
+
+    fn resolve_expression_operand(&self, operand: &ExpressionOperand) -> Result<f64, ResolveError> {
+        let input = match operand {
+            ExpressionOperand::Literal(value) => InputValue::Literal(value.clone()),
+            ExpressionOperand::Variable(variable_id) => InputValue::Variable(variable_id.clone()),
+            ExpressionOperand::StepOutput(reference) => InputValue::StepOutput(reference.clone()),
+        };
+        self.resolve(&input)?
+            .as_f64()
+            .ok_or(ResolveError::InvalidNumericOperand)
+    }
 }
 
-/// Missing runtime data encountered while resolving an input.
+/// An input could not be resolved from runtime data or evaluated numerically.
 #[derive(Debug)]
 pub enum ResolveError {
-    UnsupportedExpression,
+    InvalidNumericOperand,
+    DivisionByZero,
+    InvalidNumericResult,
     MissingVariable(VariableId),
     MissingStepOutput(StepId),
     MissingStepOutputPath { step_id: StepId, pointer: String },
@@ -74,8 +111,12 @@ pub enum ResolveError {
 impl fmt::Display for ResolveError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedExpression => {
-                formatter.write_str("expression resolution is not supported")
+            Self::InvalidNumericOperand => {
+                formatter.write_str("expression operand must be a JSON number")
+            }
+            Self::DivisionByZero => formatter.write_str("expression division by zero"),
+            Self::InvalidNumericResult => {
+                formatter.write_str("expression result is not a finite JSON number")
             }
             Self::MissingVariable(variable_id) => {
                 write!(formatter, "missing variable {variable_id}")
@@ -106,16 +147,120 @@ mod tests {
     };
 
     #[test]
-    fn expression_resolution_is_explicitly_unsupported() {
+    fn arithmetic_expressions_resolve_to_numbers() {
+        for (operator, expected) in [
+            (ExpressionOperator::Add, 7.0),
+            (ExpressionOperator::Subtract, 3.0),
+            (ExpressionOperator::Multiply, 10.0),
+            (ExpressionOperator::Divide, 2.5),
+        ] {
+            let input = InputValue::Expression(Expression::new(
+                ExpressionOperand::Literal(json!(5)),
+                operator,
+                ExpressionOperand::Literal(json!(2)),
+            ));
+
+            assert_eq!(DataContext::new().resolve(&input).unwrap(), json!(expected));
+        }
+    }
+
+    #[test]
+    fn comparison_expressions_resolve_to_booleans() {
+        for (operator, left, right, expected) in [
+            (ExpressionOperator::GreaterThan, 5, 2, true),
+            (ExpressionOperator::GreaterThan, 5, 5, false),
+            (ExpressionOperator::GreaterThanOrEqual, 5, 5, true),
+            (ExpressionOperator::GreaterThanOrEqual, 2, 5, false),
+            (ExpressionOperator::LessThan, 2, 5, true),
+            (ExpressionOperator::LessThan, 5, 5, false),
+            (ExpressionOperator::LessThanOrEqual, 5, 5, true),
+            (ExpressionOperator::LessThanOrEqual, 5, 2, false),
+        ] {
+            let input = InputValue::Expression(Expression::new(
+                ExpressionOperand::Literal(json!(left)),
+                operator,
+                ExpressionOperand::Literal(json!(right)),
+            ));
+
+            assert_eq!(DataContext::new().resolve(&input).unwrap(), json!(expected));
+        }
+    }
+
+    #[test]
+    fn expression_operands_use_runtime_data() {
+        let mut context = DataContext::new();
+        let variable = VariableId::new("threshold").unwrap();
+        let step_id = StepId::new("meter-read-1").unwrap();
+        context.set_step_output(step_id.clone(), json!({ "value": 5 }));
         let input = InputValue::Expression(Expression::new(
-            ExpressionOperand::Variable(VariableId::new("x").unwrap()),
+            ExpressionOperand::StepOutput(StepOutputReference::new(step_id, "/value")),
+            ExpressionOperator::GreaterThan,
+            ExpressionOperand::Variable(variable.clone()),
+        ));
+
+        assert!(
+            matches!(context.resolve(&input), Err(ResolveError::MissingVariable(id)) if id == variable)
+        );
+        context.set_variable(variable.clone(), json!(2));
+        assert_eq!(context.resolve(&input).unwrap(), json!(true));
+        context.set_variable(variable, json!(6));
+        assert_eq!(context.resolve(&input).unwrap(), json!(false));
+    }
+
+    #[test]
+    fn expression_operands_require_numbers_without_coercion() {
+        for invalid in [json!("5"), json!(true), json!(null), json!([]), json!({})] {
+            for (left, right) in [(invalid.clone(), json!(2)), (json!(2), invalid)] {
+                for operator in [
+                    ExpressionOperator::Multiply,
+                    ExpressionOperator::GreaterThan,
+                ] {
+                    let input = InputValue::Expression(Expression::new(
+                        ExpressionOperand::Literal(left.clone()),
+                        operator,
+                        ExpressionOperand::Literal(right.clone()),
+                    ));
+                    let error = DataContext::new().resolve(&input).unwrap_err();
+
+                    assert!(matches!(error, ResolveError::InvalidNumericOperand));
+                    assert_eq!(
+                        error.to_string(),
+                        "expression operand must be a JSON number"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn expression_division_by_zero_is_rejected() {
+        for zero in [json!(0), json!(-0.0)] {
+            let input = InputValue::Expression(Expression::new(
+                ExpressionOperand::Literal(json!(5)),
+                ExpressionOperator::Divide,
+                ExpressionOperand::Literal(zero),
+            ));
+            let error = DataContext::new().resolve(&input).unwrap_err();
+
+            assert!(matches!(error, ResolveError::DivisionByZero));
+            assert_eq!(error.to_string(), "expression division by zero");
+        }
+    }
+
+    #[test]
+    fn non_finite_expression_result_is_rejected() {
+        let input = InputValue::Expression(Expression::new(
+            ExpressionOperand::Literal(json!(f64::MAX)),
             ExpressionOperator::Multiply,
             ExpressionOperand::Literal(json!(2)),
         ));
         let error = DataContext::new().resolve(&input).unwrap_err();
 
-        assert!(matches!(error, ResolveError::UnsupportedExpression));
-        assert_eq!(error.to_string(), "expression resolution is not supported");
+        assert!(matches!(error, ResolveError::InvalidNumericResult));
+        assert_eq!(
+            error.to_string(),
+            "expression result is not a finite JSON number"
+        );
     }
 
     #[test]
