@@ -1,4 +1,5 @@
 import type { StepResultDto, WorkflowStep } from './App'
+import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
   steps: readonly WorkflowStep[]
@@ -14,6 +15,8 @@ type SequenceEditorProps = {
 
 function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
   switch (value.source) {
+    case 'expression':
+      return expressionSummary(value)
     case 'literal':
       return JSON.stringify(value.value) ?? 'No value'
     case 'variable':
@@ -43,7 +46,9 @@ function stepSummary(step: WorkflowStep): string {
               ? `Voltage = ${voltage.variable}`
               : voltage.source === 'literal'
                 ? `${valueSummary(voltage)} V`
-                : 'Bound value'
+                : voltage.source === 'expression'
+                  ? `Voltage = ${expressionSummary(voltage)}`
+                  : 'Bound value'
             : `${step.arguments.voltage ?? '?'} V`}`
         }
         if (step.action === 'output-on' || step.action === 'output-off') {

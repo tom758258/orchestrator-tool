@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
+import InputValueEditor from './InputValueEditor'
+import type { InputValueWire } from './inputValue'
 
 type ToolStatus = {
   tool_id: string
@@ -40,11 +42,6 @@ type WaitStep = {
   id: string
   duration_ms: number
 }
-
-type InputValueWire =
-  | { source: 'literal'; value: unknown }
-  | { source: 'variable'; variable: string }
-  | { source: 'step-output'; step_id: string; pointer: string }
 
 type SetVariableStep = {
   type: 'set-variable'
@@ -988,125 +985,15 @@ function App() {
                       )}
 
                       {selectedValue && (
-                        <>
-                          <label className="step-property-field">
-                            <span className="step-property-label">Source</span>
-                            <select
-                              value={selectedValue.source}
-                              disabled={workflowBusy}
-                              onChange={(event) => {
-                                const source = event.target.value
-                                const value: InputValueWire = source === 'variable'
-                                  ? { source, variable: earlierVariables[0] }
-                                  : source === 'step-output'
-                                    ? { source, step_id: earlierSteps[0].id, pointer: '/value' }
-                                    : { source: 'literal', value: 0 }
-                                updateStep(selectedStep.id, (step) =>
-                                  step.type === 'output' || step.type === 'set-variable'
-                                    ? { ...step, value } : step)
-                              }}
-                            >
-                              <option value="literal">Literal</option>
-                              <option value="variable" disabled={earlierVariables.length === 0}>Variable</option>
-                              <option value="step-output" disabled={earlierSteps.length === 0}>Step Output</option>
-                            </select>
-                          </label>
-                          {selectedValue.source === 'literal' && (
-                            typeof selectedValue.value === 'number' ? (
-                              <label className="step-property-field">
-                                <span className="step-property-label">Value</span>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={selectedValue.value}
-                                  disabled={workflowBusy}
-                                  onChange={(event) => {
-                                    const value = event.currentTarget.valueAsNumber
-                                    if (Number.isFinite(value)) {
-                                      updateStep(selectedStep.id, (step) =>
-                                        step.type === 'output' || step.type === 'set-variable'
-                                          ? { ...step, value: { source: 'literal', value } } : step)
-                                    }
-                                  }}
-                                />
-                              </label>
-                            ) : (
-                              <>
-                                <p className="step-properties-empty">
-                                  Value preserved (only numeric literals are editable): {JSON.stringify(selectedValue.value)}
-                                </p>
-                                <button
-                                  className="action-button"
-                                  type="button"
-                                  disabled={workflowBusy}
-                                  onClick={() => updateStep(selectedStep.id, (step) =>
-                                    step.type === 'output' || step.type === 'set-variable'
-                                      ? { ...step, value: { source: 'literal', value: 0 } } : step)}
-                                >
-                                  Replace with numeric literal
-                                </button>
-                              </>
-                            )
-                          )}
-                          {selectedValue.source === 'variable' && (
-                            <>
-                              <label className="step-property-field">
-                                <span className="step-property-label">Referenced Variable</span>
-                                <select
-                                  value={earlierVariables.includes(selectedValue.variable) ? selectedValue.variable : ''}
-                                  disabled={workflowBusy || earlierVariables.length === 0}
-                                  onChange={(event) => {
-                                    const variable = event.target.value
-                                    updateStep(selectedStep.id, (step) =>
-                                      step.type === 'output' || step.type === 'set-variable'
-                                        ? { ...step, value: { source: 'variable', variable } } : step)
-                                  }}
-                                >
-                                  <option value="" disabled>Select an earlier variable...</option>
-                                  {earlierVariables.map((variable) => <option key={variable} value={variable}>{variable}</option>)}
-                                </select>
-                              </label>
-                              {!earlierVariables.includes(selectedValue.variable) && (
-                                <p className="step-properties-empty">Reference preserved: {selectedValue.variable} is not defined by an earlier Set Variable step.</p>
-                              )}
-                            </>
-                          )}
-                          {selectedValue.source === 'step-output' && (
-                            <>
-                              <label className="step-property-field">
-                                <span className="step-property-label">Step</span>
-                                <select
-                                  value={earlierSteps.some((step) => step.id === selectedValue.step_id) ? selectedValue.step_id : ''}
-                                  disabled={workflowBusy || earlierSteps.length === 0}
-                                  onChange={(event) => {
-                                    const stepId = event.target.value
-                                    updateStep(selectedStep.id, (step) => (step.type === 'output' || step.type === 'set-variable')
-                                      ? { ...step, value: { ...selectedValue, step_id: stepId } } : step)
-                                  }}
-                                >
-                                  <option value="" disabled>Select an earlier step...</option>
-                                  {earlierSteps.map((step) => <option key={step.id} value={step.id}>{step.id}</option>)}
-                                </select>
-                              </label>
-                              {!earlierSteps.some((step) => step.id === selectedValue.step_id) && (
-                                <p className="step-properties-empty">Reference preserved: {selectedValue.step_id} is not an earlier step. Validate to check it.</p>
-                              )}
-                              <label className="step-property-field">
-                                <span className="step-property-label">Pointer</span>
-                                <input
-                                  type="text"
-                                  value={selectedValue.pointer}
-                                  disabled={workflowBusy}
-                                  onChange={(event) => {
-                                    const pointer = event.target.value
-                                    updateStep(selectedStep.id, (step) => (step.type === 'output' || step.type === 'set-variable')
-                                      ? { ...step, value: { ...selectedValue, pointer } } : step)
-                                  }}
-                                />
-                              </label>
-                            </>
-                          )}
-                        </>
+                        <InputValueEditor
+                          value={selectedValue}
+                          earlierSteps={earlierSteps}
+                          earlierVariables={earlierVariables}
+                          disabled={workflowBusy}
+                          onChange={(value) => updateStep(selectedStep.id, (step) =>
+                            step.type === 'output' || step.type === 'set-variable'
+                              ? { ...step, value } : step)}
+                        />
                       )}
 
                       {selectedStep.type === 'wait' && (
@@ -1154,71 +1041,25 @@ function App() {
                       )}
 
                       {selectedToolAction && selectedAction === 'powers/set-voltage' && (
-                        <>
-                          <label className="step-property-field">
-                            <span className="step-property-label">Voltage Source</span>
-                            <select
-                              value={!voltageBinding ? 'literal' : voltageBinding.source === 'variable' ? 'variable' : 'preserved'}
-                              disabled={workflowBusy}
-                              onChange={(event) => {
-                                if (event.target.value === 'literal') {
-                                  updateVoltageBinding(selectedToolAction.id)
-                                } else if (earlierVariables.length > 0) {
-                                  updateVoltageBinding(selectedToolAction.id, { source: 'variable', variable: earlierVariables[0] })
-                                }
-                              }}
-                            >
-                              <option value="literal">Literal</option>
-                              <option value="variable" disabled={earlierVariables.length === 0}>Variable</option>
-                              {voltageBinding && voltageBinding.source !== 'variable' && (
-                                <option value="preserved" disabled>Current binding (preserved)</option>
-                              )}
-                            </select>
-                          </label>
-                          {earlierVariables.length === 0 && (
-                            <p className="step-properties-empty">Define a valid variable in an earlier Set Variable step to select it.</p>
-                          )}
-                          {voltageBinding?.source === 'variable' && (
-                            <>
-                              <label className="step-property-field">
-                                <span className="step-property-label">Variable</span>
-                                <select
-                                  value={earlierVariables.includes(voltageBinding.variable) ? voltageBinding.variable : ''}
-                                  disabled={workflowBusy || earlierVariables.length === 0}
-                                  onChange={(event) => updateVoltageBinding(selectedToolAction.id, {
-                                    source: 'variable', variable: event.target.value,
-                                  })}
-                                >
-                                  <option value="" disabled>Select an earlier variable...</option>
-                                  {earlierVariables.map((variable) => <option key={variable} value={variable}>{variable}</option>)}
-                                </select>
-                              </label>
-                              {!earlierVariables.includes(voltageBinding.variable) && (
-                                <p className="step-properties-empty">Reference preserved: {voltageBinding.variable} is not defined by an earlier Set Variable step.</p>
-                              )}
-                            </>
-                          )}
-                          {voltageBinding && voltageBinding.source !== 'variable' && (
-                            <p className="step-properties-empty">Binding preserved: {JSON.stringify(voltageBinding)}</p>
-                          )}
-                          {!voltageBinding && (
-                            <label className="step-property-field">
-                              <span className="step-property-label">Voltage</span>
-                              <input
-                                type="number"
-                                step="any"
-                                value={numericArgument(selectedToolAction, 'voltage')}
-                                disabled={workflowBusy}
-                                onChange={(event) => {
-                                  const voltage = event.currentTarget.valueAsNumber
-                                  if (Number.isFinite(voltage)) {
-                                    updateToolArgument(selectedToolAction.id, 'voltage', voltage)
-                                  }
-                                }}
-                              />
-                            </label>
-                          )}
-                        </>
+                        <InputValueEditor
+                          value={voltageBinding ?? { source: 'literal', value: numericArgument(selectedToolAction, 'voltage') }}
+                          sourceLabel="Voltage Source"
+                          literalLabel="Voltage"
+                          literalDefault={numericArgument(selectedToolAction, 'voltage') || 0}
+                          earlierSteps={earlierSteps}
+                          earlierVariables={earlierVariables}
+                          disabled={workflowBusy}
+                          onChange={(value) => {
+                            if (value.source === 'literal' && voltageBinding?.source !== 'literal') {
+                              updateVoltageBinding(selectedToolAction.id)
+                              if (typeof value.value === 'number') {
+                                updateToolArgument(selectedToolAction.id, 'voltage', value.value)
+                              }
+                            } else {
+                              updateVoltageBinding(selectedToolAction.id, value)
+                            }
+                          }}
+                        />
                       )}
 
                       {selectedAction === 'meters/measure' && (
