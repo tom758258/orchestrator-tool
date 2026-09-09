@@ -748,6 +748,58 @@ mod tests {
     }
 
     #[test]
+    fn expression_dataflow_json_and_file_round_trip() {
+        let original = Template::new(
+            "Double x".to_owned(),
+            Workflow::new(vec![
+                Step::new(
+                    StepId::new("set-x").unwrap(),
+                    StepKind::SetVariable {
+                        variable: VariableId::new("x").unwrap(),
+                        value: InputValue::Literal(json!(5)),
+                    },
+                ),
+                Step::new(
+                    StepId::new("set-doubled").unwrap(),
+                    StepKind::SetVariable {
+                        variable: VariableId::new("doubled").unwrap(),
+                        value: InputValue::Expression(Expression::new(
+                            ExpressionOperand::Variable(VariableId::new("x").unwrap()),
+                            ExpressionOperator::Multiply,
+                            ExpressionOperand::Literal(json!(2)),
+                        )),
+                    },
+                ),
+                Step::new(
+                    StepId::new("output-doubled").unwrap(),
+                    StepKind::Output {
+                        value: InputValue::Variable(VariableId::new("doubled").unwrap()),
+                    },
+                ),
+            ])
+            .unwrap(),
+        );
+        let json = original.to_json_string().unwrap();
+        let wire: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(wire["schema_version"], 1);
+        assert_eq!(
+            wire["workflow"]["steps"][1]["value"],
+            json!({
+                "source": "expression",
+                "left": { "source": "variable", "variable": "x" },
+                "operator": "multiply",
+                "right": { "source": "literal", "value": 2 }
+            })
+        );
+        assert_eq!(Template::from_json_str(&json).unwrap(), original);
+
+        let test_dir = TestDir::new();
+        let path = test_dir.path().join("expression.json");
+        original.save_to_file(&path).unwrap();
+        assert_eq!(Template::load_from_file(&path).unwrap(), original);
+    }
+
+    #[test]
     fn expression_template_round_trip_preserves_domain_and_wire_shape() {
         let cases = [
             (

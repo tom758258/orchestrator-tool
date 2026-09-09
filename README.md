@@ -10,6 +10,21 @@
 
 The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, safety cleanup, or canvas positions. The CLI does not provide a workflow run command.
 
+## Template expressions
+
+Template schema version 1 persists structured Expression inputs in Set Variable, Output, and ToolAction bindings using the existing Core domain. For example, `x * 2` is stored as:
+
+```json
+{
+  "source": "expression",
+  "left": { "source": "variable", "variable": "x" },
+  "operator": "multiply",
+  "right": { "source": "literal", "value": 2 }
+}
+```
+
+Operands support `literal`, `variable`, and `step-output` (for example, `{ "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" }`). Operators are `add`, `subtract`, `multiply`, `divide`, `greater-than`, `greater-than-or-equal`, `less-than`, and `less-than-or-equal`. Nested expressions are not supported. Save/load preserves the operator, operands, identifiers, JSON Pointers, and workflow step order without storing runtime values.
+
 ## Executable configuration
 
 Core can load a TOML configuration file selected by its caller and use it to override built-in portable executable paths:
