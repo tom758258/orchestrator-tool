@@ -19,9 +19,10 @@ use orchestrator_tool::{
     template::Template,
     tool::ToolId,
     worker::WorkerLaunchSpec,
-    workflow::{StepKind, StepOutcome, StepResult, Workflow},
+    workflow::{StepId, StepKind, StepOutcome, StepResult, Workflow},
+    workflow_csv::serialize_workflow_outputs_csv,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
@@ -58,7 +59,7 @@ struct ToolStatusDto {
     live_resource: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct StepResultDto {
     step_id: String,
     status: String,
@@ -533,6 +534,57 @@ fn step_result_dto(result: &StepResult) -> StepResultDto {
     }
 }
 
+impl TryFrom<StepResultDto> for StepResult {
+    type Error = String;
+
+    fn try_from(dto: StepResultDto) -> Result<Self, Self::Error> {
+        let step_id = StepId::new(&dto.step_id)
+            .map_err(|error| format!("invalid step ID {:?}: {error}", dto.step_id))?;
+        let outcome = match dto.status.as_str() {
+            "succeeded" => StepOutcome::Succeeded {
+                // Option<Value> deserializes a JSON null output as None.
+                output: dto.output.unwrap_or(Value::Null),
+            },
+            "failed" => StepOutcome::Failed {
+                message: dto.message.ok_or_else(|| {
+                    format!("failed step {:?} is missing its message", dto.step_id)
+                })?,
+            },
+            "cancelled" => StepOutcome::Cancelled,
+            _ => {
+                return Err(format!(
+                    "unknown result status {:?} for step {:?}",
+                    dto.status, dto.step_id
+                ));
+            }
+        };
+        Ok(StepResult::new(step_id, outcome))
+    }
+}
+
+#[tauri::command]
+fn export_workflow_csv(
+    template_json: String,
+    step_results: Vec<StepResultDto>,
+    destination_path: String,
+) -> Result<(), String> {
+    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+    let results = step_results
+        .into_iter()
+        .map(StepResult::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    let outputs = template
+        .workflow()
+        .project_outputs(&results)
+        .map_err(|error| error.to_string())?;
+    if outputs.is_empty() {
+        return Err("workflow has no outputs available for export".to_owned());
+    }
+    let csv = serialize_workflow_outputs_csv(&outputs).map_err(|error| error.to_string())?;
+    std::fs::write(&destination_path, csv)
+        .map_err(|error| format!("could not write CSV to {destination_path:?}: {error}"))
+}
+
 #[tauri::command]
 fn create_workflow_draft() -> Result<String, String> {
     let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
@@ -578,7 +630,8 @@ fn main() {
             create_workflow_draft,
             validate_workflow_draft,
             save_workflow_template,
-            load_workflow_template
+            load_workflow_template,
+            export_workflow_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -888,6 +941,63 @@ mod tests {
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn export_workflow_csv_writes_completed_results() {
+        let template_json = json!({
+            "schema_version": 1,
+            "name": "CSV export",
+            "workflow": { "steps": [
+                { "type": "output", "id": "voltage", "name": "voltage",
+                  "value": { "source": "literal", "value": 0 } },
+                { "type": "output", "id": "passed", "name": "passed",
+                  "value": { "source": "literal", "value": false } }
+            ] }
+        })
+        .to_string();
+        let results = serde_json::from_value(json!([
+            { "step_id": "voltage", "status": "succeeded", "output": 5, "message": null },
+            { "step_id": "passed", "status": "succeeded", "output": true, "message": null }
+        ]))
+        .unwrap();
+        let dir = unique_test_dir("orchestrator-desktop-csv-success");
+        let path = dir.join("results.csv");
+
+        super::export_workflow_csv(template_json, results, path.display().to_string()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "voltage,passed\n5,true\n"
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn export_workflow_csv_without_outputs_does_not_create_file() {
+        let template_json = json!({
+            "schema_version": 1,
+            "name": "No outputs",
+            "workflow": { "steps": [
+                { "type": "wait", "id": "wait-1", "duration_ms": 0 }
+            ] }
+        })
+        .to_string();
+        let results = serde_json::from_value(json!([
+            { "step_id": "wait-1", "status": "succeeded", "output": null, "message": null }
+        ]))
+        .unwrap();
+        let dir = unique_test_dir("orchestrator-desktop-csv-no-outputs");
+        let path = dir.join("results.csv");
+        assert!(!path.exists());
+
+        let error = super::export_workflow_csv(template_json, results, path.display().to_string())
+            .unwrap_err();
+
+        assert_eq!(error, "workflow has no outputs available for export");
+        assert!(!path.exists());
+        std::fs::remove_dir(dir).unwrap();
     }
 
     #[test]
