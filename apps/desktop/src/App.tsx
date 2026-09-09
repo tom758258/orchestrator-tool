@@ -262,6 +262,15 @@ function App() {
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runResults, setRunResults] = useState<StepResultDto[] | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const hasWorkflowOutputs = workflowDraft?.workflow.steps.some((step) => step.type === 'output') ?? false
+
+  useEffect(() => {
+    setExportError(null)
+    setExportMessage(null)
+  }, [workflowDraft, runResults, runStatus])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -666,7 +675,35 @@ function App() {
   }, [workflowDraft])
 
   const workflowBusy =
-    validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running'
+    validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+
+  const handleExportCsv = useCallback(async () => {
+    if (!workflowDraft || !runResults || !hasWorkflowOutputs || workflowBusy) {
+      return
+    }
+
+    setExporting(true)
+    setExportError(null)
+    setExportMessage(null)
+    try {
+      const selectedPath = await save({
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      })
+      if (!selectedPath) {
+        return
+      }
+      await invoke('export_workflow_csv', {
+        templateJson: JSON.stringify(workflowDraft),
+        stepResults: runResults,
+        destinationPath: selectedPath,
+      })
+      setExportMessage('CSV exported successfully.')
+    } catch (message) {
+      setExportError(String(message))
+    } finally {
+      setExporting(false)
+    }
+  }, [workflowDraft, runResults, hasWorkflowOutputs, workflowBusy])
 
   const selectedStep = workflowDraft?.workflow.steps.find(
     (step) => step.id === selectedStepId,
@@ -1225,6 +1262,23 @@ function App() {
                       )
                     })}
                   </ol>
+                  <button
+                    className="action-button"
+                    type="button"
+                    onClick={() => void handleExportCsv()}
+                    disabled={!hasWorkflowOutputs || workflowBusy}
+                  >
+                    {exporting ? 'Exporting…' : 'Export CSV'}
+                  </button>
+                  {!hasWorkflowOutputs && (
+                    <p>No workflow outputs available for export.</p>
+                  )}
+                  {exportMessage && (
+                    <p className="validation-success" role="status">{exportMessage}</p>
+                  )}
+                  {exportError && (
+                    <p className="error" role="alert">CSV export failed: {exportError}</p>
+                  )}
                 </section>
               )}
             </div>
