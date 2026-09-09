@@ -12,6 +12,8 @@ The project is Windows-first for deployment, while keeping shared Core code plat
 
 ## Template expressions
 
+Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Schema v1 templates without an Output name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
+
 Template schema version 1 persists structured Expression inputs in Set Variable, Output, and ToolAction bindings using the existing Core domain. For example, `x * 2` is stored as:
 
 ```json

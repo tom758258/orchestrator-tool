@@ -4,7 +4,10 @@ use orchestrator_tool::{
     run::run_simulated_workflow,
     template::Template,
     tool::ToolId,
-    workflow::{ActionId, Step, StepId, StepKind, StepOutcome, StepResult, Workflow},
+    workflow::{
+        ActionId, InputValue, OutputProjectionError, Step, StepId, StepKind, StepOutcome,
+        StepResult, VariableId, Workflow, WorkflowError,
+    },
 };
 use serde_json::json;
 
@@ -49,6 +52,24 @@ fn comparison_expression_flows_through_simulated_workflow() {
         Duration::from_secs(5),
     )
     .unwrap();
+
+    let outputs = template.workflow().project_outputs(&results).unwrap();
+    assert_eq!(
+        outputs
+            .iter()
+            .map(|output| output.name())
+            .collect::<Vec<_>>(),
+        ["measurement", "output-passed"]
+    );
+    assert_eq!(outputs[1].value(), &json!(true));
+    let saved: serde_json::Value =
+        serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+    assert_eq!(saved["schema_version"], 1);
+    assert_eq!(saved["workflow"]["steps"][1]["name"], "measurement");
+    assert_eq!(
+        Template::from_json_str(&saved.to_string()).unwrap(),
+        template
+    );
 
     assert_eq!(results.len(), 4);
     for (result, (id, output)) in results.iter().zip([
@@ -118,4 +139,115 @@ fn workflow_template_step_result_integration() {
             output: output.clone()
         }
     );
+}
+
+fn output_step(id: &str, name: &str, value: InputValue) -> Step {
+    Step::new(
+        StepId::new(id).unwrap(),
+        StepKind::Output {
+            name: name.to_owned(),
+            value,
+        },
+    )
+}
+
+#[test]
+fn named_outputs_project_in_workflow_order_and_ignore_other_steps() {
+    let workflow = Workflow::new(vec![
+        Step::new(
+            StepId::new("wait").unwrap(),
+            StepKind::Wait { duration_ms: 0 },
+        ),
+        output_step("read-voltage", "voltage", InputValue::Literal(json!(5))),
+        Step::new(
+            StepId::new("set-x").unwrap(),
+            StepKind::SetVariable {
+                variable: VariableId::new("x").unwrap(),
+                value: InputValue::Literal(json!(9)),
+            },
+        ),
+        output_step("check-passed", "passed", InputValue::Literal(json!(true))),
+    ])
+    .unwrap();
+    let template = Template::new("Named outputs".to_owned(), workflow);
+    let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
+    assert_eq!(restored, template);
+    let workflow = restored.workflow();
+    let mut results = run_simulated_workflow(
+        workflow,
+        &HashMap::new(),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    results.reverse();
+    let outputs = workflow.project_outputs(&results).unwrap();
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].name(), "voltage");
+    assert_eq!(outputs[0].value(), &json!(5));
+    assert_eq!(outputs[1].name(), "passed");
+    assert_eq!(outputs[1].value(), &json!(true));
+}
+
+#[test]
+fn invalid_and_duplicate_output_names_are_rejected() {
+    for name in ["", " \t"] {
+        assert!(matches!(
+            Workflow::new(vec![output_step(
+                "out",
+                name,
+                InputValue::Literal(json!(5))
+            )]),
+            Err(WorkflowError::InvalidOutputName(_))
+        ));
+    }
+    assert!(matches!(Workflow::new(vec![
+        output_step("first", "voltage", InputValue::Literal(json!(5))),
+        output_step("second", "voltage", InputValue::Literal(json!(true))),
+    ]), Err(WorkflowError::DuplicateOutputName(name)) if name == "voltage"));
+}
+
+#[test]
+fn projection_rejects_missing_failed_and_cancelled_outputs() {
+    let workflow = Workflow::new(vec![
+        Step::new(
+            StepId::new("set-x").unwrap(),
+            StepKind::SetVariable {
+                variable: VariableId::new("x").unwrap(),
+                value: InputValue::Variable(VariableId::new("missing").unwrap()),
+            },
+        ),
+        output_step(
+            "out",
+            "voltage",
+            InputValue::Variable(VariableId::new("x").unwrap()),
+        ),
+    ])
+    .unwrap();
+    let results = run_simulated_workflow(
+        &workflow,
+        &HashMap::new(),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(matches!(workflow.project_outputs(&results),
+        Err(OutputProjectionError::MissingStepResult(id)) if id.as_str() == "out"));
+    for outcome in [
+        StepOutcome::Failed {
+            message: "unresolved variable x".to_owned(),
+        },
+        StepOutcome::Cancelled,
+    ] {
+        let results = [StepResult::new(
+            StepId::new("out").unwrap(),
+            outcome.clone(),
+        )];
+        assert!(matches!(workflow.project_outputs(&results),
+            Err(OutputProjectionError::UnsuccessfulStep { step_id, outcome: actual })
+                if step_id.as_str() == "out" && actual == outcome));
+    }
 }

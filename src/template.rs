@@ -209,6 +209,8 @@ enum StepWire {
     },
     Output {
         id: String,
+        #[serde(default)]
+        name: Option<String>,
         value: InputValueWire,
     },
     Wait {
@@ -233,7 +235,8 @@ impl StepWire {
                 variable: variable.as_str().to_owned(),
                 value: InputValueWire::from_input(value),
             },
-            StepKind::Output { value } => Self::Output {
+            StepKind::Output { name, value } => Self::Output {
+                name: Some(name.clone()),
                 id: step.id().as_str().to_owned(),
                 value: InputValueWire::from_input(value),
             },
@@ -415,12 +418,14 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                 },
             ))
         }
-        StepWire::Output { id, value } => {
+        StepWire::Output { id, name, value } => {
+            let name = name.unwrap_or_else(|| id.clone());
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
             Ok(Step::new(
                 step_id,
                 StepKind::Output {
+                    name,
                     value: input_from_wire(value)?,
                 },
             ))
@@ -703,12 +708,14 @@ mod tests {
             Step::new(
                 StepId::new("output-variable").unwrap(),
                 StepKind::Output {
+                    name: "output-2".to_owned(),
                     value: InputValue::Variable(variable),
                 },
             ),
             Step::new(
                 StepId::new("output-step").unwrap(),
                 StepKind::Output {
+                    name: "output-3".to_owned(),
                     value: InputValue::StepOutput(StepOutputReference::new(step_id, "")),
                 },
             ),
@@ -773,6 +780,7 @@ mod tests {
                 Step::new(
                     StepId::new("output-doubled").unwrap(),
                     StepKind::Output {
+                        name: "output-4".to_owned(),
                         value: InputValue::Variable(VariableId::new("doubled").unwrap()),
                     },
                 ),
@@ -838,12 +846,14 @@ mod tests {
                         Step::new(
                             StepId::new("measurement").unwrap(),
                             StepKind::Output {
+                                name: "output-5".to_owned(),
                                 value: InputValue::Literal(json!({ "value": 3 })),
                             },
                         ),
                         Step::new(
                             StepId::new("output-expression").unwrap(),
                             StepKind::Output {
+                                name: "output-6".to_owned(),
                                 value: InputValue::Expression(Expression::new(
                                     left.clone(),
                                     operator,

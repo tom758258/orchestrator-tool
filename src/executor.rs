@@ -59,7 +59,7 @@ pub fn execute_workflow(
                     message: error.to_string(),
                 },
             },
-            StepKind::Output { value } => match data_context.resolve(value) {
+            StepKind::Output { value, .. } => match data_context.resolve(value) {
                 Ok(output) => StepOutcome::Succeeded { output },
                 Err(error) => StepOutcome::Failed {
                     message: error.to_string(),
@@ -253,6 +253,7 @@ mod tests {
                 Step::new(
                     StepId::new("later").unwrap(),
                     StepKind::Output {
+                        name: "output-1".to_owned(),
                         value: InputValue::Literal(json!(5.0)),
                     },
                 ),
@@ -290,6 +291,7 @@ mod tests {
             Step::new(
                 StepId::new("output-x").unwrap(),
                 StepKind::Output {
+                    name: "output-2".to_owned(),
                     value: InputValue::Variable(variable),
                 },
             ),
@@ -325,6 +327,7 @@ mod tests {
             Step::new(
                 StepId::new("output-x").unwrap(),
                 StepKind::Output {
+                    name: "output-3".to_owned(),
                     value: InputValue::StepOutput(StepOutputReference::new(step_id, "")),
                 },
             ),
@@ -372,6 +375,7 @@ mod tests {
             Step::new(
                 StepId::new("output-result").unwrap(),
                 StepKind::Output {
+                    name: "output-4".to_owned(),
                     value: InputValue::Expression(Expression::new(
                         ExpressionOperand::Variable(doubled),
                         ExpressionOperator::Add,
@@ -411,12 +415,14 @@ mod tests {
             Step::new(
                 StepId::new("missing-output").unwrap(),
                 StepKind::Output {
+                    name: "output-5".to_owned(),
                     value: InputValue::Variable(VariableId::new("missing").unwrap()),
                 },
             ),
             Step::new(
                 StepId::new("later-output").unwrap(),
                 StepKind::Output {
+                    name: "output-6".to_owned(),
                     value: InputValue::Literal(json!(5.0)),
                 },
             ),

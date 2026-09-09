@@ -31,7 +31,7 @@ function stepSummary(step: WorkflowStep): string {
     case 'set-variable':
       return `${step.variable} = ${valueSummary(step.value)}`
     case 'output':
-      return valueSummary(step.value)
+      return `${step.name} = ${valueSummary(step.value)}`
     case 'wait':
       return `${step.duration_ms} ms`
     case 'tool-action': {

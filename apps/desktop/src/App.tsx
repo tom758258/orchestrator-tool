@@ -53,6 +53,7 @@ type SetVariableStep = {
 type OutputStep = {
   type: 'output'
   id: string
+  name: string
   value: InputValueWire
 }
 
@@ -160,7 +161,7 @@ function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
     case 'set-variable':
       return { type: 'set-variable', id, variable: 'x', value: { source: 'literal', value: 5.0 } }
     case 'output':
-      return { type: 'output', id, value: { source: 'literal', value: null } }
+      return { type: 'output', id, name: id, value: { source: 'literal', value: null } }
     case 'power-set-voltage':
       return {
         type: 'tool-action',
@@ -982,6 +983,20 @@ function App() {
                             />
                           </label>
                         </>
+                      )}
+
+                      {selectedStep.type === 'output' && (
+                        <label className="step-property-field">
+                          <span className="step-property-label">Output name</span>
+                          <input
+                            type="text"
+                            value={selectedStep.name}
+                            disabled={workflowBusy}
+                            onChange={(event) => updateStep(selectedStep.id, (step) =>
+                              step.type === 'output' ? { ...step, name: event.target.value } : step,
+                            )}
+                          />
+                        </label>
                       )}
 
                       {selectedValue && (

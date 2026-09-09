@@ -249,6 +249,7 @@ pub enum StepKind {
         value: InputValue,
     },
     Output {
+        name: String,
         value: InputValue,
     },
     Wait {
@@ -273,10 +274,19 @@ impl Workflow {
     /// Creates a workflow with unique IDs and references only to earlier steps.
     pub fn new(steps: Vec<Step>) -> Result<Self, WorkflowError> {
         let mut seen = HashSet::new();
+        let mut output_names = HashSet::new();
 
         for step in &steps {
             if seen.contains(step.id()) {
                 return Err(WorkflowError::DuplicateStepId(step.id().clone()));
+            }
+            if let StepKind::Output { name, .. } = step.kind() {
+                if name.trim().is_empty() {
+                    return Err(WorkflowError::InvalidOutputName(step.id().clone()));
+                }
+                if !output_names.insert(name) {
+                    return Err(WorkflowError::DuplicateOutputName(name.clone()));
+                }
             }
             let validate_reference = |reference: &StepOutputReference| {
                 if !seen.contains(reference.step_id()) {
@@ -302,7 +312,7 @@ impl Workflow {
                 Ok(())
             };
             match step.kind() {
-                StepKind::SetVariable { value, .. } | StepKind::Output { value } => {
+                StepKind::SetVariable { value, .. } | StepKind::Output { value, .. } => {
                     validate_input(value)?;
                 }
                 StepKind::ToolAction { bindings, .. } => {
@@ -318,22 +328,106 @@ impl Workflow {
         Ok(Self { steps })
     }
 
+    /// Projects successful Output results in workflow order.
+    /// Missing, failed, or cancelled Outputs reject the entire projection.
+    pub fn project_outputs(
+        &self,
+        results: &[StepResult],
+    ) -> Result<Vec<WorkflowOutput>, OutputProjectionError> {
+        let mut outputs = Vec::new();
+        for step in &self.steps {
+            let StepKind::Output { name, .. } = step.kind() else {
+                continue;
+            };
+            let result = results
+                .iter()
+                .find(|result| result.step_id() == step.id())
+                .ok_or_else(|| OutputProjectionError::MissingStepResult(step.id().clone()))?;
+            match result.outcome() {
+                StepOutcome::Succeeded { output } => outputs.push(WorkflowOutput {
+                    name: name.clone(),
+                    value: output.clone(),
+                }),
+                outcome => {
+                    return Err(OutputProjectionError::UnsuccessfulStep {
+                        step_id: step.id().clone(),
+                        outcome: outcome.clone(),
+                    });
+                }
+            }
+        }
+        Ok(outputs)
+    }
+
     /// Returns the steps in execution order.
     pub fn steps(&self) -> &[Step] {
         &self.steps
     }
 }
 
+/// A named resolved value, ordered by its Output step in the workflow.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkflowOutput {
+    name: String,
+    value: Value,
+}
+
+impl WorkflowOutput {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+}
+
+/// An Output step has no successful result to project.
+#[derive(Debug)]
+pub enum OutputProjectionError {
+    MissingStepResult(StepId),
+    UnsuccessfulStep {
+        step_id: StepId,
+        outcome: StepOutcome,
+    },
+}
+
+impl fmt::Display for OutputProjectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingStepResult(step_id) => {
+                write!(formatter, "output step {step_id} has no result")
+            }
+            Self::UnsuccessfulStep { step_id, outcome } => {
+                write!(
+                    formatter,
+                    "output step {step_id} did not succeed: {outcome:?}"
+                )
+            }
+        }
+    }
+}
+
+impl Error for OutputProjectionError {}
+
 /// Errors produced while constructing a workflow.
 #[derive(Debug)]
 pub enum WorkflowError {
     DuplicateStepId(StepId),
+    InvalidOutputName(StepId),
+    DuplicateOutputName(String),
     InvalidStepOutputReference { step_id: StepId, target: StepId },
 }
 
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidOutputName(step_id) => {
+                write!(formatter, "output step {step_id} name must not be blank")
+            }
+            Self::DuplicateOutputName(name) => {
+                write!(formatter, "duplicate workflow output name {name:?}")
+            }
             Self::InvalidStepOutputReference { step_id, target } => write!(
                 formatter,
                 "step {step_id} references step {target}, but {target} is not an earlier step"
@@ -448,6 +542,7 @@ mod tests {
                     value: value.clone(),
                 },
                 StepKind::Output {
+                    name: "output-1".to_owned(),
                     value: value.clone(),
                 },
                 StepKind::ToolAction {
@@ -496,6 +591,7 @@ mod tests {
             let current = Step::new(
                 StepId::new("current").unwrap(),
                 StepKind::Output {
+                    name: "output-2".to_owned(),
                     value: InputValue::Expression(Expression::new(
                         left,
                         ExpressionOperator::Multiply,
