@@ -20,6 +20,7 @@ pub mod tool;
 pub mod worker;
 pub mod worker_http;
 pub mod workflow;
+pub mod workflow_csv;
 
 /// Product name shared by application frontends.
 pub const PRODUCT_NAME: &str = "orchestrator-tool";
