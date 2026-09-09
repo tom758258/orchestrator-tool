@@ -83,7 +83,7 @@ type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type StepResultStatus = 'succeeded' | 'failed' | 'cancelled'
-type StepResultDto = {
+export type StepResultDto = {
   step_id: string
   status: StepResultStatus
   output: unknown | null
@@ -945,6 +945,8 @@ function App() {
                   selectedStepId={selectedStepId}
                   onSelectStep={setSelectedStepId}
                   stepLabel={stepLabel}
+                  runResults={runResults}
+                  formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
                   onDeleteStep={deleteStep}

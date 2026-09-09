@@ -629,6 +629,25 @@ body {
   white-space: nowrap;
 }
 
+.sequence-step-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sequence-step-result .run-result-status {
+  flex-shrink: 0;
+}
+
+.sequence-step-output {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 600px) {
   .sequence-step-row {
     flex-wrap: wrap;
