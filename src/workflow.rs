@@ -278,14 +278,26 @@ impl Workflow {
             if seen.contains(step.id()) {
                 return Err(WorkflowError::DuplicateStepId(step.id().clone()));
             }
-            let validate_input = |input: &InputValue| {
-                if let InputValue::StepOutput(reference) = input
-                    && !seen.contains(reference.step_id())
-                {
+            let validate_reference = |reference: &StepOutputReference| {
+                if !seen.contains(reference.step_id()) {
                     return Err(WorkflowError::InvalidStepOutputReference {
                         step_id: step.id().clone(),
                         target: reference.step_id().clone(),
                     });
+                }
+                Ok(())
+            };
+            let validate_input = |input: &InputValue| {
+                match input {
+                    InputValue::StepOutput(reference) => validate_reference(reference)?,
+                    InputValue::Expression(expression) => {
+                        for operand in [expression.left(), expression.right()] {
+                            if let ExpressionOperand::StepOutput(reference) = operand {
+                                validate_reference(reference)?;
+                            }
+                        }
+                    }
+                    InputValue::Literal(_) | InputValue::Variable(_) => {}
                 }
                 Ok(())
             };
@@ -471,6 +483,36 @@ mod tests {
         let workflow = Workflow::new(Vec::new()).unwrap();
 
         assert!(workflow.steps().is_empty());
+    }
+
+    #[test]
+    fn expression_step_output_references_must_target_earlier_steps() {
+        let reference = ExpressionOperand::StepOutput(StepOutputReference::new(
+            StepId::new("future").unwrap(),
+            "/value",
+        ));
+        let literal = ExpressionOperand::Literal(json!(2));
+        for (left, right) in [(reference.clone(), literal.clone()), (literal, reference)] {
+            let current = Step::new(
+                StepId::new("current").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Expression(Expression::new(
+                        left,
+                        ExpressionOperator::Multiply,
+                        right,
+                    )),
+                },
+            );
+            let future = Step::new(
+                StepId::new("future").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            );
+            let error = Workflow::new(vec![current.clone(), future.clone()]).unwrap_err();
+            assert!(matches!(error, WorkflowError::InvalidStepOutputReference {
+                step_id, target
+            } if step_id.as_str() == "current" && target.as_str() == "future"));
+            assert!(Workflow::new(vec![future, current]).is_ok());
+        }
     }
 
     #[test]

@@ -182,8 +182,8 @@ mod tests {
         run::ExecutionMode,
         tool::ToolId,
         workflow::{
-            ActionId, InputValue, Step, StepId, StepKind, StepOutcome, StepOutputReference,
-            VariableId, Workflow,
+            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
+            StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
         },
     };
 
@@ -195,7 +195,7 @@ mod tests {
         context.set_variable(variable.clone(), json!(5.0));
         context.set_step_output(step_id.clone(), json!({ "value": 3.3 }));
         let arguments = json!({ "channel": 1, "voltage": 0 });
-        let mut bindings = [("voltage".to_owned(), InputValue::Variable(variable))].into();
+        let mut bindings = [("voltage".to_owned(), InputValue::Variable(variable.clone()))].into();
         assert_eq!(
             super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap(),
             json!({ "channel": 1, "voltage": 5.0 })
@@ -209,6 +209,18 @@ mod tests {
             json!({ "channel": 1, "voltage": 5.0, "measured": 3.3 })
         );
         assert_eq!(arguments, json!({ "channel": 1, "voltage": 0 }));
+        bindings.insert(
+            "voltage".to_owned(),
+            InputValue::Expression(Expression::new(
+                ExpressionOperand::Variable(variable),
+                ExpressionOperator::Multiply,
+                ExpressionOperand::Literal(json!(2)),
+            )),
+        );
+        assert_eq!(
+            super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap(),
+            json!({ "channel": 1, "voltage": 10.0, "measured": 3.3 })
+        );
         assert_eq!(
             super::resolve_tool_arguments(&json!([1]), &Default::default(), &context).unwrap(),
             json!([1])
@@ -330,6 +342,65 @@ mod tests {
             assert_eq!(
                 result.outcome(),
                 &StepOutcome::Succeeded { output: json!(5.0) }
+            );
+        }
+    }
+
+    #[test]
+    fn expressions_use_sequential_variable_results() {
+        let variable = VariableId::new("x").unwrap();
+        let doubled = VariableId::new("doubled").unwrap();
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("set-x").unwrap(),
+                StepKind::SetVariable {
+                    variable: variable.clone(),
+                    value: InputValue::Literal(json!(5.0)),
+                },
+            ),
+            Step::new(
+                StepId::new("set-doubled").unwrap(),
+                StepKind::SetVariable {
+                    variable: doubled.clone(),
+                    value: InputValue::Expression(Expression::new(
+                        ExpressionOperand::Variable(variable),
+                        ExpressionOperator::Multiply,
+                        ExpressionOperand::Literal(json!(2)),
+                    )),
+                },
+            ),
+            Step::new(
+                StepId::new("output-result").unwrap(),
+                StepKind::Output {
+                    value: InputValue::Expression(Expression::new(
+                        ExpressionOperand::Variable(doubled),
+                        ExpressionOperator::Add,
+                        ExpressionOperand::Literal(json!(1)),
+                    )),
+                },
+            ),
+        ])
+        .unwrap();
+        let results = execute_workflow(
+            &workflow,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 3);
+        for (result, (step_id, expected)) in results.iter().zip([
+            ("set-x", 5.0),
+            ("set-doubled", 10.0),
+            ("output-result", 11.0),
+        ]) {
+            assert_eq!(result.step_id().as_str(), step_id);
+            assert_eq!(
+                result.outcome(),
+                &StepOutcome::Succeeded {
+                    output: json!(expected)
+                }
             );
         }
     }
