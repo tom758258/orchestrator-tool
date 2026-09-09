@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
+import SequenceEditor from './SequenceEditor'
 import WorkflowCanvas, {
   createCanvasPositions,
   reconcileCanvasPositions,
@@ -73,7 +74,7 @@ type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
-type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep
+export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep
 
 type WorkflowDraft = {
   schema_version: number
@@ -995,6 +996,13 @@ function App() {
                   onDeleteStep={deleteStep}
                 />
               </div>
+
+              <SequenceEditor
+                steps={workflowDraft.workflow.steps}
+                selectedStepId={selectedStepId}
+                onSelectStep={setSelectedStepId}
+                stepLabel={stepLabel}
+              />
 
               <section className="step-properties" aria-labelledby="step-properties-title">
                 <h3 id="step-properties-title">Properties</h3>

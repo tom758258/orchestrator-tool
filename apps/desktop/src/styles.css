@@ -520,3 +520,83 @@ body {
 .discovered-resources {
   margin-top: 12px;
 }
+
+.sequence-editor {
+  margin-top: 20px;
+}
+
+.sequence-editor h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.sequence-empty {
+  color: #5a6270;
+}
+
+.sequence-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sequence-step-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2430;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sequence-step-card:hover {
+  background: #f0f2f5;
+}
+
+.sequence-step-card[aria-pressed='true'] {
+  border-color: #315da8;
+  background: #edf3ff;
+  box-shadow: inset 3px 0 #315da8;
+}
+
+.sequence-step-card:focus-visible {
+  outline: 2px solid #315da8;
+  outline-offset: 2px;
+}
+
+.sequence-step-order {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e3e6ea;
+  font-size: 0.85rem;
+  place-items: center;
+}
+
+.sequence-step-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+
+.sequence-step-label {
+  font-weight: 600;
+}
+
+.sequence-step-identity code {
+  color: #5a6270;
+  font-size: 0.85rem;
+}
