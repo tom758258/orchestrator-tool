@@ -224,11 +224,16 @@ body {
 
 .workflow-builder {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr);
-  align-items: stretch;
+  grid-template-columns: 170px minmax(340px, 1fr) 300px;
+  align-items: start;
   gap: 16px;
   margin-top: 16px;
   min-width: 0;
+}
+
+.app-workflow {
+  max-width: 1440px;
+  min-width: 960px;
 }
 
 .step-palette {
@@ -375,9 +380,15 @@ body {
 }
 
 .step-properties {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid #e3e6ea;
+  position: sticky;
+  top: 16px;
+  min-width: 0;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid #c9ced6;
+  border-radius: 8px;
 }
 
 .step-properties h3 {
@@ -400,7 +411,7 @@ body {
 .step-property-readonly,
 .step-property-field {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 12px;
 }
@@ -522,7 +533,7 @@ body {
 }
 
 .sequence-editor {
-  margin-top: 20px;
+  min-width: 0;
 }
 
 .sequence-editor h3 {
@@ -547,12 +558,14 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .sequence-step-actions {
   display: flex;
   flex-shrink: 0;
   gap: 6px;
+  margin-left: auto;
 }
 
 .sequence-step-card {
