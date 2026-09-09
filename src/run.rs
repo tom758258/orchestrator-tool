@@ -279,6 +279,7 @@ mod tests {
                 tool: ToolId::powers(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: serde_json::json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
             },
         )])
         .unwrap();

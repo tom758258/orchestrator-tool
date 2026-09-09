@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, fs, io, path::Path};
+use std::{collections::BTreeMap, error::Error, fmt, fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -219,6 +219,8 @@ enum StepWire {
         tool: String,
         action: String,
         arguments: Value,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        bindings: BTreeMap<String, InputValueWire>,
     },
 }
 
@@ -242,11 +244,16 @@ impl StepWire {
                 tool,
                 action,
                 arguments,
+                bindings,
             } => Self::ToolAction {
                 id: step.id().as_str().to_owned(),
                 tool: tool.as_str().to_owned(),
                 action: action.as_str().to_owned(),
                 arguments: arguments.clone(),
+                bindings: bindings
+                    .iter()
+                    .map(|(key, input)| (key.clone(), InputValueWire::from_input(input)))
+                    .collect(),
             },
         }
     }
@@ -353,6 +360,7 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
             tool,
             action,
             arguments,
+            bindings,
         } => {
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
@@ -371,6 +379,10 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                     tool: tool_id,
                     action: action_id,
                     arguments,
+                    bindings: bindings
+                        .into_iter()
+                        .map(|(key, input)| Ok((key, input_from_wire(input)?)))
+                        .collect::<Result<_, TemplateError>>()?,
                 },
             ))
         }
@@ -430,6 +442,7 @@ mod tests {
                     tool: ToolId::powers(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                    bindings: Default::default(),
                 },
             ),
             Step::new(
@@ -442,6 +455,7 @@ mod tests {
                     tool: ToolId::meters(),
                     action: ActionId::new("measure").unwrap(),
                     arguments: json!({}),
+                    bindings: Default::default(),
                 },
             ),
         ])
@@ -459,6 +473,8 @@ mod tests {
         assert_eq!(value["name"], "Power and Meter Test");
         assert_eq!(value["workflow"]["steps"][0]["type"], "tool-action");
         assert_eq!(value["workflow"]["steps"][0]["id"], "power-set-1");
+        assert!(value["workflow"]["steps"][0].get("bindings").is_none());
+        assert!(value["workflow"]["steps"][2].get("bindings").is_none());
         assert_eq!(value["workflow"]["steps"][1]["type"], "wait");
         assert_eq!(value["workflow"]["steps"][1]["duration_ms"], 500);
         assert_eq!(value["workflow"]["steps"][2]["type"], "tool-action");
@@ -478,6 +494,34 @@ mod tests {
             restored.workflow().steps()[2].kind(),
             original.workflow().steps()[2].kind()
         );
+    }
+
+    #[test]
+    fn tool_action_bindings_round_trip() {
+        let original = Template::new(
+            "Bound voltage".to_owned(),
+            Workflow::new(vec![Step::new(
+                StepId::new("power-set-1").unwrap(),
+                StepKind::ToolAction {
+                    tool: ToolId::powers(),
+                    action: ActionId::new("set-voltage").unwrap(),
+                    arguments: json!({ "channel": 1, "voltage": 0 }),
+                    bindings: [(
+                        "voltage".to_owned(),
+                        InputValue::Variable(VariableId::new("x").unwrap()),
+                    )]
+                    .into(),
+                },
+            )])
+            .unwrap(),
+        );
+        let json = original.to_json_string().unwrap();
+        let value: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["schema_version"], 1);
+        let binding = &value["workflow"]["steps"][0]["bindings"]["voltage"];
+        assert_eq!(binding["source"], "variable");
+        assert_eq!(binding["variable"], "x");
+        assert_eq!(Template::from_json_str(&json).unwrap(), original);
     }
 
     #[test]

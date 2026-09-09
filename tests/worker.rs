@@ -1072,6 +1072,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
                 tool: ToolId::powers(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
             },
         ),
         Step::new(
@@ -1080,6 +1081,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
                 tool: ToolId::powers(),
                 action: ActionId::new("output-on").unwrap(),
                 arguments: json!({ "channel": 1 }),
+                bindings: Default::default(),
             },
         ),
         Step::new(
@@ -1092,6 +1094,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
                 tool: ToolId::meters(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
+                bindings: Default::default(),
             },
         ),
         Step::new(
@@ -1100,6 +1103,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
                 tool: ToolId::powers(),
                 action: ActionId::new("output-off").unwrap(),
                 arguments: json!({ "channel": 1 }),
+                bindings: Default::default(),
             },
         ),
     ])
@@ -1155,6 +1159,7 @@ fn three_meter_measurements_shutdown_normally() {
                         tool: ToolId::meters(),
                         action: ActionId::new("measure").unwrap(),
                         arguments: json!({}),
+                        bindings: Default::default(),
                     },
                 )
             })
@@ -1202,6 +1207,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
                 tool: ToolId::powers(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
             },
         ),
         Step::new(
@@ -1210,6 +1216,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
                 tool: ToolId::meters(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
+                bindings: Default::default(),
             },
         ),
     ])
@@ -1288,6 +1295,7 @@ fn live_workflow_cleanup_lifecycle() {
                     tool: ToolId::powers(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                    bindings: Default::default(),
                 },
             ),
             Step::new(
@@ -1296,6 +1304,7 @@ fn live_workflow_cleanup_lifecycle() {
                     tool: ToolId::powers(),
                     action: ActionId::new("output-on").unwrap(),
                     arguments: json!({ "channel": 1 }),
+                    bindings: Default::default(),
                 },
             ),
             Step::new(
@@ -1304,6 +1313,7 @@ fn live_workflow_cleanup_lifecycle() {
                     tool: ToolId::powers(),
                     action: ActionId::new("output-off").unwrap(),
                     arguments: json!({ "channel": 1 }),
+                    bindings: Default::default(),
                 },
             ),
         ];
@@ -1315,6 +1325,7 @@ fn live_workflow_cleanup_lifecycle() {
                     tool: ToolId::meters(),
                     action: ActionId::new("measure").unwrap(),
                     arguments: json!({}),
+                    bindings: Default::default(),
                 },
             ));
             specs.insert(ToolId::meters(), fixture_spec("exit-before-ready"));

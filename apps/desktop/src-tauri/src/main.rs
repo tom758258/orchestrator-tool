@@ -616,6 +616,7 @@ mod tests {
                     })
                     .unwrap(),
                     arguments: json!({}),
+                    bindings: Default::default(),
                 },
             )])
             .unwrap();
@@ -725,6 +726,7 @@ mod tests {
                     tool: tool.clone(),
                     action: ActionId::new("measure").unwrap(),
                     arguments: json!({}),
+                    bindings: Default::default(),
                 },
             )])
             .unwrap();

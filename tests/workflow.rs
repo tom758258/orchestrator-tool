@@ -14,6 +14,7 @@ fn workflow_template_step_result_integration() {
                 tool: ToolId::powers(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
             },
         ),
         Step::new(
@@ -26,6 +27,7 @@ fn workflow_template_step_result_integration() {
                 tool: ToolId::meters(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
+                bindings: Default::default(),
             },
         ),
     ])

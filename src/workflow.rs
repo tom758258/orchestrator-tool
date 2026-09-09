@@ -1,4 +1,8 @@
-use std::{collections::HashSet, error::Error, fmt};
+use std::{
+    collections::{BTreeMap, HashSet},
+    error::Error,
+    fmt,
+};
 
 use serde_json::Value;
 
@@ -200,6 +204,8 @@ pub enum StepKind {
         tool: ToolId,
         action: ActionId,
         arguments: Value,
+        /// Top-level inputs resolved at runtime, overriding literal arguments.
+        bindings: BTreeMap<String, InputValue>,
     },
 }
 
@@ -210,14 +216,37 @@ pub struct Workflow {
 }
 
 impl Workflow {
-    /// Creates a workflow and rejects duplicate step IDs.
+    /// Creates a workflow with unique IDs and references only to earlier steps.
     pub fn new(steps: Vec<Step>) -> Result<Self, WorkflowError> {
         let mut seen = HashSet::new();
 
         for step in &steps {
-            if !seen.insert(step.id()) {
+            if seen.contains(step.id()) {
                 return Err(WorkflowError::DuplicateStepId(step.id().clone()));
             }
+            let validate_input = |input: &InputValue| {
+                if let InputValue::StepOutput(reference) = input
+                    && !seen.contains(reference.step_id())
+                {
+                    return Err(WorkflowError::InvalidStepOutputReference {
+                        step_id: step.id().clone(),
+                        target: reference.step_id().clone(),
+                    });
+                }
+                Ok(())
+            };
+            match step.kind() {
+                StepKind::SetVariable { value, .. } | StepKind::Output { value } => {
+                    validate_input(value)?;
+                }
+                StepKind::ToolAction { bindings, .. } => {
+                    for value in bindings.values() {
+                        validate_input(value)?;
+                    }
+                }
+                StepKind::Wait { .. } => {}
+            }
+            seen.insert(step.id());
         }
 
         Ok(Self { steps })
@@ -233,11 +262,16 @@ impl Workflow {
 #[derive(Debug)]
 pub enum WorkflowError {
     DuplicateStepId(StepId),
+    InvalidStepOutputReference { step_id: StepId, target: StepId },
 }
 
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidStepOutputReference { step_id, target } => write!(
+                formatter,
+                "step {step_id} references step {target}, but {target} is not an earlier step"
+            ),
             Self::DuplicateStepId(step_id) => {
                 write!(formatter, "duplicate workflow step ID {step_id}")
             }
@@ -311,6 +345,7 @@ mod tests {
                     tool: ToolId::powers(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                    bindings: Default::default(),
                 },
             ),
         ])
@@ -328,8 +363,52 @@ mod tests {
                 tool: ToolId::powers(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
             }
         );
+    }
+
+    #[test]
+    fn step_output_references_must_target_earlier_steps() {
+        for target in ["current", "future", "missing"] {
+            let value = InputValue::StepOutput(StepOutputReference::new(
+                StepId::new(target).unwrap(),
+                "/value",
+            ));
+            for kind in [
+                StepKind::SetVariable {
+                    variable: VariableId::new("x").unwrap(),
+                    value: value.clone(),
+                },
+                StepKind::Output {
+                    value: value.clone(),
+                },
+                StepKind::ToolAction {
+                    tool: ToolId::powers(),
+                    action: ActionId::new("set-voltage").unwrap(),
+                    arguments: json!({}),
+                    bindings: [("voltage".to_owned(), value.clone())].into(),
+                },
+            ] {
+                let error = Workflow::new(vec![
+                    Step::new(StepId::new("current").unwrap(), kind),
+                    Step::new(
+                        StepId::new("future").unwrap(),
+                        StepKind::Wait { duration_ms: 0 },
+                    ),
+                ])
+                .unwrap_err();
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "step current references step {target}, but {target} is not an earlier step"
+                    )
+                );
+                assert!(matches!(error, WorkflowError::InvalidStepOutputReference {
+                    step_id, target: referenced
+                } if step_id.as_str() == "current" && referenced.as_str() == target));
+            }
+        }
     }
 
     #[test]

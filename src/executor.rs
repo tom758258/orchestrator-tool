@@ -1,4 +1,9 @@
-use std::{collections::HashMap, error::Error, fmt, thread, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    fmt, thread,
+    time::Duration,
+};
 
 use serde_json::Value;
 
@@ -7,7 +12,7 @@ use crate::{
     run::ExecutionMode,
     tool::ToolId,
     worker::WorkerSession,
-    workflow::{StepKind, StepOutcome, StepResult, Workflow},
+    workflow::{InputValue, StepKind, StepOutcome, StepResult, Workflow},
 };
 
 /// Errors that prevent a workflow from starting execution.
@@ -72,14 +77,18 @@ pub fn execute_workflow(
                 tool,
                 action,
                 arguments,
-            } => dispatch_tool_action(
-                tool,
-                action,
-                arguments,
-                sessions,
-                execution_mode,
-                action_timeout,
-            ),
+                bindings,
+            } => match resolve_tool_arguments(arguments, bindings, &data_context) {
+                Ok(arguments) => dispatch_tool_action(
+                    tool,
+                    action,
+                    &arguments,
+                    sessions,
+                    execution_mode,
+                    action_timeout,
+                ),
+                Err(message) => StepOutcome::Failed { message },
+            },
         };
 
         if let StepOutcome::Succeeded { output } = &outcome {
@@ -94,6 +103,26 @@ pub fn execute_workflow(
     }
 
     Ok(results)
+}
+
+fn resolve_tool_arguments(
+    arguments: &Value,
+    bindings: &BTreeMap<String, InputValue>,
+    data_context: &DataContext,
+) -> Result<Value, String> {
+    let mut arguments = arguments.clone();
+    if !bindings.is_empty() {
+        let object = arguments
+            .as_object_mut()
+            .ok_or("tool action arguments must be a JSON object when bindings are present")?;
+        for (key, input) in bindings {
+            let value = data_context
+                .resolve(input)
+                .map_err(|error| error.to_string())?;
+            object.insert(key.clone(), value);
+        }
+    }
+    Ok(arguments)
 }
 
 fn dispatch_tool_action(
@@ -157,6 +186,83 @@ mod tests {
             VariableId, Workflow,
         },
     };
+
+    #[test]
+    fn bindings_override_literal_arguments_using_runtime_data() {
+        let mut context = crate::data_context::DataContext::new();
+        let variable = VariableId::new("x").unwrap();
+        let step_id = StepId::new("meter-read-1").unwrap();
+        context.set_variable(variable.clone(), json!(5.0));
+        context.set_step_output(step_id.clone(), json!({ "value": 3.3 }));
+        let arguments = json!({ "channel": 1, "voltage": 0 });
+        let mut bindings = [("voltage".to_owned(), InputValue::Variable(variable))].into();
+        assert_eq!(
+            super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap(),
+            json!({ "channel": 1, "voltage": 5.0 })
+        );
+        bindings.insert(
+            "measured".to_owned(),
+            InputValue::StepOutput(StepOutputReference::new(step_id, "/value")),
+        );
+        assert_eq!(
+            super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap(),
+            json!({ "channel": 1, "voltage": 5.0, "measured": 3.3 })
+        );
+        assert_eq!(arguments, json!({ "channel": 1, "voltage": 0 }));
+        assert_eq!(
+            super::resolve_tool_arguments(&json!([1]), &Default::default(), &context).unwrap(),
+            json!([1])
+        );
+    }
+
+    #[test]
+    fn binding_failures_stop_execution_before_dispatch() {
+        for (arguments, expected) in [
+            (json!({ "voltage": 0 }), "missing variable missing"),
+            (
+                json!([]),
+                "tool action arguments must be a JSON object when bindings are present",
+            ),
+        ] {
+            let workflow = Workflow::new(vec![
+                Step::new(
+                    StepId::new("power-set-1").unwrap(),
+                    StepKind::ToolAction {
+                        tool: ToolId::powers(),
+                        action: ActionId::new("set-voltage").unwrap(),
+                        arguments,
+                        bindings: [(
+                            "voltage".to_owned(),
+                            InputValue::Variable(VariableId::new("missing").unwrap()),
+                        )]
+                        .into(),
+                    },
+                ),
+                Step::new(
+                    StepId::new("later").unwrap(),
+                    StepKind::Output {
+                        value: InputValue::Literal(json!(5.0)),
+                    },
+                ),
+            ])
+            .unwrap();
+            let results = execute_workflow(
+                &workflow,
+                &HashMap::new(),
+                ExecutionMode::Simulate,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].step_id().as_str(), "power-set-1");
+            assert_eq!(
+                results[0].outcome(),
+                &StepOutcome::Failed {
+                    message: expected.to_owned()
+                }
+            );
+        }
+    }
 
     #[test]
     fn variable_is_available_to_later_output() {
@@ -289,6 +395,7 @@ mod tests {
                     tool: ToolId::powers(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                    bindings: Default::default(),
                 },
             ),
             Step::new(
