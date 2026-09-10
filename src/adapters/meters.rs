@@ -91,10 +91,11 @@ pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
     arguments
 }
 
-/// Builds the Meters Worker launch specification used for simulate diagnostics.
+/// Builds a simulate Worker launch specification from a validated setup.
 pub fn simulate_worker_launch_spec(
     executable: impl AsRef<Path>,
     max_samples: usize,
+    setup: &MetersSetup,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
@@ -103,8 +104,6 @@ pub fn simulate_worker_launch_spec(
             OsString::from("--resource"),
             OsString::from("SIM::34461A"),
             OsString::from("--simulate"),
-            OsString::from("--measurement"),
-            OsString::from("voltage-dc"),
             OsString::from("--trigger-mode"),
             OsString::from("software"),
             OsString::from("--max-samples"),
@@ -114,15 +113,18 @@ pub fn simulate_worker_launch_spec(
             OsString::from("--sw-trigger-port"),
             OsString::from("0"),
             OsString::from("--no-csv"),
-        ],
+        ]
+        .into_iter()
+        .chain(setup_arguments(setup)),
     )
 }
 
-/// Builds live Worker launch details using the exact caller-supplied resource.
+/// Builds live Worker launch details from a validated setup and exact resource.
 pub fn live_worker_launch_spec(
     executable: impl AsRef<Path>,
     resource: &str,
     max_samples: usize,
+    setup: &MetersSetup,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
@@ -130,8 +132,6 @@ pub fn live_worker_launch_spec(
             OsString::from("start-trigger-record"),
             OsString::from("--resource"),
             OsString::from(resource),
-            OsString::from("--measurement"),
-            OsString::from("voltage-dc"),
             OsString::from("--trigger-mode"),
             OsString::from("software"),
             OsString::from("--max-samples"),
@@ -141,7 +141,9 @@ pub fn live_worker_launch_spec(
             OsString::from("--sw-trigger-port"),
             OsString::from("0"),
             OsString::from("--no-csv"),
-        ],
+        ]
+        .into_iter()
+        .chain(setup_arguments(setup)),
     )
 }
 
@@ -152,7 +154,16 @@ pub fn run_worker_smoke(
     operation_timeout: Duration,
     shutdown_timeout: Duration,
 ) -> Result<(), MetersSmokeError> {
-    let spec = simulate_worker_launch_spec(executable, 2);
+    let setup = MetersSetup {
+        measurement: MetersMeasurement::VoltageDc,
+        range_mode: RangeMode::Auto,
+        manual_range: None,
+        nplc: 1.0,
+        auto_zero: AutoZero::On,
+        dcv_input_impedance: None,
+        current_terminal: None,
+    };
+    let spec = simulate_worker_launch_spec(executable, 2, &setup);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
     let operation = run_smoke_operation(session.ready(), operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);
@@ -702,7 +713,16 @@ mod tests {
     #[test]
     fn meters_live_contract_shape_is_correct() {
         let resource = " USB0::Vendor::Serial With Spaces::INSTR ";
-        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, 2);
+        let setup = MetersSetup {
+            measurement: MetersMeasurement::VoltageDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 1.0,
+            auto_zero: AutoZero::On,
+            dcv_input_impedance: None,
+            current_terminal: None,
+        };
+        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, 2, &setup);
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(
             spec.arguments(),
@@ -710,8 +730,6 @@ mod tests {
                 OsString::from("start-trigger-record"),
                 OsString::from("--resource"),
                 OsString::from(resource),
-                OsString::from("--measurement"),
-                OsString::from("voltage-dc"),
                 OsString::from("--trigger-mode"),
                 OsString::from("software"),
                 OsString::from("--max-samples"),
@@ -722,6 +740,9 @@ mod tests {
                 OsString::from("0"),
                 OsString::from("--no-csv"),
             ]
+            .into_iter()
+            .chain(super::setup_arguments(&setup))
+            .collect::<Vec<_>>()
         );
     }
 
@@ -822,7 +843,16 @@ mod tests {
 
     #[test]
     fn meters_simulate_contract_shape_is_correct() {
-        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), 2);
+        let setup = MetersSetup {
+            measurement: MetersMeasurement::VoltageDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 1.0,
+            auto_zero: AutoZero::On,
+            dcv_input_impedance: None,
+            current_terminal: None,
+        };
+        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), 2, &setup);
 
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(
@@ -832,8 +862,6 @@ mod tests {
                 OsString::from("--resource"),
                 OsString::from("SIM::34461A"),
                 OsString::from("--simulate"),
-                OsString::from("--measurement"),
-                OsString::from("voltage-dc"),
                 OsString::from("--trigger-mode"),
                 OsString::from("software"),
                 OsString::from("--max-samples"),
@@ -844,6 +872,9 @@ mod tests {
                 OsString::from("0"),
                 OsString::from("--no-csv"),
             ]
+            .into_iter()
+            .chain(super::setup_arguments(&setup))
+            .collect::<Vec<_>>()
         );
         assert_eq!(
             software_trigger_request(),

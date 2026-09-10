@@ -11,6 +11,7 @@ use orchestrator_tool::{
     config::{Config, ConfigError},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     inspection::inspect_tool,
+    instrument_setup::InstrumentSetup,
     live_resources::LiveResourceCandidate,
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
@@ -166,6 +167,7 @@ async fn run_workflow_simulation(
         let config = load_desktop_config(&app)?;
         let launch_specs = prepare_worker_launch_specs(
             template.workflow(),
+            template.instrument_setup(),
             ExecutionMode::Simulate,
             &application_dir,
             &config,
@@ -205,6 +207,7 @@ async fn run_workflow_live(
         )?;
         let mut launch_specs = prepare_worker_launch_specs(
             template.workflow(),
+            template.instrument_setup(),
             ExecutionMode::Live,
             &application_dir,
             &config,
@@ -318,6 +321,7 @@ fn validate_confirmed_live_resources(
 
 fn prepare_worker_launch_specs(
     workflow: &Workflow,
+    instrument_setup: &InstrumentSetup,
     execution_mode: ExecutionMode,
     application_dir: &Path,
     config: &Config,
@@ -336,6 +340,13 @@ fn prepare_worker_launch_specs(
     let mut launch_specs = HashMap::new();
 
     let tools = referenced_workflow_tools(workflow);
+    if tools.contains(&ToolId::meters()) {
+        let setup = instrument_setup
+            .meters
+            .as_ref()
+            .ok_or("Meters setup is required when the workflow uses Meters")?;
+        setup.validate().map_err(|error| error.to_string())?;
+    }
     if execution_mode == ExecutionMode::Live {
         for tool in &tools {
             if config
@@ -380,9 +391,14 @@ fn prepare_worker_launch_specs(
 
         let spec = match (execution_mode, tool.as_str()) {
             (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
-            (ExecutionMode::Simulate, "meters") => {
-                meters::simulate_worker_launch_spec(executable, meters_max_samples)
-            }
+            (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(
+                executable,
+                meters_max_samples,
+                instrument_setup
+                    .meters
+                    .as_ref()
+                    .expect("Meters setup was validated"),
+            ),
             (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
                 executable,
                 config
@@ -395,6 +411,10 @@ fn prepare_worker_launch_specs(
                     .live_resource(&tool)
                     .expect("live resources were validated"),
                 meters_max_samples,
+                instrument_setup
+                    .meters
+                    .as_ref()
+                    .expect("Meters setup was validated"),
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
         };
@@ -704,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn meters_workflow_launch_reserves_capacity_after_three_measurements() {
+    fn meters_workflow_launch_uses_setup_and_reserves_capacity_after_three_measurements() {
         use super::{Config, ExecutionMode, prepare_worker_launch_specs};
         use std::{ffi::OsString, fs};
         let dir = unique_test_dir("orchestrator-meters-launch-test");
@@ -729,7 +749,11 @@ mod tests {
             path
         };
         let template = Template::from_json_str(&json!({
-            "schema_version": 1, "instrument_setup": {"meters": null}, "name": "Three measurements", "workflow": { "steps": [
+            "schema_version": 1, "instrument_setup": {"meters": {
+                "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
+                "nplc": 1.0, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
+                "current_terminal": null
+            }}, "name": "Three measurements", "workflow": { "steps": [
                 {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}},
                 {"type": "wait", "id": "wait-1", "duration_ms": 0},
                 {"type": "tool-action", "id": "read-2", "tool": "meters", "action": "measure", "arguments": {}},
@@ -741,11 +765,40 @@ mod tests {
         let mut config = Config::default();
         config.set_executable_path(&ToolId::meters(), &executable);
         config.set_live_resource(&ToolId::meters(), resource);
-        for mode in [ExecutionMode::Live, ExecutionMode::Simulate] {
-            let specs =
-                prepare_worker_launch_specs(template.workflow(), mode, &dir, &config).unwrap();
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let mut setup = template.instrument_setup().clone();
+            if mode == ExecutionMode::Live {
+                let meters = setup.meters.as_mut().unwrap();
+                meters.measurement =
+                    orchestrator_tool::instrument_setup::MetersMeasurement::CurrentDc;
+                meters.dcv_input_impedance = None;
+                meters.current_terminal = Some(3);
+            }
+            let template = Template::new(
+                template.name().to_owned(),
+                setup,
+                template.workflow().clone(),
+            )
+            .unwrap();
+            let specs = prepare_worker_launch_specs(
+                template.workflow(),
+                template.instrument_setup(),
+                mode,
+                &dir,
+                &config,
+            )
+            .unwrap();
             assert_eq!(specs.len(), 1);
             let args = specs[&ToolId::meters()].arguments();
+            let setup_args = super::meters::setup_arguments(
+                template.instrument_setup().meters.as_ref().unwrap(),
+            );
+            assert!(args.ends_with(&setup_args));
+            assert_eq!(args.iter().filter(|arg| *arg == "--measurement").count(), 1);
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair == ["--trigger-mode", "software"])
+            );
             assert!(
                 args.windows(2)
                     .any(|pair| pair == [OsString::from("--max-samples"), OsString::from("4")])
@@ -766,6 +819,53 @@ mod tests {
             );
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn meters_preparation_requires_setup_before_executable_probing() {
+        let template = Template::from_json_str(&json!({
+            "schema_version": 1, "name": "Missing setup", "instrument_setup": {"meters": null},
+            "workflow": {"steps": [
+                {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}}
+            ]}
+        }).to_string()).unwrap();
+        for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
+            let error = super::prepare_worker_launch_specs(
+                template.workflow(),
+                template.instrument_setup(),
+                mode,
+                std::path::Path::new("unused"),
+                &super::Config::default(),
+            )
+            .unwrap_err();
+            assert_eq!(
+                error,
+                "Meters setup is required when the workflow uses Meters"
+            );
+        }
+    }
+
+    #[test]
+    fn preparation_without_meters_does_not_require_setup() {
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version": 1, "name": "Wait only", "instrument_setup": {"meters": null},
+                "workflow": {"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
+            let specs = super::prepare_worker_launch_specs(
+                template.workflow(),
+                template.instrument_setup(),
+                mode,
+                std::path::Path::new("unused"),
+                &super::Config::default(),
+            )
+            .unwrap();
+            assert!(specs.is_empty());
+        }
     }
 
     #[test]
@@ -790,6 +890,17 @@ mod tests {
                 }
                 let error = prepare_worker_launch_specs(
                     &workflow,
+                    &super::InstrumentSetup {
+                        meters: if tool == ToolId::meters() {
+                            Some(serde_json::from_value(json!({
+                                "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+                                "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+                                "current_terminal": null
+                            })).unwrap())
+                        } else {
+                            None
+                        },
+                    },
                     ExecutionMode::Live,
                     std::path::Path::new("unused"),
                     &config,

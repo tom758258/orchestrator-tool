@@ -17,6 +17,7 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
+    instrument_setup::{AutoZero, MetersMeasurement, MetersSetup, RangeMode},
     run::{ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow},
     template::Template,
     tool::ToolId,
@@ -37,13 +38,11 @@ const POWERS_WORKER_ARGUMENTS: [&str; 7] = [
     "--artifact-mode",
     "memory",
 ];
-const METERS_WORKER_ARGUMENTS: [&str; 15] = [
+const METERS_WORKER_ARGUMENTS: [&str; 21] = [
     "start-trigger-record",
     "--resource",
     "SIM::34461A",
     "--simulate",
-    "--measurement",
-    "voltage-dc",
     "--trigger-mode",
     "software",
     "--max-samples",
@@ -53,6 +52,14 @@ const METERS_WORKER_ARGUMENTS: [&str; 15] = [
     "--sw-trigger-port",
     "0",
     "--no-csv",
+    "--measurement",
+    "voltage-dc",
+    "--auto-range",
+    "on",
+    "--nplc",
+    "1",
+    "--auto-zero",
+    "on",
 ];
 const POWERS_FIXTURE_SCENARIO_ENV: &str = "ORCHESTRATOR_TEST_POWERS_SCENARIO";
 const CLEANUP_MARKER_ENV: &str = "ORCHESTRATOR_TEST_CLEANUP_MARKER";
@@ -1238,6 +1245,15 @@ fn three_meter_measurements_shutdown_normally() {
     let spec = orchestrator_tool::adapters::meters::simulate_worker_launch_spec(
         env::current_exe().unwrap(),
         4,
+        &MetersSetup {
+            measurement: MetersMeasurement::VoltageDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 1.0,
+            auto_zero: AutoZero::On,
+            dcv_input_impedance: None,
+            current_terminal: None,
+        },
     );
     let results = run_simulated_workflow(
         &workflow,
