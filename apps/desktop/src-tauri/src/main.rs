@@ -821,6 +821,108 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    // Set ORCHESTRATOR_TEST_METERS_EXECUTABLE to a real meters-tool executable, then run:
+    // cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml vertical_slice -- --ignored
+    #[test]
+    #[ignore = "requires external meters-tool; runs simulation without hardware"]
+    fn dcv_simulation_vertical_slice() {
+        meters_simulation_vertical_slice(
+            json!({
+                "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
+                "nplc": 0.2, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
+                "current_terminal": null
+            }),
+            &[
+                ["--measurement", "voltage-dc"],
+                ["--range", "10"],
+                ["--dcv-input-impedance", "10m"],
+            ],
+            "V",
+        );
+    }
+
+    #[test]
+    #[ignore = "requires external meters-tool; runs simulation without hardware"]
+    fn dci_simulation_vertical_slice() {
+        meters_simulation_vertical_slice(
+            json!({
+                "measurement": "current-dc", "range_mode": "manual", "manual_range": 0.1,
+                "nplc": 0.2, "auto_zero": "once", "dcv_input_impedance": null,
+                "current_terminal": 3
+            }),
+            &[
+                ["--measurement", "current-dc"],
+                ["--range", "0.1"],
+                ["--current-terminal", "3"],
+            ],
+            "A",
+        );
+    }
+
+    fn meters_simulation_vertical_slice(
+        setup: serde_json::Value,
+        expected_arguments: &[[&str; 2]],
+        expected_unit: &str,
+    ) {
+        let executable = std::env::var_os("ORCHESTRATOR_TEST_METERS_EXECUTABLE")
+            .expect("set ORCHESTRATOR_TEST_METERS_EXECUTABLE to a real meters-tool executable");
+        let executable = std::fs::canonicalize(executable).unwrap();
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version": 1, "name": "Meters simulation vertical slice",
+                "instrument_setup": {"meters": setup},
+                "workflow": {"steps": [
+                    {"type": "tool-action", "id": "measure", "tool": "meters",
+                     "action": "measure", "arguments": {}}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut config = super::Config::default();
+        config.set_executable_path(&ToolId::meters(), &executable);
+        let specs = super::prepare_worker_launch_specs(
+            template.workflow(),
+            template.instrument_setup(),
+            super::ExecutionMode::Simulate,
+            executable.parent().unwrap(),
+            &config,
+        )
+        .unwrap();
+        let args = specs[&ToolId::meters()].arguments();
+        assert!(args.iter().any(|arg| arg == "--simulate"));
+        for expected in expected_arguments.iter().chain(
+            [
+                ["--auto-range", "off"],
+                ["--nplc", "0.2"],
+                ["--auto-zero", "once"],
+                ["--trigger-mode", "software"],
+            ]
+            .iter(),
+        ) {
+            assert!(
+                args.windows(2).any(|pair| pair == *expected),
+                "missing {expected:?}: {args:?}"
+            );
+        }
+        let results = super::run_simulated_workflow(
+            template.workflow(),
+            &specs,
+            super::RUN_STARTUP_TIMEOUT,
+            super::RUN_ACTION_TIMEOUT,
+            super::RUN_SHUTDOWN_TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].step_id().as_str(), "measure");
+        let super::StepOutcome::Succeeded { output } = results[0].outcome() else {
+            panic!("Meter Measure failed: {:?}", results[0]);
+        };
+        assert_eq!(output["event"], "sample");
+        assert_eq!(output["unit"], expected_unit);
+        assert!(output["value"].as_f64().is_some());
+    }
+
     #[test]
     fn meters_preparation_requires_setup_before_executable_probing() {
         let template_json = json!({
