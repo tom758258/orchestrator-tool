@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
+    instrument_setup::{AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode},
     worker::{
         WorkerEventError, WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError,
         WorkerStartError, start_worker,
@@ -25,6 +26,70 @@ const SERVICE_NAME: &str = "keysight-meter";
 const SOFTWARE_TRIGGER_COMMAND: &str = "software_trigger";
 const SMOKE_JOB_ID: &str = "orchestrator-meter-smoke";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Maps setup to `meters-tool start-trigger-record` setup arguments.
+/// Call [`MetersSetup::validate`] before using this mapping.
+///
+/// # Panics
+/// Panics if manual range mode has no range value.
+pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
+    let mut arguments = vec![
+        OsString::from("--measurement"),
+        OsString::from(match setup.measurement {
+            MetersMeasurement::VoltageDc => "voltage-dc",
+            MetersMeasurement::CurrentDc => "current-dc",
+        }),
+        OsString::from("--auto-range"),
+        OsString::from(match setup.range_mode {
+            RangeMode::Auto => "on",
+            RangeMode::Manual => "off",
+        }),
+    ];
+    if setup.range_mode == RangeMode::Manual {
+        arguments.extend([
+            OsString::from("--range"),
+            OsString::from(
+                setup
+                    .manual_range
+                    .expect("validated manual range mode requires a range")
+                    .to_string(),
+            ),
+        ]);
+    }
+    arguments.extend([
+        OsString::from("--nplc"),
+        OsString::from(setup.nplc.to_string()),
+        OsString::from("--auto-zero"),
+        OsString::from(match setup.auto_zero {
+            AutoZero::On => "on",
+            AutoZero::Off => "off",
+            AutoZero::Once => "once",
+        }),
+    ]);
+    match setup.measurement {
+        MetersMeasurement::VoltageDc => {
+            if let Some(impedance) = setup.dcv_input_impedance {
+                arguments.extend([
+                    OsString::from("--dcv-input-impedance"),
+                    OsString::from(match impedance {
+                        DcvInputImpedance::Default => "default",
+                        DcvInputImpedance::TenMegohm => "10m",
+                        DcvInputImpedance::Auto => "auto",
+                    }),
+                ]);
+            }
+        }
+        MetersMeasurement::CurrentDc => {
+            if let Some(terminal) = setup.current_terminal {
+                arguments.extend([
+                    OsString::from("--current-terminal"),
+                    OsString::from(terminal.to_string()),
+                ]);
+            }
+        }
+    }
+    arguments
+}
 
 /// Builds the Meters Worker launch specification used for simulate diagnostics.
 pub fn simulate_worker_launch_spec(
@@ -552,10 +617,87 @@ mod tests {
 
     use serde_json::json;
 
+    use crate::instrument_setup::{
+        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode,
+    };
+
     use super::{
         MetersActionError, MetersEventDecision, classify_meters_event, simulate_worker_launch_spec,
         software_trigger_request,
     };
+
+    #[test]
+    fn meters_setup_arguments_dcv_manual() {
+        let mut setup = MetersSetup {
+            measurement: MetersMeasurement::VoltageDc,
+            range_mode: RangeMode::Manual,
+            manual_range: Some(10.0),
+            nplc: 1.0,
+            auto_zero: AutoZero::Once,
+            dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
+            current_terminal: None,
+        };
+        setup.validate().unwrap();
+        let expected = [
+            "--measurement",
+            "voltage-dc",
+            "--auto-range",
+            "off",
+            "--range",
+            "10",
+            "--nplc",
+            "1",
+            "--auto-zero",
+            "once",
+            "--dcv-input-impedance",
+            "10m",
+        ]
+        .map(OsString::from);
+        assert_eq!(super::setup_arguments(&setup), expected);
+
+        setup.current_terminal = Some(3);
+        assert_eq!(super::setup_arguments(&setup), expected);
+
+        setup.dcv_input_impedance = None;
+        assert_eq!(super::setup_arguments(&setup), expected[..10]);
+    }
+
+    #[test]
+    fn meters_setup_arguments_dci_auto() {
+        let mut setup = MetersSetup {
+            measurement: MetersMeasurement::CurrentDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 0.2,
+            auto_zero: AutoZero::On,
+            dcv_input_impedance: None,
+            current_terminal: Some(3),
+        };
+        setup.validate().unwrap();
+        let expected = [
+            "--measurement",
+            "current-dc",
+            "--auto-range",
+            "on",
+            "--nplc",
+            "0.2",
+            "--auto-zero",
+            "on",
+            "--current-terminal",
+            "3",
+        ]
+        .map(OsString::from);
+        assert_eq!(super::setup_arguments(&setup), expected);
+
+        setup.manual_range = Some(10.0);
+        assert_eq!(super::setup_arguments(&setup), expected);
+
+        setup.dcv_input_impedance = Some(DcvInputImpedance::TenMegohm);
+        assert_eq!(super::setup_arguments(&setup), expected);
+
+        setup.current_terminal = None;
+        assert_eq!(super::setup_arguments(&setup), expected[..8]);
+    }
 
     #[test]
     fn meters_live_contract_shape_is_correct() {
