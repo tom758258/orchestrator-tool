@@ -114,7 +114,12 @@ fn workflow_template_step_result_integration() {
 
     let template = Template::new(
         "Workflow Integration".to_owned(),
-        Default::default(),
+        serde_json::from_value(json!({"meters": {
+            "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+            "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+            "current_terminal": null
+        }}))
+        .unwrap(),
         workflow,
     )
     .unwrap();

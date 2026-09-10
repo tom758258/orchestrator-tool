@@ -33,6 +33,10 @@ impl Template {
     ) -> Result<Self, TemplateError> {
         if let Some(meters) = &instrument_setup.meters {
             meters.validate().map_err(TemplateError::MetersSetup)?;
+        } else if workflow.steps().iter().any(|step| {
+            matches!(step.kind(), StepKind::ToolAction { tool, .. } if tool == &ToolId::meters())
+        }) {
+            return Err(TemplateError::MissingMetersSetup);
         }
         Ok(Self {
             name,
@@ -102,6 +106,7 @@ impl Template {
 
 #[derive(Debug)]
 pub enum TemplateError {
+    MissingMetersSetup,
     MetersSetup(MetersSetupError),
     InvalidVariableId {
         value: String,
@@ -134,6 +139,9 @@ pub enum TemplateError {
 impl fmt::Display for TemplateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingMetersSetup => {
+                formatter.write_str("Meters setup is required when the workflow uses Meters")
+            }
             Self::InvalidVariableId { value, source } => {
                 write!(formatter, "invalid variable ID {value:?}: {source}")
             }
@@ -170,7 +178,7 @@ impl Error for TemplateError {
             Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
-            Self::UnsupportedSchemaVersion { .. } => None,
+            Self::UnsupportedSchemaVersion { .. } | Self::MissingMetersSetup => None,
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
@@ -656,6 +664,27 @@ mod tests {
     }
 
     #[test]
+    fn meters_actions_require_setup() {
+        for action in ["measure", "unsupported"] {
+            let wire = json!({
+                "schema_version": 1,
+                "name": "Missing setup",
+                "instrument_setup": {"meters": null},
+                "workflow": {"steps": [{
+                    "type": "tool-action", "id": "read-1", "tool": "meters",
+                    "action": action, "arguments": {}
+                }]}
+            });
+            let error = Template::from_json_str(&wire.to_string()).unwrap_err();
+            assert!(matches!(error, TemplateError::MissingMetersSetup));
+            assert_eq!(
+                error.to_string(),
+                "Meters setup is required when the workflow uses Meters"
+            );
+        }
+    }
+
+    #[test]
     fn tool_action_bindings_round_trip() {
         let original = Template::new(
             "Bound voltage".to_owned(),
@@ -679,6 +708,7 @@ mod tests {
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
+        assert!(value["instrument_setup"]["meters"].is_null());
         let binding = &value["workflow"]["steps"][0]["bindings"]["voltage"];
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");

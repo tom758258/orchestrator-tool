@@ -645,8 +645,13 @@ function App() {
         confirmedResources[toolId] = resource
         return label + ':\n' + resource
       })
+      const confirmation = [...resources, 'This workflow will control real instruments and may change power outputs.']
+      const meters = workflowDraft.instrument_setup.meters
+      if (meters?.measurement === 'current-dc' && meters.current_terminal === 10) {
+        confirmation.push("WARNING: Confirm that the measurement leads are physically connected to the instrument's 10 A current terminal.")
+      }
       const approved = await confirm(
-        [...resources, 'This workflow will control real instruments and may change power outputs.'].join('\n\n'),
+        confirmation.join('\n\n'),
         { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
       )
       if (!approved) {

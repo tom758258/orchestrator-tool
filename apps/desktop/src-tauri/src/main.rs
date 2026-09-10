@@ -823,16 +823,30 @@ mod tests {
 
     #[test]
     fn meters_preparation_requires_setup_before_executable_probing() {
-        let template = Template::from_json_str(&json!({
+        let template_json = json!({
             "schema_version": 1, "name": "Missing setup", "instrument_setup": {"meters": null},
             "workflow": {"steps": [
                 {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}}
             ]}
-        }).to_string()).unwrap();
+        }).to_string();
+        assert_eq!(
+            super::validate_workflow_draft(template_json).unwrap_err(),
+            "Meters setup is required when the workflow uses Meters"
+        );
+        let workflow = super::Workflow::new(vec![orchestrator_tool::workflow::Step::new(
+            StepId::new("read-1").unwrap(),
+            super::StepKind::ToolAction {
+                tool: ToolId::meters(),
+                action: orchestrator_tool::workflow::ActionId::new("measure").unwrap(),
+                arguments: json!({}),
+                bindings: Default::default(),
+            },
+        )])
+        .unwrap();
         for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
             let error = super::prepare_worker_launch_specs(
-                template.workflow(),
-                template.instrument_setup(),
+                &workflow,
+                &super::InstrumentSetup::default(),
                 mode,
                 std::path::Path::new("unused"),
                 &super::Config::default(),
@@ -855,6 +869,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
+        assert!(super::validate_workflow_draft(template.to_json_string().unwrap()).is_ok());
         for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
             let specs = super::prepare_worker_launch_specs(
                 template.workflow(),
@@ -1153,7 +1168,11 @@ mod tests {
         let template = Template::from_json_str(
             r#"{
                 "schema_version": 1,
-                "instrument_setup": {"meters": null},
+                "instrument_setup": {"meters": {
+                    "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+                    "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+                    "current_terminal": null
+                }},
                 "name": "Meters Only",
                 "workflow": {
                     "steps": [

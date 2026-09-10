@@ -1165,7 +1165,11 @@ fn simulated_measurement_dataflow_exports_csv() {
     let template = Template::from_json_str(
         &json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "instrument_setup": {"meters": {
+                "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+                "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+                "current_terminal": null
+            }},
             "name": "Measurement CSV",
             "workflow": { "steps": [
                 {
