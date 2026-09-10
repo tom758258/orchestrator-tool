@@ -2,15 +2,19 @@
 
 use std::{error::Error, fmt};
 
-/// Instrument session setups intended for future inclusion in a template.
-#[derive(Clone, Debug, Default, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+/// Instrument session setups included in a template.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InstrumentSetup {
     /// Optional setup for the Meters session.
     pub meters: Option<MetersSetup>,
 }
 
 /// Meters session setup data, validated explicitly with [`MetersSetup::validate`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetersSetup {
     pub measurement: MetersMeasurement,
     pub range_mode: RangeMode,
@@ -67,21 +71,24 @@ impl fmt::Display for MetersSetupError {
 impl Error for MetersSetupError {}
 
 /// Supported Meters measurements.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum MetersMeasurement {
     VoltageDc,
     CurrentDc,
 }
 
 /// Automatic or manual measurement range selection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum RangeMode {
     Auto,
     Manual,
 }
 
 /// Meters auto zero setting.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum AutoZero {
     On,
     Off,
@@ -89,7 +96,8 @@ pub enum AutoZero {
 }
 
 /// Input impedance selection for DC voltage measurements.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum DcvInputImpedance {
     Default,
     TenMegohm,

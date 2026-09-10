@@ -16,6 +16,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
     let template = Template::from_json_str(
         &json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Comparison integration",
             "workflow": { "steps": [
                 {
@@ -111,7 +112,12 @@ fn workflow_template_step_result_integration() {
     ])
     .unwrap();
 
-    let template = Template::new("Workflow Integration".to_owned(), workflow);
+    let template = Template::new(
+        "Workflow Integration".to_owned(),
+        Default::default(),
+        workflow,
+    )
+    .unwrap();
     let json = template.to_json_string().unwrap();
     let restored = Template::from_json_str(&json).unwrap();
 
@@ -169,7 +175,7 @@ fn named_outputs_project_in_workflow_order_and_ignore_other_steps() {
         output_step("check-passed", "passed", InputValue::Literal(json!(true))),
     ])
     .unwrap();
-    let template = Template::new("Named outputs".to_owned(), workflow);
+    let template = Template::new("Named outputs".to_owned(), Default::default(), workflow).unwrap();
     let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
     assert_eq!(restored, template);
     let workflow = restored.workflow();

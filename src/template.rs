@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
+    instrument_setup::{InstrumentSetup, MetersSetupError},
     tool::{InvalidToolId, ToolId},
     workflow::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, InvalidActionId,
@@ -19,18 +20,35 @@ pub const TEMPLATE_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
     name: String,
+    instrument_setup: InstrumentSetup,
     workflow: Workflow,
 }
 
 impl Template {
     /// Creates a template.
-    pub fn new(name: String, workflow: Workflow) -> Self {
-        Self { name, workflow }
+    pub fn new(
+        name: String,
+        instrument_setup: InstrumentSetup,
+        workflow: Workflow,
+    ) -> Result<Self, TemplateError> {
+        if let Some(meters) = &instrument_setup.meters {
+            meters.validate().map_err(TemplateError::MetersSetup)?;
+        }
+        Ok(Self {
+            name,
+            instrument_setup,
+            workflow,
+        })
     }
 
     /// Returns the template name.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Returns the instrument session setup.
+    pub fn instrument_setup(&self) -> &InstrumentSetup {
+        &self.instrument_setup
     }
 
     /// Returns the workflow.
@@ -58,10 +76,7 @@ impl Template {
 
         let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
         let workflow = workflow_from_wire(wire.workflow)?;
-        Ok(Self {
-            name: wire.name,
-            workflow,
-        })
+        Self::new(wire.name, wire.instrument_setup, workflow)
     }
 
     /// Saves the template to a file as pretty JSON.
@@ -87,6 +102,7 @@ impl Template {
 
 #[derive(Debug)]
 pub enum TemplateError {
+    MetersSetup(MetersSetupError),
     InvalidVariableId {
         value: String,
         source: InvalidVariableId,
@@ -142,6 +158,7 @@ impl fmt::Display for TemplateError {
             Self::InvalidToolId { value, source } => {
                 write!(formatter, "invalid tool ID {value:?}: {source}")
             }
+            Self::MetersSetup(source) => write!(formatter, "template Meters setup error: {source}"),
             Self::Workflow(source) => write!(formatter, "template workflow error: {source}"),
         }
     }
@@ -157,6 +174,7 @@ impl Error for TemplateError {
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
+            Self::MetersSetup(source) => Some(source),
             Self::Workflow(source) => Some(source),
         }
     }
@@ -172,6 +190,7 @@ struct TemplateVersionWire {
 struct TemplateWire {
     schema_version: u32,
     name: String,
+    instrument_setup: InstrumentSetup,
     workflow: WorkflowWire,
 }
 
@@ -180,6 +199,7 @@ impl TemplateWire {
         Self {
             schema_version: TEMPLATE_SCHEMA_VERSION,
             name: template.name.clone(),
+            instrument_setup: template.instrument_setup.clone(),
             workflow: WorkflowWire::from_workflow(template.workflow()),
         }
     }
@@ -482,6 +502,10 @@ mod tests {
 
     use super::{TEMPLATE_SCHEMA_VERSION, Template, TemplateError};
     use crate::{
+        instrument_setup::{
+            AutoZero, DcvInputImpedance, InstrumentSetup, MetersMeasurement, MetersSetup,
+            MetersSetupError, RangeMode,
+        },
         tool::ToolId,
         workflow::{
             ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
@@ -541,7 +565,23 @@ mod tests {
             ),
         ])
         .unwrap();
-        Template::new("Power and Meter Test".to_owned(), workflow)
+        let instrument_setup = InstrumentSetup {
+            meters: Some(MetersSetup {
+                measurement: MetersMeasurement::VoltageDc,
+                range_mode: RangeMode::Manual,
+                manual_range: Some(10.0),
+                nplc: 1.0,
+                auto_zero: AutoZero::Once,
+                dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
+                current_terminal: None,
+            }),
+        };
+        Template::new(
+            "Power and Meter Test".to_owned(),
+            instrument_setup,
+            workflow,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -552,6 +592,18 @@ mod tests {
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], TEMPLATE_SCHEMA_VERSION);
         assert_eq!(value["name"], "Power and Meter Test");
+        assert_eq!(
+            value["instrument_setup"],
+            json!({"meters": {
+                "measurement": "voltage-dc",
+                "range_mode": "manual",
+                "manual_range": 10.0,
+                "nplc": 1.0,
+                "auto_zero": "once",
+                "dcv_input_impedance": "ten-megohm",
+                "current_terminal": null
+            }})
+        );
         assert_eq!(value["workflow"]["steps"][0]["type"], "tool-action");
         assert_eq!(value["workflow"]["steps"][0]["id"], "power-set-1");
         assert!(value["workflow"]["steps"][0].get("bindings").is_none());
@@ -563,6 +615,7 @@ mod tests {
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(restored, original);
         assert_eq!(restored.name(), original.name());
+        assert_eq!(restored.instrument_setup(), original.instrument_setup());
         assert_eq!(
             restored.workflow().steps()[0].kind(),
             original.workflow().steps()[0].kind()
@@ -578,9 +631,35 @@ mod tests {
     }
 
     #[test]
+    fn invalid_setup_is_rejected_by_construction_and_load() {
+        let original = sample_template();
+        let mut setup = original.instrument_setup().clone();
+        setup.meters.as_mut().unwrap().manual_range = None;
+        let error = Template::new(
+            original.name().to_owned(),
+            setup,
+            original.workflow().clone(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            TemplateError::MetersSetup(MetersSetupError::MissingManualRange)
+        ));
+
+        let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
+        wire["instrument_setup"]["meters"]["manual_range"] = Value::Null;
+        let error = Template::from_json_str(&wire.to_string()).unwrap_err();
+        assert!(matches!(
+            error,
+            TemplateError::MetersSetup(MetersSetupError::MissingManualRange)
+        ));
+    }
+
+    #[test]
     fn tool_action_bindings_round_trip() {
         let original = Template::new(
             "Bound voltage".to_owned(),
+            Default::default(),
             Workflow::new(vec![Step::new(
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
@@ -595,7 +674,8 @@ mod tests {
                 },
             )])
             .unwrap(),
-        );
+        )
+        .unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
@@ -641,6 +721,7 @@ mod tests {
     fn duplicate_step_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Dup",
             "workflow": {
                 "steps": [
@@ -662,6 +743,7 @@ mod tests {
     fn invalid_tool_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Bad tool",
             "workflow": {
                 "steps": [
@@ -686,7 +768,12 @@ mod tests {
 
     #[test]
     fn draft_empty_workflow_is_allowed() {
-        let template = Template::new("Draft".to_owned(), Workflow::new(Vec::new()).unwrap());
+        let template = Template::new(
+            "Draft".to_owned(),
+            Default::default(),
+            Workflow::new(Vec::new()).unwrap(),
+        )
+        .unwrap();
         let json = template.to_json_string().unwrap();
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(restored, template);
@@ -721,7 +808,7 @@ mod tests {
             ),
         ])
         .unwrap();
-        let original = Template::new("Dataflow".to_owned(), workflow);
+        let original = Template::new("Dataflow".to_owned(), Default::default(), workflow).unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
@@ -740,6 +827,7 @@ mod tests {
     fn invalid_variable_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Invalid variable",
             "workflow": { "steps": [{
                 "type": "set-variable", "id": "set-x", "variable": "Bad_Name",
@@ -758,6 +846,7 @@ mod tests {
     fn expression_dataflow_json_and_file_round_trip() {
         let original = Template::new(
             "Double x".to_owned(),
+            Default::default(),
             Workflow::new(vec![
                 Step::new(
                     StepId::new("set-x").unwrap(),
@@ -786,7 +875,8 @@ mod tests {
                 ),
             ])
             .unwrap(),
-        );
+        )
+        .unwrap();
         let json = original.to_json_string().unwrap();
         let wire: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(wire["schema_version"], 1);
@@ -842,6 +932,7 @@ mod tests {
             for (left, right, left_wire, right_wire) in &cases {
                 let original = Template::new(
                     "Expression".to_owned(),
+                    Default::default(),
                     Workflow::new(vec![
                         Step::new(
                             StepId::new("measurement").unwrap(),
@@ -863,7 +954,8 @@ mod tests {
                         ),
                     ])
                     .unwrap(),
-                );
+                )
+                .unwrap();
                 let json = original.to_json_string().unwrap();
                 let wire: Value = serde_json::from_str(&json).unwrap();
                 assert_eq!(wire["schema_version"], 1);

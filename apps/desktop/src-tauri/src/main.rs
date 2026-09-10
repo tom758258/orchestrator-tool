@@ -588,8 +588,8 @@ fn export_workflow_csv(
 #[tauri::command]
 fn create_workflow_draft() -> Result<String, String> {
     let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
-    Template::new("Untitled".to_owned(), workflow)
-        .to_json_string()
+    Template::new("Untitled".to_owned(), Default::default(), workflow)
+        .and_then(|template| template.to_json_string())
         .map_err(|error| error.to_string())
 }
 
@@ -729,7 +729,7 @@ mod tests {
             path
         };
         let template = Template::from_json_str(&json!({
-            "schema_version": 1, "name": "Three measurements", "workflow": { "steps": [
+            "schema_version": 1, "instrument_setup": {"meters": null}, "name": "Three measurements", "workflow": { "steps": [
                 {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}},
                 {"type": "wait", "id": "wait-1", "duration_ms": 0},
                 {"type": "tool-action", "id": "read-2", "tool": "meters", "action": "measure", "arguments": {}},
@@ -877,6 +877,7 @@ mod tests {
     fn validate_workflow_draft_rejects_invalid_step_id() {
         let invalid = r#"{
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Invalid",
             "workflow": {
                 "steps": [
@@ -917,6 +918,7 @@ mod tests {
 
         let template_json = r#"{
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Round Trip",
             "workflow": {
                 "steps": [
@@ -947,6 +949,7 @@ mod tests {
     fn export_workflow_csv_writes_completed_results() {
         let template_json = json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "CSV export",
             "workflow": { "steps": [
                 { "type": "output", "id": "voltage", "name": "voltage",
@@ -978,6 +981,7 @@ mod tests {
     fn export_workflow_csv_without_outputs_does_not_create_file() {
         let template_json = json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "No outputs",
             "workflow": { "steps": [
                 { "type": "wait", "id": "wait-1", "duration_ms": 0 }
@@ -1038,6 +1042,7 @@ mod tests {
         let template = Template::from_json_str(
             r#"{
                 "schema_version": 1,
+                "instrument_setup": {"meters": null},
                 "name": "Meters Only",
                 "workflow": {
                     "steps": [

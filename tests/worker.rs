@@ -1158,6 +1158,7 @@ fn simulated_measurement_dataflow_exports_csv() {
     let template = Template::from_json_str(
         &json!({
             "schema_version": 1,
+            "instrument_setup": {"meters": null},
             "name": "Measurement CSV",
             "workflow": { "steps": [
                 {
