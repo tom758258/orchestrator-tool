@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
+import InstrumentSetupEditor from './InstrumentSetupEditor'
+import type { InstrumentSetup } from './InstrumentSetupEditor'
 import InputValueEditor from './InputValueEditor'
 import type { InputValueWire } from './inputValue'
 
@@ -71,6 +73,7 @@ export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputS
 type WorkflowDraft = {
   schema_version: number
   name: string
+  instrument_setup: InstrumentSetup
   workflow: {
     steps: WorkflowStep[]
   }
@@ -334,6 +337,15 @@ function App() {
     },
     [],
   )
+
+  const updateInstrumentSetup = useCallback((instrument_setup: InstrumentSetup) => {
+    setWorkflowDraft((current) => current ? { ...current, instrument_setup } : current)
+    setValidationStatus('idle')
+    setValidationError(null)
+    setRunResults(null)
+    setRunError(null)
+    setTemplateIoMessage(null)
+  }, [])
 
   const addStep = useCallback((preset: StepPresetOption) => {
     if (!workflowDraft) {
@@ -956,6 +968,12 @@ function App() {
                   <dd className="detail-value">{workflowDraft.workflow.steps.length}</dd>
                 </div>
               </dl>
+
+              <InstrumentSetupEditor
+                value={workflowDraft.instrument_setup}
+                onChange={updateInstrumentSetup}
+                disabled={workflowBusy}
+              />
 
               <div className="workflow-builder">
                 <aside className="step-palette" aria-labelledby="step-palette-title">

@@ -662,3 +662,47 @@ body {
   color: #5a6270;
   font-size: 0.85rem;
 }
+
+.instrument-setup {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #c9ced6;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.instrument-setup h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.instrument-setup fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.instrument-setup legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.meters-setup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instrument-setup-hint {
+  margin: 8px 0;
+  color: #5a6270;
+  font-size: 0.9rem;
+}
+
+.meters-setup-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
