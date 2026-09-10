@@ -10,6 +10,26 @@
 
 專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 StepResult。Template schema version 1 與線性 Workflow 不保存 execution mode、resource、output authorization、safety cleanup 或 Canvas 位置。CLI 不提供 workflow run command。
 
+## Instrument Setup 與 Workflow Template
+
+Template schema 維持 `schema_version = 1`，測試定義分成兩部分：
+
+```text
+Template
+├─ Instrument Setup
+└─ Workflow Sequence
+```
+
+Instrument Setup 定義 run 前建立 instrument session 的設定，不是 Workflow Step。Workflow 則是在所需 Worker Ready 後依序執行的線性測試程序。Desktop 的 Instrument Setup editor 位於 Workflow 頁、Sequence 上方。Template 儲存／載入會保留這兩部分。
+
+Meters Setup 支援 DC Voltage 與 DC Current，兩者皆提供 Auto / Manual Range Mode、Manual Range、NPLC 與 Auto Zero。DC Voltage 另提供 Input Impedance；DC Current 另提供 Current Terminal。DCV 不可攜帶 Current Terminal，DCI 不可攜帶 DCV Input Impedance。Manual mode 必須提供 Manual Range；Auto mode 忽略已儲存的 Manual Range，不產生 `--range` startup argument。Trigger 固定為 Software。
+
+Run preparation 會驗證 setup，透過 Core Meters adapter 將其轉成 `meters-tool` startup arguments，再啟動 Worker。Simulation 與 Live 共用相同 setup semantics。Run 等待 Worker Ready 後才呼叫 Executor。`Meter Measure` 維持 runtime measurement action，不負責 session 設定。Core 檢查 setup 一致性；實際支援的 model 與數值設定仍由 `meters-tool` 驗證，Orchestrator 不建立 capability database。
+
+頂層 `instrument_setup` 欄位為必填。使用 Meters 的 Workflow 必須提供 Meters setup；未使用 Meters 的 Workflow 可使用 `"instrument_setup": {"meters": null}`。缺少此欄位的舊 Template 不做 migration，也沒有 compatibility layer 或 schema v2。
+
+ExecutionMode、Live VISA Resource、runtime results、output authorization 與 safety cleanup state 均不屬於 Template。Live resource 存在 Desktop configuration，execution mode 則在每次 run 時選擇。DCI 的 Current Terminal 設為 10 時，Live confirmation 也會要求操作者確認量測線實際接在 10 A terminal。Simulation 測試不代表已完成真實硬體驗證。
+
 ## Executable 設定
 
 Core 可以載入由呼叫端指定的 TOML 設定檔，並用它覆寫 built-in portable executable path：

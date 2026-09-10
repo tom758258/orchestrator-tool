@@ -10,6 +10,26 @@
 
 The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, safety cleanup, or canvas positions. The CLI does not provide a workflow run command.
 
+## Instrument Setup and workflow templates
+
+Template schema remains `schema_version = 1` and stores the test definition in two parts:
+
+```text
+Template
+├─ Instrument Setup
+└─ Workflow Sequence
+```
+
+Instrument Setup defines the instrument session established before a run; it is not a Workflow Step. The Workflow is the linear test procedure executed after the referenced Workers are ready. Desktop places the Instrument Setup editor on the Workflow page, above the Sequence. Template save/load preserves both parts.
+
+Meters Setup supports DC Voltage and DC Current. Both provide Auto / Manual Range Mode, Manual Range, NPLC, and Auto Zero. DC Voltage additionally provides Input Impedance; DC Current provides Current Terminal. DCV cannot carry Current Terminal, and DCI cannot carry DCV Input Impedance. Manual mode requires Manual Range; Auto mode ignores any stored Manual Range and does not emit a `--range` startup argument. Trigger is fixed to Software.
+
+Run preparation validates setup and maps it through the Core Meters adapter to `meters-tool` startup arguments before Worker launch. Simulation and Live share these setup semantics. The run then waits for Worker Ready before invoking the Executor. `Meter Measure` remains a runtime measurement action and does not configure the session. Core checks setup consistency; supported models and numeric settings remain the responsibility of `meters-tool`, without an orchestrator capability database.
+
+The top-level `instrument_setup` field is required. Workflows using Meters require a Meters setup; workflows without Meters can use `"instrument_setup": {"meters": null}`. Templates predating this field are not migrated or accepted through a compatibility layer; there is no schema v2.
+
+ExecutionMode, Live VISA Resource, runtime results, output authorization, and safety cleanup state remain outside the Template. Live resources belong to Desktop configuration, and the execution mode is selected for each run. For DCI with Current Terminal set to 10, the Live confirmation also asks the operator to confirm physical connection to the 10 A terminal. Simulation coverage does not establish real-hardware validation.
+
 ## Template expressions
 
 Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Schema v1 templates without an Output name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
