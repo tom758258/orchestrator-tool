@@ -9,6 +9,7 @@ pub mod data_context;
 pub mod discovery;
 pub mod executor;
 pub mod inspection;
+pub mod instrument_setup;
 pub mod live_resources;
 pub mod manifest;
 pub mod manifest_probe;
