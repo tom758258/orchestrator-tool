@@ -27,7 +27,7 @@ pub struct MetersSetup {
 }
 
 impl MetersSetup {
-    /// Checks setup consistency; supported numeric values are validated by meters-tool.
+    /// Checks setup consistency and current terminal values; range and NPLC support are validated by meters-tool.
     /// Auto range does not require or validate a manual range value.
     pub fn validate(&self) -> Result<(), MetersSetupError> {
         if self.range_mode == RangeMode::Manual && self.manual_range.is_none() {
@@ -41,6 +41,9 @@ impl MetersSetup {
             MetersMeasurement::CurrentDc if self.dcv_input_impedance.is_some() => {
                 Err(MetersSetupError::InputImpedanceForCurrentDc)
             }
+            _ if !matches!(self.current_terminal, None | Some(3 | 10)) => {
+                Err(MetersSetupError::InvalidCurrentTerminal)
+            }
             _ => Ok(()),
         }
     }
@@ -52,11 +55,13 @@ pub enum MetersSetupError {
     MissingManualRange,
     CurrentTerminalForVoltageDc,
     InputImpedanceForCurrentDc,
+    InvalidCurrentTerminal,
 }
 
 impl fmt::Display for MetersSetupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::InvalidCurrentTerminal => "current terminal must be 3 or 10",
             Self::MissingManualRange => "manual range mode requires a manual range value",
             Self::CurrentTerminalForVoltageDc => {
                 "DC voltage setup must not contain a current terminal"
@@ -154,6 +159,23 @@ mod tests {
 
         assert!(meters.validate().is_ok());
         assert_eq!(setup.meters, Some(meters));
+    }
+
+    #[test]
+    fn dc_current_rejects_invalid_current_terminal() {
+        let setup = MetersSetup {
+            measurement: MetersMeasurement::CurrentDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 0.2,
+            auto_zero: AutoZero::Once,
+            dcv_input_impedance: None,
+            current_terminal: Some(4),
+        };
+
+        let error = setup.validate().unwrap_err();
+        assert!(matches!(error, MetersSetupError::InvalidCurrentTerminal));
+        assert_eq!(error.to_string(), "current terminal must be 3 or 10");
     }
 
     #[test]

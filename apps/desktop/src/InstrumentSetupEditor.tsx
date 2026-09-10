@@ -114,12 +114,13 @@ function InstrumentSetupEditor({ value, onChange, disabled }: InstrumentSetupEdi
               {meters.measurement === 'current-dc' && (
                 <label className="step-property-field">
                   <span className="step-property-label">Current Terminal (optional)</span>
-                  <input type="number" min="0" max="4294967295" step="1" value={meters.current_terminal ?? ''}
-                    onChange={(event) => {
-                      if (event.currentTarget.validity.valid) onChange({
-                        ...value, meters: { ...meters, current_terminal: event.currentTarget.value === '' ? null : event.currentTarget.valueAsNumber },
-                      })
-                    }} />
+                  <select value={meters.current_terminal ?? ''} onChange={(event) => onChange({
+                    ...value, meters: { ...meters, current_terminal: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) },
+                  })}>
+                    <option value="">Not specified</option>
+                    <option value="3">3 A terminal</option>
+                    <option value="10">10 A terminal</option>
+                  </select>
                 </label>
               )}
             </div>
