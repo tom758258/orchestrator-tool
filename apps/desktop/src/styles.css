@@ -663,7 +663,7 @@ body {
   font-size: 0.85rem;
 }
 
-.instrument-setup {
+.tool-setup {
   margin-top: 16px;
   padding: 12px;
   border: 1px solid #c9ced6;
@@ -671,19 +671,19 @@ body {
   background: #fafafa;
 }
 
-.instrument-setup h3 {
+.tool-setup h3 {
   margin: 0 0 12px;
   font-size: 1rem;
 }
 
-.instrument-setup fieldset {
+.tool-setup fieldset {
   min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.instrument-setup legend {
+.tool-setup legend {
   margin-bottom: 8px;
   padding: 0;
   font-weight: 600;
@@ -695,7 +695,7 @@ body {
   gap: 8px;
 }
 
-.instrument-setup-hint {
+.tool-setup-hint {
   margin: 8px 0;
   color: #5a6270;
   font-size: 0.9rem;

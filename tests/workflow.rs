@@ -4,6 +4,7 @@ use orchestrator_tool::{
     run::run_simulated_workflow,
     template::Template,
     tool::ToolId,
+    tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
         ActionId, InputValue, OutputProjectionError, Step, StepId, StepKind, StepOutcome,
         StepResult, VariableId, Workflow, WorkflowError,
@@ -16,7 +17,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
     let template = Template::from_json_str(
         &json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "Comparison integration",
             "workflow": { "steps": [
                 {
@@ -46,7 +47,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
     )
     .unwrap();
     let results = run_simulated_workflow(
-        template.workflow(),
+        &template,
         &HashMap::new(),
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -90,7 +91,7 @@ fn workflow_template_step_result_integration() {
         Step::new(
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
@@ -103,7 +104,7 @@ fn workflow_template_step_result_integration() {
         Step::new(
             StepId::new("meter-read-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::meters(),
+                target: ToolInstanceId::new("meters-1").unwrap(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
                 bindings: Default::default(),
@@ -114,12 +115,25 @@ fn workflow_template_step_result_integration() {
 
     let template = Template::new(
         "Workflow Integration".to_owned(),
-        serde_json::from_value(json!({"meters": {
-            "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
-            "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
-            "current_terminal": null
-        }}))
-        .unwrap(),
+        vec![
+            ToolInstance {
+                id: ToolInstanceId::new("powers-1").unwrap(),
+                tool: ToolId::powers(),
+                setup: Default::default(),
+            },
+            ToolInstance {
+                id: ToolInstanceId::new("meters-1").unwrap(),
+                tool: ToolId::meters(),
+                setup: ToolSetup::Meters(
+                    serde_json::from_value(json!({
+                        "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+                        "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+                        "current_terminal": null
+                    }))
+                    .unwrap(),
+                ),
+            },
+        ],
         workflow,
     )
     .unwrap();
@@ -185,7 +199,7 @@ fn named_outputs_project_in_workflow_order_and_ignore_other_steps() {
     assert_eq!(restored, template);
     let workflow = restored.workflow();
     let mut results = run_simulated_workflow(
-        workflow,
+        &template,
         &HashMap::new(),
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -237,7 +251,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
     ])
     .unwrap();
     let results = run_simulated_workflow(
-        &workflow,
+        &Template::new("Test".to_owned(), vec![], workflow.clone()).unwrap(),
         &HashMap::new(),
         Duration::from_secs(5),
         Duration::from_secs(5),

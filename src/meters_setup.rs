@@ -1,16 +1,8 @@
-//! Instrument session setup before a run, separate from workflow steps.
+//! Meters session setup before a run, separate from workflow steps.
 
 use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
-
-/// Instrument session setups included in a template.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InstrumentSetup {
-    /// Optional setup for the Meters session.
-    pub meters: Option<MetersSetup>,
-}
 
 /// Meters session setup data, validated explicitly with [`MetersSetup::validate`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -112,16 +104,8 @@ pub enum DcvInputImpedance {
 #[cfg(test)]
 mod tests {
     use super::{
-        AutoZero, DcvInputImpedance, InstrumentSetup, MetersMeasurement, MetersSetup,
-        MetersSetupError, RangeMode,
+        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError, RangeMode,
     };
-
-    #[test]
-    fn default_setup_has_no_instrument_setup() {
-        let setup = InstrumentSetup::default();
-
-        assert!(setup.meters.is_none());
-    }
 
     #[test]
     fn setup_can_hold_dc_voltage_setup() {
@@ -134,12 +118,8 @@ mod tests {
             dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
             current_terminal: None,
         };
-        let setup = InstrumentSetup {
-            meters: Some(meters.clone()),
-        };
 
         assert!(meters.validate().is_ok());
-        assert_eq!(setup.meters, Some(meters));
     }
 
     #[test]
@@ -153,12 +133,8 @@ mod tests {
             dcv_input_impedance: None,
             current_terminal: Some(3),
         };
-        let setup = InstrumentSetup {
-            meters: Some(meters.clone()),
-        };
 
         assert!(meters.validate().is_ok());
-        assert_eq!(setup.meters, Some(meters));
     }
 
     #[test]

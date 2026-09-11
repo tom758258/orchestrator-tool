@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    instrument_setup::{InstrumentSetup, MetersSetupError},
+    meters_setup::MetersSetupError,
     tool::{InvalidToolId, ToolId},
+    tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, InvalidActionId,
         InvalidStepId, InvalidVariableId, Step, StepId, StepKind, StepOutputReference, VariableId,
@@ -20,7 +21,7 @@ pub const TEMPLATE_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
     name: String,
-    instrument_setup: InstrumentSetup,
+    tool_instances: Vec<ToolInstance>,
     workflow: Workflow,
 }
 
@@ -28,19 +29,42 @@ impl Template {
     /// Creates a template.
     pub fn new(
         name: String,
-        instrument_setup: InstrumentSetup,
+        tool_instances: Vec<ToolInstance>,
         workflow: Workflow,
     ) -> Result<Self, TemplateError> {
-        if let Some(meters) = &instrument_setup.meters {
-            meters.validate().map_err(TemplateError::MetersSetup)?;
-        } else if workflow.steps().iter().any(|step| {
-            matches!(step.kind(), StepKind::ToolAction { tool, .. } if tool == &ToolId::meters())
-        }) {
-            return Err(TemplateError::MissingMetersSetup);
+        let mut ids = std::collections::HashSet::new();
+        for instance in &tool_instances {
+            if !ids.insert(&instance.id) {
+                return Err(TemplateError::Instance(format!(
+                    "duplicate tool instance ID {}",
+                    instance.id
+                )));
+            }
+            match (&instance.setup, instance.tool == ToolId::meters()) {
+                (ToolSetup::Meters(setup), true) => {
+                    setup.validate().map_err(TemplateError::MetersSetup)?
+                }
+                (ToolSetup::Empty(_), false) => {}
+                _ => {
+                    return Err(TemplateError::Instance(format!(
+                        "invalid setup for {} ({})",
+                        instance.id, instance.tool
+                    )));
+                }
+            }
+        }
+        for step in workflow.steps() {
+            if let StepKind::ToolAction { target, .. } = step.kind()
+                && !ids.contains(target)
+            {
+                return Err(TemplateError::Instance(format!(
+                    "unknown tool instance target {target}"
+                )));
+            }
         }
         Ok(Self {
             name,
-            instrument_setup,
+            tool_instances,
             workflow,
         })
     }
@@ -50,9 +74,27 @@ impl Template {
         &self.name
     }
 
-    /// Returns the instrument session setup.
-    pub fn instrument_setup(&self) -> &InstrumentSetup {
-        &self.instrument_setup
+    /// Returns the logical tool instances.
+    pub fn tool_instances(&self) -> &[ToolInstance] {
+        &self.tool_instances
+    }
+
+    /// Returns referenced instances in first-use order.
+    pub fn referenced_tool_instances(&self) -> Vec<&ToolInstance> {
+        let mut instances = Vec::new();
+        for step in self.workflow.steps() {
+            if let StepKind::ToolAction { target, .. } = step.kind() {
+                let instance = self
+                    .tool_instances
+                    .iter()
+                    .find(|instance| &instance.id == target)
+                    .expect("template targets are validated");
+                if !instances.contains(&instance) {
+                    instances.push(instance);
+                }
+            }
+        }
+        instances
     }
 
     /// Returns the workflow.
@@ -80,7 +122,23 @@ impl Template {
 
         let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
         let workflow = workflow_from_wire(wire.workflow)?;
-        Self::new(wire.name, wire.instrument_setup, workflow)
+        let instances = wire
+            .tool_instances
+            .into_iter()
+            .map(|instance| {
+                let tool =
+                    ToolId::new(&instance.tool).map_err(|source| TemplateError::InvalidToolId {
+                        value: instance.tool,
+                        source,
+                    })?;
+                Ok(ToolInstance {
+                    id: instance.id,
+                    tool,
+                    setup: instance.setup,
+                })
+            })
+            .collect::<Result<Vec<_>, TemplateError>>()?;
+        Self::new(wire.name, instances, workflow)
     }
 
     /// Saves the template to a file as pretty JSON.
@@ -106,7 +164,7 @@ impl Template {
 
 #[derive(Debug)]
 pub enum TemplateError {
-    MissingMetersSetup,
+    Instance(String),
     MetersSetup(MetersSetupError),
     InvalidVariableId {
         value: String,
@@ -139,9 +197,7 @@ pub enum TemplateError {
 impl fmt::Display for TemplateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingMetersSetup => {
-                formatter.write_str("Meters setup is required when the workflow uses Meters")
-            }
+            Self::Instance(message) => formatter.write_str(message),
             Self::InvalidVariableId { value, source } => {
                 write!(formatter, "invalid variable ID {value:?}: {source}")
             }
@@ -178,7 +234,7 @@ impl Error for TemplateError {
             Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
-            Self::UnsupportedSchemaVersion { .. } | Self::MissingMetersSetup => None,
+            Self::UnsupportedSchemaVersion { .. } | Self::Instance(_) => None,
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
@@ -198,7 +254,7 @@ struct TemplateVersionWire {
 struct TemplateWire {
     schema_version: u32,
     name: String,
-    instrument_setup: InstrumentSetup,
+    tool_instances: Vec<ToolInstanceWire>,
     workflow: WorkflowWire,
 }
 
@@ -207,10 +263,26 @@ impl TemplateWire {
         Self {
             schema_version: TEMPLATE_SCHEMA_VERSION,
             name: template.name.clone(),
-            instrument_setup: template.instrument_setup.clone(),
+            tool_instances: template
+                .tool_instances
+                .iter()
+                .map(|instance| ToolInstanceWire {
+                    id: instance.id.clone(),
+                    tool: instance.tool.as_str().to_owned(),
+                    setup: instance.setup.clone(),
+                })
+                .collect(),
             workflow: WorkflowWire::from_workflow(template.workflow()),
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolInstanceWire {
+    id: ToolInstanceId,
+    tool: String,
+    setup: ToolSetup,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -247,7 +319,7 @@ enum StepWire {
     },
     ToolAction {
         id: String,
-        tool: String,
+        target: ToolInstanceId,
         action: String,
         arguments: Value,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -273,13 +345,13 @@ impl StepWire {
                 duration_ms: *duration_ms,
             },
             StepKind::ToolAction {
-                tool,
+                target,
                 action,
                 arguments,
                 bindings,
             } => Self::ToolAction {
                 id: step.id().as_str().to_owned(),
-                tool: tool.as_str().to_owned(),
+                target: target.clone(),
                 action: action.as_str().to_owned(),
                 arguments: arguments.clone(),
                 bindings: bindings
@@ -465,17 +537,13 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
         }
         StepWire::ToolAction {
             id,
-            tool,
+            target,
             action,
             arguments,
             bindings,
         } => {
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
-            let tool_id = ToolId::new(&tool).map_err(|source| TemplateError::InvalidToolId {
-                value: tool,
-                source,
-            })?;
             let action_id =
                 ActionId::new(&action).map_err(|source| TemplateError::InvalidActionId {
                     value: action,
@@ -484,7 +552,7 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
             Ok(Step::new(
                 step_id,
                 StepKind::ToolAction {
-                    tool: tool_id,
+                    target,
                     action: action_id,
                     arguments,
                     bindings: bindings
@@ -510,11 +578,12 @@ mod tests {
 
     use super::{TEMPLATE_SCHEMA_VERSION, Template, TemplateError};
     use crate::{
-        instrument_setup::{
-            AutoZero, DcvInputImpedance, InstrumentSetup, MetersMeasurement, MetersSetup,
-            MetersSetupError, RangeMode,
+        meters_setup::{
+            AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError,
+            RangeMode,
         },
         tool::ToolId,
+        tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
         workflow::{
             ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
             StepKind, StepOutputReference, VariableId, Workflow,
@@ -552,7 +621,7 @@ mod tests {
             Step::new(
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
@@ -565,7 +634,7 @@ mod tests {
             Step::new(
                 StepId::new("meter-read-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::meters(),
+                    target: ToolInstanceId::new("meters-1").unwrap(),
                     action: ActionId::new("measure").unwrap(),
                     arguments: json!({}),
                     bindings: Default::default(),
@@ -573,23 +642,27 @@ mod tests {
             ),
         ])
         .unwrap();
-        let instrument_setup = InstrumentSetup {
-            meters: Some(MetersSetup {
-                measurement: MetersMeasurement::VoltageDc,
-                range_mode: RangeMode::Manual,
-                manual_range: Some(10.0),
-                nplc: 1.0,
-                auto_zero: AutoZero::Once,
-                dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
-                current_terminal: None,
-            }),
-        };
-        Template::new(
-            "Power and Meter Test".to_owned(),
-            instrument_setup,
-            workflow,
-        )
-        .unwrap()
+        let meters_setup = vec![
+            ToolInstance {
+                id: ToolInstanceId::new("meters-1").unwrap(),
+                tool: ToolId::meters(),
+                setup: ToolSetup::Meters(MetersSetup {
+                    measurement: MetersMeasurement::VoltageDc,
+                    range_mode: RangeMode::Manual,
+                    manual_range: Some(10.0),
+                    nplc: 1.0,
+                    auto_zero: AutoZero::Once,
+                    dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
+                    current_terminal: None,
+                }),
+            },
+            ToolInstance {
+                id: ToolInstanceId::new("powers-1").unwrap(),
+                tool: ToolId::powers(),
+                setup: Default::default(),
+            },
+        ];
+        Template::new("Power and Meter Test".to_owned(), meters_setup, workflow).unwrap()
     }
 
     #[test]
@@ -601,8 +674,8 @@ mod tests {
         assert_eq!(value["schema_version"], TEMPLATE_SCHEMA_VERSION);
         assert_eq!(value["name"], "Power and Meter Test");
         assert_eq!(
-            value["instrument_setup"],
-            json!({"meters": {
+            value["tool_instances"][0]["setup"],
+            json!({
                 "measurement": "voltage-dc",
                 "range_mode": "manual",
                 "manual_range": 10.0,
@@ -610,7 +683,7 @@ mod tests {
                 "auto_zero": "once",
                 "dcv_input_impedance": "ten-megohm",
                 "current_terminal": null
-            }})
+            })
         );
         assert_eq!(value["workflow"]["steps"][0]["type"], "tool-action");
         assert_eq!(value["workflow"]["steps"][0]["id"], "power-set-1");
@@ -623,7 +696,7 @@ mod tests {
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(restored, original);
         assert_eq!(restored.name(), original.name());
-        assert_eq!(restored.instrument_setup(), original.instrument_setup());
+        assert_eq!(restored.tool_instances(), original.tool_instances());
         assert_eq!(
             restored.workflow().steps()[0].kind(),
             original.workflow().steps()[0].kind()
@@ -641,8 +714,11 @@ mod tests {
     #[test]
     fn invalid_setup_is_rejected_by_construction_and_load() {
         let original = sample_template();
-        let mut setup = original.instrument_setup().clone();
-        setup.meters.as_mut().unwrap().manual_range = None;
+        let mut setup = original.tool_instances().to_vec();
+        let ToolSetup::Meters(meters) = &mut setup[0].setup else {
+            unreachable!()
+        };
+        meters.manual_range = None;
         let error = Template::new(
             original.name().to_owned(),
             setup,
@@ -655,7 +731,7 @@ mod tests {
         ));
 
         let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
-        wire["instrument_setup"]["meters"]["manual_range"] = Value::Null;
+        wire["tool_instances"][0]["setup"]["manual_range"] = Value::Null;
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(matches!(
             error,
@@ -669,18 +745,15 @@ mod tests {
             let wire = json!({
                 "schema_version": 1,
                 "name": "Missing setup",
-                "instrument_setup": {"meters": null},
+                "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {}}],
                 "workflow": {"steps": [{
-                    "type": "tool-action", "id": "read-1", "tool": "meters",
+                    "type": "tool-action", "id": "read-1", "target": "meters-1",
                     "action": action, "arguments": {}
                 }]}
             });
             let error = Template::from_json_str(&wire.to_string()).unwrap_err();
-            assert!(matches!(error, TemplateError::MissingMetersSetup));
-            assert_eq!(
-                error.to_string(),
-                "Meters setup is required when the workflow uses Meters"
-            );
+            assert!(matches!(error, TemplateError::Instance(_)));
+            assert_eq!(error.to_string(), "invalid setup for meters-1 (meters)");
         }
     }
 
@@ -688,11 +761,15 @@ mod tests {
     fn tool_action_bindings_round_trip() {
         let original = Template::new(
             "Bound voltage".to_owned(),
-            Default::default(),
+            vec![ToolInstance {
+                id: ToolInstanceId::new("powers-1").unwrap(),
+                tool: ToolId::powers(),
+                setup: Default::default(),
+            }],
             Workflow::new(vec![Step::new(
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 0 }),
                     bindings: [(
@@ -708,7 +785,7 @@ mod tests {
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
-        assert!(value["instrument_setup"]["meters"].is_null());
+        assert_eq!(value["tool_instances"][0]["setup"], json!({}));
         let binding = &value["workflow"]["steps"][0]["bindings"]["voltage"];
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");
@@ -751,7 +828,7 @@ mod tests {
     fn duplicate_step_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "Dup",
             "workflow": {
                 "steps": [
@@ -770,17 +847,17 @@ mod tests {
     }
 
     #[test]
-    fn invalid_tool_id_is_rejected_from_json() {
+    fn invalid_target_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "Bad tool",
             "workflow": {
                 "steps": [
                     {
                         "id": "power-set-1",
                         "type": "tool-action",
-                        "tool": "Meters",
+                        "target": "Meters-1",
                         "action": "set-voltage",
                         "arguments": {}
                     }
@@ -791,7 +868,7 @@ mod tests {
 
         let error = Template::from_json_str(&json).unwrap_err();
         assert!(
-            matches!(error, TemplateError::InvalidToolId { .. }),
+            matches!(error, TemplateError::Json(_)),
             "unexpected error: {error:?}"
         );
     }
@@ -857,7 +934,7 @@ mod tests {
     fn invalid_variable_id_is_rejected_from_json() {
         let json = json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "Invalid variable",
             "workflow": { "steps": [{
                 "type": "set-variable", "id": "set-x", "variable": "Bad_Name",
@@ -999,5 +1076,69 @@ mod tests {
                 assert_eq!(Template::from_json_str(&json).unwrap(), original);
             }
         }
+    }
+
+    #[test]
+    fn instance_counts_round_trip_and_invalid_references_are_rejected() {
+        let sample = sample_template();
+        let mut meters = sample.tool_instances()[0].clone();
+        meters.id = ToolInstanceId::new("meters-2").unwrap();
+        let ToolSetup::Meters(setup) = &mut meters.setup else {
+            unreachable!()
+        };
+        setup.nplc = 0.2;
+        for instances in [
+            vec![],
+            vec![sample.tool_instances()[0].clone()],
+            vec![sample.tool_instances()[0].clone(), meters],
+        ] {
+            let template = Template::new(
+                "Instances".to_owned(),
+                instances,
+                Workflow::new(vec![]).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+                template
+            );
+        }
+        let duplicate = vec![sample.tool_instances()[0].clone(); 2];
+        assert!(
+            Template::new(
+                "Duplicate".to_owned(),
+                duplicate,
+                Workflow::new(vec![]).unwrap()
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate tool instance ID")
+        );
+        assert!(
+            Template::new(
+                "Missing target".to_owned(),
+                vec![],
+                sample.workflow().clone()
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("unknown tool instance target")
+        );
+        let mut wire: Value = serde_json::from_str(&sample.to_json_string().unwrap()).unwrap();
+        wire["tool_instances"][1]["id"] = json!("meters-1");
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate tool instance ID")
+        );
+        wire["tool_instances"][1]["id"] = json!("powers-1");
+        wire["workflow"]["steps"][0]["target"] = json!("absent-1");
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("unknown tool instance target")
+        );
     }
 }

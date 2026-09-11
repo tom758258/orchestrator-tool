@@ -17,10 +17,10 @@ use orchestrator_tool::{
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
-    instrument_setup::{AutoZero, MetersMeasurement, MetersSetup, RangeMode},
+    meters_setup::{AutoZero, MetersMeasurement, MetersSetup, RangeMode},
     run::{ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow},
     template::Template,
-    tool::ToolId,
+    tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
     workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
@@ -118,6 +118,8 @@ fn main() {
     three_meter_measurements_shutdown_normally();
     partial_startup_failure_shuts_down_started_worker();
     live_workflow_cleanup_lifecycle();
+    multiple_powers_cleanup_attempts_every_session();
+    two_meters_use_distinct_sessions();
 }
 
 fn run_powers_worker_fixture() {
@@ -420,7 +422,8 @@ fn run_fixture(scenario: &OsStr) {
         | "live-step-failure"
         | "live-cleanup-failure"
         | "live-both-failed"
-        | "live-startup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
+        | "live-startup-failure"
+        | "live-multi-cleanup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
         "meters-runtime-measure" => run_meters_runtime_fixture(1, 2, json!(3.3)),
         "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
@@ -606,7 +609,10 @@ fn run_powers_runtime_fixture() {
 fn run_powers_workflow_fixture(scenario: &str) {
     let live = scenario != "simulate";
     let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
-    let cleanup_failed = matches!(scenario, "live-cleanup-failure" | "live-both-failed");
+    let cleanup_failed = matches!(
+        scenario,
+        "live-cleanup-failure" | "live-both-failed" | "live-multi-cleanup-failure"
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "powers-workflow-runtime-run";
@@ -634,7 +640,10 @@ fn run_powers_workflow_fixture(scenario: &str) {
     if step_failed {
         commands.truncate(2);
     }
-    if scenario == "live-startup-failure" {
+    if matches!(
+        scenario,
+        "live-startup-failure" | "live-multi-cleanup-failure"
+    ) {
         commands.clear();
     }
     if live {
@@ -716,7 +725,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
 fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: serde_json::Value) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let run_id = "meters-runtime-run";
+    let run_id = format!("meters-runtime-run-{}", process::id());
     print_json_line(
         &json!({
             "event": "ready",
@@ -1080,7 +1089,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         Step::new(
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
@@ -1089,7 +1098,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         Step::new(
             StepId::new("power-on-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("output-on").unwrap(),
                 arguments: json!({ "channel": 1 }),
                 bindings: Default::default(),
@@ -1102,7 +1111,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         Step::new(
             StepId::new("meter-read-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::meters(),
+                target: ToolInstanceId::new("meters-1").unwrap(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
                 bindings: Default::default(),
@@ -1111,7 +1120,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         Step::new(
             StepId::new("power-off-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("output-off").unwrap(),
                 arguments: json!({ "channel": 1 }),
                 bindings: Default::default(),
@@ -1120,12 +1129,18 @@ fn powers_and_meters_workflow_executes_end_to_end() {
     ])
     .unwrap();
     let launch_specs = HashMap::from([
-        (ToolId::powers(), fixture_spec("powers-workflow-runtime")),
-        (ToolId::meters(), fixture_spec("meters-runtime-measure")),
+        (
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("powers-workflow-runtime"),
+        ),
+        (
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-runtime-measure"),
+        ),
     ]);
 
     let results = run_simulated_workflow(
-        &workflow,
+        &test_template(&workflow),
         &launch_specs,
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -1165,11 +1180,11 @@ fn simulated_measurement_dataflow_exports_csv() {
     let template = Template::from_json_str(
         &json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": {
+            "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                 "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
                 "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
                 "current_terminal": null
-            }},
+            }}, {"id": "powers-1", "tool": "powers", "setup": {}}],
             "name": "Measurement CSV",
             "workflow": { "steps": [
                 {
@@ -1177,7 +1192,7 @@ fn simulated_measurement_dataflow_exports_csv() {
                     "value": { "source": "literal", "value": 3 }
                 },
                 {
-                    "type": "tool-action", "id": "meter-read-1", "tool": "meters",
+                    "type": "tool-action", "id": "meter-read-1", "target": "meters-1",
                     "action": "measure", "arguments": {}
                 },
                 {
@@ -1200,8 +1215,11 @@ fn simulated_measurement_dataflow_exports_csv() {
     .unwrap();
     let definition_before_run = template.to_json_string().unwrap();
     let results = run_simulated_workflow(
-        template.workflow(),
-        &HashMap::from([(ToolId::meters(), fixture_spec("meters-csv-measure"))]),
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-csv-measure"),
+        )]),
         Duration::from_secs(5),
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -1236,7 +1254,7 @@ fn three_meter_measurements_shutdown_normally() {
                 Step::new(
                     StepId::new(format!("read-{sequence}")).unwrap(),
                     StepKind::ToolAction {
-                        tool: ToolId::meters(),
+                        target: ToolInstanceId::new("meters-1").unwrap(),
                         action: ActionId::new("measure").unwrap(),
                         arguments: json!({}),
                         bindings: Default::default(),
@@ -1260,8 +1278,8 @@ fn three_meter_measurements_shutdown_normally() {
         },
     );
     let results = run_simulated_workflow(
-        &workflow,
-        &HashMap::from([(ToolId::meters(), spec)]),
+        &test_template(&workflow),
+        &HashMap::from([(ToolInstanceId::new("meters-1").unwrap(), spec)]),
         Duration::from_secs(5),
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -1293,7 +1311,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
         Step::new(
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
@@ -1302,7 +1320,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
         Step::new(
             StepId::new("meter-read-1").unwrap(),
             StepKind::ToolAction {
-                tool: ToolId::meters(),
+                target: ToolInstanceId::new("meters-1").unwrap(),
                 action: ActionId::new("measure").unwrap(),
                 arguments: json!({}),
                 bindings: Default::default(),
@@ -1311,12 +1329,18 @@ fn partial_startup_failure_shuts_down_started_worker() {
     ])
     .unwrap();
     let launch_specs = HashMap::from([
-        (ToolId::powers(), fixture_spec("partial-startup-cleanup")),
-        (ToolId::meters(), fixture_spec("exit-before-ready")),
+        (
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("partial-startup-cleanup"),
+        ),
+        (
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("exit-before-ready"),
+        ),
     ]);
 
     let result = run_simulated_workflow(
-        &workflow,
+        &test_template(&workflow),
         &launch_specs,
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -1330,9 +1354,9 @@ fn partial_startup_failure_shuts_down_started_worker() {
     assert!(matches!(
         result,
         Err(WorkflowRunError::WorkerStartup {
-            tool,
+            instance,
             source: WorkerStartError::ExitedBeforeReady(status),
-        }) if tool == ToolId::meters() && status.success()
+        }) if instance == ToolInstanceId::new("meters-1").unwrap() && status.success()
     ));
     assert_eq!(marker_contents, "stopped");
 }
@@ -1381,7 +1405,7 @@ fn live_workflow_cleanup_lifecycle() {
             Step::new(
                 StepId::new("set-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
@@ -1390,7 +1414,7 @@ fn live_workflow_cleanup_lifecycle() {
             Step::new(
                 StepId::new("on-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("output-on").unwrap(),
                     arguments: json!({ "channel": 1 }),
                     bindings: Default::default(),
@@ -1399,29 +1423,35 @@ fn live_workflow_cleanup_lifecycle() {
             Step::new(
                 StepId::new("off-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("output-off").unwrap(),
                     arguments: json!({ "channel": 1 }),
                     bindings: Default::default(),
                 },
             ),
         ];
-        let mut specs = HashMap::from([(ToolId::powers(), fixture_spec(scenario))]);
+        let mut specs = HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec(scenario),
+        )]);
         if scenario == "live-startup-failure" {
             steps.push(Step::new(
                 StepId::new("measure-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::meters(),
+                    target: ToolInstanceId::new("meters-1").unwrap(),
                     action: ActionId::new("measure").unwrap(),
                     arguments: json!({}),
                     bindings: Default::default(),
                 },
             ));
-            specs.insert(ToolId::meters(), fixture_spec("exit-before-ready"));
+            specs.insert(
+                ToolInstanceId::new("meters-1").unwrap(),
+                fixture_spec("exit-before-ready"),
+            );
         }
         let workflow = Workflow::new(steps).unwrap();
         let result = run_workflow(
-            &workflow,
+            &test_template(&workflow),
             ExecutionMode::Live,
             &specs,
             Duration::from_secs(5),
@@ -1477,4 +1507,150 @@ fn live_workflow_cleanup_lifecycle() {
             }
         }
     }
+}
+
+fn test_template(workflow: &Workflow) -> Template {
+    Template::new(
+        "Test".to_owned(),
+        vec![
+            ToolInstance {
+                id: ToolInstanceId::new("powers-1").unwrap(),
+                tool: orchestrator_tool::tool::ToolId::powers(),
+                setup: Default::default(),
+            },
+            ToolInstance {
+                id: ToolInstanceId::new("meters-1").unwrap(),
+                tool: orchestrator_tool::tool::ToolId::meters(),
+                setup: ToolSetup::Meters(MetersSetup {
+                    measurement: MetersMeasurement::VoltageDc,
+                    range_mode: RangeMode::Auto,
+                    manual_range: None,
+                    nplc: 1.0,
+                    auto_zero: AutoZero::On,
+                    dcv_input_impedance: None,
+                    current_terminal: None,
+                }),
+            },
+        ],
+        workflow.clone(),
+    )
+    .unwrap()
+}
+
+fn multiple_powers_cleanup_attempts_every_session() {
+    let marker = env::temp_dir().join(format!("orchestrator-multiple-powers-{}", process::id()));
+    let _ = fs::remove_file(&marker);
+    // SAFETY: fixtures run sequentially and child sessions are reaped before removal.
+    unsafe { env::set_var(CLEANUP_MARKER_ENV, &marker) };
+    let workflow = Workflow::new(
+        vec!["powers-1", "powers-2"]
+            .into_iter()
+            .map(|id| {
+                Step::new(
+                    StepId::new(id).unwrap(),
+                    StepKind::ToolAction {
+                        target: ToolInstanceId::new(id).unwrap(),
+                        action: ActionId::new("unsupported").unwrap(),
+                        arguments: json!({"channel": 1}),
+                        bindings: Default::default(),
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    let instances = ["powers-1", "powers-2"]
+        .into_iter()
+        .map(|id| ToolInstance {
+            id: ToolInstanceId::new(id).unwrap(),
+            tool: orchestrator_tool::tool::ToolId::powers(),
+            setup: Default::default(),
+        })
+        .collect();
+    let template = Template::new("Two Powers".to_owned(), instances, workflow).unwrap();
+    // An unsupported action fails before dispatch; cleanup must still reach both workers.
+    let specs = template
+        .tool_instances()
+        .iter()
+        .map(|instance| {
+            (
+                instance.id.clone(),
+                fixture_spec("live-multi-cleanup-failure"),
+            )
+        })
+        .collect();
+    let result = run_workflow(
+        &template,
+        ExecutionMode::Live,
+        &specs,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    );
+    // SAFETY: all child sessions have been reaped.
+    unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
+    let events = fs::read_to_string(&marker).unwrap();
+    fs::remove_file(marker).unwrap();
+    assert!(matches!(
+        result,
+        Err(WorkflowRunError::SafetyCleanup { .. })
+    ));
+    assert_eq!(
+        events.lines().filter(|event| *event == "safe-off").count(),
+        2,
+        "{events}"
+    );
+    assert_eq!(
+        events.lines().filter(|event| *event == "stop").count(),
+        2,
+        "{events}"
+    );
+}
+
+fn two_meters_use_distinct_sessions() {
+    let mut instances =
+        test_template(&Workflow::new(vec![]).unwrap()).tool_instances()[1..].to_vec();
+    let mut second = instances[0].clone();
+    second.id = ToolInstanceId::new("meters-2").unwrap();
+    instances.push(second);
+    let workflow = Workflow::new(
+        instances
+            .iter()
+            .map(|instance| {
+                Step::new(
+                    StepId::new(instance.id.as_str()).unwrap(),
+                    StepKind::ToolAction {
+                        target: instance.id.clone(),
+                        action: ActionId::new("measure").unwrap(),
+                        arguments: json!({}),
+                        bindings: Default::default(),
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    let template = Template::new("Two Meters".to_owned(), instances, workflow).unwrap();
+    let specs = template
+        .tool_instances()
+        .iter()
+        .map(|instance| (instance.id.clone(), fixture_spec("meters-runtime-measure")))
+        .collect();
+    let results = run_simulated_workflow(
+        &template,
+        &specs,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let outputs: Vec<_> = results
+        .iter()
+        .map(|result| match result.outcome() {
+            StepOutcome::Succeeded { output } => output,
+            outcome => panic!("{outcome:?}"),
+        })
+        .collect();
+    assert_eq!(outputs.len(), 2);
+    assert_ne!(outputs[0]["run_id"], outputs[1]["run_id"]);
 }

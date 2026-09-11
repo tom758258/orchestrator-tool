@@ -1,7 +1,9 @@
+import type { ToolInstance } from './ToolSetupEditor'
 import type { StepResultDto, WorkflowStep } from './App'
 import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
+  instances: ToolInstance[]
   steps: readonly WorkflowStep[]
   runResults: readonly StepResultDto[] | null
   formatMeasurement: (output: unknown) => string | null
@@ -26,7 +28,7 @@ function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'])
   }
 }
 
-function stepSummary(step: WorkflowStep): string {
+function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
     case 'set-variable':
       return `${step.variable} = ${valueSummary(step.value)}`
@@ -35,7 +37,7 @@ function stepSummary(step: WorkflowStep): string {
     case 'wait':
       return `${step.duration_ms} ms`
     case 'tool-action': {
-      if (step.tool === 'powers') {
+      if (instances.find(instance => instance.id === step.target)?.tool === 'powers') {
         const channel = step.bindings?.channel
           ? 'Bound channel'
           : `CH${step.arguments.channel ?? '?'}`
@@ -55,13 +57,14 @@ function stepSummary(step: WorkflowStep): string {
           return channel
         }
       }
-      return step.id
+      return step.target
     }
   }
 }
 
 function SequenceEditor({
   steps,
+  instances,
   runResults,
   formatMeasurement,
   selectedStepId,
@@ -111,8 +114,8 @@ function SequenceEditor({
                   <span className="sequence-step-order">{index + 1}</span>
                   <span className="sequence-step-identity">
                     <span className="sequence-step-label">{stepLabel(step)}</span>
-                    <span className="sequence-step-summary" title={stepSummary(step)}>
-                      {stepSummary(step)}
+                    <span className="sequence-step-summary" title={stepSummary(step, instances)}>
+                      {stepSummary(step, instances)}
                     </span>
                     <code>{step.id}</code>
                     {result && (

@@ -10,9 +10,11 @@ use serde_json::Value;
 use crate::{
     data_context::DataContext,
     run::ExecutionMode,
+    template::Template,
     tool::ToolId,
+    tool_instance::ToolInstanceId,
     worker::WorkerSession,
-    workflow::{InputValue, StepKind, StepOutcome, StepResult, Workflow},
+    workflow::{InputValue, StepKind, StepOutcome, StepResult},
 };
 
 /// Errors that prevent a workflow from starting execution.
@@ -34,13 +36,14 @@ impl Error for WorkflowExecutionError {}
 /// Executes a linear workflow sequentially with fail-fast semantics.
 ///
 /// `sessions` must contain already-started `WorkerSession` references for
-/// `powers` and `meters`. The executor does not start or shut down workers.
+/// referenced Powers and Meters instances. The executor does not start or shut down workers.
 pub fn execute_workflow(
-    workflow: &Workflow,
-    sessions: &HashMap<ToolId, &WorkerSession>,
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
 ) -> Result<Vec<StepResult>, WorkflowExecutionError> {
+    let workflow = template.workflow();
     if workflow.steps().is_empty() {
         return Err(WorkflowExecutionError::EmptyWorkflow);
     }
@@ -74,13 +77,14 @@ pub fn execute_workflow(
                 }
             }
             StepKind::ToolAction {
-                tool,
+                target,
                 action,
                 arguments,
                 bindings,
             } => match resolve_tool_arguments(arguments, bindings, &data_context) {
                 Ok(arguments) => dispatch_tool_action(
-                    tool,
+                    template,
+                    target,
                     action,
                     &arguments,
                     sessions,
@@ -126,13 +130,24 @@ fn resolve_tool_arguments(
 }
 
 fn dispatch_tool_action(
-    tool: &ToolId,
+    template: &Template,
+    target: &ToolInstanceId,
     action: &crate::workflow::ActionId,
     arguments: &Value,
-    sessions: &HashMap<ToolId, &WorkerSession>,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> StepOutcome {
+    let Some(instance) = template
+        .tool_instances()
+        .iter()
+        .find(|instance| &instance.id == target)
+    else {
+        return StepOutcome::Failed {
+            message: format!("unknown tool instance target {target}"),
+        };
+    };
+    let tool = &instance.tool;
     let is_powers = tool == &ToolId::powers();
     let is_meters = tool == &ToolId::meters();
 
@@ -142,9 +157,9 @@ fn dispatch_tool_action(
         };
     }
 
-    let Some(session) = sessions.get(tool) else {
+    let Some(session) = sessions.get(target) else {
         return StepOutcome::Failed {
-            message: format!("missing WorkerSession for tool {tool}"),
+            message: format!("missing WorkerSession for instance {target}"),
         };
     };
 
@@ -180,7 +195,7 @@ mod tests {
     use super::{WorkflowExecutionError, execute_workflow};
     use crate::{
         run::ExecutionMode,
-        tool::ToolId,
+        tool_instance::ToolInstanceId,
         workflow::{
             ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
             StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
@@ -240,7 +255,7 @@ mod tests {
                 Step::new(
                     StepId::new("power-set-1").unwrap(),
                     StepKind::ToolAction {
-                        tool: ToolId::powers(),
+                        target: ToolInstanceId::new("powers-1").unwrap(),
                         action: ActionId::new("set-voltage").unwrap(),
                         arguments,
                         bindings: [(
@@ -260,7 +275,7 @@ mod tests {
             ])
             .unwrap();
             let results = execute_workflow(
-                &workflow,
+                &test_template(&workflow),
                 &HashMap::new(),
                 ExecutionMode::Simulate,
                 Duration::from_secs(5),
@@ -298,7 +313,7 @@ mod tests {
         ])
         .unwrap();
         let results = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -334,7 +349,7 @@ mod tests {
         ])
         .unwrap();
         let results = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -386,7 +401,7 @@ mod tests {
         ])
         .unwrap();
         let results = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -429,7 +444,7 @@ mod tests {
         ])
         .unwrap();
         let results = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -450,7 +465,7 @@ mod tests {
         let workflow = Workflow::new(Vec::new()).unwrap();
         let sessions = HashMap::new();
         let error = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &sessions,
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -469,7 +484,7 @@ mod tests {
             Step::new(
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
@@ -484,7 +499,7 @@ mod tests {
 
         let sessions = HashMap::new();
         let results = execute_workflow(
-            &workflow,
+            &test_template(&workflow),
             &sessions,
             ExecutionMode::Simulate,
             Duration::from_secs(5),
@@ -505,5 +520,18 @@ mod tests {
         );
         // wait-2 must not have executed
         assert!(!results.iter().any(|r| r.step_id().as_str() == "wait-2"));
+    }
+
+    fn test_template(workflow: &Workflow) -> crate::template::Template {
+        crate::template::Template::new(
+            "Test".to_owned(),
+            vec![crate::tool_instance::ToolInstance {
+                id: crate::tool_instance::ToolInstanceId::new("powers-1").unwrap(),
+                tool: crate::tool::ToolId::powers(),
+                setup: Default::default(),
+            }],
+            workflow.clone(),
+        )
+        .unwrap()
     }
 }

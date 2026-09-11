@@ -18,7 +18,7 @@ use orchestrator_tool::{
     tool::ToolId,
 };
 
-/// Coordinates external instrument tools.
+/// Coordinates external tools.
 #[derive(Debug, Parser)]
 #[command(name = PRODUCT_NAME, version = VERSION)]
 struct Cli {

@@ -1,6 +1,6 @@
 # orchestrator-tool
 
-`orchestrator-tool` is a Rust-based multi-instrument orchestrator intended to coordinate external instrument tools through a shared core.
+`orchestrator-tool` is a Rust-based external tools orchestrator that coordinates external programs through a shared core.
 
 ## Architecture
 
@@ -10,29 +10,29 @@
 
 The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
 
-## Instrument Setup and workflow templates
+## Tool Setup and workflow templates
 
-Template schema remains `schema_version = 1` and stores the test definition in two parts:
+Template schema uses `schema_version = 1` and stores the test definition in two parts:
 
 ```text
 Template
-├─ Instrument Setup
+├─ Tool Setup
 └─ Workflow Sequence
 ```
 
-Instrument Setup defines the instrument session established before a run; it is not a Workflow Step. The Workflow is the linear test procedure executed after the referenced Workers are ready. Desktop places the Instrument Setup editor on the Workflow page, above the Sequence. Template save/load preserves both parts.
+Tool Setup defines each tool instance session established before a run; it is not a Workflow Step. The Workflow is the linear test procedure executed after the referenced Workers are ready. Desktop places the Tool Setup editor on the Workflow page, above the Sequence. Template save/load preserves both parts.
 
 Meters Setup supports DC Voltage and DC Current. Both provide Auto / Manual Range Mode, Manual Range, NPLC, and Auto Zero. DC Voltage additionally provides Input Impedance; DC Current provides Current Terminal. DCV cannot carry Current Terminal, and DCI cannot carry DCV Input Impedance. Manual mode requires Manual Range; Auto mode ignores any stored Manual Range and does not emit a `--range` startup argument. Trigger is fixed to Software.
 
 Run preparation validates setup and maps it through the Core Meters adapter to `meters-tool` startup arguments before Worker launch. Simulation and Live share these setup semantics. The run then waits for Worker Ready before invoking the Executor. `Meter Measure` remains a runtime measurement action and does not configure the session. Core checks setup consistency; supported models and numeric settings remain the responsibility of `meters-tool`, without an orchestrator capability database.
 
-The top-level `instrument_setup` field is required. Workflows using Meters require a Meters setup; workflows without Meters can use `"instrument_setup": {"meters": null}`. Templates predating this field are not migrated or accepted through a compatibility layer; there is no schema v2.
+The required `tool_instances` array separates logical instance `id` from external tool type `tool`. Each entry has its own `setup`: Meters requires its existing setup fields; other tool types currently use `{}`. IDs must be unique within the Template. Workflow tool actions use `target` to reference an existing instance. During development, the schema v1 wire structure is updated directly. Templates using the previous setup or action fields are rejected; there is no migration or compatibility layer.
 
-ExecutionMode, Live VISA Resource, runtime results, output authorization, and safety cleanup state remain outside the Template. Live resources belong to Desktop configuration, and the execution mode is selected for each run. For DCI with Current Terminal set to 10, the Live confirmation also asks the operator to confirm physical connection to the 10 A terminal. Instrument Setup coverage is primarily simulation-based; specific hardware models and setup combinations remain subject to validation by the corresponding external instrument tool.
+ExecutionMode, Live VISA Resource, runtime results, output authorization, and safety cleanup state remain outside the Template. Live resources belong to Desktop configuration, and the execution mode is selected for each run. For DCI with Current Terminal set to 10, the Live confirmation also asks the operator to confirm physical connection to the 10 A terminal. Tool Setup coverage is primarily simulation-based; specific hardware models and setup combinations remain subject to validation by the corresponding external instrument tool.
 
 ## Template expressions
 
-Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Schema v1 templates without an Output name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
+Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Output steps without a name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
 
 Template schema version 1 persists structured Expression inputs in Set Variable, Output, and ToolAction bindings using the existing Core domain. For example, `x * 2` is stored as:
 
@@ -47,6 +47,11 @@ Template schema version 1 persists structured Expression inputs in Set Variable,
 
 Operands support `literal`, `variable`, and `step-output` (for example, `{ "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" }`). Operators are `add`, `subtract`, `multiply`, `divide`, `greater-than`, `greater-than-or-equal`, `less-than`, and `less-than-or-equal`. Nested expressions are not supported. Save/load preserves the operator, operands, identifiers, JSON Pointers, and workflow step order without storing runtime values.
 
+
+Instance examples: Powers only uses powers-1; Powers + Scopes uses powers-1 and scopes-1; one Meters uses meters-1; two Meters use meters-1 and meters-2, both with tool = meters and independent setups, Live resources, and Worker sessions. Executable paths remain shared by tool type; physical resources are never stored in Templates. Templates reusing an instance ID share its Desktop resource binding, which must be confirmed before Live execution.
+
+Desktop Tool Setup can add built-in tool instances with unique generated IDs and blocks removal of referenced instances. Action editors select compatible instances and prompt users to create one when none exists. The Steps palette groups Workflow, Powers, and Meters actions. Scopes/Wavegen instances can be declared, but their runtime actions return an unsupported error. Serial-tool, additional runtime adapters, manifest-driven UI, plugin systems, and setup registries are not implemented.
+
 ## Executable configuration
 
 Core can load a TOML configuration file selected by its caller and use it to override built-in portable executable paths:
@@ -57,21 +62,21 @@ meters = "D:/tools/meters-tool.exe"
 powers = "D:/tools/powers-tool.exe"
 
 [live_resources]
-meters = "USB0::VENDOR::METER_SERIAL::INSTR"
-powers = "USB0::VENDOR::POWER_SERIAL::INSTR"
+meters-1 = "USB0::VENDOR::METER_SERIAL::INSTR"
+powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
 Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
-The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. Powers and Meters also offer Live Resource with Save Resource and Clear Resource. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. A missing config file uses portable executable paths.
+The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. The Workflow Tool Setup section offers Live Resource with Save Resource and Clear Resource for each Powers or Meters instance. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. A missing config file uses portable executable paths.
 
 The optional `live_resources` table preserves exact non-empty resource strings without path resolution, scanning, or fallback. Live preparation rejects missing or whitespace-only resources and validates executables, manifests, and Worker compatibility before starting any Worker. Simulation remains available without live resources.
 
-Run Live requires operator confirmation showing the referenced resources and warning that real instruments will be controlled and power outputs may change. Powers live writes use both authorization gates: a short-lived Desktop runtime config sets Worker `settings.allow_output_writes=true`, and the runtime adapter injects `arguments.confirm_output=true` into live output-affecting requests. This support file is removed best-effort after the run.
+Run Live requires operator confirmation showing each referenced instance ID, tool type, and resource, and warning that external tools will run in Live mode and power outputs may change. Powers live writes use both authorization gates: a short-lived Desktop runtime config sets Worker `settings.allow_output_writes=true`, and the runtime adapter injects `arguments.confirm_output=true` into live output-affecting requests. This support file is removed best-effort after the run.
 
-Every live run with a started Powers Worker attempts bounded `safe-off` for all channels before Worker shutdown, including after workflow failure or a later Worker startup failure. An explicit Output OFF step does not replace this safety cleanup. Cleanup failure makes the run fail and preserves any original workflow failure in the error; Worker shutdown is still attempted. Simulation does not perform this additional live cleanup.
+Every live run attempts bounded `safe-off` for all channels on every started Powers instance before Worker shutdown, including after workflow failure or a later Worker startup failure. An explicit Output OFF step does not replace this safety cleanup. Cleanup failure makes the run fail and preserves any original workflow failure in the error; Worker shutdown is still attempted. Simulation does not perform this additional live cleanup.
 
-Physical hardware support remains subject to each external instrument tool's manifest and product support policy. Live Powers and Meters workflows have received limited real-hardware end-to-end validation, including power safety cleanup behavior. Instrument Setup coverage remains primarily simulation-based, and this does not imply full validation of all hardware models or setup combinations. Scopes and Wavegen live workflows are not supported.
+Physical hardware support remains subject to each external instrument tool's manifest and product support policy. Live Powers and Meters workflows have received limited real-hardware end-to-end validation, including power safety cleanup behavior. Tool Setup coverage remains primarily simulation-based, and this does not imply full validation of all hardware models or setup combinations. Scopes and Wavegen live workflows are not supported.
 
 ## External process management
 

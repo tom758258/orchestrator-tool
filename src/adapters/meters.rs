@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    instrument_setup::{AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode},
+    meters_setup::{AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode},
     worker::{
         WorkerEventError, WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError,
         WorkerStartError, start_worker,
@@ -628,7 +628,7 @@ mod tests {
 
     use serde_json::json;
 
-    use crate::instrument_setup::{
+    use crate::meters_setup::{
         AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode,
     };
 

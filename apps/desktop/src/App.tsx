@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
-import InstrumentSetupEditor from './InstrumentSetupEditor'
-import type { InstrumentSetup } from './InstrumentSetupEditor'
+import ToolSetupEditor from './ToolSetupEditor'
+import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor from './InputValueEditor'
 import type { InputValueWire } from './inputValue'
 
@@ -16,7 +16,6 @@ type ToolStatus = {
   tool_version: string | null
   worker_schema_versions: number[]
   reason: string | null
-  live_resource: string | null
 }
 
 type LiveResourceCandidate = {
@@ -62,7 +61,7 @@ type OutputStep = {
 type ToolActionStep = {
   type: 'tool-action'
   id: string
-  tool: string
+  target: string
   action: string
   arguments: Record<string, unknown>
   bindings?: Record<string, InputValueWire>
@@ -73,7 +72,7 @@ export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputS
 type WorkflowDraft = {
   schema_version: number
   name: string
-  instrument_setup: InstrumentSetup
+  tool_instances: ToolInstance[]
   workflow: {
     steps: WorkflowStep[]
   }
@@ -103,16 +102,18 @@ type StepPresetOption = {
   value: StepPreset
   label: string
   prefix: string
+  category: string
+  tool?: ToolInstance['tool']
 }
 
 const STEP_PRESETS: StepPresetOption[] = [
-  { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable' },
-  { value: 'output', label: 'Output', prefix: 'output' },
-  { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set' },
-  { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on' },
-  { value: 'wait', label: 'Wait', prefix: 'wait' },
-  { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read' },
-  { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off' },
+  { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
+  { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
+  { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set', category: 'Powers', tool: 'powers' },
+  { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
+  { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
+  { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read', category: 'Meters', tool: 'meters' },
+  { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off', category: 'Powers', tool: 'powers' },
 ]
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
@@ -159,7 +160,7 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
   return `${prefix}-${sequence}`
 }
 
-function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
+function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
   switch (preset) {
     case 'set-variable':
       return { type: 'set-variable', id, variable: 'x', value: { source: 'literal', value: 5.0 } }
@@ -169,7 +170,7 @@ function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
       return {
         type: 'tool-action',
         id,
-        tool: 'powers',
+        target,
         action: 'set-voltage',
         arguments: { channel: 1, voltage: 5.0 },
       }
@@ -177,7 +178,7 @@ function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
       return {
         type: 'tool-action',
         id,
-        tool: 'powers',
+        target,
         action: 'output-on',
         arguments: { channel: 1 },
       }
@@ -187,7 +188,7 @@ function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
       return {
         type: 'tool-action',
         id,
-        tool: 'meters',
+        target,
         action: 'measure',
         arguments: {},
       }
@@ -195,14 +196,14 @@ function createPresetStep(preset: StepPreset, id: string): WorkflowStep {
       return {
         type: 'tool-action',
         id,
-        tool: 'powers',
+        target,
         action: 'output-off',
         arguments: { channel: 1 },
       }
   }
 }
 
-function stepLabel(step: WorkflowStep): string {
+function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
   if (step.type === 'set-variable') {
     return 'Set Variable'
   }
@@ -213,7 +214,8 @@ function stepLabel(step: WorkflowStep): string {
     return 'Wait'
   }
 
-  return TOOL_ACTION_LABELS[`${step.tool}/${step.action}`] ?? `${step.tool} / ${step.action}`
+  const tool = instances.find(instance => instance.id === step.target)?.tool
+  return TOOL_ACTION_LABELS[`${tool}/${step.action}`] ?? `${step.target} / ${step.action}`
 }
 
 function numericArgument(step: ToolActionStep, name: string): number | '' {
@@ -280,7 +282,7 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      setResourceDrafts(Object.fromEntries(statuses.map((tool) => [tool.tool_id, tool.live_resource ?? ''])))
+      setResourceDrafts(await invoke<Record<string, string>>('get_live_resources'))
       setError(null)
     } catch (message) {
       setError(String(message))
@@ -338,8 +340,8 @@ function App() {
     [],
   )
 
-  const updateInstrumentSetup = useCallback((instrument_setup: InstrumentSetup) => {
-    setWorkflowDraft((current) => current ? { ...current, instrument_setup } : current)
+  const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
+    setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
     setValidationStatus('idle')
     setValidationError(null)
     setRunResults(null)
@@ -351,8 +353,13 @@ function App() {
     if (!workflowDraft) {
       return
     }
+    const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
+    if (preset.tool && !target) {
+      setValidationError(`Create a ${preset.tool} Tool Instance before adding this action.`)
+      return
+    }
     const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
-    const newStep = createPresetStep(preset.value, id)
+    const newStep = createPresetStep(preset.value, id, target ?? '')
     updateSteps((steps) => {
       const selectedIndex = steps.findIndex((step) => step.id === selectedStepId)
       const insertIndex = selectedIndex < 0 ? steps.length : selectedIndex + 1
@@ -596,7 +603,7 @@ function App() {
     setToolConfigError(null)
     try {
       await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
-        toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '' }),
+        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '' }),
       })
       await refresh()
     } catch (message) {
@@ -632,23 +639,22 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      const referenced = ['powers', 'meters'].filter((toolId) =>
-        workflowDraft.workflow.steps.some((step) => step.type === 'tool-action' && step.tool === toolId),
-      )
+      const bindings = await invoke<Record<string, string>>('get_live_resources')
+      const referenced = workflowDraft.tool_instances.filter(instance =>
+        workflowDraft.workflow.steps.some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
-      const resources = referenced.map((toolId) => {
-        const resource = statuses.find((tool) => tool.tool_id === toolId)?.live_resource
-        const label = toolId === 'powers' ? 'Powers' : 'Meters'
-        if (!resource || !resource.trim()) {
-          throw new Error(label + ' live resource is not configured.')
-        }
-        confirmedResources[toolId] = resource
-        return label + ':\n' + resource
+      const resources = referenced.map(instance => {
+        if (instance.tool !== 'powers' && instance.tool !== 'meters') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
+        const resource = bindings[instance.id]
+        if (!resource?.trim()) throw new Error(`${instance.id} (${instance.tool}) live resource is not configured.`)
+        confirmedResources[instance.id] = resource
+        return `${instance.id} (${instance.tool}):\n${resource}`
       })
-      const confirmation = [...resources, 'This workflow will control real instruments and may change power outputs.']
-      const meters = workflowDraft.instrument_setup.meters
-      if (meters?.measurement === 'current-dc' && meters.current_terminal === 10) {
-        confirmation.push("WARNING: Confirm that the measurement leads are physically connected to the instrument's 10 A current terminal.")
+      const confirmation = [...resources, 'This workflow will run external tools in Live mode and may change power outputs.']
+      for (const instance of referenced) {
+        if (instance.tool === 'meters' && instance.setup.measurement === 'current-dc' && instance.setup.current_terminal === 10) {
+          confirmation.push(`WARNING: ${instance.id}: Confirm that the measurement leads are physically connected to the instrument's 10 A current terminal.`)
+        }
       }
       const approved = await confirm(
         confirmation.join('\n\n'),
@@ -660,8 +666,7 @@ function App() {
       setRunResults(null)
       const results = await invoke<StepResultDto[]>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
-        confirmedPowersResource: confirmedResources.powers ?? null,
-        confirmedMetersResource: confirmedResources.meters ?? null,
+        confirmedResources,
       })
       setRunResults(results)
     } catch (message) {
@@ -737,7 +742,7 @@ function App() {
   const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
   const voltageBinding = selectedToolAction?.bindings?.voltage
   const selectedAction = selectedToolAction
-    ? `${selectedToolAction.tool}/${selectedToolAction.action}`
+    ? `${workflowDraft?.tool_instances.find(instance => instance.id === selectedToolAction.target)?.tool}/${selectedToolAction.action}`
     : null
   const selectedPowersAction =
     selectedAction === 'powers/set-voltage' ||
@@ -871,75 +876,6 @@ function App() {
                       Use Portable Default
                     </button>
                   </div>
-                  {(tool.tool_id === 'powers' || tool.tool_id === 'meters') && (
-                    <div className="live-resource">
-                      <label className="step-property-field">
-                        <span className="step-property-label">Live Resource</span>
-                        <input
-                          type="text"
-                          value={resourceDrafts[tool.tool_id] ?? ''}
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onChange={(event) => setResourceDrafts((current) => ({
-                            ...current, [tool.tool_id]: event.target.value,
-                          }))}
-                        />
-                      </label>
-                      <div className="tool-actions">
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onClick={() => void handleListResources(tool.tool_id)}
-                        >
-                          List Resources
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onClick={() => void handleResource(tool.tool_id, false)}
-                        >
-                          Save Resource
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy || tool.live_resource === null}
-                          onClick={() => void handleResource(tool.tool_id, true)}
-                        >
-                          Clear Resource
-                        </button>
-                      </div>
-                      {discoveryErrors[tool.tool_id] && (
-                        <p className="error" role="alert">
-                          {discoveryErrors[tool.tool_id]}
-                        </p>
-                      )}
-                      {discoveredResources[tool.tool_id]?.length === 0 && (
-                        <p role="status">No live resources found.</p>
-                      )}
-                      {(discoveredResources[tool.tool_id]?.length ?? 0) > 0 && (
-                        <label className="step-property-field discovered-resources">
-                          <span className="step-property-label">Discovered Resources</span>
-                          <select
-                            value=""
-                            disabled={toolConfigBusy !== null || workflowBusy}
-                            onChange={(event) => {
-                              const resource = event.target.value
-                              if (resource) {
-                                setResourceDrafts((current) => ({ ...current, [tool.tool_id]: resource }))
-                              }
-                            }}
-                          >
-                            <option value="">Select discovered resource...</option>
-                            {discoveredResources[tool.tool_id]?.map((candidate, index) => (
-                              <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                  )}
                 </li>
               ))}
             </ul>
@@ -974,9 +910,84 @@ function App() {
                 </div>
               </dl>
 
-              <InstrumentSetupEditor
-                value={workflowDraft.instrument_setup}
-                onChange={updateInstrumentSetup}
+              {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
+              <ToolSetupEditor
+                value={workflowDraft.tool_instances}
+                steps={workflowDraft.workflow.steps}
+                renderResource={instance => (
+                  <>
+                  {(instance.tool === 'powers' || instance.tool === 'meters') && (
+                    <div className="live-resource">
+                      <label className="step-property-field">
+                        <span className="step-property-label">Live Resource</span>
+                        <input
+                          type="text"
+                          value={resourceDrafts[instance.id] ?? ''}
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onChange={(event) => setResourceDrafts((current) => ({
+                            ...current, [instance.id]: event.target.value,
+                          }))}
+                        />
+                      </label>
+                      <div className="tool-actions">
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onClick={() => void handleListResources(instance.tool)}
+                        >
+                          List Resources
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onClick={() => void handleResource(instance.id, false)}
+                        >
+                          Save Resource
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={toolConfigBusy !== null || workflowBusy}
+                          onClick={() => void handleResource(instance.id, true)}
+                        >
+                          Clear Resource
+                        </button>
+                      </div>
+                      {discoveryErrors[instance.tool] && (
+                        <p className="error" role="alert">
+                          {discoveryErrors[instance.tool]}
+                        </p>
+                      )}
+                      {discoveredResources[instance.tool]?.length === 0 && (
+                        <p role="status">No live resources found.</p>
+                      )}
+                      {(discoveredResources[instance.tool]?.length ?? 0) > 0 && (
+                        <label className="step-property-field discovered-resources">
+                          <span className="step-property-label">Discovered Resources</span>
+                          <select
+                            value=""
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onChange={(event) => {
+                              const resource = event.target.value
+                              if (resource) {
+                                setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
+                              }
+                            }}
+                          >
+                            <option value="">Select discovered resource...</option>
+                            {discoveredResources[instance.tool]?.map((candidate, index) => (
+                              <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  )}
+                  </>
+                )}
+                onChange={updateToolInstances}
                 disabled={workflowBusy}
               />
 
@@ -984,16 +995,23 @@ function App() {
                 <aside className="step-palette" aria-labelledby="step-palette-title">
                   <h3 id="step-palette-title">Steps</h3>
                   <div className="step-palette-items">
-                    {STEP_PRESETS.map((preset) => (
-                      <button
-                        key={preset.value}
-                        className="action-button step-palette-button"
-                        type="button"
-                        onClick={() => addStep(preset)}
-                        disabled={workflowBusy}
-                      >
-                        {preset.label}
-                      </button>
+                    {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
+                      <section key={category}>
+                        <h4>{category}</h4>
+                        <div className="step-palette-items">
+                          {STEP_PRESETS.filter(preset => preset.category === category).map((preset) => (
+                            <button
+                              key={preset.value}
+                              className="action-button step-palette-button"
+                              type="button"
+                              onClick={() => addStep(preset)}
+                              disabled={workflowBusy}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     ))}
                   </div>
                 </aside>
@@ -1002,7 +1020,8 @@ function App() {
                   steps={workflowDraft.workflow.steps}
                   selectedStepId={selectedStepId}
                   onSelectStep={setSelectedStepId}
-                  stepLabel={stepLabel}
+                  stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                  instances={workflowDraft.tool_instances}
                   runResults={runResults}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
@@ -1024,6 +1043,16 @@ function App() {
                         <code className="workflow-step-id">{selectedStep.id}</code>
                       </div>
 
+                      {selectedToolAction && <label className="step-property-field">
+                        <span className="step-property-label">Target instance</span>
+                        <select disabled={workflowBusy} value={selectedToolAction.target} onChange={event => {
+                          const target = event.target.value
+                          updateStep(selectedToolAction.id, step => step.type === 'tool-action' ? { ...step, target } : step)
+                        }}>
+                          {workflowDraft.tool_instances.filter(instance => instance.tool === workflowDraft.tool_instances.find(item => item.id === selectedToolAction.target)?.tool)
+                            .map(instance => <option key={instance.id} value={instance.id}>{instance.id}</option>)}
+                        </select>
+                      </label>}
                       {selectedStep.type === 'set-variable' && (
                         <>
                           <label className="step-property-field">

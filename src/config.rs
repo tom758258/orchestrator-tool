@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{discovery::built_in_tool_definitions, tool::ToolId};
+use crate::{discovery::built_in_tool_definitions, tool::ToolId, tool_instance::ToolInstanceId};
 
 /// Executable path overrides and exact live resources loaded from an orchestrator configuration file.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -62,16 +62,11 @@ impl Config {
             tools.insert(tool_id, path);
         }
 
-        for tool_id in raw.live_resources.keys() {
-            if !definitions
-                .iter()
-                .any(|definition| definition.id().as_str() == tool_id)
-            {
-                return Err(ConfigError::UnknownTool {
-                    path: config_path,
-                    tool_id: tool_id.clone(),
-                });
-            }
+        for instance_id in raw.live_resources.keys() {
+            ToolInstanceId::new(instance_id).map_err(|_| ConfigError::InvalidInstanceId {
+                path: config_path.clone(),
+                instance_id: instance_id.clone(),
+            })?;
         }
         Ok(Self {
             tools,
@@ -100,24 +95,29 @@ impl Config {
         self.tools.remove(tool_id.as_str()).is_some()
     }
 
-    /// Returns the exact configured live resource for a tool, if present.
-    pub fn live_resource(&self, tool_id: &ToolId) -> Option<&str> {
+    /// Returns the exact configured live resource for an instance, if present.
+    pub fn live_resource(&self, instance_id: &ToolInstanceId) -> Option<&str> {
         self.live_resources
-            .get(tool_id.as_str())
+            .get(instance_id.as_str())
             .map(String::as_str)
     }
 
     /// Sets an opaque live resource without path resolution or normalization.
     ///
-    /// Callers must use built-in tool IDs, as with executable path overrides.
-    pub fn set_live_resource(&mut self, tool_id: &ToolId, resource: impl Into<String>) {
+    /// Instance IDs are scoped to the template chosen by the caller.
+    pub fn set_live_resource(&mut self, instance_id: &ToolInstanceId, resource: impl Into<String>) {
         self.live_resources
-            .insert(tool_id.as_str().to_owned(), resource.into());
+            .insert(instance_id.as_str().to_owned(), resource.into());
     }
 
     /// Removes a live resource, returning false when none was present.
-    pub fn remove_live_resource(&mut self, tool_id: &ToolId) -> bool {
-        self.live_resources.remove(tool_id.as_str()).is_some()
+    pub fn remove_live_resource(&mut self, instance_id: &ToolInstanceId) -> bool {
+        self.live_resources.remove(instance_id.as_str()).is_some()
+    }
+
+    /// Returns resource bindings keyed by logical instance ID.
+    pub fn live_resources(&self) -> &BTreeMap<String, String> {
+        &self.live_resources
     }
 
     /// Saves the configuration as TOML, creating parent directories as needed.
@@ -158,27 +158,45 @@ struct RawConfig {
 /// An error produced while loading an orchestrator configuration file.
 #[derive(Debug)]
 pub enum ConfigError {
+    InvalidInstanceId {
+        path: PathBuf,
+        instance_id: String,
+    },
     /// The configuration file could not be read.
-    Read { path: PathBuf, source: io::Error },
+    Read {
+        path: PathBuf,
+        source: io::Error,
+    },
     /// The configuration file contains invalid TOML or an unknown field.
     Parse {
         path: PathBuf,
         source: toml::de::Error,
     },
     /// The configuration names a tool outside the built-in registry.
-    UnknownTool { path: PathBuf, tool_id: String },
+    UnknownTool {
+        path: PathBuf,
+        tool_id: String,
+    },
     /// The configuration could not be serialized to TOML.
     Serialize {
         path: PathBuf,
         source: toml::ser::Error,
     },
     /// The configuration file could not be written.
-    Write { path: PathBuf, source: io::Error },
+    Write {
+        path: PathBuf,
+        source: io::Error,
+    },
 }
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidInstanceId { path, instance_id } => write!(
+                formatter,
+                "config error in {}: invalid instance ID {instance_id:?}",
+                path.display()
+            ),
             Self::Read { path, source } => {
                 write!(
                     formatter,
@@ -221,7 +239,7 @@ impl Error for ConfigError {
         match self {
             Self::Read { source, .. } => Some(source),
             Self::Parse { source, .. } => Some(source),
-            Self::UnknownTool { .. } => None,
+            Self::UnknownTool { .. } | Self::InvalidInstanceId { .. } => None,
             Self::Serialize { source, .. } => Some(source),
             Self::Write { source, .. } => Some(source),
         }
@@ -275,23 +293,52 @@ mod tests {
         let meters = "TCPIP0::MeterHost::inst0::INSTR";
         let mut config = Config::default();
         config.set_executable_path(&ToolId::powers(), &executable);
-        config.set_live_resource(&ToolId::powers(), powers);
-        config.set_live_resource(&ToolId::meters(), meters);
+        config.set_live_resource(
+            &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap(),
+            powers,
+        );
+        config.set_live_resource(
+            &crate::tool_instance::ToolInstanceId::new("meters-1").unwrap(),
+            meters,
+        );
         config.save(&path).unwrap();
         let mut loaded = Config::load(&path).unwrap();
-        assert_eq!(loaded.live_resource(&ToolId::powers()), Some(powers));
-        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
+            Some(powers)
+        );
+        assert_eq!(
+            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("meters-1").unwrap()),
+            Some(meters)
+        );
         assert_eq!(
             loaded.executable_path(&ToolId::powers()),
             Some(executable.as_path())
         );
-        assert!(loaded.remove_live_resource(&ToolId::powers()));
-        assert!(!loaded.remove_live_resource(&ToolId::powers()));
-        assert_eq!(loaded.live_resource(&ToolId::powers()), None);
+        assert!(
+            loaded.remove_live_resource(
+                &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()
+            )
+        );
+        assert!(
+            !loaded.remove_live_resource(
+                &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()
+            )
+        );
+        assert_eq!(
+            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
+            None
+        );
         loaded.save(&path).unwrap();
         let reloaded = Config::load(&path).unwrap();
-        assert_eq!(reloaded.live_resource(&ToolId::powers()), None);
-        assert_eq!(reloaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            reloaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
+            None
+        );
+        assert_eq!(
+            reloaded.live_resource(&crate::tool_instance::ToolInstanceId::new("meters-1").unwrap()),
+            Some(meters)
+        );
         assert_eq!(
             reloaded.executable_path(&ToolId::powers()),
             Some(executable.as_path())
@@ -299,17 +346,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_live_resource_tool_id_is_rejected() {
+    fn invalid_live_resource_instance_id_is_rejected() {
         let test_dir = TestDir::new();
         let path = test_dir.path().join("orchestrator.toml");
-        fs::write(
-            &path,
-            "[live_resources]\nelectronic-load = \"USB0::load\"\n",
-        )
-        .unwrap();
+        fs::write(&path, "[live_resources]\nbad_id = \"USB0::load\"\n").unwrap();
         assert!(matches!(
             Config::load(path),
-            Err(ConfigError::UnknownTool { .. })
+            Err(ConfigError::InvalidInstanceId { .. })
         ));
     }
 
@@ -326,7 +369,10 @@ mod tests {
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.live_resource(&ToolId::meters()), None);
+        assert_eq!(
+            config.live_resource(&crate::tool_instance::ToolInstanceId::new("meters-1").unwrap()),
+            None
+        );
 
         assert_eq!(
             config.executable_path(&ToolId::meters()),

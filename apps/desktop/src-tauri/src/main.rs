@@ -7,20 +7,17 @@ use std::{
 };
 
 use orchestrator_tool::{
-    adapters::{meters, powers},
     config::{Config, ConfigError},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
-    inspection::inspect_tool,
-    instrument_setup::InstrumentSetup,
     live_resources::LiveResourceCandidate,
-    manifest::WorkerCompatibility,
-    manifest_probe::probe_manifest,
     run::{ExecutionMode, run_simulated_workflow, run_workflow},
+    run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
     tool::ToolId,
+    tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
-    workflow::{StepId, StepKind, StepOutcome, StepResult, Workflow},
+    workflow::{StepId, StepOutcome, StepResult, Workflow},
     workflow_csv::serialize_workflow_outputs_csv,
 };
 use serde::{Deserialize, Serialize};
@@ -57,7 +54,6 @@ struct ToolStatusDto {
     tool_version: Option<String>,
     worker_schema_versions: Vec<u32>,
     reason: Option<String>,
-    live_resource: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -143,7 +139,6 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
                     tool_version,
                     worker_schema_versions,
                     reason: final_reason,
-                    live_resource: config.live_resource(status.tool_id()).map(str::to_owned),
                 }
             })
             .collect();
@@ -166,14 +161,13 @@ async fn run_workflow_simulation(
             .map_err(|error| format!("could not determine application directory: {error}"))?;
         let config = load_desktop_config(&app)?;
         let launch_specs = prepare_worker_launch_specs(
-            template.workflow(),
-            template.instrument_setup(),
+            &template,
             ExecutionMode::Simulate,
             &application_dir,
             &config,
         )?;
         let results = run_simulated_workflow(
-            template.workflow(),
+            &template,
             &launch_specs,
             RUN_STARTUP_TIMEOUT,
             RUN_ACTION_TIMEOUT,
@@ -191,38 +185,31 @@ async fn run_workflow_simulation(
 async fn run_workflow_live(
     app: AppHandle,
     template_json: String,
-    confirmed_powers_resource: Option<String>,
-    confirmed_meters_resource: Option<String>,
+    confirmed_resources: HashMap<String, String>,
 ) -> Result<Vec<StepResultDto>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;
-        validate_confirmed_live_resources(
-            template.workflow(),
-            &config,
-            confirmed_powers_resource.as_deref(),
-            confirmed_meters_resource.as_deref(),
-        )?;
-        let mut launch_specs = prepare_worker_launch_specs(
-            template.workflow(),
-            template.instrument_setup(),
-            ExecutionMode::Live,
-            &application_dir,
-            &config,
-        )?;
-        let _authorization = if let Some(spec) = launch_specs.get_mut(&ToolId::powers()) {
-            let dir = app
-                .path()
-                .app_cache_dir()
-                .map_err(|error| error.to_string())?;
-            Some(PowersWriteAuthorization::prepare(&dir, spec)?)
-        } else {
-            None
-        };
+        validate_confirmed_live_resources(&template, &config, &confirmed_resources)?;
+        let mut launch_specs =
+            prepare_worker_launch_specs(&template, ExecutionMode::Live, &application_dir, &config)?;
+        let mut authorizations = Vec::new();
+        for instance in template.referenced_tool_instances() {
+            if instance.tool == ToolId::powers() {
+                let dir = app
+                    .path()
+                    .app_cache_dir()
+                    .map_err(|error| error.to_string())?;
+                let spec = launch_specs
+                    .get_mut(&instance.id)
+                    .expect("referenced instance was prepared");
+                authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
+            }
+        }
         let results = run_workflow(
-            template.workflow(),
+            &template,
             ExecutionMode::Live,
             &launch_specs,
             RUN_STARTUP_TIMEOUT,
@@ -279,151 +266,6 @@ impl Drop for PowersWriteAuthorization {
     }
 }
 
-fn referenced_workflow_tools(workflow: &Workflow) -> Vec<ToolId> {
-    let mut tools = Vec::new();
-
-    for step in workflow.steps() {
-        let StepKind::ToolAction { tool, .. } = step.kind() else {
-            continue;
-        };
-        if matches!(tool.as_str(), "powers" | "meters") && !tools.contains(tool) {
-            tools.push(tool.clone());
-        }
-    }
-
-    tools
-}
-
-fn validate_confirmed_live_resources(
-    workflow: &Workflow,
-    config: &Config,
-    confirmed_powers_resource: Option<&str>,
-    confirmed_meters_resource: Option<&str>,
-) -> Result<(), String> {
-    for tool in referenced_workflow_tools(workflow) {
-        let (label, confirmed) = match tool.as_str() {
-            "powers" => ("Powers", confirmed_powers_resource),
-            "meters" => ("Meters", confirmed_meters_resource),
-            _ => unreachable!("referenced workflow tools are filtered"),
-        };
-        let current = config.live_resource(&tool);
-        if confirmed.is_none_or(|resource| resource.trim().is_empty())
-            || current.is_none_or(|resource| resource.trim().is_empty())
-            || confirmed != current
-        {
-            return Err(format!(
-                "{label} live resource changed after confirmation; confirm the live run again"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn prepare_worker_launch_specs(
-    workflow: &Workflow,
-    instrument_setup: &InstrumentSetup,
-    execution_mode: ExecutionMode,
-    application_dir: &Path,
-    config: &Config,
-) -> Result<HashMap<ToolId, WorkerLaunchSpec>, String> {
-    // Keep the Worker alive after the final measurement until orchestrator shutdown.
-    let meters_max_samples = workflow
-        .steps()
-        .iter()
-        .filter(|step| {
-            matches!(step.kind(), StepKind::ToolAction { tool, action, .. }
-            if tool.as_str() == "meters" && action.as_str() == "measure")
-        })
-        .count()
-        + 1;
-    let definitions = built_in_tool_definitions();
-    let mut launch_specs = HashMap::new();
-
-    let tools = referenced_workflow_tools(workflow);
-    if tools.contains(&ToolId::meters()) {
-        let setup = instrument_setup
-            .meters
-            .as_ref()
-            .ok_or("Meters setup is required when the workflow uses Meters")?;
-        setup.validate().map_err(|error| error.to_string())?;
-    }
-    if execution_mode == ExecutionMode::Live {
-        for tool in &tools {
-            if config
-                .live_resource(tool)
-                .is_none_or(|resource| resource.trim().is_empty())
-            {
-                return Err(format!("{tool} live resource is not configured"));
-            }
-        }
-    }
-
-    for tool in tools {
-        let definition = definitions
-            .iter()
-            .find(|definition| definition.id() == &tool)
-            .expect("supported workflow tool must be built in");
-        let inspection = inspect_tool(application_dir, config, definition)
-            .map_err(|error| format!("{tool} executable inspection failed: {error}"))?;
-
-        match inspection.status() {
-            ExecutableStatus::Available => {}
-            ExecutableStatus::Missing => {
-                return Err(format!(
-                    "{tool} executable is missing: {}",
-                    inspection.resolved().path().display()
-                ));
-            }
-            ExecutableStatus::NotFile => {
-                return Err(format!(
-                    "{tool} executable is not a file: {}",
-                    inspection.resolved().path().display()
-                ));
-            }
-        }
-
-        let executable = inspection.resolved().path();
-        let probe = probe_manifest(executable, &tool)
-            .map_err(|error| format!("{tool} manifest probe failed: {error}"))?;
-        if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
-            return Err(format!("{tool} Worker protocol is incompatible"));
-        }
-
-        let spec = match (execution_mode, tool.as_str()) {
-            (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
-            (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(
-                executable,
-                meters_max_samples,
-                instrument_setup
-                    .meters
-                    .as_ref()
-                    .expect("Meters setup was validated"),
-            ),
-            (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
-                executable,
-                config
-                    .live_resource(&tool)
-                    .expect("live resources were validated"),
-            ),
-            (ExecutionMode::Live, "meters") => meters::live_worker_launch_spec(
-                executable,
-                config
-                    .live_resource(&tool)
-                    .expect("live resources were validated"),
-                meters_max_samples,
-                instrument_setup
-                    .meters
-                    .as_ref()
-                    .expect("Meters setup was validated"),
-            ),
-            _ => unreachable!("referenced workflow tools are filtered"),
-        };
-        launch_specs.insert(tool, spec);
-    }
-
-    Ok(launch_specs)
-}
-
 /// Returns the persisted Desktop configuration file path.
 fn desktop_config_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -447,9 +289,7 @@ fn load_desktop_config(app: &AppHandle) -> Result<Config, String> {
 fn load_desktop_config_from_path(path: &Path) -> Result<Config, String> {
     match Config::load(path) {
         Ok(config) => Ok(config),
-        Err(ConfigError::Read { source, .. })
-            if source.kind() == std::io::ErrorKind::NotFound =>
-        {
+        Err(ConfigError::Read { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
             Ok(Config::default())
         }
         Err(error) => Err(error.to_string()),
@@ -478,17 +318,13 @@ fn set_desktop_tool_executable(
 ) -> Result<(), String> {
     let mut config = load_desktop_config_from_path(config_path)?;
     config.set_executable_path(tool_id, executable_path);
-    config
-        .save(config_path)
-        .map_err(|error| error.to_string())
+    config.save(config_path).map_err(|error| error.to_string())
 }
 
 fn reset_desktop_tool_executable(config_path: &Path, tool_id: &ToolId) -> Result<(), String> {
     let mut config = load_desktop_config_from_path(config_path)?;
     config.remove_executable_path(tool_id);
-    config
-        .save(config_path)
-        .map_err(|error| error.to_string())
+    config.save(config_path).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -509,34 +345,38 @@ fn reset_tool_executable(app: AppHandle, tool_id: String) -> Result<(), String> 
 
 fn edit_desktop_live_resource(
     config_path: &Path,
-    raw_tool_id: &str,
+    raw_instance_id: &str,
     resource: Option<&str>,
 ) -> Result<(), String> {
-    let tool_id = resolve_built_in_tool_id(raw_tool_id)?;
-    if !matches!(tool_id.as_str(), "powers" | "meters") {
-        return Err(format!("{tool_id} live resource editing is not supported"));
-    }
+    let instance_id = ToolInstanceId::new(raw_instance_id).map_err(|error| error.to_string())?;
     if resource.is_some_and(|value| value.trim().is_empty()) {
-        return Err(format!("{tool_id} live resource must not be blank"));
+        return Err(format!("{instance_id} live resource must not be blank"));
     }
     let mut config = load_desktop_config_from_path(config_path)?;
     match resource {
-        Some(value) => config.set_live_resource(&tool_id, value),
+        Some(value) => config.set_live_resource(&instance_id, value),
         None => {
-            config.remove_live_resource(&tool_id);
+            config.remove_live_resource(&instance_id);
         }
     }
     config.save(config_path).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-fn set_live_resource(app: AppHandle, tool_id: String, resource: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &tool_id, Some(&resource))
+fn get_live_resources(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    Ok(load_desktop_config(&app)?.live_resources().clone())
 }
 
 #[tauri::command]
-fn remove_live_resource(app: AppHandle, tool_id: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &tool_id, None)
+fn set_live_resource(app: AppHandle, instance_id: String, resource: String) -> Result<(), String> {
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, Some(&resource))
+}
+
+#[tauri::command]
+fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), String> {
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None)
 }
 
 fn step_result_dto(result: &StepResult) -> StepResultDto {
@@ -643,6 +483,7 @@ fn main() {
             list_live_resources,
             run_workflow_simulation,
             run_workflow_live,
+            get_live_resources,
             set_live_resource,
             remove_live_resource,
             set_tool_executable,
@@ -661,376 +502,16 @@ fn main() {
 mod tests {
     use super::{
         create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
-        referenced_workflow_tools, reset_desktop_tool_executable, resolve_built_in_tool_id,
-        save_workflow_template, set_desktop_tool_executable, step_result_dto,
-        validate_workflow_draft,
+        reset_desktop_tool_executable, resolve_built_in_tool_id, save_workflow_template,
+        set_desktop_tool_executable, step_result_dto, validate_workflow_draft,
     };
     use orchestrator_tool::{
         template::Template,
         tool::ToolId,
+        tool_instance::ToolInstanceId,
         workflow::{StepId, StepOutcome, StepResult},
     };
     use serde_json::json;
-
-    #[test]
-    fn confirmed_live_resources_require_exact_current_values() {
-        use super::{Config, validate_confirmed_live_resources};
-        use orchestrator_tool::workflow::{ActionId, Step, StepKind, Workflow};
-        let resource = " USB0::Serial With Spaces::INSTR ";
-        for tool in [ToolId::powers(), ToolId::meters()] {
-            let workflow = Workflow::new(vec![Step::new(
-                StepId::new("action-1").unwrap(),
-                StepKind::ToolAction {
-                    tool: tool.clone(),
-                    action: ActionId::new(if tool == ToolId::powers() {
-                        "output-on"
-                    } else {
-                        "measure"
-                    })
-                    .unwrap(),
-                    arguments: json!({}),
-                    bindings: Default::default(),
-                },
-            )])
-            .unwrap();
-            let mut config = Config::default();
-            config.set_live_resource(&tool, resource);
-            let (powers, meters) = if tool == ToolId::powers() {
-                (Some(resource), None)
-            } else {
-                (None, Some(resource))
-            };
-            validate_confirmed_live_resources(&workflow, &config, powers, meters).unwrap();
-            if tool == ToolId::powers() {
-                for confirmed in [None, Some(resource.trim()), Some("USB0::Other::INSTR")] {
-                    let error =
-                        validate_confirmed_live_resources(&workflow, &config, confirmed, None)
-                            .unwrap_err();
-                    assert_eq!(
-                        error,
-                        "Powers live resource changed after confirmation; confirm the live run again"
-                    );
-                }
-                config.remove_live_resource(&tool);
-                assert!(
-                    validate_confirmed_live_resources(&workflow, &config, powers, meters).is_err()
-                );
-                config.set_live_resource(&tool, " ");
-                assert!(
-                    validate_confirmed_live_resources(&workflow, &config, Some(" "), None).is_err()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn meters_workflow_launch_uses_setup_and_reserves_capacity_after_three_measurements() {
-        use super::{Config, ExecutionMode, prepare_worker_launch_specs};
-        use std::{ffi::OsString, fs};
-        let dir = unique_test_dir("orchestrator-meters-launch-test");
-        let manifest = json!({
-            "event": "tool_manifest", "schema_version": 2, "tool_id": "meters",
-            "tool_version": "test", "worker_protocol": {
-                "compatibility_policy": "exact", "schema_versions": [2]
-            }
-        });
-        #[cfg(windows)]
-        let executable = {
-            let path = dir.join("meters-tool.cmd");
-            fs::write(&path, format!("@echo off\r\necho {manifest}\r\n")).unwrap();
-            path
-        };
-        #[cfg(unix)]
-        let executable = {
-            use std::os::unix::fs::PermissionsExt;
-            let path = dir.join("meters-tool");
-            fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' '{manifest}'\n")).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-            path
-        };
-        let template = Template::from_json_str(&json!({
-            "schema_version": 1, "instrument_setup": {"meters": {
-                "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
-                "nplc": 1.0, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
-                "current_terminal": null
-            }}, "name": "Three measurements", "workflow": { "steps": [
-                {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}},
-                {"type": "wait", "id": "wait-1", "duration_ms": 0},
-                {"type": "tool-action", "id": "read-2", "tool": "meters", "action": "measure", "arguments": {}},
-                {"type": "tool-action", "id": "other-1", "tool": "meters", "action": "unsupported", "arguments": {}},
-                {"type": "tool-action", "id": "read-3", "tool": "meters", "action": "measure", "arguments": {}}
-            ]}
-        }).to_string()).unwrap();
-        let resource = " USB0::Meter Serial::INSTR ";
-        let mut config = Config::default();
-        config.set_executable_path(&ToolId::meters(), &executable);
-        config.set_live_resource(&ToolId::meters(), resource);
-        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-            let mut setup = template.instrument_setup().clone();
-            if mode == ExecutionMode::Live {
-                let meters = setup.meters.as_mut().unwrap();
-                meters.measurement =
-                    orchestrator_tool::instrument_setup::MetersMeasurement::CurrentDc;
-                meters.dcv_input_impedance = None;
-                meters.current_terminal = Some(3);
-            }
-            let template = Template::new(
-                template.name().to_owned(),
-                setup,
-                template.workflow().clone(),
-            )
-            .unwrap();
-            let specs = prepare_worker_launch_specs(
-                template.workflow(),
-                template.instrument_setup(),
-                mode,
-                &dir,
-                &config,
-            )
-            .unwrap();
-            assert_eq!(specs.len(), 1);
-            let args = specs[&ToolId::meters()].arguments();
-            let setup_args = super::meters::setup_arguments(
-                template.instrument_setup().meters.as_ref().unwrap(),
-            );
-            assert!(args.ends_with(&setup_args));
-            assert_eq!(args.iter().filter(|arg| *arg == "--measurement").count(), 1);
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair == ["--trigger-mode", "software"])
-            );
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair == [OsString::from("--max-samples"), OsString::from("4")])
-            );
-            let expected_resource = if mode == ExecutionMode::Live {
-                resource
-            } else {
-                "SIM::34461A"
-            };
-            assert!(args.windows(2).any(|pair| pair
-                == [
-                    OsString::from("--resource"),
-                    OsString::from(expected_resource)
-                ]));
-            assert_eq!(
-                args.contains(&OsString::from("--simulate")),
-                mode == ExecutionMode::Simulate
-            );
-        }
-        fs::remove_dir_all(dir).unwrap();
-    }
-
-    // Set ORCHESTRATOR_TEST_METERS_EXECUTABLE to a real meters-tool executable, then run:
-    // cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml vertical_slice -- --ignored
-    #[test]
-    #[ignore = "requires external meters-tool; runs simulation without hardware"]
-    fn dcv_simulation_vertical_slice() {
-        meters_simulation_vertical_slice(
-            json!({
-                "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
-                "nplc": 0.2, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
-                "current_terminal": null
-            }),
-            &[
-                ["--measurement", "voltage-dc"],
-                ["--range", "10"],
-                ["--dcv-input-impedance", "10m"],
-            ],
-            "V",
-        );
-    }
-
-    #[test]
-    #[ignore = "requires external meters-tool; runs simulation without hardware"]
-    fn dci_simulation_vertical_slice() {
-        meters_simulation_vertical_slice(
-            json!({
-                "measurement": "current-dc", "range_mode": "manual", "manual_range": 0.1,
-                "nplc": 0.2, "auto_zero": "once", "dcv_input_impedance": null,
-                "current_terminal": 3
-            }),
-            &[
-                ["--measurement", "current-dc"],
-                ["--range", "0.1"],
-                ["--current-terminal", "3"],
-            ],
-            "A",
-        );
-    }
-
-    fn meters_simulation_vertical_slice(
-        setup: serde_json::Value,
-        expected_arguments: &[[&str; 2]],
-        expected_unit: &str,
-    ) {
-        let executable = std::env::var_os("ORCHESTRATOR_TEST_METERS_EXECUTABLE")
-            .expect("set ORCHESTRATOR_TEST_METERS_EXECUTABLE to a real meters-tool executable");
-        let executable = std::fs::canonicalize(executable).unwrap();
-        let template = Template::from_json_str(
-            &json!({
-                "schema_version": 1, "name": "Meters simulation vertical slice",
-                "instrument_setup": {"meters": setup},
-                "workflow": {"steps": [
-                    {"type": "tool-action", "id": "measure", "tool": "meters",
-                     "action": "measure", "arguments": {}}
-                ]}
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let mut config = super::Config::default();
-        config.set_executable_path(&ToolId::meters(), &executable);
-        let specs = super::prepare_worker_launch_specs(
-            template.workflow(),
-            template.instrument_setup(),
-            super::ExecutionMode::Simulate,
-            executable.parent().unwrap(),
-            &config,
-        )
-        .unwrap();
-        let args = specs[&ToolId::meters()].arguments();
-        assert!(args.iter().any(|arg| arg == "--simulate"));
-        for expected in expected_arguments.iter().chain(
-            [
-                ["--auto-range", "off"],
-                ["--nplc", "0.2"],
-                ["--auto-zero", "once"],
-                ["--trigger-mode", "software"],
-            ]
-            .iter(),
-        ) {
-            assert!(
-                args.windows(2).any(|pair| pair == *expected),
-                "missing {expected:?}: {args:?}"
-            );
-        }
-        let results = super::run_simulated_workflow(
-            template.workflow(),
-            &specs,
-            super::RUN_STARTUP_TIMEOUT,
-            super::RUN_ACTION_TIMEOUT,
-            super::RUN_SHUTDOWN_TIMEOUT,
-        )
-        .unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].step_id().as_str(), "measure");
-        let super::StepOutcome::Succeeded { output } = results[0].outcome() else {
-            panic!("Meter Measure failed: {:?}", results[0]);
-        };
-        assert_eq!(output["event"], "sample");
-        assert_eq!(output["unit"], expected_unit);
-        assert!(output["value"].as_f64().is_some());
-    }
-
-    #[test]
-    fn meters_preparation_requires_setup_before_executable_probing() {
-        let template_json = json!({
-            "schema_version": 1, "name": "Missing setup", "instrument_setup": {"meters": null},
-            "workflow": {"steps": [
-                {"type": "tool-action", "id": "read-1", "tool": "meters", "action": "measure", "arguments": {}}
-            ]}
-        }).to_string();
-        assert_eq!(
-            super::validate_workflow_draft(template_json).unwrap_err(),
-            "Meters setup is required when the workflow uses Meters"
-        );
-        let workflow = super::Workflow::new(vec![orchestrator_tool::workflow::Step::new(
-            StepId::new("read-1").unwrap(),
-            super::StepKind::ToolAction {
-                tool: ToolId::meters(),
-                action: orchestrator_tool::workflow::ActionId::new("measure").unwrap(),
-                arguments: json!({}),
-                bindings: Default::default(),
-            },
-        )])
-        .unwrap();
-        for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
-            let error = super::prepare_worker_launch_specs(
-                &workflow,
-                &super::InstrumentSetup::default(),
-                mode,
-                std::path::Path::new("unused"),
-                &super::Config::default(),
-            )
-            .unwrap_err();
-            assert_eq!(
-                error,
-                "Meters setup is required when the workflow uses Meters"
-            );
-        }
-    }
-
-    #[test]
-    fn preparation_without_meters_does_not_require_setup() {
-        let template = Template::from_json_str(
-            &json!({
-                "schema_version": 1, "name": "Wait only", "instrument_setup": {"meters": null},
-                "workflow": {"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
-            })
-            .to_string(),
-        )
-        .unwrap();
-        assert!(super::validate_workflow_draft(template.to_json_string().unwrap()).is_ok());
-        for mode in [super::ExecutionMode::Simulate, super::ExecutionMode::Live] {
-            let specs = super::prepare_worker_launch_specs(
-                template.workflow(),
-                template.instrument_setup(),
-                mode,
-                std::path::Path::new("unused"),
-                &super::Config::default(),
-            )
-            .unwrap();
-            assert!(specs.is_empty());
-        }
-    }
-
-    #[test]
-    fn live_preparation_requires_resources_before_executable_probing() {
-        use super::{Config, ExecutionMode, prepare_worker_launch_specs};
-        use orchestrator_tool::workflow::{ActionId, Step, StepKind, Workflow};
-        for tool in [ToolId::powers(), ToolId::meters()] {
-            let workflow = Workflow::new(vec![Step::new(
-                StepId::new("action-1").unwrap(),
-                StepKind::ToolAction {
-                    tool: tool.clone(),
-                    action: ActionId::new("measure").unwrap(),
-                    arguments: json!({}),
-                    bindings: Default::default(),
-                },
-            )])
-            .unwrap();
-            for resource in [None, Some(""), Some(" \t\r\n")] {
-                let mut config = Config::default();
-                if let Some(value) = resource {
-                    config.set_live_resource(&tool, value);
-                }
-                let error = prepare_worker_launch_specs(
-                    &workflow,
-                    &super::InstrumentSetup {
-                        meters: if tool == ToolId::meters() {
-                            Some(serde_json::from_value(json!({
-                                "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
-                                "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
-                                "current_terminal": null
-                            })).unwrap())
-                        } else {
-                            None
-                        },
-                    },
-                    ExecutionMode::Live,
-                    std::path::Path::new("unused"),
-                    &config,
-                )
-                .unwrap_err();
-                assert!(error.contains(tool.as_str()), "{error}");
-                assert!(
-                    error.contains("live resource") && error.contains("not configured"),
-                    "{error}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {
@@ -1038,22 +519,34 @@ mod tests {
         let path = dir.join("orchestrator.toml");
         let powers = " USB0::Power Serial::INSTR ";
         let meters = " TCPIP0::MeterHost::inst0::INSTR ";
-        super::edit_desktop_live_resource(&path, "powers", Some(powers)).unwrap();
-        super::edit_desktop_live_resource(&path, "meters", Some(meters)).unwrap();
+        super::edit_desktop_live_resource(&path, "powers-1", Some(powers)).unwrap();
+        super::edit_desktop_live_resource(&path, "meters-1", Some(meters)).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
-        assert_eq!(loaded.live_resource(&ToolId::powers()), Some(powers));
-        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
+            Some(powers)
+        );
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
+            Some(meters)
+        );
         for resource in ["", " ", "\t\r\n"] {
-            assert!(super::edit_desktop_live_resource(&path, "powers", Some(resource)).is_err());
+            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource)).is_err());
         }
-        for tool in ["scopes", "wavegen", "unknown"] {
+        for tool in ["", "bad_id", "Uppercase"] {
             assert!(super::edit_desktop_live_resource(&path, tool, Some(powers)).is_err());
             assert!(super::edit_desktop_live_resource(&path, tool, None).is_err());
         }
-        super::edit_desktop_live_resource(&path, "powers", None).unwrap();
+        super::edit_desktop_live_resource(&path, "powers-1", None).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
-        assert_eq!(loaded.live_resource(&ToolId::powers()), None);
-        assert_eq!(loaded.live_resource(&ToolId::meters()), Some(meters));
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
+            None
+        );
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
+            Some(meters)
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1062,7 +555,10 @@ mod tests {
         use std::ffi::OsString;
         let dir = unique_test_dir("orchestrator-powers-authorization-test");
         let resource = " USB0::Power Serial::INSTR ";
-        let mut spec = super::powers::live_worker_launch_spec("powers-tool.exe", resource);
+        let mut spec = orchestrator_tool::adapters::powers::live_worker_launch_spec(
+            "powers-tool.exe",
+            resource,
+        );
         let authorization = super::PowersWriteAuthorization::prepare(&dir, &mut spec).unwrap();
         let path = authorization.0.clone();
         let value: serde_json::Value =
@@ -1105,7 +601,7 @@ mod tests {
     fn validate_workflow_draft_rejects_invalid_step_id() {
         let invalid = r#"{
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "Invalid",
             "workflow": {
                 "steps": [
@@ -1146,11 +642,11 @@ mod tests {
 
         let template_json = r#"{
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [{"id": "powers-1", "tool": "powers", "setup": {}}],
             "name": "Round Trip",
             "workflow": {
                 "steps": [
-                    { "type": "tool-action", "id": "power-set-1", "tool": "powers", "action": "set-voltage", "arguments": { "channel": 1, "voltage": 5.0 } },
+                    { "type": "tool-action", "id": "power-set-1", "target": "powers-1", "action": "set-voltage", "arguments": { "channel": 1, "voltage": 5.0 } },
                     { "type": "wait", "id": "wait-1", "duration_ms": 500 }
                 ]
             }
@@ -1177,7 +673,7 @@ mod tests {
     fn export_workflow_csv_writes_completed_results() {
         let template_json = json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "CSV export",
             "workflow": { "steps": [
                 { "type": "output", "id": "voltage", "name": "voltage",
@@ -1209,7 +705,7 @@ mod tests {
     fn export_workflow_csv_without_outputs_does_not_create_file() {
         let template_json = json!({
             "schema_version": 1,
-            "instrument_setup": {"meters": null},
+            "tool_instances": [],
             "name": "No outputs",
             "workflow": { "steps": [
                 { "type": "wait", "id": "wait-1", "duration_ms": 0 }
@@ -1266,22 +762,22 @@ mod tests {
     }
 
     #[test]
-    fn referenced_workflow_tools_only_selects_used_supported_tools() {
+    fn referenced_tool_instances_only_selects_used_instances() {
         let template = Template::from_json_str(
             r#"{
                 "schema_version": 1,
-                "instrument_setup": {"meters": {
+                "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
                     "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
                     "current_terminal": null
-                }},
-                "name": "Meters Only",
+                }}, {"id": "powers-1", "tool": "powers", "setup": {}}, {"id": "scopes-1", "tool": "scopes", "setup": {}}],
+                "name": "Referenced instances",
                 "workflow": {
                     "steps": [
                         { "type": "wait", "id": "wait-1", "duration_ms": 1 },
-                        { "type": "tool-action", "id": "meter-read-1", "tool": "meters", "action": "measure", "arguments": {} },
-                        { "type": "tool-action", "id": "scope-read-1", "tool": "scopes", "action": "capture", "arguments": {} },
-                        { "type": "tool-action", "id": "meter-read-2", "tool": "meters", "action": "measure", "arguments": {} }
+                        { "type": "tool-action", "id": "meter-read-1", "target": "meters-1", "action": "measure", "arguments": {} },
+                        { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": {} },
+                        { "type": "tool-action", "id": "meter-read-2", "target": "meters-1", "action": "measure", "arguments": {} }
                     ]
                 }
             }"#,
@@ -1289,8 +785,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            referenced_workflow_tools(template.workflow()),
-            vec![ToolId::meters()]
+            template
+                .referenced_tool_instances()
+                .iter()
+                .map(|instance| instance.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["meters-1", "scopes-1"]
         );
     }
 
@@ -1308,8 +808,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis();
-        let dir =
-            std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

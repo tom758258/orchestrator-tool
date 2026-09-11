@@ -6,7 +6,7 @@ use std::{
 
 use serde_json::Value;
 
-use crate::tool::ToolId;
+use crate::tool_instance::ToolInstanceId;
 
 /// A validated, stable identifier for a workflow step.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -256,7 +256,7 @@ pub enum StepKind {
         duration_ms: u64,
     },
     ToolAction {
-        tool: ToolId,
+        target: ToolInstanceId,
         action: ActionId,
         arguments: Value,
         /// Top-level inputs resolved at runtime, overriding literal arguments.
@@ -491,7 +491,7 @@ mod tests {
         StepKind, StepOutcome, StepOutputReference, StepResult, VariableId, Workflow,
         WorkflowError,
     };
-    use crate::tool::ToolId;
+    use crate::tool_instance::ToolInstanceId;
 
     #[test]
     fn workflow_preserves_linear_step_order() {
@@ -503,7 +503,7 @@ mod tests {
             Step::new(
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(
             workflow.steps()[1].kind(),
             &StepKind::ToolAction {
-                tool: ToolId::powers(),
+                target: ToolInstanceId::new("powers-1").unwrap(),
                 action: ActionId::new("set-voltage").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
@@ -546,7 +546,7 @@ mod tests {
                     value: value.clone(),
                 },
                 StepKind::ToolAction {
-                    tool: ToolId::powers(),
+                    target: ToolInstanceId::new("powers-1").unwrap(),
                     action: ActionId::new("set-voltage").unwrap(),
                     arguments: json!({}),
                     bindings: [("voltage".to_owned(), value.clone())].into(),
@@ -742,14 +742,14 @@ mod tests {
         let failed = StepResult::new(
             StepId::new("meter-read-1").unwrap(),
             StepOutcome::Failed {
-                message: "instrument timeout".to_owned(),
+                message: "tool timeout".to_owned(),
             },
         );
         assert_eq!(failed.step_id().as_str(), "meter-read-1");
         assert_eq!(
             failed.outcome(),
             &StepOutcome::Failed {
-                message: "instrument timeout".to_owned()
+                message: "tool timeout".to_owned()
             }
         );
 
