@@ -46,6 +46,24 @@ function formatResourceCandidate(candidate: LiveResourceCandidate): string {
   return detail ? `${detail} — ${candidate.resource}` : candidate.resource
 }
 
+function formatLiveResourceConfirmation(
+  instance: ToolInstance,
+  resource: string,
+  identity: ResourceIdentity | null | undefined,
+): string {
+  const lines = [`${instance.id} (${instance.tool})`]
+  const name = deviceName(identity)
+  const serial = identity?.serial?.trim()
+  if (name) {
+    lines.push(name)
+  }
+  if (serial) {
+    lines.push(`S/N: ${serial}`)
+  }
+  lines.push(resource)
+  return lines.join('\n')
+}
+
 type WaitStep = {
   type: 'wait'
   id: string
@@ -350,6 +368,7 @@ function App() {
       setValidationError(null)
       setRunResults(null)
       setRunError(null)
+      setTemplateIoMessage(null)
     },
     [],
   )
@@ -653,16 +672,22 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      const bindings = await invoke<Record<string, string>>('get_live_resources')
+      const [bindings, persistedIdentities] = await Promise.all([
+        invoke<Record<string, string>>('get_live_resources'),
+        invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
+      ])
       const referenced = workflowDraft.tool_instances.filter(instance =>
         workflowDraft.workflow.steps.some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
       const resources = referenced.map(instance => {
         if (instance.tool !== 'powers' && instance.tool !== 'meters') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
+        if (resourceDrafts[instance.id] !== bindings[instance.id]) {
+          throw new Error(`${instance.id} has unsaved Live Resource changes. Save Resource before running Live.`)
+        }
         const resource = bindings[instance.id]
         if (!resource?.trim()) throw new Error(`${instance.id} (${instance.tool}) live resource is not configured.`)
         confirmedResources[instance.id] = resource
-        return `${instance.id} (${instance.tool}):\n${resource}`
+        return formatLiveResourceConfirmation(instance, resource, persistedIdentities[instance.id])
       })
       const confirmation = [...resources, 'This workflow will run external tools in Live mode and may change power outputs.']
       for (const instance of referenced) {
@@ -688,7 +713,7 @@ function App() {
     } finally {
       setRunStatus('idle')
     }
-  }, [workflowDraft])
+  }, [resourceDrafts, workflowDraft])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {

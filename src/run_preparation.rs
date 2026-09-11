@@ -20,6 +20,7 @@ pub fn validate_confirmed_live_resources(
     config: &Config,
     confirmed_resources: &HashMap<String, String>,
 ) -> Result<(), String> {
+    let mut assigned_resources = HashMap::new();
     for instance in template.referenced_tool_instances() {
         if !matches!(instance.tool.as_str(), "powers" | "meters") {
             return Err(format!(
@@ -40,6 +41,15 @@ pub fn validate_confirmed_live_resources(
                 instance.id, instance.tool
             ));
         }
+        let resource = current.expect("current live resource was validated");
+        let resource_key = resource.trim().to_owned();
+        if let Some(previous_instance) = assigned_resources.get(&resource_key) {
+            return Err(format!(
+                "live resource {resource_key:?} is assigned to both {previous_instance} and {}",
+                instance.id
+            ));
+        }
+        assigned_resources.insert(resource_key, instance.id.as_str().to_owned());
     }
     Ok(())
 }
@@ -184,6 +194,23 @@ mod tests {
             changed.remove_live_resource(&instance.id);
             assert!(validate_confirmed_live_resources(&template, &changed, &confirmed).is_err());
         }
+
+        let mut duplicate_config = Config::default();
+        let mut duplicate_confirmed = std::collections::HashMap::new();
+        for instance in template.referenced_tool_instances() {
+            let resource = match instance.id.as_str() {
+                "meters-1" | "meters-2" => "USB0::SAME::INSTR".to_owned(),
+                _ => format!("USB0::{}::INSTR", instance.id),
+            };
+            duplicate_config.set_live_resource(&instance.id, resource.clone());
+            duplicate_confirmed.insert(instance.id.as_str().to_owned(), resource);
+        }
+        let error =
+            validate_confirmed_live_resources(&template, &duplicate_config, &duplicate_confirmed)
+                .unwrap_err();
+        assert!(error.contains("USB0::SAME::INSTR"), "{error}");
+        assert!(error.contains("meters-1"), "{error}");
+        assert!(error.contains("meters-2"), "{error}");
     }
 
     #[test]
