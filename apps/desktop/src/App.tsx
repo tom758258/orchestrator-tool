@@ -681,7 +681,9 @@ function App() {
       const confirmedResources: Record<string, string> = {}
       const resources = referenced.map(instance => {
         if (instance.tool !== 'powers' && instance.tool !== 'meters') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
-        if (resourceDrafts[instance.id] !== bindings[instance.id]) {
+        const draftResource = resourceDrafts[instance.id]
+        const persistedResource = bindings[instance.id]
+        if ((draftResource?.trim() || persistedResource?.trim()) && draftResource !== persistedResource) {
           throw new Error(`${instance.id} has unsaved Live Resource changes. Save Resource before running Live.`)
         }
         const resource = bindings[instance.id]
@@ -789,7 +791,7 @@ function App() {
     selectedAction === 'powers/output-off'
 
   return (
-    <main className={`app${activeTab === 'workflow' ? ' app-workflow' : ''}`}>
+    <main className="app">
       <header className="app-header">
         <h1>orchestrator-tool</h1>
       </header>

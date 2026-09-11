@@ -68,7 +68,8 @@ pub fn run_workflow(
                 let _ = shutdown_workers(sessions, shutdown_timeout);
                 let startup = WorkflowRunError::WorkerStartup { instance, source };
                 return Err(match cleanup {
-                    Some(source) => WorkflowRunError::SafetyCleanup {
+                    Some((instance, source)) => WorkflowRunError::SafetyCleanup {
+                        instance,
                         prior_failure: Some(startup.to_string()),
                         source,
                     },
@@ -87,7 +88,7 @@ pub fn run_workflow(
 
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
     let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
-    if let Some(source) = cleanup {
+    if let Some((instance, source)) = cleanup {
         let prior_failure = match &execution {
             Err(error) => Some(error.to_string()),
             Ok(results) => results.iter().find_map(|result| match result.outcome() {
@@ -99,6 +100,7 @@ pub fn run_workflow(
         }
         .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
         return Err(WorkflowRunError::SafetyCleanup {
+            instance,
             prior_failure,
             source,
         });
@@ -133,7 +135,7 @@ fn cleanup_powers(
     sessions: &[(ToolInstanceId, WorkerSession)],
     execution_mode: ExecutionMode,
     timeout: Duration,
-) -> Option<PowersActionError> {
+) -> Option<(ToolInstanceId, PowersActionError)> {
     if execution_mode != ExecutionMode::Live {
         return None;
     }
@@ -143,11 +145,10 @@ fn cleanup_powers(
             .tool_instances()
             .iter()
             .any(|instance| &instance.id == id && instance.tool == ToolId::powers())
+            && let Err(error) = safe_off_all(session, timeout)
+            && first_error.is_none()
         {
-            let error = safe_off_all(session, timeout).err();
-            if first_error.is_none() {
-                first_error = error;
-            }
+            first_error = Some((id.clone(), error));
         }
     }
     first_error
@@ -177,6 +178,7 @@ fn shutdown_workers(
 #[derive(Debug)]
 pub enum WorkflowRunError {
     SafetyCleanup {
+        instance: ToolInstanceId,
         prior_failure: Option<String>,
         source: PowersActionError,
     },
@@ -202,13 +204,17 @@ impl fmt::Display for WorkflowRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SafetyCleanup {
+                instance,
                 prior_failure,
                 source,
             } => {
                 if let Some(prior) = prior_failure {
                     write!(formatter, "{prior}; ")?;
                 }
-                write!(formatter, "Power safety cleanup failed: {source}")
+                write!(
+                    formatter,
+                    "{instance} Power safety cleanup failed: {source}"
+                )
             }
             Self::MissingLaunchSpec { instance } => {
                 write!(

@@ -20,8 +20,8 @@ pub fn validate_confirmed_live_resources(
     config: &Config,
     confirmed_resources: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let mut assigned_resources = HashMap::new();
-    for instance in template.referenced_tool_instances() {
+    let instances = template.referenced_tool_instances();
+    for instance in &instances {
         if !matches!(instance.tool.as_str(), "powers" | "meters") {
             return Err(format!(
                 "unsupported tool {} for instance {}",
@@ -41,15 +41,30 @@ pub fn validate_confirmed_live_resources(
                 instance.id, instance.tool
             ));
         }
-        let resource = current.expect("current live resource was validated");
-        let resource_key = resource.trim().to_owned();
-        if let Some(previous_instance) = assigned_resources.get(&resource_key) {
+    }
+    validate_unique_live_resources(&instances, config)
+}
+
+fn validate_unique_live_resources(
+    instances: &[&crate::tool_instance::ToolInstance],
+    config: &Config,
+) -> Result<(), String> {
+    let mut assigned_resources = HashMap::new();
+    for instance in instances {
+        let Some(resource) = config.live_resource(&instance.id) else {
+            continue;
+        };
+        let resource_key = resource.trim();
+        if resource_key.is_empty() {
+            continue;
+        }
+        if let Some(previous_instance) = assigned_resources.get(resource_key) {
             return Err(format!(
                 "live resource {resource_key:?} is assigned to both {previous_instance} and {}",
                 instance.id
             ));
         }
-        assigned_resources.insert(resource_key, instance.id.as_str().to_owned());
+        assigned_resources.insert(resource_key.to_owned(), instance.id.as_str().to_owned());
     }
     Ok(())
 }
@@ -83,6 +98,7 @@ pub fn prepare_worker_launch_specs(
                 ));
             }
         }
+        validate_unique_live_resources(&instances, config)?;
     }
 
     for instance in instances {
@@ -484,6 +500,33 @@ mod tests {
                 "{error}"
             );
         }
+    }
+
+    #[test]
+    fn live_preparation_rejects_duplicate_resources_before_executable_probing() {
+        let template = instance_template();
+        let mut config = Config::default();
+        for instance in template.referenced_tool_instances() {
+            let resource = match instance.id.as_str() {
+                "meters-1" | "meters-2" => " USB0::Same::INSTR ",
+                "powers-1" => "USB0::Power::INSTR",
+                _ => unreachable!(),
+            };
+            config.set_live_resource(&instance.id, resource);
+        }
+
+        let error = prepare_worker_launch_specs(
+            &template,
+            ExecutionMode::Live,
+            std::path::Path::new("unused"),
+            &config,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("USB0::Same::INSTR"), "{error}");
+        assert!(error.contains("meters-1"), "{error}");
+        assert!(error.contains("meters-2"), "{error}");
+        assert!(!error.contains("executable inspection"), "{error}");
     }
 
     fn instance_template() -> Template {

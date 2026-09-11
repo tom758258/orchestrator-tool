@@ -1591,10 +1591,17 @@ fn multiple_powers_cleanup_attempts_every_session() {
     unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
     let events = fs::read_to_string(&marker).unwrap();
     fs::remove_file(marker).unwrap();
+    let error = result.unwrap_err();
     assert!(matches!(
-        result,
-        Err(WorkflowRunError::SafetyCleanup { .. })
+        &error,
+        WorkflowRunError::SafetyCleanup { instance, .. }
+            if instance == &ToolInstanceId::new("powers-1").unwrap()
     ));
+    let message = error.to_string();
+    assert!(
+        message.contains("powers-1 Power safety cleanup failed"),
+        "{message}"
+    );
     assert_eq!(
         events.lines().filter(|event| *event == "safe-off").count(),
         2,

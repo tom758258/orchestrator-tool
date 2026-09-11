@@ -42,7 +42,12 @@ impl Template {
             }
             match (&instance.setup, instance.tool == ToolId::meters()) {
                 (ToolSetup::Meters(setup), true) => {
-                    setup.validate().map_err(TemplateError::MetersSetup)?
+                    setup
+                        .validate()
+                        .map_err(|source| TemplateError::MetersSetup {
+                            instance: instance.id.clone(),
+                            source,
+                        })?
                 }
                 (ToolSetup::Empty(_), false) => {}
                 _ => {
@@ -165,7 +170,10 @@ impl Template {
 #[derive(Debug)]
 pub enum TemplateError {
     Instance(String),
-    MetersSetup(MetersSetupError),
+    MetersSetup {
+        instance: ToolInstanceId,
+        source: MetersSetupError,
+    },
     InvalidVariableId {
         value: String,
         source: InvalidVariableId,
@@ -222,7 +230,9 @@ impl fmt::Display for TemplateError {
             Self::InvalidToolId { value, source } => {
                 write!(formatter, "invalid tool ID {value:?}: {source}")
             }
-            Self::MetersSetup(source) => write!(formatter, "template Meters setup error: {source}"),
+            Self::MetersSetup { instance, source } => {
+                write!(formatter, "{instance} Meters setup error: {source}")
+            }
             Self::Workflow(source) => write!(formatter, "template workflow error: {source}"),
         }
     }
@@ -238,7 +248,7 @@ impl Error for TemplateError {
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
-            Self::MetersSetup(source) => Some(source),
+            Self::MetersSetup { source, .. } => Some(source),
             Self::Workflow(source) => Some(source),
         }
     }
@@ -727,7 +737,8 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             error,
-            TemplateError::MetersSetup(MetersSetupError::MissingManualRange)
+            TemplateError::MetersSetup { instance, source: MetersSetupError::MissingManualRange }
+                if instance == ToolInstanceId::new("meters-1").unwrap()
         ));
 
         let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
@@ -735,8 +746,39 @@ mod tests {
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(matches!(
             error,
-            TemplateError::MetersSetup(MetersSetupError::MissingManualRange)
+            TemplateError::MetersSetup { instance, source: MetersSetupError::MissingManualRange }
+                if instance == ToolInstanceId::new("meters-1").unwrap()
         ));
+    }
+
+    #[test]
+    fn invalid_meters_setup_identifies_the_instance() {
+        let original = sample_template();
+        let mut instances = original.tool_instances().to_vec();
+        let mut invalid = instances[0].clone();
+        invalid.id = ToolInstanceId::new("meters-2").unwrap();
+        let ToolSetup::Meters(setup) = &mut invalid.setup else {
+            unreachable!()
+        };
+        setup.manual_range = None;
+
+        instances.push(invalid);
+        let error = Template::new(
+            "Two meters".to_owned(),
+            instances,
+            Workflow::new(Vec::new()).unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            &error,
+            TemplateError::MetersSetup {
+                instance,
+                source: MetersSetupError::MissingManualRange,
+            } if instance.as_str() == "meters-2"
+        ));
+        assert!(error.to_string().contains("meters-2"));
+        assert!(std::error::Error::source(&error).is_some());
     }
 
     #[test]
