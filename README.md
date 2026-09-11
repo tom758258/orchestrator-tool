@@ -8,7 +8,7 @@
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
 - Desktop application: Tauri 2 frontend with built-in external-tool status, a session-only ordered sequence editor with a click-to-add step palette, step reordering, execution result status, parameter editing, template load/save, simulation and live workflow runs, and full step-result display.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, safety cleanup, or canvas positions. The CLI does not provide a workflow run command.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
 
 ## Instrument Setup and workflow templates
 
@@ -28,7 +28,7 @@ Run preparation validates setup and maps it through the Core Meters adapter to `
 
 The top-level `instrument_setup` field is required. Workflows using Meters require a Meters setup; workflows without Meters can use `"instrument_setup": {"meters": null}`. Templates predating this field are not migrated or accepted through a compatibility layer; there is no schema v2.
 
-ExecutionMode, Live VISA Resource, runtime results, output authorization, and safety cleanup state remain outside the Template. Live resources belong to Desktop configuration, and the execution mode is selected for each run. For DCI with Current Terminal set to 10, the Live confirmation also asks the operator to confirm physical connection to the 10 A terminal. Simulation coverage does not establish real-hardware validation.
+ExecutionMode, Live VISA Resource, runtime results, output authorization, and safety cleanup state remain outside the Template. Live resources belong to Desktop configuration, and the execution mode is selected for each run. For DCI with Current Terminal set to 10, the Live confirmation also asks the operator to confirm physical connection to the 10 A terminal. Instrument Setup coverage is primarily simulation-based; specific hardware models and setup combinations remain subject to validation by the corresponding external instrument tool.
 
 ## Template expressions
 
@@ -71,7 +71,7 @@ Run Live requires operator confirmation showing the referenced resources and war
 
 Every live run with a started Powers Worker attempts bounded `safe-off` for all channels before Worker shutdown, including after workflow failure or a later Worker startup failure. An explicit Output OFF step does not replace this safety cleanup. Cleanup failure makes the run fail and preserves any original workflow failure in the error; Worker shutdown is still attempted. Simulation does not perform this additional live cleanup.
 
-Physical hardware support remains subject to each external instrument tool's manifest and product support policy. Real-hardware end-to-end testing has not been performed for this implementation. Scopes and Wavegen live workflows are not supported.
+Physical hardware support remains subject to each external instrument tool's manifest and product support policy. Live Powers and Meters workflows have received limited real-hardware end-to-end validation, including power safety cleanup behavior. Instrument Setup coverage remains primarily simulation-based, and this does not imply full validation of all hardware models or setup combinations. Scopes and Wavegen live workflows are not supported.
 
 ## External process management
 

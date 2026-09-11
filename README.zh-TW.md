@@ -8,7 +8,7 @@
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
 - Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的有序 Sequence editor、點擊新增的 Step Palette、步驟順序調整、執行結果狀態、參數編輯、Template 載入／儲存、Simulation 與 Live Workflow 執行及完整 StepResult 顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 StepResult。Template schema version 1 與線性 Workflow 不保存 execution mode、resource、output authorization、safety cleanup 或 Canvas 位置。CLI 不提供 workflow run command。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 StepResult。Template schema version 1 與線性 Workflow 不保存 execution mode、resource、output authorization 或 safety cleanup state。CLI 不提供 workflow run command。
 
 ## Instrument Setup 與 Workflow Template
 
@@ -28,7 +28,7 @@ Run preparation 會驗證 setup，透過 Core Meters adapter 將其轉成 `meter
 
 頂層 `instrument_setup` 欄位為必填。使用 Meters 的 Workflow 必須提供 Meters setup；未使用 Meters 的 Workflow 可使用 `"instrument_setup": {"meters": null}`。缺少此欄位的舊 Template 不做 migration，也沒有 compatibility layer 或 schema v2。
 
-ExecutionMode、Live VISA Resource、runtime results、output authorization 與 safety cleanup state 均不屬於 Template。Live resource 存在 Desktop configuration，execution mode 則在每次 run 時選擇。DCI 的 Current Terminal 設為 10 時，Live confirmation 也會要求操作者確認量測線實際接在 10 A terminal。Simulation 測試不代表已完成真實硬體驗證。
+ExecutionMode、Live VISA Resource、runtime results、output authorization 與 safety cleanup state 均不屬於 Template。Live resource 存在 Desktop configuration，execution mode 則在每次 run 時選擇。DCI 的 Current Terminal 設為 10 時，Live confirmation 也會要求操作者確認量測線實際接在 10 A terminal。目前 Instrument Setup 的驗證仍以 Simulation 為主；特定硬體型號與設定組合是否支援，仍以對應 external instrument tool 的驗證結果為準。
 
 ## Executable 設定
 
@@ -54,7 +54,7 @@ Run Live 必須先經過操作人員確認，對話框會列出 Workflow 引用�
 
 只要 Live run 已啟動 Powers Worker，就會在 Worker shutdown 前嘗試 bounded `safe-off`，關閉所有通道，包括 Workflow 失敗或後續其他 Worker 啟動失敗的情況。Workflow 中明確的 Output OFF step 不會取代這道安全清理。Cleanup 失敗會讓 run 回報失敗，錯誤中同時保留原有 Workflow failure；Worker shutdown 仍會嘗試執行。Simulation 不會額外執行這項 Live cleanup。
 
-實體硬體支援仍受各 external instrument tool 的 manifest 與 product support policy 約束。本次實作尚未進行真實硬體端到端測試。Scopes 與 Wavegen 尚不支援 Live Workflow。
+實體硬體支援仍受各 external instrument tool 的 manifest 與 product support policy 約束。Live Powers／Meters Workflow 已進行部分真實硬體端到端驗證，包含電源安全清理行為。目前 Instrument Setup 的驗證仍以 Simulation 為主，不代表所有硬體型號與設定組合都已完成實機驗證。Scopes 與 Wavegen 尚不支援 Live Workflow。
 
 ## External process 管理
 
