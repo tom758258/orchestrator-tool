@@ -14,6 +14,21 @@ use crate::{discovery::built_in_tool_definitions, tool::ToolId, tool_instance::T
 pub struct Config {
     tools: BTreeMap<String, PathBuf>,
     live_resources: BTreeMap<String, String>,
+    live_resource_identities: BTreeMap<String, ResourceIdentity>,
+}
+
+/// Last-known device presentation metadata stored only in local configuration.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceIdentity {
+    #[serde(default)]
+    pub manufacturer: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub serial: Option<String>,
+    #[serde(default)]
+    pub identity: Option<String>,
 }
 
 impl Config {
@@ -62,7 +77,11 @@ impl Config {
             tools.insert(tool_id, path);
         }
 
-        for instance_id in raw.live_resources.keys() {
+        for instance_id in raw
+            .live_resources
+            .keys()
+            .chain(raw.live_resource_identities.keys())
+        {
             ToolInstanceId::new(instance_id).map_err(|_| ConfigError::InvalidInstanceId {
                 path: config_path.clone(),
                 instance_id: instance_id.clone(),
@@ -71,6 +90,7 @@ impl Config {
         Ok(Self {
             tools,
             live_resources: raw.live_resources,
+            live_resource_identities: raw.live_resource_identities,
         })
     }
 
@@ -102,16 +122,37 @@ impl Config {
             .map(String::as_str)
     }
 
-    /// Sets an opaque live resource without path resolution or normalization.
+    /// Sets an opaque live resource and clears any last-known identity.
     ///
     /// Instance IDs are scoped to the template chosen by the caller.
     pub fn set_live_resource(&mut self, instance_id: &ToolInstanceId, resource: impl Into<String>) {
+        self.live_resource_identities.remove(instance_id.as_str());
         self.live_resources
             .insert(instance_id.as_str().to_owned(), resource.into());
     }
 
-    /// Removes a live resource, returning false when none was present.
+    /// Sets a discovered resource and its last-known identity together.
+    pub fn set_live_resource_with_identity(
+        &mut self,
+        instance_id: &ToolInstanceId,
+        resource: impl Into<String>,
+        identity: Option<ResourceIdentity>,
+    ) {
+        self.set_live_resource(instance_id, resource);
+        if let Some(identity) = identity {
+            self.live_resource_identities
+                .insert(instance_id.as_str().to_owned(), identity);
+        }
+    }
+
+    /// Returns local presentation metadata keyed by logical instance ID.
+    pub fn live_resource_identities(&self) -> &BTreeMap<String, ResourceIdentity> {
+        &self.live_resource_identities
+    }
+
+    /// Removes a resource and its identity, returning false when no binding was present.
     pub fn remove_live_resource(&mut self, instance_id: &ToolInstanceId) -> bool {
+        self.live_resource_identities.remove(instance_id.as_str());
         self.live_resources.remove(instance_id.as_str()).is_some()
     }
 
@@ -126,6 +167,7 @@ impl Config {
         let raw = RawConfig {
             tools: self.tools.clone(),
             live_resources: self.live_resources.clone(),
+            live_resource_identities: self.live_resource_identities.clone(),
         };
         let contents = toml::to_string(&raw).map_err(|source| ConfigError::Serialize {
             path: supplied_path.to_path_buf(),
@@ -153,6 +195,8 @@ struct RawConfig {
     tools: BTreeMap<String, PathBuf>,
     #[serde(default)]
     live_resources: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    live_resource_identities: BTreeMap<String, ResourceIdentity>,
 }
 
 /// An error produced while loading an orchestrator configuration file.
@@ -255,7 +299,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use super::{Config, ConfigError};
+    use super::{Config, ConfigError, ResourceIdentity};
     use crate::tool::ToolId;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
@@ -291,58 +335,78 @@ mod tests {
         let executable = test_dir.path().join("powers-tool.exe");
         let powers = " USB0::Vendor::Power serial::INSTR ";
         let meters = "TCPIP0::MeterHost::inst0::INSTR";
+        let powers_id = crate::tool_instance::ToolInstanceId::new("powers-1").unwrap();
+        let meters_id = crate::tool_instance::ToolInstanceId::new("meters-1").unwrap();
+        let powers_identity = ResourceIdentity {
+            manufacturer: Some("Keysight Technologies".to_owned()),
+            model: Some("E36312A".to_owned()),
+            serial: Some("MY123456".to_owned()),
+            identity: Some("Keysight Technologies,E36312A,MY123456,1.0".to_owned()),
+        };
+        let meters_identity = ResourceIdentity {
+            manufacturer: None,
+            model: Some("34461A".to_owned()),
+            serial: None,
+            identity: Some("34461A".to_owned()),
+        };
         let mut config = Config::default();
         config.set_executable_path(&ToolId::powers(), &executable);
-        config.set_live_resource(
-            &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap(),
-            powers,
-        );
-        config.set_live_resource(
-            &crate::tool_instance::ToolInstanceId::new("meters-1").unwrap(),
-            meters,
-        );
+        config.set_live_resource_with_identity(&powers_id, powers, Some(powers_identity.clone()));
+        config.set_live_resource_with_identity(&meters_id, meters, Some(meters_identity.clone()));
         config.save(&path).unwrap();
         let mut loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.live_resource(&powers_id), Some(powers));
+        assert_eq!(loaded.live_resource(&meters_id), Some(meters));
         assert_eq!(
-            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
-            Some(powers)
+            loaded.live_resource_identities().get("powers-1"),
+            Some(&powers_identity)
         );
         assert_eq!(
-            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("meters-1").unwrap()),
-            Some(meters)
+            loaded.live_resource_identities().get("meters-1"),
+            Some(&meters_identity)
         );
         assert_eq!(
             loaded.executable_path(&ToolId::powers()),
             Some(executable.as_path())
         );
-        assert!(
-            loaded.remove_live_resource(
-                &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()
-            )
-        );
-        assert!(
-            !loaded.remove_live_resource(
-                &crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()
-            )
-        );
+
+        loaded.set_live_resource(&powers_id, "USB0::Replacement::INSTR");
+        assert_eq!(loaded.live_resource_identities().get("powers-1"), None);
+        loaded.set_live_resource_with_identity(&powers_id, powers, Some(powers_identity.clone()));
         assert_eq!(
-            loaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
-            None
+            loaded.live_resource_identities().get("powers-1"),
+            Some(&powers_identity)
         );
+        assert!(loaded.remove_live_resource(&powers_id));
+        assert!(!loaded.remove_live_resource(&powers_id));
+        assert_eq!(loaded.live_resource(&powers_id), None);
+        assert_eq!(loaded.live_resource_identities().get("powers-1"), None);
         loaded.save(&path).unwrap();
         let reloaded = Config::load(&path).unwrap();
+        assert_eq!(reloaded.live_resource(&powers_id), None);
+        assert_eq!(reloaded.live_resource_identities().get("powers-1"), None);
+        assert_eq!(reloaded.live_resource(&meters_id), Some(meters));
         assert_eq!(
-            reloaded.live_resource(&crate::tool_instance::ToolInstanceId::new("powers-1").unwrap()),
-            None
-        );
-        assert_eq!(
-            reloaded.live_resource(&crate::tool_instance::ToolInstanceId::new("meters-1").unwrap()),
-            Some(meters)
+            reloaded.live_resource_identities().get("meters-1"),
+            Some(&meters_identity)
         );
         assert_eq!(
             reloaded.executable_path(&ToolId::powers()),
             Some(executable.as_path())
         );
+
+        let legacy_path = test_dir.path().join("legacy.toml");
+        fs::write(
+            &legacy_path,
+            "[live_resources]\nmeters-1 = \"USB0::Legacy::INSTR\"\n",
+        )
+        .unwrap();
+        let legacy = Config::load(&legacy_path).unwrap();
+        assert_eq!(
+            legacy.live_resource(&meters_id),
+            Some("USB0::Legacy::INSTR")
+        );
+        assert!(legacy.live_resource_identities().is_empty());
     }
 
     #[test]

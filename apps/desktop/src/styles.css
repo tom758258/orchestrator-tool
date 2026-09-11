@@ -438,6 +438,7 @@ body {
   opacity: 0.55;
 }
 
+.template-toolbar,
 .workflow-actions {
   display: flex;
   flex-wrap: wrap;
@@ -705,4 +706,17 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.live-device {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.tool-setup > fieldset + fieldset {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e3e6ea;
 }

@@ -20,7 +20,7 @@ Template
 └─ Workflow Sequence
 ```
 
-Tool Setup 定義 run 前建立各 tool instance session 的設定，不是 Workflow Step。Workflow 則是在所需 Worker Ready 後依序執行的線性測試程序。Desktop 的 Tool Setup editor 位於 Workflow 頁、Sequence 上方。Template 儲存／載入會保留這兩部分。
+Tool Setup 定義 run 前建立各 tool instance session 的設定，不是 Workflow Step。Workflow 則是在所需 Worker Ready 後依序執行的線性測試程序。Desktop 的 Tool Setup editor 位於獨立的 Setup tab，與 Workflow tab 分開。app-level 的 Open Template 與 Save Template 會一起保留這兩部分。
 
 Meters Setup 支援 DC Voltage 與 DC Current，兩者皆提供 Auto / Manual Range Mode、Manual Range、NPLC 與 Auto Zero。DC Voltage 另提供 Input Impedance；DC Current 另提供 Current Terminal。DCV 不可攜帶 Current Terminal，DCI 不可攜帶 DCV Input Impedance。Manual mode 必須提供 Manual Range；Auto mode 忽略已儲存的 Manual Range，不產生 `--range` startup argument。Trigger 固定為 Software。
 
@@ -51,9 +51,9 @@ powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 
 Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
-Desktop 應用程式透過 Tools tab 提供相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。Workflow 的 Tool Setup 區域為每個 Powers／Meters instance 提供 Live Resource，以及 Save Resource／Clear Resource 操作。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。設定檔不存在時使用 portable executable path。
+Desktop 應用程式透過 Tools tab 提供相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。獨立的 Setup tab 提供 Add Tool Instance、Meters setup，以及每個 Powers／Meters instance 的 Live Resource、Save Resource／Clear Resource 與手動 discovery。選定的 resource 會在同一份 local configuration 保存 last-known manufacturer、model、serial 與 raw identity metadata。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。設定檔不存在時使用 portable executable path。
 
-可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
+可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。可選的 `live_resource_identities` table 只保存以 ToolInstanceId 為 key 的 last-known presentation metadata。這兩個 table 都不屬於 Template。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
 
 Run Live 必須先經過操作人員確認，對話框會列出 Workflow 引用的 instance ID、tool type 與 resource，並警告即將以 Live mode 執行 external tools、可能改變電源輸出。Powers live writes 同時使用兩道授權：短生命週期的 Desktop runtime config 設定 Worker `settings.allow_output_writes=true`，runtime adapter 則為 Live output-affecting request 注入 `arguments.confirm_output=true`。執行結束後會 best-effort 刪除此支援檔案。
 

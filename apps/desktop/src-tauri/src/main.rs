@@ -7,7 +7,7 @@ use std::{
 };
 
 use orchestrator_tool::{
-    config::{Config, ConfigError},
+    config::{Config, ConfigError, ResourceIdentity},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     live_resources::LiveResourceCandidate,
     run::{ExecutionMode, run_simulated_workflow, run_workflow},
@@ -347,6 +347,7 @@ fn edit_desktop_live_resource(
     config_path: &Path,
     raw_instance_id: &str,
     resource: Option<&str>,
+    identity: Option<ResourceIdentity>,
 ) -> Result<(), String> {
     let instance_id = ToolInstanceId::new(raw_instance_id).map_err(|error| error.to_string())?;
     if resource.is_some_and(|value| value.trim().is_empty()) {
@@ -354,7 +355,7 @@ fn edit_desktop_live_resource(
     }
     let mut config = load_desktop_config_from_path(config_path)?;
     match resource {
-        Some(value) => config.set_live_resource(&instance_id, value),
+        Some(value) => config.set_live_resource_with_identity(&instance_id, value, identity),
         None => {
             config.remove_live_resource(&instance_id);
         }
@@ -370,13 +371,25 @@ fn get_live_resources(
 }
 
 #[tauri::command]
-fn set_live_resource(app: AppHandle, instance_id: String, resource: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, Some(&resource))
+fn get_live_resource_identities(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, ResourceIdentity>, String> {
+    Ok(load_desktop_config(&app)?.live_resource_identities().clone())
+}
+
+#[tauri::command]
+fn set_live_resource(app: AppHandle, instance_id: String, resource: String, identity: Option<ResourceIdentity>) -> Result<(), String> {
+    edit_desktop_live_resource(
+        &desktop_config_path(&app)?,
+        &instance_id,
+        Some(&resource),
+        identity,
+    )
 }
 
 #[tauri::command]
 fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None)
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None)
 }
 
 fn step_result_dto(result: &StepResult) -> StepResultDto {
@@ -484,6 +497,7 @@ fn main() {
             run_workflow_simulation,
             run_workflow_live,
             get_live_resources,
+            get_live_resource_identities,
             set_live_resource,
             remove_live_resource,
             set_tool_executable,
@@ -519,8 +533,8 @@ mod tests {
         let path = dir.join("orchestrator.toml");
         let powers = " USB0::Power Serial::INSTR ";
         let meters = " TCPIP0::MeterHost::inst0::INSTR ";
-        super::edit_desktop_live_resource(&path, "powers-1", Some(powers)).unwrap();
-        super::edit_desktop_live_resource(&path, "meters-1", Some(meters)).unwrap();
+        super::edit_desktop_live_resource(&path, "powers-1", Some(powers), None).unwrap();
+        super::edit_desktop_live_resource(&path, "meters-1", Some(meters), None).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
         assert_eq!(
             loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
@@ -531,13 +545,13 @@ mod tests {
             Some(meters)
         );
         for resource in ["", " ", "\t\r\n"] {
-            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource)).is_err());
+            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err());
         }
         for tool in ["", "bad_id", "Uppercase"] {
-            assert!(super::edit_desktop_live_resource(&path, tool, Some(powers)).is_err());
-            assert!(super::edit_desktop_live_resource(&path, tool, None).is_err());
+            assert!(super::edit_desktop_live_resource(&path, tool, Some(powers), None).is_err());
+            assert!(super::edit_desktop_live_resource(&path, tool, None, None).is_err());
         }
-        super::edit_desktop_live_resource(&path, "powers-1", None).unwrap();
+        super::edit_desktop_live_resource(&path, "powers-1", None, None).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
         assert_eq!(
             loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),

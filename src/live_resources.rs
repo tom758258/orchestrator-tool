@@ -15,7 +15,7 @@ use crate::{
     tool::ToolId,
 };
 
-/// Discovery-time presentation metadata; only the resource address is configuration.
+/// Discovery-time resource address and device presentation metadata.
 #[derive(Debug, Serialize)]
 pub struct LiveResourceCandidate {
     pub resource: String,

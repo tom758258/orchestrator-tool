@@ -18,24 +18,32 @@ type ToolStatus = {
   reason: string | null
 }
 
-type LiveResourceCandidate = {
-  resource: string
+type ResourceIdentity = {
   manufacturer: string | null
   model: string | null
   serial: string | null
   identity: string | null
 }
 
+type LiveResourceCandidate = ResourceIdentity & { resource: string }
+
+function deviceName(identity: ResourceIdentity | null | undefined): string {
+  return [identity?.manufacturer?.trim(), identity?.model?.trim()].filter(Boolean).join(' ')
+    || identity?.identity?.trim() || ''
+}
+
+function targetLabel(id: string, identity: ResourceIdentity | null | undefined): string {
+  const name = identity?.model?.trim() || deviceName(identity)
+  const serial = identity?.serial?.trim()
+  const detail = [name, serial ? `[${serial}]` : ''].filter(Boolean).join(' ')
+  return detail ? `${id} — ${detail}` : id
+}
+
 function formatResourceCandidate(candidate: LiveResourceCandidate): string {
-  const manufacturer = candidate.manufacturer?.trim()
-  const model = candidate.model?.trim()
+  const name = deviceName(candidate)
   const serial = candidate.serial?.trim()
-  if (manufacturer && model) {
-    return `${manufacturer} ${model}${serial ? ` [${serial}]` : ''} — ${candidate.resource}`
-  }
-  return candidate.identity?.trim()
-    ? `${candidate.identity} — ${candidate.resource}`
-    : candidate.resource
+  const detail = [name, serial ? `[${serial}]` : ''].filter(Boolean).join(' ')
+  return detail ? `${detail} — ${candidate.resource}` : candidate.resource
 }
 
 type WaitStep = {
@@ -78,7 +86,7 @@ type WorkflowDraft = {
   }
 }
 
-type ActiveTab = 'tools' | 'workflow'
+type ActiveTab = 'tools' | 'setup' | 'workflow'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
@@ -248,6 +256,7 @@ function formatMeasurement(output: unknown): string | null {
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
@@ -282,7 +291,12 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      setResourceDrafts(await invoke<Record<string, string>>('get_live_resources'))
+      const [resources, identities] = await Promise.all([
+        invoke<Record<string, string>>('get_live_resources'),
+        invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
+      ])
+      setResourceDrafts(resources)
+      setResourceIdentities(identities)
       setError(null)
     } catch (message) {
       setError(String(message))
@@ -355,7 +369,7 @@ function App() {
     }
     const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
     if (preset.tool && !target) {
-      setValidationError(`Create a ${preset.tool} Tool Instance before adding this action.`)
+      setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
       return
     }
     const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
@@ -603,7 +617,7 @@ function App() {
     setToolConfigError(null)
     try {
       await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
-        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '' }),
+        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentities[toolId] ?? null }),
       })
       await refresh()
     } catch (message) {
@@ -611,7 +625,7 @@ function App() {
     } finally {
       setToolConfigBusy(null)
     }
-  }, [refresh, resourceDrafts, toolConfigBusy])
+  }, [refresh, resourceDrafts, resourceIdentities, toolConfigBusy])
 
   const handleListResources = useCallback(async (toolId: string) => {
     if (toolConfigBusy !== null) {
@@ -755,6 +769,48 @@ function App() {
         <h1>orchestrator-tool</h1>
       </header>
 
+      <div className="template-toolbar" aria-label="Template actions">
+        <button
+          className="action-button"
+          type="button"
+          onClick={() => void handleLoadTemplate()}
+          disabled={workflowBusy}
+        >
+          Open Template
+        </button>
+        <button
+          className="action-button"
+          type="button"
+          onClick={() => void handleSaveTemplate()}
+          disabled={!workflowDraft || workflowBusy}
+        >
+          Save Template
+        </button>
+      </div>
+
+      {templateIoStatus === 'saving' && <p role="status">Saving…</p>}
+      {templateIoStatus === 'loading' && <p role="status">Loading…</p>}
+
+      {templateIoMessage && templateIoStatus === 'idle' && (
+        <p className="validation-success" role="status">
+          {templateIoMessage}
+        </p>
+      )}
+
+      {templateIoError && (
+        <p className="error" role="alert">
+          Template I/O failed: {templateIoError}
+        </p>
+      )}
+
+      {draftLoading && <p>Creating template draft…</p>}
+
+      {draftCreationError && (
+        <p className="error" role="alert">
+          Failed to create template draft: {draftCreationError}
+        </p>
+      )}
+
       <nav className="tabs" role="tablist" aria-label="Desktop sections">
         <button
           id="tools-tab"
@@ -766,6 +822,17 @@ function App() {
           onClick={() => setActiveTab('tools')}
         >
           Tools
+        </button>
+        <button
+          id="setup-tab"
+          className={`tab ${activeTab === 'setup' ? 'tab-active' : ''}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'setup'}
+          aria-controls="setup-panel"
+          onClick={() => setActiveTab('setup')}
+        >
+          Setup
         </button>
         <button
           id="workflow-tab"
@@ -883,19 +950,119 @@ function App() {
         </section>
       )}
 
+      {activeTab === 'setup' && (
+        <section id="setup-panel" role="tabpanel" aria-labelledby="setup-tab">
+          <div className="section-header">
+            <h2>Setup</h2>
+          </div>
+          {error && <p className="error" role="alert">Failed to load tool configuration: {error}</p>}
+          {workflowDraft && (
+            <>
+              {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
+              <ToolSetupEditor
+                value={workflowDraft.tool_instances}
+                steps={workflowDraft.workflow.steps}
+                renderResource={instance => (
+                  <>
+                    {(instance.tool === 'powers' || instance.tool === 'meters') && (
+                      <div className="live-resource">
+                        <div className="live-device">
+                          <strong>Live Device</strong>
+                          {deviceName(resourceIdentities[instance.id]) && <span>{deviceName(resourceIdentities[instance.id])}</span>}
+                          {resourceIdentities[instance.id]?.serial?.trim() && <span>S/N: {resourceIdentities[instance.id]?.serial?.trim()}</span>}
+                          <code>{resourceDrafts[instance.id] || 'No resource configured'}</code>
+                          <span className="tool-setup-hint">Last-known identity; not a connection check.</span>
+                        </div>
+                        <p className="tool-setup-hint">Stored locally; not included in Template. Save Resource to apply changes.</p>
+                        <label className="step-property-field">
+                          <span className="step-property-label">Live Resource</span>
+                          <input
+                            type="text"
+                            value={resourceDrafts[instance.id] ?? ''}
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onChange={(event) => {
+                              setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
+                              setResourceIdentities((current) => ({ ...current, [instance.id]: null }))
+                            }}
+                          />
+                        </label>
+                        <div className="tool-actions">
+                          <button
+                            className="action-button"
+                            type="button"
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onClick={() => void handleListResources(instance.tool)}
+                          >
+                            List Resources
+                          </button>
+                          <button
+                            className="action-button"
+                            type="button"
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onClick={() => void handleResource(instance.id, false)}
+                          >
+                            Save Resource
+                          </button>
+                          <button
+                            className="action-button"
+                            type="button"
+                            disabled={toolConfigBusy !== null || workflowBusy}
+                            onClick={() => void handleResource(instance.id, true)}
+                          >
+                            Clear Resource
+                          </button>
+                        </div>
+                        {discoveryErrors[instance.tool] && (
+                          <p className="error" role="alert">
+                            {discoveryErrors[instance.tool]}
+                          </p>
+                        )}
+                        {discoveredResources[instance.tool]?.length === 0 && (
+                          <p role="status">No live resources found.</p>
+                        )}
+                        {(discoveredResources[instance.tool]?.length ?? 0) > 0 && (
+                          <label className="step-property-field discovered-resources">
+                            <span className="step-property-label">Discovered Resources</span>
+                            <select
+                              value=""
+                              disabled={toolConfigBusy !== null || workflowBusy}
+                              onChange={(event) => {
+                                const resource = event.target.value
+                                if (resource) {
+                                  const candidate = discoveredResources[instance.tool]?.find(item => item.resource === resource)
+                                  setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
+                                  setResourceIdentities((current) => ({ ...current, [instance.id]: candidate ? {
+                                    manufacturer: candidate.manufacturer, model: candidate.model,
+                                    serial: candidate.serial, identity: candidate.identity,
+                                  } : null }))
+                                }
+                              }}
+                            >
+                              <option value="">Select discovered resource...</option>
+                              {discoveredResources[instance.tool]?.map((candidate, index) => (
+                                <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+                onChange={updateToolInstances}
+                disabled={workflowBusy}
+              />
+
+            </>
+          )}
+        </section>
+      )}
+
       {activeTab === 'workflow' && (
         <section id="workflow-panel" role="tabpanel" aria-labelledby="workflow-tab">
           <div className="section-header">
             <h2>Workflow</h2>
           </div>
-
-          {draftLoading && <p>Creating workflow draft…</p>}
-
-          {draftCreationError && (
-            <p className="error" role="alert">
-              Failed to create workflow draft: {draftCreationError}
-            </p>
-          )}
 
           {workflowDraft && (
             <div className="workflow-summary">
@@ -909,87 +1076,6 @@ function App() {
                   <dd className="detail-value">{workflowDraft.workflow.steps.length}</dd>
                 </div>
               </dl>
-
-              {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
-              <ToolSetupEditor
-                value={workflowDraft.tool_instances}
-                steps={workflowDraft.workflow.steps}
-                renderResource={instance => (
-                  <>
-                  {(instance.tool === 'powers' || instance.tool === 'meters') && (
-                    <div className="live-resource">
-                      <label className="step-property-field">
-                        <span className="step-property-label">Live Resource</span>
-                        <input
-                          type="text"
-                          value={resourceDrafts[instance.id] ?? ''}
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onChange={(event) => setResourceDrafts((current) => ({
-                            ...current, [instance.id]: event.target.value,
-                          }))}
-                        />
-                      </label>
-                      <div className="tool-actions">
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onClick={() => void handleListResources(instance.tool)}
-                        >
-                          List Resources
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onClick={() => void handleResource(instance.id, false)}
-                        >
-                          Save Resource
-                        </button>
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={toolConfigBusy !== null || workflowBusy}
-                          onClick={() => void handleResource(instance.id, true)}
-                        >
-                          Clear Resource
-                        </button>
-                      </div>
-                      {discoveryErrors[instance.tool] && (
-                        <p className="error" role="alert">
-                          {discoveryErrors[instance.tool]}
-                        </p>
-                      )}
-                      {discoveredResources[instance.tool]?.length === 0 && (
-                        <p role="status">No live resources found.</p>
-                      )}
-                      {(discoveredResources[instance.tool]?.length ?? 0) > 0 && (
-                        <label className="step-property-field discovered-resources">
-                          <span className="step-property-label">Discovered Resources</span>
-                          <select
-                            value=""
-                            disabled={toolConfigBusy !== null || workflowBusy}
-                            onChange={(event) => {
-                              const resource = event.target.value
-                              if (resource) {
-                                setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
-                              }
-                            }}
-                          >
-                            <option value="">Select discovered resource...</option>
-                            {discoveredResources[instance.tool]?.map((candidate, index) => (
-                              <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                  )}
-                  </>
-                )}
-                onChange={updateToolInstances}
-                disabled={workflowBusy}
-              />
 
               <div className="workflow-builder">
                 <aside className="step-palette" aria-labelledby="step-palette-title">
@@ -1050,7 +1136,7 @@ function App() {
                           updateStep(selectedToolAction.id, step => step.type === 'tool-action' ? { ...step, target } : step)
                         }}>
                           {workflowDraft.tool_instances.filter(instance => instance.tool === workflowDraft.tool_instances.find(item => item.id === selectedToolAction.target)?.tool)
-                            .map(instance => <option key={instance.id} value={instance.id}>{instance.id}</option>)}
+                            .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance.id, resourceIdentities[instance.id])}</option>)}
                         </select>
                       </label>}
                       {selectedStep.type === 'set-variable' && (
@@ -1186,22 +1272,6 @@ function App() {
                 <button
                   className="action-button"
                   type="button"
-                  onClick={() => void handleLoadTemplate()}
-                  disabled={workflowBusy}
-                >
-                  Load Template
-                </button>
-                <button
-                  className="action-button"
-                  type="button"
-                  onClick={() => void handleSaveTemplate()}
-                  disabled={!workflowDraft || workflowBusy}
-                >
-                  Save Template
-                </button>
-                <button
-                  className="action-button"
-                  type="button"
                   onClick={() => void validateDraft()}
                   disabled={workflowBusy}
                 >
@@ -1226,25 +1296,6 @@ function App() {
               </div>
 
               {runStatus === 'running' && <p role="status">Running…</p>}
-
-              {templateIoStatus === 'saving' && (
-                <p role="status">Saving…</p>
-              )}
-              {templateIoStatus === 'loading' && (
-                <p role="status">Loading…</p>
-              )}
-
-              {templateIoMessage && templateIoStatus === 'idle' && (
-                <p className="validation-success" role="status">
-                  {templateIoMessage}
-                </p>
-              )}
-
-              {templateIoError && (
-                <p className="error" role="alert">
-                  Template I/O failed: {templateIoError}
-                </p>
-              )}
 
               {validationStatus === 'valid' && (
                 <p className="validation-success" role="status">
