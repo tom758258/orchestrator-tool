@@ -10,9 +10,9 @@ body {
 }
 
 .app {
-  max-width: 1440px;
+  width: min(1560px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 32px 0;
 }
 
 .app-header h1 {
