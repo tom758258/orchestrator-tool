@@ -17,8 +17,11 @@ export type ToolInstance =
   | { id: string; tool: 'meters'; setup: MetersSetup }
   | { id: string; tool: 'powers' | 'scopes' | 'wavegen'; setup: Record<string, never> }
 
+const METERS_NPLC_OPTIONS = [0.02, 0.2, 1, 10, 100] as const
+
 function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void }) {
   const meters = value.meters
+  const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
     <>
       <p className="tool-setup-hint">Applied before the run starts. Trigger: Software.</p>
@@ -58,11 +61,12 @@ function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }
         )}
         <label className="step-property-field">
           <span className="step-property-label">NPLC</span>
-          <input type="number" step="any" required value={meters.nplc}
-            onChange={(event) => {
-              const nplc = event.currentTarget.valueAsNumber
-              if (Number.isFinite(nplc)) onChange({ ...value, meters: { ...meters, nplc } })
-            }} />
+          <select required value={meters.nplc} onChange={(event) => onChange({
+            ...value, meters: { ...meters, nplc: Number(event.target.value) },
+          })}>
+            {!hasStandardNplc && <option value={meters.nplc}>{meters.nplc} (current)</option>}
+            {METERS_NPLC_OPTIONS.map((nplc) => <option key={nplc} value={nplc}>{nplc}</option>)}
+          </select>
         </label>
         <label className="step-property-field">
           <span className="step-property-label">Auto Zero</span>
