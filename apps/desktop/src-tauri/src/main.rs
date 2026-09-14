@@ -416,11 +416,18 @@ fn get_live_resources(
 fn get_live_resource_identities(
     app: AppHandle,
 ) -> Result<std::collections::BTreeMap<String, ResourceIdentity>, String> {
-    Ok(load_desktop_config(&app)?.live_resource_identities().clone())
+    Ok(load_desktop_config(&app)?
+        .live_resource_identities()
+        .clone())
 }
 
 #[tauri::command]
-fn set_live_resource(app: AppHandle, instance_id: String, resource: String, identity: Option<ResourceIdentity>) -> Result<(), String> {
+fn set_live_resource(
+    app: AppHandle,
+    instance_id: String,
+    resource: String,
+    identity: Option<ResourceIdentity>,
+) -> Result<(), String> {
     edit_desktop_live_resource(
         &desktop_config_path(&app)?,
         &instance_id,
@@ -674,7 +681,9 @@ mod tests {
             Some(meters)
         );
         for resource in ["", " ", "\t\r\n"] {
-            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err());
+            assert!(
+                super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err()
+            );
         }
         for tool in ["", "bad_id", "Uppercase"] {
             assert!(super::edit_desktop_live_resource(&path, tool, Some(powers), None).is_err());

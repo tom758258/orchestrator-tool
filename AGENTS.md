@@ -38,6 +38,14 @@ These instructions define long-term, repository-specific boundaries for agents w
   - `cargo clippy --locked --all-targets --all-features -- -D warnings`
   - `cargo test --locked`
   - `cargo build --locked`
+- Desktop frontend baseline checks (from `apps/desktop`):
+  - `npm ci`
+  - `npm run typecheck`
+  - `npm run build`
+- Desktop Tauri baseline checks (from the repository root):
+  - `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check`
+  - `cargo clippy --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings`
+  - `cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml`
 - Report failed, skipped, blocked, or unexecuted verification steps rather than implying they passed.
 
 ## 6. Scope Control

@@ -85,7 +85,7 @@ export function inputScope(steps: readonly WorkflowStep[], stepId: string | null
   const priorRoots = rootIndex < 0 ? [] : steps.slice(0, rootIndex)
   const priorBody = parent ? parent.steps.slice(0, parent.steps.findIndex(step => step.id === stepId)) : []
   const earlierSteps = parent
-    ? [...priorRoots.filter(step => step.type !== 'for'), ...priorBody]
+    ? [...priorRoots, ...priorBody]
     : priorRoots
   const setVariables = (items: readonly WorkflowStep[]) => items.flatMap(step =>
     step.type === 'set-variable' ? [step.variable] : [])

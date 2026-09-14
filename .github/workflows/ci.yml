@@ -32,3 +32,45 @@ jobs:
 
       - name: Build
         run: cargo build --locked
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: apps/desktop
+        run: npm run typecheck
+
+      - name: Build frontend
+        working-directory: apps/desktop
+        run: npm run build
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format Tauri
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check
+
+      - name: Clippy Tauri
+        run: cargo clippy --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test Tauri
+        run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
