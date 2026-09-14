@@ -254,7 +254,8 @@ impl NumericRange {
         }
         let ratio = ((stop - start) / step).abs();
         let rounded = ratio.round();
-        let ratio = if (ratio - rounded).abs() <= f64::EPSILON * ratio.max(1.0) {
+        let tolerance = (f64::EPSILON * ratio.max(1.0)).min(f64::EPSILON.sqrt());
+        let ratio = if (ratio - rounded).abs() <= tolerance {
             rounded
         } else {
             ratio
@@ -1054,6 +1055,16 @@ mod tests {
             let range = NumericRange::new(0.0, stop, 1.0).unwrap();
 
             assert_eq!(range.iteration_count() as u64, (1_u64 << 53) + 1);
+        }
+    }
+
+    #[test]
+    fn numeric_range_preserves_fractional_endpoint_at_large_ratio() {
+        if usize::BITS >= 64 {
+            let stop = 2_f64.powi(51) + 0.5;
+            let range = NumericRange::new(0.0, stop, 1.0).unwrap();
+
+            assert_eq!(range.iteration_count() as u64, (1_u64 << 51) + 1);
         }
     }
 
