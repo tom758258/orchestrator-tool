@@ -119,6 +119,13 @@ pub fn prepare_worker_launch_specs(
                         .iteration_count()
                         .checked_mul(measure_count(body, target)?)
                         .ok_or_else(|| "meter sample count overflow".to_owned())?,
+                    StepKind::While {
+                        max_iterations,
+                        body,
+                        ..
+                    } => max_iterations
+                        .checked_mul(measure_count(body, target)?)
+                        .ok_or_else(|| "meter sample count overflow".to_owned())?,
                     _ => 0,
                 };
                 total
@@ -372,6 +379,26 @@ mod tests {
                     pair == [OsString::from("--max-samples"), OsString::from("12")]
                 })
             );
+        }
+
+        let mut while_wire: serde_json::Value =
+            serde_json::from_str(&for_template.to_json_string().unwrap()).unwrap();
+        let body = while_wire["workflow"]["steps"][1]["steps"].clone();
+        while_wire["workflow"]["steps"] = json!([{
+            "type": "while", "id": "repeat", "max_iterations": 5,
+            "left": { "source": "literal", "value": 0 }, "operator": "less-than",
+            "right": { "source": "literal", "value": 1 }, "steps": body
+        }]);
+        let while_template = Template::from_json_str(&while_wire.to_string()).unwrap();
+        assert_eq!(while_template.referenced_tool_instances().len(), 1);
+        assert!(
+            super::validate_confirmed_live_resources(&while_template, &config, &Default::default())
+                .is_err()
+        );
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let specs = prepare_worker_launch_specs(&while_template, mode, &dir, &config).unwrap();
+            let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+            assert!(args.windows(2).any(|pair| pair == ["--max-samples", "11"]));
         }
 
         let multi = instance_template();

@@ -67,7 +67,7 @@ impl Template {
                     StepKind::ToolAction { target, .. } if !ids.contains(target) => {
                         return Some(target.clone());
                     }
-                    StepKind::For { body, .. } => {
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         if let Some(target) = validate(body, ids) {
                             return Some(target);
                         }
@@ -119,7 +119,9 @@ impl Template {
                             instances.push(instance);
                         }
                     }
-                    StepKind::For { body, .. } => collect(body, template, instances),
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                        collect(body, template, instances)
+                    }
                     _ => {}
                 }
             }
@@ -338,6 +340,14 @@ impl WorkflowWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
+    While {
+        id: String,
+        left: ExpressionOperandWire,
+        operator: ExpressionOperator,
+        right: ExpressionOperandWire,
+        max_iterations: usize,
+        steps: Vec<StepWire>,
+    },
     Assert {
         id: String,
         left: ExpressionOperandWire,
@@ -387,6 +397,18 @@ struct NumericRangeWire {
 impl StepWire {
     fn from_step(step: &Step) -> Self {
         match step.kind() {
+            StepKind::While {
+                condition,
+                max_iterations,
+                body,
+            } => Self::While {
+                id: step.id().as_str().to_owned(),
+                left: ExpressionOperandWire::from_operand(condition.left()),
+                operator: condition.operator(),
+                right: ExpressionOperandWire::from_operand(condition.right()),
+                max_iterations: *max_iterations,
+                steps: body.iter().map(StepWire::from_step).collect(),
+            },
             StepKind::Assert { condition, message } => Self::Assert {
                 id: step.id().as_str().to_owned(),
                 left: ExpressionOperandWire::from_operand(condition.left()),
@@ -576,6 +598,32 @@ fn workflow_from_wire(wire: WorkflowWire) -> Result<Workflow, TemplateError> {
 
 fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
     match wire {
+        StepWire::While {
+            id,
+            left,
+            operator,
+            right,
+            max_iterations,
+            steps,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::While {
+                    condition: Expression::new(
+                        operand_from_wire(left)?,
+                        operator,
+                        operand_from_wire(right)?,
+                    ),
+                    max_iterations,
+                    body: steps
+                        .into_iter()
+                        .map(step_from_wire)
+                        .collect::<Result<_, _>>()?,
+                },
+            ))
+        }
         StepWire::Assert {
             id,
             left,

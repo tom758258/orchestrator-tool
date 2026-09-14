@@ -17,7 +17,7 @@ use crate::{
     worker::WorkerSession,
     workflow::{
         ForIteration, InputValue, ResultRow, Step, StepExecution, StepKind, StepOutcome,
-        StepResult, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
+        StepResult, WhileIteration, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
 };
 
@@ -37,7 +37,7 @@ impl fmt::Display for WorkflowExecutionError {
 
 impl Error for WorkflowExecutionError {}
 
-/// Executes root steps and For bodies sequentially with fail-fast semantics.
+/// Executes root steps and loop bodies sequentially with fail-fast semantics.
 ///
 /// `sessions` must contain already-started `WorkerSession` references for
 /// referenced Powers and Meters instances. The executor does not start or shut down workers.
@@ -70,7 +70,7 @@ pub fn execute_workflow_with_events(
     let mut result_rows = Vec::new();
     let mut completed_successfully = true;
     let has_body_output = workflow.steps().iter().any(|step| {
-        matches!(step.kind(), StepKind::For { body, .. }
+        matches!(step.kind(), StepKind::For { body, .. } | StepKind::While { body, .. }
             if body.iter().any(|step| matches!(step.kind(), StepKind::Output { .. })))
     });
 
@@ -106,7 +106,7 @@ pub fn execute_workflow_with_events(
                     let occurrence = ForIteration::new(step.id().clone(), iteration_index);
                     let mut staged_outputs = Vec::new();
                     for body_step in body {
-                        let outcome = execute_non_for_step(
+                        let outcome = execute_non_loop_step(
                             body_step,
                             template,
                             &mut data_context,
@@ -162,8 +162,97 @@ pub fn execute_workflow_with_events(
                 data_context.remove_variable(variable);
             }
             outcome
+        } else if let StepKind::While {
+            condition,
+            max_iterations,
+            body,
+        } = step.kind()
+        {
+            let produces_rows = body
+                .iter()
+                .any(|step| matches!(step.kind(), StepKind::Output { .. }));
+            let outcome = (|| {
+                let mut iteration_index = 0;
+                loop {
+                    match data_context.resolve(&InputValue::Expression(condition.clone())) {
+                        Ok(Value::Bool(false)) => {
+                            return StepOutcome::Succeeded {
+                                output: Value::Null,
+                            };
+                        }
+                        Ok(Value::Bool(true)) => {}
+                        Ok(_) => {
+                            return StepOutcome::Failed {
+                                message: "While condition must resolve to a boolean".to_owned(),
+                            };
+                        }
+                        Err(error) => {
+                            return StepOutcome::Failed {
+                                message: error.to_string(),
+                            };
+                        }
+                    }
+                    if iteration_index >= *max_iterations {
+                        return StepOutcome::Failed {
+                            message: "While reached max_iterations while condition is still true"
+                                .to_owned(),
+                        };
+                    }
+                    clear_body_step_outputs(body, &mut data_context);
+                    let occurrence = WhileIteration::new(step.id().clone(), iteration_index);
+                    let mut staged_outputs = Vec::new();
+                    for body_step in body {
+                        let outcome = execute_non_loop_step(
+                            body_step,
+                            template,
+                            &mut data_context,
+                            sessions,
+                            execution_mode,
+                            action_timeout,
+                        );
+                        if let StepOutcome::Succeeded { output } = &outcome {
+                            data_context.set_step_output(body_step.id().clone(), output.clone());
+                            if let StepKind::Output { name, .. } = body_step.kind() {
+                                staged_outputs
+                                    .push(WorkflowOutput::new(name.clone(), output.clone()));
+                            }
+                        }
+                        let failure = match &outcome {
+                            StepOutcome::Failed { message } => {
+                                Some(format!("body step {} failed: {message}", body_step.id()))
+                            }
+                            _ => None,
+                        };
+                        step_executions.push(StepExecution::in_while(
+                            StepResult::new(body_step.id().clone(), outcome),
+                            occurrence.clone(),
+                        ));
+                        notify_progress(
+                            &mut on_event,
+                            WorkflowRunEvent::StepCompleted(
+                                step_executions.last().unwrap().clone(),
+                            ),
+                        );
+                        if let Some(message) = failure {
+                            return StepOutcome::Failed { message };
+                        }
+                    }
+                    if produces_rows {
+                        result_rows.push(ResultRow::in_while(staged_outputs, occurrence));
+                        notify_progress(
+                            &mut on_event,
+                            WorkflowRunEvent::ResultRowCommitted(
+                                result_rows.last().unwrap().clone(),
+                            ),
+                        );
+                    }
+                    iteration_index += 1;
+                }
+            })();
+            clear_body_step_outputs(body, &mut data_context);
+            outcome
         } else {
-            execute_non_for_step(
+            execute_non_loop_step(
                 step,
                 template,
                 &mut data_context,
@@ -224,7 +313,7 @@ fn clear_body_step_outputs(body: &[Step], data_context: &mut DataContext) {
     }
 }
 
-fn execute_non_for_step(
+fn execute_non_loop_step(
     step: &Step,
     template: &Template,
     data_context: &mut DataContext,
@@ -288,8 +377,8 @@ fn execute_non_for_step(
             ),
             Err(message) => StepOutcome::Failed { message },
         },
-        StepKind::For { .. } => StepOutcome::Failed {
-            message: "nested For execution is not supported".to_owned(),
+        StepKind::For { .. } | StepKind::While { .. } => StepOutcome::Failed {
+            message: "nested loop execution is not supported".to_owned(),
         },
     }
 }

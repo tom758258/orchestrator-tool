@@ -291,3 +291,267 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
                 if step_id.as_str() == "out" && actual == outcome));
     }
 }
+
+// Shared wire fixture also protects While template parsing and serialization.
+fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
+    json!({
+        "schema_version": 1, "name": "While counter", "tool_instances": [],
+        "workflow": { "steps": [
+            { "type": "set-variable", "id": "init", "variable": "x",
+              "value": { "source": "literal", "value": 0 } },
+            { "type": "while", "id": "repeat", "max_iterations": limit,
+              "left": { "source": "variable", "variable": "x" }, "operator": "less-than",
+              "right": { "source": "literal", "value": stop }, "steps": [
+                { "type": "set-variable", "id": "increment", "variable": "x", "value": {
+                    "source": "expression", "left": { "source": "variable", "variable": "x" },
+                    "operator": "add", "right": { "source": "literal", "value": 1 } } },
+                { "type": "output", "id": "out", "name": "x",
+                  "value": { "source": "step-output", "step_id": "increment", "pointer": "" } }
+              ] },
+            { "type": "set-variable", "id": "after", "variable": "final",
+              "value": { "source": "variable", "variable": "x" } }
+        ] }
+    })
+}
+
+fn execute_while_wire(
+    wire: &serde_json::Value,
+) -> (
+    orchestrator_tool::workflow::WorkflowRunResult,
+    Vec<orchestrator_tool::workflow::WorkflowRunEvent>,
+) {
+    let template = Template::from_json_str(&wire.to_string()).unwrap();
+    let mut events = Vec::new();
+    let result = orchestrator_tool::executor::execute_workflow_with_events(
+        &template,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+        |event| events.push(event),
+    )
+    .unwrap();
+    (result, events)
+}
+
+#[test]
+fn while_commits_successful_iterations_and_orders_progress() {
+    use orchestrator_tool::workflow::WorkflowRunEvent;
+    let wire = while_wire(10, 3);
+    let template = Template::from_json_str(&wire.to_string()).unwrap();
+    assert_eq!(
+        Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+        template
+    );
+    let (run, events) = execute_while_wire(&wire);
+    assert_eq!(run.step_executions().len(), 9);
+    assert_eq!(run.result_rows().len(), 3);
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|e| matches!(e.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    for (index, row) in run.result_rows().iter().enumerate() {
+        assert_eq!(row.outputs()[0].value().as_f64(), Some((index + 1) as f64));
+        let iteration = row.while_iteration().unwrap();
+        assert_eq!(iteration.while_step_id().as_str(), "repeat");
+        assert_eq!(iteration.iteration_index(), index);
+        assert!(row.for_iteration().is_none());
+        for offset in 0..2 {
+            let execution = &run.step_executions()[1 + index * 2 + offset];
+            assert_eq!(execution.while_iteration(), Some(iteration));
+            assert!(execution.for_iteration().is_none());
+            assert_eq!(
+                events[1 + index * 3 + offset],
+                WorkflowRunEvent::StepCompleted(execution.clone())
+            );
+        }
+        assert_eq!(
+            events[3 + index * 3],
+            WorkflowRunEvent::ResultRowCommitted(row.clone())
+        );
+    }
+    let aggregate = &run.step_executions()[7];
+    assert_eq!(aggregate.step_id().as_str(), "repeat");
+    assert_eq!(
+        aggregate.outcome(),
+        &StepOutcome::Succeeded {
+            output: json!(null)
+        }
+    );
+    assert!(aggregate.for_iteration().is_none() && aggregate.while_iteration().is_none());
+    assert_eq!(
+        events[10],
+        WorkflowRunEvent::StepCompleted(aggregate.clone())
+    );
+    assert_eq!(events.len(), 12);
+    assert_eq!(
+        run.step_executions()[8].outcome(),
+        &StepOutcome::Succeeded { output: json!(3.0) }
+    );
+}
+
+#[test]
+fn while_precondition_and_guard_allow_exactly_the_limit() {
+    let (zero, _) = execute_while_wire(&while_wire(2, 0));
+    assert_eq!(zero.step_executions().len(), 3);
+    assert!(zero.result_rows().is_empty());
+    assert!(
+        zero.step_executions()
+            .iter()
+            .all(|e| matches!(e.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    let (exact, _) = execute_while_wire(&while_wire(2, 2));
+    assert_eq!(exact.result_rows().len(), 2);
+    assert!(
+        exact
+            .step_executions()
+            .iter()
+            .all(|e| matches!(e.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    let (limited, _) = execute_while_wire(&while_wire(2, 3));
+    assert_eq!(limited.result_rows().len(), 2);
+    assert_eq!(limited.step_executions().len(), 6);
+    let aggregate = limited.step_executions().last().unwrap();
+    assert_eq!(aggregate.step_id().as_str(), "repeat");
+    assert!(
+        matches!(aggregate.outcome(), StepOutcome::Failed { message }
+        if message == "While reached max_iterations while condition is still true")
+    );
+    let mut unresolved = while_wire(2, 3);
+    unresolved["workflow"]["steps"][1]["left"]["variable"] = json!("missing");
+    let (failed, _) = execute_while_wire(&unresolved);
+    assert_eq!(failed.step_executions().len(), 2);
+    assert!(matches!(
+        failed.step_executions()[1].outcome(),
+        StepOutcome::Failed { .. }
+    ));
+    assert!(failed.result_rows().is_empty());
+}
+
+#[test]
+fn while_failure_discards_only_the_current_staged_row() {
+    use orchestrator_tool::workflow::WorkflowRunEvent;
+    let mut wire = while_wire(10, 3);
+    wire["workflow"]["steps"][1]["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "type": "assert", "id": "check", "left": { "source": "variable", "variable": "x" },
+            "operator": "less-than", "right": { "source": "literal", "value": 2 }, "message": "stop"
+        }));
+    let (run, events) = execute_while_wire(&wire);
+    assert_eq!(run.result_rows().len(), 1);
+    assert_eq!(run.result_rows()[0].outputs()[0].value(), &json!(1.0));
+    assert_eq!(run.step_executions().len(), 8);
+    assert!(matches!(
+        run.step_executions()[6].outcome(),
+        StepOutcome::Failed { .. }
+    ));
+    assert!(matches!(
+        run.step_executions()[7].outcome(),
+        StepOutcome::Failed { .. }
+    ));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, WorkflowRunEvent::ResultRowCommitted(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events.last(),
+        Some(&WorkflowRunEvent::StepCompleted(
+            run.step_executions()[7].clone()
+        ))
+    );
+}
+
+#[test]
+fn while_validation_rejects_invalid_conditions_guards_and_nested_loops() {
+    let base = while_wire(10, 3);
+    for (field, value, diagnostic) in [
+        ("operator", json!("add"), "comparison operator"),
+        ("max_iterations", json!(0), "positive max_iterations"),
+    ] {
+        let mut wire = base.clone();
+        wire["workflow"]["steps"][1][field] = value;
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains(diagnostic)
+        );
+    }
+    let for_step = json!({ "type": "for", "id": "outer", "variable": "i",
+        "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [] });
+    // Both body validators reject either loop kind through the same in-loop guard.
+    for (mut outer, inner) in [
+        (for_step.clone(), base["workflow"]["steps"][1].clone()),
+        (base["workflow"]["steps"][1].clone(), for_step),
+    ] {
+        outer["steps"] = json!([inner]);
+        let mut wire = base.clone();
+        wire["workflow"]["steps"] = json!([outer]);
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("nested")
+        );
+    }
+}
+
+#[test]
+fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
+    let base = while_wire(3, 2);
+    for (pointer, target) in [
+        ("/workflow/steps/1/left", "increment"),
+        ("/workflow/steps/1/steps/0/value", "out"),
+        ("/workflow/steps/2/value", "increment"),
+    ] {
+        let mut wire = base.clone();
+        *wire.pointer_mut(pointer).unwrap() =
+            json!({ "source": "step-output", "step_id": target, "pointer": "" });
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("not an earlier step")
+        );
+    }
+    let mut wire = base.clone();
+    wire["workflow"]["steps"][1]["right"] =
+        json!({ "source": "step-output", "step_id": "init", "pointer": "" });
+    assert!(Template::from_json_str(&wire.to_string()).is_ok());
+    let mut root_output = base.clone();
+    root_output["workflow"]["steps"].as_array_mut().unwrap().push(json!({
+        "type": "output", "id": "root-output", "name": "root", "value": { "source": "literal", "value": 1 }
+    }));
+    assert!(
+        Template::from_json_str(&root_output.to_string())
+            .unwrap_err()
+            .to_string()
+            .contains("cannot be mixed")
+    );
+    let mut two_scopes = base.clone();
+    two_scopes["workflow"]["steps"].as_array_mut().unwrap().push(json!({
+        "type": "for", "id": "sweep", "variable": "i",
+        "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [
+            { "type": "output", "id": "out-i", "name": "i", "value": { "source": "variable", "variable": "i" } }
+        ]
+    }));
+    assert!(
+        Template::from_json_str(&two_scopes.to_string())
+            .unwrap_err()
+            .to_string()
+            .contains("both produce workflow rows")
+    );
+    wire = base;
+    wire["workflow"]["steps"][1]["steps"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    let (no_outputs, _) = execute_while_wire(&wire);
+    assert_eq!(no_outputs.result_rows().len(), 1);
+    assert!(no_outputs.result_rows()[0].while_iteration().is_none());
+}

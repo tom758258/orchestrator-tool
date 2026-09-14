@@ -7,8 +7,8 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, enclosingFor, insertionFor, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
-import type { WorkflowStep, NonForWorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
+import { allWorkflowSteps, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
+import type { WorkflowStep, NonLoopWorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -83,6 +83,7 @@ type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type StepPreset =
   | 'for'
+  | 'while'
   | 'assert'
   | 'set-variable'
   | 'output'
@@ -101,6 +102,7 @@ type StepPresetOption = {
 }
 
 const STEP_PRESETS: StepPresetOption[] = [
+  { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
@@ -120,7 +122,8 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 }
 
 const STEP_HELP: Record<string, string> = {
-  for: 'Repeat these body steps over an exact decimal range. Nested For is not supported.',
+  while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
+  for: 'Repeat these body steps over an exact decimal range. Nested loops are not supported.',
   assert: 'Fail the Workflow when this numeric comparison is false.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
@@ -170,6 +173,8 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
   switch (preset) {
+    case 'while':
+      return { type: 'while', id, left: { source: 'literal', value: 0 }, operator: 'less-than', right: { source: 'literal', value: 1 }, max_iterations: 1000, steps: [] }
     case 'for':
       return { type: 'for', id, variable: 'x', range: { start: '1', stop: '3', step: '1' }, steps: [] }
     case 'assert':
@@ -222,6 +227,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
 }
 
 function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
+  if (step.type === 'while') return 'While'
   if (step.type === 'for') return `For ${step.variable} = ${step.range.start}..${step.range.stop}`
   if (step.type === 'set-variable') {
     return 'Set Variable'
@@ -299,8 +305,12 @@ function App() {
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
+  const latestWhileIteration = runProgress?.step_executions.at(-1)?.while_iteration
+  const runningText = latestWhileIteration
+    ? `While ${latestWhileIteration.while_step_id} · Iteration ${latestWhileIteration.iteration_index + 1} · Running`
+    : 'Running…'
   const displayedRun = runResult ?? runProgress
-  const iterationRows = displayedRun?.result_rows.some(row => row.for_iteration !== null) ?? false
+  const iterationRows = displayedRun?.result_rows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
   useEffect(() => {
     setExportError(null)
@@ -393,8 +403,8 @@ function App() {
     if (!workflowDraft) {
       return
     }
-    const parent = insertionFor(workflowDraft.workflow.steps, selectedStepId)
-    if (parent && preset.value === 'for') return
+    const parent = insertionLoop(workflowDraft.workflow.steps, selectedStepId)
+    if (parent && (preset.value === 'for' || preset.value === 'while')) return
     const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
     if (preset.tool && !target) {
       setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
@@ -403,9 +413,9 @@ function App() {
     const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
     updateSteps((steps) => {
-      if (parent && newStep.type !== 'for') {
+      if (parent && newStep.type !== 'for' && newStep.type !== 'while') {
         return steps.map(step => {
-          if (step.id !== parent.id || step.type !== 'for') return step
+          if (step.id !== parent.id || (step.type !== 'for' && step.type !== 'while')) return step
           const index = step.steps.findIndex(body => body.id === selectedStepId)
           const insertIndex = index < 0 ? step.steps.length : index + 1
           return { ...step, steps: [...step.steps.slice(0, insertIndex), newStep, ...step.steps.slice(insertIndex)] }
@@ -421,9 +431,9 @@ function App() {
   const deleteStep = useCallback(
     (stepId: string) => {
       updateSteps((steps) => steps.filter(step => step.id !== stepId).map(step =>
-        step.type === 'for' ? { ...step, steps: step.steps.filter(body => body.id !== stepId) } : step))
+        (step.type === 'for' || step.type === 'while') ? { ...step, steps: step.steps.filter(body => body.id !== stepId) } : step))
       setSelectedStepId(current => current === stepId ||
-        enclosingFor(workflowDraft?.workflow.steps ?? [], current)?.id === stepId ? null : current)
+        enclosingLoop(workflowDraft?.workflow.steps ?? [], current)?.id === stepId ? null : current)
     },
     [updateSteps, workflowDraft],
   )
@@ -433,11 +443,11 @@ function App() {
       updateSteps((steps) =>
         steps.map(step => {
           if (step.id === stepId) return update(step)
-          if (step.type !== 'for') return step
+          if (step.type !== 'for' && step.type !== 'while') return step
           return { ...step, steps: step.steps.map(body => {
             if (body.id !== stepId) return body
             const updated = update(body)
-            return updated.type === 'for' ? body : updated
+            return (updated.type === 'for' || updated.type === 'while') ? body : updated
           }) }
         }),
       )
@@ -489,7 +499,7 @@ function App() {
   const moveStep = useCallback(
     (stepId: string, offset: -1 | 1) => {
       updateSteps((steps) => {
-        const parent = enclosingFor(steps, stepId)
+        const parent = enclosingLoop(steps, stepId)
         const siblings = parent?.steps ?? steps
         const index = siblings.findIndex(step => step.id === stepId)
         const targetIndex = index + offset
@@ -499,7 +509,7 @@ function App() {
         reordered[index] = reordered[targetIndex]
         reordered[targetIndex] = currentStep
         return parent
-          ? steps.map(step => step.id === parent.id ? { ...parent, steps: reordered as NonForWorkflowStep[] } : step)
+          ? steps.map(step => step.id === parent.id ? { ...parent, steps: reordered as NonLoopWorkflowStep[] } : step)
           : reordered
       })
     },
@@ -825,8 +835,8 @@ function App() {
         : null
     : null
   const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
-  const selectedParent = enclosingFor(workflowDraft?.workflow.steps ?? [], selectedStepId)
-  const addingToFor = insertionFor(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const selectedParent = enclosingLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const addingToLoop = insertionLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
   const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
@@ -1049,7 +1059,7 @@ function App() {
                 value={workflowDraft.tool_instances}
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
-                steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => step.type !== 'for')}
+                steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while'))}
                 renderResource={instance => (
                   <>
                     {(instance.tool === 'powers' || instance.tool === 'meters') && (
@@ -1167,8 +1177,8 @@ function App() {
               <div className="workflow-builder">
                 <aside className="step-palette" aria-labelledby="step-palette-title">
                   <h3 id="step-palette-title">Steps</h3>
-                  <p>Adding to: {addingToFor ? `For "${addingToFor.id}" body` : 'Root workflow'}</p>
-                  {addingToFor && <button className="action-button" type="button" disabled={workflowBusy}
+                  <p>Adding to: {addingToLoop ? `${addingToLoop.type === 'for' ? 'For' : 'While'} "${addingToLoop.id}" body` : 'Root workflow'}</p>
+                  {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
                     onClick={() => setSelectedStepId(null)}>Add to root</button>}
                   <div className="step-palette-items">
                     {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
@@ -1181,7 +1191,7 @@ function App() {
                               className="action-button step-palette-button"
                               type="button"
                               onClick={() => addStep(preset)}
-                              disabled={workflowBusy || (Boolean(addingToFor) && preset.value === 'for')}
+                              disabled={workflowBusy || (Boolean(addingToLoop) && (preset.value === 'for' || preset.value === 'while'))}
                             >
                               {preset.label}
                             </button>
@@ -1257,7 +1267,7 @@ function App() {
                         {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
                           <p className="error">Loop variable and range fields must not be blank.</p>}
                       </>}
-                      {selectedStep.type === 'set-variable' && selectedParent?.variable === selectedStep.variable &&
+                      {selectedStep.type === 'set-variable' && selectedParent?.type === 'for' && selectedParent.variable === selectedStep.variable &&
                         <p className="error">A body Set Variable cannot write the enclosing loop variable.</p>}
                       {selectedStep.type === 'set-variable' && (
                         <>
@@ -1321,7 +1331,7 @@ function App() {
                         />
                       )}
 
-                      {selectedStep.type === 'assert' && (
+                      {(selectedStep.type === 'assert' || selectedStep.type === 'while') && (
                         <div key={selectedStep.id} className="step-properties-fields">
                           <ExpressionOperandEditor
                             side="Left" value={selectedStep.left}
@@ -1330,13 +1340,13 @@ function App() {
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
                             onChange={left => updateStep(selectedStep.id, step =>
-                              step.type === 'assert' ? { ...step, left } : step)}
+                              (step.type === 'assert' || step.type === 'while') ? { ...step, left } : step)}
                           />
                           <label className="step-property-field">
                             <span className="step-property-label">Operator</span>
                             <select value={selectedStep.operator} disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
-                                step.type === 'assert' ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
+                                (step.type === 'assert' || step.type === 'while') ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
                               {Object.entries(COMPARISON_OPERATORS).map(([operator, symbol]) => (
                                 <option key={operator} value={operator}>{symbol}</option>
                               ))}
@@ -1349,15 +1359,23 @@ function App() {
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
                             onChange={right => updateStep(selectedStep.id, step =>
-                              step.type === 'assert' ? { ...step, right } : step)}
+                              (step.type === 'assert' || step.type === 'while') ? { ...step, right } : step)}
                           />
-                          <label className="step-property-field">
+                          {selectedStep.type === 'assert' && <label className="step-property-field">
                             <span className="step-property-label">Failure message</span>
                             <input type="text" value={selectedStep.message} placeholder="Assertion failed."
                               disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'assert' ? { ...step, message: event.target.value } : step)} />
-                          </label>
+                          </label>}
+                          {selectedStep.type === 'while' && <label className="step-property-field">
+                            <span className="step-property-label">Max iterations</span>
+                            <input type="number" min="1" step="1" value={selectedStep.max_iterations} disabled={workflowBusy}
+                              onChange={event => updateStep(selectedStep.id, step =>
+                                step.type === 'while' ? { ...step, max_iterations: Number(event.target.value) } : step)} />
+                            {(!Number.isSafeInteger(selectedStep.max_iterations) || selectedStep.max_iterations <= 0) &&
+                              <span className="error">Max iterations must be a positive integer.</span>}
+                          </label>}
                         </div>
                       )}
 
@@ -1473,7 +1491,7 @@ function App() {
                 </button>
               </div>
 
-              {runStatus === 'running' && <p role="status">Running…</p>}
+              {runStatus === 'running' && <p role="status">{runningText}</p>}
 
               {validationStatus === 'valid' && (
                 <p className="validation-success" role="status">
@@ -1529,6 +1547,7 @@ function App() {
                             <div className="run-result-summary">
                               <code className="workflow-step-id">{result.step_id}</code>
                               {result.for_iteration && <span>For {result.for_iteration.for_step_id} · Iteration {result.for_iteration.iteration_index + 1}</span>}
+                              {result.while_iteration && <span>While {result.while_iteration.while_step_id} · Iteration {result.while_iteration.iteration_index + 1}</span>}
                               <span className={`run-result-status run-result-${result.status}`}>
                                 {statusLabel}
                               </span>
@@ -1568,7 +1587,7 @@ function App() {
           ) : (
             <section aria-labelledby="last-run-title">
               <h3 id="last-run-title">Last Run</h3>
-              {runStatus === 'running' && <p role="status">Running…</p>}
+              {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {displayedRun.result_rows.length === 0 && <p>No committed output rows.</p>}
               <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
@@ -1581,8 +1600,8 @@ function App() {
                   </thead>
                   <tbody>
                     {displayedRun.result_rows.map((row, index) => (
-                      <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : `root:${index}`}>
-                        {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : '—'}</td>}
+                      <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : row.while_iteration ? `while:${row.while_iteration.while_step_id}:${row.while_iteration.iteration_index}` : `root:${index}`}>
+                        {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : row.while_iteration ? row.while_iteration.iteration_index + 1 : '—'}</td>}
                         {row.outputs.map(output => <td key={output.name}>
                           {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
                         </td>)}

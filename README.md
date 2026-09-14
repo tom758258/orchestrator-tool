@@ -8,7 +8,7 @@
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
 - Desktop application: Tauri 2 frontend with built-in external-tool status, a session-only ordered sequence editor with a click-to-add step palette, step reordering, execution result status, parameter editing, template load/save, simulation and live workflow runs, and full step-result display.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines an ordered workflow domain with one-level For, versioned JSON templates, occurrence-aware results, and sequential execution. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same workflow run result contract. Template schema version 1 and the Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines an ordered workflow domain with one-level For and While, versioned JSON templates, occurrence-aware results, and sequential execution. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same workflow run result contract. Template schema version 1 and the Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
 
 ## Tool Setup and workflow templates
 
@@ -32,15 +32,32 @@ ExecutionMode, Live VISA Resource, runtime results, output authorization, and sa
 
 ## Template expressions
 
-A workflow run returns a Core `WorkflowRunResult` containing ordered `StepExecution` records and `ResultRow` values. Each execution retains its `StepResult`; Step IDs remain stable definition identities. Optional `ForIteration` metadata stores the For step ID and a zero-based iteration index separately from Step IDs and Output columns.
+A workflow run returns a Core `WorkflowRunResult` containing ordered `StepExecution` records and `ResultRow` values. Each execution retains its `StepResult`; Step IDs remain stable definition identities. Optional `ForIteration` or `WhileIteration` metadata stores the enclosing step ID and a zero-based iteration index separately from Step IDs and Output columns. Existing `for_iteration` fields remain unchanged; parallel `while_iteration` fields identify While occurrences. An execution or row cannot carry both.
 
-A successfully completed workflow without body Outputs produces one root ResultRow, including workflows with For steps. Its cells reuse `WorkflowOutput`, with root Output names as columns in Output step order. A successful workflow without any Output still produces one empty root row. A failed or incomplete workflow commits no root row. Root executions and rows have no For iteration metadata.
+A successfully completed workflow without body Outputs produces one root ResultRow, including workflows with For or While steps. Its cells reuse `WorkflowOutput`, with root Output names as columns in Output step order. A successful workflow without any Output still produces one empty root row. A failed or incomplete workflow commits no root row. Root executions and rows have neither For nor While iteration metadata.
 
 Core now executes For bodies sequentially for every index from `NumericRange::iteration_count()`, obtaining each exact range value solely from `NumericRange::value_at(index)`. The Executor converts that Decimal once into a JSON number before binding the loop variable; runtime expressions and tool arguments retain their existing JSON numeric behavior. The binding exists only within the For scope: a previous value is restored on success or failure, or the variable is removed if it did not previously exist. Ordinary variables remain mutable across iterations and after the For. Body step outputs are cleared before each iteration and when leaving the For; bodies can read earlier root outputs and current-iteration earlier sibling outputs.
 
 Body StepExecutions keep their original Step IDs and carry `ForIteration` metadata. Completion order is earlier root steps, body occurrences in iteration order, the For aggregate root execution, then later root steps. A successful For stores JSON null as its aggregate output. A body failure records the failed occurrence and then a failed For aggregate naming the body step and its original diagnostic; remaining body steps, iterations, and later root steps do not execute. Live Powers safe-off and Worker shutdown still run through the existing lifecycle.
 
-When a For body contains Outputs, each fully successful iteration commits one ResultRow with `ForIteration` metadata and body Output names in step order. Outputs are staged until the entire body succeeds; a later failure discards only that iteration's staged row. Previously committed iteration rows remain in the Core result after failure. Iteration metadata does not add Output columns. Validation continues to prohibit mixed root/body Outputs and more than one top-level For with body Outputs.
+When a For body contains Outputs, each fully successful iteration commits one ResultRow with `ForIteration` metadata and body Output names in step order. Outputs are staged until the entire body succeeds; a later failure discards only that iteration's staged row. Previously committed iteration rows remain in the Core result after failure. Iteration metadata does not add Output columns. Validation continues to prohibit mixed root/body Outputs and more than one row-producing top-level loop across For and While.
+
+While evaluates an Assert-style comparison before every iteration using current runtime variables and earlier root StepOutputs. It introduces no loop variable: ordinary variable updates persist across iterations and after completion. Body StepOutputs follow the same lexical scope and clearing rules as For. An initially false condition succeeds with no body executions; condition resolution errors or body failures fail the aggregate. A successful aggregate produces null. While rows use the same staging, progress events, and successful-run CSV gate as For; an initially false row-producing While commits no synthetic row.
+
+`max_iterations` is a required positive safety guard. After exactly that many successful body executions, While evaluates the condition once more: false succeeds, true fails with `While reached max_iterations while condition is still true`. It is not an expected iteration count or progress percentage. Desktop defaults it to 1000 and shows While identity, 1-based iteration information, and Running state using completed-step events, without a percentage. For presentation is unchanged. Meters preparation reserves capacity using this upper bound; external tool limits still apply.
+
+While reuses the existing comparison operands and operators, with no equality, boolean trees, nested loops, break, continue, or timeout semantics. Template schema v1 represents it as:
+
+```json
+{
+  "type": "while", "id": "warm-up",
+  "left": { "source": "variable", "variable": "temperature" },
+  "operator": "less-than",
+  "right": { "source": "literal", "value": 80 },
+  "max_iterations": 1000,
+  "steps": []
+}
+```
 
 Core For steps define a static decimal numeric range using `start`, `stop`, and nonzero `step`. Ascending ranges require a positive step; descending ranges require a negative step. Stop is inclusive when reachable on the step grid: `0 -> 0.3 step 0.1` has four iterations. A non-grid stop is never crossed: `0 -> 0.35 step 0.1` also ends at `0.3`. Equal start and stop always produce one iteration with any nonzero step.
 
@@ -56,15 +73,15 @@ Template schema v1 stores range values exclusively as exact decimal strings; num
 }
 ```
 
-Desktop can create, load, edit, validate, save, and run one-level For workflows in Simulation or Live mode using Template schema v1. Range fields remain decimal strings. The nested Sequence editor keeps root and body moves within their own lists; the palette shows its insertion target and disables For inside a body. Tool Setup usage checks and Live resource confirmation include body ToolActions.
+Desktop can create, load, edit, validate, save, and run one-level For and While workflows in Simulation or Live mode using Template schema v1. Range fields remain decimal strings. The nested Sequence editor keeps root and body moves within their own lists; the palette shows its insertion target and disables For and While inside a loop body. Tool Setup usage checks and Live resource confirmation include body ToolActions.
 
 Input suggestions follow Core scope: body steps can read earlier root outputs and earlier body sibling outputs, plus the loop variable and earlier ordinary variables. Later root steps cannot see body StepOutputs or a newly introduced loop variable, but can reuse ordinary variables set in the body. A pre-existing variable with the loop variable's name is restored after For.
 
-Core `execute_workflow_with_events` and `run_workflow_with_events` notify callers of completed `StepExecution` records and committed `ResultRow` values during execution. Desktop Simulation and Live use a Tauri Channel to update Execution Results and the Output table incrementally. Rows are notified only after commit, including each successful row-producing For iteration. Partial progress remains available for inspection if the command fails; the final command result is the authoritative `WorkflowRunResult`. CSV remains a manual export after a successfully completed run. Pause, cancel, streaming CSV, charts, and nested For are not supported.
+Core `execute_workflow_with_events` and `run_workflow_with_events` notify callers of completed `StepExecution` records and committed `ResultRow` values during execution. Desktop Simulation and Live use a Tauri Channel to update Execution Results and the Output table incrementally. Rows are notified only after commit, including each successful row-producing For or While iteration. Partial progress remains available for inspection if the command fails; the final command result is the authoritative `WorkflowRunResult`. CSV remains a manual export after a successfully completed run. Pause, cancel, streaming CSV, charts, and nested loops are not supported.
 
 Both Desktop run commands return `WorkflowRunResult` DTOs with iteration metadata and committed ResultRows. Execution Results distinguish body occurrences and display iterations starting at 1; root executions retain null metadata. The Output page uses ResultRows directly for either one root row or multiple iteration rows. Its Iteration column is presentation metadata, not a Workflow Output.
 
-CSV export uses `serialize_result_rows_csv`: the first row's Output names form the header, every ResultRow supplies a data row, and subsequent names, order, and counts must match. Iteration metadata is excluded from CSV. Successful For body rows can be exported as multi-row CSV; failed, cancelled, or incomplete runs remain rejected by the backend, even when prior committed rows exist. Desktop labels those rows as inspection-only and disables export. Runs without Outputs do not create a CSV file. Nested For, break, and continue remain unsupported.
+CSV export uses `serialize_result_rows_csv`: the first row's Output names form the header, every ResultRow supplies a data row, and subsequent names, order, and counts must match. Iteration metadata is excluded from CSV. Successful For or While body rows can be exported as multi-row CSV; failed, cancelled, or incomplete runs remain rejected by the backend, even when prior committed rows exist. Desktop labels those rows as inspection-only and disables export. Runs without Outputs do not create a CSV file. Nested loops, break, and continue remain unsupported.
 
 Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Output steps without a name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
 

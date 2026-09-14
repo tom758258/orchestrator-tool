@@ -130,7 +130,15 @@ pub fn run_workflow_with_events(
                                 iteration.for_step_id(),
                                 iteration.iteration_index(),
                             ),
-                            None => format!("step {} failed: {message}", result.step_id()),
+                            None => match result.while_iteration() {
+                                Some(iteration) => format!(
+                                    "step {} (While {} iteration {}) failed: {message}",
+                                    result.step_id(),
+                                    iteration.while_step_id(),
+                                    iteration.iteration_index()
+                                ),
+                                None => format!("step {} failed: {message}", result.step_id()),
+                            },
                         }),
                         _ => None,
                     })

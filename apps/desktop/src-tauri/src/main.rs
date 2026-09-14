@@ -18,8 +18,8 @@ use orchestrator_tool::{
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
     workflow::{
-        ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, Workflow,
-        WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
+        ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, WhileIteration,
+        Workflow, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
     workflow_csv::serialize_result_rows_csv,
 };
@@ -80,6 +80,7 @@ struct StepExecutionDto {
     output: Option<Value>,
     message: Option<String>,
     for_iteration: Option<ForIterationDto>,
+    while_iteration: Option<WhileIterationDto>,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,9 +103,16 @@ struct ForIterationDto {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct WhileIterationDto {
+    while_step_id: String,
+    iteration_index: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 struct ResultRowDto {
     outputs: Vec<WorkflowOutputDto>,
     for_iteration: Option<ForIterationDto>,
+    while_iteration: Option<WhileIterationDto>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -464,6 +472,13 @@ fn for_iteration_dto(iteration: &ForIteration) -> ForIterationDto {
     }
 }
 
+fn while_iteration_dto(iteration: &WhileIteration) -> WhileIterationDto {
+    WhileIterationDto {
+        while_step_id: iteration.while_step_id().as_str().to_owned(),
+        iteration_index: iteration.iteration_index(),
+    }
+}
+
 fn workflow_run_event_dto(event: &WorkflowRunEvent) -> WorkflowRunEventDto {
     match event {
         WorkflowRunEvent::StepCompleted(execution) => WorkflowRunEventDto::StepCompleted {
@@ -497,6 +512,7 @@ fn result_row_dto(row: &ResultRow) -> ResultRowDto {
             })
             .collect(),
         for_iteration: row.for_iteration().map(for_iteration_dto),
+        while_iteration: row.while_iteration().map(while_iteration_dto),
     }
 }
 
@@ -514,6 +530,7 @@ fn step_execution_dto(execution: &StepExecution) -> StepExecutionDto {
         output,
         message,
         for_iteration: execution.for_iteration().map(for_iteration_dto),
+        while_iteration: execution.while_iteration().map(while_iteration_dto),
     }
 }
 
@@ -526,17 +543,35 @@ impl TryFrom<ForIterationDto> for ForIteration {
     }
 }
 
+impl TryFrom<WhileIterationDto> for WhileIteration {
+    type Error = String;
+
+    fn try_from(dto: WhileIterationDto) -> Result<Self, Self::Error> {
+        let id = StepId::new(dto.while_step_id).map_err(|error| error.to_string())?;
+        Ok(Self::new(id, dto.iteration_index))
+    }
+}
+
 impl TryFrom<ResultRowDto> for ResultRow {
     type Error = String;
 
     fn try_from(dto: ResultRowDto) -> Result<Self, Self::Error> {
-        Ok(Self::new(
-            dto.outputs
-                .into_iter()
-                .map(|output| WorkflowOutput::new(output.name, output.value))
-                .collect(),
-            dto.for_iteration.map(ForIteration::try_from).transpose()?,
-        ))
+        if dto.for_iteration.is_some() && dto.while_iteration.is_some() {
+            return Err("a row cannot have both For and While iteration metadata".to_owned());
+        }
+        let outputs = dto
+            .outputs
+            .into_iter()
+            .map(|output| WorkflowOutput::new(output.name, output.value))
+            .collect();
+        Ok(if let Some(iteration) = dto.while_iteration {
+            Self::in_while(outputs, iteration.try_into()?)
+        } else {
+            Self::new(
+                outputs,
+                dto.for_iteration.map(ForIteration::try_from).transpose()?,
+            )
+        })
     }
 }
 
@@ -564,10 +599,20 @@ impl TryFrom<StepExecutionDto> for StepExecution {
                 ));
             }
         };
-        Ok(Self::new(
-            StepResult::new(step_id, outcome),
-            dto.for_iteration.map(ForIteration::try_from).transpose()?,
-        ))
+        if dto.for_iteration.is_some() && dto.while_iteration.is_some() {
+            return Err(
+                "an execution cannot have both For and While iteration metadata".to_owned(),
+            );
+        }
+        let result = StepResult::new(step_id, outcome);
+        Ok(if let Some(iteration) = dto.while_iteration {
+            Self::in_while(result, iteration.try_into()?)
+        } else {
+            Self::new(
+                result,
+                dto.for_iteration.map(ForIteration::try_from).transpose()?,
+            )
+        })
     }
 }
 
@@ -579,9 +624,11 @@ fn validate_completed_successful_run(
         .iter()
         .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }));
     let all_root_steps_completed = workflow.steps().iter().all(|step| {
-        results
-            .iter()
-            .any(|result| result.for_iteration().is_none() && result.step_id() == step.id())
+        results.iter().any(|result| {
+            result.for_iteration().is_none()
+                && result.while_iteration().is_none()
+                && result.step_id() == step.id()
+        })
     });
     if !all_succeeded || !all_root_steps_completed {
         return Err(
@@ -1006,7 +1053,7 @@ mod tests {
             json!({
                 "type": "step-completed",
                 "execution": { "step_id": "out", "status": "succeeded", "output": 3, "message": null,
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 } }
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
             })
         );
         assert_eq!(
@@ -1014,7 +1061,7 @@ mod tests {
             json!({
                 "type": "result-row-committed",
                 "row": { "outputs": [{ "name": "value", "value": 3 }],
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 } }
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
             })
         );
     }
@@ -1135,6 +1182,98 @@ mod tests {
                 super::export_workflow_csv(template_json.clone(), dto, path.display().to_string())
                     .unwrap_err();
             assert!(error.contains("did not complete successfully"));
+            assert!(!path.exists());
+        }
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn while_dtos_preserve_occurrences_and_csv_requires_root_completion() {
+        let template_json = json!({
+            "schema_version": 1, "tool_instances": [], "name": "While CSV",
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "init", "variable": "x", "value": { "source": "literal", "value": 0 } },
+                { "type": "while", "id": "repeat", "max_iterations": 1,
+                  "left": { "source": "variable", "variable": "x" }, "operator": "less-than",
+                  "right": { "source": "literal", "value": 1 }, "steps": [
+                    { "type": "output", "id": "out", "name": "x", "value": { "source": "variable", "variable": "x" } },
+                    { "type": "set-variable", "id": "advance", "variable": "x", "value": { "source": "literal", "value": 1 } }
+                  ] }
+            ] }
+        }).to_string();
+        let template = Template::from_json_str(&template_json).unwrap();
+        let run = orchestrator_tool::run::run_simulated_workflow(
+            &template,
+            &Default::default(),
+            super::RUN_STARTUP_TIMEOUT,
+            super::RUN_ACTION_TIMEOUT,
+            super::RUN_SHUTDOWN_TIMEOUT,
+        )
+        .unwrap();
+        let execution = &run.step_executions()[1];
+        let row = &run.result_rows()[0];
+        assert_eq!(
+            StepExecution::try_from(super::step_execution_dto(execution)).unwrap(),
+            *execution
+        );
+        assert_eq!(
+            ResultRow::try_from(super::result_row_dto(row)).unwrap(),
+            *row
+        );
+        for (event, field) in [
+            (
+                WorkflowRunEvent::StepCompleted(execution.clone()),
+                "execution",
+            ),
+            (WorkflowRunEvent::ResultRowCommitted(row.clone()), "row"),
+        ] {
+            let wire = serde_json::to_value(super::workflow_run_event_dto(&event)).unwrap();
+            assert_eq!(
+                wire[field]["while_iteration"],
+                json!({ "while_step_id": "repeat", "iteration_index": 0 })
+            );
+            assert!(wire[field]["for_iteration"].is_null());
+        }
+        let mut ambiguous = super::step_execution_dto(execution);
+        ambiguous.for_iteration = Some(super::ForIterationDto {
+            for_step_id: "sweep".to_owned(),
+            iteration_index: 0,
+        });
+        assert!(StepExecution::try_from(ambiguous).is_err());
+        let mut ambiguous = super::result_row_dto(row);
+        ambiguous.for_iteration = Some(super::ForIterationDto {
+            for_step_id: "sweep".to_owned(),
+            iteration_index: 0,
+        });
+        assert!(ResultRow::try_from(ambiguous).is_err());
+        let dir = unique_test_dir("orchestrator-desktop-while-csv");
+        let path = dir.join("results.csv");
+        super::export_workflow_csv(
+            template_json.clone(),
+            super::workflow_run_result_dto(&run),
+            path.display().to_string(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n0\n");
+        std::fs::remove_file(&path).unwrap();
+        for missing_root in [false, true] {
+            let mut dto = super::workflow_run_result_dto(&run);
+            let aggregate = dto.step_executions.last_mut().unwrap();
+            if missing_root {
+                aggregate.while_iteration = Some(super::WhileIterationDto {
+                    while_step_id: "repeat".to_owned(),
+                    iteration_index: 0,
+                });
+            } else {
+                aggregate.status = "failed".to_owned();
+                aggregate.message =
+                    Some("While reached max_iterations while condition is still true".to_owned());
+            }
+            assert!(
+                super::export_workflow_csv(template_json.clone(), dto, path.display().to_string())
+                    .unwrap_err()
+                    .contains("did not complete successfully")
+            );
             assert!(!path.exists());
         }
         std::fs::remove_dir(dir).unwrap();

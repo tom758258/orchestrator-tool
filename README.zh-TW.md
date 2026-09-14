@@ -8,7 +8,7 @@
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
 - Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的有序 Sequence editor、點擊新增的 Step Palette、步驟順序調整、執行結果狀態、參數編輯、Template 載入／儲存、Simulation 與 Live Workflow 執行及完整 StepResult 顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義支援一層 For 的 ordered workflow domain、版本化 JSON template、可區分 occurrence 的結果與循序執行。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 WorkflowRunResult 契約。Template schema version 1 與 Workflow 不保存 execution mode、resource、output authorization 或 safety cleanup state。CLI 不提供 workflow run command。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義支援一層 For 與 While 的 ordered workflow domain、版本化 JSON template、可區分 occurrence 的結果與循序執行。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 WorkflowRunResult 契約。Template schema version 1 與 Workflow 不保存 execution mode、resource、output authorization 或 safety cleanup state。CLI 不提供 workflow run command。
 
 ## Tool Setup 與 Workflow Template
 
@@ -32,15 +32,32 @@ ExecutionMode、Live VISA Resource、runtime results、output authorization 與 
 
 ## Template Expression
 
-Workflow run 現在回傳 Core `WorkflowRunResult`，包含依執行順序排列的 `StepExecution` 與 `ResultRow`。每筆 execution 保留原有 `StepResult`；Step ID 仍是穩定的 definition identity。可選的 `ForIteration` metadata 保存 For Step ID 與 zero-based iteration index，與 Step ID 及 Output columns 分離。
+Workflow run 現在回傳 Core `WorkflowRunResult`，包含依執行順序排列的 `StepExecution` 與 `ResultRow`。每筆 execution 保留原有 `StepResult`；Step ID 仍是穩定的 definition identity。可選的 `ForIteration` 或 `WhileIteration` metadata 保存所屬 step ID 與 zero-based iteration index，與 Step ID 及 Output columns 分離。既有 `for_iteration` 欄位維持不變，平行的 `while_iteration` 欄位用來識別 While occurrence；同一筆 execution 或 row 不會同時帶有兩種 metadata。
 
-成功完成且沒有 body Output 的 workflow 產生一列 root ResultRow，也適用於包含 For 的 workflow。Cells 沿用 `WorkflowOutput`，依 root Output Step 順序使用 Output names 作為 columns。完全沒有 Output 的成功 workflow 仍產生一列 empty root row。失敗或未完整完成的 workflow 不 commit root row。Root execution 與 row 都沒有 For iteration metadata。
+成功完成且沒有 body Output 的 workflow 產生一列 root ResultRow，也適用於包含 For 或 While 的 workflow。Cells 沿用 `WorkflowOutput`，依 root Output Step 順序使用 Output names 作為 columns。完全沒有 Output 的成功 workflow 仍產生一列 empty root row。失敗或未完整完成的 workflow 不 commit root row。Root execution 與 row 都沒有 For 或 While iteration metadata。
 
 Core 現在依 `NumericRange::iteration_count()` 的各個 index，循序執行 For body，每個 exact range value 都只取自 `NumericRange::value_at(index)`。Executor 在 bind loop variable 前，將 Decimal 轉換一次成 JSON number；runtime expressions 與 tool arguments 維持既有 JSON numeric 行為。Loop binding 只在 For scope 內有效：成功或失敗離開時，還原進入前的原值；原本不存在則移除。普通變數可跨 iteration 與 For 結束後持續修改。每次 iteration 開始前及離開 For 時都清除 body step outputs；body 可讀取先前 root outputs 與當次 iteration 已執行的 sibling outputs。
 
 Body StepExecution 保留原本 Step ID，並附上 `ForIteration` metadata。Completion order 是先前 root steps、依 iteration 排列的 body occurrences、For aggregate root execution，最後才是後續 root steps。For 成功時保存 JSON null 作為 aggregate output。Body 失敗時，先記錄 failed occurrence，再記錄包含 body Step ID 與原始診斷的 For aggregate failure；剩餘 body steps、iterations 與後續 root steps 都不執行。既有 lifecycle 仍執行 Live Powers safe-off 與 Worker shutdown。
 
-For body 包含 Output 時，每個完整成功的 iteration commit 一列 ResultRow，附上 `ForIteration` metadata，columns 依 body Output Step 順序使用 Output names。Outputs 先暫存，直到整個 body 成功才 commit；後續 step 失敗只丟棄當次 iteration 的 staged row。先前成功 commit 的 iteration rows 在失敗後仍保留於 Core result。Iteration metadata 不會增加 Output columns。Validation 仍禁止混用 root／body Output，並限制最多一個 top-level For 包含 body Output。
+For body 包含 Output 時，每個完整成功的 iteration commit 一列 ResultRow，附上 `ForIteration` metadata，columns 依 body Output Step 順序使用 Output names。Outputs 先暫存，直到整個 body 成功才 commit；後續 step 失敗只丟棄當次 iteration 的 staged row。先前成功 commit 的 iteration rows 在失敗後仍保留於 Core result。Iteration metadata 不會增加 Output columns。Validation 仍禁止混用 root／body Output，並限制 For 與 While 中最多一個 top-level loop 可以產生 body Output。
+
+While 每次 iteration 前都使用目前 runtime variables 與 While 前可用的 root StepOutputs，評估 Assert-style comparison。While 不引入 loop variable；普通變數在各次 iteration 及 While 結束後持續保留。Body StepOutputs 沿用 For 的 lexical scope 與清除規則。若初始條件為 false，While 成功且不執行 body；condition resolution error 或 body failure 會使 aggregate 失敗。成功的 aggregate output 為 JSON null。While rows 沿用 For 的 staged row、progress event 與 successful-run CSV gate；若初始條件為 false，即使 body 有 Output 也不建立 synthetic row。
+
+`max_iterations` 是必要且必須為正整數的 safety guard。完成剛好這個數量的 body execution 後，While 會再評估一次 condition：若為 false 則成功，若仍為 true 則以 `While reached max_iterations while condition is still true` 失敗。它不是預期 iteration 數量，也不是 progress percentage。Desktop 新增 While 時預設為 1000，顯示 While identity、從 1 開始的 iteration 資訊與 Running 狀態，不顯示百分比；For 的呈現維持不變。Meters preparation 會依這個上限預留容量，實際限制仍由 external tool 決定。
+
+While 重用既有 comparison operand 與 operator，不新增 equality、boolean tree、巢狀 loop、break、continue 或 timeout semantics。Template schema v1 表示如下：
+
+```json
+{
+  "type": "while", "id": "warm-up",
+  "left": { "source": "variable", "variable": "temperature" },
+  "operator": "less-than",
+  "right": { "source": "literal", "value": 80 },
+  "max_iterations": 1000,
+  "steps": []
+}
+```
 
 Core For Step 使用 static decimal numeric range，由 `start`、`stop` 與非零 `step` 定義。遞增 range 必須使用正 step，遞減 range 必須使用負 step。Stop 正好落在 step grid 時包含該值：`0 -> 0.3 step 0.1` 共四次 iteration。非 grid 的 stop 不會被越過：`0 -> 0.35 step 0.1` 同樣止於 `0.3`。Start 等於 stop 時，任何非零 step 都只有一次 iteration。
 
@@ -56,15 +73,15 @@ Template schema v1 的 range 值只接受 exact decimal string；JSON number 會
 }
 ```
 
-Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、儲存一層 For，並以 Simulation 或 Live 執行。Range 欄位全程保留 decimal string。巢狀 Sequence editor 的 root／body Step 只能在各自清單內移動；palette 會顯示插入位置，body 中停用 For。Tool Setup 使用偵測與 Live resource confirmation 皆包含 body ToolAction。
+Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、儲存一層 For 與 While，並以 Simulation 或 Live 執行。Range 欄位全程保留 decimal string。巢狀 Sequence editor 的 root／body Step 只能在各自清單內移動；palette 會顯示插入位置，loop body 中停用 For 與 While。Tool Setup 使用偵測與 Live resource confirmation 皆包含 body ToolAction。
 
 Input suggestions 遵循 Core scope：body Step 可引用 For 前的 root outputs、同一次 iteration 的先前 body sibling outputs，以及 loop variable 和先前普通 variables。For 後的 root Step 看不到 body StepOutput 或新引入的 loop variable，但可使用 body 設定的普通 variables；若 loop variable 原先已有同名 variable，For 結束後會恢復其值。
 
-Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、cancel、streaming CSV、chart 或 nested For。
+Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、cancel、streaming CSV、chart 或 nested loop。
 
-兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
+兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 For／While body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For／While iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
 
-CSV 使用 `serialize_result_rows_csv`：第一列 Output names 為 header，每個 ResultRow 產生一列，後續列的名稱、順序與數量必須一致。Iteration metadata 不寫入 CSV。成功 For 的 body rows 可匯出多列 CSV；failed、cancelled 或 incomplete run 仍由 backend 拒絕匯出，即使已有先前 committed rows。Desktop 會標示這些列僅供檢視並停用匯出；沒有 Output 的 run 不建立 CSV 檔。Nested For、break 與 continue 仍不支援。
+CSV 使用 `serialize_result_rows_csv`：第一列 Output names 為 header，每個 ResultRow 產生一列，後續列的名稱、順序與數量必須一致。Iteration metadata 不寫入 CSV。成功 For 或 While 的 body rows 可匯出多列 CSV；failed、cancelled 或 incomplete run 仍由 backend 拒絕匯出，即使已有先前 committed rows。Desktop 會標示這些列僅供檢視並停用匯出；沒有 Output 的 run 不建立 CSV 檔。Nested loop、break 與 continue 仍不支援。
 
 Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。舊 Template 的 Output Step 若沒有 `name`，載入時會使用該 Step ID 作為 name，再次儲存時會明確寫入 `name`。
 

@@ -383,6 +383,11 @@ pub enum StepKind {
         /// Top-level inputs resolved at runtime, overriding literal arguments.
         bindings: BTreeMap<String, InputValue>,
     },
+    While {
+        condition: Expression,
+        max_iterations: usize,
+        body: Vec<Step>,
+    },
     For {
         variable: VariableId,
         range: NumericRange,
@@ -403,7 +408,7 @@ impl Workflow {
         let mut output_names = HashSet::new();
         let mut root_outputs = false;
         let mut body_outputs = false;
-        let mut row_for = None;
+        let mut row_loop = None;
 
         #[allow(clippy::too_many_arguments)]
         fn validate_steps(
@@ -413,10 +418,10 @@ impl Workflow {
             available: &HashSet<StepId>,
             root_outputs: &mut bool,
             body_outputs: &mut bool,
-            in_for: bool,
+            in_loop: bool,
             loop_variable: Option<&VariableId>,
-            current_for: Option<&StepId>,
-            row_for: &mut Option<StepId>,
+            current_loop: Option<&StepId>,
+            row_loop: &mut Option<StepId>,
         ) -> Result<(), WorkflowError> {
             let mut prior = available.clone();
             for step in steps {
@@ -454,8 +459,8 @@ impl Workflow {
                         body,
                     } => {
                         let _ = range.iteration_count();
-                        if in_for {
-                            return Err(WorkflowError::NestedFor(step.id().clone()));
+                        if in_loop {
+                            return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
                         validate_steps(
                             body,
@@ -467,7 +472,37 @@ impl Workflow {
                             true,
                             Some(variable),
                             Some(step.id()),
-                            row_for,
+                            row_loop,
+                        )?;
+                    }
+                    StepKind::While {
+                        condition,
+                        max_iterations,
+                        body,
+                    } => {
+                        if in_loop {
+                            return Err(WorkflowError::NestedLoop(step.id().clone()));
+                        }
+                        if !condition.operator().is_comparison() {
+                            return Err(WorkflowError::InvalidWhileOperator(step.id().clone()));
+                        }
+                        if *max_iterations == 0 {
+                            return Err(WorkflowError::InvalidWhileMaxIterations(
+                                step.id().clone(),
+                            ));
+                        }
+                        validate_input(&InputValue::Expression(condition.clone()))?;
+                        validate_steps(
+                            body,
+                            seen,
+                            output_names,
+                            &prior,
+                            root_outputs,
+                            body_outputs,
+                            true,
+                            None,
+                            Some(step.id()),
+                            row_loop,
                         )?;
                     }
                     StepKind::Assert { condition, .. } => {
@@ -490,17 +525,17 @@ impl Workflow {
                             return Err(WorkflowError::DuplicateOutputName(name.clone()));
                         }
                         validate_input(value)?;
-                        if in_for {
-                            if let Some(for_id) = current_for {
-                                if let Some(previous) = row_for {
-                                    if previous != for_id {
-                                        return Err(WorkflowError::MultipleRowProducingFors {
+                        if in_loop {
+                            if let Some(loop_id) = current_loop {
+                                if let Some(previous) = row_loop {
+                                    if previous != loop_id {
+                                        return Err(WorkflowError::MultipleRowProducingLoops {
                                             first: previous.clone(),
-                                            second: for_id.clone(),
+                                            second: loop_id.clone(),
                                         });
                                     }
                                 } else {
-                                    *row_for = Some(for_id.clone());
+                                    *row_loop = Some(loop_id.clone());
                                 }
                             }
                             *body_outputs = true;
@@ -530,7 +565,7 @@ impl Workflow {
             false,
             None,
             None,
-            &mut row_for,
+            &mut row_loop,
         )?;
         if root_outputs && body_outputs {
             return Err(WorkflowError::MixedOutputPlacement);
@@ -629,20 +664,30 @@ impl Error for OutputProjectionError {}
 #[derive(Debug)]
 pub enum WorkflowError {
     InvalidAssertOperator(StepId),
+    InvalidWhileOperator(StepId),
+    InvalidWhileMaxIterations(StepId),
     DuplicateStepId(StepId),
     InvalidOutputName(StepId),
     DuplicateOutputName(String),
     InvalidStepOutputReference { step_id: StepId, target: StepId },
-    NestedFor(StepId),
+    NestedLoop(StepId),
     LoopVariableAssignment(StepId),
     MixedOutputPlacement,
-    MultipleRowProducingFors { first: StepId, second: StepId },
+    MultipleRowProducingLoops { first: StepId, second: StepId },
     InvalidRange(String),
 }
 
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidWhileOperator(step_id) => write!(
+                formatter,
+                "While step {step_id} requires a comparison operator"
+            ),
+            Self::InvalidWhileMaxIterations(step_id) => write!(
+                formatter,
+                "While step {step_id} requires positive max_iterations"
+            ),
             Self::InvalidAssertOperator(step_id) => {
                 write!(
                     formatter,
@@ -662,19 +707,22 @@ impl fmt::Display for WorkflowError {
             Self::DuplicateStepId(step_id) => {
                 write!(formatter, "duplicate workflow step ID {step_id}")
             }
-            Self::NestedFor(step_id) => {
-                write!(formatter, "nested For is not supported at step {step_id}")
+            Self::NestedLoop(step_id) => {
+                write!(
+                    formatter,
+                    "nested For/While is not supported at step {step_id}"
+                )
             }
             Self::LoopVariableAssignment(step_id) => write!(
                 formatter,
                 "step {step_id} cannot assign its For loop variable"
             ),
             Self::MixedOutputPlacement => {
-                write!(formatter, "root and For-body outputs cannot be mixed")
+                write!(formatter, "root and loop-body outputs cannot be mixed")
             }
-            Self::MultipleRowProducingFors { first, second } => write!(
+            Self::MultipleRowProducingLoops { first, second } => write!(
                 formatter,
-                "For steps {first} and {second} both produce workflow rows"
+                "Loop steps {first} and {second} both produce workflow rows"
             ),
             Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
         }
@@ -739,18 +787,57 @@ impl ForIteration {
     }
 }
 
-/// One execution of a step; root executions have no For iteration.
+/// Occurrence metadata, separate from stable step definition IDs and output columns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WhileIteration {
+    while_step_id: StepId,
+    iteration_index: usize,
+}
+
+impl WhileIteration {
+    /// The iteration index is zero-based.
+    pub fn new(while_step_id: StepId, iteration_index: usize) -> Self {
+        Self {
+            while_step_id,
+            iteration_index,
+        }
+    }
+
+    pub fn while_step_id(&self) -> &StepId {
+        &self.while_step_id
+    }
+
+    pub fn iteration_index(&self) -> usize {
+        self.iteration_index
+    }
+}
+
+/// One execution of a step; root executions have no iteration metadata.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StepExecution {
     result: StepResult,
     for_iteration: Option<ForIteration>,
+    while_iteration: Option<WhileIteration>,
 }
 
 impl StepExecution {
+    pub fn in_while(result: StepResult, while_iteration: WhileIteration) -> Self {
+        Self {
+            result,
+            for_iteration: None,
+            while_iteration: Some(while_iteration),
+        }
+    }
+
+    pub fn while_iteration(&self) -> Option<&WhileIteration> {
+        self.while_iteration.as_ref()
+    }
+
     pub fn new(result: StepResult, for_iteration: Option<ForIteration>) -> Self {
         Self {
             result,
             for_iteration,
+            while_iteration: None,
         }
     }
 
@@ -776,13 +863,27 @@ impl StepExecution {
 pub struct ResultRow {
     outputs: Vec<WorkflowOutput>,
     for_iteration: Option<ForIteration>,
+    while_iteration: Option<WhileIteration>,
 }
 
 impl ResultRow {
+    pub fn in_while(outputs: Vec<WorkflowOutput>, while_iteration: WhileIteration) -> Self {
+        Self {
+            outputs,
+            for_iteration: None,
+            while_iteration: Some(while_iteration),
+        }
+    }
+
+    pub fn while_iteration(&self) -> Option<&WhileIteration> {
+        self.while_iteration.as_ref()
+    }
+
     pub fn new(outputs: Vec<WorkflowOutput>, for_iteration: Option<ForIteration>) -> Self {
         Self {
             outputs,
             for_iteration,
+            while_iteration: None,
         }
     }
 
@@ -1289,7 +1390,7 @@ mod tests {
                 for_step("for-a", vec![output("out-a", "a")]),
                 for_step("for-b", vec![output("out-b", "b")]),
             ]),
-            Err(WorkflowError::MultipleRowProducingFors { .. })
+            Err(WorkflowError::MultipleRowProducingLoops { .. })
         ));
         assert!(Workflow::new(vec![for_step("for-a", vec![]), for_step("for-b", vec![])]).is_ok());
     }
@@ -1334,7 +1435,7 @@ mod tests {
                 "outer",
                 vec![for_step("inner", vec![])],
             )]),
-            Err(WorkflowError::NestedFor(step_id)) if step_id.as_str() == "inner"
+            Err(WorkflowError::NestedLoop(step_id)) if step_id.as_str() == "inner"
         ));
 
         let root_id = StepId::new("root-a").unwrap();

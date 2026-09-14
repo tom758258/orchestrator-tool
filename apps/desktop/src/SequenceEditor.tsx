@@ -1,5 +1,5 @@
 import type { ToolInstance } from './ToolSetupEditor'
-import type { StepExecutionDto, WorkflowStep, ForStep } from './workflow'
+import type { StepExecutionDto, WorkflowStep, ForStep, WhileStep } from './workflow'
 import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
@@ -32,6 +32,7 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
     case 'for':
       return `Step ${step.range.step} · ${step.steps.length} body steps`
+    case 'while':
     case 'assert':
       return expressionSummary(step)
     case 'set-variable':
@@ -78,12 +79,15 @@ function SequenceEditor({
   onMoveStep,
   onDeleteStep,
 }: SequenceEditorProps) {
-  function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep, parentOrder?: string): React.ReactNode {
+  function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep | WhileStep, parentOrder?: string): React.ReactNode {
     return (
       <ol className="sequence-steps">
         {siblings.map((step, index) => {
           const occurrences = runResults?.filter(result => result.step_id === step.id &&
-            (parent ? result.for_iteration?.for_step_id === parent.id : result.for_iteration === null)) ?? []
+            (parent ? parent.type === 'for'
+              ? result.for_iteration?.for_step_id === parent.id
+              : result.while_iteration?.while_step_id === parent.id
+              : result.for_iteration === null && result.while_iteration === null)) ?? []
           const result = occurrences.find(result => result.status === 'failed')
             ?? (occurrences.length > 0 && occurrences.every(result => result.status === 'succeeded')
               ? occurrences[occurrences.length - 1] : occurrences.find(result => result.status === 'cancelled'))
@@ -150,8 +154,8 @@ function SequenceEditor({
                   Delete
                 </button>
               </div>
-              {step.type === 'for' && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
-                {step.steps.length ? renderSteps(step.steps, step, order) : <p>No body steps. Select this For and add steps from the palette.</p>}
+              {(step.type === 'for' || step.type === 'while') && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
+                {step.steps.length ? renderSteps(step.steps, step, order) : <p>No body steps. Select this loop and add steps from the palette.</p>}
               </div>}
             </li>
           )
