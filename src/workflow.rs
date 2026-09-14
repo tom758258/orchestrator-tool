@@ -259,16 +259,20 @@ impl NumericRange {
         } else {
             ratio
         };
-        let count_value = ratio.floor() + 1.0;
+        let intervals_value = ratio.floor();
         let usize_limit = 2.0_f64.powi(usize::BITS as i32);
-        if !count_value.is_finite() || count_value >= usize_limit {
+        if !intervals_value.is_finite() || intervals_value >= usize_limit {
             return Err(NumericRangeError::CountOverflow);
         }
+        let intervals = intervals_value as usize;
+        let count = intervals
+            .checked_add(1)
+            .ok_or(NumericRangeError::CountOverflow)?;
         Ok(Self {
             start,
             stop,
             step,
-            count: count_value as usize,
+            count,
         })
     }
     pub fn start(&self) -> f64 {
@@ -1041,6 +1045,16 @@ mod tests {
         assert!(NumericRange::new(0.0, 1.0, -1.0).is_err());
         assert!(NumericRange::new(1.0, 0.0, 1.0).is_err());
         assert!(NumericRange::new(f64::NAN, 1.0, 1.0).is_err());
+    }
+
+    #[test]
+    fn numeric_range_preserves_count_increment_above_f64_integer_precision() {
+        if usize::BITS >= 64 {
+            let stop = 2_f64.powi(53);
+            let range = NumericRange::new(0.0, stop, 1.0).unwrap();
+
+            assert_eq!(range.iteration_count() as u64, (1_u64 << 53) + 1);
+        }
     }
 
     #[test]
