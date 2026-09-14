@@ -291,6 +291,8 @@ function formatOutputResult(result: StepResultDto | undefined): string {
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const metersTool = tools.find(tool => tool.tool_id === 'meters')
+  const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
   const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
@@ -1024,6 +1026,7 @@ function App() {
               <ToolSetupEditor
                 value={workflowDraft.tool_instances}
                 resourceIdentities={resourceIdentities}
+                metersExecutableKey={metersExecutableKey}
                 steps={workflowDraft.workflow.steps}
                 renderResource={instance => (
                   <>

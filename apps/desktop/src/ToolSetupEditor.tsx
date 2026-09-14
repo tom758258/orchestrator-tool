@@ -29,25 +29,25 @@ function formatRange(value: number, unit: string): string {
   return `${Number((value / 10 ** exponent).toPrecision(12))} ${prefix[exponent]}${unit}`
 }
 
-function MetersSetupFields({ value, onChange, model }: {
-  value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void; model?: string | null
+function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
+  value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void; model?: string | null; metersExecutableKey: string
 }) {
-  const [capabilities, setCapabilities] = useState<{ model: string; options: MetersRangeOptions[] | null } | null>(null)
+  const [capabilities, setCapabilities] = useState<{ model: string; metersExecutableKey: string; options: MetersRangeOptions[] | null } | null>(null)
   useEffect(() => {
     let cancelled = false
     setCapabilities(null)
     if (model) {
       invoke<MetersRangeOptions[]>('get_meters_range_options', { model }).then(
-        options => { if (!cancelled) setCapabilities({ model, options }) },
-        () => { if (!cancelled) setCapabilities({ model, options: null }) },
+        options => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options }) },
+        () => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options: null }) },
       )
     }
     return () => { cancelled = true }
-  }, [model])
+  }, [model, metersExecutableKey])
   const meters = value.meters
-  const currentCapabilities = capabilities?.model === model ? capabilities : null
+  const currentCapabilities = capabilities?.model === model && capabilities?.metersExecutableKey === metersExecutableKey ? capabilities : null
   const ranges = currentCapabilities?.options?.find(option => option.measurement_name === meters.measurement)?.range_values
-  const unsupportedRange = ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)
+  const unsupportedRange = meters.range_mode === 'manual' && ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)
   const unit = meters.measurement === 'voltage-dc' ? 'V' : 'A'
   const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
@@ -158,9 +158,10 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities }: {
+export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, metersExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   resourceIdentities: Record<string, { model: string | null } | null>
+  metersExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
@@ -206,7 +207,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
         {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'
-            ? <MetersSetupFields model={resourceIdentities[instance.id]?.model} value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
+            ? <MetersSetupFields metersExecutableKey={metersExecutableKey} model={resourceIdentities[instance.id]?.model} value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
             : <p>No additional setup</p>}
           {renderResource(instance)}
           <button type="button" className="action-button" disabled={referenced}
