@@ -32,6 +32,22 @@ ExecutionMode、Live VISA Resource、runtime results、output authorization 與 
 
 ## Template Expression
 
+Core For Step 使用 static decimal numeric range，由 `start`、`stop` 與非零 `step` 定義。遞增 range 必須使用正 step，遞減 range 必須使用負 step。Stop 正好落在 step grid 時包含該值：`0 -> 0.3 step 0.1` 共四次 iteration。非 grid 的 stop 不會被越過：`0 -> 0.35 step 0.1` 同樣止於 `0.3`。Start 等於 stop 時，任何非零 step 都只有一次 iteration。
+
+`NumericRange` 統一負責 exact count 與 `value_at(index)`；超出範圍回傳 `None`，不配置完整 value list。只有 For range 使用 `rust_decimal::Decimal`（96-bit mantissa、scale 0–28）。除相同 endpoint 外，正規化後的輸入必須能以共同 decimal scale 表示，否則 construction 回報 representable-domain error。Count 使用 exact scaled-integer division 並檢查是否可放入 `usize`，不使用 floating-point tolerance 或經 rounding 的 decimal division。Expression arithmetic 與 measurement value 維持原有型別。
+
+Template schema v1 的 range 值只接受 exact decimal string；JSON number 會被拒絕，無效或無法精確表示的 decimal string 會回報解析錯誤。不保證保留尾端零等文字格式。例如：
+
+```json
+{
+  "type": "for", "id": "sweep", "variable": "voltage",
+  "range": { "start": "0", "stop": "0.3", "step": "0.1" },
+  "steps": []
+}
+```
+
+目前不支援 nested For。For runtime execution 尚未實作，Executor 仍回報 `For execution is not implemented`；這是 Core／Template 的 domain foundation，尚無 Desktop For editor。
+
 Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。舊 Template 的 Output Step 若沒有 `name`，載入時會使用該 Step ID 作為 name，再次儲存時會明確寫入 `name`。
 
 Core 的 `Workflow::project_outputs(&[StepResult])` 只收集 Output Steps，依 Workflow 中的 Step 順序回傳有序的 `WorkflowOutput`，並由 `WorkflowOutput` 提供 `name()` 與 `value()` 存取方法。若任何 Output Step 的結果缺少（missing）、失敗（failed）或取消（cancelled），則整個 projection 失敗。Projection 本身不負責保存結果，也不負責 CSV serialization。

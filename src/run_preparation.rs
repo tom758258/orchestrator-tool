@@ -355,7 +355,8 @@ mod tests {
                     crate::workflow::StepId::new("sweep").unwrap(),
                     crate::workflow::StepKind::For {
                         variable: crate::workflow::VariableId::new("voltage").unwrap(),
-                        range: crate::workflow::NumericRange::new(1.0, 5.0, 1.0).unwrap(),
+                        range: crate::workflow::NumericRange::new(1.into(), 5.into(), 1.into())
+                            .unwrap(),
                         body: vec![measure("body-measure-a"), measure("body-measure-b")],
                     },
                 ),

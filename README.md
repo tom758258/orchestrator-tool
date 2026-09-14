@@ -32,6 +32,22 @@ ExecutionMode, Live VISA Resource, runtime results, output authorization, and sa
 
 ## Template expressions
 
+Core For steps define a static decimal numeric range using `start`, `stop`, and nonzero `step`. Ascending ranges require a positive step; descending ranges require a negative step. Stop is inclusive when reachable on the step grid: `0 -> 0.3 step 0.1` has four iterations. A non-grid stop is never crossed: `0 -> 0.35 step 0.1` also ends at `0.3`. Equal start and stop always produce one iteration with any nonzero step.
+
+`NumericRange` owns the exact count and `value_at(index)` values; out-of-range indices return `None` without allocating a value list. Only For ranges use `rust_decimal::Decimal` (96-bit mantissa, scale 0–28). Normalized inputs must fit at a common decimal scale, except equal endpoints; otherwise construction reports a representable-domain error. Count uses exact scaled-integer division and must fit `usize`, with no floating-point tolerance or rounded decimal division. Expression arithmetic and measurement values are unchanged.
+
+Template schema v1 stores range values exclusively as exact decimal strings; numeric JSON values are rejected, and invalid or unrepresentable decimal strings fail parsing. Text formatting such as trailing zeros need not be preserved. For example:
+
+```json
+{
+  "type": "for", "id": "sweep", "variable": "voltage",
+  "range": { "start": "0", "stop": "0.3", "step": "0.1" },
+  "steps": []
+}
+```
+
+Nested For is not supported. For runtime execution is not implemented; the Executor still reports `For execution is not implemented`. This is a Core/Template domain foundation, with no Desktop For editor.
+
 Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Output steps without a name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
 
 Template schema version 1 persists structured Expression inputs in Set Variable, Output, and ToolAction bindings using the existing Core domain. For example, `x * 2` is stored as:

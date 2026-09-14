@@ -4,6 +4,7 @@ use std::{
     fmt,
 };
 
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::tool_instance::ToolInstanceId;
@@ -235,37 +236,50 @@ pub struct Step {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NumericRange {
-    start: f64,
-    stop: f64,
-    step: f64,
+    start: Decimal,
+    stop: Decimal,
+    step: Decimal,
     count: usize,
+    scaled_start: i128,
+    scaled_step: i128,
+    scale: u32,
 }
 
 impl NumericRange {
-    pub fn new(start: f64, stop: f64, step: f64) -> Result<Self, NumericRangeError> {
-        if !start.is_finite() || !stop.is_finite() || !step.is_finite() {
-            return Err(NumericRangeError::NonFinite);
-        }
-        if step == 0.0 {
+    /// Requires the normalized inputs to fit Decimal at a common scale.
+    pub fn new(start: Decimal, stop: Decimal, step: Decimal) -> Result<Self, NumericRangeError> {
+        if step.is_zero() {
             return Err(NumericRangeError::ZeroStep);
         }
-        if start < stop && step < 0.0 || start > stop && step > 0.0 {
+        if start < stop && step.is_sign_negative() || start > stop && step.is_sign_positive() {
             return Err(NumericRangeError::WrongDirection);
         }
-        let ratio = ((stop - start) / step).abs();
-        let rounded = ratio.round();
-        let tolerance = (f64::EPSILON * ratio.max(1.0)).min(f64::EPSILON.sqrt());
-        let ratio = if (ratio - rounded).abs() <= tolerance {
-            rounded
-        } else {
-            ratio
-        };
-        let intervals_value = ratio.floor();
-        let usize_limit = 2.0_f64.powi(usize::BITS as i32);
-        if !intervals_value.is_finite() || intervals_value >= usize_limit {
-            return Err(NumericRangeError::CountOverflow);
+        let (start, stop, step) = (start.normalize(), stop.normalize(), step.normalize());
+        if start == stop {
+            return Ok(Self {
+                start,
+                stop,
+                step,
+                count: 1,
+                scaled_start: start.mantissa(),
+                scaled_step: 0,
+                scale: start.scale(),
+            });
         }
-        let intervals = intervals_value as usize;
+        let scale = start.scale().max(stop.scale()).max(step.scale());
+        let scaled = |value: Decimal| {
+            value
+                .mantissa()
+                .checked_mul(10_i128.pow(scale - value.scale()))
+                .filter(|value| value.abs() <= Decimal::MAX.mantissa())
+                .ok_or(NumericRangeError::Unrepresentable)
+        };
+        let scaled_start = scaled(start)?;
+        let scaled_stop = scaled(stop)?;
+        let scaled_step = scaled(step)?;
+        // 96-bit coefficients leave room in i128 for the exact signed span.
+        let intervals = (scaled_stop - scaled_start).abs() / scaled_step.abs();
+        let intervals = usize::try_from(intervals).map_err(|_| NumericRangeError::CountOverflow)?;
         let count = intervals
             .checked_add(1)
             .ok_or(NumericRangeError::CountOverflow)?;
@@ -274,25 +288,40 @@ impl NumericRange {
             stop,
             step,
             count,
+            scaled_start,
+            scaled_step,
+            scale,
         })
     }
-    pub fn start(&self) -> f64 {
+    pub fn start(&self) -> Decimal {
         self.start
     }
-    pub fn stop(&self) -> f64 {
+    pub fn stop(&self) -> Decimal {
         self.stop
     }
-    pub fn step(&self) -> f64 {
+    pub fn step(&self) -> Decimal {
         self.step
     }
     pub fn iteration_count(&self) -> usize {
         self.count
     }
+
+    /// Returns an exact grid value, or None when index is outside the range.
+    pub fn value_at(&self, index: usize) -> Option<Decimal> {
+        if index >= self.count {
+            return None;
+        }
+        // Construction bounds the product by the span and the sum by the endpoints.
+        Some(Decimal::from_i128_with_scale(
+            self.scaled_start + self.scaled_step * index as i128,
+            self.scale,
+        ))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NumericRangeError {
-    NonFinite,
+    Unrepresentable,
     ZeroStep,
     WrongDirection,
     CountOverflow,
@@ -301,7 +330,9 @@ pub enum NumericRangeError {
 impl fmt::Display for NumericRangeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::NonFinite => "range values must be finite",
+            Self::Unrepresentable => {
+                "range values cannot be represented exactly at a common decimal scale"
+            }
             Self::ZeroStep => "range step must not be zero",
             Self::WrongDirection => "range step has the wrong direction",
             Self::CountOverflow => "range iteration count does not fit in usize",
@@ -1010,62 +1041,82 @@ mod tests {
         assert_eq!(cancelled.outcome(), &StepOutcome::Cancelled);
     }
 
+    fn decimal(value: &str) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from_str_exact(value).unwrap()
+    }
+
     #[test]
-    fn numeric_ranges_count_inclusive_decimal_boundaries_safely() {
-        for (start, stop, step, count) in [
-            (1.0, 5.0, 1.0, 5),
-            (5.0, 1.0, -1.0, 5),
-            (3.0, 3.0, 1.0, 1),
-            (0.0, 0.3, 0.1, 4),
-            (0.3, 0.0, -0.1, 4),
+    fn numeric_ranges_have_exact_decimal_counts_and_values() {
+        for (start, stop, step, count, last) in [
+            ("1", "5", "1", 5, "5"),
+            ("5", "1", "-1", 5, "1"),
+            ("3", "3", "1", 1, "3"),
+            ("0", "0.3", "0.1", 4, "0.3"),
+            ("0.3", "0", "-0.1", 4, "0"),
+            ("0", "0.35", "0.1", 4, "0.3"),
+            ("0.35", "0", "-0.1", 4, "0.05"),
+            ("-0.1", "0.1", "0.1", 3, "0.1"),
+            (
+                "0",
+                "1",
+                "0.3333333333333333333333333334",
+                3,
+                "0.6666666666666666666666666668",
+            ),
+        ] {
+            let range = NumericRange::new(decimal(start), decimal(stop), decimal(step)).unwrap();
+            assert_eq!(range.iteration_count(), count);
+            assert_eq!(range.value_at(0), Some(decimal(start)));
+            assert_eq!(range.value_at(count - 1), Some(decimal(last)));
+            assert_eq!(range.value_at(count), None);
+            assert_eq!(range.value_at(usize::MAX), None);
+        }
+        let range = NumericRange::new(decimal("0"), decimal("0.3"), decimal("0.1")).unwrap();
+        assert_eq!(range.value_at(1), Some(decimal("0.1")));
+        assert_eq!(range.value_at(2), Some(decimal("0.2")));
+    }
+
+    #[test]
+    fn numeric_range_rejects_invalid_inputs_and_count_overflow() {
+        for (start, stop, step, error) in [
+            ("0", "1", "0", NumericRangeError::ZeroStep),
+            ("0", "1", "-1", NumericRangeError::WrongDirection),
+            ("1", "0", "1", NumericRangeError::WrongDirection),
         ] {
             assert_eq!(
-                NumericRange::new(start, stop, step)
-                    .unwrap()
-                    .iteration_count(),
-                count
+                NumericRange::new(decimal(start), decimal(stop), decimal(step)),
+                Err(error)
             );
         }
-        let (stop, expected_count) = if usize::BITS >= 64 {
-            (1_000_000_000_000.75, 1_000_000_000_001)
-        } else {
-            (4_000_000_000.999, 4_000_000_001)
-        };
+        let limit = rust_decimal::Decimal::from(usize::MAX as u64);
         assert_eq!(
-            NumericRange::new(0.0, stop, 1.0).unwrap().iteration_count() as u64,
-            expected_count
-        );
-        let usize_limit = 2.0_f64.powi(usize::BITS as i32);
-        assert!(usize_limit.is_finite());
-        assert!(matches!(
-            NumericRange::new(0.0, usize_limit, 1.0),
+            NumericRange::new(decimal("0"), limit, decimal("1")),
             Err(NumericRangeError::CountOverflow)
-        ));
-        assert!(NumericRange::new(0.0, f64::MAX, f64::MIN_POSITIVE).is_err());
-        assert!(NumericRange::new(0.0, 1.0, 0.0).is_err());
-        assert!(NumericRange::new(0.0, 1.0, -1.0).is_err());
-        assert!(NumericRange::new(1.0, 0.0, 1.0).is_err());
-        assert!(NumericRange::new(f64::NAN, 1.0, 1.0).is_err());
+        );
+        let range = NumericRange::new(decimal("1"), limit, decimal("1")).unwrap();
+        assert_eq!(range.iteration_count(), usize::MAX);
+        assert_eq!(range.value_at(usize::MAX - 1), Some(limit));
     }
 
     #[test]
-    fn numeric_range_preserves_count_increment_above_f64_integer_precision() {
-        if usize::BITS >= 64 {
-            let stop = 2_f64.powi(53);
-            let range = NumericRange::new(0.0, stop, 1.0).unwrap();
-
-            assert_eq!(range.iteration_count() as u64, (1_u64 << 53) + 1);
-        }
-    }
-
-    #[test]
-    fn numeric_range_preserves_fractional_endpoint_at_large_ratio() {
-        if usize::BITS >= 64 {
-            let stop = 2_f64.powi(51) + 0.5;
-            let range = NumericRange::new(0.0, stop, 1.0).unwrap();
-
-            assert_eq!(range.iteration_count() as u64, (1_u64 << 51) + 1);
-        }
+    fn numeric_range_enforces_exact_representable_domain() {
+        use rust_decimal::Decimal;
+        assert_eq!(
+            NumericRange::new(Decimal::ZERO, Decimal::MAX, decimal("0.1")),
+            Err(NumericRangeError::Unrepresentable)
+        );
+        let range = NumericRange::new(Decimal::MIN, Decimal::MAX, Decimal::MAX).unwrap();
+        assert_eq!(range.iteration_count(), 3);
+        assert_eq!(range.value_at(1), Some(Decimal::ZERO));
+        assert_eq!(range.value_at(2), Some(Decimal::MAX));
+        let equal = NumericRange::new(
+            Decimal::MAX,
+            Decimal::MAX,
+            decimal("0.0000000000000000000000000001"),
+        )
+        .unwrap();
+        assert_eq!(equal.iteration_count(), 1);
+        assert_eq!(equal.value_at(0), Some(Decimal::MAX));
     }
 
     #[test]
@@ -1084,7 +1135,7 @@ mod tests {
                 StepId::new(id).unwrap(),
                 StepKind::For {
                     variable: VariableId::new("x").unwrap(),
-                    range: NumericRange::new(1.0, 2.0, 1.0).unwrap(),
+                    range: NumericRange::new(decimal("1"), decimal("2"), decimal("1")).unwrap(),
                     body,
                 },
             )
@@ -1109,7 +1160,7 @@ mod tests {
 
     #[test]
     fn for_validation_preserves_ids_scopes_and_loop_variable_rules() {
-        let range = || NumericRange::new(1.0, 2.0, 1.0).unwrap();
+        let range = || NumericRange::new(decimal("1"), decimal("2"), decimal("1")).unwrap();
         let for_step = |id: &str, body: Vec<Step>| {
             Step::new(
                 StepId::new(id).unwrap(),

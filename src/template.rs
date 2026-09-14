@@ -379,9 +379,9 @@ enum StepWire {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NumericRangeWire {
-    start: f64,
-    stop: f64,
-    step: f64,
+    start: String,
+    stop: String,
+    step: String,
 }
 
 impl StepWire {
@@ -431,9 +431,9 @@ impl StepWire {
                 id: step.id().as_str().to_owned(),
                 variable: variable.as_str().to_owned(),
                 range: NumericRangeWire {
-                    start: range.start(),
-                    stop: range.stop(),
-                    step: range.step(),
+                    start: range.start().to_string(),
+                    stop: range.stop().to_string(),
+                    step: range.step().to_string(),
                 },
                 steps: body.iter().map(StepWire::from_step).collect(),
             },
@@ -674,10 +674,21 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                     value: variable,
                     source,
                 })?;
-            let range =
-                NumericRange::new(range.start, range.stop, range.step).map_err(|source| {
-                    TemplateError::Workflow(WorkflowError::InvalidRange(source.to_string()))
-                })?;
+            let parse = |field: &str, value: &str| {
+                rust_decimal::Decimal::from_str_exact(value).map_err(|source| {
+                    TemplateError::Workflow(WorkflowError::InvalidRange(format!(
+                        "invalid range {field} decimal {value:?}: {source}"
+                    )))
+                })
+            };
+            let range = NumericRange::new(
+                parse("start", &range.start)?,
+                parse("stop", &range.stop)?,
+                parse("step", &range.step)?,
+            )
+            .map_err(|source| {
+                TemplateError::Workflow(WorkflowError::InvalidRange(source.to_string()))
+            })?;
             let body = steps
                 .into_iter()
                 .map(step_from_wire)
@@ -1350,7 +1361,12 @@ mod tests {
             StepId::new("sweep").unwrap(),
             StepKind::For {
                 variable: VariableId::new("voltage").unwrap(),
-                range: NumericRange::new(0.0, 0.3, 0.1).unwrap(),
+                range: NumericRange::new(
+                    0.into(),
+                    rust_decimal::Decimal::new(3, 1),
+                    rust_decimal::Decimal::new(1, 1),
+                )
+                .unwrap(),
                 body: vec![
                     Step::new(
                         StepId::new("measure").unwrap(),
@@ -1381,7 +1397,24 @@ mod tests {
         let wire: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
         assert_eq!(wire["schema_version"], 1);
         assert_eq!(wire["workflow"]["steps"][0]["type"], "for");
-        assert_eq!(wire["workflow"]["steps"][0]["range"]["start"], 0.0);
+        assert_eq!(
+            wire["workflow"]["steps"][0]["range"],
+            json!({"start": "0", "stop": "0.3", "step": "0.1"})
+        );
+        let parsed = Template::from_json_str(&wire.to_string()).unwrap();
+        let reparsed = Template::from_json_str(&parsed.to_json_string().unwrap()).unwrap();
+        assert_eq!(parsed, reparsed);
+        let StepKind::For { range, .. } = reparsed.workflow().steps()[0].kind() else {
+            panic!("expected For")
+        };
+        assert_eq!(range.iteration_count(), 4);
+        for index in 0..4 {
+            assert_eq!(
+                range.value_at(index),
+                Some(rust_decimal::Decimal::new(index as i64, 1))
+            );
+        }
+        assert_eq!(range.value_at(4), None);
         assert_eq!(
             Template::from_json_str(&wire.to_string()).unwrap(),
             template
@@ -1400,7 +1433,7 @@ mod tests {
             "type": "for",
             "id": "sweep",
             "variable": "voltage",
-            "range": {"start": 1.0, "stop": 2.0, "step": 1.0},
+            "range": {"start": "1", "stop": "2", "step": "1"},
             "steps": [{
                 "type": "tool-action",
                 "id": "measure",
@@ -1413,5 +1446,28 @@ mod tests {
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(error.to_string().contains("unknown tool instance target"));
         assert!(error.to_string().contains("missing-instance"));
+    }
+
+    #[test]
+    fn for_template_requires_exact_decimal_strings() {
+        let mut wire: Value =
+            serde_json::from_str(&sample_template().to_json_string().unwrap()).unwrap();
+        wire["workflow"]["steps"] = json!([{
+            "type": "for", "id": "sweep", "variable": "voltage",
+            "range": {"start": "0", "stop": "0.3", "step": "0.1"}, "steps": []
+        }]);
+        for field in ["start", "stop", "step"] {
+            let original = wire["workflow"]["steps"][0]["range"][field].clone();
+            for invalid in [
+                json!(0.1),
+                json!("invalid"),
+                json!("0.00000000000000000000000000001"),
+                json!("79228162514264337593543950336"),
+            ] {
+                wire["workflow"]["steps"][0]["range"][field] = invalid;
+                assert!(Template::from_json_str(&wire.to_string()).is_err());
+            }
+            wire["workflow"]["steps"][0]["range"][field] = original;
+        }
     }
 }
