@@ -10,7 +10,7 @@ use orchestrator_tool::{
     config::{Config, ConfigError, ResourceIdentity},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, run_simulated_workflow, run_workflow},
+    run::{ExecutionMode, run_workflow_with_events},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
@@ -19,13 +19,13 @@ use orchestrator_tool::{
     worker::WorkerLaunchSpec,
     workflow::{
         ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, Workflow,
-        WorkflowOutput, WorkflowRunResult,
+        WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
     workflow_csv::serialize_result_rows_csv,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, ipc::Channel};
 
 const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -80,6 +80,13 @@ struct StepExecutionDto {
     output: Option<Value>,
     message: Option<String>,
     for_iteration: Option<ForIterationDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum WorkflowRunEventDto {
+    StepCompleted { execution: StepExecutionDto },
+    ResultRowCommitted { row: ResultRowDto },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -195,6 +202,7 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
 async fn run_workflow_simulation(
     app: AppHandle,
     template_json: String,
+    on_progress: Channel<WorkflowRunEventDto>,
 ) -> Result<WorkflowRunResultDto, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
@@ -208,12 +216,16 @@ async fn run_workflow_simulation(
             &application_dir,
             &config,
         )?;
-        let results = run_simulated_workflow(
+        let results = run_workflow_with_events(
             &template,
+            ExecutionMode::Simulate,
             &launch_specs,
             RUN_STARTUP_TIMEOUT,
             RUN_ACTION_TIMEOUT,
             RUN_SHUTDOWN_TIMEOUT,
+            |event| {
+                let _ = on_progress.send(workflow_run_event_dto(&event));
+            },
         )
         .map_err(|error| error.to_string())?;
 
@@ -228,6 +240,7 @@ async fn run_workflow_live(
     app: AppHandle,
     template_json: String,
     confirmed_resources: HashMap<String, String>,
+    on_progress: Channel<WorkflowRunEventDto>,
 ) -> Result<WorkflowRunResultDto, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
@@ -250,13 +263,16 @@ async fn run_workflow_live(
                 authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
             }
         }
-        let results = run_workflow(
+        let results = run_workflow_with_events(
             &template,
             ExecutionMode::Live,
             &launch_specs,
             RUN_STARTUP_TIMEOUT,
             RUN_ACTION_TIMEOUT,
             RUN_SHUTDOWN_TIMEOUT,
+            |event| {
+                let _ = on_progress.send(workflow_run_event_dto(&event));
+            },
         )
         .map_err(|error| error.to_string())?;
         Ok(workflow_run_result_dto(&results))
@@ -445,6 +461,17 @@ fn for_iteration_dto(iteration: &ForIteration) -> ForIterationDto {
     ForIterationDto {
         for_step_id: iteration.for_step_id().as_str().to_owned(),
         iteration_index: iteration.iteration_index(),
+    }
+}
+
+fn workflow_run_event_dto(event: &WorkflowRunEvent) -> WorkflowRunEventDto {
+    match event {
+        WorkflowRunEvent::StepCompleted(execution) => WorkflowRunEventDto::StepCompleted {
+            execution: step_execution_dto(execution),
+        },
+        WorkflowRunEvent::ResultRowCommitted(row) => WorkflowRunEventDto::ResultRowCommitted {
+            row: result_row_dto(row),
+        },
     }
 }
 
@@ -658,7 +685,7 @@ mod tests {
         tool_instance::ToolInstanceId,
         workflow::{
             ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult,
-            WorkflowOutput, WorkflowRunResult,
+            WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
         },
     };
     use serde_json::json;
@@ -950,6 +977,46 @@ mod tests {
         assert_eq!(error, "workflow has no outputs available for export");
         assert!(!path.exists());
         std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn progress_event_dto_preserves_tags_and_occurrence_metadata() {
+        let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
+        let execution = StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Succeeded { output: json!(3) },
+            ),
+            Some(iteration.clone()),
+        );
+        let row = ResultRow::new(
+            vec![WorkflowOutput::new("value".to_owned(), json!(3))],
+            Some(iteration),
+        );
+        let step_event = serde_json::to_value(super::workflow_run_event_dto(
+            &WorkflowRunEvent::StepCompleted(execution),
+        ))
+        .unwrap();
+        let row_event = serde_json::to_value(super::workflow_run_event_dto(
+            &WorkflowRunEvent::ResultRowCommitted(row),
+        ))
+        .unwrap();
+        assert_eq!(
+            step_event,
+            json!({
+                "type": "step-completed",
+                "execution": { "step_id": "out", "status": "succeeded", "output": 3, "message": null,
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 } }
+            })
+        );
+        assert_eq!(
+            row_event,
+            json!({
+                "type": "result-row-committed",
+                "row": { "outputs": [{ "name": "value", "value": 3 }],
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 } }
+            })
+        );
     }
 
     #[test]

@@ -683,6 +683,13 @@ impl fmt::Display for WorkflowError {
 
 impl Error for WorkflowError {}
 
+/// Execution progress observed before the authoritative run result is returned.
+#[derive(Clone, Debug, PartialEq)]
+pub enum WorkflowRunEvent {
+    StepCompleted(StepExecution),
+    ResultRowCommitted(ResultRow),
+}
+
 /// The completed result of one workflow run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorkflowRunResult {

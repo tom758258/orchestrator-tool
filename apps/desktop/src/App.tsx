@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ToolSetupEditor from './ToolSetupEditor'
@@ -8,7 +8,7 @@ import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, enclosingFor, insertionFor, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
-import type { WorkflowStep, NonForWorkflowStep, ToolActionStep, WorkflowRunResultDto } from './workflow'
+import type { WorkflowStep, NonForWorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -291,6 +291,7 @@ function App() {
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
+  const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -298,7 +299,8 @@ function App() {
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
-  const iterationRows = runResult?.result_rows.some(row => row.for_iteration !== null) ?? false
+  const displayedRun = runResult ?? runProgress
+  const iterationRows = displayedRun?.result_rows.some(row => row.for_iteration !== null) ?? false
 
   useEffect(() => {
     setExportError(null)
@@ -333,12 +335,14 @@ function App() {
       setSelectedStepId(null)
       setDraftCreationError(null)
       setRunResult(null)
+      setRunProgress(null)
       setRunError(null)
     } catch (message) {
       setWorkflowDraft(null)
       setSelectedStepId(null)
       setDraftCreationError(String(message))
       setRunResult(null)
+      setRunProgress(null)
       setRunError(null)
     } finally {
       setDraftLoading(false)
@@ -368,6 +372,7 @@ function App() {
       setValidationStatus('idle')
       setValidationError(null)
       setRunResult(null)
+      setRunProgress(null)
       setRunError(null)
       setTemplateIoMessage(null)
     },
@@ -379,6 +384,7 @@ function App() {
     setValidationStatus('idle')
     setValidationError(null)
     setRunResult(null)
+    setRunProgress(null)
     setRunError(null)
     setTemplateIoMessage(null)
   }, [])
@@ -548,6 +554,7 @@ function App() {
       setValidationStatus('valid')
       setValidationError(null)
       setRunResult(null)
+      setRunProgress(null)
       setRunError(null)
       setTemplateIoMessage('Template loaded.')
       setTemplateIoStatus('idle')
@@ -681,11 +688,23 @@ function App() {
     }
   }, [toolConfigBusy])
 
+  const receiveRunProgress = useCallback((event: WorkflowRunEventDto) => {
+    setRunProgress(current => {
+      const progress = current ?? { step_executions: [], result_rows: [] }
+      return event.type === 'step-completed'
+        ? { ...progress, step_executions: [...progress.step_executions, event.execution] }
+        : { ...progress, result_rows: [...progress.result_rows, event.row] }
+    })
+  }, [])
+
   const runLive = useCallback(async () => {
     if (!workflowDraft) {
       return
     }
+    let onProgress: Channel<WorkflowRunEventDto> | undefined
     setRunStatus('running')
+    setRunResult(null)
+    setRunProgress({ step_executions: [], result_rows: [] })
     setRunError(null)
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
@@ -720,40 +739,49 @@ function App() {
         { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
       )
       if (!approved) {
+        setRunProgress(null)
         return
       }
-      setRunResult(null)
+      onProgress = new Channel<WorkflowRunEventDto>(receiveRunProgress)
       const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
+        onProgress,
         confirmedResources,
       })
       setRunResult(results)
+      setRunProgress(null)
     } catch (message) {
       setRunError(String(message))
     } finally {
+      if (onProgress) onProgress.onmessage = () => {}
       setRunStatus('idle')
     }
-  }, [resourceDrafts, workflowDraft])
+  }, [resourceDrafts, workflowDraft, receiveRunProgress])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
       return
     }
 
+    const onProgress = new Channel<WorkflowRunEventDto>(receiveRunProgress)
     setRunStatus('running')
     setRunResult(null)
+    setRunProgress({ step_executions: [], result_rows: [] })
     setRunError(null)
     try {
       const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
+        onProgress,
       })
       setRunResult(results)
+      setRunProgress(null)
     } catch (message) {
       setRunError(String(message))
     } finally {
+      onProgress.onmessage = () => {}
       setRunStatus('idle')
     }
-  }, [workflowDraft])
+  }, [workflowDraft, receiveRunProgress])
 
   const workflowBusy =
     validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
@@ -1170,7 +1198,7 @@ function App() {
                   onSelectStep={setSelectedStepId}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
-                  runResults={runResult?.step_executions ?? null}
+                  runResults={displayedRun?.step_executions ?? null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
@@ -1465,11 +1493,11 @@ function App() {
                 </p>
               )}
 
-              {runResult && (
+              {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
                   <h3 id="run-results-title">Execution Results</h3>
                   <ol className="run-result-list">
-                    {runResult.step_executions.map((result) => {
+                    {displayedRun.step_executions.map((result) => {
                       const isOutput = allWorkflowSteps(workflowDraft.workflow.steps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
@@ -1532,7 +1560,7 @@ function App() {
               <p>No workflow outputs defined.</p>
               <p>Add Output steps to the Workflow to publish final result values.</p>
             </>
-          ) : !runResult ? (
+          ) : !displayedRun ? (
             <>
               <p>No run results yet.</p>
               <p>Run the Workflow to view its outputs.</p>
@@ -1540,8 +1568,9 @@ function App() {
           ) : (
             <section aria-labelledby="last-run-title">
               <h3 id="last-run-title">Last Run</h3>
-              {!runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
-              {runResult.result_rows.length === 0 && <p>No committed output rows.</p>}
+              {runStatus === 'running' && <p role="status">Running…</p>}
+              {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
+              {displayedRun.result_rows.length === 0 && <p>No committed output rows.</p>}
               <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
                 <table className="output-table" aria-labelledby="last-run-title">
                   <thead>
@@ -1551,7 +1580,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {runResult.result_rows.map((row, index) => (
+                    {displayedRun.result_rows.map((row, index) => (
                       <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : `root:${index}`}>
                         {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : '—'}</td>}
                         {row.outputs.map(output => <td key={output.name}>

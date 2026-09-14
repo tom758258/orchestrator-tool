@@ -17,7 +17,7 @@ use crate::{
     worker::WorkerSession,
     workflow::{
         ForIteration, InputValue, ResultRow, Step, StepExecution, StepKind, StepOutcome,
-        StepResult, WorkflowOutput, WorkflowRunResult,
+        StepResult, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
 };
 
@@ -46,6 +46,18 @@ pub fn execute_workflow(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
+) -> Result<WorkflowRunResult, WorkflowExecutionError> {
+    execute_workflow_with_events(template, sessions, execution_mode, action_timeout, |_| {})
+}
+
+/// Observes completed executions and committed rows synchronously.
+/// Observer panics that unwind are ignored so execution and safety cleanup can continue.
+pub fn execute_workflow_with_events(
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+    mut on_event: impl FnMut(WorkflowRunEvent),
 ) -> Result<WorkflowRunResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
@@ -119,12 +131,24 @@ pub fn execute_workflow(
                             StepResult::new(body_step.id().clone(), outcome),
                             Some(occurrence.clone()),
                         ));
+                        notify_progress(
+                            &mut on_event,
+                            WorkflowRunEvent::StepCompleted(
+                                step_executions.last().unwrap().clone(),
+                            ),
+                        );
                         if let Some(message) = failure {
                             return StepOutcome::Failed { message };
                         }
                     }
                     if produces_rows {
                         result_rows.push(ResultRow::new(staged_outputs, Some(occurrence)));
+                        notify_progress(
+                            &mut on_event,
+                            WorkflowRunEvent::ResultRowCommitted(
+                                result_rows.last().unwrap().clone(),
+                            ),
+                        );
                     }
                 }
                 StepOutcome::Succeeded {
@@ -155,6 +179,10 @@ pub fn execute_workflow(
         let is_failed = matches!(outcome, StepOutcome::Failed { .. });
         let result = StepResult::new(step.id().clone(), outcome);
         step_executions.push(StepExecution::new(result.clone(), None));
+        notify_progress(
+            &mut on_event,
+            WorkflowRunEvent::StepCompleted(step_executions.last().unwrap().clone()),
+        );
         root_results.push(result);
         if is_failed {
             completed_successfully = false;
@@ -169,8 +197,16 @@ pub fn execute_workflow(
                 .expect("all validated workflow steps succeeded"),
             None,
         ));
+        notify_progress(
+            &mut on_event,
+            WorkflowRunEvent::ResultRowCommitted(result_rows.last().unwrap().clone()),
+        );
     }
     Ok(WorkflowRunResult::new(step_executions, result_rows))
+}
+
+fn notify_progress(on_event: &mut impl FnMut(WorkflowRunEvent), event: WorkflowRunEvent) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_event(event)));
 }
 
 // This is the sole boundary from exact range decimals to JSON runtime numbers.
@@ -341,13 +377,13 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{WorkflowExecutionError, execute_workflow};
+    use super::{WorkflowExecutionError, execute_workflow, execute_workflow_with_events};
     use crate::{
         run::ExecutionMode,
         tool_instance::ToolInstanceId,
         workflow::{
             ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
-            StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
+            StepKind, StepOutcome, StepOutputReference, VariableId, Workflow, WorkflowRunEvent,
         },
     };
 
@@ -378,11 +414,13 @@ mod tests {
             ),
         ])
         .unwrap();
-        let run = execute_workflow(
+        let mut events = Vec::new();
+        let run = execute_workflow_with_events(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
+            |event| events.push(event),
         )
         .unwrap();
         assert_eq!(run.step_executions().len(), 3);
@@ -401,6 +439,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("A", &json!(5)), ("B", &json!(true))]
         );
+        let expected = run
+            .step_executions()
+            .iter()
+            .cloned()
+            .map(WorkflowRunEvent::StepCompleted)
+            .chain(
+                run.result_rows()
+                    .iter()
+                    .cloned()
+                    .map(WorkflowRunEvent::ResultRowCommitted),
+            )
+            .collect::<Vec<_>>();
+        assert_eq!(events, expected);
     }
 
     #[test]
@@ -424,11 +475,13 @@ mod tests {
             ),
         ])
         .unwrap();
-        let run = execute_workflow(
+        let mut events = Vec::new();
+        let run = execute_workflow_with_events(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
+            |event| events.push(event),
         )
         .unwrap();
         let executions = run.step_executions();
@@ -458,6 +511,19 @@ mod tests {
         assert_eq!(run.result_rows().len(), 1);
         assert!(run.result_rows()[0].outputs().is_empty());
         assert!(run.result_rows()[0].for_iteration().is_none());
+        let expected = run
+            .step_executions()
+            .iter()
+            .cloned()
+            .map(WorkflowRunEvent::StepCompleted)
+            .chain(
+                run.result_rows()
+                    .iter()
+                    .cloned()
+                    .map(WorkflowRunEvent::ResultRowCommitted),
+            )
+            .collect::<Vec<_>>();
+        assert_eq!(events, expected);
     }
 
     #[test]
@@ -589,11 +655,13 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let run = execute_workflow(
+        let mut events = Vec::new();
+        let run = execute_workflow_with_events(
             &template,
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
+            |event| events.push(event),
         )
         .unwrap();
         assert_eq!(run.result_rows().len(), 1);
@@ -639,6 +707,18 @@ mod tests {
         assert!(
             matches!(executions[5].outcome(), StepOutcome::Failed { message }
             if message.contains("check-x") && message.contains("x must be below 2."))
+        );
+        assert_eq!(
+            events,
+            vec![
+                WorkflowRunEvent::StepCompleted(executions[0].clone()),
+                WorkflowRunEvent::StepCompleted(executions[1].clone()),
+                WorkflowRunEvent::StepCompleted(executions[2].clone()),
+                WorkflowRunEvent::ResultRowCommitted(row.clone()),
+                WorkflowRunEvent::StepCompleted(executions[3].clone()),
+                WorkflowRunEvent::StepCompleted(executions[4].clone()),
+                WorkflowRunEvent::StepCompleted(executions[5].clone()),
+            ]
         );
     }
 

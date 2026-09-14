@@ -60,6 +60,8 @@ Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、�
 
 Input suggestions 遵循 Core scope：body Step 可引用 For 前的 root outputs、同一次 iteration 的先前 body sibling outputs，以及 loop variable 和先前普通 variables。For 後的 root Step 看不到 body StepOutput 或新引入的 loop variable，但可使用 body 設定的普通 variables；若 loop variable 原先已有同名 variable，For 結束後會恢復其值。
 
+Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、cancel、streaming CSV、chart 或 nested For。
+
 兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
 
 CSV 使用 `serialize_result_rows_csv`：第一列 Output names 為 header，每個 ResultRow 產生一列，後續列的名稱、順序與數量必須一致。Iteration metadata 不寫入 CSV。成功 For 的 body rows 可匯出多列 CSV；failed、cancelled 或 incomplete run 仍由 backend 拒絕匯出，即使已有先前 committed rows。Desktop 會標示這些列僅供檢視並停用匯出；沒有 Output 的 run 不建立 CSV 檔。Nested For、break 與 continue 仍不支援。

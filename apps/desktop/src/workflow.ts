@@ -65,6 +65,10 @@ export type WorkflowRunResultDto = {
   result_rows: ResultRowDto[]
 }
 
+export type WorkflowRunEventDto =
+  | { type: 'step-completed'; execution: StepExecutionDto }
+  | { type: 'result-row-committed'; row: ResultRowDto }
+
 export function allWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
   return steps.flatMap(step => step.type === 'for' ? [step, ...step.steps] : [step])
 }

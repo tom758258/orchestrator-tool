@@ -2,14 +2,14 @@ use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Du
 
 use crate::{
     adapters::powers::{PowersActionError, safe_off_all},
-    executor::{WorkflowExecutionError, execute_workflow},
+    executor::{WorkflowExecutionError, execute_workflow_with_events},
     template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepOutcome, WorkflowRunResult},
+    workflow::{StepOutcome, WorkflowRunEvent, WorkflowRunResult},
 };
 
 /// Runtime execution mode for a workflow run.
@@ -39,6 +39,27 @@ pub fn run_workflow(
     startup_timeout: Duration,
     action_timeout: Duration,
     shutdown_timeout: Duration,
+) -> Result<WorkflowRunResult, WorkflowRunError> {
+    run_workflow_with_events(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        |_| {},
+    )
+}
+
+/// Observes workflow execution while preserving Worker cleanup and shutdown handling.
+pub fn run_workflow_with_events(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    on_event: impl FnMut(WorkflowRunEvent),
 ) -> Result<WorkflowRunResult, WorkflowRunError> {
     let referenced_instances = template
         .referenced_tool_instances()
@@ -83,7 +104,13 @@ pub fn run_workflow(
         .iter()
         .map(|(instance, session)| (instance.clone(), session))
         .collect();
-    let execution = execute_workflow(template, &session_refs, execution_mode, action_timeout);
+    let execution = execute_workflow_with_events(
+        template,
+        &session_refs,
+        execution_mode,
+        action_timeout,
+        on_event,
+    );
     drop(session_refs);
 
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
@@ -299,6 +326,47 @@ mod tests {
             results[0].outcome(),
             StepOutcome::Succeeded { .. }
         ));
+    }
+
+    #[test]
+    fn observer_panic_does_not_interrupt_workerless_run() {
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("first").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            ),
+            Step::new(
+                StepId::new("later").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            ),
+        ])
+        .unwrap();
+        let template = test_template(&workflow);
+        let expected = run_workflow(
+            &template,
+            ExecutionMode::Simulate,
+            &HashMap::new(),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let mut observed = 0;
+        let actual = super::run_workflow_with_events(
+            &template,
+            ExecutionMode::Simulate,
+            &HashMap::new(),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            |_| {
+                observed += 1;
+                panic!("observer unavailable");
+            },
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(observed, 3);
     }
 
     #[test]
