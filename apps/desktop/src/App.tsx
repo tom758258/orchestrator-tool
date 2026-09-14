@@ -987,8 +987,7 @@ function App() {
         </section>
       )}
 
-      {activeTab === 'setup' && (
-        <section id="setup-panel" role="tabpanel" aria-labelledby="setup-tab">
+        <section id="setup-panel" role="tabpanel" aria-labelledby="setup-tab" hidden={activeTab !== 'setup'}>
           <div className="section-header">
             <h2>Setup</h2>
           </div>
@@ -1093,7 +1092,6 @@ function App() {
             </>
           )}
         </section>
-      )}
 
       {activeTab === 'workflow' && (
         <section id="workflow-panel" role="tabpanel" aria-labelledby="workflow-tab">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { WorkflowStep } from './App'
 
@@ -50,15 +50,13 @@ function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }
             <option value="manual">Manual</option>
           </select>
         </label>
-        {meters.range_mode === 'manual' && (
-          <label className="step-property-field">
-            <span className="step-property-label">Manual Range ({meters.measurement === 'voltage-dc' ? 'V' : 'A'})</span>
-            <input type="number" step="any" required value={meters.manual_range ?? ''}
-              onChange={(event) => onChange({
-                ...value, meters: { ...meters, manual_range: Number.isFinite(event.currentTarget.valueAsNumber) ? event.currentTarget.valueAsNumber : null },
-              })} />
-          </label>
-        )}
+        <label className="step-property-field">
+          <span className="step-property-label">Manual Range ({meters.measurement === 'voltage-dc' ? 'V' : 'A'})</span>
+          <input type="number" step="any" required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
+            onChange={(event) => onChange({
+              ...value, meters: { ...meters, manual_range: Number.isFinite(event.currentTarget.valueAsNumber) ? event.currentTarget.valueAsNumber : null },
+            })} />
+        </label>
         <label className="step-property-field">
           <span className="step-property-label">NPLC</span>
           <select required value={meters.nplc} onChange={(event) => onChange({
@@ -108,10 +106,28 @@ function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }
   )
 }
 
+function setupSummary(instance: ToolInstance): string {
+  const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
+  if (instance.tool !== 'meters') return `${type} · No additional setup`
+  const meters = instance.setup
+  const voltage = meters.measurement === 'voltage-dc'
+  const range = meters.range_mode === 'auto' ? 'Auto Range'
+    : meters.manual_range !== null && Number.isFinite(meters.manual_range)
+      ? `Manual ${meters.manual_range} ${voltage ? 'V' : 'A'}` : 'Manual Range'
+  return `${type} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
+}
+
 export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   renderResource: (instance: ToolInstance) => ReactNode
 }) {
+  const [collapsedIds, setCollapsedIds] = useState<string[]>([])
+  useEffect(() => {
+    setCollapsedIds(current => {
+      const remaining = current.filter(id => value.some(instance => instance.id === id))
+      return remaining.length === current.length ? current : remaining
+    })
+  }, [value])
   const [tool, setTool] = useState<ToolInstance['tool']>('meters')
   return <section className="tool-setup" aria-labelledby="tool-setup-title">
     <h3 id="tool-setup-title">Tool Setup</h3>
@@ -128,21 +144,33 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
           ? { id, tool, setup: { measurement: 'voltage-dc', range_mode: 'auto', manual_range: null,
               nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
           : { id, tool, setup: {} }
+        setCollapsedIds(current => current.filter(collapsedId => collapsedId !== id))
         onChange([...value, instance])
       }}>Add Tool Instance</button>
     </fieldset>
     {value.map(instance => {
+      const collapsed = collapsedIds.includes(instance.id)
       const referenced = steps.some(step => step.type === 'tool-action' && step.target === instance.id)
       return <fieldset key={instance.id} disabled={disabled}>
-        <legend>{instance.id}</legend>
-        <p>Type: {instance.tool}</p>
-        {instance.tool === 'meters'
-          ? <MetersSetupFields value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
-          : <p>No additional setup</p>}
-        {renderResource(instance)}
-        <button type="button" className="action-button" disabled={referenced}
-          onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
-        {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
+        <legend>
+          <button type="button" className="action-button tool-setup-toggle"
+            aria-expanded={!collapsed} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${instance.id}`}
+            onClick={() => setCollapsedIds(current => collapsed
+              ? current.filter(id => id !== instance.id) : [...current, instance.id])}>
+            {collapsed ? '+' : '−'}
+          </button>
+          {instance.id}
+        </legend>
+        {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
+          <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
+          {instance.tool === 'meters'
+            ? <MetersSetupFields value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
+            : <p>No additional setup</p>}
+          {renderResource(instance)}
+          <button type="button" className="action-button" disabled={referenced}
+            onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
+          {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
+        </>}
       </fieldset>
     })}
   </section>

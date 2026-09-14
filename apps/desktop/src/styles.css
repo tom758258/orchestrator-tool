@@ -759,3 +759,9 @@ body {
   padding-top: 16px;
   border-top: 1px solid #e3e6ea;
 }
+
+.tool-setup-toggle {
+  min-width: 32px;
+  margin-right: 8px;
+  padding: 4px 8px;
+}
