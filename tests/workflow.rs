@@ -46,7 +46,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
         .to_string(),
     )
     .unwrap();
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &template,
         &HashMap::new(),
         Duration::from_secs(5),
@@ -54,6 +54,11 @@ fn comparison_expression_flows_through_simulated_workflow() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run
+        .step_executions()
+        .iter()
+        .map(|execution| execution.result().clone())
+        .collect::<Vec<_>>();
 
     let outputs = template.workflow().project_outputs(&results).unwrap();
     assert_eq!(
@@ -198,7 +203,7 @@ fn named_outputs_project_in_workflow_order_and_ignore_other_steps() {
     let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
     assert_eq!(restored, template);
     let workflow = restored.workflow();
-    let mut results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &template,
         &HashMap::new(),
         Duration::from_secs(5),
@@ -206,6 +211,11 @@ fn named_outputs_project_in_workflow_order_and_ignore_other_steps() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let mut results = run
+        .step_executions()
+        .iter()
+        .map(|execution| execution.result().clone())
+        .collect::<Vec<_>>();
     results.reverse();
     let outputs = workflow.project_outputs(&results).unwrap();
     assert_eq!(outputs.len(), 2);
@@ -250,7 +260,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
         ),
     ])
     .unwrap();
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &Template::new("Test".to_owned(), vec![], workflow.clone()).unwrap(),
         &HashMap::new(),
         Duration::from_secs(5),
@@ -258,6 +268,11 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run
+        .step_executions()
+        .iter()
+        .map(|execution| execution.result().clone())
+        .collect::<Vec<_>>();
     assert_eq!(results.len(), 1);
     assert!(matches!(workflow.project_outputs(&results),
         Err(OutputProjectionError::MissingStepResult(id)) if id.as_str() == "out"));

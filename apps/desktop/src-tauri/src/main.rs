@@ -189,7 +189,11 @@ async fn run_workflow_simulation(
         )
         .map_err(|error| error.to_string())?;
 
-        Ok(results.iter().map(step_result_dto).collect())
+        Ok(results
+            .step_executions()
+            .iter()
+            .map(|execution| step_result_dto(execution.result()))
+            .collect())
     })
     .await
     .map_err(|error| error.to_string())?
@@ -231,7 +235,11 @@ async fn run_workflow_live(
             RUN_SHUTDOWN_TIMEOUT,
         )
         .map_err(|error| error.to_string())?;
-        Ok(results.iter().map(step_result_dto).collect())
+        Ok(results
+            .step_executions()
+            .iter()
+            .map(|execution| step_result_dto(execution.result()))
+            .collect())
     })
     .await
     .map_err(|error| error.to_string())?

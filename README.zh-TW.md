@@ -32,6 +32,10 @@ ExecutionMode、Live VISA Resource、runtime results、output authorization 與 
 
 ## Template Expression
 
+Workflow run 現在回傳 Core `WorkflowRunResult`，包含依執行順序排列的 `StepExecution` 與 `ResultRow`。每筆 execution 保留原有 `StepResult`；Step ID 仍是穩定的 definition identity。可選的 `ForIteration` metadata 保存 For Step ID 與 zero-based iteration index，與 Step ID 及 Output columns 分離。
+
+成功完成的 non-For workflow 產生一列 root ResultRow，以既有 `WorkflowOutput` 作為 cells，依 Output Step 順序使用 Output names 作為 columns。成功但沒有 Output 的 flat workflow 仍產生一列 empty row。失敗或未完整完成的 workflow 保留已執行的 steps，但不 commit root row。Root execution 與 row 都沒有 For iteration metadata。For execution 仍未實作：placeholder 以 root execution 失敗，不執行 body，也不產生 row。Desktop 維持既有 step-result DTO；CSV 維持原有 Output projection 與匯出 policy。
+
 Core For Step 使用 static decimal numeric range，由 `start`、`stop` 與非零 `step` 定義。遞增 range 必須使用正 step，遞減 range 必須使用負 step。Stop 正好落在 step grid 時包含該值：`0 -> 0.3 step 0.1` 共四次 iteration。非 grid 的 stop 不會被越過：`0 -> 0.35 step 0.1` 同樣止於 `0.3`。Start 等於 stop 時，任何非零 step 都只有一次 iteration。
 
 `NumericRange` 統一負責 exact count 與 `value_at(index)`；超出範圍回傳 `None`，不配置完整 value list。只有 For range 使用 `rust_decimal::Decimal`（96-bit mantissa、scale 0–28）。除相同 endpoint 外，正規化後的輸入必須能以共同 decimal scale 表示，否則 construction 回報 representable-domain error。Count 使用 exact scaled-integer division 並檢查是否可放入 `usize`，不使用 floating-point tolerance 或經 rounding 的 decimal division。Expression arithmetic 與 measurement value 維持原有型別。

@@ -1143,7 +1143,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         ),
     ]);
 
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &test_template(&workflow),
         &launch_specs,
         Duration::from_secs(5),
@@ -1151,6 +1151,11 @@ fn powers_and_meters_workflow_executes_end_to_end() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run
+        .step_executions()
+        .iter()
+        .map(|execution| execution.result().clone())
+        .collect::<Vec<_>>();
 
     assert!(workflow.project_outputs(&results).unwrap().is_empty());
     assert_eq!(results.len(), 5);
@@ -1218,7 +1223,7 @@ fn simulated_measurement_dataflow_exports_csv() {
     )
     .unwrap();
     let definition_before_run = template.to_json_string().unwrap();
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &template,
         &HashMap::from([(
             ToolInstanceId::new("meters-1").unwrap(),
@@ -1229,6 +1234,11 @@ fn simulated_measurement_dataflow_exports_csv() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run
+        .step_executions()
+        .iter()
+        .map(|execution| execution.result().clone())
+        .collect::<Vec<_>>();
 
     assert_eq!(results.len(), 4);
     assert_eq!(results[1].step_id().as_str(), "meter-read-1");
@@ -1281,7 +1291,7 @@ fn three_meter_measurements_shutdown_normally() {
             current_terminal: None,
         },
     );
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &test_template(&workflow),
         &HashMap::from([(ToolInstanceId::new("meters-1").unwrap(), spec)]),
         Duration::from_secs(5),
@@ -1289,6 +1299,7 @@ fn three_meter_measurements_shutdown_normally() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run.step_executions();
     assert_eq!(results.len(), 3);
     for (index, result) in results.iter().enumerate() {
         assert_eq!(result.step_id().as_str(), format!("read-{}", index + 1));
@@ -1504,7 +1515,8 @@ fn live_workflow_cleanup_lifecycle() {
         fs::remove_file(&marker).unwrap();
         match scenario {
             "live-success" => {
-                let results = result.unwrap();
+                let run = result.unwrap();
+                let results = run.step_executions();
                 assert_eq!(results.len(), 3);
                 assert!(
                     results
@@ -1514,7 +1526,8 @@ fn live_workflow_cleanup_lifecycle() {
                 assert_eq!(events, "set\noutput-on\noutput-off\nsafe-off\nstop\n");
             }
             "live-assert-failure" => {
-                let results = result.unwrap();
+                let run = result.unwrap();
+                let results = run.step_executions();
                 assert_eq!(results.len(), 4);
                 assert!(
                     results[..3]
@@ -1531,7 +1544,8 @@ fn live_workflow_cleanup_lifecycle() {
                 assert_eq!(events, "set\noutput-on\nsafe-off\nstop\n");
             }
             "live-step-failure" => {
-                let results = result.unwrap();
+                let run = result.unwrap();
+                let results = run.step_executions();
                 assert_eq!(results.len(), 2);
                 assert!(
                     matches!(results[1].outcome(), StepOutcome::Failed { message } if message.contains("fixture action failure"))
@@ -1700,7 +1714,7 @@ fn two_meters_use_distinct_sessions() {
         .iter()
         .map(|instance| (instance.id.clone(), fixture_spec("meters-runtime-measure")))
         .collect();
-    let results = run_simulated_workflow(
+    let run = run_simulated_workflow(
         &template,
         &specs,
         Duration::from_secs(5),
@@ -1708,6 +1722,7 @@ fn two_meters_use_distinct_sessions() {
         Duration::from_secs(5),
     )
     .unwrap();
+    let results = run.step_executions();
     let outputs: Vec<_> = results
         .iter()
         .map(|result| match result.outcome() {

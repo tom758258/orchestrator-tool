@@ -9,7 +9,7 @@ use crate::{
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepOutcome, StepResult},
+    workflow::{StepOutcome, WorkflowRunResult},
 };
 
 /// Runtime execution mode for a workflow run.
@@ -39,7 +39,7 @@ pub fn run_workflow(
     startup_timeout: Duration,
     action_timeout: Duration,
     shutdown_timeout: Duration,
-) -> Result<Vec<StepResult>, WorkflowRunError> {
+) -> Result<WorkflowRunResult, WorkflowRunError> {
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
@@ -91,12 +91,17 @@ pub fn run_workflow(
     if let Some((instance, source)) = cleanup {
         let prior_failure = match &execution {
             Err(error) => Some(error.to_string()),
-            Ok(results) => results.iter().find_map(|result| match result.outcome() {
-                StepOutcome::Failed { message } => {
-                    Some(format!("step {} failed: {message}", result.step_id()))
-                }
-                _ => None,
-            }),
+            Ok(results) => {
+                results
+                    .step_executions()
+                    .iter()
+                    .find_map(|result| match result.outcome() {
+                        StepOutcome::Failed { message } => {
+                            Some(format!("step {} failed: {message}", result.step_id()))
+                        }
+                        _ => None,
+                    })
+            }
         }
         .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
         return Err(WorkflowRunError::SafetyCleanup {
@@ -119,7 +124,7 @@ pub fn run_simulated_workflow(
     startup_timeout: Duration,
     action_timeout: Duration,
     shutdown_timeout: Duration,
-) -> Result<Vec<StepResult>, WorkflowRunError> {
+) -> Result<WorkflowRunResult, WorkflowRunError> {
     run_workflow(
         template,
         ExecutionMode::Simulate,
@@ -268,7 +273,7 @@ mod tests {
         )])
         .unwrap();
 
-        let results = run_workflow(
+        let run = run_workflow(
             &test_template(&workflow),
             ExecutionMode::Simulate,
             &HashMap::new(),
@@ -277,9 +282,13 @@ mod tests {
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].step_id().as_str(), "wait-1");
+        assert_eq!(run.result_rows().len(), 1);
+        assert!(run.result_rows()[0].outputs().is_empty());
+        assert!(run.result_rows()[0].for_iteration().is_none());
         assert!(matches!(
             results[0].outcome(),
             StepOutcome::Succeeded { .. }

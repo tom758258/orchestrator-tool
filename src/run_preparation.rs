@@ -492,7 +492,7 @@ mod tests {
                 "missing {expected:?}: {args:?}"
             );
         }
-        let results = crate::run::run_simulated_workflow(
+        let run = crate::run::run_simulated_workflow(
             &template,
             &specs,
             std::time::Duration::from_secs(10),
@@ -500,6 +500,7 @@ mod tests {
             std::time::Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].step_id().as_str(), "measure");
         let crate::workflow::StepOutcome::Succeeded { output } = results[0].outcome() else {

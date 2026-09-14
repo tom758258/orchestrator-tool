@@ -32,6 +32,10 @@ ExecutionMode, Live VISA Resource, runtime results, output authorization, and sa
 
 ## Template expressions
 
+A workflow run returns a Core `WorkflowRunResult` containing ordered `StepExecution` records and `ResultRow` values. Each execution retains its `StepResult`; Step IDs remain stable definition identities. Optional `ForIteration` metadata stores the For step ID and a zero-based iteration index separately from Step IDs and Output columns.
+
+A successfully completed non-For workflow produces one root ResultRow. Its cells reuse `WorkflowOutput`, with Output names as columns in Output step order. A successful flat workflow without Output still produces one empty row. A failed or incomplete workflow retains its executed steps but commits no root row. Root executions and rows have no For iteration metadata. For execution remains unimplemented: its placeholder fails as a root execution, skips the body, and produces no row. Desktop continues to receive the existing step-result DTOs; CSV retains its existing Output projection and export policy.
+
 Core For steps define a static decimal numeric range using `start`, `stop`, and nonzero `step`. Ascending ranges require a positive step; descending ranges require a negative step. Stop is inclusive when reachable on the step grid: `0 -> 0.3 step 0.1` has four iterations. A non-grid stop is never crossed: `0 -> 0.35 step 0.1` also ends at `0.3`. Equal start and stop always produce one iteration with any nonzero step.
 
 `NumericRange` owns the exact count and `value_at(index)` values; out-of-range indices return `None` without allocating a value list. Only For ranges use `rust_decimal::Decimal` (96-bit mantissa, scale 0–28). Normalized inputs must fit at a common decimal scale, except equal endpoints; otherwise construction reports a representable-domain error. Count uses exact scaled-integer division and must fit `usize`, with no floating-point tolerance or rounded decimal division. Expression arithmetic and measurement values are unchanged.

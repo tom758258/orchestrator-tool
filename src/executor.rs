@@ -14,7 +14,9 @@ use crate::{
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerSession,
-    workflow::{InputValue, StepKind, StepOutcome, StepResult},
+    workflow::{
+        InputValue, ResultRow, StepExecution, StepKind, StepOutcome, StepResult, WorkflowRunResult,
+    },
 };
 
 /// Errors that prevent a workflow from starting execution.
@@ -42,7 +44,7 @@ pub fn execute_workflow(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
-) -> Result<Vec<StepResult>, WorkflowExecutionError> {
+) -> Result<WorkflowRunResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
         return Err(WorkflowExecutionError::EmptyWorkflow);
@@ -124,7 +126,27 @@ pub fn execute_workflow(
         }
     }
 
-    Ok(results)
+    let result_rows = if results.len() == workflow.steps().len()
+        && results
+            .iter()
+            .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }))
+    {
+        vec![ResultRow::new(
+            workflow
+                .project_outputs(&results)
+                .expect("all validated workflow steps succeeded"),
+            None,
+        )]
+    } else {
+        Vec::new()
+    };
+    Ok(WorkflowRunResult::new(
+        results
+            .into_iter()
+            .map(|result| StepExecution::new(result, None))
+            .collect(),
+        result_rows,
+    ))
 }
 
 fn resolve_tool_arguments(
@@ -221,6 +243,99 @@ mod tests {
     };
 
     #[test]
+    fn successful_flat_run_commits_one_ordered_root_row() {
+        let variable = VariableId::new("x").unwrap();
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("set-x").unwrap(),
+                StepKind::SetVariable {
+                    variable: variable.clone(),
+                    value: InputValue::Literal(json!(5)),
+                },
+            ),
+            Step::new(
+                StepId::new("out-a").unwrap(),
+                StepKind::Output {
+                    name: "A".to_owned(),
+                    value: InputValue::Variable(variable),
+                },
+            ),
+            Step::new(
+                StepId::new("out-b").unwrap(),
+                StepKind::Output {
+                    name: "B".to_owned(),
+                    value: InputValue::Literal(json!(true)),
+                },
+            ),
+        ])
+        .unwrap();
+        let run = execute_workflow(
+            &test_template(&workflow),
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(run.step_executions().len(), 3);
+        assert!(
+            run.step_executions()
+                .iter()
+                .all(|execution| execution.for_iteration().is_none())
+        );
+        assert_eq!(run.result_rows().len(), 1);
+        let row = &run.result_rows()[0];
+        assert!(row.for_iteration().is_none());
+        assert_eq!(
+            row.outputs()
+                .iter()
+                .map(|output| (output.name(), output.value()))
+                .collect::<Vec<_>>(),
+            vec![("A", &json!(5)), ("B", &json!(true))]
+        );
+    }
+
+    #[test]
+    fn for_placeholder_fails_as_root_without_executing_body_or_committing_row() {
+        let workflow = Workflow::new(vec![
+            Step::new(
+                StepId::new("sweep").unwrap(),
+                StepKind::For {
+                    variable: VariableId::new("x").unwrap(),
+                    range: crate::workflow::NumericRange::new(1.into(), 2.into(), 1.into())
+                        .unwrap(),
+                    body: vec![Step::new(
+                        StepId::new("body").unwrap(),
+                        StepKind::Wait { duration_ms: 0 },
+                    )],
+                },
+            ),
+            Step::new(
+                StepId::new("later").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            ),
+        ])
+        .unwrap();
+        let run = execute_workflow(
+            &test_template(&workflow),
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(run.step_executions().len(), 1);
+        let execution = &run.step_executions()[0];
+        assert_eq!(execution.step_id().as_str(), "sweep");
+        assert!(execution.for_iteration().is_none());
+        assert_eq!(
+            execution.outcome(),
+            &StepOutcome::Failed {
+                message: "For execution is not implemented".to_owned(),
+            }
+        );
+        assert!(run.result_rows().is_empty());
+    }
+
+    #[test]
     fn bindings_override_literal_arguments_using_runtime_data() {
         let mut context = crate::data_context::DataContext::new();
         let variable = VariableId::new("x").unwrap();
@@ -292,13 +407,14 @@ mod tests {
                 ),
             ])
             .unwrap();
-            let results = execute_workflow(
+            let run = execute_workflow(
                 &test_template(&workflow),
                 &HashMap::new(),
                 ExecutionMode::Simulate,
                 Duration::from_secs(5),
             )
             .unwrap();
+            let results = run.step_executions();
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].step_id().as_str(), "power-set-1");
             assert_eq!(
@@ -330,13 +446,14 @@ mod tests {
             ),
         ])
         .unwrap();
-        let results = execute_workflow(
+        let run = execute_workflow(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
         assert_eq!(results.len(), 2);
         for result in results {
             assert_eq!(
@@ -366,13 +483,14 @@ mod tests {
             ),
         ])
         .unwrap();
-        let results = execute_workflow(
+        let run = execute_workflow(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
         assert_eq!(results.len(), 2);
         for result in results {
             assert_eq!(
@@ -418,13 +536,14 @@ mod tests {
             ),
         ])
         .unwrap();
-        let results = execute_workflow(
+        let run = execute_workflow(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
 
         assert_eq!(results.len(), 3);
         for (result, (step_id, expected)) in results.iter().zip([
@@ -461,13 +580,14 @@ mod tests {
             ),
         ])
         .unwrap();
-        let results = execute_workflow(
+        let run = execute_workflow(
             &test_template(&workflow),
             &HashMap::new(),
             ExecutionMode::Simulate,
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].step_id().as_str(), "missing-output");
         assert_eq!(
@@ -508,8 +628,9 @@ mod tests {
         )
         .unwrap();
         for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-            let results =
+            let run =
                 execute_workflow(&template, &HashMap::new(), mode, Duration::from_secs(5)).unwrap();
+            let results = run.step_executions();
             assert_eq!(results.len(), 2);
             for result in results {
                 assert_eq!(
@@ -547,15 +668,17 @@ mod tests {
                 ),
             ])
             .unwrap();
-            let results = execute_workflow(
+            let run = execute_workflow(
                 &test_template(&workflow),
                 &HashMap::new(),
                 ExecutionMode::Simulate,
                 Duration::from_secs(5),
             )
             .unwrap();
+            let results = run.step_executions();
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].step_id().as_str(), "assert-1");
+            assert!(run.result_rows().is_empty());
             assert_eq!(
                 results[0].outcome(),
                 &StepOutcome::Failed {
@@ -606,13 +729,14 @@ mod tests {
                 ),
             ])
             .unwrap();
-            let results = execute_workflow(
+            let run = execute_workflow(
                 &test_template(&workflow),
                 &HashMap::new(),
                 ExecutionMode::Simulate,
                 Duration::from_secs(5),
             )
             .unwrap();
+            let results = run.step_executions();
             assert_eq!(results.len(), 2);
             assert_eq!(results[1].step_id().as_str(), "assert-1");
             assert_eq!(
@@ -662,13 +786,14 @@ mod tests {
         .unwrap();
 
         let sessions = HashMap::new();
-        let results = execute_workflow(
+        let run = execute_workflow(
             &test_template(&workflow),
             &sessions,
             ExecutionMode::Simulate,
             Duration::from_secs(5),
         )
         .unwrap();
+        let results = run.step_executions();
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].step_id().as_str(), "wait-1");

@@ -679,6 +679,111 @@ impl fmt::Display for WorkflowError {
 
 impl Error for WorkflowError {}
 
+/// The completed result of one workflow run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkflowRunResult {
+    step_executions: Vec<StepExecution>,
+    result_rows: Vec<ResultRow>,
+}
+
+impl WorkflowRunResult {
+    pub fn new(step_executions: Vec<StepExecution>, result_rows: Vec<ResultRow>) -> Self {
+        Self {
+            step_executions,
+            result_rows,
+        }
+    }
+
+    pub fn step_executions(&self) -> &[StepExecution] {
+        &self.step_executions
+    }
+
+    pub fn result_rows(&self) -> &[ResultRow] {
+        &self.result_rows
+    }
+}
+
+/// Occurrence metadata, separate from stable step definition IDs and output columns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForIteration {
+    for_step_id: StepId,
+    iteration_index: usize,
+}
+
+impl ForIteration {
+    /// The iteration index is zero-based.
+    pub fn new(for_step_id: StepId, iteration_index: usize) -> Self {
+        Self {
+            for_step_id,
+            iteration_index,
+        }
+    }
+
+    pub fn for_step_id(&self) -> &StepId {
+        &self.for_step_id
+    }
+
+    pub fn iteration_index(&self) -> usize {
+        self.iteration_index
+    }
+}
+
+/// One execution of a step; root executions have no For iteration.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepExecution {
+    result: StepResult,
+    for_iteration: Option<ForIteration>,
+}
+
+impl StepExecution {
+    pub fn new(result: StepResult, for_iteration: Option<ForIteration>) -> Self {
+        Self {
+            result,
+            for_iteration,
+        }
+    }
+
+    pub fn result(&self) -> &StepResult {
+        &self.result
+    }
+
+    pub fn step_id(&self) -> &StepId {
+        self.result.step_id()
+    }
+
+    pub fn outcome(&self) -> &StepOutcome {
+        self.result.outcome()
+    }
+
+    pub fn for_iteration(&self) -> Option<&ForIteration> {
+        self.for_iteration.as_ref()
+    }
+}
+
+/// One externally produced row, with Output names as columns.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResultRow {
+    outputs: Vec<WorkflowOutput>,
+    for_iteration: Option<ForIteration>,
+}
+
+impl ResultRow {
+    pub fn new(outputs: Vec<WorkflowOutput>, for_iteration: Option<ForIteration>) -> Self {
+        Self {
+            outputs,
+            for_iteration,
+        }
+    }
+
+    pub fn outputs(&self) -> &[WorkflowOutput] {
+        &self.outputs
+    }
+
+    pub fn for_iteration(&self) -> Option<&ForIteration> {
+        self.for_iteration.as_ref()
+    }
+}
+
 /// The result of executing a single workflow step.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StepResult {
@@ -730,6 +835,26 @@ mod tests {
         VariableId, Workflow, WorkflowError,
     };
     use crate::tool_instance::ToolInstanceId;
+
+    #[test]
+    fn execution_and_row_preserve_iteration_metadata_separately_from_step_id() {
+        use super::{ForIteration, ResultRow, StepExecution, WorkflowRunResult};
+        let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 0);
+        let result = StepResult::new(
+            StepId::new("body").unwrap(),
+            StepOutcome::Succeeded { output: json!(5) },
+        );
+        let execution = StepExecution::new(result.clone(), Some(iteration.clone()));
+        let row = ResultRow::new(vec![], Some(iteration.clone()));
+        let run = WorkflowRunResult::new(vec![execution], vec![row]);
+        assert_eq!(iteration.for_step_id().as_str(), "sweep");
+        assert_eq!(iteration.iteration_index(), 0);
+        assert_eq!(run.step_executions()[0].result(), &result);
+        assert_eq!(run.step_executions()[0].step_id().as_str(), "body");
+        assert_eq!(run.step_executions()[0].for_iteration(), Some(&iteration));
+        assert_eq!(run.result_rows()[0].for_iteration(), Some(&iteration));
+        assert!(run.result_rows()[0].outputs().is_empty());
+    }
 
     #[test]
     fn workflow_preserves_linear_step_order() {
