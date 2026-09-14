@@ -30,6 +30,8 @@ function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'])
 
 function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
+    case 'assert':
+      return expressionSummary(step)
     case 'set-variable':
       return `${step.variable} = ${valueSummary(step.value)}`
     case 'output':

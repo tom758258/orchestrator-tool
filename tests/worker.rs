@@ -23,7 +23,10 @@ use orchestrator_tool::{
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
-    workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
+    workflow::{
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, Step, StepId, StepKind,
+        StepOutcome, StepOutputReference, Workflow,
+    },
     workflow_csv::serialize_workflow_outputs_csv,
 };
 use serde_json::json;
@@ -419,6 +422,7 @@ fn run_fixture(scenario: &OsStr) {
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
         "live-success"
+        | "live-assert-failure"
         | "live-step-failure"
         | "live-cleanup-failure"
         | "live-both-failed"
@@ -637,7 +641,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
         ("output-on", json!({ "channel": 1 }), "job-workflow-002"),
         ("output-off", json!({ "channel": 1 }), "job-workflow-003"),
     ];
-    if step_failed {
+    if step_failed || scenario == "live-assert-failure" {
         commands.truncate(2);
     }
     if matches!(
@@ -1389,6 +1393,7 @@ fn record_live_event(event: &str) {
 fn live_workflow_cleanup_lifecycle() {
     for scenario in [
         "live-success",
+        "live-assert-failure",
         "live-step-failure",
         "live-cleanup-failure",
         "live-both-failed",
@@ -1434,6 +1439,41 @@ fn live_workflow_cleanup_lifecycle() {
             ToolInstanceId::new("powers-1").unwrap(),
             fixture_spec(scenario),
         )]);
+        if scenario == "live-assert-failure" {
+            steps.insert(
+                2,
+                Step::new(
+                    StepId::new("measure-1").unwrap(),
+                    StepKind::ToolAction {
+                        target: ToolInstanceId::new("meters-1").unwrap(),
+                        action: ActionId::new("measure").unwrap(),
+                        arguments: json!({}),
+                        bindings: Default::default(),
+                    },
+                ),
+            );
+            steps.insert(
+                3,
+                Step::new(
+                    StepId::new("assert-1").unwrap(),
+                    StepKind::Assert {
+                        condition: Expression::new(
+                            ExpressionOperand::StepOutput(StepOutputReference::new(
+                                StepId::new("measure-1").unwrap(),
+                                "/value",
+                            )),
+                            ExpressionOperator::GreaterThanOrEqual,
+                            ExpressionOperand::Literal(json!(4.9)),
+                        ),
+                        message: "Voltage is below minimum.".to_owned(),
+                    },
+                ),
+            );
+            specs.insert(
+                ToolInstanceId::new("meters-1").unwrap(),
+                fixture_spec("meters-runtime-measure"),
+            );
+        }
         if scenario == "live-startup-failure" {
             steps.push(Step::new(
                 StepId::new("measure-1").unwrap(),
@@ -1472,6 +1512,23 @@ fn live_workflow_cleanup_lifecycle() {
                         .all(|r| matches!(r.outcome(), StepOutcome::Succeeded { .. }))
                 );
                 assert_eq!(events, "set\noutput-on\noutput-off\nsafe-off\nstop\n");
+            }
+            "live-assert-failure" => {
+                let results = result.unwrap();
+                assert_eq!(results.len(), 4);
+                assert!(
+                    results[..3]
+                        .iter()
+                        .all(|r| matches!(r.outcome(), StepOutcome::Succeeded { .. }))
+                );
+                assert_eq!(results[3].step_id().as_str(), "assert-1");
+                assert_eq!(
+                    results[3].outcome(),
+                    &StepOutcome::Failed {
+                        message: "Voltage is below minimum.".to_owned(),
+                    }
+                );
+                assert_eq!(events, "set\noutput-on\nsafe-off\nstop\n");
             }
             "live-step-failure" => {
                 let results = result.unwrap();

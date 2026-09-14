@@ -53,6 +53,21 @@ pub fn execute_workflow(
 
     for step in workflow.steps() {
         let outcome = match step.kind() {
+            StepKind::Assert { condition, message } => {
+                match data_context.resolve(&InputValue::Expression(condition.clone())) {
+                    Ok(output) if output == Value::Bool(true) => StepOutcome::Succeeded { output },
+                    Ok(_) => StepOutcome::Failed {
+                        message: if message.trim().is_empty() {
+                            "Assertion failed.".to_owned()
+                        } else {
+                            message.clone()
+                        },
+                    },
+                    Err(error) => StepOutcome::Failed {
+                        message: error.to_string(),
+                    },
+                }
+            }
             StepKind::SetVariable { variable, value } => match data_context.resolve(value) {
                 Ok(output) => {
                     data_context.set_variable(variable.clone(), output.clone());
@@ -458,6 +473,152 @@ mod tests {
                 message: "missing variable missing".to_owned()
             }
         );
+    }
+
+    #[test]
+    fn assert_success_stores_true_and_continues_in_both_modes() {
+        let assertion_id = StepId::new("assert-1").unwrap();
+        let template = crate::template::Template::new(
+            "Assert".to_owned(),
+            vec![],
+            Workflow::new(vec![
+                Step::new(
+                    assertion_id.clone(),
+                    StepKind::Assert {
+                        condition: Expression::new(
+                            ExpressionOperand::Literal(json!(0)),
+                            ExpressionOperator::GreaterThanOrEqual,
+                            ExpressionOperand::Literal(json!(0)),
+                        ),
+                        message: "Assertion failed.".to_owned(),
+                    },
+                ),
+                Step::new(
+                    StepId::new("output-1").unwrap(),
+                    StepKind::Output {
+                        name: "assert-result".to_owned(),
+                        value: InputValue::StepOutput(StepOutputReference::new(assertion_id, "")),
+                    },
+                ),
+            ])
+            .unwrap(),
+        )
+        .unwrap();
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let results =
+                execute_workflow(&template, &HashMap::new(), mode, Duration::from_secs(5)).unwrap();
+            assert_eq!(results.len(), 2);
+            for result in results {
+                assert_eq!(
+                    result.outcome(),
+                    &StepOutcome::Succeeded {
+                        output: json!(true)
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn assert_false_uses_message_and_stops_later_steps() {
+        for (message, expected) in [
+            ("Voltage is below minimum.", "Voltage is below minimum."),
+            ("", "Assertion failed."),
+            ("  ", "Assertion failed."),
+        ] {
+            let workflow = Workflow::new(vec![
+                Step::new(
+                    StepId::new("assert-1").unwrap(),
+                    StepKind::Assert {
+                        condition: Expression::new(
+                            ExpressionOperand::Literal(json!(4.8)),
+                            ExpressionOperator::GreaterThanOrEqual,
+                            ExpressionOperand::Literal(json!(4.9)),
+                        ),
+                        message: message.to_owned(),
+                    },
+                ),
+                Step::new(
+                    StepId::new("later").unwrap(),
+                    StepKind::Wait { duration_ms: 0 },
+                ),
+            ])
+            .unwrap();
+            let results = execute_workflow(
+                &test_template(&workflow),
+                &HashMap::new(),
+                ExecutionMode::Simulate,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].step_id().as_str(), "assert-1");
+            assert_eq!(
+                results[0].outcome(),
+                &StepOutcome::Failed {
+                    message: expected.to_owned()
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn assert_resolution_errors_fail_without_running_later_steps() {
+        for (left, expected) in [
+            (
+                ExpressionOperand::Variable(VariableId::new("missing").unwrap()),
+                "missing variable missing",
+            ),
+            (
+                ExpressionOperand::StepOutput(StepOutputReference::new(
+                    StepId::new("prior").unwrap(),
+                    "/absent",
+                )),
+                "missing step output target for step prior at JSON Pointer \"/absent\"",
+            ),
+            (
+                ExpressionOperand::Literal(json!("5")),
+                "expression operand must be a JSON number",
+            ),
+        ] {
+            let workflow = Workflow::new(vec![
+                Step::new(
+                    StepId::new("prior").unwrap(),
+                    StepKind::Wait { duration_ms: 0 },
+                ),
+                Step::new(
+                    StepId::new("assert-1").unwrap(),
+                    StepKind::Assert {
+                        condition: Expression::new(
+                            left,
+                            ExpressionOperator::GreaterThan,
+                            ExpressionOperand::Literal(json!(0)),
+                        ),
+                        message: "Do not hide the resolve error.".to_owned(),
+                    },
+                ),
+                Step::new(
+                    StepId::new("later").unwrap(),
+                    StepKind::Wait { duration_ms: 0 },
+                ),
+            ])
+            .unwrap();
+            let results = execute_workflow(
+                &test_template(&workflow),
+                &HashMap::new(),
+                ExecutionMode::Simulate,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[1].step_id().as_str(), "assert-1");
+            assert_eq!(
+                results[1].outcome(),
+                &StepOutcome::Failed {
+                    message: expected.to_owned()
+                }
+            );
+        }
     }
 
     #[test]

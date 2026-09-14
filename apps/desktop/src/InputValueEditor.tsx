@@ -143,6 +143,30 @@ function SourceOptions({ earlierSteps, earlierVariables }: ReferenceOptions) {
   )
 }
 
+function defaultOperand(source: string, references: ReferenceOptions, literal = 0): ExpressionOperandWire {
+  switch (source) {
+    case 'variable': return { source, variable: references.earlierVariables[0] }
+    case 'step-output': return { source, step_id: references.earlierSteps[0].id, pointer: '/value' }
+    default: return { source: 'literal', value: literal }
+  }
+}
+
+export function ExpressionOperandEditor({ value, onChange, side, ...references }: OperandEditorProps & { side: 'Left' | 'Right' }) {
+  return (
+    <div className="step-properties-fields" role="group" aria-label={`${side} operand`}>
+      <label className="step-property-field">
+        <span className="step-property-label">{side} Source</span>
+        <select value={value.source} disabled={references.disabled}
+          onChange={(event) => onChange(defaultOperand(event.target.value, references))}>
+          <SourceOptions {...references} />
+        </select>
+      </label>
+      <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
+      <OperandEditor {...references} value={value} onChange={onChange} />
+    </div>
+  )
+}
+
 type InputValueEditorProps = ReferenceOptions & {
   value: InputValueWire
   onChange: (value: InputValueWire) => void
@@ -153,27 +177,9 @@ type InputValueEditorProps = ReferenceOptions & {
 
 export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
   literalDefault = 0, ...references }: InputValueEditorProps) {
-  const defaultOperand = (source: string, literal = 0): ExpressionOperandWire => {
-    switch (source) {
-      case 'variable': return { source, variable: references.earlierVariables[0] }
-      case 'step-output': return { source, step_id: references.earlierSteps[0].id, pointer: '/value' }
-      default: return { source: 'literal', value: literal }
-    }
-  }
-
   const operandEditor = (side: 'left' | 'right') => value.source === 'expression' && (
-    <div className="step-properties-fields" role="group" aria-label={`${side === 'left' ? 'Left' : 'Right'} operand`}>
-      <label className="step-property-field">
-        <span className="step-property-label">{side === 'left' ? 'Left' : 'Right'} Source</span>
-        <select value={value[side].source} disabled={references.disabled}
-          onChange={(event) => onChange({ ...value, [side]: defaultOperand(event.target.value) })}>
-          <SourceOptions {...references} />
-        </select>
-      </label>
-      <p className="value-source-help">{SOURCE_HELP[value[side].source]}</p>
-      <OperandEditor {...references} value={value[side]}
-        onChange={(operand) => onChange({ ...value, [side]: operand })} />
-    </div>
+    <ExpressionOperandEditor {...references} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
+      onChange={(operand) => onChange({ ...value, [side]: operand })} />
   )
 
   return (
@@ -183,7 +189,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
         <select value={value.source} disabled={references.disabled}
           onChange={(event) => onChange(event.target.value === 'expression'
             ? { source: 'expression', left: { source: 'literal', value: 0 }, operator: 'add', right: { source: 'literal', value: 0 } }
-            : defaultOperand(event.target.value, literalDefault))}>
+            : defaultOperand(event.target.value, references, literalDefault))}>
           <SourceOptions {...references} />
           <option value="expression">Calculation</option>
         </select>

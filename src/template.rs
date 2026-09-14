@@ -312,6 +312,13 @@ impl WorkflowWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
+    Assert {
+        id: String,
+        left: ExpressionOperandWire,
+        operator: ExpressionOperator,
+        right: ExpressionOperandWire,
+        message: String,
+    },
     SetVariable {
         id: String,
         variable: String,
@@ -340,6 +347,13 @@ enum StepWire {
 impl StepWire {
     fn from_step(step: &Step) -> Self {
         match step.kind() {
+            StepKind::Assert { condition, message } => Self::Assert {
+                id: step.id().as_str().to_owned(),
+                left: ExpressionOperandWire::from_operand(condition.left()),
+                operator: condition.operator(),
+                right: ExpressionOperandWire::from_operand(condition.right()),
+                message: message.clone(),
+            },
             StepKind::SetVariable { variable, value } => Self::SetVariable {
                 id: step.id().as_str().to_owned(),
                 variable: variable.as_str().to_owned(),
@@ -508,6 +522,27 @@ fn workflow_from_wire(wire: WorkflowWire) -> Result<Workflow, TemplateError> {
 
 fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
     match wire {
+        StepWire::Assert {
+            id,
+            left,
+            operator,
+            right,
+            message,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::Assert {
+                    condition: Expression::new(
+                        operand_from_wire(left)?,
+                        operator,
+                        operand_from_wire(right)?,
+                    ),
+                    message,
+                },
+            ))
+        }
         StepWire::SetVariable {
             id,
             variable,
@@ -832,6 +867,47 @@ mod tests {
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");
         assert_eq!(Template::from_json_str(&json).unwrap(), original);
+    }
+
+    #[test]
+    fn assert_template_round_trip_and_operator_validation() {
+        let assertion = json!({
+            "type": "assert", "id": "assert-1",
+            "left": { "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" },
+            "operator": "greater-than-or-equal",
+            "right": { "source": "variable", "variable": "threshold" },
+            "message": "Voltage is below minimum."
+        });
+        let mut wire: Value =
+            serde_json::from_str(&sample_template().to_json_string().unwrap()).unwrap();
+        wire["workflow"]["steps"]
+            .as_array_mut()
+            .unwrap()
+            .push(assertion.clone());
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let serialized: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+        assert_eq!(serialized["schema_version"], 1);
+        assert_eq!(serialized["workflow"]["steps"][3], assertion);
+        assert!(
+            matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, message }
+            if condition.operator() == ExpressionOperator::GreaterThanOrEqual
+                && condition.left() == &ExpressionOperand::StepOutput(StepOutputReference::new(
+                    StepId::new("meter-read-1").unwrap(), "/value"))
+                && condition.right() == &ExpressionOperand::Variable(VariableId::new("threshold").unwrap())
+                && message == "Voltage is below minimum.")
+        );
+        let test_dir = TestDir::new();
+        let path = test_dir.path().join("assert.json");
+        template.save_to_file(&path).unwrap();
+        assert_eq!(Template::load_from_file(&path).unwrap(), template);
+
+        wire["workflow"]["steps"][3]["operator"] = json!("add");
+        assert!(matches!(
+            Template::from_json_str(&wire.to_string()),
+            Err(TemplateError::Workflow(
+                crate::workflow::WorkflowError::InvalidAssertOperator(_)
+            ))
+        ));
     }
 
     #[test]

@@ -30,6 +30,10 @@ Run preparation 會驗證 setup，透過 Core Meters adapter 將其轉成 `meter
 
 ExecutionMode、Live VISA Resource、runtime results、output authorization 與 safety cleanup state 均不屬於 Template。Live resource 存在 Desktop configuration，execution mode 則在每次 run 時選擇。DCI 的 Current Terminal 設為 10 時，Live confirmation 也會要求操作者確認量測線實際接在 10 A terminal。目前 Tool Setup 的驗證仍以 Simulation 為主；特定硬體型號與設定組合是否支援，仍以對應 external instrument tool 的驗證結果為準。
 
+Template schema version 1 支援 Set Variable、Output 與 ToolAction binding 中的結構化 Expression。Operand 支援 `literal`、`variable` 與 `step-output`，operator 支援 `add`、`subtract`、`multiply`、`divide`、`greater-than`、`greater-than-or-equal`、`less-than` 與 `less-than-or-equal`；不支援巢狀 Expression。儲存與載入會保留 operator、operand、識別字、JSON Pointer 與 Workflow 順序，不保存 runtime value。
+
+Assert 是與裝置無關的 Workflow Step，schema v1 使用 `type: "assert"`、`id`、`left`、`operator`、`right` 與 `message` 欄位。它重用上述 Expression operand，但只接受四種 comparison operator；Core validation 會拒絕 arithmetic operator，以及引用非前置 Step 的 reference。比較結果為 true 時，Step 成功並以 boolean `true` 作為 output；結果為 false 時，Step 使用設定的訊息失敗，空白訊息則使用 `Assertion failed.`。Expression resolve error 會保留既有明確錯誤訊息。兩種 failure 都沿用既有 executor fail-fast，Live run 仍會使用既有 Power safety cleanup。Desktop 的 Assert Properties 共用 Calculation operand 與 Meter result field selector。Assert 不會建立 Workflow Output，也不會新增 CSV 欄位。
+
 
 Instance 表示方式：Powers only 使用 powers-1；Powers + Scopes 使用 powers-1 與 scopes-1；單台 Meters 使用 meters-1；兩台 Meters 使用 meters-1 與 meters-2，兩者皆為 tool = meters，但各自保存 setup、綁定 Live resource 並啟動獨立 Worker session。Executable path 仍依 tool type 共用；physical resource 不保存在 Template。不同 Template 若使用相同 instance ID，會讀取相同 Desktop resource binding，Live run 前仍須確認。
 

@@ -217,6 +217,15 @@ pub enum ExpressionOperator {
     LessThanOrEqual,
 }
 
+impl ExpressionOperator {
+    pub fn is_comparison(self) -> bool {
+        matches!(
+            self,
+            Self::GreaterThan | Self::GreaterThanOrEqual | Self::LessThan | Self::LessThanOrEqual
+        )
+    }
+}
+
 /// A single step in a workflow.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step {
@@ -244,6 +253,10 @@ impl Step {
 /// The behavior represented by a workflow step.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StepKind {
+    Assert {
+        condition: Expression,
+        message: String,
+    },
     SetVariable {
         variable: VariableId,
         value: InputValue,
@@ -297,21 +310,29 @@ impl Workflow {
                 }
                 Ok(())
             };
+            let validate_expression = |expression: &Expression| {
+                for operand in [expression.left(), expression.right()] {
+                    if let ExpressionOperand::StepOutput(reference) = operand {
+                        validate_reference(reference)?;
+                    }
+                }
+                Ok(())
+            };
             let validate_input = |input: &InputValue| {
                 match input {
                     InputValue::StepOutput(reference) => validate_reference(reference)?,
-                    InputValue::Expression(expression) => {
-                        for operand in [expression.left(), expression.right()] {
-                            if let ExpressionOperand::StepOutput(reference) = operand {
-                                validate_reference(reference)?;
-                            }
-                        }
-                    }
+                    InputValue::Expression(expression) => validate_expression(expression)?,
                     InputValue::Literal(_) | InputValue::Variable(_) => {}
                 }
                 Ok(())
             };
             match step.kind() {
+                StepKind::Assert { condition, .. } => {
+                    if !condition.operator().is_comparison() {
+                        return Err(WorkflowError::InvalidAssertOperator(step.id().clone()));
+                    }
+                    validate_expression(condition)?;
+                }
                 StepKind::SetVariable { value, .. } | StepKind::Output { value, .. } => {
                     validate_input(value)?;
                 }
@@ -413,6 +434,7 @@ impl Error for OutputProjectionError {}
 /// Errors produced while constructing a workflow.
 #[derive(Debug)]
 pub enum WorkflowError {
+    InvalidAssertOperator(StepId),
     DuplicateStepId(StepId),
     InvalidOutputName(StepId),
     DuplicateOutputName(String),
@@ -422,6 +444,12 @@ pub enum WorkflowError {
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidAssertOperator(step_id) => {
+                write!(
+                    formatter,
+                    "assert step {step_id} requires a comparison operator"
+                )
+            }
             Self::InvalidOutputName(step_id) => {
                 write!(formatter, "output step {step_id} name must not be blank")
             }
@@ -609,6 +637,52 @@ mod tests {
             } if step_id.as_str() == "current" && target.as_str() == "future"));
             assert!(Workflow::new(vec![future, current]).is_ok());
         }
+    }
+
+    #[test]
+    fn assert_requires_comparison_and_earlier_step_references() {
+        let prior = Step::new(
+            StepId::new("measurement").unwrap(),
+            StepKind::Wait { duration_ms: 0 },
+        );
+        let assertion = Step::new(
+            StepId::new("assert-1").unwrap(),
+            StepKind::Assert {
+                condition: Expression::new(
+                    ExpressionOperand::StepOutput(StepOutputReference::new(
+                        prior.id().clone(),
+                        "/value",
+                    )),
+                    ExpressionOperator::GreaterThanOrEqual,
+                    ExpressionOperand::Variable(VariableId::new("threshold").unwrap()),
+                ),
+                message: "Below threshold.".to_owned(),
+            },
+        );
+        assert!(Workflow::new(vec![prior.clone(), assertion.clone()]).is_ok());
+        for steps in [vec![assertion.clone(), prior], vec![assertion]] {
+            assert!(matches!(
+                Workflow::new(steps),
+                Err(WorkflowError::InvalidStepOutputReference { .. })
+            ));
+        }
+        let arithmetic = Step::new(
+            StepId::new("assert-1").unwrap(),
+            StepKind::Assert {
+                condition: Expression::new(
+                    ExpressionOperand::Literal(json!(5)),
+                    ExpressionOperator::Add,
+                    ExpressionOperand::Literal(json!(2)),
+                ),
+                message: String::new(),
+            },
+        );
+        let error = Workflow::new(vec![arithmetic]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "assert step assert-1 requires a comparison operator"
+        );
+        assert!(matches!(error, WorkflowError::InvalidAssertOperator(_)));
     }
 
     #[test]

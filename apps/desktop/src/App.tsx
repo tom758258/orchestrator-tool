@@ -4,8 +4,9 @@ import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
-import InputValueEditor from './InputValueEditor'
-import type { InputValueWire } from './inputValue'
+import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
+import { COMPARISON_OPERATORS } from './inputValue'
+import type { ComparisonOperator, ExpressionOperandWire, InputValueWire } from './inputValue'
 
 type ToolStatus = {
   tool_id: string
@@ -84,6 +85,15 @@ type OutputStep = {
   value: InputValueWire
 }
 
+type AssertStep = {
+  type: 'assert'
+  id: string
+  left: ExpressionOperandWire
+  operator: ComparisonOperator
+  right: ExpressionOperandWire
+  message: string
+}
+
 type ToolActionStep = {
   type: 'tool-action'
   id: string
@@ -93,7 +103,7 @@ type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
-export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep
+export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep
 
 type WorkflowDraft = {
   schema_version: number
@@ -116,6 +126,7 @@ export type StepResultDto = {
   message: string | null
 }
 type StepPreset =
+  | 'assert'
   | 'set-variable'
   | 'output'
   | 'power-set-voltage'
@@ -138,6 +149,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set', category: 'Powers', tool: 'powers' },
   { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
   { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
+  { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
   { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read', category: 'Meters', tool: 'meters' },
   { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off', category: 'Powers', tool: 'powers' },
 ]
@@ -150,6 +162,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 }
 
 const STEP_HELP: Record<string, string> = {
+  assert: 'Fail the Workflow when this numeric comparison is false.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
@@ -198,6 +211,14 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
   switch (preset) {
+    case 'assert':
+      return {
+        type: 'assert', id,
+        left: { source: 'literal', value: 0 },
+        operator: 'greater-than-or-equal',
+        right: { source: 'literal', value: 0 },
+        message: 'Assertion failed.',
+      }
     case 'set-variable':
       return { type: 'set-variable', id, variable: 'x', value: { source: 'literal', value: 5.0 } }
     case 'output':
@@ -245,6 +266,9 @@ function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
   }
   if (step.type === 'output') {
     return 'Output'
+  }
+  if (step.type === 'assert') {
+    return 'Assert'
   }
   if (step.type === 'wait') {
     return 'Wait'
@@ -1270,6 +1294,46 @@ function App() {
                             step.type === 'output' || step.type === 'set-variable'
                               ? { ...step, value } : step)}
                         />
+                      )}
+
+                      {selectedStep.type === 'assert' && (
+                        <div key={selectedStep.id} className="step-properties-fields">
+                          <ExpressionOperandEditor
+                            side="Left" value={selectedStep.left}
+                            earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+                            instances={workflowDraft.tool_instances}
+                            stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                            disabled={workflowBusy}
+                            onChange={left => updateStep(selectedStep.id, step =>
+                              step.type === 'assert' ? { ...step, left } : step)}
+                          />
+                          <label className="step-property-field">
+                            <span className="step-property-label">Operator</span>
+                            <select value={selectedStep.operator} disabled={workflowBusy}
+                              onChange={event => updateStep(selectedStep.id, step =>
+                                step.type === 'assert' ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
+                              {Object.entries(COMPARISON_OPERATORS).map(([operator, symbol]) => (
+                                <option key={operator} value={operator}>{symbol}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <ExpressionOperandEditor
+                            side="Right" value={selectedStep.right}
+                            earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+                            instances={workflowDraft.tool_instances}
+                            stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                            disabled={workflowBusy}
+                            onChange={right => updateStep(selectedStep.id, step =>
+                              step.type === 'assert' ? { ...step, right } : step)}
+                          />
+                          <label className="step-property-field">
+                            <span className="step-property-label">Failure message</span>
+                            <input type="text" value={selectedStep.message} placeholder="Assertion failed."
+                              disabled={workflowBusy}
+                              onChange={event => updateStep(selectedStep.id, step =>
+                                step.type === 'assert' ? { ...step, message: event.target.value } : step)} />
+                          </label>
+                        </div>
                       )}
 
                       {selectedStep.type === 'wait' && (
