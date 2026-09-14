@@ -238,6 +238,7 @@ pub struct NumericRange {
     start: f64,
     stop: f64,
     step: f64,
+    count: usize,
 }
 
 impl NumericRange {
@@ -251,7 +252,23 @@ impl NumericRange {
         if start < stop && step < 0.0 || start > stop && step > 0.0 {
             return Err(NumericRangeError::WrongDirection);
         }
-        Ok(Self { start, stop, step })
+        let ratio = ((stop - start) / step).abs();
+        let rounded = ratio.round();
+        let ratio = if (ratio - rounded).abs() <= 1e-12 * ratio.max(1.0) {
+            rounded
+        } else {
+            ratio
+        };
+        let count_value = ratio.floor() + 1.0;
+        if !count_value.is_finite() || count_value > usize::MAX as f64 {
+            return Err(NumericRangeError::CountOverflow);
+        }
+        Ok(Self {
+            start,
+            stop,
+            step,
+            count: count_value as usize,
+        })
     }
     pub fn start(&self) -> f64 {
         self.start
@@ -263,10 +280,7 @@ impl NumericRange {
         self.step
     }
     pub fn iteration_count(&self) -> usize {
-        if self.start == self.stop {
-            return 1;
-        }
-        ((self.stop - self.start) / self.step).floor() as usize + 1
+        self.count
     }
 }
 
@@ -275,6 +289,7 @@ pub enum NumericRangeError {
     NonFinite,
     ZeroStep,
     WrongDirection,
+    CountOverflow,
 }
 
 impl fmt::Display for NumericRangeError {
@@ -283,6 +298,7 @@ impl fmt::Display for NumericRangeError {
             Self::NonFinite => "range values must be finite",
             Self::ZeroStep => "range step must not be zero",
             Self::WrongDirection => "range step has the wrong direction",
+            Self::CountOverflow => "range iteration count does not fit in usize",
         })
     }
 }
@@ -337,7 +353,7 @@ pub enum StepKind {
     },
 }
 
-/// An ordered, linear collection of workflow steps.
+/// An ordered collection of top-level workflow steps.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workflow {
     steps: Vec<Step>,
@@ -350,6 +366,7 @@ impl Workflow {
         let mut output_names = HashSet::new();
         let mut root_outputs = false;
         let mut body_outputs = false;
+        let mut row_for = None;
 
         #[allow(clippy::too_many_arguments)]
         fn validate_steps(
@@ -361,6 +378,8 @@ impl Workflow {
             body_outputs: &mut bool,
             in_for: bool,
             loop_variable: Option<&VariableId>,
+            current_for: Option<&StepId>,
+            row_for: &mut Option<StepId>,
         ) -> Result<(), WorkflowError> {
             let mut prior = available.clone();
             for step in steps {
@@ -410,6 +429,8 @@ impl Workflow {
                             body_outputs,
                             true,
                             Some(variable),
+                            Some(step.id()),
+                            row_for,
                         )?;
                     }
                     StepKind::Assert { condition, .. } => {
@@ -433,6 +454,18 @@ impl Workflow {
                         }
                         validate_input(value)?;
                         if in_for {
+                            if let Some(for_id) = current_for {
+                                if let Some(previous) = row_for {
+                                    if previous != for_id {
+                                        return Err(WorkflowError::MultipleRowProducingFors {
+                                            first: previous.clone(),
+                                            second: for_id.clone(),
+                                        });
+                                    }
+                                } else {
+                                    *row_for = Some(for_id.clone());
+                                }
+                            }
                             *body_outputs = true;
                         } else {
                             *root_outputs = true;
@@ -459,6 +492,8 @@ impl Workflow {
             &mut body_outputs,
             false,
             None,
+            None,
+            &mut row_for,
         )?;
         if root_outputs && body_outputs {
             return Err(WorkflowError::MixedOutputPlacement);
@@ -560,6 +595,7 @@ pub enum WorkflowError {
     NestedFor(StepId),
     LoopVariableAssignment(StepId),
     MixedOutputPlacement,
+    MultipleRowProducingFors { first: StepId, second: StepId },
     InvalidRange(String),
 }
 
@@ -595,6 +631,10 @@ impl fmt::Display for WorkflowError {
             Self::MixedOutputPlacement => {
                 write!(formatter, "root and For-body outputs cannot be mixed")
             }
+            Self::MultipleRowProducingFors { first, second } => write!(
+                formatter,
+                "For steps {first} and {second} both produce workflow rows"
+            ),
             Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
         }
     }
@@ -648,8 +688,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
-        StepKind, StepOutcome, StepOutputReference, StepResult, VariableId, Workflow,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
+        Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult, VariableId, Workflow,
         WorkflowError,
     };
     use crate::tool_instance::ToolInstanceId;
@@ -962,5 +1002,60 @@ mod tests {
 
         let cancelled = StepResult::new(StepId::new("wait-1").unwrap(), StepOutcome::Cancelled);
         assert_eq!(cancelled.outcome(), &StepOutcome::Cancelled);
+    }
+
+    #[test]
+    fn numeric_ranges_count_inclusive_decimal_boundaries_safely() {
+        for (start, stop, step, count) in [
+            (1.0, 5.0, 1.0, 5),
+            (5.0, 1.0, -1.0, 5),
+            (3.0, 3.0, 1.0, 1),
+            (0.0, 0.3, 0.1, 4),
+            (0.3, 0.0, -0.1, 4),
+        ] {
+            assert_eq!(
+                NumericRange::new(start, stop, step)
+                    .unwrap()
+                    .iteration_count(),
+                count
+            );
+        }
+        assert!(NumericRange::new(0.0, f64::MAX, f64::MIN_POSITIVE).is_err());
+        assert!(NumericRange::new(0.0, 1.0, 0.0).is_err());
+        assert!(NumericRange::new(0.0, 1.0, -1.0).is_err());
+        assert!(NumericRange::new(1.0, 0.0, 1.0).is_err());
+        assert!(NumericRange::new(f64::NAN, 1.0, 1.0).is_err());
+    }
+
+    #[test]
+    fn only_one_for_may_produce_rows() {
+        let output = |id: &str, name: &str| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::Output {
+                    name: name.to_owned(),
+                    value: InputValue::Literal(json!(1)),
+                },
+            )
+        };
+        let for_step = |id: &str, body: Vec<Step>| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::For {
+                    variable: VariableId::new("x").unwrap(),
+                    range: NumericRange::new(1.0, 2.0, 1.0).unwrap(),
+                    body,
+                },
+            )
+        };
+        assert!(Workflow::new(vec![for_step("for-a", vec![output("out-a", "a")])]).is_ok());
+        assert!(matches!(
+            Workflow::new(vec![
+                for_step("for-a", vec![output("out-a", "a")]),
+                for_step("for-b", vec![output("out-b", "b")]),
+            ]),
+            Err(WorkflowError::MultipleRowProducingFors { .. })
+        ));
+        assert!(Workflow::new(vec![for_step("for-a", vec![]), for_step("for-b", vec![])]).is_ok());
     }
 }

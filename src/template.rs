@@ -714,8 +714,8 @@ mod tests {
         tool::ToolId,
         tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
         workflow::{
-            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
-            StepKind, StepOutputReference, VariableId, Workflow,
+            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
+            Step, StepId, StepKind, StepOutputReference, VariableId, Workflow,
         },
     };
 
@@ -1341,6 +1341,54 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("unknown tool instance target")
+        );
+    }
+
+    #[test]
+    fn for_template_round_trip_and_recursive_tool_validation() {
+        let workflow = Workflow::new(vec![Step::new(
+            StepId::new("sweep").unwrap(),
+            StepKind::For {
+                variable: VariableId::new("voltage").unwrap(),
+                range: NumericRange::new(0.0, 0.3, 0.1).unwrap(),
+                body: vec![
+                    Step::new(
+                        StepId::new("measure").unwrap(),
+                        StepKind::ToolAction {
+                            target: ToolInstanceId::new("meters-1").unwrap(),
+                            action: ActionId::new("measure").unwrap(),
+                            arguments: json!({}),
+                            bindings: [(
+                                "voltage".to_owned(),
+                                InputValue::Variable(VariableId::new("voltage").unwrap()),
+                            )]
+                            .into(),
+                        },
+                    ),
+                    Step::new(
+                        StepId::new("output").unwrap(),
+                        StepKind::Output {
+                            name: "voltage".to_owned(),
+                            value: InputValue::Variable(VariableId::new("voltage").unwrap()),
+                        },
+                    ),
+                ],
+            },
+        )])
+        .unwrap();
+        let instances = vec![sample_template().tool_instances()[0].clone()];
+        let template = Template::new("For".to_owned(), instances, workflow).unwrap();
+        let wire: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+        assert_eq!(wire["schema_version"], 1);
+        assert_eq!(wire["workflow"]["steps"][0]["type"], "for");
+        assert_eq!(wire["workflow"]["steps"][0]["range"]["start"], 0.0);
+        assert_eq!(
+            Template::from_json_str(&wire.to_string()).unwrap(),
+            template
+        );
+        assert_eq!(
+            template.referenced_tool_instances()[0].id.as_str(),
+            "meters-1"
         );
     }
 }

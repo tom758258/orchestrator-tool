@@ -104,23 +104,31 @@ pub fn prepare_worker_launch_specs(
     for instance in instances {
         let tool = &instance.tool;
         // Reserve capacity until orchestrator shutdown, separately for each instance.
-        fn measure_count(steps: &[crate::workflow::Step], target: &ToolInstanceId) -> usize {
-            steps
-                .iter()
-                .map(|step| match step.kind() {
+        fn measure_count(
+            steps: &[crate::workflow::Step],
+            target: &ToolInstanceId,
+        ) -> Result<usize, String> {
+            steps.iter().try_fold(0usize, |total, step| {
+                let count = match step.kind() {
                     StepKind::ToolAction {
                         target: step_target,
                         action,
                         ..
                     } if step_target == target && action.as_str() == "measure" => 1,
-                    StepKind::For { range, body, .. } => {
-                        range.iteration_count() * measure_count(body, target)
-                    }
+                    StepKind::For { range, body, .. } => range
+                        .iteration_count()
+                        .checked_mul(measure_count(body, target)?)
+                        .ok_or_else(|| "meter sample count overflow".to_owned())?,
                     _ => 0,
-                })
-                .sum()
+                };
+                total
+                    .checked_add(count)
+                    .ok_or_else(|| "meter sample count overflow".to_owned())
+            })
         }
-        let meters_max_samples = measure_count(template.workflow().steps(), &instance.id) + 1;
+        let meters_max_samples = measure_count(template.workflow().steps(), &instance.id)?
+            .checked_add(1)
+            .ok_or_else(|| "meter sample reserve count overflow".to_owned())?;
         let definition = definitions
             .iter()
             .find(|definition| definition.id() == tool)
