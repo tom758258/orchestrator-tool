@@ -47,7 +47,11 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
   const meters = value.meters
   const currentCapabilities = capabilities?.model === model && capabilities?.metersExecutableKey === metersExecutableKey ? capabilities : null
   const ranges = currentCapabilities?.options?.find(option => option.measurement_name === meters.measurement)?.range_values
-  const unsupportedRange = meters.range_mode === 'manual' && ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)
+  useEffect(() => {
+    if (ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)) {
+      onChange({ ...value, meters: { ...meters, manual_range: null } })
+    }
+  }, [ranges, meters.measurement, meters.manual_range])
   const unit = meters.measurement === 'voltage-dc' ? 'V' : 'A'
   const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
@@ -84,19 +88,16 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
             <select required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
               onChange={event => onChange({ ...value, meters: { ...meters, manual_range: Number(event.target.value) } })}>
               {meters.manual_range === null && <option value="" disabled>Select a range...</option>}
-              {unsupportedRange && <option value={meters.manual_range!}>{formatRange(meters.manual_range!, unit)} (current, unsupported)</option>}
               {ranges.map(range => <option key={range} value={range}>{formatRange(range, unit)}</option>)}
             </select>
           ) : (
-            <input type="number" step="any" required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
-              onChange={(event) => onChange({
-                ...value, meters: { ...meters, manual_range: Number.isFinite(event.currentTarget.valueAsNumber) ? event.currentTarget.valueAsNumber : null },
-              })} />
+            <select disabled value="">
+              <option value="">{model ? 'Range options unavailable' : 'Save a Live Resource to load range options'}</option>
+            </select>
           )}
           {currentCapabilities && ranges === undefined && (
-            <span className="tool-setup-hint">Supported range options could not be loaded. Enter a range manually.</span>
+            <span className="tool-setup-hint">Supported range options could not be loaded for this model.</span>
           )}
-          {unsupportedRange && <span className="tool-setup-hint">Current range is not supported by this model for this measurement.</span>}
         </label>
         <label className="step-property-field">
           <span className="step-property-label">NPLC</span>
