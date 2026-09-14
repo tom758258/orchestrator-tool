@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import type { ReactNode } from 'react'
 import type { WorkflowStep } from './App'
 
@@ -19,8 +20,35 @@ export type ToolInstance =
 
 const METERS_NPLC_OPTIONS = [0.02, 0.2, 1, 10, 100] as const
 
-function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void }) {
+type MetersRangeOptions = { measurement_name: string; range_values: number[] }
+
+function formatRange(value: number, unit: string): string {
+  const magnitude = Math.abs(value)
+  const exponent = magnitude === 0 ? 0 : Math.max(-12, Math.min(12, Math.floor(Math.log10(magnitude) / 3) * 3))
+  const prefix: Record<number, string> = { '-12': 'p', '-9': 'n', '-6': '\u00b5', '-3': 'm', 0: '', 3: 'k', 6: 'M', 9: 'G', 12: 'T' }
+  return `${Number((value / 10 ** exponent).toPrecision(12))} ${prefix[exponent]}${unit}`
+}
+
+function MetersSetupFields({ value, onChange, model }: {
+  value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void; model?: string | null
+}) {
+  const [capabilities, setCapabilities] = useState<{ model: string; options: MetersRangeOptions[] | null } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setCapabilities(null)
+    if (model) {
+      invoke<MetersRangeOptions[]>('get_meters_range_options', { model }).then(
+        options => { if (!cancelled) setCapabilities({ model, options }) },
+        () => { if (!cancelled) setCapabilities({ model, options: null }) },
+      )
+    }
+    return () => { cancelled = true }
+  }, [model])
   const meters = value.meters
+  const currentCapabilities = capabilities?.model === model ? capabilities : null
+  const ranges = currentCapabilities?.options?.find(option => option.measurement_name === meters.measurement)?.range_values
+  const unsupportedRange = ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)
+  const unit = meters.measurement === 'voltage-dc' ? 'V' : 'A'
   const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
     <>
@@ -52,10 +80,23 @@ function MetersSetupFields({ value, onChange }: { value: { meters: MetersSetup }
         </label>
         <label className="step-property-field">
           <span className="step-property-label">Manual Range ({meters.measurement === 'voltage-dc' ? 'V' : 'A'})</span>
-          <input type="number" step="any" required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
-            onChange={(event) => onChange({
-              ...value, meters: { ...meters, manual_range: Number.isFinite(event.currentTarget.valueAsNumber) ? event.currentTarget.valueAsNumber : null },
-            })} />
+          {ranges !== undefined ? (
+            <select required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
+              onChange={event => onChange({ ...value, meters: { ...meters, manual_range: Number(event.target.value) } })}>
+              {meters.manual_range === null && <option value="" disabled>Select a range...</option>}
+              {unsupportedRange && <option value={meters.manual_range!}>{formatRange(meters.manual_range!, unit)} (current, unsupported)</option>}
+              {ranges.map(range => <option key={range} value={range}>{formatRange(range, unit)}</option>)}
+            </select>
+          ) : (
+            <input type="number" step="any" required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
+              onChange={(event) => onChange({
+                ...value, meters: { ...meters, manual_range: Number.isFinite(event.currentTarget.valueAsNumber) ? event.currentTarget.valueAsNumber : null },
+              })} />
+          )}
+          {currentCapabilities && ranges === undefined && (
+            <span className="tool-setup-hint">Supported range options could not be loaded. Enter a range manually.</span>
+          )}
+          {unsupportedRange && <span className="tool-setup-hint">Current range is not supported by this model for this measurement.</span>}
         </label>
         <label className="step-property-field">
           <span className="step-property-label">NPLC</span>
@@ -117,8 +158,9 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource }: {
+export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
+  resourceIdentities: Record<string, { model: string | null } | null>
   renderResource: (instance: ToolInstance) => ReactNode
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
@@ -164,7 +206,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
         {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'
-            ? <MetersSetupFields value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
+            ? <MetersSetupFields model={resourceIdentities[instance.id]?.model} value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
             : <p>No additional setup</p>}
           {renderResource(instance)}
           <button type="button" className="action-button" disabled={referenced}

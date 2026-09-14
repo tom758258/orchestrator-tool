@@ -44,6 +44,20 @@ async fn list_live_resources(
     .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+async fn get_meters_range_options(
+    app: AppHandle,
+    model: String,
+) -> Result<Vec<orchestrator_tool::adapters::meters::MetersRangeOptions>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::adapters::meters::get_range_options(&application_dir, &config, &model)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[derive(Serialize)]
 struct ToolStatusDto {
     tool_id: String,
@@ -494,6 +508,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
             list_live_resources,
+            get_meters_range_options,
             run_workflow_simulation,
             run_workflow_live,
             get_live_resources,

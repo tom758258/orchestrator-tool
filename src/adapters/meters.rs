@@ -8,11 +8,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
+    config::Config,
+    discovery::{ExecutableStatus, built_in_tool_definitions},
+    inspection::inspect_tool,
     meters_setup::{AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode},
+    process::{CaptureError, run_output_with_timeout},
+    tool::ToolId,
     worker::{
         WorkerEventError, WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError,
         WorkerStartError, start_worker,
@@ -26,6 +31,67 @@ const SERVICE_NAME: &str = "keysight-meter";
 const SOFTWARE_TRIGGER_COMMAND: &str = "software_trigger";
 const SMOKE_JOB_ID: &str = "orchestrator-meter-smoke";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Manual ranges advertised by meters-tool for one measurement.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MetersRangeOptions {
+    pub measurement_name: String,
+    pub range_values: Vec<f64>,
+}
+
+/// Queries offline model capabilities using the configured or portable executable.
+pub fn get_range_options(
+    application_dir: &Path,
+    config: &Config,
+    model: &str,
+) -> Result<Vec<MetersRangeOptions>, String> {
+    let definition = built_in_tool_definitions()
+        .into_iter()
+        .find(|definition| definition.id() == &ToolId::meters())
+        .expect("meters is built in");
+    let inspection = inspect_tool(application_dir, config, &definition)
+        .map_err(|error| format!("meters executable inspection failed: {error}"))?;
+    if inspection.status() != ExecutableStatus::Available {
+        return Err(format!(
+            "meters executable is unavailable: {}",
+            inspection.resolved().path().display()
+        ));
+    }
+    let output = run_output_with_timeout(
+        inspection.resolved().path(),
+        ["capabilities", "--json", "--model", model],
+        Duration::from_secs(10),
+    )
+    .map_err(|error| match error {
+        CaptureError::Io(error) => format!("meters capabilities query failed: {error}"),
+        CaptureError::Timeout => "meters capabilities query timed out after 10 seconds".to_owned(),
+    })?;
+    if !output.status.success() {
+        return Err(format!(
+            "meters capabilities query failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_range_options(&output.stdout)
+}
+
+fn parse_range_options(stdout: &[u8]) -> Result<Vec<MetersRangeOptions>, String> {
+    #[derive(Deserialize)]
+    struct Capabilities {
+        schema_version: u32,
+        event: String,
+        measurements: Vec<MetersRangeOptions>,
+    }
+    let response: Capabilities = serde_json::from_slice(stdout)
+        .map_err(|error| format!("meters capabilities returned invalid JSON or shape: {error}"))?;
+    if response.schema_version != 2 || response.event != "capabilities" {
+        return Err(
+            "meters capabilities expected schema_version 2 and event capabilities".to_owned(),
+        );
+    }
+    Ok(response.measurements)
+}
 
 /// Maps setup to `meters-tool start-trigger-record` setup arguments.
 /// Call [`MetersSetup::validate`] before using this mapping.
@@ -624,6 +690,35 @@ impl Error for MetersActionError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn range_capabilities_parse_v2_with_additive_fields() {
+        let ranges = super::parse_range_options(
+            br#"{
+            "schema_version": 2, "event": "capabilities", "model": "example",
+            "measurements": [
+                {"measurement_name": "voltage-dc", "range_values": [0.1, 10], "other": true},
+                {"measurement_name": "current-dc", "range_values": [0.0001, 0.001]}
+            ]
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(ranges[0].measurement_name, "voltage-dc");
+        assert_eq!(ranges[0].range_values, vec![0.1, 10.0]);
+        assert_eq!(ranges[1].measurement_name, "current-dc");
+        assert_eq!(ranges[1].range_values, vec![0.0001, 0.001]);
+    }
+
+    #[test]
+    fn range_capabilities_reject_invalid_contract() {
+        for payload in [
+            r#"{"schema_version":1,"event":"capabilities","measurements":[]}"#,
+            r#"{"schema_version":2,"event":"other","measurements":[]}"#,
+            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":["10"]}]}"#,
+        ] {
+            assert!(super::parse_range_options(payload.as_bytes()).is_err());
+        }
+    }
+
     use std::{ffi::OsString, path::Path};
 
     use serde_json::json;

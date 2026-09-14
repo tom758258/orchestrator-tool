@@ -789,6 +789,13 @@ function App() {
   const selectedStep = workflowDraft?.workflow.steps.find(
     (step) => step.id === selectedStepId,
   )
+  const outputNameError = selectedStep?.type === 'output'
+    ? selectedStep.name.trim().length === 0
+      ? 'Output name must not be blank.'
+      : outputSteps.some((step) => step !== selectedStep && step.name === selectedStep.name)
+        ? 'Output name must be unique.'
+        : null
+    : null
   const earlierSteps = selectedStep && workflowDraft
     ? workflowDraft.workflow.steps.slice(0, workflowDraft.workflow.steps.indexOf(selectedStep))
     : []
@@ -1016,6 +1023,7 @@ function App() {
               {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
               <ToolSetupEditor
                 value={workflowDraft.tool_instances}
+                resourceIdentities={resourceIdentities}
                 steps={workflowDraft.workflow.steps}
                 renderResource={instance => (
                   <>
@@ -1221,17 +1229,29 @@ function App() {
                       )}
 
                       {selectedStep.type === 'output' && (
-                        <label className="step-property-field">
-                          <span className="step-property-label">Output name</span>
-                          <input
-                            type="text"
-                            value={selectedStep.name}
-                            disabled={workflowBusy}
-                            onChange={(event) => updateStep(selectedStep.id, (step) =>
-                              step.type === 'output' ? { ...step, name: event.target.value } : step,
-                            )}
-                          />
-                        </label>
+                        <>
+                          <label className="step-property-field">
+                            <span className="step-property-label">Output name</span>
+                            <input
+                              type="text"
+                              value={selectedStep.name}
+                              disabled={workflowBusy}
+                              aria-invalid={outputNameError !== null}
+                              aria-describedby={outputNameError
+                                ? 'output-name-help output-name-error' : 'output-name-help'}
+                              onChange={(event) => updateStep(selectedStep.id, (step) =>
+                                step.type === 'output' ? { ...step, name: event.target.value } : step,
+                              )}
+                            />
+                          </label>
+                          <p id="output-name-help" className="value-source-help">
+                            Used as the column name in Output results and CSV export.
+                          </p>
+                          {outputNameError && (
+                            <p id="output-name-error" className="step-property-error">{outputNameError}</p>
+                          )}
+                          <p className="step-context-help">Choose the value this Output publishes.</p>
+                        </>
                       )}
 
                       {selectedValue && (
