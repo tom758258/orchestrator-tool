@@ -75,7 +75,7 @@ Template schema v1 的 range 值只接受 exact decimal string；JSON number 會
 
 Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、儲存一層 For 與 While，並以 Simulation 或 Live 執行。Range 欄位全程保留 decimal string。巢狀 Sequence editor 的 root／body Step 只能在各自清單內移動；palette 會顯示插入位置，loop body 中停用 For 與 While。Tool Setup 使用偵測與 Live resource confirmation 皆包含 body ToolAction。
 
-Input suggestions 遵循 Core scope：body Step 可引用 For 前的 root outputs、同一次 iteration 的先前 body sibling outputs，以及 loop variable 和先前普通 variables。For 後的 root Step 看不到 body StepOutput 或新引入的 loop variable，但可使用 body 設定的普通 variables；若 loop variable 原先已有同名 variable，For 結束後會恢復其值。
+Input suggestions 遵循 Core scope：loop body Step 可引用 loop 前已存在的 root outputs、同一次 iteration 的先前 body sibling outputs，以及先前普通 variables。For body 可額外使用 enclosing For 的 loop variable；While 沒有 loop variable。Loop 後的 root Step 看不到 body StepOutput，新引入的 For loop variable 也不會洩漏（原先同名 variable 會恢復），但 body 設定的普通 variables 可繼續使用。會產生 row 的 While 可能執行 0 次。
 
 Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、cancel、streaming CSV、chart 或 nested loop。
 

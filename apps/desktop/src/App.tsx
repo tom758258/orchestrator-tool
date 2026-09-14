@@ -305,6 +305,7 @@ function App() {
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
+  const hasCommittedOutputRows = (runResult?.result_rows.length ?? 0) > 0
   const latestWhileIteration = runProgress?.step_executions.at(-1)?.while_iteration
   const runningText = latestWhileIteration
     ? `While ${latestWhileIteration.while_step_id} · Iteration ${latestWhileIteration.iteration_index + 1} · Running`
@@ -797,7 +798,7 @@ function App() {
     validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
 
   const handleExportCsv = useCallback(async () => {
-    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || workflowBusy) {
+    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy) {
       return
     }
 
@@ -822,7 +823,7 @@ function App() {
     } finally {
       setExporting(false)
     }
-  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, workflowBusy])
+  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasCommittedOutputRows, workflowBusy])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -1616,7 +1617,7 @@ function App() {
             className="action-button"
             type="button"
             onClick={() => void handleExportCsv()}
-            disabled={!hasWorkflowOutputs || !runSucceeded || workflowBusy}
+            disabled={!hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy}
           >
             {exporting ? 'Exporting…' : 'Export CSV'}
           </button>
