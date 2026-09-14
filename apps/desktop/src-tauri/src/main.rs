@@ -17,8 +17,11 @@ use orchestrator_tool::{
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
-    workflow::{StepId, StepOutcome, StepResult, Workflow},
-    workflow_csv::serialize_workflow_outputs_csv,
+    workflow::{
+        ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, Workflow,
+        WorkflowOutput, WorkflowRunResult,
+    },
+    workflow_csv::serialize_result_rows_csv,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -71,11 +74,36 @@ struct ToolStatusDto {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct StepResultDto {
+struct StepExecutionDto {
     step_id: String,
     status: String,
     output: Option<Value>,
     message: Option<String>,
+    for_iteration: Option<ForIterationDto>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WorkflowRunResultDto {
+    step_executions: Vec<StepExecutionDto>,
+    result_rows: Vec<ResultRowDto>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ForIterationDto {
+    for_step_id: String,
+    iteration_index: usize,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ResultRowDto {
+    outputs: Vec<WorkflowOutputDto>,
+    for_iteration: Option<ForIterationDto>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WorkflowOutputDto {
+    name: String,
+    value: Value,
 }
 
 #[tauri::command]
@@ -167,7 +195,7 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
 async fn run_workflow_simulation(
     app: AppHandle,
     template_json: String,
-) -> Result<Vec<StepResultDto>, String> {
+) -> Result<WorkflowRunResultDto, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
@@ -189,11 +217,7 @@ async fn run_workflow_simulation(
         )
         .map_err(|error| error.to_string())?;
 
-        Ok(results
-            .step_executions()
-            .iter()
-            .map(|execution| step_result_dto(execution.result()))
-            .collect())
+        Ok(workflow_run_result_dto(&results))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -204,7 +228,7 @@ async fn run_workflow_live(
     app: AppHandle,
     template_json: String,
     confirmed_resources: HashMap<String, String>,
-) -> Result<Vec<StepResultDto>, String> {
+) -> Result<WorkflowRunResultDto, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
@@ -235,11 +259,7 @@ async fn run_workflow_live(
             RUN_SHUTDOWN_TIMEOUT,
         )
         .map_err(|error| error.to_string())?;
-        Ok(results
-            .step_executions()
-            .iter()
-            .map(|execution| step_result_dto(execution.result()))
-            .collect())
+        Ok(workflow_run_result_dto(&results))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -414,25 +434,82 @@ fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), Strin
     edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None)
 }
 
-fn step_result_dto(result: &StepResult) -> StepResultDto {
+fn for_iteration_dto(iteration: &ForIteration) -> ForIterationDto {
+    ForIterationDto {
+        for_step_id: iteration.for_step_id().as_str().to_owned(),
+        iteration_index: iteration.iteration_index(),
+    }
+}
+
+fn workflow_run_result_dto(result: &WorkflowRunResult) -> WorkflowRunResultDto {
+    WorkflowRunResultDto {
+        step_executions: result
+            .step_executions()
+            .iter()
+            .map(step_execution_dto)
+            .collect(),
+        result_rows: result.result_rows().iter().map(result_row_dto).collect(),
+    }
+}
+
+fn result_row_dto(row: &ResultRow) -> ResultRowDto {
+    ResultRowDto {
+        outputs: row
+            .outputs()
+            .iter()
+            .map(|output| WorkflowOutputDto {
+                name: output.name().to_owned(),
+                value: output.value().clone(),
+            })
+            .collect(),
+        for_iteration: row.for_iteration().map(for_iteration_dto),
+    }
+}
+
+fn step_execution_dto(execution: &StepExecution) -> StepExecutionDto {
+    let result = execution.result();
     let (status, output, message) = match result.outcome() {
         StepOutcome::Succeeded { output } => ("succeeded".to_owned(), Some(output.clone()), None),
         StepOutcome::Failed { message } => ("failed".to_owned(), None, Some(message.clone())),
         StepOutcome::Cancelled => ("cancelled".to_owned(), None, None),
     };
 
-    StepResultDto {
+    StepExecutionDto {
         step_id: result.step_id().as_str().to_owned(),
         status,
         output,
         message,
+        for_iteration: execution.for_iteration().map(for_iteration_dto),
     }
 }
 
-impl TryFrom<StepResultDto> for StepResult {
+impl TryFrom<ForIterationDto> for ForIteration {
     type Error = String;
 
-    fn try_from(dto: StepResultDto) -> Result<Self, Self::Error> {
+    fn try_from(dto: ForIterationDto) -> Result<Self, Self::Error> {
+        let id = StepId::new(dto.for_step_id).map_err(|error| error.to_string())?;
+        Ok(Self::new(id, dto.iteration_index))
+    }
+}
+
+impl TryFrom<ResultRowDto> for ResultRow {
+    type Error = String;
+
+    fn try_from(dto: ResultRowDto) -> Result<Self, Self::Error> {
+        Ok(Self::new(
+            dto.outputs
+                .into_iter()
+                .map(|output| WorkflowOutput::new(output.name, output.value))
+                .collect(),
+            dto.for_iteration.map(ForIteration::try_from).transpose()?,
+        ))
+    }
+}
+
+impl TryFrom<StepExecutionDto> for StepExecution {
+    type Error = String;
+
+    fn try_from(dto: StepExecutionDto) -> Result<Self, Self::Error> {
         let step_id = StepId::new(&dto.step_id)
             .map_err(|error| format!("invalid step ID {:?}: {error}", dto.step_id))?;
         let outcome = match dto.status.as_str() {
@@ -453,21 +530,25 @@ impl TryFrom<StepResultDto> for StepResult {
                 ));
             }
         };
-        Ok(StepResult::new(step_id, outcome))
+        Ok(Self::new(
+            StepResult::new(step_id, outcome),
+            dto.for_iteration.map(ForIteration::try_from).transpose()?,
+        ))
     }
 }
 
 fn validate_completed_successful_run(
     workflow: &Workflow,
-    results: &[StepResult],
+    results: &[StepExecution],
 ) -> Result<(), String> {
     let all_succeeded = results
         .iter()
         .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }));
-    let all_root_steps_completed = workflow
-        .steps()
-        .iter()
-        .all(|step| results.iter().any(|result| result.step_id() == step.id()));
+    let all_root_steps_completed = workflow.steps().iter().all(|step| {
+        results
+            .iter()
+            .any(|result| result.for_iteration().is_none() && result.step_id() == step.id())
+    });
     if !all_succeeded || !all_root_steps_completed {
         return Err(
             "workflow run did not complete successfully; CSV export is unavailable".to_owned(),
@@ -479,23 +560,25 @@ fn validate_completed_successful_run(
 #[tauri::command]
 fn export_workflow_csv(
     template_json: String,
-    step_results: Vec<StepResultDto>,
+    run_result: WorkflowRunResultDto,
     destination_path: String,
 ) -> Result<(), String> {
     let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-    let results = step_results
+    let results = run_result
+        .step_executions
         .into_iter()
-        .map(StepResult::try_from)
+        .map(StepExecution::try_from)
         .collect::<Result<Vec<_>, _>>()?;
     validate_completed_successful_run(template.workflow(), &results)?;
-    let outputs = template
-        .workflow()
-        .project_outputs(&results)
-        .map_err(|error| error.to_string())?;
-    if outputs.is_empty() {
+    let rows = run_result
+        .result_rows
+        .into_iter()
+        .map(ResultRow::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    let csv = serialize_result_rows_csv(&rows).map_err(|error| error.to_string())?;
+    if csv.is_empty() {
         return Err("workflow has no outputs available for export".to_owned());
     }
-    let csv = serialize_workflow_outputs_csv(&outputs).map_err(|error| error.to_string())?;
     std::fs::write(&destination_path, csv)
         .map_err(|error| format!("could not write CSV to {destination_path:?}: {error}"))
 }
@@ -560,13 +643,16 @@ mod tests {
     use super::{
         create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
         reset_desktop_tool_executable, resolve_built_in_tool_id, save_workflow_template,
-        set_desktop_tool_executable, step_result_dto, validate_workflow_draft,
+        set_desktop_tool_executable, validate_workflow_draft,
     };
     use orchestrator_tool::{
         template::Template,
         tool::ToolId,
         tool_instance::ToolInstanceId,
-        workflow::{StepId, StepOutcome, StepResult},
+        workflow::{
+            ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult,
+            WorkflowOutput, WorkflowRunResult,
+        },
     };
     use serde_json::json;
 
@@ -704,7 +790,11 @@ mod tests {
             "workflow": {
                 "steps": [
                     { "type": "tool-action", "id": "power-set-1", "target": "powers-1", "action": "set-voltage", "arguments": { "channel": 1, "voltage": 5.0 } },
-                    { "type": "wait", "id": "wait-1", "duration_ms": 500 }
+                    { "type": "wait", "id": "wait-1", "duration_ms": 500 },
+                    { "type": "for", "id": "sweep", "variable": "x",
+                      "range": { "start": "0", "stop": "0.3", "step": "0.1" },
+                      "steps": [{ "type": "output", "id": "sample", "name": "sample",
+                                  "value": { "source": "variable", "variable": "x" } }] }
                 ]
             }
         }"#;
@@ -718,9 +808,15 @@ mod tests {
 
         let template = Template::from_json_str(&loaded_canonical).unwrap();
         assert_eq!(template.name(), "Round Trip");
-        assert_eq!(template.workflow().steps().len(), 2);
+        assert_eq!(template.workflow().steps().len(), 3);
         assert_eq!(template.workflow().steps()[0].id().as_str(), "power-set-1");
         assert_eq!(template.workflow().steps()[1].id().as_str(), "wait-1");
+        let wire: serde_json::Value = serde_json::from_str(&loaded_canonical).unwrap();
+        assert_eq!(
+            wire["workflow"]["steps"][2]["range"],
+            json!({ "start": "0", "stop": "0.3", "step": "0.1" })
+        );
+        assert_eq!(wire["workflow"]["steps"][2]["steps"][0]["id"], "sample");
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir(&dir);
@@ -740,10 +836,15 @@ mod tests {
             ] }
         })
         .to_string();
-        let results = serde_json::from_value(json!([
-            { "step_id": "voltage", "status": "succeeded", "output": 5, "message": null },
-            { "step_id": "passed", "status": "succeeded", "output": true, "message": null }
-        ]))
+        let results = serde_json::from_value(json!({
+            "step_executions": [
+                { "step_id": "voltage", "status": "succeeded", "output": 5, "for_iteration": null },
+                { "step_id": "passed", "status": "succeeded", "output": true, "for_iteration": null }
+            ],
+            "result_rows": [{ "outputs": [
+                { "name": "voltage", "value": 5 }, { "name": "passed", "value": true }
+            ], "for_iteration": null }]
+        }))
         .unwrap();
         let dir = unique_test_dir("orchestrator-desktop-csv-success");
         let path = dir.join("results.csv");
@@ -796,7 +897,10 @@ mod tests {
             assert!(!path.exists());
             let error = super::export_workflow_csv(
                 template_json.clone(),
-                serde_json::from_value(results).unwrap(),
+                serde_json::from_value(json!({
+                    "step_executions": results,
+                    "result_rows": [{ "outputs": [{ "name": "result", "value": 5 }], "for_iteration": null }]
+                })).unwrap(),
                 path.display().to_string(),
             )
             .unwrap_err();
@@ -822,9 +926,10 @@ mod tests {
             ] }
         })
         .to_string();
-        let results = serde_json::from_value(json!([
-            { "step_id": "wait-1", "status": "succeeded", "output": null, "message": null }
-        ]))
+        let results = serde_json::from_value(json!({
+            "step_executions": [{ "step_id": "wait-1", "status": "succeeded", "output": null, "for_iteration": null }],
+            "result_rows": [{ "outputs": [], "for_iteration": null }]
+        }))
         .unwrap();
         let dir = unique_test_dir("orchestrator-desktop-csv-no-outputs");
         let path = dir.join("results.csv");
@@ -839,36 +944,124 @@ mod tests {
     }
 
     #[test]
-    fn step_result_dto_preserves_outcome_data() {
-        let succeeded = step_result_dto(&StepResult::new(
-            StepId::new("meter-read-1").unwrap(),
-            StepOutcome::Succeeded {
-                output: json!({"event": "sample", "value": 3.3, "unit": "V"}),
-            },
-        ));
-        assert_eq!(succeeded.step_id, "meter-read-1");
-        assert_eq!(succeeded.status, "succeeded");
-        assert_eq!(succeeded.output.as_ref().unwrap()["value"], 3.3);
-        assert_eq!(succeeded.output.as_ref().unwrap()["unit"], "V");
-        assert!(succeeded.message.is_none());
+    fn run_result_dto_preserves_occurrences_rows_and_outcomes() {
+        let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
+        let run = WorkflowRunResult::new(
+            vec![
+                StepExecution::new(
+                    StepResult::new(
+                        StepId::new("measure").unwrap(),
+                        StepOutcome::Succeeded {
+                            output: json!({"value": 3.3, "unit": "V"}),
+                        },
+                    ),
+                    Some(iteration.clone()),
+                ),
+                StepExecution::new(
+                    StepResult::new(
+                        StepId::new("sweep").unwrap(),
+                        StepOutcome::Succeeded {
+                            output: serde_json::Value::Null,
+                        },
+                    ),
+                    None,
+                ),
+                StepExecution::new(
+                    StepResult::new(
+                        StepId::new("check").unwrap(),
+                        StepOutcome::Failed {
+                            message: "Check failed.".to_owned(),
+                        },
+                    ),
+                    None,
+                ),
+                StepExecution::new(
+                    StepResult::new(StepId::new("wait").unwrap(), StepOutcome::Cancelled),
+                    None,
+                ),
+            ],
+            vec![
+                ResultRow::new(
+                    vec![WorkflowOutput::new("voltage".to_owned(), json!(3.3))],
+                    Some(iteration),
+                ),
+                ResultRow::new(vec![], None),
+            ],
+        );
+        let dto = serde_json::to_value(super::workflow_run_result_dto(&run)).unwrap();
+        assert_eq!(dto["step_executions"][0]["step_id"], "measure");
+        assert_eq!(
+            dto["step_executions"][0]["output"],
+            json!({"value": 3.3, "unit": "V"})
+        );
+        let metadata = json!({"for_step_id": "sweep", "iteration_index": 1});
+        assert_eq!(dto["step_executions"][0]["for_iteration"], metadata);
+        assert!(dto["step_executions"][1]["for_iteration"].is_null());
+        assert_eq!(dto["step_executions"][2]["status"], "failed");
+        assert_eq!(dto["step_executions"][2]["message"], "Check failed.");
+        assert_eq!(dto["step_executions"][3]["status"], "cancelled");
+        assert_eq!(dto["result_rows"][0]["for_iteration"], metadata);
+        assert_eq!(
+            dto["result_rows"][0]["outputs"],
+            json!([{"name": "voltage", "value": 3.3}])
+        );
+        assert!(dto["result_rows"][1]["for_iteration"].is_null());
+    }
 
-        let failed = step_result_dto(&StepResult::new(
-            StepId::new("meter-read-2").unwrap(),
-            StepOutcome::Failed {
-                message: "measurement failed".to_owned(),
-            },
-        ));
-        assert_eq!(failed.status, "failed");
-        assert_eq!(failed.message.as_deref(), Some("measurement failed"));
-        assert!(failed.output.is_none());
-
-        let cancelled = step_result_dto(&StepResult::new(
-            StepId::new("wait-1").unwrap(),
-            StepOutcome::Cancelled,
-        ));
-        assert_eq!(cancelled.status, "cancelled");
-        assert!(cancelled.output.is_none());
-        assert!(cancelled.message.is_none());
+    #[test]
+    fn export_for_result_rows_requires_successful_completion() {
+        let template_json = json!({
+            "schema_version": 1, "tool_instances": [], "name": "For CSV",
+            "workflow": { "steps": [{
+                "type": "for", "id": "sweep", "variable": "x",
+                "range": { "start": "0", "stop": "0.2", "step": "0.1" },
+                "steps": [
+                    { "type": "output", "id": "voltage", "name": "voltage", "value": { "source": "variable", "variable": "x" } },
+                    { "type": "output", "id": "passed", "name": "passed", "value": { "source": "literal", "value": true } }
+                ]
+            }] }
+        }).to_string();
+        let template = Template::from_json_str(&template_json).unwrap();
+        let run = orchestrator_tool::run::run_simulated_workflow(
+            &template,
+            &Default::default(),
+            super::RUN_STARTUP_TIMEOUT,
+            super::RUN_ACTION_TIMEOUT,
+            super::RUN_SHUTDOWN_TIMEOUT,
+        )
+        .unwrap();
+        let dir = unique_test_dir("orchestrator-desktop-for-csv");
+        let path = dir.join("results.csv");
+        super::export_workflow_csv(
+            template_json.clone(),
+            super::workflow_run_result_dto(&run),
+            path.display().to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "voltage,passed\n0.0,true\n0.1,true\n0.2,true\n"
+        );
+        std::fs::remove_file(&path).unwrap();
+        for status in ["failed", "cancelled", "missing-root"] {
+            let mut dto = super::workflow_run_result_dto(&run);
+            let aggregate = dto.step_executions.last_mut().unwrap();
+            if status == "missing-root" {
+                aggregate.for_iteration = Some(super::ForIterationDto {
+                    for_step_id: "sweep".to_owned(),
+                    iteration_index: 0,
+                });
+            } else {
+                aggregate.status = status.to_owned();
+                aggregate.message = Some("Run stopped.".to_owned());
+            }
+            let error =
+                super::export_workflow_csv(template_json.clone(), dto, path.display().to_string())
+                    .unwrap_err();
+            assert!(error.contains("did not complete successfully"));
+            assert!(!path.exists());
+        }
+        std::fs::remove_dir(dir).unwrap();
     }
 
     #[test]

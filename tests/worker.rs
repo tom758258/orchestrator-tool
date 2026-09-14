@@ -27,7 +27,7 @@ use orchestrator_tool::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, NumericRange, Step, StepId,
         StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
     },
-    workflow_csv::serialize_workflow_outputs_csv,
+    workflow_csv::serialize_result_rows_csv,
 };
 use serde_json::json;
 
@@ -1246,9 +1246,8 @@ fn simulated_measurement_dataflow_exports_csv() {
         panic!("measurement failed: {:?}", results[1].outcome());
     };
     assert_eq!(output["value"], 5);
-    let outputs = template.workflow().project_outputs(&results).unwrap();
     assert_eq!(
-        serialize_workflow_outputs_csv(&outputs).unwrap(),
+        serialize_result_rows_csv(run.result_rows()).unwrap(),
         "voltage,passed\n5,true\n"
     );
 

@@ -1,11 +1,11 @@
 import type { ToolInstance } from './ToolSetupEditor'
-import type { StepResultDto, WorkflowStep } from './App'
+import type { StepExecutionDto, WorkflowStep, ForStep } from './workflow'
 import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
   instances: ToolInstance[]
   steps: readonly WorkflowStep[]
-  runResults: readonly StepResultDto[] | null
+  runResults: readonly StepExecutionDto[] | null
   formatMeasurement: (output: unknown) => string | null
   selectedStepId: string | null
   onSelectStep: (stepId: string) => void
@@ -30,6 +30,8 @@ function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'])
 
 function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
+    case 'for':
+      return `Step ${step.range.step} · ${step.steps.length} body steps`
     case 'assert':
       return expressionSummary(step)
     case 'set-variable':
@@ -76,7 +78,87 @@ function SequenceEditor({
   onMoveStep,
   onDeleteStep,
 }: SequenceEditorProps) {
-  const resultsByStepId = new Map(runResults?.map((result) => [result.step_id, result]))
+  function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep, parentOrder?: string): React.ReactNode {
+    return (
+      <ol className="sequence-steps">
+        {siblings.map((step, index) => {
+          const occurrences = runResults?.filter(result => result.step_id === step.id &&
+            (parent ? result.for_iteration?.for_step_id === parent.id : result.for_iteration === null)) ?? []
+          const result = occurrences.find(result => result.status === 'failed')
+            ?? (occurrences.length > 0 && occurrences.every(result => result.status === 'succeeded')
+              ? occurrences[occurrences.length - 1] : occurrences.find(result => result.status === 'cancelled'))
+          const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
+          let outputSummary: string | null = null
+          if (!parent && result?.status === 'succeeded') {
+            outputSummary = formatMeasurement(result.output)
+            if (step.type === 'output' && (
+              result.output === null ||
+              typeof result.output === 'number' ||
+              typeof result.output === 'string' ||
+              typeof result.output === 'boolean'
+            )) {
+              outputSummary = JSON.stringify(result.output)
+            }
+          }
+
+          return (
+            <li key={step.id} className="sequence-step-row">
+              <button
+                className="sequence-step-card"
+                type="button"
+                aria-label={`Step ${order}: ${stepLabel(step)}, ${step.id}`}
+                aria-describedby={result ? `sequence-result-${step.id}` : undefined}
+                aria-pressed={selectedStepId === step.id}
+                onClick={() => onSelectStep(step.id)}
+              >
+                <span className="sequence-step-order">{order}</span>
+                <span className="sequence-step-identity">
+                  <span className="sequence-step-label">{stepLabel(step)}</span>
+                  <span className="sequence-step-summary" title={stepSummary(step, instances)}>
+                    {stepSummary(step, instances)}
+                  </span>
+                  <code>{step.id}</code>
+                  {result && (
+                    <span id={`sequence-result-${step.id}`} className="sequence-step-result">
+                      <span className={`run-result-status run-result-${result.status}`}>
+                        <span aria-hidden="true">
+                          {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
+                        </span>{' '}
+                        {result.status}
+                      </span>
+                      {outputSummary !== null && (
+                        <span className="sequence-step-output">{outputSummary}</span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`}>
+                <button className="action-button" type="button"
+                  disabled={workflowBusy || index === 0}
+                  onClick={() => onMoveStep(step.id, -1)}>
+                  Up
+                </button>
+                <button className="action-button" type="button"
+                  disabled={workflowBusy || index === siblings.length - 1}
+                  onClick={() => onMoveStep(step.id, 1)}>
+                  Down
+                </button>
+                <button className="action-button" type="button"
+                  disabled={workflowBusy}
+                  onClick={() => onDeleteStep(step.id)}>
+                  Delete
+                </button>
+              </div>
+              {step.type === 'for' && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
+                {step.steps.length ? renderSteps(step.steps, step, order) : <p>No body steps. Select this For and add steps from the palette.</p>}
+              </div>}
+            </li>
+          )
+        })}
+      </ol>
+    )
+  }
 
   return (
     <section className="sequence-editor" aria-labelledby="sequence-editor-title">
@@ -105,75 +187,7 @@ function SequenceEditor({
           </ul>
         </div>
       ) : (
-        <ol className="sequence-steps">
-          {steps.map((step, index) => {
-            const result = resultsByStepId.get(step.id)
-            let outputSummary: string | null = null
-            if (result?.status === 'succeeded') {
-              outputSummary = formatMeasurement(result.output)
-              if (step.type === 'output' && (
-                result.output === null ||
-                typeof result.output === 'number' ||
-                typeof result.output === 'string' ||
-                typeof result.output === 'boolean'
-              )) {
-                outputSummary = JSON.stringify(result.output)
-              }
-            }
-
-            return (
-              <li key={step.id} className="sequence-step-row">
-                <button
-                  className="sequence-step-card"
-                  type="button"
-                  aria-label={`Step ${index + 1}: ${stepLabel(step)}, ${step.id}`}
-                  aria-describedby={result ? `sequence-result-${step.id}` : undefined}
-                  aria-pressed={selectedStepId === step.id}
-                  onClick={() => onSelectStep(step.id)}
-                >
-                  <span className="sequence-step-order">{index + 1}</span>
-                  <span className="sequence-step-identity">
-                    <span className="sequence-step-label">{stepLabel(step)}</span>
-                    <span className="sequence-step-summary" title={stepSummary(step, instances)}>
-                      {stepSummary(step, instances)}
-                    </span>
-                    <code>{step.id}</code>
-                    {result && (
-                      <span id={`sequence-result-${step.id}`} className="sequence-step-result">
-                        <span className={`run-result-status run-result-${result.status}`}>
-                          <span aria-hidden="true">
-                            {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
-                          </span>{' '}
-                          {result.status}
-                        </span>
-                        {outputSummary !== null && (
-                          <span className="sequence-step-output">{outputSummary}</span>
-                        )}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`}>
-                  <button className="action-button" type="button"
-                    disabled={workflowBusy || index === 0}
-                    onClick={() => onMoveStep(step.id, -1)}>
-                    Up
-                  </button>
-                  <button className="action-button" type="button"
-                    disabled={workflowBusy || index === steps.length - 1}
-                    onClick={() => onMoveStep(step.id, 1)}>
-                    Down
-                  </button>
-                  <button className="action-button" type="button"
-                    disabled={workflowBusy}
-                    onClick={() => onDeleteStep(step.id)}>
-                    Delete
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
+        renderSteps(steps)
       )}
     </section>
   )

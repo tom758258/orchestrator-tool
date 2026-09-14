@@ -8,7 +8,7 @@
 - CLI binary（`src/main.rs`）：輕量工程 CLI，定位於設定、偵測、診斷與維護，並使用同一個 `orchestrator-tool` Cargo package 內的 Core。
 - Desktop 應用程式：採用 Tauri 2，已提供 external tool 狀態、僅限目前 session 的有序 Sequence editor、點擊新增的 Step Palette、步驟順序調整、執行結果狀態、參數編輯、Template 載入／儲存、Simulation 與 Live Workflow 執行及完整 StepResult 顯示。
 
-專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義線性 workflow domain、版本化 JSON template、per-step result domain 與 linear workflow executor。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 StepResult。Template schema version 1 與線性 Workflow 不保存 execution mode、resource、output authorization 或 safety cleanup state。CLI 不提供 workflow run command。
+專案部署以 Windows-first 為原則，同時在合理範圍內維持 Core 的平台中立。Core 已定義支援一層 For 的 ordered workflow domain、版本化 JSON template、可區分 occurrence 的結果與循序執行。Desktop 為 Powers 與 Meters 提供 Run Simulation 和獨立的 Run Live 操作，兩者共用 WorkflowRunResult 契約。Template schema version 1 與 Workflow 不保存 execution mode、resource、output authorization 或 safety cleanup state。CLI 不提供 workflow run command。
 
 ## Tool Setup 與 Workflow Template
 
@@ -20,7 +20,7 @@ Template
 └─ Workflow Sequence
 ```
 
-Tool Setup 定義 run 前建立各 tool instance session 的設定，不是 Workflow Step。Workflow 則是在所需 Worker Ready 後依序執行的線性測試程序。Desktop 的 Tool Setup editor 位於獨立的 Setup tab，與 Workflow tab 分開。app-level 的 Open Template 與 Save Template 會一起保留這兩部分。
+Tool Setup 定義 run 前建立各 tool instance session 的設定，不是 Workflow Step。Workflow 則是在所需 Worker Ready 後依序執行的測試程序。Desktop 的 Tool Setup editor 位於獨立的 Setup tab，與 Workflow tab 分開。app-level 的 Open Template 與 Save Template 會一起保留這兩部分。
 
 Meters Setup 支援 DC Voltage 與 DC Current，兩者皆提供 Auto / Manual Range Mode、Manual Range、NPLC 與 Auto Zero。DC Voltage 另提供 Input Impedance；DC Current 另提供 Current Terminal。DCV 不可攜帶 Current Terminal，DCI 不可攜帶 DCV Input Impedance。Manual mode 必須提供 Manual Range；Auto mode 忽略已儲存的 Manual Range，不產生 `--range` startup argument。Trigger 固定為 Software。
 
@@ -56,7 +56,13 @@ Template schema v1 的 range 值只接受 exact decimal string；JSON number 會
 }
 ```
 
-目前不支援 nested For、break 與 continue。Desktop For editor、multi-row Result UI 與 multi-row CSV integration 尚未實作。Desktop 維持既有 step-result DTO；CSV 維持原有 root Output export path，失敗或未完整完成的 run 仍不可匯出，包括其中已 commit 的部分 iteration rows。
+Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、儲存一層 For，並以 Simulation 或 Live 執行。Range 欄位全程保留 decimal string。巢狀 Sequence editor 的 root／body Step 只能在各自清單內移動；palette 會顯示插入位置，body 中停用 For。Tool Setup 使用偵測與 Live resource confirmation 皆包含 body ToolAction。
+
+Input suggestions 遵循 Core scope：body Step 可引用 For 前的 root outputs、同一次 iteration 的先前 body sibling outputs，以及 loop variable 和先前普通 variables。For 後的 root Step 看不到 body StepOutput 或新引入的 loop variable，但可使用 body 設定的普通 variables；若 loop variable 原先已有同名 variable，For 結束後會恢復其值。
+
+兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
+
+CSV 使用 `serialize_result_rows_csv`：第一列 Output names 為 header，每個 ResultRow 產生一列，後續列的名稱、順序與數量必須一致。Iteration metadata 不寫入 CSV。成功 For 的 body rows 可匯出多列 CSV；failed、cancelled 或 incomplete run 仍由 backend 拒絕匯出，即使已有先前 committed rows。Desktop 會標示這些列僅供檢視並停用匯出；沒有 Output 的 run 不建立 CSV 檔。Nested For、break 與 continue 仍不支援。
 
 Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。舊 Template 的 Output Step 若沒有 `name`，載入時會使用該 Step ID 作為 name，再次儲存時會明確寫入 `name`。
 

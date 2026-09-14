@@ -6,7 +6,10 @@ import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
-import type { ComparisonOperator, ExpressionOperandWire, InputValueWire } from './inputValue'
+import type { ComparisonOperator, InputValueWire } from './inputValue'
+import { allWorkflowSteps, enclosingFor, insertionFor, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
+import type { WorkflowStep, NonForWorkflowStep, ToolActionStep, WorkflowRunResultDto } from './workflow'
+export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
   tool_id: string
@@ -65,46 +68,6 @@ function formatLiveResourceConfirmation(
   return lines.join('\n')
 }
 
-type WaitStep = {
-  type: 'wait'
-  id: string
-  duration_ms: number
-}
-
-type SetVariableStep = {
-  type: 'set-variable'
-  id: string
-  variable: string
-  value: InputValueWire
-}
-
-type OutputStep = {
-  type: 'output'
-  id: string
-  name: string
-  value: InputValueWire
-}
-
-type AssertStep = {
-  type: 'assert'
-  id: string
-  left: ExpressionOperandWire
-  operator: ComparisonOperator
-  right: ExpressionOperandWire
-  message: string
-}
-
-type ToolActionStep = {
-  type: 'tool-action'
-  id: string
-  target: string
-  action: string
-  arguments: Record<string, unknown>
-  bindings?: Record<string, InputValueWire>
-}
-
-export type WorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep
-
 type WorkflowDraft = {
   schema_version: number
   name: string
@@ -118,14 +81,8 @@ type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
-type StepResultStatus = 'succeeded' | 'failed' | 'cancelled'
-export type StepResultDto = {
-  step_id: string
-  status: StepResultStatus
-  output: unknown | null
-  message: string | null
-}
 type StepPreset =
+  | 'for'
   | 'assert'
   | 'set-variable'
   | 'output'
@@ -144,6 +101,7 @@ type StepPresetOption = {
 }
 
 const STEP_PRESETS: StepPresetOption[] = [
+  { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
   { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set', category: 'Powers', tool: 'powers' },
@@ -162,6 +120,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 }
 
 const STEP_HELP: Record<string, string> = {
+  for: 'Repeat these body steps over an exact decimal range. Nested For is not supported.',
   assert: 'Fail the Workflow when this numeric comparison is false.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
@@ -199,7 +158,7 @@ function formatWorkerSchemas(versions: number[]): string {
 }
 
 function nextStepId(prefix: string, steps: WorkflowStep[]): string {
-  const existingIds = new Set(steps.map((step) => step.id))
+  const existingIds = new Set(allWorkflowSteps(steps).map((step) => step.id))
   let sequence = 1
 
   while (existingIds.has(`${prefix}-${sequence}`)) {
@@ -211,6 +170,8 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
   switch (preset) {
+    case 'for':
+      return { type: 'for', id, variable: 'x', range: { start: '1', stop: '3', step: '1' }, steps: [] }
     case 'assert':
       return {
         type: 'assert', id,
@@ -261,6 +222,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
 }
 
 function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
+  if (step.type === 'for') return `For ${step.variable} = ${step.range.start}..${step.range.stop}`
   if (step.type === 'set-variable') {
     return 'Set Variable'
   }
@@ -305,13 +267,6 @@ function formatMeasurement(output: unknown): string | null {
   return `${value} ${unit}`
 }
 
-function formatOutputResult(result: StepResultDto | undefined): string {
-  if (!result) return '—'
-  if (result.status === 'failed') return 'Failed'
-  if (result.status === 'cancelled') return 'Cancelled'
-  return typeof result.output === 'string' ? result.output : JSON.stringify(result.output) ?? '—'
-}
-
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -335,18 +290,20 @@ function App() {
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
-  const [runResults, setRunResults] = useState<StepResultDto[] | null>(null)
+  const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
-  const outputSteps = workflowDraft?.workflow.steps.filter((step) => step.type === 'output') ?? []
+  const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const hasWorkflowOutputs = outputSteps.length > 0
+  const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
+  const iterationRows = runResult?.result_rows.some(row => row.for_iteration !== null) ?? false
 
   useEffect(() => {
     setExportError(null)
     setExportMessage(null)
-  }, [workflowDraft, runResults, runStatus])
+  }, [workflowDraft, runResult, runStatus])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -375,13 +332,13 @@ function App() {
       setWorkflowDraft(draft)
       setSelectedStepId(null)
       setDraftCreationError(null)
-      setRunResults(null)
+      setRunResult(null)
       setRunError(null)
     } catch (message) {
       setWorkflowDraft(null)
       setSelectedStepId(null)
       setDraftCreationError(String(message))
-      setRunResults(null)
+      setRunResult(null)
       setRunError(null)
     } finally {
       setDraftLoading(false)
@@ -410,7 +367,7 @@ function App() {
       })
       setValidationStatus('idle')
       setValidationError(null)
-      setRunResults(null)
+      setRunResult(null)
       setRunError(null)
       setTemplateIoMessage(null)
     },
@@ -421,7 +378,7 @@ function App() {
     setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
     setValidationStatus('idle')
     setValidationError(null)
-    setRunResults(null)
+    setRunResult(null)
     setRunError(null)
     setTemplateIoMessage(null)
   }, [])
@@ -430,6 +387,8 @@ function App() {
     if (!workflowDraft) {
       return
     }
+    const parent = insertionFor(workflowDraft.workflow.steps, selectedStepId)
+    if (parent && preset.value === 'for') return
     const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
     if (preset.tool && !target) {
       setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
@@ -438,6 +397,14 @@ function App() {
     const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
     updateSteps((steps) => {
+      if (parent && newStep.type !== 'for') {
+        return steps.map(step => {
+          if (step.id !== parent.id || step.type !== 'for') return step
+          const index = step.steps.findIndex(body => body.id === selectedStepId)
+          const insertIndex = index < 0 ? step.steps.length : index + 1
+          return { ...step, steps: [...step.steps.slice(0, insertIndex), newStep, ...step.steps.slice(insertIndex)] }
+        })
+      }
       const selectedIndex = steps.findIndex((step) => step.id === selectedStepId)
       const insertIndex = selectedIndex < 0 ? steps.length : selectedIndex + 1
       return [...steps.slice(0, insertIndex), newStep, ...steps.slice(insertIndex)]
@@ -447,16 +414,26 @@ function App() {
 
   const deleteStep = useCallback(
     (stepId: string) => {
-      updateSteps((steps) => steps.filter((step) => step.id !== stepId))
-      setSelectedStepId((current) => (current === stepId ? null : current))
+      updateSteps((steps) => steps.filter(step => step.id !== stepId).map(step =>
+        step.type === 'for' ? { ...step, steps: step.steps.filter(body => body.id !== stepId) } : step))
+      setSelectedStepId(current => current === stepId ||
+        enclosingFor(workflowDraft?.workflow.steps ?? [], current)?.id === stepId ? null : current)
     },
-    [updateSteps],
+    [updateSteps, workflowDraft],
   )
 
   const updateStep = useCallback(
     (stepId: string, update: (step: WorkflowStep) => WorkflowStep) => {
       updateSteps((steps) =>
-        steps.map((step) => (step.id === stepId ? update(step) : step)),
+        steps.map(step => {
+          if (step.id === stepId) return update(step)
+          if (step.type !== 'for') return step
+          return { ...step, steps: step.steps.map(body => {
+            if (body.id !== stepId) return body
+            const updated = update(body)
+            return updated.type === 'for' ? body : updated
+          }) }
+        }),
       )
     },
     [updateSteps],
@@ -506,21 +483,18 @@ function App() {
   const moveStep = useCallback(
     (stepId: string, offset: -1 | 1) => {
       updateSteps((steps) => {
-        const index = steps.findIndex((step) => step.id === stepId)
-        if (index < 0) {
-          return steps
-        }
-
+        const parent = enclosingFor(steps, stepId)
+        const siblings = parent?.steps ?? steps
+        const index = siblings.findIndex(step => step.id === stepId)
         const targetIndex = index + offset
-        if (targetIndex < 0 || targetIndex >= steps.length) {
-          return steps
-        }
-
-        const reordered = [...steps]
+        if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return steps
+        const reordered = [...siblings]
         const currentStep = reordered[index]
         reordered[index] = reordered[targetIndex]
         reordered[targetIndex] = currentStep
-        return reordered
+        return parent
+          ? steps.map(step => step.id === parent.id ? { ...parent, steps: reordered as NonForWorkflowStep[] } : step)
+          : reordered
       })
     },
     [updateSteps],
@@ -540,7 +514,7 @@ function App() {
       const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(canonicalDraft)
       setSelectedStepId((current) =>
-        current && canonicalDraft.workflow.steps.some((step) => step.id === current)
+        current && allWorkflowSteps(canonicalDraft.workflow.steps).some((step) => step.id === current)
           ? current
           : null,
       )
@@ -573,7 +547,7 @@ function App() {
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
-      setRunResults(null)
+      setRunResult(null)
       setRunError(null)
       setTemplateIoMessage('Template loaded.')
       setTemplateIoStatus('idle')
@@ -606,7 +580,7 @@ function App() {
       const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(canonicalDraft)
       setSelectedStepId((current) =>
-        current && canonicalDraft.workflow.steps.some((step) => step.id === current)
+        current && allWorkflowSteps(canonicalDraft.workflow.steps).some((step) => step.id === current)
           ? current
           : null,
       )
@@ -721,7 +695,7 @@ function App() {
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
       ])
       const referenced = workflowDraft.tool_instances.filter(instance =>
-        workflowDraft.workflow.steps.some(step => step.type === 'tool-action' && step.target === instance.id))
+        allWorkflowSteps(workflowDraft.workflow.steps).some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
       const resources = referenced.map(instance => {
         if (instance.tool !== 'powers' && instance.tool !== 'meters') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
@@ -748,12 +722,12 @@ function App() {
       if (!approved) {
         return
       }
-      setRunResults(null)
-      const results = await invoke<StepResultDto[]>('run_workflow_live', {
+      setRunResult(null)
+      const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         confirmedResources,
       })
-      setRunResults(results)
+      setRunResult(results)
     } catch (message) {
       setRunError(String(message))
     } finally {
@@ -767,13 +741,13 @@ function App() {
     }
 
     setRunStatus('running')
-    setRunResults(null)
+    setRunResult(null)
     setRunError(null)
     try {
-      const results = await invoke<StepResultDto[]>('run_workflow_simulation', {
+      const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
       })
-      setRunResults(results)
+      setRunResult(results)
     } catch (message) {
       setRunError(String(message))
     } finally {
@@ -785,7 +759,7 @@ function App() {
     validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
 
   const handleExportCsv = useCallback(async () => {
-    if (!workflowDraft || !runResults || !hasWorkflowOutputs || workflowBusy) {
+    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || workflowBusy) {
       return
     }
 
@@ -801,7 +775,7 @@ function App() {
       }
       await invoke('export_workflow_csv', {
         templateJson: JSON.stringify(workflowDraft),
-        stepResults: runResults,
+        runResult,
         destinationPath: selectedPath,
       })
       setExportMessage('CSV exported successfully.')
@@ -810,9 +784,9 @@ function App() {
     } finally {
       setExporting(false)
     }
-  }, [workflowDraft, runResults, hasWorkflowOutputs, workflowBusy])
+  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, workflowBusy])
 
-  const selectedStep = workflowDraft?.workflow.steps.find(
+  const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
   )
   const outputNameError = selectedStep?.type === 'output'
@@ -822,13 +796,9 @@ function App() {
         ? 'Output name must be unique.'
         : null
     : null
-  const earlierSteps = selectedStep && workflowDraft
-    ? workflowDraft.workflow.steps.slice(0, workflowDraft.workflow.steps.indexOf(selectedStep))
-    : []
-  const earlierVariables = [...new Set(earlierSteps.flatMap((step) =>
-    step.type === 'set-variable' && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(step.variable)
-      ? [step.variable] : [],
-  ))]
+  const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const selectedParent = enclosingFor(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const addingToFor = insertionFor(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
   const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
@@ -1051,7 +1021,7 @@ function App() {
                 value={workflowDraft.tool_instances}
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
-                steps={workflowDraft.workflow.steps}
+                steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => step.type !== 'for')}
                 renderResource={instance => (
                   <>
                     {(instance.tool === 'powers' || instance.tool === 'meters') && (
@@ -1162,13 +1132,16 @@ function App() {
                 </div>
                 <div className="detail-row">
                   <dt className="detail-label">Steps</dt>
-                  <dd className="detail-value">{workflowDraft.workflow.steps.length}</dd>
+                  <dd className="detail-value">{allWorkflowSteps(workflowDraft.workflow.steps).length}</dd>
                 </div>
               </dl>
 
               <div className="workflow-builder">
                 <aside className="step-palette" aria-labelledby="step-palette-title">
                   <h3 id="step-palette-title">Steps</h3>
+                  <p>Adding to: {addingToFor ? `For "${addingToFor.id}" body` : 'Root workflow'}</p>
+                  {addingToFor && <button className="action-button" type="button" disabled={workflowBusy}
+                    onClick={() => setSelectedStepId(null)}>Add to root</button>}
                   <div className="step-palette-items">
                     {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
                       <section key={category}>
@@ -1180,7 +1153,7 @@ function App() {
                               className="action-button step-palette-button"
                               type="button"
                               onClick={() => addStep(preset)}
-                              disabled={workflowBusy}
+                              disabled={workflowBusy || (Boolean(addingToFor) && preset.value === 'for')}
                             >
                               {preset.label}
                             </button>
@@ -1197,7 +1170,7 @@ function App() {
                   onSelectStep={setSelectedStepId}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
-                  runResults={runResults}
+                  runResults={runResult?.step_executions ?? null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
@@ -1234,6 +1207,30 @@ function App() {
                             .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance.id, resourceIdentities[instance.id])}</option>)}
                         </select>
                       </label>}
+                      {selectedStep.type === 'for' && <>
+                        <label className="step-property-field">
+                          <span className="step-property-label">Loop variable</span>
+                          <input type="text" required pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                            title="Use lowercase letters, digits, and single hyphens between segments."
+                            value={selectedStep.variable} disabled={workflowBusy} onChange={event => {
+                              const variable = event.target.value
+                              updateStep(selectedStep.id, step => step.type === 'for' ? { ...step, variable } : step)
+                            }} />
+                        </label>
+                        {(['start', 'stop', 'step'] as const).map(field => <label key={field} className="step-property-field">
+                          <span className="step-property-label">{field === 'start' ? 'Start' : field === 'stop' ? 'Stop' : 'Step'}</span>
+                          <input type="text" required value={selectedStep.range[field]} disabled={workflowBusy}
+                            onChange={event => {
+                              const value = event.target.value
+                              updateStep(selectedStep.id, step => step.type === 'for'
+                                ? { ...step, range: { ...step.range, [field]: value } } : step)
+                            }} />
+                        </label>)}
+                        {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
+                          <p className="error">Loop variable and range fields must not be blank.</p>}
+                      </>}
+                      {selectedStep.type === 'set-variable' && selectedParent?.variable === selectedStep.variable &&
+                        <p className="error">A body Set Variable cannot write the enclosing loop variable.</p>}
                       {selectedStep.type === 'set-variable' && (
                         <>
                           <label className="step-property-field">
@@ -1468,12 +1465,12 @@ function App() {
                 </p>
               )}
 
-              {runResults && (
+              {runResult && (
                 <section className="run-results" aria-labelledby="run-results-title">
                   <h3 id="run-results-title">Execution Results</h3>
                   <ol className="run-result-list">
-                    {runResults.map((result) => {
-                      const isOutput = workflowDraft.workflow.steps.some((step) =>
+                    {runResult.step_executions.map((result) => {
+                      const isOutput = allWorkflowSteps(workflowDraft.workflow.steps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
                       const measurement = isOutput && result.status === 'succeeded'
@@ -1493,7 +1490,7 @@ function App() {
                             : '—'
 
                       return (
-                        <li key={result.step_id} className="run-result-card">
+                        <li key={occurrenceKey(result)} className="run-result-card">
                           <span
                             className={`run-result-mark run-result-${result.status}`}
                             aria-hidden="true"
@@ -1503,6 +1500,7 @@ function App() {
                           <div className="run-result-content">
                             <div className="run-result-summary">
                               <code className="workflow-step-id">{result.step_id}</code>
+                              {result.for_iteration && <span>For {result.for_iteration.for_step_id} · Iteration {result.for_iteration.iteration_index + 1}</span>}
                               <span className={`run-result-status run-result-${result.status}`}>
                                 {statusLabel}
                               </span>
@@ -1534,7 +1532,7 @@ function App() {
               <p>No workflow outputs defined.</p>
               <p>Add Output steps to the Workflow to publish final result values.</p>
             </>
-          ) : !runResults ? (
+          ) : !runResult ? (
             <>
               <p>No run results yet.</p>
               <p>Run the Workflow to view its outputs.</p>
@@ -1542,21 +1540,25 @@ function App() {
           ) : (
             <section aria-labelledby="last-run-title">
               <h3 id="last-run-title">Last Run</h3>
+              {!runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
+              {runResult.result_rows.length === 0 && <p>No committed output rows.</p>}
               <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
                 <table className="output-table" aria-labelledby="last-run-title">
                   <thead>
                     <tr>
+                      {iterationRows && <th scope="col">Iteration</th>}
                       {outputSteps.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      {outputSteps.map((step) => (
-                        <td key={step.id}>
-                          {formatOutputResult(runResults.find((result) => result.step_id === step.id))}
-                        </td>
-                      ))}
-                    </tr>
+                    {runResult.result_rows.map((row, index) => (
+                      <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : `root:${index}`}>
+                        {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : '—'}</td>}
+                        {row.outputs.map(output => <td key={output.name}>
+                          {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
+                        </td>)}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1566,7 +1568,7 @@ function App() {
             className="action-button"
             type="button"
             onClick={() => void handleExportCsv()}
-            disabled={!hasWorkflowOutputs || !runResults || workflowBusy}
+            disabled={!hasWorkflowOutputs || !runSucceeded || workflowBusy}
           >
             {exporting ? 'Exporting…' : 'Export CSV'}
           </button>

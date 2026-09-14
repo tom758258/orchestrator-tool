@@ -8,7 +8,7 @@
 - CLI binary (`src/main.rs`): lightweight engineering CLI for setup, discovery, diagnostics, and maintenance. It uses Core from the same `orchestrator-tool` Cargo package.
 - Desktop application: Tauri 2 frontend with built-in external-tool status, a session-only ordered sequence editor with a click-to-add step palette, step reordering, execution result status, parameter editing, template load/save, simulation and live workflow runs, and full step-result display.
 
-The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines a linear workflow domain, versioned JSON templates, per-step results, and a linear workflow executor. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same step results. Template schema version 1 and the linear Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
+The project is Windows-first for deployment, while keeping shared Core code platform-neutral where practical. Core includes Common Worker process and local HTTP IPC support plus focused Powers and Meters Worker diagnostics. Core defines an ordered workflow domain with one-level For, versioned JSON templates, occurrence-aware results, and sequential execution. Desktop supports Run Simulation and a separate Run Live action for Powers and Meters, sharing the same workflow run result contract. Template schema version 1 and the Workflow do not store execution mode, resources, output authorization, or safety cleanup state. The CLI does not provide a workflow run command.
 
 ## Tool Setup and workflow templates
 
@@ -20,7 +20,7 @@ Template
 └─ Workflow Sequence
 ```
 
-Tool Setup defines each tool instance session established before a run; it is not a Workflow Step. The Workflow is the linear test procedure executed after the referenced Workers are ready. Desktop places the Tool Setup editor on the Setup tab, separate from the Workflow tab. The app-level Open Template and Save Template actions preserve both parts together.
+Tool Setup defines each tool instance session established before a run; it is not a Workflow Step. The Workflow is the ordered test procedure executed after the referenced Workers are ready. Desktop places the Tool Setup editor on the Setup tab, separate from the Workflow tab. The app-level Open Template and Save Template actions preserve both parts together.
 
 Meters Setup supports DC Voltage and DC Current. Both provide Auto / Manual Range Mode, Manual Range, NPLC, and Auto Zero. DC Voltage additionally provides Input Impedance; DC Current provides Current Terminal. DCV cannot carry Current Terminal, and DCI cannot carry DCV Input Impedance. Manual mode requires Manual Range; Auto mode ignores any stored Manual Range and does not emit a `--range` startup argument. Trigger is fixed to Software.
 
@@ -56,7 +56,13 @@ Template schema v1 stores range values exclusively as exact decimal strings; num
 }
 ```
 
-Nested For, break, and continue are not supported. Desktop For editing, multi-row result presentation, and multi-row CSV integration are not implemented. Desktop retains its existing step-result DTOs; CSV retains the existing root Output export path and rejects failed or incomplete runs, including their partial iteration rows.
+Desktop can create, load, edit, validate, save, and run one-level For workflows in Simulation or Live mode using Template schema v1. Range fields remain decimal strings. The nested Sequence editor keeps root and body moves within their own lists; the palette shows its insertion target and disables For inside a body. Tool Setup usage checks and Live resource confirmation include body ToolActions.
+
+Input suggestions follow Core scope: body steps can read earlier root outputs and earlier body sibling outputs, plus the loop variable and earlier ordinary variables. Later root steps cannot see body StepOutputs or a newly introduced loop variable, but can reuse ordinary variables set in the body. A pre-existing variable with the loop variable's name is restored after For.
+
+Both Desktop run commands return `WorkflowRunResult` DTOs with iteration metadata and committed ResultRows. Execution Results distinguish body occurrences and display iterations starting at 1; root executions retain null metadata. The Output page uses ResultRows directly for either one root row or multiple iteration rows. Its Iteration column is presentation metadata, not a Workflow Output.
+
+CSV export uses `serialize_result_rows_csv`: the first row's Output names form the header, every ResultRow supplies a data row, and subsequent names, order, and counts must match. Iteration metadata is excluded from CSV. Successful For body rows can be exported as multi-row CSV; failed, cancelled, or incomplete runs remain rejected by the backend, even when prior committed rows exist. Desktop labels those rows as inspection-only and disables export. Runs without Outputs do not create a CSV file. Nested For, break, and continue remain unsupported.
 
 Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Output steps without a name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
 

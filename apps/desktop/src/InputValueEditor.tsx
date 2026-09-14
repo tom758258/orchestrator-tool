@@ -14,7 +14,7 @@ type ReferenceOptions = {
 
 const SOURCE_HELP = {
   literal: 'Enter a value directly.',
-  variable: 'Use a value saved by an earlier Set Variable step.',
+  variable: 'Use an available variable or the enclosing For loop variable.',
   'step-output': 'Use data produced by an earlier step.',
   expression: 'Calculate a value from fixed values, variables, or previous step results.',
 }
@@ -97,12 +97,12 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
             <select value={earlierVariables.includes(value.variable) ? value.variable : ''}
               disabled={disabled || earlierVariables.length === 0}
               onChange={(event) => onChange({ source: 'variable', variable: event.target.value })}>
-              <option value="" disabled>Select an earlier variable...</option>
+              <option value="" disabled>Select an available variable...</option>
               {earlierVariables.map((variable) => <option key={variable} value={variable}>{variable}</option>)}
             </select>
           </label>
           {!earlierVariables.includes(value.variable) && (
-            <p className="step-properties-empty">Reference preserved: {value.variable} is not defined by an earlier Set Variable step.</p>
+            <p className="step-properties-empty">Reference preserved: {value.variable} is not among the variable suggestions for this scope.</p>
           )}
         </>
       )
