@@ -457,6 +457,25 @@ impl TryFrom<StepResultDto> for StepResult {
     }
 }
 
+fn validate_completed_successful_run(
+    workflow: &Workflow,
+    results: &[StepResult],
+) -> Result<(), String> {
+    let all_succeeded = results
+        .iter()
+        .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }));
+    let all_root_steps_completed = workflow
+        .steps()
+        .iter()
+        .all(|step| results.iter().any(|result| result.step_id() == step.id()));
+    if !all_succeeded || !all_root_steps_completed {
+        return Err(
+            "workflow run did not complete successfully; CSV export is unavailable".to_owned(),
+        );
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn export_workflow_csv(
     template_json: String,
@@ -468,6 +487,7 @@ fn export_workflow_csv(
         .into_iter()
         .map(StepResult::try_from)
         .collect::<Result<Vec<_>, _>>()?;
+    validate_completed_successful_run(template.workflow(), &results)?;
     let outputs = template
         .workflow()
         .project_outputs(&results)
@@ -735,6 +755,59 @@ mod tests {
             "voltage,passed\n5,true\n"
         );
         std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn export_workflow_csv_rejects_failed_and_incomplete_runs_without_creating_file() {
+        let template_json = json!({
+            "schema_version": 1,
+            "tool_instances": [],
+            "name": "Unsuccessful CSV export",
+            "workflow": { "steps": [
+                { "type": "output", "id": "result", "name": "result",
+                  "value": { "source": "literal", "value": 5 } },
+                { "type": "assert", "id": "check",
+                  "left": { "source": "literal", "value": 1 },
+                  "operator": "less-than",
+                  "right": { "source": "literal", "value": 0 },
+                  "message": "Check failed." }
+            ] }
+        })
+        .to_string();
+        let dir = unique_test_dir("orchestrator-desktop-csv-unsuccessful");
+
+        for (case, results) in [
+            (
+                "failed",
+                json!([
+                    { "step_id": "result", "status": "succeeded", "output": 5 },
+                    { "step_id": "check", "status": "failed", "message": "Check failed." }
+                ]),
+            ),
+            (
+                "incomplete",
+                json!([
+                    { "step_id": "result", "status": "succeeded", "output": 5 }
+                ]),
+            ),
+        ] {
+            let path = dir.join(format!("{case}.csv"));
+            assert!(!path.exists());
+            let error = super::export_workflow_csv(
+                template_json.clone(),
+                serde_json::from_value(results).unwrap(),
+                path.display().to_string(),
+            )
+            .unwrap_err();
+
+            assert_eq!(
+                error,
+                "workflow run did not complete successfully; CSV export is unavailable"
+            );
+            assert!(!path.exists());
+        }
+
         std::fs::remove_dir(dir).unwrap();
     }
 
