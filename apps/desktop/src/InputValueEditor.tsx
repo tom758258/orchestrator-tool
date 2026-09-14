@@ -1,10 +1,19 @@
 import { EXPRESSION_OPERATORS } from './inputValue'
 import type { ExpressionOperandWire, InputValueWire } from './inputValue'
+import type { WorkflowStep } from './App'
 
 type ReferenceOptions = {
-  earlierSteps: readonly { id: string }[]
+  earlierSteps: readonly WorkflowStep[]
+  stepLabel: (step: WorkflowStep) => string
   earlierVariables: readonly string[]
   disabled: boolean
+}
+
+const SOURCE_HELP = {
+  literal: 'Enter a value directly.',
+  variable: 'Use a value saved by an earlier Set Variable step.',
+  'step-output': 'Use data produced by an earlier step.',
+  expression: 'Calculate a value from fixed values, variables, or previous step results.',
 }
 
 type OperandEditorProps = ReferenceOptions & {
@@ -13,7 +22,7 @@ type OperandEditorProps = ReferenceOptions & {
   literalLabel?: string
 }
 
-function OperandEditor({ value, onChange, earlierSteps, earlierVariables, disabled, literalLabel = 'Value' }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, stepLabel, earlierVariables, disabled, literalLabel = 'Value' }: OperandEditorProps) {
   switch (value.source) {
     case 'literal':
       return typeof value.value === 'number' ? (
@@ -28,11 +37,11 @@ function OperandEditor({ value, onChange, earlierSteps, earlierVariables, disabl
       ) : (
         <>
           <p className="step-properties-empty">
-            Value preserved (only numeric literals are editable): {JSON.stringify(value.value)}
+            Value preserved (only numeric fixed values are editable): {JSON.stringify(value.value)}
           </p>
           <button className="action-button" type="button" disabled={disabled}
             onClick={() => onChange({ source: 'literal', value: 0 })}>
-            Replace with numeric literal
+            Replace with numeric fixed value
           </button>
         </>
       )
@@ -57,22 +66,23 @@ function OperandEditor({ value, onChange, earlierSteps, earlierVariables, disabl
       return (
         <>
           <label className="step-property-field">
-            <span className="step-property-label">Step</span>
+            <span className="step-property-label">Previous step</span>
             <select value={earlierSteps.some((step) => step.id === value.step_id) ? value.step_id : ''}
               disabled={disabled || earlierSteps.length === 0}
               onChange={(event) => onChange({ ...value, step_id: event.target.value })}>
               <option value="" disabled>Select an earlier step...</option>
-              {earlierSteps.map((step) => <option key={step.id} value={step.id}>{step.id}</option>)}
+              {earlierSteps.map((step) => <option key={step.id} value={step.id}>{stepLabel(step)} ({step.id})</option>)}
             </select>
           </label>
           {!earlierSteps.some((step) => step.id === value.step_id) && (
             <p className="step-properties-empty">Reference preserved: {value.step_id} is not an earlier step. Validate to check it.</p>
           )}
           <label className="step-property-field">
-            <span className="step-property-label">Pointer</span>
+            <span className="step-property-label">Result path</span>
             <input type="text" value={value.pointer} disabled={disabled}
               onChange={(event) => onChange({ ...value, pointer: event.target.value })} />
           </label>
+          <p className="value-source-help">Use a JSON Pointer such as /value. Leave empty for the complete result.</p>
         </>
       )
   }
@@ -81,9 +91,9 @@ function OperandEditor({ value, onChange, earlierSteps, earlierVariables, disabl
 function SourceOptions({ earlierSteps, earlierVariables }: ReferenceOptions) {
   return (
     <>
-      <option value="literal">Literal</option>
+      <option value="literal">Fixed value</option>
       <option value="variable" disabled={earlierVariables.length === 0}>Variable</option>
-      <option value="step-output" disabled={earlierSteps.length === 0}>Step Output</option>
+      <option value="step-output" disabled={earlierSteps.length === 0}>Previous step result</option>
     </>
   )
 }
@@ -96,7 +106,7 @@ type InputValueEditorProps = ReferenceOptions & {
   literalDefault?: number
 }
 
-export default function InputValueEditor({ value, onChange, sourceLabel = 'Source', literalLabel,
+export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
   literalDefault = 0, ...references }: InputValueEditorProps) {
   const defaultOperand = (source: string, literal = 0): ExpressionOperandWire => {
     switch (source) {
@@ -115,6 +125,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Sourc
           <SourceOptions {...references} />
         </select>
       </label>
+      <p className="value-source-help">{SOURCE_HELP[value[side].source]}</p>
       <OperandEditor {...references} value={value[side]}
         onChange={(operand) => onChange({ ...value, [side]: operand })} />
     </div>
@@ -129,12 +140,13 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Sourc
             ? { source: 'expression', left: { source: 'literal', value: 0 }, operator: 'add', right: { source: 'literal', value: 0 } }
             : defaultOperand(event.target.value, literalDefault))}>
           <SourceOptions {...references} />
-          <option value="expression">Expression</option>
+          <option value="expression">Calculation</option>
         </select>
       </label>
+      <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
       {value.source === 'expression' ? (
-        <div className="step-properties-fields" role="group" aria-label="Expression">
-          <span className="step-property-label">Expression</span>
+        <div className="step-properties-fields" role="group" aria-label="Calculation">
+          <span className="step-property-label">Calculation</span>
           {operandEditor('left')}
           <label className="step-property-field">
             <span className="step-property-label">Operator</span>

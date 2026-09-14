@@ -80,10 +80,28 @@ function SequenceEditor({
     <section className="sequence-editor" aria-labelledby="sequence-editor-title">
       <h3 id="sequence-editor-title">Sequence</h3>
       {steps.length === 0 ? (
-        <p className="sequence-empty">
-          No workflow steps yet.<br />
-          Choose a step from the palette to begin.
-        </p>
+        <div className="sequence-empty">
+          <h4>Create your first workflow</h4>
+          <p>Add steps from the palette to build a workflow. Configure each selected step in Properties.</p>
+          <h4>Examples</h4>
+          <ul className="sequence-examples">
+            <li>
+              <strong>Measure Only</strong>
+              <p>Meter Measure → Output</p>
+              <p>Take one measurement and publish the result.</p>
+            </li>
+            <li>
+              <strong>Power and Measure</strong>
+              <p>Power Set Voltage → Power Output ON → Wait → Meter Measure → Output → Power Output OFF</p>
+              <p>Power a DUT, wait for settling, measure it, then turn power off.</p>
+            </li>
+            <li>
+              <strong>Reuse a Variable</strong>
+              <p>Set Variable → Power Set Voltage</p>
+              <p>Define a value once and reuse it in a later step.</p>
+            </li>
+          </ul>
+        </div>
       ) : (
         <ol className="sequence-steps">
           {steps.map((step, index) => {

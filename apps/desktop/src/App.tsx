@@ -149,6 +149,16 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   'powers/output-off': 'Power Output OFF',
 }
 
+const STEP_HELP: Record<string, string> = {
+  'set-variable': 'Save a value or calculation result so later steps can reuse it.',
+  output: 'Publish a value as a final Workflow result. This does not control a Power output.',
+  wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
+  'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
+  'powers/output-on': 'Enable the selected Power channel.',
+  'powers/output-off': 'Disable the selected Power channel.',
+  'meters/measure': 'Take one measurement using the Meter configuration defined in Setup. The result can be used by later steps.',
+}
+
 const EXECUTABLE_LABELS: Record<string, string> = {
   available: 'Available',
   missing: 'Missing',
@@ -1151,6 +1161,12 @@ function App() {
 
                   {selectedStep && (
                     <div className="step-properties-fields">
+                      <div>
+                        <h4 className="step-properties-step-title">{stepLabel(selectedStep, workflowDraft.tool_instances)}</h4>
+                        {STEP_HELP[selectedAction ?? selectedStep.type] && (
+                          <p className="step-context-help">{STEP_HELP[selectedAction ?? selectedStep.type]}</p>
+                        )}
+                      </div>
                       <div className="step-property-readonly">
                         <span className="step-property-label">Step ID</span>
                         <code className="workflow-step-id">{selectedStep.id}</code>
@@ -1205,6 +1221,7 @@ function App() {
                         <InputValueEditor
                           value={selectedValue}
                           earlierSteps={earlierSteps}
+                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
                           disabled={workflowBusy}
                           onChange={(value) => updateStep(selectedStep.id, (step) =>
@@ -1264,6 +1281,7 @@ function App() {
                           literalLabel="Voltage"
                           literalDefault={numericArgument(selectedToolAction, 'voltage') || 0}
                           earlierSteps={earlierSteps}
+                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
                           disabled={workflowBusy}
                           onChange={(value) => {

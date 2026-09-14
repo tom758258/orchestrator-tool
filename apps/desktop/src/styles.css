@@ -396,6 +396,26 @@ body {
   color: #5a6270;
 }
 
+.step-properties-step-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.step-context-help,
+.value-source-help {
+  color: #5a6270;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.step-context-help {
+  margin: 6px 0 0;
+}
+
+.value-source-help {
+  margin: -6px 0 0;
+}
+
 .step-properties-fields {
   display: flex;
   flex-direction: column;
@@ -539,6 +559,30 @@ body {
 
 .sequence-empty {
   color: #5a6270;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sequence-empty h4 {
+  margin: 16px 0 6px;
+  color: #1f2430;
+}
+
+.sequence-empty p {
+  margin: 4px 0;
+}
+
+.sequence-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sequence-examples strong {
+  color: #1f2430;
 }
 
 .sequence-steps {
