@@ -104,7 +104,7 @@ type WorkflowDraft = {
   }
 }
 
-type ActiveTab = 'tools' | 'setup' | 'workflow'
+type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
@@ -281,6 +281,13 @@ function formatMeasurement(output: unknown): string | null {
   return `${value} ${unit}`
 }
 
+function formatOutputResult(result: StepResultDto | undefined): string {
+  if (!result) return '—'
+  if (result.status === 'failed') return 'Failed'
+  if (result.status === 'cancelled') return 'Cancelled'
+  return typeof result.output === 'string' ? result.output : JSON.stringify(result.output) ?? '—'
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -307,7 +314,8 @@ function App() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
-  const hasWorkflowOutputs = workflowDraft?.workflow.steps.some((step) => step.type === 'output') ?? false
+  const outputSteps = workflowDraft?.workflow.steps.filter((step) => step.type === 'output') ?? []
+  const hasWorkflowOutputs = outputSteps.length > 0
 
   useEffect(() => {
     setExportError(null)
@@ -882,6 +890,17 @@ function App() {
         >
           Workflow
         </button>
+        <button
+          id="output-tab"
+          className={`tab ${activeTab === 'output' ? 'tab-active' : ''}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'output'}
+          aria-controls="output-panel"
+          onClick={() => setActiveTab('output')}
+        >
+          Output
+        </button>
       </nav>
 
       {activeTab === 'tools' && (
@@ -1364,7 +1383,7 @@ function App() {
 
               {runResults && (
                 <section className="run-results" aria-labelledby="run-results-title">
-                  <h3 id="run-results-title">Run Results</h3>
+                  <h3 id="run-results-title">Execution Results</h3>
                   <ol className="run-result-list">
                     {runResults.map((result) => {
                       const isOutput = workflowDraft.workflow.steps.some((step) =>
@@ -1412,26 +1431,63 @@ function App() {
                       )
                     })}
                   </ol>
-                  <button
-                    className="action-button"
-                    type="button"
-                    onClick={() => void handleExportCsv()}
-                    disabled={!hasWorkflowOutputs || workflowBusy}
-                  >
-                    {exporting ? 'Exporting…' : 'Export CSV'}
-                  </button>
-                  {!hasWorkflowOutputs && (
-                    <p>No workflow outputs available for export.</p>
-                  )}
-                  {exportMessage && (
-                    <p className="validation-success" role="status">{exportMessage}</p>
-                  )}
-                  {exportError && (
-                    <p className="error" role="alert">CSV export failed: {exportError}</p>
-                  )}
                 </section>
               )}
             </div>
+          )}
+        </section>
+      )}
+      {activeTab === 'output' && (
+        <section id="output-panel" role="tabpanel" aria-labelledby="output-tab">
+          <div className="section-header">
+            <h2>Output</h2>
+          </div>
+          {!hasWorkflowOutputs ? (
+            <>
+              <p>No workflow outputs defined.</p>
+              <p>Add Output steps to the Workflow to publish final result values.</p>
+            </>
+          ) : !runResults ? (
+            <>
+              <p>No run results yet.</p>
+              <p>Run the Workflow to view its outputs.</p>
+            </>
+          ) : (
+            <section aria-labelledby="last-run-title">
+              <h3 id="last-run-title">Last Run</h3>
+              <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
+                <table className="output-table" aria-labelledby="last-run-title">
+                  <thead>
+                    <tr>
+                      {outputSteps.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {outputSteps.map((step) => (
+                        <td key={step.id}>
+                          {formatOutputResult(runResults.find((result) => result.step_id === step.id))}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+          <button
+            className="action-button"
+            type="button"
+            onClick={() => void handleExportCsv()}
+            disabled={!hasWorkflowOutputs || !runResults || workflowBusy}
+          >
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          {exportMessage && (
+            <p className="validation-success" role="status">{exportMessage}</p>
+          )}
+          {exportError && (
+            <p className="error" role="alert">CSV export failed: {exportError}</p>
           )}
         </section>
       )}

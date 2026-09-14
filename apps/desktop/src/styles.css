@@ -765,3 +765,32 @@ body {
   margin-right: 8px;
   padding: 4px 8px;
 }
+
+.output-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.output-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background: #ffffff;
+}
+
+.output-table th,
+.output-table td {
+  min-width: 140px;
+  max-width: 320px;
+  padding: 8px 12px;
+  border: 1px solid #d8dce2;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.output-table th {
+  background: #f0f2f5;
+  font-weight: 600;
+}
