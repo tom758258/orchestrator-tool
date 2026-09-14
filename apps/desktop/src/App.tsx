@@ -279,6 +279,7 @@ function App() {
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
   const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
   const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
+  const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
@@ -329,6 +330,7 @@ function App() {
       ])
       setResourceDrafts(resources)
       setResourceIdentities(identities)
+      setResourceIdentityDrafts(identities)
       setError(null)
     } catch (message) {
       setError(String(message))
@@ -672,7 +674,7 @@ function App() {
     setToolConfigError(null)
     try {
       await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
-        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentities[toolId] ?? null }),
+        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentityDrafts[toolId] ?? null }),
       })
       await refresh()
     } catch (message) {
@@ -680,7 +682,7 @@ function App() {
     } finally {
       setToolConfigBusy(null)
     }
-  }, [refresh, resourceDrafts, resourceIdentities, toolConfigBusy])
+  }, [refresh, resourceDrafts, resourceIdentityDrafts, toolConfigBusy])
 
   const handleListResources = useCallback(async (toolId: string) => {
     if (toolConfigBusy !== null) {
@@ -1081,7 +1083,7 @@ function App() {
                             disabled={toolConfigBusy !== null || workflowBusy}
                             onChange={(event) => {
                               setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
-                              setResourceIdentities((current) => ({ ...current, [instance.id]: null }))
+                              setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: null }))
                             }}
                           />
                         </label>
@@ -1130,7 +1132,7 @@ function App() {
                                 if (resource) {
                                   const candidate = discoveredResources[instance.tool]?.find(item => item.resource === resource)
                                   setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
-                                  setResourceIdentities((current) => ({ ...current, [instance.id]: candidate ? {
+                                  setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: candidate ? {
                                     manufacturer: candidate.manufacturer, model: candidate.model,
                                     serial: candidate.serial, identity: candidate.identity,
                                   } : null }))

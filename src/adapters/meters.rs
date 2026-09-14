@@ -32,19 +32,20 @@ const SOFTWARE_TRIGGER_COMMAND: &str = "software_trigger";
 const SMOKE_JOB_ID: &str = "orchestrator-meter-smoke";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-/// Manual ranges advertised by meters-tool for one measurement.
+/// Manual ranges and NPLC values advertised by meters-tool for one measurement.
 #[derive(Debug, Deserialize, Serialize)]
-pub struct MetersRangeOptions {
+pub struct MetersMeasurementOptions {
     pub measurement_name: String,
     pub range_values: Vec<f64>,
+    pub nplc_values: Vec<f64>,
 }
 
 /// Queries offline model capabilities using the configured or portable executable.
-pub fn get_range_options(
+pub fn get_measurement_options(
     application_dir: &Path,
     config: &Config,
     model: &str,
-) -> Result<Vec<MetersRangeOptions>, String> {
+) -> Result<Vec<MetersMeasurementOptions>, String> {
     let definition = built_in_tool_definitions()
         .into_iter()
         .find(|definition| definition.id() == &ToolId::meters())
@@ -73,15 +74,15 @@ pub fn get_range_options(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    parse_range_options(&output.stdout)
+    parse_measurement_options(&output.stdout)
 }
 
-fn parse_range_options(stdout: &[u8]) -> Result<Vec<MetersRangeOptions>, String> {
+fn parse_measurement_options(stdout: &[u8]) -> Result<Vec<MetersMeasurementOptions>, String> {
     #[derive(Deserialize)]
     struct Capabilities {
         schema_version: u32,
         event: String,
-        measurements: Vec<MetersRangeOptions>,
+        measurements: Vec<MetersMeasurementOptions>,
     }
     let response: Capabilities = serde_json::from_slice(stdout)
         .map_err(|error| format!("meters capabilities returned invalid JSON or shape: {error}"))?;
@@ -691,31 +692,34 @@ impl Error for MetersActionError {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn range_capabilities_parse_v2_with_additive_fields() {
-        let ranges = super::parse_range_options(
+    fn measurement_capabilities_parse_v2_with_additive_fields() {
+        let options = super::parse_measurement_options(
             br#"{
             "schema_version": 2, "event": "capabilities", "model": "example",
             "measurements": [
-                {"measurement_name": "voltage-dc", "range_values": [0.1, 10], "other": true},
-                {"measurement_name": "current-dc", "range_values": [0.0001, 0.001]}
+                {"measurement_name": "voltage-dc", "range_values": [0.1, 10], "nplc_values": [0.02, 1], "other": true},
+                {"measurement_name": "current-dc", "range_values": [0.0001, 0.001], "nplc_values": [0.2, 10]}
             ]
         }"#,
         )
         .unwrap();
-        assert_eq!(ranges[0].measurement_name, "voltage-dc");
-        assert_eq!(ranges[0].range_values, vec![0.1, 10.0]);
-        assert_eq!(ranges[1].measurement_name, "current-dc");
-        assert_eq!(ranges[1].range_values, vec![0.0001, 0.001]);
+        assert_eq!(options[0].measurement_name, "voltage-dc");
+        assert_eq!(options[0].range_values, vec![0.1, 10.0]);
+        assert_eq!(options[0].nplc_values, vec![0.02, 1.0]);
+        assert_eq!(options[1].measurement_name, "current-dc");
+        assert_eq!(options[1].range_values, vec![0.0001, 0.001]);
+        assert_eq!(options[1].nplc_values, vec![0.2, 10.0]);
     }
 
     #[test]
-    fn range_capabilities_reject_invalid_contract() {
+    fn measurement_capabilities_reject_invalid_contract() {
         for payload in [
             r#"{"schema_version":1,"event":"capabilities","measurements":[]}"#,
             r#"{"schema_version":2,"event":"other","measurements":[]}"#,
-            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":["10"]}]}"#,
+            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":[10]}]}"#,
+            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":["10"],"nplc_values":[1]}]}"#,
         ] {
-            assert!(super::parse_range_options(payload.as_bytes()).is_err());
+            assert!(super::parse_measurement_options(payload.as_bytes()).is_err());
         }
     }
 
