@@ -254,13 +254,14 @@ impl NumericRange {
         }
         let ratio = ((stop - start) / step).abs();
         let rounded = ratio.round();
-        let ratio = if (ratio - rounded).abs() <= 1e-12 * ratio.max(1.0) {
+        let ratio = if (ratio - rounded).abs() <= f64::EPSILON * ratio.max(1.0) {
             rounded
         } else {
             ratio
         };
         let count_value = ratio.floor() + 1.0;
-        if !count_value.is_finite() || count_value > usize::MAX as f64 {
+        let usize_limit = 2.0_f64.powi(usize::BITS as i32);
+        if !count_value.is_finite() || count_value >= usize_limit {
             return Err(NumericRangeError::CountOverflow);
         }
         Ok(Self {
@@ -689,8 +690,8 @@ mod tests {
 
     use super::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
-        Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult, VariableId, Workflow,
-        WorkflowError,
+        NumericRangeError, Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult,
+        VariableId, Workflow, WorkflowError,
     };
     use crate::tool_instance::ToolInstanceId;
 
@@ -1020,6 +1021,21 @@ mod tests {
                 count
             );
         }
+        let (stop, expected_count) = if usize::BITS >= 64 {
+            (1_000_000_000_000.75, 1_000_000_000_001)
+        } else {
+            (4_000_000_000.999, 4_000_000_001)
+        };
+        assert_eq!(
+            NumericRange::new(0.0, stop, 1.0).unwrap().iteration_count() as u64,
+            expected_count
+        );
+        let usize_limit = 2.0_f64.powi(usize::BITS as i32);
+        assert!(usize_limit.is_finite());
+        assert!(matches!(
+            NumericRange::new(0.0, usize_limit, 1.0),
+            Err(NumericRangeError::CountOverflow)
+        ));
         assert!(NumericRange::new(0.0, f64::MAX, f64::MIN_POSITIVE).is_err());
         assert!(NumericRange::new(0.0, 1.0, 0.0).is_err());
         assert!(NumericRange::new(0.0, 1.0, -1.0).is_err());
@@ -1051,11 +1067,156 @@ mod tests {
         assert!(Workflow::new(vec![for_step("for-a", vec![output("out-a", "a")])]).is_ok());
         assert!(matches!(
             Workflow::new(vec![
+                output("root-output", "root"),
+                for_step("for-a", vec![output("body-output", "body")]),
+            ]),
+            Err(WorkflowError::MixedOutputPlacement)
+        ));
+        assert!(matches!(
+            Workflow::new(vec![
                 for_step("for-a", vec![output("out-a", "a")]),
                 for_step("for-b", vec![output("out-b", "b")]),
             ]),
             Err(WorkflowError::MultipleRowProducingFors { .. })
         ));
         assert!(Workflow::new(vec![for_step("for-a", vec![]), for_step("for-b", vec![])]).is_ok());
+    }
+
+    #[test]
+    fn for_validation_preserves_ids_scopes_and_loop_variable_rules() {
+        let range = || NumericRange::new(1.0, 2.0, 1.0).unwrap();
+        let for_step = |id: &str, body: Vec<Step>| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::For {
+                    variable: VariableId::new("voltage").unwrap(),
+                    range: range(),
+                    body,
+                },
+            )
+        };
+        let duplicate_id = StepId::new("same").unwrap();
+        assert!(matches!(
+            Workflow::new(vec![
+                Step::new(duplicate_id.clone(), StepKind::Wait { duration_ms: 0 }),
+                for_step(
+                    "sweep",
+                    vec![Step::new(duplicate_id.clone(), StepKind::Wait { duration_ms: 0 })]
+                ),
+            ]),
+            Err(WorkflowError::DuplicateStepId(step_id)) if step_id == duplicate_id
+        ));
+        let duplicate_body_id = StepId::new("same").unwrap();
+        assert!(matches!(
+            Workflow::new(vec![for_step(
+                "sweep",
+                vec![
+                    Step::new(duplicate_body_id.clone(), StepKind::Wait { duration_ms: 0 }),
+                    Step::new(duplicate_body_id.clone(), StepKind::Wait { duration_ms: 0 }),
+                ],
+            )]),
+            Err(WorkflowError::DuplicateStepId(step_id)) if step_id == duplicate_body_id
+        ));
+        assert!(matches!(
+            Workflow::new(vec![for_step(
+                "outer",
+                vec![for_step("inner", vec![])],
+            )]),
+            Err(WorkflowError::NestedFor(step_id)) if step_id.as_str() == "inner"
+        ));
+
+        let root_id = StepId::new("root-a").unwrap();
+        let body_id = StepId::new("body-a").unwrap();
+        let later_body_id = StepId::new("body-b").unwrap();
+        let reference =
+            |step_id: StepId| InputValue::StepOutput(StepOutputReference::new(step_id, "/value"));
+        assert!(
+            Workflow::new(vec![
+                Step::new(root_id.clone(), StepKind::Wait { duration_ms: 0 }),
+                for_step(
+                    "sweep",
+                    vec![
+                        Step::new(
+                            body_id.clone(),
+                            StepKind::SetVariable {
+                                variable: VariableId::new("result").unwrap(),
+                                value: reference(root_id.clone()),
+                            },
+                        ),
+                        Step::new(
+                            later_body_id.clone(),
+                            StepKind::SetVariable {
+                                variable: VariableId::new("result").unwrap(),
+                                value: reference(body_id.clone()),
+                            },
+                        ),
+                    ],
+                ),
+            ])
+            .is_ok()
+        );
+        assert!(matches!(
+            Workflow::new(vec![for_step(
+                "sweep",
+                vec![
+                    Step::new(
+                        body_id.clone(),
+                        StepKind::SetVariable {
+                            variable: VariableId::new("result").unwrap(),
+                            value: reference(later_body_id.clone()),
+                        },
+                    ),
+                    Step::new(later_body_id.clone(), StepKind::Wait { duration_ms: 0 }),
+                ],
+            )]),
+            Err(WorkflowError::InvalidStepOutputReference { step_id, target })
+                if step_id == body_id && target == later_body_id
+        ));
+        assert!(matches!(
+            Workflow::new(vec![
+                for_step("sweep", vec![Step::new(body_id.clone(), StepKind::Wait { duration_ms: 0 })]),
+                Step::new(
+                    StepId::new("root-b").unwrap(),
+                    StepKind::SetVariable {
+                        variable: VariableId::new("result").unwrap(),
+                        value: reference(body_id.clone()),
+                    },
+                ),
+            ]),
+            Err(WorkflowError::InvalidStepOutputReference { step_id, target })
+                if step_id.as_str() == "root-b" && target == body_id
+        ));
+
+        let measure = || StepKind::ToolAction {
+            target: ToolInstanceId::new("meters-1").unwrap(),
+            action: ActionId::new("measure").unwrap(),
+            arguments: json!({}),
+            bindings: [(
+                "voltage".to_owned(),
+                InputValue::Variable(VariableId::new("voltage").unwrap()),
+            )]
+            .into(),
+        };
+        assert!(
+            Workflow::new(vec![for_step(
+                "sweep",
+                vec![Step::new(StepId::new("measure").unwrap(), measure())],
+            )])
+            .is_ok()
+        );
+        assert!(matches!(
+            Workflow::new(vec![for_step(
+                "sweep",
+                vec![Step::new(
+                    StepId::new("set-voltage").unwrap(),
+                    StepKind::SetVariable {
+                        variable: VariableId::new("voltage").unwrap(),
+                        value: InputValue::Literal(json!(1.0)),
+                    },
+                )],
+            )]),
+            Err(WorkflowError::LoopVariableAssignment(step_id))
+                if step_id.as_str() == "set-voltage"
+        ));
     }
 }

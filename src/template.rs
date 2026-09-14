@@ -1391,4 +1391,27 @@ mod tests {
             "meters-1"
         );
     }
+
+    #[test]
+    fn for_template_rejects_unknown_recursive_tool_target() {
+        let mut wire: Value =
+            serde_json::from_str(&sample_template().to_json_string().unwrap()).unwrap();
+        wire["workflow"]["steps"] = json!([{
+            "type": "for",
+            "id": "sweep",
+            "variable": "voltage",
+            "range": {"start": 1.0, "stop": 2.0, "step": 1.0},
+            "steps": [{
+                "type": "tool-action",
+                "id": "measure",
+                "target": "missing-instance",
+                "action": "measure",
+                "arguments": {}
+            }]
+        }]);
+
+        let error = Template::from_json_str(&wire.to_string()).unwrap_err();
+        assert!(error.to_string().contains("unknown tool instance target"));
+        assert!(error.to_string().contains("missing-instance"));
+    }
 }

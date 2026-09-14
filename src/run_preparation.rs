@@ -334,6 +334,45 @@ mod tests {
                 mode == ExecutionMode::Simulate
             );
         }
+
+        let measure = |id: &str| {
+            crate::workflow::Step::new(
+                crate::workflow::StepId::new(id).unwrap(),
+                crate::workflow::StepKind::ToolAction {
+                    target: ToolInstanceId::new("meters-1").unwrap(),
+                    action: crate::workflow::ActionId::new("measure").unwrap(),
+                    arguments: json!({}),
+                    bindings: Default::default(),
+                },
+            )
+        };
+        let for_template = Template::new(
+            "For measurements".to_owned(),
+            template.tool_instances().to_vec(),
+            crate::workflow::Workflow::new(vec![
+                measure("root-measure"),
+                crate::workflow::Step::new(
+                    crate::workflow::StepId::new("sweep").unwrap(),
+                    crate::workflow::StepKind::For {
+                        variable: crate::workflow::VariableId::new("voltage").unwrap(),
+                        range: crate::workflow::NumericRange::new(1.0, 5.0, 1.0).unwrap(),
+                        body: vec![measure("body-measure-a"), measure("body-measure-b")],
+                    },
+                ),
+            ])
+            .unwrap(),
+        )
+        .unwrap();
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let specs = prepare_worker_launch_specs(&for_template, mode, &dir, &config).unwrap();
+            let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+            assert!(
+                args.windows(2).any(|pair| {
+                    pair == [OsString::from("--max-samples"), OsString::from("12")]
+                })
+            );
+        }
+
         let multi = instance_template();
         let workflow =
             crate::workflow::Workflow::new(multi.workflow().steps()[..2].to_vec()).unwrap();
