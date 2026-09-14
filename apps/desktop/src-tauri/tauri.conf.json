@@ -22,5 +22,11 @@
     "security": {
       "csp": null
     }
+  },
+  "bundle": {
+    "icon": [
+      "icons/orchestrator-icon.png",
+      "icons/orchestrator-icon.ico"
+    ]
   }
 }
