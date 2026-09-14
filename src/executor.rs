@@ -108,6 +108,9 @@ pub fn execute_workflow(
                 ),
                 Err(message) => StepOutcome::Failed { message },
             },
+            StepKind::For { .. } => StepOutcome::Failed {
+                message: "For execution is not implemented".to_owned(),
+            },
         };
 
         if let StepOutcome::Succeeded { output } = &outcome {

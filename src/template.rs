@@ -9,8 +9,8 @@ use crate::{
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, InvalidActionId,
-        InvalidStepId, InvalidVariableId, Step, StepId, StepKind, StepOutputReference, VariableId,
-        Workflow, WorkflowError,
+        InvalidStepId, InvalidVariableId, NumericRange, Step, StepId, StepKind,
+        StepOutputReference, VariableId, Workflow, WorkflowError,
     },
 };
 
@@ -58,14 +58,29 @@ impl Template {
                 }
             }
         }
-        for step in workflow.steps() {
-            if let StepKind::ToolAction { target, .. } = step.kind()
-                && !ids.contains(target)
-            {
-                return Err(TemplateError::Instance(format!(
-                    "unknown tool instance target {target}"
-                )));
+        fn validate(
+            steps: &[Step],
+            ids: &std::collections::HashSet<&ToolInstanceId>,
+        ) -> Option<ToolInstanceId> {
+            for step in steps {
+                match step.kind() {
+                    StepKind::ToolAction { target, .. } if !ids.contains(target) => {
+                        return Some(target.clone());
+                    }
+                    StepKind::For { body, .. } => {
+                        if let Some(target) = validate(body, ids) {
+                            return Some(target);
+                        }
+                    }
+                    _ => {}
+                }
             }
+            None
+        }
+        if let Some(target) = validate(workflow.steps(), &ids) {
+            return Err(TemplateError::Instance(format!(
+                "unknown tool instance target {target}"
+            )));
         }
         Ok(Self {
             name,
@@ -87,18 +102,29 @@ impl Template {
     /// Returns referenced instances in first-use order.
     pub fn referenced_tool_instances(&self) -> Vec<&ToolInstance> {
         let mut instances = Vec::new();
-        for step in self.workflow.steps() {
-            if let StepKind::ToolAction { target, .. } = step.kind() {
-                let instance = self
-                    .tool_instances
-                    .iter()
-                    .find(|instance| &instance.id == target)
-                    .expect("template targets are validated");
-                if !instances.contains(&instance) {
-                    instances.push(instance);
+        fn collect<'a>(
+            steps: &[Step],
+            template: &'a Template,
+            instances: &mut Vec<&'a ToolInstance>,
+        ) {
+            for step in steps {
+                match step.kind() {
+                    StepKind::ToolAction { target, .. } => {
+                        let instance = template
+                            .tool_instances
+                            .iter()
+                            .find(|i| &i.id == target)
+                            .expect("template targets are validated");
+                        if !instances.contains(&instance) {
+                            instances.push(instance);
+                        }
+                    }
+                    StepKind::For { body, .. } => collect(body, template, instances),
+                    _ => {}
                 }
             }
         }
+        collect(self.workflow.steps(), self, &mut instances);
         instances
     }
 
@@ -342,6 +368,20 @@ enum StepWire {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         bindings: BTreeMap<String, InputValueWire>,
     },
+    For {
+        id: String,
+        variable: String,
+        range: NumericRangeWire,
+        steps: Vec<StepWire>,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NumericRangeWire {
+    start: f64,
+    stop: f64,
+    step: f64,
 }
 
 impl StepWire {
@@ -382,6 +422,20 @@ impl StepWire {
                     .iter()
                     .map(|(key, input)| (key.clone(), InputValueWire::from_input(input)))
                     .collect(),
+            },
+            StepKind::For {
+                variable,
+                range,
+                body,
+            } => Self::For {
+                id: step.id().as_str().to_owned(),
+                variable: variable.as_str().to_owned(),
+                range: NumericRangeWire {
+                    start: range.start(),
+                    stop: range.stop(),
+                    step: range.step(),
+                },
+                steps: body.iter().map(StepWire::from_step).collect(),
             },
         }
     }
@@ -604,6 +658,36 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                         .into_iter()
                         .map(|(key, input)| Ok((key, input_from_wire(input)?)))
                         .collect::<Result<_, TemplateError>>()?,
+                },
+            ))
+        }
+        StepWire::For {
+            id,
+            variable,
+            range,
+            steps,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let variable =
+                VariableId::new(&variable).map_err(|source| TemplateError::InvalidVariableId {
+                    value: variable,
+                    source,
+                })?;
+            let range =
+                NumericRange::new(range.start, range.stop, range.step).map_err(|source| {
+                    TemplateError::Workflow(WorkflowError::InvalidRange(source.to_string()))
+                })?;
+            let body = steps
+                .into_iter()
+                .map(step_from_wire)
+                .collect::<Result<_, _>>()?;
+            Ok(Step::new(
+                step_id,
+                StepKind::For {
+                    variable,
+                    range,
+                    body,
                 },
             ))
         }

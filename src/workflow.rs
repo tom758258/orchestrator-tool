@@ -233,6 +233,61 @@ pub struct Step {
     kind: StepKind,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct NumericRange {
+    start: f64,
+    stop: f64,
+    step: f64,
+}
+
+impl NumericRange {
+    pub fn new(start: f64, stop: f64, step: f64) -> Result<Self, NumericRangeError> {
+        if !start.is_finite() || !stop.is_finite() || !step.is_finite() {
+            return Err(NumericRangeError::NonFinite);
+        }
+        if step == 0.0 {
+            return Err(NumericRangeError::ZeroStep);
+        }
+        if start < stop && step < 0.0 || start > stop && step > 0.0 {
+            return Err(NumericRangeError::WrongDirection);
+        }
+        Ok(Self { start, stop, step })
+    }
+    pub fn start(&self) -> f64 {
+        self.start
+    }
+    pub fn stop(&self) -> f64 {
+        self.stop
+    }
+    pub fn step(&self) -> f64 {
+        self.step
+    }
+    pub fn iteration_count(&self) -> usize {
+        if self.start == self.stop {
+            return 1;
+        }
+        ((self.stop - self.start) / self.step).floor() as usize + 1
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NumericRangeError {
+    NonFinite,
+    ZeroStep,
+    WrongDirection,
+}
+
+impl fmt::Display for NumericRangeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NonFinite => "range values must be finite",
+            Self::ZeroStep => "range step must not be zero",
+            Self::WrongDirection => "range step has the wrong direction",
+        })
+    }
+}
+impl Error for NumericRangeError {}
+
 impl Step {
     /// Creates a workflow step.
     pub fn new(id: StepId, kind: StepKind) -> Self {
@@ -275,6 +330,11 @@ pub enum StepKind {
         /// Top-level inputs resolved at runtime, overriding literal arguments.
         bindings: BTreeMap<String, InputValue>,
     },
+    For {
+        variable: VariableId,
+        range: NumericRange,
+        body: Vec<Step>,
+    },
 }
 
 /// An ordered, linear collection of workflow steps.
@@ -288,62 +348,120 @@ impl Workflow {
     pub fn new(steps: Vec<Step>) -> Result<Self, WorkflowError> {
         let mut seen = HashSet::new();
         let mut output_names = HashSet::new();
+        let mut root_outputs = false;
+        let mut body_outputs = false;
 
-        for step in &steps {
-            if seen.contains(step.id()) {
-                return Err(WorkflowError::DuplicateStepId(step.id().clone()));
-            }
-            if let StepKind::Output { name, .. } = step.kind() {
-                if name.trim().is_empty() {
-                    return Err(WorkflowError::InvalidOutputName(step.id().clone()));
+        #[allow(clippy::too_many_arguments)]
+        fn validate_steps(
+            steps: &[Step],
+            seen: &mut HashSet<StepId>,
+            output_names: &mut HashSet<String>,
+            available: &HashSet<StepId>,
+            root_outputs: &mut bool,
+            body_outputs: &mut bool,
+            in_for: bool,
+            loop_variable: Option<&VariableId>,
+        ) -> Result<(), WorkflowError> {
+            let mut prior = available.clone();
+            for step in steps {
+                if !seen.insert(step.id().clone()) {
+                    return Err(WorkflowError::DuplicateStepId(step.id().clone()));
                 }
-                if !output_names.insert(name) {
-                    return Err(WorkflowError::DuplicateOutputName(name.clone()));
-                }
-            }
-            let validate_reference = |reference: &StepOutputReference| {
-                if !seen.contains(reference.step_id()) {
-                    return Err(WorkflowError::InvalidStepOutputReference {
-                        step_id: step.id().clone(),
-                        target: reference.step_id().clone(),
-                    });
-                }
-                Ok(())
-            };
-            let validate_expression = |expression: &Expression| {
-                for operand in [expression.left(), expression.right()] {
-                    if let ExpressionOperand::StepOutput(reference) = operand {
-                        validate_reference(reference)?;
+                let validate_input = |input: &InputValue| -> Result<(), WorkflowError> {
+                    let check = |r: &StepOutputReference| {
+                        if prior.contains(r.step_id()) {
+                            Ok(())
+                        } else {
+                            Err(WorkflowError::InvalidStepOutputReference {
+                                step_id: step.id().clone(),
+                                target: r.step_id().clone(),
+                            })
+                        }
+                    };
+                    match input {
+                        InputValue::StepOutput(r) => check(r),
+                        InputValue::Expression(e) => {
+                            for o in [e.left(), e.right()] {
+                                if let ExpressionOperand::StepOutput(r) = o {
+                                    check(r)?;
+                                }
+                            }
+                            Ok(())
+                        }
+                        _ => Ok(()),
                     }
-                }
-                Ok(())
-            };
-            let validate_input = |input: &InputValue| {
-                match input {
-                    InputValue::StepOutput(reference) => validate_reference(reference)?,
-                    InputValue::Expression(expression) => validate_expression(expression)?,
-                    InputValue::Literal(_) | InputValue::Variable(_) => {}
-                }
-                Ok(())
-            };
-            match step.kind() {
-                StepKind::Assert { condition, .. } => {
-                    if !condition.operator().is_comparison() {
-                        return Err(WorkflowError::InvalidAssertOperator(step.id().clone()));
+                };
+                match step.kind() {
+                    StepKind::For {
+                        variable,
+                        range,
+                        body,
+                    } => {
+                        let _ = range.iteration_count();
+                        if in_for {
+                            return Err(WorkflowError::NestedFor(step.id().clone()));
+                        }
+                        validate_steps(
+                            body,
+                            seen,
+                            output_names,
+                            &prior,
+                            root_outputs,
+                            body_outputs,
+                            true,
+                            Some(variable),
+                        )?;
                     }
-                    validate_expression(condition)?;
-                }
-                StepKind::SetVariable { value, .. } | StepKind::Output { value, .. } => {
-                    validate_input(value)?;
-                }
-                StepKind::ToolAction { bindings, .. } => {
-                    for value in bindings.values() {
+                    StepKind::Assert { condition, .. } => {
+                        if !condition.operator().is_comparison() {
+                            return Err(WorkflowError::InvalidAssertOperator(step.id().clone()));
+                        }
+                        validate_input(&InputValue::Expression(condition.clone()))?;
+                    }
+                    StepKind::SetVariable { variable, value } => {
+                        if loop_variable == Some(variable) {
+                            return Err(WorkflowError::LoopVariableAssignment(step.id().clone()));
+                        }
                         validate_input(value)?;
                     }
+                    StepKind::Output { name, value } => {
+                        if name.trim().is_empty() {
+                            return Err(WorkflowError::InvalidOutputName(step.id().clone()));
+                        }
+                        if !output_names.insert(name.clone()) {
+                            return Err(WorkflowError::DuplicateOutputName(name.clone()));
+                        }
+                        validate_input(value)?;
+                        if in_for {
+                            *body_outputs = true;
+                        } else {
+                            *root_outputs = true;
+                        }
+                    }
+                    StepKind::ToolAction { bindings, .. } => {
+                        for value in bindings.values() {
+                            validate_input(value)?;
+                        }
+                    }
+                    StepKind::Wait { .. } => {}
                 }
-                StepKind::Wait { .. } => {}
+                prior.insert(step.id().clone());
             }
-            seen.insert(step.id());
+            Ok(())
+        }
+
+        validate_steps(
+            &steps,
+            &mut seen,
+            &mut output_names,
+            &HashSet::new(),
+            &mut root_outputs,
+            &mut body_outputs,
+            false,
+            None,
+        )?;
+        if root_outputs && body_outputs {
+            return Err(WorkflowError::MixedOutputPlacement);
         }
 
         Ok(Self { steps })
@@ -439,6 +557,10 @@ pub enum WorkflowError {
     InvalidOutputName(StepId),
     DuplicateOutputName(String),
     InvalidStepOutputReference { step_id: StepId, target: StepId },
+    NestedFor(StepId),
+    LoopVariableAssignment(StepId),
+    MixedOutputPlacement,
+    InvalidRange(String),
 }
 
 impl fmt::Display for WorkflowError {
@@ -463,6 +585,17 @@ impl fmt::Display for WorkflowError {
             Self::DuplicateStepId(step_id) => {
                 write!(formatter, "duplicate workflow step ID {step_id}")
             }
+            Self::NestedFor(step_id) => {
+                write!(formatter, "nested For is not supported at step {step_id}")
+            }
+            Self::LoopVariableAssignment(step_id) => write!(
+                formatter,
+                "step {step_id} cannot assign its For loop variable"
+            ),
+            Self::MixedOutputPlacement => {
+                write!(formatter, "root and For-body outputs cannot be mixed")
+            }
+            Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
         }
     }
 }
