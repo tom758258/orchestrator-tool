@@ -18,7 +18,9 @@ export type ToolInstance =
   | { id: string; tool: 'meters'; setup: MetersSetup }
   | { id: string; tool: 'powers' | 'scopes' | 'wavegen'; setup: Record<string, never> }
 
-type MetersMeasurementOptions = { measurement_name: string; range_values: number[]; nplc_values: number[] }
+const METERS_NPLC_OPTIONS = [0.02, 0.2, 1, 10, 100] as const
+
+type MetersRangeOptions = { measurement_name: string; range_values: number[] }
 
 function formatRange(value: number, unit: string): string {
   const magnitude = Math.abs(value)
@@ -30,29 +32,29 @@ function formatRange(value: number, unit: string): string {
 function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
   value: { meters: MetersSetup }; onChange: (value: { meters: MetersSetup }) => void; model?: string | null; metersExecutableKey: string
 }) {
-  const [capabilities, setCapabilities] = useState<{ model: string; metersExecutableKey: string; options: MetersMeasurementOptions[] | null } | null>(null)
+  const [capabilities, setCapabilities] = useState<{ model: string | null | undefined; metersExecutableKey: string; options: MetersRangeOptions[] | null } | null>(null)
   useEffect(() => {
     let cancelled = false
     setCapabilities(null)
-    if (model) {
-      invoke<MetersMeasurementOptions[]>('get_meters_measurement_options', { model }).then(
-        options => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options }) },
-        () => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options: null }) },
-      )
-    }
+    invoke<MetersRangeOptions[]>(
+      'get_meters_range_options',
+      model == null ? {} : { model },
+    ).then(
+      options => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options }) },
+      () => { if (!cancelled) setCapabilities({ model, metersExecutableKey, options: null }) },
+    )
     return () => { cancelled = true }
   }, [model, metersExecutableKey])
   const meters = value.meters
   const currentCapabilities = capabilities?.model === model && capabilities?.metersExecutableKey === metersExecutableKey ? capabilities : null
   const ranges = currentCapabilities?.options?.find(option => option.measurement_name === meters.measurement)?.range_values
-  const nplcs = currentCapabilities?.options?.find(option => option.measurement_name === meters.measurement)?.nplc_values
   useEffect(() => {
     if (ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)) {
       onChange({ ...value, meters: { ...meters, manual_range: null } })
     }
   }, [ranges, meters.measurement, meters.manual_range])
   const unit = meters.measurement === 'voltage-dc' ? 'V' : 'A'
-  const hasSupportedNplc = nplcs?.some((option) => option === meters.nplc) ?? false
+  const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
     <>
       <p className="tool-setup-hint">Applied before the run starts. Trigger: Software.</p>
@@ -92,30 +94,21 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
             </select>
           ) : (
             <select disabled value="">
-              <option value="">{model ? 'Range options unavailable' : 'Save a Live Resource to load range options'}</option>
+              <option value="">{currentCapabilities ? 'Range options unavailable' : 'Loading range options...'}</option>
             </select>
           )}
           {currentCapabilities && ranges === undefined && (
-            <span className="tool-setup-hint">Supported range options could not be loaded for this model.</span>
+            <span className="tool-setup-hint">Supported range options could not be loaded.</span>
           )}
         </label>
         <label className="step-property-field">
           <span className="step-property-label">NPLC</span>
-          {nplcs !== undefined ? (
-            <select required value={meters.nplc} onChange={(event) => onChange({
-              ...value, meters: { ...meters, nplc: Number(event.target.value) },
-            })}>
-              {!hasSupportedNplc && <option value={meters.nplc}>{meters.nplc} (current, unsupported)</option>}
-              {nplcs.map((nplc) => <option key={nplc} value={nplc}>{nplc}</option>)}
-            </select>
-          ) : (
-            <select disabled value="">
-              <option value="">{model ? 'NPLC options unavailable' : 'Save a Live Resource to load NPLC options'}</option>
-            </select>
-          )}
-          {currentCapabilities && nplcs === undefined && (
-            <span className="tool-setup-hint">Supported NPLC options could not be loaded for this model.</span>
-          )}
+          <select required value={meters.nplc} onChange={(event) => onChange({
+            ...value, meters: { ...meters, nplc: Number(event.target.value) },
+          })}>
+            {!hasStandardNplc && <option value={meters.nplc}>{meters.nplc} (current)</option>}
+            {METERS_NPLC_OPTIONS.map((nplc) => <option key={nplc} value={nplc}>{nplc}</option>)}
+          </select>
         </label>
         <label className="step-property-field">
           <span className="step-property-label">Auto Zero</span>
