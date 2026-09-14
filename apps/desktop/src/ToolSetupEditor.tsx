@@ -65,6 +65,7 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
             onChange({ ...value, meters: {
               ...meters,
               measurement,
+              manual_range: null,
               dcv_input_impedance: measurement === 'voltage-dc' ? meters.dcv_input_impedance : null,
               current_terminal: measurement === 'current-dc' ? meters.current_terminal : null,
             } })
