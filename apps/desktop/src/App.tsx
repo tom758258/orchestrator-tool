@@ -1219,8 +1219,10 @@ function App() {
 
                       {selectedValue && (
                         <InputValueEditor
+                          key={selectedStep.id}
                           value={selectedValue}
                           earlierSteps={earlierSteps}
+                          instances={workflowDraft.tool_instances}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
                           disabled={workflowBusy}
@@ -1276,11 +1278,13 @@ function App() {
 
                       {selectedToolAction && selectedAction === 'powers/set-voltage' && (
                         <InputValueEditor
+                          key={selectedStep.id}
                           value={voltageBinding ?? { source: 'literal', value: numericArgument(selectedToolAction, 'voltage') }}
                           sourceLabel="Voltage Source"
                           literalLabel="Voltage"
                           literalDefault={numericArgument(selectedToolAction, 'voltage') || 0}
                           earlierSteps={earlierSteps}
+                          instances={workflowDraft.tool_instances}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
                           disabled={workflowBusy}
