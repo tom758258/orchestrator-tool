@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::{
@@ -15,7 +16,8 @@ use crate::{
     tool_instance::ToolInstanceId,
     worker::WorkerSession,
     workflow::{
-        InputValue, ResultRow, StepExecution, StepKind, StepOutcome, StepResult, WorkflowRunResult,
+        ForIteration, InputValue, ResultRow, Step, StepExecution, StepKind, StepOutcome,
+        StepResult, WorkflowOutput, WorkflowRunResult,
     },
 };
 
@@ -35,7 +37,7 @@ impl fmt::Display for WorkflowExecutionError {
 
 impl Error for WorkflowExecutionError {}
 
-/// Executes a linear workflow sequentially with fail-fast semantics.
+/// Executes root steps and For bodies sequentially with fail-fast semantics.
 ///
 /// `sessions` must contain already-started `WorkerSession` references for
 /// referenced Powers and Meters instances. The executor does not start or shut down workers.
@@ -51,102 +53,209 @@ pub fn execute_workflow(
     }
 
     let mut data_context = DataContext::new();
-    let mut results = Vec::new();
+    let mut root_results = Vec::new();
+    let mut step_executions = Vec::new();
+    let mut result_rows = Vec::new();
+    let mut completed_successfully = true;
+    let has_body_output = workflow.steps().iter().any(|step| {
+        matches!(step.kind(), StepKind::For { body, .. }
+            if body.iter().any(|step| matches!(step.kind(), StepKind::Output { .. })))
+    });
 
     for step in workflow.steps() {
-        let outcome = match step.kind() {
-            StepKind::Assert { condition, message } => {
-                match data_context.resolve(&InputValue::Expression(condition.clone())) {
-                    Ok(output) if output == Value::Bool(true) => StepOutcome::Succeeded { output },
-                    Ok(_) => StepOutcome::Failed {
-                        message: if message.trim().is_empty() {
-                            "Assertion failed.".to_owned()
-                        } else {
-                            message.clone()
+        let outcome = if let StepKind::For {
+            variable,
+            range,
+            body,
+        } = step.kind()
+        {
+            let previous_value = data_context.variable(variable).cloned();
+            let produces_rows = body
+                .iter()
+                .any(|step| matches!(step.kind(), StepKind::Output { .. }));
+            // Keep every exit inside this closure so the loop binding is always restored below.
+            let outcome = (|| {
+                for iteration_index in 0..range.iteration_count() {
+                    clear_body_step_outputs(body, &mut data_context);
+                    let value = match range.value_at(iteration_index) {
+                        Some(value) => match decimal_to_json_value(value) {
+                            Ok(value) => value,
+                            Err(message) => return StepOutcome::Failed { message },
                         },
-                    },
-                    Err(error) => StepOutcome::Failed {
-                        message: error.to_string(),
-                    },
-                }
-            }
-            StepKind::SetVariable { variable, value } => match data_context.resolve(value) {
-                Ok(output) => {
-                    data_context.set_variable(variable.clone(), output.clone());
-                    StepOutcome::Succeeded { output }
-                }
-                Err(error) => StepOutcome::Failed {
-                    message: error.to_string(),
-                },
-            },
-            StepKind::Output { value, .. } => match data_context.resolve(value) {
-                Ok(output) => StepOutcome::Succeeded { output },
-                Err(error) => StepOutcome::Failed {
-                    message: error.to_string(),
-                },
-            },
-            StepKind::Wait { duration_ms } => {
-                if *duration_ms > 0 {
-                    thread::sleep(Duration::from_millis(*duration_ms));
+                        None => {
+                            return StepOutcome::Failed {
+                                message: format!(
+                                    "For range has no value at iteration {iteration_index}"
+                                ),
+                            };
+                        }
+                    };
+                    data_context.set_variable(variable.clone(), value);
+                    let occurrence = ForIteration::new(step.id().clone(), iteration_index);
+                    let mut staged_outputs = Vec::new();
+                    for body_step in body {
+                        let outcome = execute_non_for_step(
+                            body_step,
+                            template,
+                            &mut data_context,
+                            sessions,
+                            execution_mode,
+                            action_timeout,
+                        );
+                        if let StepOutcome::Succeeded { output } = &outcome {
+                            data_context.set_step_output(body_step.id().clone(), output.clone());
+                            if let StepKind::Output { name, .. } = body_step.kind() {
+                                staged_outputs
+                                    .push(WorkflowOutput::new(name.clone(), output.clone()));
+                            }
+                        }
+                        let failure = match &outcome {
+                            StepOutcome::Failed { message } => {
+                                Some(format!("body step {} failed: {message}", body_step.id()))
+                            }
+                            _ => None,
+                        };
+                        step_executions.push(StepExecution::new(
+                            StepResult::new(body_step.id().clone(), outcome),
+                            Some(occurrence.clone()),
+                        ));
+                        if let Some(message) = failure {
+                            return StepOutcome::Failed { message };
+                        }
+                    }
+                    if produces_rows {
+                        result_rows.push(ResultRow::new(staged_outputs, Some(occurrence)));
+                    }
                 }
                 StepOutcome::Succeeded {
                     output: Value::Null,
                 }
+            })();
+            clear_body_step_outputs(body, &mut data_context);
+            if let Some(value) = previous_value {
+                data_context.set_variable(variable.clone(), value);
+            } else {
+                data_context.remove_variable(variable);
             }
-            StepKind::ToolAction {
-                target,
-                action,
-                arguments,
-                bindings,
-            } => match resolve_tool_arguments(arguments, bindings, &data_context) {
-                Ok(arguments) => dispatch_tool_action(
-                    template,
-                    target,
-                    action,
-                    &arguments,
-                    sessions,
-                    execution_mode,
-                    action_timeout,
-                ),
-                Err(message) => StepOutcome::Failed { message },
-            },
-            StepKind::For { .. } => StepOutcome::Failed {
-                message: "For execution is not implemented".to_owned(),
-            },
+            outcome
+        } else {
+            execute_non_for_step(
+                step,
+                template,
+                &mut data_context,
+                sessions,
+                execution_mode,
+                action_timeout,
+            )
         };
 
         if let StepOutcome::Succeeded { output } = &outcome {
             data_context.set_step_output(step.id().clone(), output.clone());
         }
-
         let is_failed = matches!(outcome, StepOutcome::Failed { .. });
-        results.push(StepResult::new(step.id().clone(), outcome));
+        let result = StepResult::new(step.id().clone(), outcome);
+        step_executions.push(StepExecution::new(result.clone(), None));
+        root_results.push(result);
         if is_failed {
+            completed_successfully = false;
             break;
         }
     }
 
-    let result_rows = if results.len() == workflow.steps().len()
-        && results
-            .iter()
-            .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }))
-    {
-        vec![ResultRow::new(
+    if completed_successfully && !has_body_output {
+        result_rows.push(ResultRow::new(
             workflow
-                .project_outputs(&results)
+                .project_outputs(&root_results)
                 .expect("all validated workflow steps succeeded"),
             None,
-        )]
-    } else {
-        Vec::new()
-    };
-    Ok(WorkflowRunResult::new(
-        results
-            .into_iter()
-            .map(|result| StepExecution::new(result, None))
-            .collect(),
-        result_rows,
-    ))
+        ));
+    }
+    Ok(WorkflowRunResult::new(step_executions, result_rows))
+}
+
+// This is the sole boundary from exact range decimals to JSON runtime numbers.
+fn decimal_to_json_value(value: Decimal) -> Result<Value, String> {
+    value
+        .to_string()
+        .parse::<serde_json::Number>()
+        .map(Value::Number)
+        .map_err(|error| format!("cannot convert For value {value} to a JSON number: {error}"))
+}
+
+fn clear_body_step_outputs(body: &[Step], data_context: &mut DataContext) {
+    for step in body {
+        data_context.remove_step_output(step.id());
+    }
+}
+
+fn execute_non_for_step(
+    step: &Step,
+    template: &Template,
+    data_context: &mut DataContext,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+) -> StepOutcome {
+    match step.kind() {
+        StepKind::Assert { condition, message } => {
+            match data_context.resolve(&InputValue::Expression(condition.clone())) {
+                Ok(output) if output == Value::Bool(true) => StepOutcome::Succeeded { output },
+                Ok(_) => StepOutcome::Failed {
+                    message: if message.trim().is_empty() {
+                        "Assertion failed.".to_owned()
+                    } else {
+                        message.clone()
+                    },
+                },
+                Err(error) => StepOutcome::Failed {
+                    message: error.to_string(),
+                },
+            }
+        }
+        StepKind::SetVariable { variable, value } => match data_context.resolve(value) {
+            Ok(output) => {
+                data_context.set_variable(variable.clone(), output.clone());
+                StepOutcome::Succeeded { output }
+            }
+            Err(error) => StepOutcome::Failed {
+                message: error.to_string(),
+            },
+        },
+        StepKind::Output { value, .. } => match data_context.resolve(value) {
+            Ok(output) => StepOutcome::Succeeded { output },
+            Err(error) => StepOutcome::Failed {
+                message: error.to_string(),
+            },
+        },
+        StepKind::Wait { duration_ms } => {
+            if *duration_ms > 0 {
+                thread::sleep(Duration::from_millis(*duration_ms));
+            }
+            StepOutcome::Succeeded {
+                output: Value::Null,
+            }
+        }
+        StepKind::ToolAction {
+            target,
+            action,
+            arguments,
+            bindings,
+        } => match resolve_tool_arguments(arguments, bindings, data_context) {
+            Ok(arguments) => dispatch_tool_action(
+                template,
+                target,
+                action,
+                &arguments,
+                sessions,
+                execution_mode,
+                action_timeout,
+            ),
+            Err(message) => StepOutcome::Failed { message },
+        },
+        StepKind::For { .. } => StepOutcome::Failed {
+            message: "nested For execution is not supported".to_owned(),
+        },
+    }
 }
 
 fn resolve_tool_arguments(
@@ -295,13 +404,13 @@ mod tests {
     }
 
     #[test]
-    fn for_placeholder_fails_as_root_without_executing_body_or_committing_row() {
+    fn for_executes_all_iterations_with_stable_ids_and_completion_order() {
         let workflow = Workflow::new(vec![
             Step::new(
                 StepId::new("sweep").unwrap(),
                 StepKind::For {
                     variable: VariableId::new("x").unwrap(),
-                    range: crate::workflow::NumericRange::new(1.into(), 2.into(), 1.into())
+                    range: crate::workflow::NumericRange::new(1.into(), 3.into(), 1.into())
                         .unwrap(),
                     body: vec![Step::new(
                         StepId::new("body").unwrap(),
@@ -322,17 +431,215 @@ mod tests {
             Duration::from_secs(5),
         )
         .unwrap();
-        assert_eq!(run.step_executions().len(), 1);
-        let execution = &run.step_executions()[0];
-        assert_eq!(execution.step_id().as_str(), "sweep");
-        assert!(execution.for_iteration().is_none());
+        let executions = run.step_executions();
+        assert_eq!(executions.len(), 5);
+        for (index, execution) in executions[..3].iter().enumerate() {
+            assert_eq!(execution.step_id().as_str(), "body");
+            let occurrence = execution.for_iteration().unwrap();
+            assert_eq!(occurrence.for_step_id().as_str(), "sweep");
+            assert_eq!(occurrence.iteration_index(), index);
+            assert_eq!(
+                execution.outcome(),
+                &StepOutcome::Succeeded {
+                    output: json!(null)
+                }
+            );
+        }
+        assert_eq!(executions[3].step_id().as_str(), "sweep");
+        assert!(executions[3].for_iteration().is_none());
         assert_eq!(
-            execution.outcome(),
-            &StepOutcome::Failed {
-                message: "For execution is not implemented".to_owned(),
+            executions[3].outcome(),
+            &StepOutcome::Succeeded {
+                output: json!(null)
             }
         );
-        assert!(run.result_rows().is_empty());
+        assert_eq!(executions[4].step_id().as_str(), "later");
+        assert!(executions[4].for_iteration().is_none());
+        assert_eq!(run.result_rows().len(), 1);
+        assert!(run.result_rows()[0].outputs().is_empty());
+        assert!(run.result_rows()[0].for_iteration().is_none());
+    }
+
+    #[test]
+    fn for_restores_loop_variable_and_preserves_run_wide_mutations_in_root_row() {
+        let template = crate::template::Template::from_json_str(&json!({
+            "schema_version": 1, "name": "For scope", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "set-x", "variable": "x",
+                  "value": { "source": "literal", "value": 99 } },
+                { "type": "set-variable", "id": "set-count", "variable": "count",
+                  "value": { "source": "literal", "value": 0 } },
+                { "type": "for", "id": "sweep", "variable": "x",
+                  "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
+                    { "type": "set-variable", "id": "increment", "variable": "count",
+                      "value": { "source": "expression",
+                        "left": { "source": "variable", "variable": "count" },
+                        "operator": "add", "right": { "source": "literal", "value": 1 } } },
+                    { "type": "assert", "id": "check-count",
+                        "left": { "source": "variable", "variable": "count" },
+                        "operator": "greater-than-or-equal",
+                        "right": { "source": "variable", "variable": "x" }, "message": "Count must persist." }
+                  ] },
+                { "type": "output", "id": "out-x", "name": "x",
+                  "value": { "source": "variable", "variable": "x" } },
+                { "type": "output", "id": "out-count", "name": "count",
+                  "value": { "source": "variable", "variable": "count" } },
+                { "type": "set-variable", "id": "read-for", "variable": "aggregate",
+                  "value": { "source": "step-output", "step_id": "sweep", "pointer": "" } }
+            ] }
+        }).to_string()).unwrap();
+        let run = execute_workflow(
+            &template,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(
+            run.step_executions()
+                .iter()
+                .all(|execution| matches!(execution.outcome(), StepOutcome::Succeeded { .. }))
+        );
+        assert_eq!(
+            run.step_executions().last().unwrap().outcome(),
+            &StepOutcome::Succeeded {
+                output: json!(null)
+            }
+        );
+        assert_eq!(run.result_rows().len(), 1);
+        let row = &run.result_rows()[0];
+        assert!(row.for_iteration().is_none());
+        assert_eq!(
+            row.outputs()
+                .iter()
+                .map(|output| (output.name(), output.value()))
+                .collect::<Vec<_>>(),
+            vec![("x", &json!(99)), ("count", &json!(3.0))]
+        );
+    }
+
+    #[test]
+    fn for_binds_exact_decimal_values_and_commits_ordered_iteration_rows() {
+        let template = crate::template::Template::from_json_str(&json!({
+            "schema_version": 1, "name": "Decimal sweep", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "before", "variable": "baseline",
+                  "value": { "source": "literal", "value": 42 } },
+                { "type": "for", "id": "sweep", "variable": "voltage",
+                  "range": { "start": "0", "stop": "0.3", "step": "0.1" }, "steps": [
+                    { "type": "output", "id": "voltage-out", "name": "voltage",
+                      "value": { "source": "variable", "variable": "voltage" } },
+                    { "type": "output", "id": "sibling-out", "name": "sibling",
+                      "value": { "source": "step-output", "step_id": "voltage-out", "pointer": "" } },
+                    { "type": "output", "id": "root-out", "name": "baseline",
+                      "value": { "source": "step-output", "step_id": "before", "pointer": "" } }
+                  ] }
+            ] }
+        }).to_string()).unwrap();
+        let run = execute_workflow(
+            &template,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(run.result_rows().len(), 4);
+        for (index, (row, expected)) in run
+            .result_rows()
+            .iter()
+            .zip([0.0, 0.1, 0.2, 0.3])
+            .enumerate()
+        {
+            let occurrence = row.for_iteration().unwrap();
+            assert_eq!(occurrence.for_step_id().as_str(), "sweep");
+            assert_eq!(occurrence.iteration_index(), index);
+            assert_eq!(
+                row.outputs()
+                    .iter()
+                    .map(|output| output.name())
+                    .collect::<Vec<_>>(),
+                ["voltage", "sibling", "baseline"]
+            );
+            assert!(row.outputs()[0].value().is_number());
+            assert_eq!(row.outputs()[0].value().as_f64(), Some(expected));
+            assert_eq!(row.outputs()[1].value(), row.outputs()[0].value());
+            assert_eq!(row.outputs()[2].value(), &json!(42));
+        }
+    }
+
+    #[test]
+    fn failed_for_iteration_discards_only_current_staged_row_and_stops_execution() {
+        let template = crate::template::Template::from_json_str(
+            &json!({
+                "schema_version": 1, "name": "Failed sweep", "tool_instances": [],
+                "workflow": { "steps": [
+                    { "type": "for", "id": "sweep", "variable": "x",
+                      "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
+                        { "type": "output", "id": "out-x", "name": "x",
+                          "value": { "source": "variable", "variable": "x" } },
+                        { "type": "assert", "id": "check-x",
+                            "left": { "source": "variable", "variable": "x" },
+                            "operator": "less-than", "right": { "source": "literal", "value": 2 },
+                          "message": "x must be below 2." },
+                        { "type": "wait", "id": "body-later", "duration_ms": 0 }
+                      ] },
+                    { "type": "wait", "id": "root-later", "duration_ms": 0 }
+                ] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let run = execute_workflow(
+            &template,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(run.result_rows().len(), 1);
+        let row = &run.result_rows()[0];
+        assert_eq!(row.outputs()[0].value(), &json!(1));
+        assert_eq!(row.for_iteration().unwrap().for_step_id().as_str(), "sweep");
+        assert_eq!(row.for_iteration().unwrap().iteration_index(), 0);
+        let executions = run.step_executions();
+        assert_eq!(
+            executions
+                .iter()
+                .map(|execution| execution.step_id().as_str())
+                .collect::<Vec<_>>(),
+            [
+                "out-x",
+                "check-x",
+                "body-later",
+                "out-x",
+                "check-x",
+                "sweep"
+            ]
+        );
+        assert_eq!(
+            executions[3].outcome(),
+            &StepOutcome::Succeeded { output: json!(2) }
+        );
+        assert_eq!(
+            executions[4]
+                .for_iteration()
+                .unwrap()
+                .for_step_id()
+                .as_str(),
+            "sweep"
+        );
+        assert_eq!(executions[4].for_iteration().unwrap().iteration_index(), 1);
+        assert_eq!(
+            executions[4].outcome(),
+            &StepOutcome::Failed {
+                message: "x must be below 2.".to_owned()
+            }
+        );
+        assert!(executions[5].for_iteration().is_none());
+        assert!(
+            matches!(executions[5].outcome(), StepOutcome::Failed { message }
+            if message.contains("check-x") && message.contains("x must be below 2."))
+        );
     }
 
     #[test]

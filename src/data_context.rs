@@ -27,6 +27,11 @@ impl DataContext {
         self.variables.get(variable_id)
     }
 
+    /// Removes a variable when its temporary loop binding ends.
+    pub fn remove_variable(&mut self, variable_id: &VariableId) {
+        self.variables.remove(variable_id);
+    }
+
     /// Stores a step output, replacing any previous output for the same ID.
     pub fn set_step_output(&mut self, step_id: StepId, output: Value) {
         self.step_outputs.insert(step_id, output);
@@ -35,6 +40,11 @@ impl DataContext {
     /// Returns the complete stored step output, if present.
     pub fn step_output(&self, step_id: &StepId) -> Option<&Value> {
         self.step_outputs.get(step_id)
+    }
+
+    /// Removes a step output when its iteration scope ends.
+    pub fn remove_step_output(&mut self, step_id: &StepId) {
+        self.step_outputs.remove(step_id);
     }
 
     /// Resolves an input to an owned value without changing the input or context.

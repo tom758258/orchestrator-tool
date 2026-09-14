@@ -24,8 +24,8 @@ use orchestrator_tool::{
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
     workflow::{
-        ActionId, Expression, ExpressionOperand, ExpressionOperator, Step, StepId, StepKind,
-        StepOutcome, StepOutputReference, Workflow,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, NumericRange, Step, StepId,
+        StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
     },
     workflow_csv::serialize_workflow_outputs_csv,
 };
@@ -1405,6 +1405,7 @@ fn live_workflow_cleanup_lifecycle() {
     for scenario in [
         "live-success",
         "live-assert-failure",
+        "live-for-failure",
         "live-step-failure",
         "live-cleanup-failure",
         "live-both-failed",
@@ -1448,9 +1449,13 @@ fn live_workflow_cleanup_lifecycle() {
         ];
         let mut specs = HashMap::from([(
             ToolInstanceId::new("powers-1").unwrap(),
-            fixture_spec(scenario),
+            fixture_spec(if scenario == "live-for-failure" {
+                "live-assert-failure"
+            } else {
+                scenario
+            }),
         )]);
-        if scenario == "live-assert-failure" {
+        if matches!(scenario, "live-assert-failure" | "live-for-failure") {
             steps.insert(
                 2,
                 Step::new(
@@ -1483,6 +1488,24 @@ fn live_workflow_cleanup_lifecycle() {
             specs.insert(
                 ToolInstanceId::new("meters-1").unwrap(),
                 fixture_spec("meters-runtime-measure"),
+            );
+        }
+        if scenario == "live-for-failure" {
+            let mut body = steps.drain(2..4).collect::<Vec<_>>();
+            body.push(Step::new(
+                StepId::new("body-later").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            ));
+            steps.insert(
+                2,
+                Step::new(
+                    StepId::new("sweep").unwrap(),
+                    StepKind::For {
+                        variable: VariableId::new("x").unwrap(),
+                        range: NumericRange::new(1.into(), 3.into(), 1.into()).unwrap(),
+                        body,
+                    },
+                ),
             );
         }
         if scenario == "live-startup-failure" {
@@ -1525,10 +1548,25 @@ fn live_workflow_cleanup_lifecycle() {
                 );
                 assert_eq!(events, "set\noutput-on\noutput-off\nsafe-off\nstop\n");
             }
-            "live-assert-failure" => {
+            "live-assert-failure" | "live-for-failure" => {
                 let run = result.unwrap();
                 let results = run.step_executions();
-                assert_eq!(results.len(), 4);
+                assert_eq!(
+                    results.len(),
+                    if scenario == "live-for-failure" { 5 } else { 4 }
+                );
+                if scenario == "live-for-failure" {
+                    let occurrence = results[3].for_iteration().unwrap();
+                    assert_eq!(occurrence.for_step_id().as_str(), "sweep");
+                    assert_eq!(occurrence.iteration_index(), 0);
+                    assert_eq!(results[4].step_id().as_str(), "sweep");
+                    assert!(results[4].for_iteration().is_none());
+                    assert!(
+                        matches!(results[4].outcome(), StepOutcome::Failed { message }
+                        if message.contains("assert-1") && message.contains("Voltage is below minimum."))
+                    );
+                    assert!(run.result_rows().is_empty());
+                }
                 assert!(
                     results[..3]
                         .iter()

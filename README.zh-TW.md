@@ -34,7 +34,13 @@ ExecutionMode、Live VISA Resource、runtime results、output authorization 與 
 
 Workflow run 現在回傳 Core `WorkflowRunResult`，包含依執行順序排列的 `StepExecution` 與 `ResultRow`。每筆 execution 保留原有 `StepResult`；Step ID 仍是穩定的 definition identity。可選的 `ForIteration` metadata 保存 For Step ID 與 zero-based iteration index，與 Step ID 及 Output columns 分離。
 
-成功完成的 non-For workflow 產生一列 root ResultRow，以既有 `WorkflowOutput` 作為 cells，依 Output Step 順序使用 Output names 作為 columns。成功但沒有 Output 的 flat workflow 仍產生一列 empty row。失敗或未完整完成的 workflow 保留已執行的 steps，但不 commit root row。Root execution 與 row 都沒有 For iteration metadata。For execution 仍未實作：placeholder 以 root execution 失敗，不執行 body，也不產生 row。Desktop 維持既有 step-result DTO；CSV 維持原有 Output projection 與匯出 policy。
+成功完成且沒有 body Output 的 workflow 產生一列 root ResultRow，也適用於包含 For 的 workflow。Cells 沿用 `WorkflowOutput`，依 root Output Step 順序使用 Output names 作為 columns。完全沒有 Output 的成功 workflow 仍產生一列 empty root row。失敗或未完整完成的 workflow 不 commit root row。Root execution 與 row 都沒有 For iteration metadata。
+
+Core 現在依 `NumericRange::iteration_count()` 的各個 index，循序執行 For body，每個 exact range value 都只取自 `NumericRange::value_at(index)`。Executor 在 bind loop variable 前，將 Decimal 轉換一次成 JSON number；runtime expressions 與 tool arguments 維持既有 JSON numeric 行為。Loop binding 只在 For scope 內有效：成功或失敗離開時，還原進入前的原值；原本不存在則移除。普通變數可跨 iteration 與 For 結束後持續修改。每次 iteration 開始前及離開 For 時都清除 body step outputs；body 可讀取先前 root outputs 與當次 iteration 已執行的 sibling outputs。
+
+Body StepExecution 保留原本 Step ID，並附上 `ForIteration` metadata。Completion order 是先前 root steps、依 iteration 排列的 body occurrences、For aggregate root execution，最後才是後續 root steps。For 成功時保存 JSON null 作為 aggregate output。Body 失敗時，先記錄 failed occurrence，再記錄包含 body Step ID 與原始診斷的 For aggregate failure；剩餘 body steps、iterations 與後續 root steps 都不執行。既有 lifecycle 仍執行 Live Powers safe-off 與 Worker shutdown。
+
+For body 包含 Output 時，每個完整成功的 iteration commit 一列 ResultRow，附上 `ForIteration` metadata，columns 依 body Output Step 順序使用 Output names。Outputs 先暫存，直到整個 body 成功才 commit；後續 step 失敗只丟棄當次 iteration 的 staged row。先前成功 commit 的 iteration rows 在失敗後仍保留於 Core result。Iteration metadata 不會增加 Output columns。Validation 仍禁止混用 root／body Output，並限制最多一個 top-level For 包含 body Output。
 
 Core For Step 使用 static decimal numeric range，由 `start`、`stop` 與非零 `step` 定義。遞增 range 必須使用正 step，遞減 range 必須使用負 step。Stop 正好落在 step grid 時包含該值：`0 -> 0.3 step 0.1` 共四次 iteration。非 grid 的 stop 不會被越過：`0 -> 0.35 step 0.1` 同樣止於 `0.3`。Start 等於 stop 時，任何非零 step 都只有一次 iteration。
 
@@ -50,7 +56,7 @@ Template schema v1 的 range 值只接受 exact decimal string；JSON number 會
 }
 ```
 
-目前不支援 nested For。For runtime execution 尚未實作，Executor 仍回報 `For execution is not implemented`；這是 Core／Template 的 domain foundation，尚無 Desktop For editor。
+目前不支援 nested For、break 與 continue。Desktop For editor、multi-row Result UI 與 multi-row CSV integration 尚未實作。Desktop 維持既有 step-result DTO；CSV 維持原有 root Output export path，失敗或未完整完成的 run 仍不可匯出，包括其中已 commit 的部分 iteration rows。
 
 Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。舊 Template 的 Output Step 若沒有 `name`，載入時會使用該 Step ID 作為 name，再次儲存時會明確寫入 `name`。
 

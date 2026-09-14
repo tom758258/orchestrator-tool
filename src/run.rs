@@ -96,9 +96,15 @@ pub fn run_workflow(
                     .step_executions()
                     .iter()
                     .find_map(|result| match result.outcome() {
-                        StepOutcome::Failed { message } => {
-                            Some(format!("step {} failed: {message}", result.step_id()))
-                        }
+                        StepOutcome::Failed { message } => Some(match result.for_iteration() {
+                            Some(iteration) => format!(
+                                "step {} (For {} iteration {}) failed: {message}",
+                                result.step_id(),
+                                iteration.for_step_id(),
+                                iteration.iteration_index(),
+                            ),
+                            None => format!("step {} failed: {message}", result.step_id()),
+                        }),
                         _ => None,
                     })
             }

@@ -584,6 +584,10 @@ pub struct WorkflowOutput {
 }
 
 impl WorkflowOutput {
+    pub fn new(name: String, value: Value) -> Self {
+        Self { name, value }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
