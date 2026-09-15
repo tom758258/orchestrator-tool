@@ -81,7 +81,7 @@ Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行�
 
 兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 For／While body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For／While iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
 
-Desktop Output 也提供單一 Line 或 Scatter 圖表，以數值型 Workflow Outputs 作為座標軸；loop 結果可選用從 1 開始的 Iteration 作為 X 軸。圖表使用已 commit 的 ResultRows，並在執行期間更新，失敗後保留的 partial rows 也可供檢視。圖表僅屬於 Desktop 呈現，選項不儲存於 Template，CSV 語意維持不變。
+Desktop Charts 將 For/While 的迭代 ResultRows 呈現為折線圖，X 軸固定為從 1 開始的 Iteration。每個面板以核取方塊選擇一個或多個數值型 Outputs；首個面板預設只選第一個數值型 Output，使用者可新增面板，最多 8 個。圖表在執行期間依已 commit 的 rows 更新，失敗後仍可檢視保留的 committed rows。圖表設定僅屬於 Desktop session state，不儲存於 Template，CSV 語意維持不變。
 
 CSV 使用 `serialize_result_rows_csv`：第一列 Output names 為 header，每個 ResultRow 產生一列，後續列的名稱、順序與數量必須一致。Iteration metadata 不寫入 CSV。成功 For 或 While 的 body rows 可匯出多列 CSV；failed、cancelled 或 incomplete run 仍由 backend 拒絕匯出，即使已有先前 committed rows。Desktop 會標示這些列僅供檢視並停用匯出；沒有 Output 的 run 不建立 CSV 檔。Nested loop、break 與 continue 仍不支援。
 

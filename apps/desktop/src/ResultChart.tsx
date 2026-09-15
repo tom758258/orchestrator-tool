@@ -1,19 +1,19 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
-  CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart,
-  Tooltip, XAxis, YAxis,
+  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import type { ResultRowDto } from './workflow'
 
-type Axes = { x: string | null; y: string }
-type ChartPoint = { x: number; y: number }
+const MAX_CHARTS = 8
+const SERIES_COLORS = ['#2563eb', '#dc2626', '#15803d', '#9333ea', '#b45309', '#0891b2']
+type ChartPanel = { id: number; outputs: string[] }
 
 export default function ResultChart({ rows, outputNames }: {
   rows: ResultRowDto[]
   outputNames: string[]
 }) {
-  const [chartType, setChartType] = useState<'line' | 'scatter'>('line')
-  const [selection, setSelection] = useState<Axes | null>(null)
+  const [panels, setPanels] = useState<ChartPanel[] | null>(null)
+  const nextPanelId = useRef(1)
   const numericNames = rows.length === 0 ? [] : outputNames.filter(name =>
     rows.every(row => {
       const value = row.outputs.find(output => output.name === name)?.value
@@ -21,85 +21,99 @@ export default function ResultChart({ rows, outputNames }: {
     }))
   const hasIteration = rows.length > 0 && rows.every(row =>
     row.for_iteration != null || row.while_iteration != null)
-  const defaultAxes: Axes | null = numericNames.length >= 2
-    ? { x: numericNames[0], y: numericNames[1] }
-    : hasIteration && numericNames.length === 1 ? { x: null, y: numericNames[0] } : null
-  const axes = selection && numericNames.includes(selection.y)
-    && (selection.x === null ? hasIteration : numericNames.includes(selection.x) && selection.x !== selection.y)
-    ? selection : defaultAxes
 
-  // Replace invalid choices before rendering newly committed rows.
-  if (axes !== selection) setSelection(axes)
+  // Null means not initialized; an empty selection must stay empty.
+  let displayedPanels = panels
+  if (hasIteration) {
+    if (panels === null && numericNames.length > 0) {
+      displayedPanels = [{ id: 0, outputs: [numericNames[0]] }]
+      setPanels(displayedPanels)
+    } else if (panels?.some(panel => panel.outputs.some(name => !numericNames.includes(name)))) {
+      displayedPanels = panels.map(panel => ({
+        ...panel,
+        outputs: panel.outputs.filter(name => numericNames.includes(name)),
+      }))
+      setPanels(displayedPanels)
+    }
+  }
 
-  if (rows.length === 0) return null
-  if (!axes) return <section aria-label="Chart">
-    <h3>Chart</h3>
-    <p>Chart requires two numeric Outputs, or one numeric Output with loop iteration data.</p>
+  if (!hasIteration) return null
+  if (numericNames.length === 0) return <section aria-label="Charts">
+    <h3>Charts</h3>
+    <p>No numeric Outputs are available for charts.</p>
   </section>
+  if (!displayedPanels) return null
 
-  const xName = axes.x ?? 'Iteration'
-  const points: ChartPoint[] = rows.map(row => ({
-    x: axes.x === null
-      ? (row.for_iteration ?? row.while_iteration)!.iteration_index + 1
-      : row.outputs.find(output => output.name === axes.x)!.value as number,
-    y: row.outputs.find(output => output.name === axes.y)!.value as number,
+  // Safe local keys keep user Output names out of Recharts path resolution.
+  const series = numericNames.map((name, index) => ({
+    name, key: `series${index}`, color: SERIES_COLORS[index % SERIES_COLORS.length],
   }))
-  const xChoices = [
-    ...(hasIteration ? [{ value: 'iteration', name: 'Iteration', x: null }] : []),
-    ...numericNames.map(name => ({ value: `output:${name}`, name, x: name })),
-  ]
-  const chartAxes = <>
-    <CartesianGrid strokeDasharray="3 3" />
-    <XAxis type="number" dataKey="x" name={xName}
-      label={{ value: xName, position: 'bottom', offset: 0 }} />
-    <YAxis type="number" dataKey="y" name={axes.y}
-      label={{ value: axes.y, angle: -90, position: 'insideLeft' }} />
-  </>
+  const points = rows.map(row => {
+    const point: Record<string, number> = {
+      iteration: (row.for_iteration ?? row.while_iteration)!.iteration_index + 1,
+    }
+    series.forEach(item => {
+      point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
+    })
+    return point
+  })
 
-  return <section className="result-chart" aria-label="Chart">
-    <h3>Chart</h3>
-    <div className="result-chart-controls">
-      <label className="step-property-field">
-        <span className="step-property-label">Chart type</span>
-        <select value={chartType} onChange={event => setChartType(event.target.value as 'line' | 'scatter')}>
-          <option value="line">Line</option>
-          <option value="scatter">Scatter</option>
-        </select>
-      </label>
-      <label className="step-property-field">
-        <span className="step-property-label">X axis</span>
-        <select value={axes.x === null ? 'iteration' : `output:${axes.x}`} onChange={event => {
-          const x = xChoices.find(choice => choice.value === event.target.value)!.x
-          setSelection({ x, y: x === axes.y ? numericNames.find(name => name !== x)! : axes.y })
-        }}>
-          {xChoices.map(choice => <option key={choice.value} value={choice.value}
-            disabled={choice.x !== null && numericNames.length < 2}>{choice.name}</option>)}
-        </select>
-      </label>
-      <label className="step-property-field">
-        <span className="step-property-label">Y axis</span>
-        <select value={axes.y} onChange={event => setSelection({ ...axes, y: event.target.value })}>
-          {numericNames.filter(name => name !== axes.x).map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
-      </label>
+  function addChart() {
+    if (!displayedPanels || displayedPanels.length >= MAX_CHARTS) return
+    const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
+      ?? numericNames[0]
+    setPanels([...displayedPanels, { id: nextPanelId.current++, outputs: [name] }])
+  }
+
+  return <section className="result-chart" aria-label="Charts">
+    <div className="section-header">
+      <h3>Charts</h3>
+      <button className="action-button" type="button" onClick={addChart}
+        disabled={displayedPanels.length >= MAX_CHARTS}>+ Add chart</button>
     </div>
-    <div className="result-chart-plot" role="img" aria-label={`${chartType === 'line' ? 'Line' : 'Scatter'} chart: ${axes.y} versus ${xName}, ${points.length} points`}>
-      <ResponsiveContainer width="100%" height="100%">
-        {chartType === 'line' ? (
-          <LineChart data={points} margin={{ top: 16, right: 24, bottom: 24, left: 20 }}>
-            {chartAxes}
-            <Tooltip labelFormatter={value => `${xName}: ${value}`} />
-            <Line type="linear" dataKey="y" name={axes.y} stroke="#2563eb"
-              dot={{ r: 4 }} isAnimationActive={false} />
-          </LineChart>
-        ) : (
-          <ScatterChart margin={{ top: 16, right: 24, bottom: 24, left: 20 }}>
-            {chartAxes}
-            <Tooltip />
-            <Scatter data={points} name={axes.y} fill="#2563eb" isAnimationActive={false} />
-          </ScatterChart>
-        )}
-      </ResponsiveContainer>
+    {displayedPanels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
+    <p>Select multiple numeric Outputs to compare them on the same chart.</p>
+    <div className="result-charts-grid">
+      {displayedPanels.map((panel, index) => {
+        const selectedSeries = series.filter(item => panel.outputs.includes(item.name))
+        return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
+          <div className="section-header">
+            <h4>Chart {index + 1}</h4>
+            {displayedPanels.length > 1 && <button className="action-button" type="button"
+              aria-label={`Remove Chart ${index + 1}`}
+              onClick={() => setPanels(displayedPanels.filter(item => item.id !== panel.id))}>Remove</button>}
+          </div>
+          <fieldset className="result-chart-outputs">
+            <legend>Outputs</legend>
+            {numericNames.map(name => <label key={name}>
+              <input type="checkbox" checked={panel.outputs.includes(name)} onChange={event => {
+                const outputs = event.target.checked
+                  ? [...panel.outputs, name] : panel.outputs.filter(output => output !== name)
+                setPanels(displayedPanels.map(item => item.id === panel.id ? { ...item, outputs } : item))
+              }} />
+              {name}
+            </label>)}
+          </fieldset>
+          {selectedSeries.length === 0 ? <p>Select at least one Output to display this chart.</p> : (
+            <div className="result-chart-plot" role="img"
+              aria-label={`Line chart: ${selectedSeries.map(item => item.name).join(', ')} versus Iteration, ${points.length} points per series`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={points} margin={{ top: 16, right: 24, bottom: 24, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" dataKey="iteration" name="Iteration" allowDecimals={false}
+                    label={{ value: 'Iteration', position: 'bottom', offset: 0 }} />
+                  <YAxis type="number" />
+                  <Tooltip labelFormatter={value => `Iteration: ${value}`} />
+                  {selectedSeries.length > 1 && <Legend verticalAlign="top" />}
+                  {selectedSeries.map(item => <Line key={item.key} type="linear"
+                    dataKey={item.key} name={item.name} stroke={item.color}
+                    dot={{ r: 4 }} isAnimationActive={false} />)}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+      })}
     </div>
   </section>
 }
