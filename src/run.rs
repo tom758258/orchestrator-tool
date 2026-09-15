@@ -2,14 +2,14 @@ use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Du
 
 use crate::{
     adapters::powers::{PowersActionError, safe_off_all},
-    executor::{WorkflowExecutionError, execute_workflow_with_events},
+    executor::{WorkflowExecutionError, execute_workflow_with_loop_stop},
     template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepOutcome, WorkflowRunEvent, WorkflowRunResult},
+    workflow::{StepId, StepOutcome, WorkflowRunEvent, WorkflowRunResult},
 };
 
 /// Runtime execution mode for a workflow run.
@@ -61,6 +61,30 @@ pub fn run_workflow_with_events(
     shutdown_timeout: Duration,
     on_event: impl FnMut(WorkflowRunEvent),
 ) -> Result<WorkflowRunResult, WorkflowRunError> {
+    run_workflow_with_loop_stop(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        on_event,
+        |_| false,
+    )
+}
+
+/// Runs with graceful loop stopping while preserving Worker cleanup and shutdown.
+#[allow(clippy::too_many_arguments)]
+pub fn run_workflow_with_loop_stop(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    on_event: impl FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunResult, WorkflowRunError> {
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
@@ -104,12 +128,13 @@ pub fn run_workflow_with_events(
         .iter()
         .map(|(instance, session)| (instance.clone(), session))
         .collect();
-    let execution = execute_workflow_with_events(
+    let execution = execute_workflow_with_loop_stop(
         template,
         &session_refs,
         execution_mode,
         action_timeout,
         on_event,
+        should_stop_after_iteration,
     );
     drop(session_refs);
 

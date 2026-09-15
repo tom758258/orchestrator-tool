@@ -300,6 +300,7 @@ function App() {
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
+  const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -308,10 +309,36 @@ function App() {
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
   const hasCommittedOutputRows = (runResult?.result_rows.length ?? 0) > 0
-  const latestWhileIteration = runProgress?.step_executions.at(-1)?.while_iteration
-  const runningText = latestWhileIteration
-    ? `While ${latestWhileIteration.while_step_id} · Iteration ${latestWhileIteration.iteration_index + 1} · Running`
+  const latestExecution = runProgress?.step_executions.at(-1)
+  const activeLoop = runStatus !== 'running' ? null : latestExecution?.for_iteration
+    ? { kind: 'For', id: latestExecution.for_iteration.for_step_id, index: latestExecution.for_iteration.iteration_index }
+    : latestExecution?.while_iteration
+      ? { kind: 'While', id: latestExecution.while_iteration.while_step_id, index: latestExecution.while_iteration.iteration_index }
+      : null
+  const stopping = activeLoop !== null && stopRequest?.loopId === activeLoop.id && !stopRequest.error
+  const runningText = activeLoop
+    ? `${activeLoop.kind} ${activeLoop.id} · Iteration ${activeLoop.index + 1} · ${stopping ? 'Stopping…' : 'Running'}`
     : 'Running…'
+  const requestStop = async () => {
+    if (!activeLoop || stopping) return
+    const request = { loopId: activeLoop.id }
+    setStopRequest(request)
+    try {
+      const accepted = await invoke<boolean>('request_workflow_stop', { loopStepId: request.loopId })
+      if (!accepted) setStopRequest(current => current === request ? null : current)
+    } catch (message) {
+      setStopRequest(current => current === request ? { ...request, error: String(message) } : current)
+    }
+  }
+  const stopControls = <>
+    {activeLoop && <>
+      <button className="action-button" type="button" onClick={() => void requestStop()} disabled={stopping}>
+        {stopping ? 'Stopping…' : 'Stop'}
+      </button>
+      <p>Stops after the current iteration completes.</p>
+    </>}
+    {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
+  </>
   const displayedRun = runResult ?? runProgress
   const iterationRows = displayedRun?.result_rows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
@@ -703,6 +730,9 @@ function App() {
   }, [toolConfigBusy])
 
   const receiveRunProgress = useCallback((event: WorkflowRunEventDto) => {
+    if (event.type === 'step-completed' && !event.execution.for_iteration && !event.execution.while_iteration) {
+      setStopRequest(current => current?.loopId === event.execution.step_id ? null : current)
+    }
     setRunProgress(current => {
       const progress = current ?? { step_executions: [], result_rows: [] }
       return event.type === 'step-completed'
@@ -716,6 +746,7 @@ function App() {
       return
     }
     let onProgress: Channel<WorkflowRunEventDto> | undefined
+    setStopRequest(null)
     setRunStatus('running')
     setRunResult(null)
     setRunProgress({ step_executions: [], result_rows: [] })
@@ -768,6 +799,7 @@ function App() {
       setRunError(String(message))
     } finally {
       if (onProgress) onProgress.onmessage = () => {}
+      setStopRequest(null)
       setRunStatus('idle')
     }
   }, [resourceDrafts, workflowDraft, receiveRunProgress])
@@ -778,6 +810,7 @@ function App() {
     }
 
     const onProgress = new Channel<WorkflowRunEventDto>(receiveRunProgress)
+    setStopRequest(null)
     setRunStatus('running')
     setRunResult(null)
     setRunProgress({ step_executions: [], result_rows: [] })
@@ -793,6 +826,7 @@ function App() {
       setRunError(String(message))
     } finally {
       onProgress.onmessage = () => {}
+      setStopRequest(null)
       setRunStatus('idle')
     }
   }, [workflowDraft, receiveRunProgress])
@@ -1493,6 +1527,7 @@ function App() {
                 >
                   Run Live
                 </button>
+                {stopControls}
               </div>
 
               {runStatus === 'running' && <p role="status">{runningText}</p>}
@@ -1578,6 +1613,7 @@ function App() {
           <div className="section-header">
             <h2>Output</h2>
           </div>
+          {stopControls}
           {!hasWorkflowOutputs ? (
             <>
               <p>No workflow outputs defined.</p>

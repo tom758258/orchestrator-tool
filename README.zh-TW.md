@@ -77,7 +77,9 @@ Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、�
 
 Input suggestions 遵循 Core scope：loop body Step 可引用 loop 前已存在的 root outputs、同一次 iteration 的先前 body sibling outputs，以及先前普通 variables。For body 可額外使用 enclosing For 的 loop variable；While 沒有 loop variable。Loop 後的 root Step 看不到 body StepOutput，新引入的 For loop variable 也不會洩漏（原先同名 variable 會恢復），但 body 設定的普通 variables 可繼續使用。會產生 row 的 While 可能執行 0 次。
 
-Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、cancel、streaming CSV 或 nested loop。
+Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、hard cancel、streaming CSV 或 nested loop。
+
+執行中的 For / While 在觀察到 body 進度後，可從 Workflow 控制區或 Output 檢視按 **Stop**。Stop 會等待目前 iteration 完整結束，不會中斷其中的步驟；成功 iteration 照常提交 row，再讓指定迴圈成功退出，並繼續後續 root steps。Powers 清理與 Worker shutdown 照常執行。最終 workflow 成功時，仍可依原流程手動匯出 CSV。Stop 並非 hard cancel。
 
 兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 For／While body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For／While iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
 

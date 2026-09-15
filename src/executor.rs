@@ -16,7 +16,7 @@ use crate::{
     tool_instance::ToolInstanceId,
     worker::WorkerSession,
     workflow::{
-        ForIteration, InputValue, ResultRow, Step, StepExecution, StepKind, StepOutcome,
+        ForIteration, InputValue, ResultRow, Step, StepExecution, StepId, StepKind, StepOutcome,
         StepResult, WhileIteration, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
 };
@@ -57,7 +57,26 @@ pub fn execute_workflow_with_events(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
+    on_event: impl FnMut(WorkflowRunEvent),
+) -> Result<WorkflowRunResult, WorkflowExecutionError> {
+    execute_workflow_with_loop_stop(
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        on_event,
+        |_| false,
+    )
+}
+
+/// Checks graceful loop stop only after a successful body and its row commit.
+pub fn execute_workflow_with_loop_stop(
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
     mut on_event: impl FnMut(WorkflowRunEvent),
+    mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
@@ -149,6 +168,9 @@ pub fn execute_workflow_with_events(
                                 result_rows.last().unwrap().clone(),
                             ),
                         );
+                    }
+                    if should_stop_after_iteration(step.id()) {
+                        break;
                     }
                 }
                 StepOutcome::Succeeded {
@@ -245,6 +267,11 @@ pub fn execute_workflow_with_events(
                                 result_rows.last().unwrap().clone(),
                             ),
                         );
+                    }
+                    if should_stop_after_iteration(step.id()) {
+                        return StepOutcome::Succeeded {
+                            output: Value::Null,
+                        };
                     }
                     iteration_index += 1;
                 }
@@ -475,6 +502,113 @@ mod tests {
             StepKind, StepOutcome, StepOutputReference, VariableId, Workflow, WorkflowRunEvent,
         },
     };
+
+    fn graceful_stop_run(is_while: bool, fail_body: bool) {
+        use std::cell::RefCell;
+        let body = json!([
+            { "type": "output", "id": "out", "name": "value",
+              "value": { "source": "literal", "value": 42 } },
+            { "type": "assert", "id": "body-last",
+              "left": { "source": "literal", "value": if fail_body { 2 } else { 0 } },
+              "operator": "less-than", "right": { "source": "literal", "value": 1 },
+              "message": "body failed" }
+        ]);
+        let loop_step = if is_while {
+            json!({ "type": "while", "id": "loop", "max_iterations": 1,
+                "left": { "source": "literal", "value": 1 }, "operator": "greater-than-or-equal",
+                "right": { "source": "literal", "value": 1 }, "steps": body })
+        } else {
+            json!({ "type": "for", "id": "loop", "variable": "x",
+                "range": { "start": "1", "stop": "3", "step": "1" }, "steps": body })
+        };
+        let template = crate::template::Template::from_json_str(
+            &json!({
+                "schema_version": 1, "name": "Stop", "tool_instances": [],
+                "workflow": { "steps": [loop_step,
+                    { "type": "wait", "id": "root-later", "duration_ms": 0 },
+                    { "type": "for", "id": "later-loop", "variable": "y",
+                      "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [
+                        { "type": "wait", "id": "later-body", "duration_ms": 0 }
+                      ] }
+                ] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let target = RefCell::new(None);
+        let events = RefCell::new(Vec::new());
+        let run = super::execute_workflow_with_loop_stop(
+            &template,
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(1),
+            |event| {
+                if matches!(&event, WorkflowRunEvent::StepCompleted(execution)
+                    if execution.step_id().as_str() == "out")
+                {
+                    *target.borrow_mut() = Some("loop".to_owned());
+                }
+                events.borrow_mut().push(event);
+            },
+            |id| {
+                if target.borrow().as_deref() != Some(id.as_str()) {
+                    return false;
+                }
+                assert!(matches!(
+                    events.borrow().last(),
+                    Some(WorkflowRunEvent::ResultRowCommitted(_))
+                ));
+                target.borrow_mut().take();
+                true
+            },
+        )
+        .unwrap();
+        let executions = run.step_executions();
+        assert_eq!(executions[0].step_id().as_str(), "out");
+        assert_eq!(executions[1].step_id().as_str(), "body-last");
+        assert_eq!(executions[2].step_id().as_str(), "loop");
+        if fail_body {
+            assert_eq!(executions.len(), 3);
+            assert!(run.result_rows().is_empty());
+            assert!(matches!(
+                executions[2].outcome(),
+                StepOutcome::Failed { .. }
+            ));
+            assert_eq!(target.borrow().as_deref(), Some("loop"));
+        } else {
+            assert_eq!(run.result_rows().len(), 1);
+            assert!(
+                executions
+                    .iter()
+                    .all(|execution| matches!(execution.outcome(), StepOutcome::Succeeded { .. }))
+            );
+            assert_eq!(executions[3].step_id().as_str(), "root-later");
+            assert_eq!(
+                executions
+                    .iter()
+                    .filter(|execution| execution.step_id().as_str() == "later-body")
+                    .count(),
+                2
+            );
+            assert!(target.borrow().is_none());
+        }
+    }
+
+    #[test]
+    fn for_graceful_stop_commits_iteration_and_continues_root_steps() {
+        graceful_stop_run(false, false);
+    }
+
+    #[test]
+    fn while_graceful_stop_at_limit_commits_iteration_and_continues_root_steps() {
+        graceful_stop_run(true, false);
+    }
+
+    #[test]
+    fn graceful_stop_does_not_hide_body_failure_or_commit_partial_row() {
+        graceful_stop_run(false, true);
+        graceful_stop_run(true, true);
+    }
 
     #[test]
     fn successful_flat_run_commits_one_ordered_root_row() {

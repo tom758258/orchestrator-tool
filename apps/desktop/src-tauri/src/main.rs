@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -10,7 +11,7 @@ use orchestrator_tool::{
     config::{Config, ConfigError, ResourceIdentity},
     discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, run_workflow_with_events},
+    run::{ExecutionMode, run_workflow_with_loop_stop},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
@@ -31,6 +32,49 @@ const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
+
+#[derive(Default)]
+struct ActiveRun(Mutex<Option<Arc<Mutex<Option<String>>>>>);
+
+impl ActiveRun {
+    fn register(&self) -> Result<Arc<Mutex<Option<String>>>, String> {
+        let mut active = self.0.lock().unwrap();
+        if active.is_some() {
+            return Err("A workflow run is already active".to_owned());
+        }
+        let control = Arc::new(Mutex::new(None));
+        *active = Some(control.clone());
+        Ok(control)
+    }
+
+    fn clear(&self) {
+        *self.0.lock().unwrap() = None;
+    }
+
+    fn request(&self, loop_step_id: String) -> bool {
+        let active = self.0.lock().unwrap();
+        let Some(control) = active.as_ref() else {
+            return false;
+        };
+        *control.lock().unwrap() = Some(loop_step_id);
+        true
+    }
+}
+
+fn consume_loop_stop(control: &Mutex<Option<String>>, step_id: &StepId) -> bool {
+    let mut target = control.lock().unwrap();
+    if target.as_deref() == Some(step_id.as_str()) {
+        target.take();
+        true
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
+fn request_workflow_stop(state: tauri::State<'_, ActiveRun>, loop_step_id: String) -> bool {
+    state.request(loop_step_id)
+}
 
 #[tauri::command]
 async fn list_live_resources(
@@ -213,10 +257,12 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
 #[tauri::command]
 async fn run_workflow_simulation(
     app: AppHandle,
+    state: tauri::State<'_, ActiveRun>,
     template_json: String,
     on_progress: Channel<WorkflowRunEventDto>,
 ) -> Result<WorkflowRunResultDto, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let control = state.register()?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir()
@@ -228,7 +274,7 @@ async fn run_workflow_simulation(
             &application_dir,
             &config,
         )?;
-        let results = run_workflow_with_events(
+        let results = run_workflow_with_loop_stop(
             &template,
             ExecutionMode::Simulate,
             &launch_specs,
@@ -238,23 +284,28 @@ async fn run_workflow_simulation(
             |event| {
                 let _ = on_progress.send(workflow_run_event_dto(&event));
             },
+            |step_id| consume_loop_stop(&control, step_id),
         )
         .map_err(|error| error.to_string())?;
 
         Ok(workflow_run_result_dto(&results))
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string());
+    state.clear();
+    result?
 }
 
 #[tauri::command]
 async fn run_workflow_live(
     app: AppHandle,
+    state: tauri::State<'_, ActiveRun>,
     template_json: String,
     confirmed_resources: HashMap<String, String>,
     on_progress: Channel<WorkflowRunEventDto>,
 ) -> Result<WorkflowRunResultDto, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let control = state.register()?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
@@ -275,7 +326,7 @@ async fn run_workflow_live(
                 authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
             }
         }
-        let results = run_workflow_with_events(
+        let results = run_workflow_with_loop_stop(
             &template,
             ExecutionMode::Live,
             &launch_specs,
@@ -285,12 +336,15 @@ async fn run_workflow_live(
             |event| {
                 let _ = on_progress.send(workflow_run_event_dto(&event));
             },
+            |step_id| consume_loop_stop(&control, step_id),
         )
         .map_err(|error| error.to_string())?;
         Ok(workflow_run_result_dto(&results))
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string());
+    state.clear();
+    result?
 }
 
 struct PowersWriteAuthorization(PathBuf);
@@ -700,6 +754,7 @@ fn load_workflow_template(path: String) -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(ActiveRun::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_tool_status,
@@ -707,6 +762,7 @@ fn main() {
             get_meters_range_options,
             run_workflow_simulation,
             run_workflow_live,
+            request_workflow_stop,
             get_live_resources,
             get_live_resource_identities,
             set_live_resource,
@@ -740,6 +796,28 @@ mod tests {
         },
     };
     use serde_json::json;
+
+    #[test]
+    fn active_run_stop_is_targeted_and_cleared_between_runs() {
+        let state = super::ActiveRun::default();
+        let a = StepId::new("loop-a").unwrap();
+        let b = StepId::new("loop-b").unwrap();
+        assert!(!state.request(a.to_string()));
+        let control = state.register().unwrap();
+        assert!(state.register().is_err());
+        assert!(state.request(a.to_string()));
+        assert!(!super::consume_loop_stop(&control, &b));
+        assert!(super::consume_loop_stop(&control, &a));
+        assert!(!super::consume_loop_stop(&control, &a));
+        assert!(state.request(a.to_string()));
+        state.clear();
+        assert!(!state.request(b.to_string()));
+        let next = state.register().unwrap();
+        assert!(!super::consume_loop_stop(&next, &a));
+        assert!(state.request(b.to_string()));
+        assert!(super::consume_loop_stop(&next, &b));
+        state.clear();
+    }
 
     #[test]
     fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {
