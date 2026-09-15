@@ -485,7 +485,15 @@ body {
   font-size: 1rem;
 }
 
+.run-result-count {
+  margin: 4px 0 0;
+  color: #5a6270;
+  font-size: 0.9rem;
+}
+
 .run-result-list {
+  max-height: 400px;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -495,6 +503,7 @@ body {
 }
 
 .run-result-card {
+  flex-shrink: 0;
   display: flex;
   gap: 10px;
   padding: 10px 12px;

@@ -340,6 +340,7 @@ function App() {
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runResult ?? runProgress
+  const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
   const iterationRows = displayedRun?.result_rows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
   useEffect(() => {
@@ -1553,8 +1554,11 @@ function App() {
               {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
                   <h3 id="run-results-title">Execution Results</h3>
-                  <ol className="run-result-list">
-                    {displayedRun.step_executions.map((result) => {
+                  <p className="run-result-count">
+                    {displayedExecutions.length} {displayedExecutions.length === 1 ? 'execution' : 'executions'} · latest first
+                  </p>
+                  <ol className="run-result-list" aria-label="Execution Results" tabIndex={0}>
+                    {displayedExecutions.map((result) => {
                       const isOutput = allWorkflowSteps(workflowDraft.workflow.steps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
