@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
+import ResultChart from './ResultChart'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -1613,6 +1614,7 @@ function App() {
                   </tbody>
                 </table>
               </div>
+              <ResultChart rows={displayedRun.result_rows} outputNames={outputSteps.map(step => step.name)} />
             </section>
           )}
           <button
