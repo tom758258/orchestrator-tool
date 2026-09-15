@@ -782,9 +782,21 @@ body {
   padding: 4px 8px;
 }
 
+.output-data h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.output-row-count {
+  margin: 4px 0 12px;
+  color: #5a6270;
+  font-size: 0.9rem;
+}
+
 .output-table-scroll {
   max-width: 100%;
-  overflow-x: auto;
+  max-height: 380px;
+  overflow: auto;
   margin-bottom: 16px;
 }
 
@@ -806,7 +818,10 @@ body {
   white-space: pre-wrap;
 }
 
-.output-table th {
+.output-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: #f0f2f5;
   font-weight: 600;
 }

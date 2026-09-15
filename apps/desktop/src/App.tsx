@@ -341,6 +341,7 @@ function App() {
   </>
   const displayedRun = runResult ?? runProgress
   const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
+  const displayedOutputRows = [...(displayedRun?.result_rows ?? [])].reverse()
   const iterationRows = displayedRun?.result_rows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
   useEffect(() => {
@@ -1634,27 +1635,35 @@ function App() {
               {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {displayedRun.result_rows.length === 0 && <p>No committed output rows.</p>}
-              <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
-                <table className="output-table" aria-labelledby="last-run-title">
-                  <thead>
-                    <tr>
-                      {iterationRows && <th scope="col">Iteration</th>}
-                      {outputSteps.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedRun.result_rows.map((row, index) => (
-                      <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : row.while_iteration ? `while:${row.while_iteration.while_step_id}:${row.while_iteration.iteration_index}` : `root:${index}`}>
-                        {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : row.while_iteration ? row.while_iteration.iteration_index + 1 : '—'}</td>}
-                        {row.outputs.map(output => <td key={output.name}>
-                          {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
-                        </td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
               <ResultChart rows={displayedRun.result_rows} outputNames={outputSteps.map(step => step.name)} />
+              {displayedOutputRows.length > 0 && (
+                <section className="output-data" aria-labelledby="output-data-title">
+                  <h3 id="output-data-title">Output Data</h3>
+                  <p className="output-row-count">
+                    {displayedRun.result_rows.length} {displayedRun.result_rows.length === 1 ? 'row' : 'rows'} · latest first
+                  </p>
+                  <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
+                    <table className="output-table" aria-labelledby="output-data-title">
+                      <thead>
+                        <tr>
+                          {iterationRows && <th scope="col">Iteration</th>}
+                          {outputSteps.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedOutputRows.map((row, index) => (
+                          <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : row.while_iteration ? `while:${row.while_iteration.while_step_id}:${row.while_iteration.iteration_index}` : `root:${index}`}>
+                            {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : row.while_iteration ? row.while_iteration.iteration_index + 1 : '—'}</td>}
+                            {row.outputs.map(output => <td key={output.name}>
+                              {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
+                            </td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
             </section>
           )}
           <button
