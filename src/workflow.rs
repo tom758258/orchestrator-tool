@@ -493,6 +493,9 @@ impl Workflow {
                                 step.id().clone(),
                             ));
                         }
+                        if max_iterations.is_none() && body.is_empty() {
+                            return Err(WorkflowError::EmptyUnlimitedWhileBody(step.id().clone()));
+                        }
                         validate_input(&InputValue::Expression(condition.clone()))?;
                         validate_steps(
                             body,
@@ -668,6 +671,7 @@ pub enum WorkflowError {
     InvalidAssertOperator(StepId),
     InvalidWhileOperator(StepId),
     InvalidWhileMaxIterations(StepId),
+    EmptyUnlimitedWhileBody(StepId),
     DuplicateStepId(StepId),
     InvalidOutputName(StepId),
     DuplicateOutputName(String),
@@ -689,6 +693,10 @@ impl fmt::Display for WorkflowError {
             Self::InvalidWhileMaxIterations(step_id) => write!(
                 formatter,
                 "While step {step_id} requires positive max_iterations"
+            ),
+            Self::EmptyUnlimitedWhileBody(step_id) => write!(
+                formatter,
+                "While step {step_id} cannot use Unlimited iterations with an empty body"
             ),
             Self::InvalidAssertOperator(step_id) => {
                 write!(

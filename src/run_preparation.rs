@@ -154,6 +154,15 @@ pub fn prepare_worker_launch_specs(
                     .ok_or_else(|| "meter sample reserve count overflow".to_owned())
             })
             .transpose()?;
+        if execution_mode == ExecutionMode::Simulate
+            && tool.as_str() == "meters"
+            && meters_max_samples.is_none()
+        {
+            return Err(format!(
+                "Run Simulation cannot use Meter Measure inside Unlimited While for {}; choose a finite max_iterations or Run Live",
+                instance.id
+            ));
+        }
         let definition = definitions
             .iter()
             .find(|definition| definition.id() == tool)
@@ -457,17 +466,31 @@ mod tests {
         unlimited_loop["max_iterations"] = json!(null);
         unlimited_wire["workflow"]["steps"][0] = unlimited_loop;
         let unlimited = Template::from_json_str(&unlimited_wire.to_string()).unwrap();
-        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-            let specs = prepare_worker_launch_specs(&unlimited, mode, &dir, &config).unwrap();
-            let unbounded = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
-            assert!(!unbounded.iter().any(|arg| arg == "--max-samples"));
-            let bounded = specs[&ToolInstanceId::new("meters-2").unwrap()].arguments();
-            assert!(
-                bounded
-                    .windows(2)
-                    .any(|pair| pair == ["--max-samples", "2"])
-            );
-        }
+        let error = prepare_worker_launch_specs(
+            &unlimited,
+            ExecutionMode::Simulate,
+            Path::new("unused"),
+            &config,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("Run Simulation") && error.contains("Unlimited While"),
+            "{error}"
+        );
+        assert!(
+            error.contains("Meter Measure") && error.contains("meters-1"),
+            "{error}"
+        );
+        let specs =
+            prepare_worker_launch_specs(&unlimited, ExecutionMode::Live, &dir, &config).unwrap();
+        let unbounded = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+        assert!(!unbounded.iter().any(|arg| arg == "--max-samples"));
+        let bounded = specs[&ToolInstanceId::new("meters-2").unwrap()].arguments();
+        assert!(
+            bounded
+                .windows(2)
+                .any(|pair| pair == ["--max-samples", "2"])
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

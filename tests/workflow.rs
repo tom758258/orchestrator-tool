@@ -580,6 +580,22 @@ fn while_validation_rejects_invalid_conditions_guards_and_nested_loops() {
 }
 
 #[test]
+fn unlimited_while_rejects_empty_body_but_finite_while_allows_it() {
+    let mut wire = while_wire(10, 0);
+    wire["workflow"]["steps"][1]["steps"] = json!([]);
+    assert!(Template::from_json_str(&wire.to_string()).is_ok());
+
+    wire["workflow"]["steps"][1]["max_iterations"] = json!(null);
+    let error = Template::from_json_str(&wire.to_string())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("While step repeat") && error.contains("empty body"),
+        "{error}"
+    );
+}
+
+#[test]
 fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
     let base = while_wire(3, 2);
     for (pointer, target) in [
