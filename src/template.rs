@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, error::Error, fmt, fs, io, path::Path};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::{
@@ -345,7 +345,7 @@ enum StepWire {
         left: ExpressionOperandWire,
         operator: ExpressionOperator,
         right: ExpressionOperandWire,
-        max_iterations: Option<usize>,
+        max_iterations: RequiredNullableUsize,
         steps: Vec<StepWire>,
     },
     Assert {
@@ -386,6 +386,21 @@ enum StepWire {
     },
 }
 
+#[derive(Serialize)]
+#[serde(transparent)]
+struct RequiredNullableUsize(Option<usize>);
+
+impl<'de> Deserialize<'de> for RequiredNullableUsize {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let limit = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(Self(limit))
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NumericRangeWire {
@@ -406,7 +421,7 @@ impl StepWire {
                 left: ExpressionOperandWire::from_operand(condition.left()),
                 operator: condition.operator(),
                 right: ExpressionOperandWire::from_operand(condition.right()),
-                max_iterations: *max_iterations,
+                max_iterations: RequiredNullableUsize(*max_iterations),
                 steps: body.iter().map(StepWire::from_step).collect(),
             },
             StepKind::Assert { condition, message } => Self::Assert {
@@ -622,7 +637,7 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                         operator,
                         operand_from_wire(right)?,
                     ),
-                    max_iterations,
+                    max_iterations: max_iterations.0,
                     body: steps
                         .into_iter()
                         .map(step_from_wire)

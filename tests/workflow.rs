@@ -352,6 +352,18 @@ fn while_limits_round_trip_and_validate() {
 }
 
 #[test]
+fn while_template_rejects_missing_max_iterations() {
+    let mut wire = while_wire(1000, 0);
+    wire["workflow"]["steps"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("max_iterations");
+
+    let error = Template::from_json_str(&wire.to_string()).unwrap_err();
+    assert!(error.to_string().contains("max_iterations"));
+}
+
+#[test]
 fn unlimited_while_false_condition_runs_no_iterations() {
     let mut wire = while_wire(1, 0);
     wire["workflow"]["steps"][1]["max_iterations"] = json!(null);

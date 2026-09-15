@@ -44,11 +44,11 @@ For body 包含 Output 時，每個完整成功的 iteration commit 一列 Resul
 
 While 每次 iteration 前都使用目前 runtime variables 與 While 前可用的 root StepOutputs，評估 Assert-style comparison。While 不引入 loop variable；普通變數在各次 iteration 及 While 結束後持續保留。Body StepOutputs 沿用 For 的 lexical scope 與清除規則。若初始條件為 false，While 成功且不執行 body；condition resolution error 或 body failure 會使 aggregate 失敗。成功的 aggregate output 為 JSON null。While rows 沿用 For 的 staged row、progress event 與 successful-run CSV gate；若初始條件為 false，即使 body 有 Output 也不建立 synthetic row。
 
-`max_iterations` 可以是正整數或 `null`。`null` 表示 unlimited iterations：While 會持續執行，直到 condition 變成 false、body 失敗，或使用者要求 graceful Stop。有限上限在完成剛好該數量的成功 body execution 後，While 會再評估一次 condition：若為 false 則成功，若仍為 true 則以 `While reached max_iterations while condition is still true` 失敗。它不是預期 iteration 數量，也不是 progress percentage。Desktop 新增 While 時預設為 1000，並提供明確的 Unlimited 選項；畫面顯示 While identity、從 1 開始的 iteration 資訊與 Running 狀態，不顯示百分比；For 的呈現維持不變。實際 external tool 的限制仍適用。
+`max_iterations` 可以是正整數或 `null`。`null` 表示 unlimited iterations：While 會持續執行，直到 condition 變成 false、body 失敗，或使用者要求 graceful Stop。Unlimited While 至少必須包含一個 body step。有限上限在完成剛好該數量的成功 body execution 後，While 會再評估一次 condition：若為 false 則成功，若仍為 true 則以 `While reached max_iterations while condition is still true` 失敗。它不是預期 iteration 數量，也不是 progress percentage。Desktop 新增 While 時預設為 1000，並提供明確的 Unlimited 選項；畫面顯示 While identity、從 1 開始的 iteration 資訊與 Running 狀態，不顯示百分比；For 的呈現維持不變。實際 external tool 的限制仍適用。
 
-Meters capacity 會依每個 instance 個別計算。有限的 measurement bound 會保留原本直到 shutdown 的額外 sample；在 Unlimited While 內執行量測的 Meter 不傳送 `--max-samples`，改用 external worker 的 unbounded mode 與既有 shutdown lifecycle。若 external tool 版本要求 Simulation 必須提供 `--max-samples`，則無法執行這種 unbounded configuration。
+Meters capacity 會依每個 instance 個別計算。有限的 measurement bound 會保留原本直到 shutdown 的額外 sample。Live 支援 Unlimited While 內的 Meter Measure，不傳 `--max-samples`。Run Simulation 不支援 Unlimited While 內的 Meter Measure；Simulation 請使用有限的 Max iterations。
 
-While 重用既有 comparison operand 與 operator，不新增 equality、boolean tree、巢狀 loop、break、continue 或 timeout semantics。Template schema v1 對 Unlimited 使用明確的 `"max_iterations": null`，有限上限表示如下：
+While 重用既有 comparison operand 與 operator，不新增 equality、boolean tree、巢狀 loop、break、continue 或 timeout semantics。Template schema v1 的 `max_iterations` 欄位必須存在：正整數表示有限上限，明確的 `null` 表示 Unlimited；省略 `max_iterations` 為無效 Template。有限上限表示如下：
 
 ```json
 {
