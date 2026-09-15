@@ -1,5 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod stream_csv;
+
+use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_with_stream};
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -136,6 +140,7 @@ struct StepExecutionDto {
 enum WorkflowRunEventDto {
     StepCompleted { execution: StepExecutionDto },
     ResultRowCommitted { row: ResultRowDto },
+    CsvStream { status: StreamCsvStatus },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -260,6 +265,7 @@ async fn run_workflow_simulation(
     state: tauri::State<'_, ActiveRun>,
     template_json: String,
     on_progress: Channel<WorkflowRunEventDto>,
+    stream_csv: Option<StreamCsvOptions>,
 ) -> Result<WorkflowRunResultDto, String> {
     let control = state.register()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -274,19 +280,30 @@ async fn run_workflow_simulation(
             &application_dir,
             &config,
         )?;
-        let results = run_workflow_with_loop_stop(
+        let results = run_with_stream(
             &template,
-            ExecutionMode::Simulate,
-            &launch_specs,
-            RUN_STARTUP_TIMEOUT,
-            RUN_ACTION_TIMEOUT,
-            RUN_SHUTDOWN_TIMEOUT,
+            stream_csv.as_ref(),
+            &application_dir,
+            |status| {
+                let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
+            },
             |event| {
                 let _ = on_progress.send(workflow_run_event_dto(&event));
             },
-            |step_id| consume_loop_stop(&control, step_id),
-        )
-        .map_err(|error| error.to_string())?;
+            |on_event| {
+                run_workflow_with_loop_stop(
+                    &template,
+                    ExecutionMode::Simulate,
+                    &launch_specs,
+                    RUN_STARTUP_TIMEOUT,
+                    RUN_ACTION_TIMEOUT,
+                    RUN_SHUTDOWN_TIMEOUT,
+                    on_event,
+                    |step_id| consume_loop_stop(&control, step_id),
+                )
+                .map_err(|error| error.to_string())
+            },
+        )?;
 
         Ok(workflow_run_result_dto(&results))
     })
@@ -303,6 +320,7 @@ async fn run_workflow_live(
     template_json: String,
     confirmed_resources: HashMap<String, String>,
     on_progress: Channel<WorkflowRunEventDto>,
+    stream_csv: Option<StreamCsvOptions>,
 ) -> Result<WorkflowRunResultDto, String> {
     let control = state.register()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
@@ -326,19 +344,30 @@ async fn run_workflow_live(
                 authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
             }
         }
-        let results = run_workflow_with_loop_stop(
+        let results = run_with_stream(
             &template,
-            ExecutionMode::Live,
-            &launch_specs,
-            RUN_STARTUP_TIMEOUT,
-            RUN_ACTION_TIMEOUT,
-            RUN_SHUTDOWN_TIMEOUT,
+            stream_csv.as_ref(),
+            &application_dir,
+            |status| {
+                let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
+            },
             |event| {
                 let _ = on_progress.send(workflow_run_event_dto(&event));
             },
-            |step_id| consume_loop_stop(&control, step_id),
-        )
-        .map_err(|error| error.to_string())?;
+            |on_event| {
+                run_workflow_with_loop_stop(
+                    &template,
+                    ExecutionMode::Live,
+                    &launch_specs,
+                    RUN_STARTUP_TIMEOUT,
+                    RUN_ACTION_TIMEOUT,
+                    RUN_SHUTDOWN_TIMEOUT,
+                    on_event,
+                    |step_id| consume_loop_stop(&control, step_id),
+                )
+                .map_err(|error| error.to_string())
+            },
+        )?;
         Ok(workflow_run_result_dto(&results))
     })
     .await
@@ -1394,7 +1423,7 @@ mod tests {
         );
     }
 
-    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+    pub(super) fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
         use std::{
             process,
             sync::atomic::{AtomicU64, Ordering},

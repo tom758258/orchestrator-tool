@@ -876,3 +876,14 @@ body {
   min-width: 0;
   height: 350px;
 }
+
+.csv-stream-controls,
+.csv-stream-feedback {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+
+.csv-stream-controls p,
+.csv-stream-feedback p {
+  margin: 6px 0;
+}

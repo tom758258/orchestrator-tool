@@ -77,7 +77,9 @@ Desktop 現在可使用 Template schema v1 建立、載入、編輯、驗證、�
 
 Input suggestions 遵循 Core scope：loop body Step 可引用 loop 前已存在的 root outputs、同一次 iteration 的先前 body sibling outputs，以及先前普通 variables。For body 可額外使用 enclosing For 的 loop variable；While 沒有 loop variable。Loop 後的 root Step 看不到 body StepOutput，新引入的 For loop variable 也不會洩漏（原先同名 variable 會恢復），但 body 設定的普通 variables 可繼續使用。會產生 row 的 While 可能執行 0 次。
 
-Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。CSV 仍只在成功完整 run 後手動匯出。不支援 pause、hard cancel、streaming CSV 或 nested loop。
+Core `execute_workflow_with_events` 與 `run_workflow_with_events` 可在執行期間通知 caller 已完成的 `StepExecution` 與已 commit 的 `ResultRow`。Desktop Simulation 與 Live 使用 Tauri Channel，逐步更新 Execution Results 與 Output table；每個產生 row 的成功 For 或 While iteration 都在真正 commit 後才通知。Command 失敗時保留 partial progress 供檢視；最終 command result 仍是 authoritative `WorkflowRunResult`。Manual CSV export 必須等 workflow 成功完成後才能使用。Pause、hard cancel 與 nested loop 尚未支援。
+
+Desktop 可選擇在 Simulation 或 Live run 期間串流 CSV，預設為關閉。勾選 **Stream CSV during run** 後，可選擇 output folder（預設為 application directory 下的 `data`）。執行前，Desktop 會使用 UTC+8 建立新檔案 `YYYY-MM-DD-HH-MM-SS_<workflow-name>.csv`，並寫入及 flush header；若檔案已存在，會依序使用 `-2`、`-3` 等尾碼，且不覆寫既有檔案。每個 `ResultRowCommitted` 都會使用與 manual export 相同的欄位與格式寫入並 flush 一筆 record，不輸出 iteration metadata。失敗的 run 會保留已 commit 的 rows；graceful Stop 不需要特殊處理。建立檔案失敗會阻止執行；後續 write／flush 失敗會停止串流並顯示錯誤，但 workflow 仍依正常流程繼續。Manual export 仍要求 authoritative final success 與 committed rows。Folder 選擇與 streaming status 屬於 Desktop session state，不在 Template 內。Flush 不保證斷電時的資料耐久性。
 
 執行中的 For / While 在觀察到 body 進度後，可從 Workflow 控制區或 Output 檢視按 **Stop**。Stop 會等待目前 iteration 完整結束，不會中斷其中的步驟；成功 iteration 照常提交 row，再讓指定迴圈成功退出，並繼續後續 root steps。Powers 清理與 Worker shutdown 照常執行。最終 workflow 成功時，仍可依原流程手動匯出 CSV。Stop 並非 hard cancel。
 

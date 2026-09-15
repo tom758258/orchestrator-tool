@@ -274,6 +274,22 @@ function formatMeasurement(output: unknown): string | null {
   return `${value} ${unit}`
 }
 
+type CsvStreamStatus = {
+  path: string
+  rows: number
+  error: string | null
+  finished: boolean
+  workflow_succeeded: boolean
+}
+type DesktopRunEvent = WorkflowRunEventDto | { type: 'csv-stream'; status: CsvStreamStatus }
+
+function streamingOptions(enabled: boolean, outputFolder: string | null) {
+  if (!enabled) return null
+  const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
+    .slice(0, 19).replace(/[T:]/g, '-')
+  return { output_folder: outputFolder, timestamp }
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -302,6 +318,9 @@ function App() {
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [streamCsv, setStreamCsv] = useState(false)
+  const [outputFolder, setOutputFolder] = useState<string | null>(null)
+  const [csvStreamStatus, setCsvStreamStatus] = useState<CsvStreamStatus | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
@@ -731,7 +750,11 @@ function App() {
     }
   }, [toolConfigBusy])
 
-  const receiveRunProgress = useCallback((event: WorkflowRunEventDto) => {
+  const receiveRunProgress = useCallback((event: DesktopRunEvent) => {
+    if (event.type === 'csv-stream') {
+      setCsvStreamStatus(event.status)
+      return
+    }
     if (event.type === 'step-completed' && !event.execution.for_iteration && !event.execution.while_iteration) {
       setStopRequest(current => current?.loopId === event.execution.step_id ? null : current)
     }
@@ -747,8 +770,9 @@ function App() {
     if (!workflowDraft) {
       return
     }
-    let onProgress: Channel<WorkflowRunEventDto> | undefined
+    let onProgress: Channel<DesktopRunEvent> | undefined
     setStopRequest(null)
+    setCsvStreamStatus(null)
     setRunStatus('running')
     setRunResult(null)
     setRunProgress({ step_executions: [], result_rows: [] })
@@ -789,10 +813,11 @@ function App() {
         setRunProgress(null)
         return
       }
-      onProgress = new Channel<WorkflowRunEventDto>(receiveRunProgress)
+      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
+        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder),
         confirmedResources,
       })
       setRunResult(results)
@@ -804,15 +829,16 @@ function App() {
       setStopRequest(null)
       setRunStatus('idle')
     }
-  }, [resourceDrafts, workflowDraft, receiveRunProgress])
+  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
       return
     }
 
-    const onProgress = new Channel<WorkflowRunEventDto>(receiveRunProgress)
+    const onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
     setStopRequest(null)
+    setCsvStreamStatus(null)
     setRunStatus('running')
     setRunResult(null)
     setRunProgress({ step_executions: [], result_rows: [] })
@@ -821,6 +847,7 @@ function App() {
       const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
+        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder),
       })
       setRunResult(results)
       setRunProgress(null)
@@ -831,10 +858,32 @@ function App() {
       setStopRequest(null)
       setRunStatus('idle')
     }
-  }, [workflowDraft, receiveRunProgress])
+  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
 
   const workflowBusy =
     validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+
+  const csvStreamFeedback = csvStreamStatus && (
+    <div className="csv-stream-feedback" role="status">
+      <strong>Streaming CSV</strong>
+      <p>{csvStreamStatus.path}</p>
+      {csvStreamStatus.error ? <p className="error">CSV streaming failed: {csvStreamStatus.error}</p>
+        : csvStreamStatus.finished && <p>{csvStreamStatus.workflow_succeeded
+          ? 'CSV streamed successfully.'
+          : csvStreamStatus.rows > 0
+            ? 'Workflow failed. Streamed CSV contains committed rows from this partial run.'
+            : 'Workflow failed. No rows were streamed.'}</p>}
+    </div>
+  )
+
+  async function selectOutputFolder() {
+    try {
+      const folder = await open({ directory: true, multiple: false, title: 'Select CSV output folder' })
+      if (typeof folder === 'string') setOutputFolder(folder)
+    } catch (message) {
+      setRunError('Could not select CSV output folder: ' + String(message))
+    }
+  }
 
   const handleExportCsv = useCallback(async () => {
     if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy) {
@@ -1531,6 +1580,22 @@ function App() {
                 </button>
                 {stopControls}
               </div>
+              <div className="csv-stream-controls">
+                <label>
+                  <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
+                    disabled={workflowBusy || !hasWorkflowOutputs}
+                    onChange={event => setStreamCsv(event.target.checked)} />
+                  Stream CSV during run
+                </label>
+                {!hasWorkflowOutputs && <p>Streaming CSV requires at least one Output.</p>}
+                {streamCsv && hasWorkflowOutputs && <div>
+                  <p>Output folder</p>
+                  <span>{outputFolder ?? 'Default (data)'}</span>{' '}
+                  <button className="action-button" type="button" disabled={workflowBusy}
+                    onClick={() => void selectOutputFolder()}>Select Folder</button>
+                </div>}
+              </div>
+              {csvStreamFeedback}
 
               {runStatus === 'running' && <p role="status">{runningText}</p>}
 
@@ -1619,6 +1684,7 @@ function App() {
             <h2>Output</h2>
           </div>
           {stopControls}
+          {csvStreamFeedback}
           {!hasWorkflowOutputs ? (
             <>
               <p>No workflow outputs defined.</p>
