@@ -354,8 +354,10 @@ function App() {
       <button className="action-button" type="button" onClick={() => void requestStop()} disabled={stopping}>
         {stopping ? 'Stopping…' : 'Stop'}
       </button>
-      <p>Stops after the current iteration completes.</p>
     </>}
+  </>
+  const stopFeedback = <>
+    {activeLoop && <p>Stops after the current iteration completes.</p>}
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runResult ?? runProgress
@@ -398,6 +400,7 @@ function App() {
       setDraftCreationError(null)
       setRunResult(null)
       setRunProgress(null)
+      setCsvStreamStatus(null)
       setRunError(null)
     } catch (message) {
       setWorkflowDraft(null)
@@ -405,6 +408,7 @@ function App() {
       setDraftCreationError(String(message))
       setRunResult(null)
       setRunProgress(null)
+      setCsvStreamStatus(null)
       setRunError(null)
     } finally {
       setDraftLoading(false)
@@ -435,6 +439,7 @@ function App() {
       setValidationError(null)
       setRunResult(null)
       setRunProgress(null)
+      setCsvStreamStatus(null)
       setRunError(null)
       setTemplateIoMessage(null)
     },
@@ -447,6 +452,7 @@ function App() {
     setValidationError(null)
     setRunResult(null)
     setRunProgress(null)
+    setCsvStreamStatus(null)
     setRunError(null)
     setTemplateIoMessage(null)
   }, [])
@@ -617,6 +623,7 @@ function App() {
       setValidationError(null)
       setRunResult(null)
       setRunProgress(null)
+      setCsvStreamStatus(null)
       setRunError(null)
       setTemplateIoMessage('Template loaded.')
       setTemplateIoStatus('idle')
@@ -1580,6 +1587,7 @@ function App() {
                 </button>
                 {stopControls}
               </div>
+              {stopFeedback}
               <div className="csv-stream-controls">
                 <label>
                   <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
@@ -1684,6 +1692,7 @@ function App() {
             <h2>Output</h2>
           </div>
           {stopControls}
+          {stopFeedback}
           {csvStreamFeedback}
           {!hasWorkflowOutputs ? (
             <>

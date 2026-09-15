@@ -468,6 +468,11 @@ body {
   margin-top: 16px;
 }
 
+.workflow-actions > .action-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .validation-success {
   margin: 12px 0 0;
   color: #226b2c;

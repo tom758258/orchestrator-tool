@@ -100,6 +100,7 @@ fn prepare(
             )
         })?;
     let writer = ResultRowsCsvWriter::new(file, names).map_err(|error| {
+        let _ = fs::remove_file(&path);
         format!(
             "Could not initialize streaming CSV {}: {error}",
             path.display()
@@ -161,7 +162,9 @@ pub fn run_with_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchestrator_tool::workflow::{ResultRow, WorkflowOutput};
+    use orchestrator_tool::workflow::{
+        ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput,
+    };
     use serde_json::json;
 
     fn template() -> Template {
@@ -257,6 +260,48 @@ mod tests {
         assert!(status.finished);
         assert!(!status.workflow_succeeded);
         assert_eq!(status.rows, 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_workflow_result_preserves_committed_row() {
+        let dir = crate::tests::unique_test_dir("stream-failed-result");
+        let path = dir.join("data/2026-09-15-11-22-33_test-name.csv");
+        let mut statuses = Vec::new();
+        let committed = ResultRow::new(vec![WorkflowOutput::new("value".into(), json!(1))], None);
+        let failed = StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Failed {
+                    message: "workflow step failed".into(),
+                },
+            ),
+            None,
+        );
+        let result = run_with_stream(
+            &template(),
+            Some(&options()),
+            &dir,
+            |status| statuses.push(status),
+            |_| {},
+            |emit| {
+                assert_eq!(fs::read_to_string(&path).unwrap(), "value\n");
+                emit(WorkflowRunEvent::ResultRowCommitted(committed.clone()));
+                Ok(WorkflowRunResult::new(
+                    vec![failed.clone()],
+                    vec![committed.clone()],
+                ))
+            },
+        )
+        .unwrap();
+        assert_eq!(result.step_executions(), &[failed]);
+        assert_eq!(result.result_rows(), &[committed]);
+        assert_eq!(fs::read_to_string(path).unwrap(), "value\n1\n");
+        let status = statuses.last().unwrap();
+        assert!(status.finished);
+        assert!(!status.workflow_succeeded);
+        assert_eq!(status.rows, 1);
+        assert_eq!(status.error, None);
         fs::remove_dir_all(dir).unwrap();
     }
 
