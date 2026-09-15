@@ -159,6 +159,8 @@ impl StepOutputReference {
 /// A workflow input value and its source.
 #[derive(Clone, Debug, PartialEq)]
 pub enum InputValue {
+    ElapsedTime,
+    Timestamp,
     Literal(Value),
     Variable(VariableId),
     StepOutput(StepOutputReference),

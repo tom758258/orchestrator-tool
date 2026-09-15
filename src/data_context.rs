@@ -1,18 +1,35 @@
-use std::{collections::HashMap, error::Error, fmt};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt,
+    time::{Duration, Instant, SystemTime},
+};
 
+use chrono::{DateTime, FixedOffset, SecondsFormat, Utc};
 use serde_json::{Number, Value};
 
 use crate::workflow::{ExpressionOperand, ExpressionOperator, InputValue, StepId, VariableId};
 
 /// Runtime values for one workflow run, never persisted in templates or config.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DataContext {
+    execution_start: Instant,
     variables: HashMap<VariableId, Value>,
     step_outputs: HashMap<StepId, Value>,
 }
 
+impl Default for DataContext {
+    fn default() -> Self {
+        Self {
+            execution_start: Instant::now(),
+            variables: HashMap::new(),
+            step_outputs: HashMap::new(),
+        }
+    }
+}
+
 impl DataContext {
-    /// Creates an empty runtime context.
+    /// Creates an empty runtime context and starts the workflow execution timer.
     pub fn new() -> Self {
         Self::default()
     }
@@ -52,6 +69,8 @@ impl DataContext {
     /// Expressions require JSON numbers and use f64 arithmetic and comparisons.
     pub fn resolve(&self, input: &InputValue) -> Result<Value, ResolveError> {
         match input {
+            InputValue::ElapsedTime => Ok(elapsed_value(self.execution_start.elapsed())),
+            InputValue::Timestamp => Ok(timestamp_value(SystemTime::now().into())),
             InputValue::Expression(expression) => {
                 let left = self.resolve_expression_operand(expression.left())?;
                 let right = self.resolve_expression_operand(expression.right())?;
@@ -107,6 +126,19 @@ impl DataContext {
     }
 }
 
+fn elapsed_value(duration: Duration) -> Value {
+    // Truncate to whole milliseconds before converting to seconds.
+    Value::from(duration.as_millis() as f64 / 1000.0)
+}
+
+fn timestamp_value(now: DateTime<Utc>) -> Value {
+    let offset = FixedOffset::east_opt(8 * 60 * 60).unwrap();
+    Value::String(
+        now.with_timezone(&offset)
+            .to_rfc3339_opts(SecondsFormat::Millis, false),
+    )
+}
+
 /// An input could not be resolved from runtime data or evaluated numerically.
 #[derive(Debug)]
 pub enum ResolveError {
@@ -155,6 +187,63 @@ mod tests {
         Expression, ExpressionOperand, ExpressionOperator, InputValue, StepId, StepOutputReference,
         VariableId,
     };
+
+    #[test]
+    fn elapsed_seconds_truncate_to_milliseconds() {
+        for (micros, seconds) in [
+            (0, 0.0),
+            (999, 0.0),
+            (1000, 0.001),
+            (1_234_567, 1.234),
+            (1_200_999, 1.2),
+        ] {
+            assert_eq!(
+                super::elapsed_value(std::time::Duration::from_micros(micros)),
+                json!(seconds)
+            );
+        }
+    }
+
+    #[test]
+    fn timestamp_uses_fixed_offset_and_three_millisecond_digits() {
+        for millis in ["007", "010", "100"] {
+            let utc = format!("2026-09-15T04:34:56.{millis}999Z").parse().unwrap();
+            assert_eq!(
+                super::timestamp_value(utc),
+                json!(format!("2026-09-15T12:34:56.{millis}+08:00"))
+            );
+        }
+        let utc = "2026-09-15T20:34:56.000Z".parse().unwrap();
+        assert_eq!(
+            super::timestamp_value(utc),
+            json!("2026-09-16T04:34:56.000+08:00")
+        );
+    }
+
+    #[test]
+    fn runtime_time_sources_resolve_from_execution_context() {
+        let context = DataContext {
+            execution_start: std::time::Instant::now() - std::time::Duration::from_secs(2),
+            ..DataContext::new()
+        };
+        let before = super::elapsed_value(context.execution_start.elapsed())
+            .as_f64()
+            .unwrap();
+        let elapsed = context
+            .resolve(&InputValue::ElapsedTime)
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        let after = super::elapsed_value(context.execution_start.elapsed())
+            .as_f64()
+            .unwrap();
+        assert!((before..=after).contains(&elapsed));
+        let timestamp = context.resolve(&InputValue::Timestamp).unwrap();
+        let timestamp = timestamp.as_str().unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).unwrap();
+        assert_eq!(parsed.offset().local_minus_utc(), 8 * 60 * 60);
+        assert_eq!(timestamp.len(), 29);
+    }
 
     #[test]
     fn arithmetic_expressions_resolve_to_numbers() {

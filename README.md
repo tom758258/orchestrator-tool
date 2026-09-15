@@ -91,6 +91,13 @@ CSV export uses `serialize_result_rows_csv`: the first row's Output names form t
 
 Output steps contain a result `name` and an input `value`. Names must not be blank and must be unique within the workflow (case-sensitive, without normalization). Output steps without a name load using the step ID as the name; saving writes the name explicitly. Core `Workflow::project_outputs(&[StepResult])` returns ordered `WorkflowOutput` values with `name()` and `value()` accessors, collecting only Output steps in workflow order. A missing, failed, or cancelled Output result rejects the projection. Projection does not persist results or serialize CSV.
 
+Standard Dataflow InputValue sources include `literal`, `variable`, `step-output`, `expression`, and two runtime time sources in schema version 1:
+
+- `{"source":"elapsed-time"}`: monotonic seconds since Workflow execution started, truncated to millisecond resolution. Timing starts with the Executor's runtime context, after worker preparation and CSV creation.
+- `{"source":"timestamp"}`: wall-clock time in fixed UTC+08:00 ISO-8601 format, such as `2026-09-15T12:34:56.007+08:00`, with exactly three millisecond digits.
+
+Both are ordinary InputValues sampled when resolved, available in Set Variable, Output, and ToolAction bindings. Only explicit Outputs become ResultRow/CSV columns. Elapsed time is numeric and can use existing numeric charts; Timestamp is a string and has no datetime chart axis. ExpressionOperand does not support either time source.
+
 Template schema version 1 persists structured Expression inputs in Set Variable, Output, and ToolAction bindings using the existing Core domain. For example, `x * 2` is stored as:
 
 ```json

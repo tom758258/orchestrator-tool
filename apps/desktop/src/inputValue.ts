@@ -21,7 +21,7 @@ export const EXPRESSION_OPERATORS = {
   ...COMPARISON_OPERATORS,
 } as const
 
-export type InputValueWire = ExpressionOperandWire | {
+export type InputValueWire = ExpressionOperandWire | { source: 'elapsed-time' } | { source: 'timestamp' } | {
   source: 'expression'
   left: ExpressionOperandWire
   operator: keyof typeof EXPRESSION_OPERATORS

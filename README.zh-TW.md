@@ -93,6 +93,13 @@ Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空
 
 Core 的 `Workflow::project_outputs(&[StepResult])` 只收集 Output Steps，依 Workflow 中的 Step 順序回傳有序的 `WorkflowOutput`，並由 `WorkflowOutput` 提供 `name()` 與 `value()` 存取方法。若任何 Output Step 的結果缺少（missing）、失敗（failed）或取消（cancelled），則整個 projection 失敗。Projection 本身不負責保存結果，也不負責 CSV serialization。
 
+Standard Dataflow 的 InputValue source 包含 `literal`、`variable`、`step-output`、`expression`，以及 schema version 1 中的兩種 runtime time source：
+
+- `{"source":"elapsed-time"}`：從 Workflow execution 開始後計算的 monotonic 秒數，截斷至毫秒精度。計時從 Executor 的 runtime context 開始，也就是 worker preparation 與 CSV 建立完成之後。
+- `{"source":"timestamp"}`：固定使用 UTC+08:00 的 ISO-8601 wall-clock timestamp，例如 `2026-09-15T12:34:56.007+08:00`，固定包含三位毫秒數字。
+
+兩者都是在 resolve 時取值的普通 InputValue，可用於 Set Variable、Output 與 ToolAction binding。只有明確建立的 Output 才會成為 ResultRow／CSV column。Elapsed time 是 numeric value，可使用既有 numeric chart；Timestamp 是 string，不提供 datetime chart axis。ExpressionOperand 尚未支援這兩種 time source。
+
 Template schema version 1 使用既有 Core domain，保存 Set Variable、Output 與 ToolAction binding 中的結構化 Expression 輸入。例如，`x * 2` 儲存為：
 
 ```json

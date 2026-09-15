@@ -17,6 +17,10 @@ type SequenceEditorProps = {
 
 function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
   switch (value.source) {
+    case 'elapsed-time':
+      return 'Elapsed time'
+    case 'timestamp':
+      return 'Timestamp'
     case 'expression':
       return expressionSummary(value)
     case 'literal':

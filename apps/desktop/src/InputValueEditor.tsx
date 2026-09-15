@@ -13,6 +13,8 @@ type ReferenceOptions = {
 }
 
 const SOURCE_HELP = {
+  'elapsed-time': 'Elapsed time since Workflow execution started, in seconds.',
+  timestamp: 'Current UTC+08:00 timestamp with millisecond precision.',
   literal: 'Enter a value directly.',
   variable: 'Use an available variable or the enclosing For loop variable.',
   'step-output': 'Use data produced by an earlier step.',
@@ -189,9 +191,13 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
         <select value={value.source} disabled={references.disabled}
           onChange={(event) => onChange(event.target.value === 'expression'
             ? { source: 'expression', left: { source: 'literal', value: 0 }, operator: 'add', right: { source: 'literal', value: 0 } }
-            : defaultOperand(event.target.value, references, literalDefault))}>
+            : event.target.value === 'elapsed-time' || event.target.value === 'timestamp'
+              ? { source: event.target.value }
+              : defaultOperand(event.target.value, references, literalDefault))}>
           <SourceOptions {...references} />
           <option value="expression">Calculation</option>
+          <option value="elapsed-time">Elapsed time</option>
+          <option value="timestamp">Timestamp</option>
         </select>
       </label>
       <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
@@ -211,6 +217,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
           {operandEditor('right')}
         </div>
       ) : (
+        value.source !== 'elapsed-time' && value.source !== 'timestamp' &&
         <OperandEditor {...references} value={value} literalLabel={literalLabel} onChange={onChange} />
       )}
     </>

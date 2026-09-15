@@ -466,6 +466,8 @@ impl StepWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
 enum InputValueWire {
+    ElapsedTime,
+    Timestamp,
     Literal {
         value: Value,
     },
@@ -534,6 +536,8 @@ fn operand_from_wire(wire: ExpressionOperandWire) -> Result<ExpressionOperand, T
 impl InputValueWire {
     fn from_input(input: &InputValue) -> Self {
         match input {
+            InputValue::ElapsedTime => Self::ElapsedTime,
+            InputValue::Timestamp => Self::Timestamp,
             InputValue::Expression(expression) => Self::Expression {
                 left: ExpressionOperandWire::from_operand(expression.left()),
                 operator: expression.operator(),
@@ -555,6 +559,8 @@ impl InputValueWire {
 
 fn input_from_wire(wire: InputValueWire) -> Result<InputValue, TemplateError> {
     match wire {
+        InputValueWire::ElapsedTime => Ok(InputValue::ElapsedTime),
+        InputValueWire::Timestamp => Ok(InputValue::Timestamp),
         InputValueWire::Expression {
             left,
             operator,
@@ -1146,6 +1152,34 @@ mod tests {
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(restored, template);
         assert!(restored.workflow().steps().is_empty());
+    }
+
+    #[test]
+    fn time_input_sources_round_trip_in_schema_one() {
+        for (source, expected) in [
+            ("elapsed-time", InputValue::ElapsedTime),
+            ("timestamp", InputValue::Timestamp),
+        ] {
+            let wire = json!({
+                "schema_version": 1, "name": "Time inputs", "tool_instances": [],
+                "workflow": { "steps": [
+                    { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
+                    { "type": "output", "id": "out", "name": "time", "value": { "source": source } }
+                ] }
+            });
+            let template = Template::from_json_str(&wire.to_string()).unwrap();
+            for step in template.workflow().steps() {
+                match step.kind() {
+                    StepKind::SetVariable { value, .. } | StepKind::Output { value, .. } => {
+                        assert_eq!(value, &expected)
+                    }
+                    _ => panic!("unexpected step"),
+                }
+            }
+            let saved = template.to_json_string().unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&saved).unwrap(), wire);
+            assert_eq!(Template::from_json_str(&saved).unwrap(), template);
+        }
     }
 
     #[test]
