@@ -345,7 +345,7 @@ enum StepWire {
         left: ExpressionOperandWire,
         operator: ExpressionOperator,
         right: ExpressionOperandWire,
-        max_iterations: usize,
+        max_iterations: Option<usize>,
         steps: Vec<StepWire>,
     },
     Assert {

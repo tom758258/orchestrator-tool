@@ -214,7 +214,7 @@ pub fn execute_workflow_with_loop_stop(
                             };
                         }
                     }
-                    if iteration_index >= *max_iterations {
+                    if max_iterations.is_some_and(|limit| iteration_index >= limit) {
                         return StepOutcome::Failed {
                             message: "While reached max_iterations while condition is still true"
                                 .to_owned(),

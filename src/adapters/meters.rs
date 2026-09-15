@@ -168,7 +168,7 @@ pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
 /// Builds a simulate Worker launch specification from a validated setup.
 pub fn simulate_worker_launch_spec(
     executable: impl AsRef<Path>,
-    max_samples: usize,
+    max_samples: Option<usize>,
     setup: &MetersSetup,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
@@ -180,15 +180,21 @@ pub fn simulate_worker_launch_spec(
             OsString::from("--simulate"),
             OsString::from("--trigger-mode"),
             OsString::from("software"),
-            OsString::from("--max-samples"),
-            OsString::from(max_samples.to_string()),
+        ]
+        .into_iter()
+        .chain(max_samples.into_iter().flat_map(|limit| {
+            [
+                OsString::from("--max-samples"),
+                OsString::from(limit.to_string()),
+            ]
+        }))
+        .chain([
             OsString::from("--status-format"),
             OsString::from("jsonl"),
             OsString::from("--sw-trigger-port"),
             OsString::from("0"),
             OsString::from("--no-csv"),
-        ]
-        .into_iter()
+        ])
         .chain(setup_arguments(setup)),
     )
 }
@@ -197,7 +203,7 @@ pub fn simulate_worker_launch_spec(
 pub fn live_worker_launch_spec(
     executable: impl AsRef<Path>,
     resource: &str,
-    max_samples: usize,
+    max_samples: Option<usize>,
     setup: &MetersSetup,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
@@ -208,15 +214,21 @@ pub fn live_worker_launch_spec(
             OsString::from(resource),
             OsString::from("--trigger-mode"),
             OsString::from("software"),
-            OsString::from("--max-samples"),
-            OsString::from(max_samples.to_string()),
+        ]
+        .into_iter()
+        .chain(max_samples.into_iter().flat_map(|limit| {
+            [
+                OsString::from("--max-samples"),
+                OsString::from(limit.to_string()),
+            ]
+        }))
+        .chain([
             OsString::from("--status-format"),
             OsString::from("jsonl"),
             OsString::from("--sw-trigger-port"),
             OsString::from("0"),
             OsString::from("--no-csv"),
-        ]
-        .into_iter()
+        ])
         .chain(setup_arguments(setup)),
     )
 }
@@ -237,7 +249,7 @@ pub fn run_worker_smoke(
         dcv_input_impedance: None,
         current_terminal: None,
     };
-    let spec = simulate_worker_launch_spec(executable, 2, &setup);
+    let spec = simulate_worker_launch_spec(executable, Some(2), &setup);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
     let operation = run_smoke_operation(session.ready(), operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);
@@ -825,7 +837,7 @@ mod tests {
             dcv_input_impedance: None,
             current_terminal: None,
         };
-        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, 2, &setup);
+        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, Some(2), &setup);
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(
             spec.arguments(),
@@ -955,7 +967,7 @@ mod tests {
             dcv_input_impedance: None,
             current_terminal: None,
         };
-        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), 2, &setup);
+        let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(2), &setup);
 
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(

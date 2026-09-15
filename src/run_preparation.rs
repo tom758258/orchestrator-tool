@@ -107,35 +107,53 @@ pub fn prepare_worker_launch_specs(
         fn measure_count(
             steps: &[crate::workflow::Step],
             target: &ToolInstanceId,
-        ) -> Result<usize, String> {
-            steps.iter().try_fold(0usize, |total, step| {
+        ) -> Result<Option<usize>, String> {
+            steps.iter().try_fold(Some(0usize), |total, step| {
                 let count = match step.kind() {
                     StepKind::ToolAction {
                         target: step_target,
                         action,
                         ..
-                    } if step_target == target && action.as_str() == "measure" => 1,
-                    StepKind::For { range, body, .. } => range
-                        .iteration_count()
-                        .checked_mul(measure_count(body, target)?)
-                        .ok_or_else(|| "meter sample count overflow".to_owned())?,
+                    } if step_target == target && action.as_str() == "measure" => Some(1),
+                    StepKind::For { range, body, .. } => measure_count(body, target)?
+                        .map(|count| {
+                            range
+                                .iteration_count()
+                                .checked_mul(count)
+                                .ok_or_else(|| "meter sample count overflow".to_owned())
+                        })
+                        .transpose()?,
                     StepKind::While {
                         max_iterations,
                         body,
                         ..
-                    } => max_iterations
-                        .checked_mul(measure_count(body, target)?)
-                        .ok_or_else(|| "meter sample count overflow".to_owned())?,
-                    _ => 0,
+                    } => match (max_iterations, measure_count(body, target)?) {
+                        (_, Some(0)) => Some(0),
+                        (Some(limit), Some(count)) => Some(
+                            limit
+                                .checked_mul(count)
+                                .ok_or_else(|| "meter sample count overflow".to_owned())?,
+                        ),
+                        _ => None,
+                    },
+                    _ => Some(0),
                 };
-                total
-                    .checked_add(count)
-                    .ok_or_else(|| "meter sample count overflow".to_owned())
+                match (total, count) {
+                    (Some(total), Some(count)) => total
+                        .checked_add(count)
+                        .map(Some)
+                        .ok_or_else(|| "meter sample count overflow".to_owned()),
+                    _ => Ok(None),
+                }
             })
         }
         let meters_max_samples = measure_count(template.workflow().steps(), &instance.id)?
-            .checked_add(1)
-            .ok_or_else(|| "meter sample reserve count overflow".to_owned())?;
+            .map(|count| {
+                count
+                    .checked_add(1)
+                    .ok_or_else(|| "meter sample reserve count overflow".to_owned())
+            })
+            .transpose()?;
         let definition = definitions
             .iter()
             .find(|definition| definition.id() == tool)
@@ -431,6 +449,23 @@ mod tests {
             assert_ne!(
                 specs[&ToolInstanceId::new("meters-1").unwrap()].arguments(),
                 specs[&ToolInstanceId::new("meters-2").unwrap()].arguments()
+            );
+        }
+        let mut unlimited_wire: serde_json::Value =
+            serde_json::from_str(&multi.to_json_string().unwrap()).unwrap();
+        let mut unlimited_loop = while_wire["workflow"]["steps"][0].clone();
+        unlimited_loop["max_iterations"] = json!(null);
+        unlimited_wire["workflow"]["steps"][0] = unlimited_loop;
+        let unlimited = Template::from_json_str(&unlimited_wire.to_string()).unwrap();
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let specs = prepare_worker_launch_specs(&unlimited, mode, &dir, &config).unwrap();
+            let unbounded = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+            assert!(!unbounded.iter().any(|arg| arg == "--max-samples"));
+            let bounded = specs[&ToolInstanceId::new("meters-2").unwrap()].arguments();
+            assert!(
+                bounded
+                    .windows(2)
+                    .any(|pair| pair == ["--max-samples", "2"])
             );
         }
         fs::remove_dir_all(dir).unwrap();

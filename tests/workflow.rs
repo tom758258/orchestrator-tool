@@ -334,6 +334,83 @@ fn execute_while_wire(
 }
 
 #[test]
+fn while_limits_round_trip_and_validate() {
+    for limit in [json!(1000), json!(1), json!(null)] {
+        let mut wire = while_wire(1000, 0);
+        wire["workflow"]["steps"][1]["max_iterations"] = limit.clone();
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let serialized = template.to_json_string().unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(saved["workflow"]["steps"][1]["max_iterations"], limit);
+        assert!(
+            saved["workflow"]["steps"][1]
+                .get("max_iterations")
+                .is_some()
+        );
+        assert_eq!(Template::from_json_str(&serialized).unwrap(), template);
+    }
+}
+
+#[test]
+fn unlimited_while_false_condition_runs_no_iterations() {
+    let mut wire = while_wire(1, 0);
+    wire["workflow"]["steps"][1]["max_iterations"] = json!(null);
+    let (run, _) = execute_while_wire(&wire);
+    assert_eq!(run.step_executions().len(), 3);
+    assert!(run.result_rows().is_empty());
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|execution| matches!(execution.outcome(), StepOutcome::Succeeded { .. }))
+    );
+}
+
+#[test]
+fn unlimited_while_stops_after_two_committed_iterations() {
+    use orchestrator_tool::workflow::WorkflowRunEvent;
+    use std::cell::Cell;
+    let mut wire = while_wire(1, 1);
+    wire["workflow"]["steps"][1]["max_iterations"] = json!(null);
+    wire["workflow"]["steps"][1]["left"] = json!({ "source": "literal", "value": 0 });
+    let template = Template::from_json_str(&wire.to_string()).unwrap();
+    let commits = Cell::new(0);
+    let mut stop_checks = 0;
+    let run = orchestrator_tool::executor::execute_workflow_with_loop_stop(
+        &template,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+        |event| {
+            if matches!(event, WorkflowRunEvent::ResultRowCommitted(_)) {
+                commits.set(commits.get() + 1);
+            }
+        },
+        |id| {
+            assert_eq!(id.as_str(), "repeat");
+            stop_checks += 1;
+            assert_eq!(commits.get(), stop_checks);
+            stop_checks == 2
+        },
+    )
+    .unwrap();
+    assert_eq!(stop_checks, 2);
+    assert_eq!(run.result_rows().len(), 2);
+    for (index, row) in run.result_rows().iter().enumerate() {
+        assert_eq!(row.while_iteration().unwrap().iteration_index(), index);
+        assert_eq!(row.outputs()[0].value(), &json!((index + 1) as f64));
+    }
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|execution| matches!(execution.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    assert_eq!(
+        run.step_executions().last().unwrap().step_id().as_str(),
+        "after"
+    );
+}
+
+#[test]
 fn while_commits_successful_iterations_and_orders_progress() {
     use orchestrator_tool::workflow::WorkflowRunEvent;
     let wire = while_wire(10, 3);
@@ -432,6 +509,7 @@ fn while_precondition_and_guard_allow_exactly_the_limit() {
 fn while_failure_discards_only_the_current_staged_row() {
     use orchestrator_tool::workflow::WorkflowRunEvent;
     let mut wire = while_wire(10, 3);
+    wire["workflow"]["steps"][1]["max_iterations"] = json!(null);
     wire["workflow"]["steps"][1]["steps"]
         .as_array_mut()
         .unwrap()

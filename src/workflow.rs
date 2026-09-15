@@ -387,7 +387,7 @@ pub enum StepKind {
     },
     While {
         condition: Expression,
-        max_iterations: usize,
+        max_iterations: Option<usize>,
         body: Vec<Step>,
     },
     For {
@@ -488,7 +488,7 @@ impl Workflow {
                         if !condition.operator().is_comparison() {
                             return Err(WorkflowError::InvalidWhileOperator(step.id().clone()));
                         }
-                        if *max_iterations == 0 {
+                        if *max_iterations == Some(0) {
                             return Err(WorkflowError::InvalidWhileMaxIterations(
                                 step.id().clone(),
                             ));

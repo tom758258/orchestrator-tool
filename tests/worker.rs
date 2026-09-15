@@ -1279,7 +1279,7 @@ fn three_meter_measurements_shutdown_normally() {
     .unwrap();
     let spec = orchestrator_tool::adapters::meters::simulate_worker_launch_spec(
         env::current_exe().unwrap(),
-        4,
+        Some(4),
         &MetersSetup {
             measurement: MetersMeasurement::VoltageDc,
             range_mode: RangeMode::Auto,

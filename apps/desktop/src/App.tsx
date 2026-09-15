@@ -1464,14 +1464,29 @@ function App() {
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'assert' ? { ...step, message: event.target.value } : step)} />
                           </label>}
-                          {selectedStep.type === 'while' && <label className="step-property-field">
-                            <span className="step-property-label">Max iterations</span>
-                            <input type="number" min="1" step="1" value={selectedStep.max_iterations} disabled={workflowBusy}
+                          {selectedStep.type === 'while' && <div className="step-property-field">
+                            <span className="step-property-label">Iteration limit</span>
+                            <select aria-label="Iteration limit" value={selectedStep.max_iterations === null ? 'unlimited' : 'limited'} disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
-                                step.type === 'while' ? { ...step, max_iterations: Number(event.target.value) } : step)} />
-                            {(!Number.isSafeInteger(selectedStep.max_iterations) || selectedStep.max_iterations <= 0) &&
-                              <span className="error">Max iterations must be a positive integer.</span>}
-                          </label>}
+                                step.type === 'while' ? { ...step, max_iterations: event.target.value === 'unlimited' ? null : 1000 } : step)}>
+                              <option value="limited">Max iterations</option>
+                              <option value="unlimited">Unlimited</option>
+                            </select>
+                            {selectedStep.max_iterations === null ? (
+                              <span>Runs until the condition becomes false or the loop is stopped.</span>
+                            ) : <>
+                              <input type="number" min="1" max={Number.MAX_SAFE_INTEGER} step="1"
+                                aria-label="Max iterations" value={selectedStep.max_iterations} disabled={workflowBusy}
+                                onChange={event => {
+                                  const limit = event.currentTarget.valueAsNumber
+                                  if (!Number.isSafeInteger(limit) || limit <= 0) return
+                                  updateStep(selectedStep.id, step =>
+                                    step.type === 'while' ? { ...step, max_iterations: limit } : step)
+                                }} />
+                              {(!Number.isSafeInteger(selectedStep.max_iterations) || selectedStep.max_iterations <= 0) &&
+                                <span className="error">Max iterations must be a positive safe integer.</span>}
+                            </>}
+                          </div>}
                         </div>
                       )}
 

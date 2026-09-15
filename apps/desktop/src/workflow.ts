@@ -52,7 +52,7 @@ export type WhileStep = {
   left: ExpressionOperandWire
   operator: ComparisonOperator
   right: ExpressionOperandWire
-  max_iterations: number
+  max_iterations: number | null
   steps: NonLoopWorkflowStep[]
 }
 export type WorkflowStep = NonLoopWorkflowStep | ForStep | WhileStep
