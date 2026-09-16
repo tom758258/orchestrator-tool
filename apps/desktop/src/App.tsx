@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
@@ -313,6 +313,8 @@ function App() {
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
+  const liveRunInFlight = useRef(false)
+  const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
@@ -774,16 +776,13 @@ function App() {
   }, [])
 
   const runLive = useCallback(async () => {
-    if (!workflowDraft) {
+    if (!workflowDraft || runStatus === 'running' || liveRunInFlight.current) {
       return
     }
+    liveRunInFlight.current = true
+    setLiveConfirmationPending(true)
+    let started = false
     let onProgress: Channel<DesktopRunEvent> | undefined
-    setStopRequest(null)
-    setCsvStreamStatus(null)
-    setRunStatus('running')
-    setRunResult(null)
-    setRunProgress({ step_executions: [], result_rows: [] })
-    setRunError(null)
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
@@ -817,9 +816,16 @@ function App() {
         { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
       )
       if (!approved) {
-        setRunProgress(null)
         return
       }
+      started = true
+      setLiveConfirmationPending(false)
+      setStopRequest(null)
+      setCsvStreamStatus(null)
+      setRunStatus('running')
+      setRunResult(null)
+      setRunProgress({ step_executions: [], result_rows: [] })
+      setRunError(null)
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
@@ -833,10 +839,14 @@ function App() {
       setRunError(String(message))
     } finally {
       if (onProgress) onProgress.onmessage = () => {}
-      setStopRequest(null)
-      setRunStatus('idle')
+      if (started) {
+        setStopRequest(null)
+        setRunStatus('idle')
+      }
+      liveRunInFlight.current = false
+      setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
+  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
@@ -868,7 +878,7 @@ function App() {
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
 
   const workflowBusy =
-    validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+    liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
