@@ -90,6 +90,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
   })
 
   function addChart() {
+    if (saving.current) return
     if (!displayedPanels || displayedPanels.length >= MAX_CHARTS) return
     const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
       ?? numericNames[0]
@@ -102,7 +103,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     <div className="section-header">
       <h3>Charts</h3>
       <button className="action-button" type="button" onClick={addChart}
-        disabled={displayedPanels.length >= MAX_CHARTS}>+ Add chart</button>
+        disabled={savingId !== null || displayedPanels.length >= MAX_CHARTS}>+ Add chart</button>
     </div>
     {displayedPanels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
     <p>Select multiple numeric Outputs to compare them on the same chart.</p>
@@ -116,8 +117,9 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
               <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
               {displayedPanels.length > 1 && <button className="action-button" type="button"
-                aria-label={`Remove Chart ${index + 1}`}
+                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null}
                 onClick={() => {
+                  if (saving.current) return
                   if (feedback?.id === panel.id) setFeedback(null)
                   onPanelsChange(displayedPanels.filter(item => item.id !== panel.id))
                 }}>Remove</button>}
