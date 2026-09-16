@@ -3,6 +3,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
+import type { ChartPanel } from './chartPanels'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -291,6 +292,7 @@ function streamingOptions(enabled: boolean, outputFolder: string | null) {
 }
 
 function App() {
+  const [chartPanels, setChartPanels] = useState<ChartPanel[] | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
@@ -1735,7 +1737,7 @@ function App() {
               {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {displayedRun.result_rows.length === 0 && <p>No committed output rows.</p>}
-              <ResultChart rows={displayedRun.result_rows} outputNames={outputSteps.map(step => step.name)} />
+              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={displayedRun.result_rows} outputNames={outputSteps.map(step => step.name)} />
               {displayedOutputRows.length > 0 && (
                 <section className="output-data" aria-labelledby="output-data-title">
                   <h3 id="output-data-title">Output Data</h3>

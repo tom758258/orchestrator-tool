@@ -1,19 +1,26 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
+import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
+import { nextChartPanelId, type ChartPanel } from './chartPanels'
+import { chartPng } from './chartPng'
 import type { ResultRowDto } from './workflow'
 
 const MAX_CHARTS = 8
 const SERIES_COLORS = ['#2563eb', '#dc2626', '#15803d', '#9333ea', '#b45309', '#0891b2']
-type ChartPanel = { id: number; outputs: string[] }
 
-export default function ResultChart({ rows, outputNames }: {
+export default function ResultChart({ rows, outputNames, panels, onPanelsChange }: {
+  panels: ChartPanel[] | null
+  onPanelsChange: (panels: ChartPanel[]) => void
   rows: ResultRowDto[]
   outputNames: string[]
 }) {
-  const [panels, setPanels] = useState<ChartPanel[] | null>(null)
-  const nextPanelId = useRef(1)
+  const plots = useRef(new Map<number, HTMLDivElement>())
+  const saving = useRef(false)
+  const [savingId, setSavingId] = useState<number | null>(null)
+  const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
   const numericNames = rows.length === 0 ? [] : outputNames.filter(name =>
     rows.every(row => {
       const value = row.outputs.find(output => output.name === name)?.value
@@ -27,13 +34,36 @@ export default function ResultChart({ rows, outputNames }: {
   if (hasIteration) {
     if (panels === null && numericNames.length > 0) {
       displayedPanels = [{ id: 0, outputs: [numericNames[0]] }]
-      setPanels(displayedPanels)
     } else if (panels?.some(panel => panel.outputs.some(name => !numericNames.includes(name)))) {
       displayedPanels = panels.map(panel => ({
         ...panel,
         outputs: panel.outputs.filter(name => numericNames.includes(name)),
       }))
-      setPanels(displayedPanels)
+    }
+  }
+
+  useEffect(() => {
+    if (displayedPanels !== panels && displayedPanels !== null) onPanelsChange(displayedPanels)
+  }, [displayedPanels, panels, onPanelsChange])
+
+  async function saveImage(id: number, index: number) {
+    if (saving.current) return
+    saving.current = true
+    setSavingId(id)
+    try {
+      const destinationPath = await save({
+        defaultPath: 'Chart-' + (index + 1) + '.png',
+        filters: [{ name: 'PNG', extensions: ['png'] }],
+      })
+      if (!destinationPath) return
+      const pngBytes = await chartPng(plots.current.get(id))
+      await invoke('save_chart_png', { destinationPath, pngBytes: Array.from(pngBytes) })
+      setFeedback({ id, message: 'Chart image saved successfully.' })
+    } catch (error) {
+      setFeedback({ id, message: 'Could not save chart image: ' + String(error) })
+    } finally {
+      saving.current = false
+      setSavingId(null)
     }
   }
 
@@ -62,7 +92,7 @@ export default function ResultChart({ rows, outputNames }: {
     if (!displayedPanels || displayedPanels.length >= MAX_CHARTS) return
     const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
       ?? numericNames[0]
-    setPanels([...displayedPanels, { id: nextPanelId.current++, outputs: [name] }])
+    onPanelsChange([...displayedPanels, { id: nextChartPanelId(displayedPanels), outputs: [name] }])
   }
 
   return <section className="result-chart" aria-label="Charts">
@@ -79,23 +109,27 @@ export default function ResultChart({ rows, outputNames }: {
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
+            <button className="action-button" type="button" disabled={savingId !== null}
+              onClick={() => void saveImage(panel.id, index)}>Save image</button>
             {displayedPanels.length > 1 && <button className="action-button" type="button"
               aria-label={`Remove Chart ${index + 1}`}
-              onClick={() => setPanels(displayedPanels.filter(item => item.id !== panel.id))}>Remove</button>}
+              onClick={() => onPanelsChange(displayedPanels.filter(item => item.id !== panel.id))}>Remove</button>}
           </div>
+          {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
           <fieldset className="result-chart-outputs">
             <legend>Outputs</legend>
             {numericNames.map(name => <label key={name}>
               <input type="checkbox" checked={panel.outputs.includes(name)} onChange={event => {
                 const outputs = event.target.checked
                   ? [...panel.outputs, name] : panel.outputs.filter(output => output !== name)
-                setPanels(displayedPanels.map(item => item.id === panel.id ? { ...item, outputs } : item))
+                onPanelsChange(displayedPanels.map(item => item.id === panel.id ? { ...item, outputs } : item))
               }} />
               {name}
             </label>)}
           </fieldset>
           {selectedSeries.length === 0 ? <p>Select at least one Output to display this chart.</p> : (
             <div className="result-chart-plot" role="img"
+              ref={element => { if (element) plots.current.set(panel.id, element); else plots.current.delete(panel.id) }}
               aria-label={`Line chart: ${selectedSeries.map(item => item.name).join(', ')} versus Iteration, ${points.length} points per series`}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={points} margin={{ top: 16, right: 24, bottom: 24, left: 0 }}>

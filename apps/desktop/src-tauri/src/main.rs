@@ -726,6 +726,12 @@ fn validate_completed_successful_run(
 }
 
 #[tauri::command]
+fn save_chart_png(destination_path: String, png_bytes: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&destination_path, png_bytes)
+        .map_err(|error| format!("could not write PNG to {destination_path:?}: {error}"))
+}
+
+#[tauri::command]
 fn export_workflow_csv(
     template_json: String,
     run_result: WorkflowRunResultDto,
@@ -802,7 +808,8 @@ fn main() {
             validate_workflow_draft,
             save_workflow_template,
             load_workflow_template,
-            export_workflow_csv
+            export_workflow_csv,
+            save_chart_png
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -825,6 +832,16 @@ mod tests {
         },
     };
     use serde_json::json;
+
+    #[test]
+    fn save_chart_png_preserves_binary_bytes() {
+        let dir = unique_test_dir("orchestrator-chart-png");
+        let path = dir.join("chart.png");
+        let bytes = vec![0, 137, 80, 78, 71, 13, 10, 26, 255];
+        super::save_chart_png(path.display().to_string(), bytes.clone()).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn active_run_stop_is_targeted_and_cleared_between_runs() {
