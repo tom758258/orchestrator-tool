@@ -6,7 +6,7 @@ use std::{
 
 use orchestrator_tool::{
     template::Template,
-    workflow::{WorkflowRunEvent, WorkflowRunResult},
+    workflow::{OutputPage, WorkflowRunEvent, WorkflowRunResult},
     workflow_csv::ResultRowsCsvWriter,
 };
 use serde::{Deserialize, Serialize};
@@ -55,6 +55,51 @@ fn create_unique_csv(folder: &Path, stem: &str) -> io::Result<(PathBuf, File)> {
     unreachable!()
 }
 
+fn prepare_all_pages_with(
+    folder: &Path,
+    stem: &str,
+    pages: &[OutputPage],
+    mut create_writer: impl FnMut(&Path, &OutputPage) -> Result<PageWriter, String>,
+) -> Result<(PathBuf, Vec<PageWriter>), String> {
+    fs::create_dir_all(folder).map_err(|error| error.to_string())?;
+    let mut suffix = 1;
+    let path = loop {
+        let candidate = folder.join(if suffix == 1 {
+            stem.to_owned()
+        } else {
+            format!("{stem}-{suffix}")
+        });
+        match fs::create_dir(&candidate) {
+            Ok(()) => break candidate,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => suffix += 1,
+            Err(error) => return Err(error.to_string()),
+        }
+    };
+    let mut writers = Vec::new();
+    for page in pages {
+        match create_writer(&path, page) {
+            Ok(writer) => writers.push(writer),
+            Err(error) => {
+                drop(writers);
+                let _ = fs::remove_dir_all(&path);
+                return Err(error);
+            }
+        }
+    }
+    Ok((path, writers))
+}
+
+fn create_page_writer(path: &Path, page: &OutputPage) -> Result<PageWriter, String> {
+    let file = File::create(path.join(format!("{}.csv", page.name())))
+        .map_err(|error| error.to_string())?;
+    let writer = ResultRowsCsvWriter::new(file, page.headers().to_vec())
+        .map_err(|error| error.to_string())?;
+    Ok(PageWriter {
+        page: page.name().to_owned(),
+        writer,
+    })
+}
+
 fn prepare(
     template: &Template,
     options: &StreamCsvOptions,
@@ -97,34 +142,12 @@ fn prepare(
     let folder = application_dir.join(options.output_folder.as_deref().unwrap_or("data"));
     let folder = std::path::absolute(&folder).map_err(|error| error.to_string())?;
     let stem = format!("{timestamp}_{name}");
-    let mut writers = Vec::new();
+    let mut writers;
     let path;
     if options.all_pages {
-        fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-        let mut suffix = 1;
-        path = loop {
-            let candidate = folder.join(if suffix == 1 {
-                stem.clone()
-            } else {
-                format!("{stem}-{suffix}")
-            });
-            match fs::create_dir(&candidate) {
-                Ok(()) => break candidate,
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => suffix += 1,
-                Err(e) => return Err(e.to_string()),
-            }
-        };
-        for page in pages {
-            let file = File::create(path.join(format!("{}.csv", page.name())))
-                .map_err(|e| e.to_string())?;
-            let writer = ResultRowsCsvWriter::new(file, page.headers().to_vec())
-                .map_err(|e| e.to_string())?;
-            writers.push(PageWriter {
-                page: page.name().to_owned(),
-                writer,
-            });
-        }
+        (path, writers) = prepare_all_pages_with(&folder, &stem, pages, create_page_writer)?;
     } else {
+        writers = Vec::new();
         let page = pages.iter().find(|page| page.name() == selected).unwrap();
         let (file_path, file) = if let Some(destination) = &options.destination_path {
             let destination = PathBuf::from(destination);
@@ -337,6 +360,50 @@ mod tests {
                 .contains("Could not create streaming CSV")
         );
         assert!(!started);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn all_pages_prepare_failure_removes_partial_run_folder_before_execution() {
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version": 1, "name": "pages", "tool_instances": [],
+                "workflow": { "steps": [
+                    { "type": "output", "id": "one", "name": "one", "page": "One",
+                      "value": { "source": "literal", "value": 1 } },
+                    { "type": "output", "id": "two", "name": "two", "page": "Two",
+                      "value": { "source": "literal", "value": 2 } }
+                ] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let dir = crate::tests::unique_test_dir("stream-all-prepare-failure");
+        let folder = dir.join("data");
+        let run_folder = folder.join("run");
+        let mut started = false;
+        let result = prepare_all_pages_with(
+            &folder,
+            "run",
+            template.workflow().output_pages(),
+            |path, page| {
+                if page.name() == "Two" {
+                    return Err("injected header initialization failure".to_owned());
+                }
+                create_page_writer(path, page)
+            },
+        )
+        .map(|prepared| {
+            drop(prepared);
+            started = true;
+        });
+
+        assert_eq!(
+            result.unwrap_err(),
+            "injected header initialization failure"
+        );
+        assert!(!started);
+        assert!(!run_folder.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -26,7 +26,6 @@ use orchestrator_tool::{
         ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, WhileIteration,
         Workflow, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
     },
-    workflow_csv::serialize_result_rows_csv,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -726,9 +725,7 @@ fn validate_completed_successful_run(
         })
     });
     if !all_succeeded || !all_root_steps_completed {
-        return Err(
-            "workflow run did not complete successfully; CSV export is unavailable".to_owned(),
-        );
+        return Err("workflow run did not complete successfully; export is unavailable".to_owned());
     }
     Ok(())
 }
@@ -737,32 +734,6 @@ fn validate_completed_successful_run(
 fn save_chart_png(destination_path: String, png_bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(&destination_path, png_bytes)
         .map_err(|error| format!("could not write PNG to {destination_path:?}: {error}"))
-}
-
-#[tauri::command]
-fn export_workflow_csv(
-    template_json: String,
-    run_result: WorkflowRunResultDto,
-    destination_path: String,
-) -> Result<(), String> {
-    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-    let results = run_result
-        .step_executions
-        .into_iter()
-        .map(StepExecution::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-    validate_completed_successful_run(template.workflow(), &results)?;
-    let rows = run_result
-        .result_rows
-        .into_iter()
-        .map(ResultRow::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-    let csv = serialize_result_rows_csv(&rows).map_err(|error| error.to_string())?;
-    if csv.is_empty() {
-        return Err("workflow has no outputs available for export".to_owned());
-    }
-    std::fs::write(&destination_path, csv)
-        .map_err(|error| format!("could not write CSV to {destination_path:?}: {error}"))
 }
 
 #[tauri::command]
@@ -882,7 +853,6 @@ fn main() {
             validate_workflow_draft,
             save_workflow_template,
             load_workflow_template,
-            export_workflow_csv,
             export_workflow_pages,
             save_chart_png
         ])
@@ -1109,127 +1079,6 @@ mod tests {
     }
 
     #[test]
-    fn export_workflow_csv_writes_completed_results() {
-        let template_json = json!({
-            "schema_version": 1,
-            "tool_instances": [],
-            "name": "CSV export",
-            "workflow": { "steps": [
-                { "type": "output", "id": "voltage", "name": "voltage",
-                  "value": { "source": "literal", "value": 0 } },
-                { "type": "output", "id": "passed", "name": "passed",
-                  "value": { "source": "literal", "value": false } }
-            ] }
-        })
-        .to_string();
-        let results = serde_json::from_value(json!({
-            "step_executions": [
-                { "step_id": "voltage", "status": "succeeded", "output": 5, "for_iteration": null },
-                { "step_id": "passed", "status": "succeeded", "output": true, "for_iteration": null }
-            ],
-            "result_rows": [{ "outputs": [
-                { "name": "voltage", "value": 5 }, { "name": "passed", "value": true }
-            ], "for_iteration": null }]
-        }))
-        .unwrap();
-        let dir = unique_test_dir("orchestrator-desktop-csv-success");
-        let path = dir.join("results.csv");
-
-        super::export_workflow_csv(template_json, results, path.display().to_string()).unwrap();
-
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "voltage,passed\n5,true\n"
-        );
-        std::fs::remove_file(path).unwrap();
-        std::fs::remove_dir(dir).unwrap();
-    }
-
-    #[test]
-    fn export_workflow_csv_rejects_failed_and_incomplete_runs_without_creating_file() {
-        let template_json = json!({
-            "schema_version": 1,
-            "tool_instances": [],
-            "name": "Unsuccessful CSV export",
-            "workflow": { "steps": [
-                { "type": "output", "id": "result", "name": "result",
-                  "value": { "source": "literal", "value": 5 } },
-                { "type": "assert", "id": "check",
-                  "left": { "source": "literal", "value": 1 },
-                  "operator": "less-than",
-                  "right": { "source": "literal", "value": 0 },
-                  "message": "Check failed." }
-            ] }
-        })
-        .to_string();
-        let dir = unique_test_dir("orchestrator-desktop-csv-unsuccessful");
-
-        for (case, results) in [
-            (
-                "failed",
-                json!([
-                    { "step_id": "result", "status": "succeeded", "output": 5 },
-                    { "step_id": "check", "status": "failed", "message": "Check failed." }
-                ]),
-            ),
-            (
-                "incomplete",
-                json!([
-                    { "step_id": "result", "status": "succeeded", "output": 5 }
-                ]),
-            ),
-        ] {
-            let path = dir.join(format!("{case}.csv"));
-            assert!(!path.exists());
-            let error = super::export_workflow_csv(
-                template_json.clone(),
-                serde_json::from_value(json!({
-                    "step_executions": results,
-                    "result_rows": [{ "outputs": [{ "name": "result", "value": 5 }], "for_iteration": null }]
-                })).unwrap(),
-                path.display().to_string(),
-            )
-            .unwrap_err();
-
-            assert_eq!(
-                error,
-                "workflow run did not complete successfully; CSV export is unavailable"
-            );
-            assert!(!path.exists());
-        }
-
-        std::fs::remove_dir(dir).unwrap();
-    }
-
-    #[test]
-    fn export_workflow_csv_without_outputs_does_not_create_file() {
-        let template_json = json!({
-            "schema_version": 1,
-            "tool_instances": [],
-            "name": "No outputs",
-            "workflow": { "steps": [
-                { "type": "wait", "id": "wait-1", "duration_ms": 0 }
-            ] }
-        })
-        .to_string();
-        let results = serde_json::from_value(json!({
-            "step_executions": [{ "step_id": "wait-1", "status": "succeeded", "output": null, "for_iteration": null }],
-            "result_rows": [{ "outputs": [], "for_iteration": null }]
-        }))
-        .unwrap();
-        let dir = unique_test_dir("orchestrator-desktop-csv-no-outputs");
-        let path = dir.join("results.csv");
-        assert!(!path.exists());
-
-        let error = super::export_workflow_csv(template_json, results, path.display().to_string())
-            .unwrap_err();
-
-        assert_eq!(error, "workflow has no outputs available for export");
-        assert!(!path.exists());
-        std::fs::remove_dir(dir).unwrap();
-    }
-
-    #[test]
     fn progress_event_dto_preserves_tags_and_occurrence_metadata() {
         let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
         let execution = StepExecution::new(
@@ -1335,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn export_for_result_rows_requires_successful_completion() {
+    fn page_export_for_result_rows_requires_successful_completion() {
         let template_json = json!({
             "schema_version": 1, "tool_instances": [], "name": "For CSV",
             "workflow": { "steps": [{
@@ -1358,10 +1207,12 @@ mod tests {
         .unwrap();
         let dir = unique_test_dir("orchestrator-desktop-for-csv");
         let path = dir.join("results.csv");
-        super::export_workflow_csv(
+        super::export_workflow_pages(
             template_json.clone(),
             super::workflow_run_result_dto(&run),
             path.display().to_string(),
+            Some("Results".to_owned()),
+            "csv".to_owned(),
         )
         .unwrap();
         assert_eq!(
@@ -1381,9 +1232,14 @@ mod tests {
                 aggregate.status = status.to_owned();
                 aggregate.message = Some("Run stopped.".to_owned());
             }
-            let error =
-                super::export_workflow_csv(template_json.clone(), dto, path.display().to_string())
-                    .unwrap_err();
+            let error = super::export_workflow_pages(
+                template_json.clone(),
+                dto,
+                path.display().to_string(),
+                Some("Results".to_owned()),
+                "csv".to_owned(),
+            )
+            .unwrap_err();
             assert!(error.contains("did not complete successfully"));
             assert!(!path.exists());
         }
@@ -1451,10 +1307,12 @@ mod tests {
         assert!(ResultRow::try_from(ambiguous).is_err());
         let dir = unique_test_dir("orchestrator-desktop-while-csv");
         let path = dir.join("results.csv");
-        super::export_workflow_csv(
+        super::export_workflow_pages(
             template_json.clone(),
             super::workflow_run_result_dto(&run),
             path.display().to_string(),
+            Some("Results".to_owned()),
+            "csv".to_owned(),
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n0\n");
@@ -1473,9 +1331,15 @@ mod tests {
                     Some("While reached max_iterations while condition is still true".to_owned());
             }
             assert!(
-                super::export_workflow_csv(template_json.clone(), dto, path.display().to_string())
-                    .unwrap_err()
-                    .contains("did not complete successfully")
+                super::export_workflow_pages(
+                    template_json.clone(),
+                    dto,
+                    path.display().to_string(),
+                    Some("Results".to_owned()),
+                    "csv".to_owned(),
+                )
+                .unwrap_err()
+                .contains("did not complete successfully")
             );
             assert!(!path.exists());
         }

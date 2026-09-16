@@ -147,6 +147,23 @@ export function outputPages(steps: readonly WorkflowStep[]) {
   return pages
 }
 
+export function compatibleOutputPages(steps: readonly WorkflowStep[], outputId: string): string[] {
+  const scope = loopPath(steps, outputId).map(loop => loop.id)
+  return outputPages(steps)
+    .filter(page => page.scope.length === scope.length && page.scope.every((id, index) => id === scope[index]))
+    .map(page => page.name)
+}
+
+export function hasExportableRows(
+  rows: readonly ResultRowDto[],
+  currentPage: string | undefined,
+  allPages: boolean,
+): boolean {
+  return allPages
+    ? rows.length > 0
+    : currentPage !== undefined && rows.some(row => (row.page ?? 'Results') === currentPage)
+}
+
 export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] {
   return allWorkflowSteps(steps).filter((step): step is OutputStep => step.type === 'output')
 }

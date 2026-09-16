@@ -9,7 +9,7 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey, compatibleOutputPages, hasExportableRows } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
@@ -345,7 +345,9 @@ function App() {
   const currentOutputs = currentPage?.outputs ?? []
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
-  const hasCommittedOutputRows = (runResult?.result_rows.length ?? 0) > 0
+  const hasExportableOutputRows = hasExportableRows(
+    runResult?.result_rows ?? [], currentPage?.name, exportAllPages,
+  )
   const latestExecution = runProgress?.step_executions.at(-1)
   const activeLoop = runStatus !== 'running' ? null : latestExecution?.for_iteration
     ? { kind: 'For', id: latestExecution.for_iteration.for_step_id, index: latestExecution.for_iteration.iteration_index }
@@ -914,8 +916,8 @@ function App() {
     }
   }
 
-  const handleExportCsv = useCallback(async () => {
-    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy) {
+  const handleExport = useCallback(async () => {
+    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy) {
       return
     }
 
@@ -942,7 +944,7 @@ function App() {
     } finally {
       setExporting(false)
     }
-  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasCommittedOutputRows, workflowBusy, exportAllPages, exportFormat, currentPage?.name])
+  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, currentPage?.name])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -1299,31 +1301,62 @@ function App() {
               </dl>
 
               <div className="workflow-builder">
-                <aside className="step-palette" aria-labelledby="step-palette-title">
-                  <h3 id="step-palette-title">Steps</h3>
-                  <p>Adding to: {addingToLoop ? `${addingToLoop.type === 'for' ? 'For' : 'While'} "${addingToLoop.id}" body` : 'Root workflow'}</p>
-                  {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
-                    onClick={() => setSelectedStepId(null)}>Add to root</button>}
-                  <div className="step-palette-items">
-                    {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
-                      <section key={category}>
-                        <h4>{category}</h4>
-                        <div className="step-palette-items">
-                          {STEP_PRESETS.filter(preset => preset.category === category).map((preset) => (
-                            <button
-                              key={preset.value}
-                              className="action-button step-palette-button"
-                              type="button"
-                              onClick={() => addStep(preset)}
-                              disabled={workflowBusy || (Boolean(addingToLoop) && loopPath(workflowDraft.workflow.steps, addingToLoop!.id).length >= 4 && (preset.value === 'for' || preset.value === 'while'))}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
+                <aside className="workflow-sidebar">
+                  <section className="step-palette" aria-labelledby="step-palette-title">
+                    <h3 id="step-palette-title">Steps</h3>
+                    <p>Adding to: {addingToLoop ? `${addingToLoop.type === 'for' ? 'For' : 'While'} "${addingToLoop.id}" body` : 'Root workflow'}</p>
+                    {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
+                      onClick={() => setSelectedStepId(null)}>Add to root</button>}
+                    <div className="step-palette-items">
+                      {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
+                        <section key={category}>
+                          <h4>{category}</h4>
+                          <div className="step-palette-items">
+                            {STEP_PRESETS.filter(preset => preset.category === category).map((preset) => (
+                              <button
+                                key={preset.value}
+                                className="action-button step-palette-button"
+                                type="button"
+                                onClick={() => addStep(preset)}
+                                disabled={workflowBusy || (Boolean(addingToLoop) && loopPath(workflowDraft.workflow.steps, addingToLoop!.id).length >= 4 && (preset.value === 'for' || preset.value === 'while'))}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </section>
+                  <section className="streaming-panel" aria-labelledby="streaming-panel-title">
+                    <h3 id="streaming-panel-title">Streaming</h3>
+                    <label className="streaming-toggle">
+                      <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
+                        disabled={workflowBusy || !hasWorkflowOutputs}
+                        onChange={event => setStreamCsv(event.target.checked)} />
+                      Stream CSV during run
+                    </label>
+                    {!hasWorkflowOutputs && <p>Streaming CSV requires at least one Output.</p>}
+                    {streamCsv && hasWorkflowOutputs && <div className="streaming-fields">
+                      <select aria-label="CSV streaming mode" disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
+                        onChange={event => setStreamAllPages(event.target.value === 'all')}>
+                        <option value="selected">Selected Page</option><option value="all">All Pages</option>
+                      </select>
+                      {!streamAllPages && <select aria-label="Streaming Page" value={streamingPage} disabled={workflowBusy}
+                        onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
+                      <span className="streaming-destination">{streamAllPages ? outputFolder ?? 'Select a folder' : streamDestination ?? 'Select a new CSV file'}</span>
+                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
+                        if (streamAllPages) void selectOutputFolder()
+                        else {
+                          setChoosingStreamDestination(true)
+                          void save({ filters: [{ name: 'CSV', extensions: ['csv'] }] }).then(path => {
+                            if (path) setStreamDestination(path)
+                          }).catch(error => setRunError(String(error))).finally(() => setChoosingStreamDestination(false))
+                        }
+                      }}>{streamAllPages ? 'Select Folder' : 'Select CSV'}</button>
+                    </div>}
+                    {csvStreamFeedback}
+                  </section>
                 </aside>
 
                 <SequenceEditor
@@ -1433,15 +1466,20 @@ function App() {
                           <label className="step-property-field">
                             <span className="step-property-label">Output Page</span>
                             <input value={selectedStep.page ?? 'Results'} list="compatible-pages" disabled={workflowBusy}
+                              aria-describedby="output-page-help"
                               onChange={event => updateStep(selectedStep.id, step => step.type === 'output' ? { ...step, page: event.target.value } : step)} />
-                            <datalist id="compatible-pages">{pages.filter(page => JSON.stringify(page.scope) === JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id)))
-                              .map(page => <option key={page.name} value={page.name} />)}</datalist>
+                            <datalist id="compatible-pages">{compatibleOutputPages(workflowDraft.workflow.steps, selectedStep.id)
+                              .map(page => <option key={page} value={page} />)}</datalist>
                           </label>
-                          <p>Use an existing Page in this loop scope, or enter a new name (1-31 filename-safe characters).</p>
+                          <p id="output-page-help" className="value-source-help">
+                            A Page is an independent tabular dataset. Only Pages in the same loop scope can be shared.
+                            Choose an existing compatible Page, or enter a new name to create another Page in this scope
+                            (1-31 filename-safe characters).
+                          </p>
                           {pages.some(page => page.name === (selectedStep.page ?? 'Results') && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
                             <p className="error">This Page belongs to a different loop path. Choose another Page.</p>}
                           <p id="output-name-help" className="value-source-help">
-                            Used as the column name in Output results and CSV export.
+                            Editable column name used in Output Data, CSV/XLSX export, and Charts.
                           </p>
                           {outputNameError && (
                             <p id="output-name-error" className="step-property-error">{outputNameError}</p>
@@ -1641,35 +1679,6 @@ function App() {
                 {stopControls}
               </div>
               {stopFeedback}
-              <div className="csv-stream-controls">
-                <label>
-                  <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
-                    disabled={workflowBusy || !hasWorkflowOutputs}
-                    onChange={event => setStreamCsv(event.target.checked)} />
-                  Stream CSV during run
-                </label>
-                {!hasWorkflowOutputs && <p>Streaming CSV requires at least one Output.</p>}
-                {streamCsv && hasWorkflowOutputs && <div>
-                  <select aria-label="CSV streaming mode" disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
-                    onChange={event => setStreamAllPages(event.target.value === 'all')}>
-                    <option value="selected">Selected Page - one CSV</option><option value="all">All Pages - CSV files</option>
-                  </select>
-                  {!streamAllPages && <select aria-label="Streaming Page" value={streamingPage} disabled={workflowBusy}
-                    onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
-                  <span>{streamAllPages ? outputFolder ?? 'Select a folder' : streamDestination ?? 'Select a new CSV file'}</span>{' '}
-                  <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
-                    if (streamAllPages) void selectOutputFolder()
-                    else {
-                      setChoosingStreamDestination(true)
-                      void save({ filters: [{ name: 'CSV', extensions: ['csv'] }] }).then(path => {
-                        if (path) setStreamDestination(path)
-                      }).catch(error => setRunError(String(error))).finally(() => setChoosingStreamDestination(false))
-                    }
-                  }}>{streamAllPages ? 'Select Folder' : 'Select CSV'}</button>
-                </div>}
-              </div>
-              {csvStreamFeedback}
-
               {runStatus === 'running' && <p role="status">{runningText}</p>}
 
               {validationStatus === 'valid' && (
@@ -1760,11 +1769,14 @@ function App() {
             <label>Page <select value={currentPage.name} disabled={chartSaving} onChange={event => setSelectedPage(event.target.value)}>
               {pages.map(page => <option key={page.name}>{page.name}</option>)}
             </select></label>
-            <label>Page name <input value={currentPage.name} disabled={workflowBusy} onChange={event => {
-              const name = event.target.value
-              updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && (step.page ?? 'Results') === currentPage.name ? { ...step, page: name } : step))
-              setSelectedPage(name)
-            }} /></label>
+            <div className="page-name-editor">
+              <label>Page name <input value={currentPage.name} disabled={workflowBusy} onChange={event => {
+                const name = event.target.value
+                updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && (step.page ?? 'Results') === currentPage.name ? { ...step, page: name } : step))
+                setSelectedPage(name)
+              }} /></label>
+              <p>Rename this Page. All Outputs assigned to this Page are updated together.</p>
+            </div>
           </div>}
           {stopControls}
           {stopFeedback}
@@ -1827,8 +1839,8 @@ function App() {
           <button
             className="action-button"
             type="button"
-            onClick={() => void handleExportCsv()}
-            disabled={!hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy}
+            onClick={() => void handleExport()}
+            disabled={!hasWorkflowOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy}
           >
             {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
           </button>
