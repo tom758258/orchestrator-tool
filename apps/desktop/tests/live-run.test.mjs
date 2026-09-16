@@ -24,7 +24,15 @@ function harness({ streamingError = null } = {}) {
   const execution = deferred()
   const previous = {
     runStatus: 'idle',
-    runResult: { step_executions: [{ step_id: 'previous' }], result_rows: [{ value: 42 }] },
+    runResult: {
+      step_executions: [{ step_id: 'previous' }],
+      result_rows: [{
+        page: 'Results',
+        outputs: [{ name: 'value', value: 42 }],
+        for_iteration: null,
+        while_iteration: null,
+      }],
+    },
     runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
     csvStreamStatus: { path: 'previous.csv', rows: 1, finished: true },
     stopRequest: { loopId: 'previous-loop' },
@@ -104,7 +112,15 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.equal(h.state.stopRequest, null)
   assert.equal(h.state.runProgress.step_executions.length, 0)
   assert.equal(h.state.runProgress.result_rows.length, 0)
-  const result = { step_executions: [], result_rows: [{ value: 99 }] }
+  const result = {
+    step_executions: [],
+    result_rows: [{
+      page: 'Results',
+      outputs: [{ name: 'value', value: 99 }],
+      for_iteration: null,
+      while_iteration: null,
+    }],
+  }
   h.execution.resolve(result)
   await pending
   assert.equal(h.state.runResult, result)

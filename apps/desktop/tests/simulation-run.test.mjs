@@ -16,7 +16,15 @@ const code = stripTypeScriptTypes('(' + callback + ')')
 test('Invalid Streaming config preserves the previous Last Run and does not execute', async () => {
   const previous = {
     runStatus: 'idle',
-    runResult: { step_executions: [{ step_id: 'previous' }], result_rows: [{ value: 42 }] },
+    runResult: {
+      step_executions: [{ step_id: 'previous' }],
+      result_rows: [{
+        page: 'Results',
+        outputs: [{ name: 'value', value: 42 }],
+        for_iteration: null,
+        while_iteration: null,
+      }],
+    },
     runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
     csvStreamStatus: { path: 'previous.csv', rows: 1, finished: true },
     stopRequest: { loopId: 'previous-loop' },
