@@ -469,7 +469,7 @@ mod tests {
     fn graceful_stop_run(is_while: bool, fail_body: bool) {
         use std::cell::RefCell;
         let body = json!([
-            { "type": "output", "id": "out", "name": "value",
+            { "type": "output", "id": "out", "name": "value", "page": "Results",
               "value": { "source": "literal", "value": 42 } },
             { "type": "assert", "id": "body-last",
               "left": { "source": "literal", "value": if fail_body { 2 } else { 0 } },
@@ -732,9 +732,9 @@ mod tests {
                         "operator": "greater-than-or-equal",
                         "right": { "source": "variable", "variable": "x" }, "message": "Count must persist." }
                   ] },
-                { "type": "output", "id": "out-x", "name": "x",
+                { "type": "output", "id": "out-x", "name": "x", "page": "Results",
                   "value": { "source": "variable", "variable": "x" } },
-                { "type": "output", "id": "out-count", "name": "count",
+                { "type": "output", "id": "out-count", "name": "count", "page": "Results",
                   "value": { "source": "variable", "variable": "count" } },
                 { "type": "set-variable", "id": "read-for", "variable": "aggregate",
                   "value": { "source": "step-output", "step_id": "sweep", "pointer": "" } }
@@ -779,11 +779,11 @@ mod tests {
                   "value": { "source": "literal", "value": 42 } },
                 { "type": "for", "id": "sweep", "variable": "voltage",
                   "range": { "start": "0", "stop": "0.3", "step": "0.1" }, "steps": [
-                    { "type": "output", "id": "voltage-out", "name": "voltage",
+                    { "type": "output", "id": "voltage-out", "name": "voltage", "page": "Results",
                       "value": { "source": "variable", "variable": "voltage" } },
-                    { "type": "output", "id": "sibling-out", "name": "sibling",
+                    { "type": "output", "id": "sibling-out", "name": "sibling", "page": "Results",
                       "value": { "source": "step-output", "step_id": "voltage-out", "pointer": "" } },
-                    { "type": "output", "id": "root-out", "name": "baseline",
+                    { "type": "output", "id": "root-out", "name": "baseline", "page": "Results",
                       "value": { "source": "step-output", "step_id": "before", "pointer": "" } }
                   ] }
             ] }
@@ -827,7 +827,7 @@ mod tests {
                 "workflow": { "steps": [
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
-                        { "type": "output", "id": "out-x", "name": "x",
+                        { "type": "output", "id": "out-x", "name": "x", "page": "Results",
                           "value": { "source": "variable", "variable": "x" } },
                         { "type": "assert", "id": "check-x",
                             "left": { "source": "variable", "variable": "x" },

@@ -25,7 +25,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
                     "value": { "source": "literal", "value": 3 }
                 },
                 {
-                    "type": "output", "id": "measurement",
+                    "type": "output", "id": "measurement", "name": "measurement", "page": "Results",
                     "value": { "source": "literal", "value": { "value": 5 } }
                 },
                 {
@@ -38,7 +38,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
                     }
                 },
                 {
-                    "type": "output", "id": "output-passed",
+                    "type": "output", "id": "output-passed", "name": "output-passed", "page": "Results",
                     "value": { "source": "variable", "variable": "passed" }
                 }
             ] }
@@ -305,7 +305,7 @@ fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
                 { "type": "set-variable", "id": "increment", "variable": "x", "value": {
                     "source": "expression", "left": { "source": "variable", "variable": "x" },
                     "operator": "add", "right": { "source": "literal", "value": 1 } } },
-                { "type": "output", "id": "out", "name": "x",
+                { "type": "output", "id": "out", "name": "x", "page": "Results",
                   "value": { "source": "step-output", "step_id": "increment", "pointer": "" } }
               ] },
             { "type": "set-variable", "id": "after", "variable": "final",
@@ -626,7 +626,7 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
     assert!(Template::from_json_str(&wire.to_string()).is_ok());
     let mut root_output = base.clone();
     root_output["workflow"]["steps"].as_array_mut().unwrap().push(json!({
-        "type": "output", "id": "root-output", "name": "root", "value": { "source": "literal", "value": 1 }
+        "type": "output", "id": "root-output", "name": "root", "page": "Results", "value": { "source": "literal", "value": 1 }
     }));
     assert!(
         Template::from_json_str(&root_output.to_string())
@@ -638,7 +638,7 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
     two_scopes["workflow"]["steps"].as_array_mut().unwrap().push(json!({
         "type": "for", "id": "sweep", "variable": "i",
         "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [
-            { "type": "output", "id": "out-i", "name": "i", "value": { "source": "variable", "variable": "i" } }
+            { "type": "output", "id": "out-i", "name": "i", "page": "Results", "value": { "source": "variable", "variable": "i" } }
         ]
     }));
     assert!(

@@ -19,7 +19,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function harness() {
+function harness({ streamingError = null } = {}) {
   const dialog = deferred()
   const execution = deferred()
   const previous = {
@@ -42,7 +42,11 @@ function harness() {
     streamCsv: true, hasWorkflowOutputs: true, outputFolder: 'data',
     streamingPage: 'Results', streamAllPages: false, streamDestination: 'results.csv',
     setTools() {}, receiveRunProgress() {},
-    streamingOptions() { streamOptions++; return { output_folder: 'data' } },
+    streamingOptions() {
+      streamOptions++
+      if (streamingError) throw new Error(streamingError)
+      return { output_folder: 'data' }
+    },
     Channel: class { constructor() { channels++ } },
     confirm() { confirmations++; return dialog.promise },
     async invoke(command, args) {
@@ -109,6 +113,20 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.equal(h.context.liveRunInFlight.current, false)
   await h.run()
   assert.equal(h.counts().confirmations, 2)
+})
+
+test('Invalid Streaming config after confirmation preserves the previous Last Run', async () => {
+  const h = harness({ streamingError: 'Select a destination CSV before running.' })
+  const pending = h.run()
+  await flush()
+  h.dialog.resolve(true)
+  await pending
+  for (const key of ['runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+    assert.equal(h.state[key], h.previous[key])
+  }
+  assert.equal(h.state.runStatus, 'idle')
+  assert.equal(h.calls.some(call => call.command === 'run_workflow_live'), false)
+  assert.deepEqual(h.counts(), { confirmations: 1, channels: 0, streamOptions: 1 })
 })
 
 test('Confirmation and execution errors release the guard; running blocks Live', async () => {

@@ -17,7 +17,7 @@ type OutputStep = {
   type: 'output'
   id: string
   name: string
-  page?: string
+  page: string
   value: InputValueWire
 }
 
@@ -139,7 +139,7 @@ export function inputScope(steps: readonly WorkflowStep[], stepId: string | null
 export function outputPages(steps: readonly WorkflowStep[]) {
   const pages: { name: string; scope: string[]; outputs: OutputStep[] }[] = []
   for (const output of outputDefinitions(steps)) {
-    const name = output.page ?? 'Results'
+    const name = output.page
     const page = pages.find(page => page.name === name)
     if (page) page.outputs.push(output)
     else pages.push({ name, scope: loopPath(steps, output.id).map(loop => loop.id), outputs: [output] })
@@ -161,7 +161,7 @@ export function hasExportableRows(
 ): boolean {
   return allPages
     ? rows.length > 0
-    : currentPage !== undefined && rows.some(row => (row.page ?? 'Results') === currentPage)
+    : currentPage !== undefined && rows.some(row => row.page === currentPage)
 }
 
 export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] {

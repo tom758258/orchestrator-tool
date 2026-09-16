@@ -337,10 +337,6 @@ impl WorkflowWire {
     }
 }
 
-fn default_output_page() -> String {
-    "Results".to_owned()
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
@@ -366,9 +362,7 @@ enum StepWire {
     },
     Output {
         id: String,
-        #[serde(default)]
-        name: Option<String>,
-        #[serde(default = "default_output_page")]
+        name: String,
         page: String,
         value: InputValueWire,
     },
@@ -443,7 +437,7 @@ impl StepWire {
                 value: InputValueWire::from_input(value),
             },
             StepKind::Output { name, value } => Self::Output {
-                name: Some(name.clone()),
+                name: name.clone(),
                 page: step.output_page().to_owned(),
                 id: step.id().as_str().to_owned(),
                 value: InputValueWire::from_input(value),
@@ -699,7 +693,6 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
             page,
             value,
         } => {
-            let name = name.unwrap_or_else(|| id.clone());
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
             Ok(Step::new(
@@ -1207,6 +1200,33 @@ mod tests {
             let saved = template.to_json_string().unwrap();
             assert_eq!(serde_json::from_str::<Value>(&saved).unwrap(), wire);
             assert_eq!(Template::from_json_str(&saved).unwrap(), template);
+        }
+    }
+
+    #[test]
+    fn output_requires_name_and_page_and_round_trips_them() {
+        let output = json!({
+            "type": "output", "id": "out", "name": "Voltage", "page": "Measurements",
+            "value": { "source": "literal", "value": 3.3 }
+        });
+        let template_wire = |output: Value| {
+            json!({
+                "schema_version": 1, "name": "Required Output fields", "tool_instances": [],
+                "workflow": { "steps": [output] }
+            })
+        };
+
+        let template = Template::from_json_str(&template_wire(output.clone()).to_string()).unwrap();
+        let saved: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+        assert_eq!(saved["workflow"]["steps"][0], output);
+
+        for field in ["name", "page"] {
+            let mut missing = output.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            assert!(matches!(
+                Template::from_json_str(&template_wire(missing).to_string()),
+                Err(TemplateError::Json(_))
+            ));
         }
     }
 

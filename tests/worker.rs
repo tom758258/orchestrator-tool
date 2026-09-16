@@ -1205,11 +1205,11 @@ fn simulated_measurement_dataflow_exports_csv() {
                     "action": "measure", "arguments": {}
                 },
                 {
-                    "type": "output", "id": "output-voltage", "name": "voltage",
+                    "type": "output", "id": "output-voltage", "name": "voltage", "page": "Results",
                     "value": { "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" }
                 },
                 {
-                    "type": "output", "id": "output-passed", "name": "passed",
+                    "type": "output", "id": "output-passed", "name": "passed", "page": "Results",
                     "value": {
                         "source": "expression",
                         "left": { "source": "step-output", "step_id": "meter-read-1", "pointer": "/value" },

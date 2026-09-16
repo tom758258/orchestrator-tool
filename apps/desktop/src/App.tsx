@@ -190,7 +190,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
     case 'set-variable':
       return { type: 'set-variable', id, variable: 'x', value: { source: 'literal', value: 5.0 } }
     case 'output':
-      return { type: 'output', id, name: id, value: { source: 'literal', value: null } }
+      return { type: 'output', id, name: id, page: 'Results', value: { source: 'literal', value: null } }
     case 'power-set-voltage':
       return {
         type: 'tool-action',
@@ -385,7 +385,7 @@ function App() {
   </>
   const displayedRun = runResult ?? runProgress
   const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
-  const pageRows = (displayedRun?.result_rows ?? []).filter(row => (row.page ?? 'Results') === currentPage?.name)
+  const pageRows = (displayedRun?.result_rows ?? []).filter(row => row.page === currentPage?.name)
   const displayedOutputRows = [...pageRows].reverse()
   const iterationRows = pageRows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
@@ -829,6 +829,10 @@ function App() {
       if (!approved) {
         return
       }
+      const streamOptions = streamingOptions(
+        streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
+      )
+      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       started = true
       setLiveConfirmationPending(false)
       setStopRequest(null)
@@ -837,11 +841,10 @@ function App() {
       setRunResult(null)
       setRunProgress({ step_executions: [], result_rows: [] })
       setRunError(null)
-      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
-        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination),
+        streamCsv: streamOptions,
         confirmedResources,
       })
       setRunResult(results)
@@ -864,27 +867,35 @@ function App() {
       return
     }
 
-    const onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
-    setStopRequest(null)
-    setCsvStreamStatus(null)
-    setRunStatus('running')
-    setRunResult(null)
-    setRunProgress({ step_executions: [], result_rows: [] })
-    setRunError(null)
+    let started = false
+    let onProgress: Channel<DesktopRunEvent> | undefined
     try {
+      const streamOptions = streamingOptions(
+        streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
+      )
+      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      started = true
+      setStopRequest(null)
+      setCsvStreamStatus(null)
+      setRunStatus('running')
+      setRunResult(null)
+      setRunProgress({ step_executions: [], result_rows: [] })
+      setRunError(null)
       const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
-        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination),
+        streamCsv: streamOptions,
       })
       setRunResult(results)
       setRunProgress(null)
     } catch (message) {
       setRunError(String(message))
     } finally {
-      onProgress.onmessage = () => {}
-      setStopRequest(null)
-      setRunStatus('idle')
+      if (onProgress) onProgress.onmessage = () => {}
+      if (started) {
+        setStopRequest(null)
+        setRunStatus('idle')
+      }
     }
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
@@ -961,6 +972,8 @@ function App() {
   const addingToLoop = insertionLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
+  const selectedCompatiblePages = selectedStep?.type === 'output'
+    ? compatibleOutputPages(workflowDraft?.workflow.steps ?? [], selectedStep.id) : []
   const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
   const voltageBinding = selectedToolAction?.bindings?.voltage
   const selectedAction = selectedToolAction
@@ -1464,19 +1477,28 @@ function App() {
                             />
                           </label>
                           <label className="step-property-field">
-                            <span className="step-property-label">Output Page</span>
-                            <input value={selectedStep.page ?? 'Results'} list="compatible-pages" disabled={workflowBusy}
-                              aria-describedby="output-page-help"
+                            <span className="step-property-label">Existing compatible Page</span>
+                            <select value={selectedCompatiblePages.includes(selectedStep.page) ? selectedStep.page : ''}
+                              disabled={workflowBusy}
+                              onChange={event => {
+                                if (event.target.value) updateStep(selectedStep.id, step =>
+                                  step.type === 'output' ? { ...step, page: event.target.value } : step)
+                              }}>
+                              <option value="">Select existing Page...</option>
+                              {selectedCompatiblePages.map(page => <option key={page} value={page}>{page}</option>)}
+                            </select>
+                          </label>
+                          <label className="step-property-field">
+                            <span className="step-property-label">Page name</span>
+                            <input value={selectedStep.page} disabled={workflowBusy} aria-describedby="output-page-help"
                               onChange={event => updateStep(selectedStep.id, step => step.type === 'output' ? { ...step, page: event.target.value } : step)} />
-                            <datalist id="compatible-pages">{compatibleOutputPages(workflowDraft.workflow.steps, selectedStep.id)
-                              .map(page => <option key={page} value={page} />)}</datalist>
                           </label>
                           <p id="output-page-help" className="value-source-help">
                             A Page is an independent tabular dataset. Only Pages in the same loop scope can be shared.
                             Choose an existing compatible Page, or enter a new name to create another Page in this scope
                             (1-31 filename-safe characters).
                           </p>
-                          {pages.some(page => page.name === (selectedStep.page ?? 'Results') && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
+                          {pages.some(page => page.name === selectedStep.page && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
                             <p className="error">This Page belongs to a different loop path. Choose another Page.</p>}
                           <p id="output-name-help" className="value-source-help">
                             Editable column name used in Output Data, CSV/XLSX export, and Charts.
@@ -1772,7 +1794,7 @@ function App() {
             <div className="page-name-editor">
               <label>Page name <input value={currentPage.name} disabled={workflowBusy} onChange={event => {
                 const name = event.target.value
-                updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && (step.page ?? 'Results') === currentPage.name ? { ...step, page: name } : step))
+                updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && step.page === currentPage.name ? { ...step, page: name } : step))
                 setSelectedPage(name)
               }} /></label>
               <p>Rename this Page. All Outputs assigned to this Page are updated together.</p>

@@ -238,7 +238,7 @@ mod tests {
             &json!({
                 "schema_version": 1, "name": "test/name", "tool_instances": [],
                 "workflow": { "steps": [{
-                    "type": "output", "id": "out", "name": "value",
+                    "type": "output", "id": "out", "name": "value", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
                 }] }
             })

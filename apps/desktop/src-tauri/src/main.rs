@@ -162,7 +162,6 @@ struct WhileIterationDto {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ResultRowDto {
-    #[serde(default = "default_page")]
     page: String,
     outputs: Vec<WorkflowOutputDto>,
     for_iteration: Option<ForIterationDto>,
@@ -587,10 +586,6 @@ fn workflow_run_result_dto(result: &WorkflowRunResult) -> WorkflowRunResultDto {
             .collect(),
         result_rows: result.result_rows().iter().map(result_row_dto).collect(),
     }
-}
-
-fn default_page() -> String {
-    "Results".to_owned()
 }
 
 fn result_row_dto(row: &ResultRow) -> ResultRowDto {
@@ -1049,7 +1044,7 @@ mod tests {
                     { "type": "wait", "id": "wait-1", "duration_ms": 500 },
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "0", "stop": "0.3", "step": "0.1" },
-                      "steps": [{ "type": "output", "id": "sample", "name": "sample",
+                      "steps": [{ "type": "output", "id": "sample", "name": "sample", "page": "Results",
                                   "value": { "source": "variable", "variable": "x" } }] }
                 ]
             }
@@ -1116,6 +1111,14 @@ mod tests {
                     "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
             })
         );
+    }
+
+    #[test]
+    fn result_row_dto_requires_page() {
+        let missing_page = json!({
+            "outputs": [], "for_iteration": null, "while_iteration": null
+        });
+        assert!(serde_json::from_value::<super::ResultRowDto>(missing_page).is_err());
     }
 
     #[test]
@@ -1191,8 +1194,8 @@ mod tests {
                 "type": "for", "id": "sweep", "variable": "x",
                 "range": { "start": "0", "stop": "0.2", "step": "0.1" },
                 "steps": [
-                    { "type": "output", "id": "voltage", "name": "voltage", "value": { "source": "variable", "variable": "x" } },
-                    { "type": "output", "id": "passed", "name": "passed", "value": { "source": "literal", "value": true } }
+                    { "type": "output", "id": "voltage", "name": "voltage", "page": "Results", "value": { "source": "variable", "variable": "x" } },
+                    { "type": "output", "id": "passed", "name": "passed", "page": "Results", "value": { "source": "literal", "value": true } }
                 ]
             }] }
         }).to_string();
@@ -1255,7 +1258,7 @@ mod tests {
                 { "type": "while", "id": "repeat", "max_iterations": 1,
                   "left": { "source": "variable", "variable": "x" }, "operator": "less-than",
                   "right": { "source": "literal", "value": 1 }, "steps": [
-                    { "type": "output", "id": "out", "name": "x", "value": { "source": "variable", "variable": "x" } },
+                    { "type": "output", "id": "out", "name": "x", "page": "Results", "value": { "source": "variable", "variable": "x" } },
                     { "type": "set-variable", "id": "advance", "variable": "x", "value": { "source": "literal", "value": 1 } }
                   ] }
             ] }

@@ -34,7 +34,7 @@ ExecutionMode、Live VISA Resource、runtime results、output authorization 與 
 
 Workflow run 現在回傳 Core `WorkflowRunResult`，包含依執行順序排列的 `StepExecution` 與 `ResultRow`。每筆 execution 保留原有 `StepResult`；Step ID 仍是穩定的 definition identity。可選的 `ForIteration` 或 `WhileIteration` metadata 保存所屬 step ID 與 zero-based iteration index，與 Step ID 及 Output columns 分離。既有 `for_iteration` 欄位維持不變，平行的 `while_iteration` 欄位用來識別 While occurrence；同一筆 execution 或 row 不會同時帶有兩種 metadata。
 
-每個 Output 屬於一個具名 Page（schema v1 的 `page`，省略時為 `Results`）。Page 是獨立的 tabular dataset，各自擁有 flat ResultRows 與 Output columns，並綁定完整 lexical loop Step ID path，而不是只比較 nesting depth。不同 loop path 不可共用 Page，同一個 loop scope 可以建立多個 Page；Step ID 與 Output name 仍維持 workflow-global unique。
+每個 Output 屬於一個具名 Page。Schema v1 要求每個 Output 明確包含 `id`、`name`、`page` 與 `value`。Desktop 新增 Output 時會將 Page 初始化為 `Results`，但 Page 是明確的 Template data，不是反序列化 fallback。Page 是獨立的 tabular dataset，各自擁有 flat ResultRows 與 Output columns，並綁定完整 lexical loop Step ID path，而不是只比較 nesting depth。不同 loop path 不可共用 Page，同一個 loop scope 可以建立多個 Page；Step ID 與 Output name 仍維持 workflow-global unique。
 
 每個 root Output Page 在 root workflow 成功完成後 commit 一列 ResultRow，也適用於包含 For 或 While 的 workflow。Cells 沿用 `WorkflowOutput`，依該 Page 的 root Output Step 順序使用 Output names 作為 columns。完全沒有 Output 的成功 workflow 仍產生一列 empty root row。失敗或未完整完成的 workflow 不 commit root row。Root execution 與 row 都沒有 For 或 While iteration metadata。
 
@@ -93,7 +93,7 @@ Desktop Charts 將所選 Page 的迭代 ResultRows 呈現為折線圖，X 軸固
 
 Manual export 支援 Current Page 匯出為 CSV 或單一 worksheet XLSX，也支援 All Pages 匯出為多個 CSV 或單一 XLSX workbook（每個 Page 一個 worksheet）。CSV 與 XLSX 共用文字 cell conversion：string 不變、null 為空字串、其他 JSON 使用 compact 文字；目前不提供 formula、styling、chart 或 native numeric cell typing。Iteration metadata 不寫入檔案。匯出仍要求 authoritative final success 與至少一筆 committed row；Current Page 必須由該 Page 自己擁有 row，All Pages 則可由任一 Page 提供 row。Failed、cancelled 或 incomplete run 僅供檢視，backend 仍拒絕匯出。Break 與 continue 尚未支援。
 
-Output Step 包含結果名稱 `name` 與輸入值 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。舊 Template 的 Output Step 若沒有 `name`，載入時會使用該 Step ID 作為 name，再次儲存時會明確寫入 `name`。
+Schema v1 的 Output Step 必須明確包含 `id`、`name`、`page` 與 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。缺少 `name` 或 `page` 的 Template JSON 會在載入時被拒絕。
 
 Core 的 `Workflow::project_outputs(&[StepResult])` 只收集 Output Steps，依 Workflow 中的 Step 順序回傳有序的 `WorkflowOutput`，並由 `WorkflowOutput` 提供 `name()` 與 `value()` 存取方法。若任何 Output Step 的結果缺少（missing）、失敗（failed）或取消（cancelled），則整個 projection 失敗。Projection 本身不負責保存結果，也不負責 CSV serialization。
 
