@@ -557,7 +557,7 @@ fn while_failure_discards_only_the_current_staged_row() {
 }
 
 #[test]
-fn while_validation_rejects_invalid_conditions_guards_and_nested_loops() {
+fn while_validation_rejects_invalid_conditions_and_guards() {
     let base = while_wire(10, 3);
     for (field, value, diagnostic) in [
         ("operator", json!("add"), "comparison operator"),
@@ -574,7 +574,7 @@ fn while_validation_rejects_invalid_conditions_guards_and_nested_loops() {
     }
     let for_step = json!({ "type": "for", "id": "outer", "variable": "i",
         "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [] });
-    // Both body validators reject either loop kind through the same in-loop guard.
+    // Both loop kinds accept finite nesting.
     for (mut outer, inner) in [
         (for_step.clone(), base["workflow"]["steps"][1].clone()),
         (base["workflow"]["steps"][1].clone(), for_step),
@@ -582,12 +582,7 @@ fn while_validation_rejects_invalid_conditions_guards_and_nested_loops() {
         outer["steps"] = json!([inner]);
         let mut wire = base.clone();
         wire["workflow"]["steps"] = json!([outer]);
-        assert!(
-            Template::from_json_str(&wire.to_string())
-                .unwrap_err()
-                .to_string()
-                .contains("nested")
-        );
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
     }
 }
 
@@ -637,7 +632,7 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
         Template::from_json_str(&root_output.to_string())
             .unwrap_err()
             .to_string()
-            .contains("cannot be mixed")
+            .contains("loop paths")
     );
     let mut two_scopes = base.clone();
     two_scopes["workflow"]["steps"].as_array_mut().unwrap().push(json!({
@@ -650,7 +645,7 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
         Template::from_json_str(&two_scopes.to_string())
             .unwrap_err()
             .to_string()
-            .contains("both produce workflow rows")
+            .contains("loop paths")
     );
     wire = base;
     wire["workflow"]["steps"][1]["steps"]

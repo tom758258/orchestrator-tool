@@ -40,6 +40,7 @@ function harness() {
     workflowDraft: { tool_instances: [], workflow: { steps: [] } },
     resourceDrafts: {}, runStatus: 'idle', liveRunInFlight: { current: false },
     streamCsv: true, hasWorkflowOutputs: true, outputFolder: 'data',
+    streamingPage: 'Results', streamAllPages: false, streamDestination: 'results.csv',
     setTools() {}, receiveRunProgress() {},
     streamingOptions() { streamOptions++; return { output_folder: 'data' } },
     Channel: class { constructor() { channels++ } },

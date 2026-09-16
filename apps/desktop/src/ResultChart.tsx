@@ -4,14 +4,17 @@ import {
 } from 'recharts'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { nextChartPanelId, type ChartPanel } from './chartPanels'
+import { reconcileChartPanels, nextChartPanelId, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
 import type { ResultRowDto } from './workflow'
 
 const MAX_CHARTS = 8
 const SERIES_COLORS = ['#2563eb', '#dc2626', '#15803d', '#9333ea', '#b45309', '#0891b2']
 
-export default function ResultChart({ rows, outputNames, panels, onPanelsChange }: {
+export default function ResultChart({ rows, outputNames, panels, onPanelsChange, page, pages, onSavingChange }: {
+  page: string
+  pages: { name: string; outputs: { name: string }[] }[]
+  onSavingChange: (saving: boolean) => void
   panels: ChartPanel[] | null
   onPanelsChange: (panels: ChartPanel[]) => void
   rows: ResultRowDto[]
@@ -29,17 +32,13 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
   const hasIteration = rows.length > 0 && rows.every(row =>
     row.for_iteration != null || row.while_iteration != null)
 
-  // Null means not initialized; an empty selection must stay empty.
+  // Reconcile definitions across every Page without clearing other Pages on tab switches.
   let displayedPanels = panels
-  if (hasIteration) {
-    if (panels === null && numericNames.length > 0) {
-      displayedPanels = [{ id: 0, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
-    } else if (panels?.some(panel => panel.outputs.some(name => !numericNames.includes(name)))) {
-      displayedPanels = panels.map(panel => ({
-        ...panel,
-        outputs: panel.outputs.filter(name => numericNames.includes(name)),
-      }))
-    }
+  if (panels === null && hasIteration && numericNames.length > 0) {
+    displayedPanels = [{ id: 0, page, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
+  } else if (panels) {
+    const reconciled = reconcileChartPanels(panels, pages, page, rows.length > 0 ? numericNames : null)
+    if (JSON.stringify(reconciled) !== JSON.stringify(panels)) displayedPanels = reconciled
   }
 
   useEffect(() => {
@@ -50,6 +49,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     if (saving.current) return
     saving.current = true
     setSavingId(id)
+    onSavingChange(true)
     setFeedback(null)
     try {
       const destinationPath = await save({
@@ -65,6 +65,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     } finally {
       saving.current = false
       setSavingId(null)
+      onSavingChange(false)
     }
   }
 
@@ -79,9 +80,9 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
   const series = numericNames.map((name, index) => ({
     name, key: `series${index}`, color: SERIES_COLORS[index % SERIES_COLORS.length],
   }))
-  const points = rows.map(row => {
+  const points = rows.map((row, index) => {
     const point: Record<string, number> = {
-      iteration: (row.for_iteration ?? row.while_iteration)!.iteration_index + 1,
+      iteration: index + 1,
     }
     series.forEach(item => {
       point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
@@ -95,7 +96,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
       ?? numericNames[0]
     onPanelsChange([...displayedPanels, {
-      id: nextChartPanelId(displayedPanels), outputs: [name], xAxisTitle: 'Iteration', yAxisTitle: '',
+      id: nextChartPanelId(displayedPanels), page, outputs: [name], xAxisTitle: 'Iteration', yAxisTitle: '',
     }])
   }
 
@@ -108,7 +109,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     {displayedPanels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
     <p>Select multiple numeric Outputs to compare them on the same chart.</p>
     <div className="result-charts-grid">
-      {displayedPanels.map((panel, index) => {
+      {displayedPanels.filter(panel => panel.page === page).map((panel, index) => {
         const selectedSeries = series.filter(item => panel.outputs.includes(item.name))
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
@@ -126,7 +127,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
             </div>
           </div>
           {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
-          <fieldset className="result-chart-outputs">
+          <fieldset className="result-chart-outputs" disabled={savingId !== null}>
             <legend>Outputs</legend>
             {numericNames.map(name => <label key={name}>
               <input type="checkbox" checked={panel.outputs.includes(name)} onChange={event => {
@@ -137,7 +138,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
               {name}
             </label>)}
           </fieldset>
-          <fieldset className="result-chart-axis-titles">
+          <fieldset className="result-chart-axis-titles" disabled={savingId !== null}>
             <legend>Axis titles</legend>
             <label>
               X-axis title

@@ -34,6 +34,14 @@ impl DataContext {
         Self::default()
     }
 
+    pub(crate) fn variable_scope(&self) -> Vec<VariableId> {
+        self.variables.keys().cloned().collect()
+    }
+
+    pub(crate) fn leave_variable_scope(&mut self, inherited: &[VariableId]) {
+        self.variables.retain(|id, _| inherited.contains(id));
+    }
+
     /// Stores a variable, replacing any previous value for the same ID.
     pub fn set_variable(&mut self, variable_id: VariableId, value: Value) {
         self.variables.insert(variable_id, value);

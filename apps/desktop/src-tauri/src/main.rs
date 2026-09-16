@@ -163,6 +163,8 @@ struct WhileIterationDto {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ResultRowDto {
+    #[serde(default = "default_page")]
+    page: String,
     outputs: Vec<WorkflowOutputDto>,
     for_iteration: Option<ForIterationDto>,
     while_iteration: Option<WhileIterationDto>,
@@ -588,8 +590,13 @@ fn workflow_run_result_dto(result: &WorkflowRunResult) -> WorkflowRunResultDto {
     }
 }
 
+fn default_page() -> String {
+    "Results".to_owned()
+}
+
 fn result_row_dto(row: &ResultRow) -> ResultRowDto {
     ResultRowDto {
+        page: row.page().to_owned(),
         outputs: row
             .outputs()
             .iter()
@@ -658,7 +665,8 @@ impl TryFrom<ResultRowDto> for ResultRow {
                 outputs,
                 dto.for_iteration.map(ForIteration::try_from).transpose()?,
             )
-        })
+        }
+        .with_page(dto.page))
     }
 }
 
@@ -758,6 +766,72 @@ fn export_workflow_csv(
 }
 
 #[tauri::command]
+fn export_workflow_pages(
+    template_json: String,
+    run_result: WorkflowRunResultDto,
+    destination_path: String,
+    page: Option<String>,
+    format: String,
+) -> Result<(), String> {
+    use orchestrator_tool::workflow_export::{page_csv, page_datasets, pages_xlsx};
+    let template = Template::from_json_str(&template_json).map_err(|e| e.to_string())?;
+    let executions = run_result
+        .step_executions
+        .into_iter()
+        .map(StepExecution::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    validate_completed_successful_run(template.workflow(), &executions)?;
+    let rows = run_result
+        .result_rows
+        .into_iter()
+        .map(ResultRow::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    let datasets = page_datasets(template.workflow(), &rows, page.as_deref())?;
+    if datasets.is_empty() || !datasets.iter().any(|dataset| !dataset.rows.is_empty()) {
+        return Err("workflow has no outputs available for export".to_owned());
+    }
+    match format.as_str() {
+        "xlsx" => {
+            std::fs::write(&destination_path, pages_xlsx(&datasets)?).map_err(|e| e.to_string())
+        }
+        "csv" if page.is_some() => {
+            std::fs::write(&destination_path, page_csv(&datasets[0])?).map_err(|e| e.to_string())
+        }
+        "csv" => {
+            use std::io::Write;
+            let folder = Path::new(&destination_path);
+            let files = datasets
+                .iter()
+                .map(|dataset| {
+                    Ok((
+                        folder.join(format!("{}.csv", dataset.page.name())),
+                        page_csv(dataset)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            if files.iter().any(|(path, _)| path.exists()) {
+                return Err(
+                    "Destination already contains Page CSV files; choose another folder".to_owned(),
+                );
+            }
+            std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+            for (path, bytes) in files {
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .map_err(|e| e.to_string())?;
+                file.write_all(&bytes)
+                    .and_then(|()| file.flush())
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+        _ => Err("Unsupported export format".to_owned()),
+    }
+}
+
+#[tauri::command]
 fn create_workflow_draft() -> Result<String, String> {
     let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
     Template::new("Untitled".to_owned(), Default::default(), workflow)
@@ -809,6 +883,7 @@ fn main() {
             save_workflow_template,
             load_workflow_template,
             export_workflow_csv,
+            export_workflow_pages,
             save_chart_png
         ])
         .run(tauri::generate_context!())
@@ -1188,7 +1263,7 @@ mod tests {
             row_event,
             json!({
                 "type": "result-row-committed",
-                "row": { "outputs": [{ "name": "value", "value": 3 }],
+                "row": { "page": "Results", "outputs": [{ "name": "value", "value": 3 }],
                     "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
             })
         );

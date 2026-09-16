@@ -337,6 +337,10 @@ impl WorkflowWire {
     }
 }
 
+fn default_output_page() -> String {
+    "Results".to_owned()
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
@@ -364,6 +368,8 @@ enum StepWire {
         id: String,
         #[serde(default)]
         name: Option<String>,
+        #[serde(default = "default_output_page")]
+        page: String,
         value: InputValueWire,
     },
     Wait {
@@ -438,6 +444,7 @@ impl StepWire {
             },
             StepKind::Output { name, value } => Self::Output {
                 name: Some(name.clone()),
+                page: step.output_page().to_owned(),
                 id: step.id().as_str().to_owned(),
                 value: InputValueWire::from_input(value),
             },
@@ -686,7 +693,12 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                 },
             ))
         }
-        StepWire::Output { id, name, value } => {
+        StepWire::Output {
+            id,
+            name,
+            page,
+            value,
+        } => {
             let name = name.unwrap_or_else(|| id.clone());
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
@@ -696,7 +708,8 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                     name,
                     value: input_from_wire(value)?,
                 },
-            ))
+            )
+            .with_output_page(page))
         }
         StepWire::Wait { id, duration_ms } => {
             let step_id = StepId::new(&id)
@@ -1179,7 +1192,7 @@ mod tests {
                 "schema_version": 1, "name": "Time inputs", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
-                    { "type": "output", "id": "out", "name": "time", "value": { "source": source } }
+                    { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
                 ] }
             });
             let template = Template::from_json_str(&wire.to_string()).unwrap();

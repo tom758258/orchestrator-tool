@@ -9,8 +9,8 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
-import type { WorkflowStep, NonLoopWorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -125,7 +125,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 
 const STEP_HELP: Record<string, string> = {
   while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
-  for: 'Repeat these body steps over an exact decimal range. Nested loops are not supported.',
+  for: 'Repeat these body steps over an exact decimal range. Loops can nest up to 5 levels.',
   assert: 'Fail the Workflow when this numeric comparison is false.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
@@ -284,14 +284,24 @@ type CsvStreamStatus = {
 }
 type DesktopRunEvent = WorkflowRunEventDto | { type: 'csv-stream'; status: CsvStreamStatus }
 
-function streamingOptions(enabled: boolean, outputFolder: string | null) {
+function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean, destinationPath: string | null) {
   if (!enabled) return null
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
     .slice(0, 19).replace(/[T:]/g, '-')
-  return { output_folder: outputFolder, timestamp }
+  if (!allPages && !destinationPath) throw new Error('Select a destination CSV before running.')
+  if (allPages && !outputFolder) throw new Error('Select a destination folder before running.')
+  return { output_folder: outputFolder, timestamp, page, all_pages: allPages, destination_path: destinationPath }
 }
 
 function App() {
+  const [selectedPage, setSelectedPage] = useState('Results')
+  const [streamPage, setStreamPage] = useState('Results')
+  const [streamAllPages, setStreamAllPages] = useState(false)
+  const [streamDestination, setStreamDestination] = useState<string | null>(null)
+  const [chartSaving, setChartSaving] = useState(false)
+  const [choosingStreamDestination, setChoosingStreamDestination] = useState(false)
+  const [exportAllPages, setExportAllPages] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[] | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
@@ -329,6 +339,10 @@ function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
+  const pages = outputPages(workflowDraft?.workflow.steps ?? [])
+  const currentPage = pages.find(page => page.name === selectedPage) ?? pages[0]
+  const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
+  const currentOutputs = currentPage?.outputs ?? []
   const hasWorkflowOutputs = outputSteps.length > 0
   const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
   const hasCommittedOutputRows = (runResult?.result_rows.length ?? 0) > 0
@@ -342,9 +356,10 @@ function App() {
   const runningText = activeLoop
     ? `${activeLoop.kind} ${activeLoop.id} · Iteration ${activeLoop.index + 1} · ${stopping ? 'Stopping…' : 'Running'}`
     : 'Running…'
-  const requestStop = async () => {
-    if (!activeLoop || stopping) return
-    const request = { loopId: activeLoop.id }
+  const activeAncestors = activeLoop ? loopPath(workflowDraft?.workflow.steps ?? [], activeLoop.id) : []
+  const requestStop = async (loopId = activeLoop?.id) => {
+    if (!loopId || stopping) return
+    const request = { loopId }
     setStopRequest(request)
     try {
       const accepted = await invoke<boolean>('request_workflow_stop', { loopStepId: request.loopId })
@@ -355,19 +370,22 @@ function App() {
   }
   const stopControls = <>
     {activeLoop && <>
-      <button className="action-button" type="button" onClick={() => void requestStop()} disabled={stopping}>
+      {activeAncestors.map(loop => <button className="action-button" type="button" key={loop.id}
+        disabled={stopRequest !== null && !stopRequest.error} onClick={() => void requestStop(loop.id)}>Stop {loop.id}</button>)}
+      <button className="action-button" type="button" onClick={() => void requestStop()} disabled={stopRequest !== null && !stopRequest.error}>
         {stopping ? 'Stopping…' : 'Stop'}
       </button>
     </>}
   </>
   const stopFeedback = <>
-    {activeLoop && <p>Stops after the current iteration completes.</p>}
+    {activeLoop && <p>Finishes the current innermost iteration, then stops the selected loop.</p>}
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runResult ?? runProgress
   const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
-  const displayedOutputRows = [...(displayedRun?.result_rows ?? [])].reverse()
-  const iterationRows = displayedRun?.result_rows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
+  const pageRows = (displayedRun?.result_rows ?? []).filter(row => (row.page ?? 'Results') === currentPage?.name)
+  const displayedOutputRows = [...pageRows].reverse()
+  const iterationRows = pageRows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
   useEffect(() => {
     setExportError(null)
@@ -466,7 +484,7 @@ function App() {
       return
     }
     const parent = insertionLoop(workflowDraft.workflow.steps, selectedStepId)
-    if (parent && (preset.value === 'for' || preset.value === 'while')) return
+    if (parent && (preset.value === 'for' || preset.value === 'while') && loopPath(workflowDraft.workflow.steps, parent.id).length >= 4) return
     const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
     if (preset.tool && !target) {
       setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
@@ -475,8 +493,8 @@ function App() {
     const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
     updateSteps((steps) => {
-      if (parent && newStep.type !== 'for' && newStep.type !== 'while') {
-        return steps.map(step => {
+      if (parent) {
+        return mapWorkflowSteps(steps, step => {
           if (step.id !== parent.id || (step.type !== 'for' && step.type !== 'while')) return step
           const index = step.steps.findIndex(body => body.id === selectedStepId)
           const insertIndex = index < 0 ? step.steps.length : index + 1
@@ -492,27 +510,16 @@ function App() {
 
   const deleteStep = useCallback(
     (stepId: string) => {
-      updateSteps((steps) => steps.filter(step => step.id !== stepId).map(step =>
-        (step.type === 'for' || step.type === 'while') ? { ...step, steps: step.steps.filter(body => body.id !== stepId) } : step))
+      updateSteps((steps) => mapWorkflowSteps(steps, step => step.id === stepId ? null : step))
       setSelectedStepId(current => current === stepId ||
-        enclosingLoop(workflowDraft?.workflow.steps ?? [], current)?.id === stepId ? null : current)
+        loopPath(workflowDraft?.workflow.steps ?? [], current).some(loop => loop.id === stepId) ? null : current)
     },
     [updateSteps, workflowDraft],
   )
 
   const updateStep = useCallback(
     (stepId: string, update: (step: WorkflowStep) => WorkflowStep) => {
-      updateSteps((steps) =>
-        steps.map(step => {
-          if (step.id === stepId) return update(step)
-          if (step.type !== 'for' && step.type !== 'while') return step
-          return { ...step, steps: step.steps.map(body => {
-            if (body.id !== stepId) return body
-            const updated = update(body)
-            return (updated.type === 'for' || updated.type === 'while') ? body : updated
-          }) }
-        }),
-      )
+      updateSteps(steps => mapWorkflowSteps(steps, step => step.id === stepId ? update(step) : step))
     },
     [updateSteps],
   )
@@ -571,7 +578,7 @@ function App() {
         reordered[index] = reordered[targetIndex]
         reordered[targetIndex] = currentStep
         return parent
-          ? steps.map(step => step.id === parent.id ? { ...parent, steps: reordered as NonLoopWorkflowStep[] } : step)
+          ? mapWorkflowSteps(steps, step => step.id === parent.id ? { ...parent, steps: reordered } : step)
           : reordered
       })
     },
@@ -766,7 +773,7 @@ function App() {
       setCsvStreamStatus(event.status)
       return
     }
-    if (event.type === 'step-completed' && !event.execution.for_iteration && !event.execution.while_iteration) {
+    if (event.type === 'step-completed') {
       setStopRequest(current => current?.loopId === event.execution.step_id ? null : current)
     }
     setRunProgress(current => {
@@ -832,7 +839,7 @@ function App() {
       const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
-        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder),
+        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination),
         confirmedResources,
       })
       setRunResult(results)
@@ -848,7 +855,7 @@ function App() {
       liveRunInFlight.current = false
       setLiveConfirmationPending(false)
     }
-  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
+  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
@@ -866,7 +873,7 @@ function App() {
       const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
-        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder),
+        streamCsv: streamingOptions(streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination),
       })
       setRunResult(results)
       setRunProgress(null)
@@ -877,10 +884,10 @@ function App() {
       setStopRequest(null)
       setRunStatus('idle')
     }
-  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder])
+  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const workflowBusy =
-    liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+    choosingStreamDestination || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
@@ -896,11 +903,14 @@ function App() {
   )
 
   async function selectOutputFolder() {
+    setChoosingStreamDestination(true)
     try {
       const folder = await open({ directory: true, multiple: false, title: 'Select CSV output folder' })
       if (typeof folder === 'string') setOutputFolder(folder)
     } catch (message) {
       setRunError('Could not select CSV output folder: ' + String(message))
+    } finally {
+      setChoosingStreamDestination(false)
     }
   }
 
@@ -913,24 +923,26 @@ function App() {
     setExportError(null)
     setExportMessage(null)
     try {
-      const selectedPath = await save({
-        filters: [{ name: 'CSV', extensions: ['csv'] }],
-      })
-      if (!selectedPath) {
+      const selectedPath = exportAllPages && exportFormat === 'csv'
+        ? await open({ directory: true, multiple: false, title: 'Export all Pages as CSV' })
+        : await save({ filters: [{ name: exportFormat.toUpperCase(), extensions: [exportFormat] }] })
+      if (typeof selectedPath !== 'string') {
         return
       }
-      await invoke('export_workflow_csv', {
+      await invoke('export_workflow_pages', {
         templateJson: JSON.stringify(workflowDraft),
         runResult,
         destinationPath: selectedPath,
+        page: exportAllPages ? null : currentPage?.name,
+        format: exportFormat,
       })
-      setExportMessage('CSV exported successfully.')
+      setExportMessage('Pages exported successfully.')
     } catch (message) {
       setExportError(String(message))
     } finally {
       setExporting(false)
     }
-  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasCommittedOutputRows, workflowBusy])
+  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasCommittedOutputRows, workflowBusy, exportAllPages, exportFormat, currentPage?.name])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -1013,6 +1025,7 @@ function App() {
           role="tab"
           aria-selected={activeTab === 'tools'}
           aria-controls="tools-panel"
+          disabled={chartSaving}
           onClick={() => setActiveTab('tools')}
         >
           Tools
@@ -1024,6 +1037,7 @@ function App() {
           role="tab"
           aria-selected={activeTab === 'setup'}
           aria-controls="setup-panel"
+          disabled={chartSaving}
           onClick={() => setActiveTab('setup')}
         >
           Setup
@@ -1035,6 +1049,7 @@ function App() {
           role="tab"
           aria-selected={activeTab === 'workflow'}
           aria-controls="workflow-panel"
+          disabled={chartSaving}
           onClick={() => setActiveTab('workflow')}
         >
           Workflow
@@ -1046,6 +1061,7 @@ function App() {
           role="tab"
           aria-selected={activeTab === 'output'}
           aria-controls="output-panel"
+          disabled={chartSaving}
           onClick={() => setActiveTab('output')}
         >
           Output
@@ -1299,7 +1315,7 @@ function App() {
                               className="action-button step-palette-button"
                               type="button"
                               onClick={() => addStep(preset)}
-                              disabled={workflowBusy || (Boolean(addingToLoop) && (preset.value === 'for' || preset.value === 'while'))}
+                              disabled={workflowBusy || (Boolean(addingToLoop) && loopPath(workflowDraft.workflow.steps, addingToLoop!.id).length >= 4 && (preset.value === 'for' || preset.value === 'while'))}
                             >
                               {preset.label}
                             </button>
@@ -1414,6 +1430,16 @@ function App() {
                               )}
                             />
                           </label>
+                          <label className="step-property-field">
+                            <span className="step-property-label">Output Page</span>
+                            <input value={selectedStep.page ?? 'Results'} list="compatible-pages" disabled={workflowBusy}
+                              onChange={event => updateStep(selectedStep.id, step => step.type === 'output' ? { ...step, page: event.target.value } : step)} />
+                            <datalist id="compatible-pages">{pages.filter(page => JSON.stringify(page.scope) === JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id)))
+                              .map(page => <option key={page.name} value={page.name} />)}</datalist>
+                          </label>
+                          <p>Use an existing Page in this loop scope, or enter a new name (1-31 filename-safe characters).</p>
+                          {pages.some(page => page.name === (selectedStep.page ?? 'Results') && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
+                            <p className="error">This Page belongs to a different loop path. Choose another Page.</p>}
                           <p id="output-name-help" className="value-source-help">
                             Used as the column name in Output results and CSV export.
                           </p>
@@ -1482,7 +1508,7 @@ function App() {
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'while' ? { ...step, max_iterations: event.target.value === 'unlimited' ? null : 1000 } : step)}>
                               <option value="limited">Max iterations</option>
-                              <option value="unlimited">Unlimited</option>
+                              <option value="unlimited" disabled={Boolean(selectedParent)}>Unlimited</option>
                             </select>
                             {selectedStep.max_iterations === null ? (
                               <span>Runs until the condition becomes false or the loop is stopped.</span>
@@ -1624,10 +1650,22 @@ function App() {
                 </label>
                 {!hasWorkflowOutputs && <p>Streaming CSV requires at least one Output.</p>}
                 {streamCsv && hasWorkflowOutputs && <div>
-                  <p>Output folder</p>
-                  <span>{outputFolder ?? 'Default (data)'}</span>{' '}
-                  <button className="action-button" type="button" disabled={workflowBusy}
-                    onClick={() => void selectOutputFolder()}>Select Folder</button>
+                  <select aria-label="CSV streaming mode" disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
+                    onChange={event => setStreamAllPages(event.target.value === 'all')}>
+                    <option value="selected">Selected Page - one CSV</option><option value="all">All Pages - CSV files</option>
+                  </select>
+                  {!streamAllPages && <select aria-label="Streaming Page" value={streamingPage} disabled={workflowBusy}
+                    onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
+                  <span>{streamAllPages ? outputFolder ?? 'Select a folder' : streamDestination ?? 'Select a new CSV file'}</span>{' '}
+                  <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
+                    if (streamAllPages) void selectOutputFolder()
+                    else {
+                      setChoosingStreamDestination(true)
+                      void save({ filters: [{ name: 'CSV', extensions: ['csv'] }] }).then(path => {
+                        if (path) setStreamDestination(path)
+                      }).catch(error => setRunError(String(error))).finally(() => setChoosingStreamDestination(false))
+                    }
+                  }}>{streamAllPages ? 'Select Folder' : 'Select CSV'}</button>
                 </div>}
               </div>
               {csvStreamFeedback}
@@ -1659,7 +1697,7 @@ function App() {
                     {displayedExecutions.length} {displayedExecutions.length === 1 ? 'execution' : 'executions'} · latest first
                   </p>
                   <ol className="run-result-list" aria-label="Execution Results" tabIndex={0}>
-                    {displayedExecutions.map((result) => {
+                    {displayedExecutions.map((result, executionIndex) => {
                       const isOutput = allWorkflowSteps(workflowDraft.workflow.steps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
@@ -1680,7 +1718,7 @@ function App() {
                             : '—'
 
                       return (
-                        <li key={occurrenceKey(result)} className="run-result-card">
+                        <li key={`${executionIndex}:${occurrenceKey(result)}`} className="run-result-card">
                           <span
                             className={`run-result-mark run-result-${result.status}`}
                             aria-hidden="true"
@@ -1718,6 +1756,16 @@ function App() {
           <div className="section-header">
             <h2>Output</h2>
           </div>
+          {currentPage && <div className="workflow-actions">
+            <label>Page <select value={currentPage.name} disabled={chartSaving} onChange={event => setSelectedPage(event.target.value)}>
+              {pages.map(page => <option key={page.name}>{page.name}</option>)}
+            </select></label>
+            <label>Page name <input value={currentPage.name} disabled={workflowBusy} onChange={event => {
+              const name = event.target.value
+              updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && (step.page ?? 'Results') === currentPage.name ? { ...step, page: name } : step))
+              setSelectedPage(name)
+            }} /></label>
+          </div>}
           {stopControls}
           {stopFeedback}
           {csvStreamFeedback}
@@ -1736,26 +1784,26 @@ function App() {
               <h3 id="last-run-title">Last Run</h3>
               {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
-              {displayedRun.result_rows.length === 0 && <p>No committed output rows.</p>}
-              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={displayedRun.result_rows} outputNames={outputSteps.map(step => step.name)} />
+              {pageRows.length === 0 && <p>No committed output rows.</p>}
+              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={currentOutputs.map(step => step.name)} page={currentPage?.name ?? 'Results'} pages={pages} onSavingChange={setChartSaving} />
               {displayedOutputRows.length > 0 && (
                 <section className="output-data" aria-labelledby="output-data-title">
                   <h3 id="output-data-title">Output Data</h3>
                   <p className="output-row-count">
-                    {displayedRun.result_rows.length} {displayedRun.result_rows.length === 1 ? 'row' : 'rows'} · latest first
+                    {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
                   </p>
                   <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
                     <table className="output-table" aria-labelledby="output-data-title">
                       <thead>
                         <tr>
                           {iterationRows && <th scope="col">Iteration</th>}
-                          {outputSteps.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
+                          {currentOutputs.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {displayedOutputRows.map((row, index) => (
-                          <tr key={row.for_iteration ? `${row.for_iteration.for_step_id}:${row.for_iteration.iteration_index}` : row.while_iteration ? `while:${row.while_iteration.while_step_id}:${row.while_iteration.iteration_index}` : `root:${index}`}>
-                            {iterationRows && <td>{row.for_iteration ? row.for_iteration.iteration_index + 1 : row.while_iteration ? row.while_iteration.iteration_index + 1 : '—'}</td>}
+                          <tr key={index}>
+                            {iterationRows && <td>{pageRows.length - index}</td>}
                             {row.outputs.map(output => <td key={output.name}>
                               {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
                             </td>)}
@@ -1768,19 +1816,27 @@ function App() {
               )}
             </section>
           )}
+          <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
+            onChange={event => setExportAllPages(event.target.value === 'all')}>
+            <option value="current">Current Page</option><option value="all">All Pages</option>
+          </select>
+          <select aria-label="Export format" disabled={workflowBusy} value={exportFormat}
+            onChange={event => setExportFormat(event.target.value as 'csv' | 'xlsx')}>
+            <option value="csv">CSV</option><option value="xlsx">XLSX</option>
+          </select>
           <button
             className="action-button"
             type="button"
             onClick={() => void handleExportCsv()}
             disabled={!hasWorkflowOutputs || !runSucceeded || !hasCommittedOutputRows || workflowBusy}
           >
-            {exporting ? 'Exporting…' : 'Export CSV'}
+            {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
           </button>
           {exportMessage && (
             <p className="validation-success" role="status">{exportMessage}</p>
           )}
           {exportError && (
-            <p className="error" role="alert">CSV export failed: {exportError}</p>
+            <p className="error" role="alert">Export failed: {exportError}</p>
           )}
         </section>
       )}
