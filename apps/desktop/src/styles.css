@@ -445,7 +445,8 @@ body {
 }
 
 .step-property-field input,
-.step-property-field select {
+.step-property-field select,
+.result-chart-axis-titles input {
   min-width: 0;
   padding: 6px 10px;
   border: 1px solid #c9ced6;
@@ -847,6 +848,34 @@ body {
   border: 1px solid #d8dce2;
   border-radius: 6px;
   background: #ffffff;
+}
+
+.result-chart-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.result-chart-axis-titles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 16px;
+  border: 0;
+  padding: 0;
+}
+
+.result-chart-axis-titles legend {
+  margin-bottom: 8px;
+}
+
+.result-chart-axis-titles label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 180px;
 }
 
 .result-chart-outputs {

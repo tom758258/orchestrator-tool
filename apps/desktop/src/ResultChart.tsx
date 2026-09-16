@@ -33,7 +33,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
   let displayedPanels = panels
   if (hasIteration) {
     if (panels === null && numericNames.length > 0) {
-      displayedPanels = [{ id: 0, outputs: [numericNames[0]] }]
+      displayedPanels = [{ id: 0, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
     } else if (panels?.some(panel => panel.outputs.some(name => !numericNames.includes(name)))) {
       displayedPanels = panels.map(panel => ({
         ...panel,
@@ -50,6 +50,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     if (saving.current) return
     saving.current = true
     setSavingId(id)
+    setFeedback(null)
     try {
       const destinationPath = await save({
         defaultPath: 'Chart-' + (index + 1) + '.png',
@@ -92,7 +93,9 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
     if (!displayedPanels || displayedPanels.length >= MAX_CHARTS) return
     const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
       ?? numericNames[0]
-    onPanelsChange([...displayedPanels, { id: nextChartPanelId(displayedPanels), outputs: [name] }])
+    onPanelsChange([...displayedPanels, {
+      id: nextChartPanelId(displayedPanels), outputs: [name], xAxisTitle: 'Iteration', yAxisTitle: '',
+    }])
   }
 
   return <section className="result-chart" aria-label="Charts">
@@ -109,11 +112,16 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
-            <button className="action-button" type="button" disabled={savingId !== null}
-              onClick={() => void saveImage(panel.id, index)}>Save image</button>
-            {displayedPanels.length > 1 && <button className="action-button" type="button"
-              aria-label={`Remove Chart ${index + 1}`}
-              onClick={() => onPanelsChange(displayedPanels.filter(item => item.id !== panel.id))}>Remove</button>}
+            <div className="result-chart-panel-actions">
+              <button className="action-button" type="button" disabled={savingId !== null}
+                onClick={() => void saveImage(panel.id, index)}>Save image</button>
+              {displayedPanels.length > 1 && <button className="action-button" type="button"
+                aria-label={`Remove Chart ${index + 1}`}
+                onClick={() => {
+                  if (feedback?.id === panel.id) setFeedback(null)
+                  onPanelsChange(displayedPanels.filter(item => item.id !== panel.id))
+                }}>Remove</button>}
+            </div>
           </div>
           {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
           <fieldset className="result-chart-outputs">
@@ -127,16 +135,34 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange 
               {name}
             </label>)}
           </fieldset>
+          <fieldset className="result-chart-axis-titles">
+            <legend>Axis titles</legend>
+            <label>
+              X-axis title
+              <input type="text" value={panel.xAxisTitle} onChange={event =>
+                onPanelsChange(displayedPanels.map(item => item.id === panel.id
+                  ? { ...item, xAxisTitle: event.target.value } : item))} />
+            </label>
+            <label>
+              Y-axis title
+              <input type="text" value={panel.yAxisTitle} onChange={event =>
+                onPanelsChange(displayedPanels.map(item => item.id === panel.id
+                  ? { ...item, yAxisTitle: event.target.value } : item))} />
+            </label>
+          </fieldset>
           {selectedSeries.length === 0 ? <p>Select at least one Output to display this chart.</p> : (
             <div className="result-chart-plot" role="img"
               ref={element => { if (element) plots.current.set(panel.id, element); else plots.current.delete(panel.id) }}
               aria-label={`Line chart: ${selectedSeries.map(item => item.name).join(', ')} versus Iteration, ${points.length} points per series`}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={points} margin={{ top: 16, right: 24, bottom: 24, left: 0 }}>
+                <LineChart data={points} margin={{ top: 16, right: 24, bottom: 32, left: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" dataKey="iteration" name="Iteration" allowDecimals={false}
-                    label={{ value: 'Iteration', position: 'bottom', offset: 0 }} />
-                  <YAxis type="number" />
+                    label={panel.xAxisTitle ? { value: panel.xAxisTitle, position: 'bottom', offset: 0 } : undefined} />
+                  <YAxis type="number" width={72}
+                    label={panel.yAxisTitle
+                      ? { value: panel.yAxisTitle, angle: -90, position: 'insideLeft', offset: 0, style: { textAnchor: 'middle' } }
+                      : undefined} />
                   <Tooltip labelFormatter={value => `Iteration: ${value}`} />
                   {selectedSeries.length > 1 && <Legend verticalAlign="top" />}
                   {selectedSeries.map(item => <Line key={item.key} type="linear"
