@@ -24,8 +24,8 @@ use orchestrator_tool::{
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
     workflow::{
-        ActionId, Expression, ExpressionOperand, ExpressionOperator, NumericRange, Step, StepId,
-        StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
+        Step, StepId, StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
     },
     workflow_csv::serialize_result_rows_csv,
 };
@@ -115,6 +115,7 @@ fn main() {
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
+    powers_set_voltage_step_outputs_reach_result_row();
     meters_runtime_measure_returns_sample();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
@@ -598,7 +599,12 @@ fn run_powers_runtime_fixture() {
             "last_job": {
                 "worker_job_id": "job-runtime-001",
                 "status": "succeeded",
-                "result": { "channel": 1, "voltage": 5.0 }
+                "result": {
+                    "request": {
+                        "command": "set",
+                        "arguments": { "channel": 1, "voltage": 5.0 }
+                    }
+                }
             }
         })
         .to_string(),
@@ -1070,8 +1076,73 @@ fn powers_runtime_action_succeeds() {
         Duration::from_secs(5),
     )
     .unwrap();
-    assert_eq!(result, json!({ "channel": 1, "voltage": 5.0 }));
+    assert_eq!(
+        result,
+        json!({
+            "request": {
+                "command": "set",
+                "arguments": { "channel": 1, "voltage": 5.0 }
+            }
+        })
+    );
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn powers_set_voltage_step_outputs_reach_result_row() {
+    let set_voltage_step_id = StepId::new("power-set-1").unwrap();
+    let workflow = Workflow::new(vec![
+        Step::new(
+            set_voltage_step_id.clone(),
+            StepKind::ToolAction {
+                target: ToolInstanceId::new("powers-1").unwrap(),
+                action: ActionId::new("set-voltage").unwrap(),
+                arguments: json!({ "channel": 1, "voltage": 5.0 }),
+                bindings: Default::default(),
+            },
+        ),
+        Step::new(
+            StepId::new("output-voltage").unwrap(),
+            StepKind::Output {
+                name: "voltage".to_owned(),
+                value: InputValue::StepOutput(StepOutputReference::new(
+                    set_voltage_step_id.clone(),
+                    "/request/arguments/voltage",
+                )),
+            },
+        ),
+        Step::new(
+            StepId::new("output-channel").unwrap(),
+            StepKind::Output {
+                name: "channel".to_owned(),
+                value: InputValue::StepOutput(StepOutputReference::new(
+                    set_voltage_step_id,
+                    "/request/arguments/channel",
+                )),
+            },
+        ),
+    ])
+    .unwrap();
+    let run = run_simulated_workflow(
+        &test_template(&workflow),
+        &HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("powers-runtime-success"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    assert_eq!(run.result_rows().len(), 1);
+    assert_eq!(
+        run.result_rows()[0]
+            .outputs()
+            .iter()
+            .map(|output| (output.name(), output.value()))
+            .collect::<Vec<_>>(),
+        [("voltage", &json!(5.0)), ("channel", &json!(1))]
+    );
 }
 
 fn meters_runtime_measure_returns_sample() {
