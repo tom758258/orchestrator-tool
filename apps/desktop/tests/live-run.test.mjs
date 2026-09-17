@@ -19,12 +19,20 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function harness() {
+function harness({ streamingError = null } = {}) {
   const dialog = deferred()
   const execution = deferred()
   const previous = {
     runStatus: 'idle',
-    runResult: { step_executions: [{ step_id: 'previous' }], result_rows: [{ value: 42 }] },
+    runResult: {
+      step_executions: [{ step_id: 'previous' }],
+      result_rows: [{
+        page: 'Results',
+        outputs: [{ name: 'value', value: 42 }],
+        for_iteration: null,
+        while_iteration: null,
+      }],
+    },
     runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
     csvStreamStatus: { path: 'previous.csv', rows: 1, finished: true },
     stopRequest: { loopId: 'previous-loop' },
@@ -40,8 +48,13 @@ function harness() {
     workflowDraft: { tool_instances: [], workflow: { steps: [] } },
     resourceDrafts: {}, runStatus: 'idle', liveRunInFlight: { current: false },
     streamCsv: true, hasWorkflowOutputs: true, outputFolder: 'data',
+    streamingPage: 'Results', streamAllPages: false, streamDestination: 'results.csv',
     setTools() {}, receiveRunProgress() {},
-    streamingOptions() { streamOptions++; return { output_folder: 'data' } },
+    streamingOptions() {
+      streamOptions++
+      if (streamingError) throw new Error(streamingError)
+      return { output_folder: 'data' }
+    },
     Channel: class { constructor() { channels++ } },
     confirm() { confirmations++; return dialog.promise },
     async invoke(command, args) {
@@ -99,7 +112,15 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.equal(h.state.stopRequest, null)
   assert.equal(h.state.runProgress.step_executions.length, 0)
   assert.equal(h.state.runProgress.result_rows.length, 0)
-  const result = { step_executions: [], result_rows: [{ value: 99 }] }
+  const result = {
+    step_executions: [],
+    result_rows: [{
+      page: 'Results',
+      outputs: [{ name: 'value', value: 99 }],
+      for_iteration: null,
+      while_iteration: null,
+    }],
+  }
   h.execution.resolve(result)
   await pending
   assert.equal(h.state.runResult, result)
@@ -108,6 +129,20 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.equal(h.context.liveRunInFlight.current, false)
   await h.run()
   assert.equal(h.counts().confirmations, 2)
+})
+
+test('Invalid Streaming config after confirmation preserves the previous Last Run', async () => {
+  const h = harness({ streamingError: 'Select a destination CSV before running.' })
+  const pending = h.run()
+  await flush()
+  h.dialog.resolve(true)
+  await pending
+  for (const key of ['runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+    assert.equal(h.state[key], h.previous[key])
+  }
+  assert.equal(h.state.runStatus, 'idle')
+  assert.equal(h.calls.some(call => call.command === 'run_workflow_live'), false)
+  assert.deepEqual(h.counts(), { confirmations: 1, channels: 0, streamOptions: 1 })
 })
 
 test('Confirmation and execution errors release the guard; running blocks Live', async () => {

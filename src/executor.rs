@@ -69,7 +69,7 @@ pub fn execute_workflow_with_events(
     )
 }
 
-/// Checks graceful loop stop only after a successful body and its row commit.
+/// Checks active loop targets at each successful innermost iteration commit point.
 pub fn execute_workflow_with_loop_stop(
     template: &Template,
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
@@ -83,245 +83,208 @@ pub fn execute_workflow_with_loop_stop(
         return Err(WorkflowExecutionError::EmptyWorkflow);
     }
 
-    let mut data_context = DataContext::new();
-    let mut root_results = Vec::new();
-    let mut step_executions = Vec::new();
-    let mut result_rows = Vec::new();
-    let mut completed_successfully = true;
-    let has_body_output = workflow.steps().iter().any(|step| {
-        matches!(step.kind(), StepKind::For { body, .. } | StepKind::While { body, .. }
-            if body.iter().any(|step| matches!(step.kind(), StepKind::Output { .. })))
-    });
-
-    for step in workflow.steps() {
-        let outcome = if let StepKind::For {
-            variable,
-            range,
-            body,
-        } = step.kind()
-        {
-            let previous_value = data_context.variable(variable).cloned();
-            let produces_rows = body
-                .iter()
-                .any(|step| matches!(step.kind(), StepKind::Output { .. }));
-            // Keep every exit inside this closure so the loop binding is always restored below.
-            let outcome = (|| {
-                for iteration_index in 0..range.iteration_count() {
-                    clear_body_step_outputs(body, &mut data_context);
-                    let value = match range.value_at(iteration_index) {
-                        Some(value) => match decimal_to_json_value(value) {
-                            Ok(value) => value,
-                            Err(message) => return StepOutcome::Failed { message },
-                        },
-                        None => {
-                            return StepOutcome::Failed {
-                                message: format!(
-                                    "For range has no value at iteration {iteration_index}"
-                                ),
-                            };
-                        }
-                    };
-                    data_context.set_variable(variable.clone(), value);
-                    let occurrence = ForIteration::new(step.id().clone(), iteration_index);
-                    let mut staged_outputs = Vec::new();
-                    for body_step in body {
-                        let outcome = execute_non_loop_step(
-                            body_step,
-                            template,
-                            &mut data_context,
-                            sessions,
-                            execution_mode,
-                            action_timeout,
-                        );
-                        if let StepOutcome::Succeeded { output } = &outcome {
-                            data_context.set_step_output(body_step.id().clone(), output.clone());
-                            if let StepKind::Output { name, .. } = body_step.kind() {
-                                staged_outputs
-                                    .push(WorkflowOutput::new(name.clone(), output.clone()));
-                            }
-                        }
-                        let failure = match &outcome {
-                            StepOutcome::Failed { message } => {
-                                Some(format!("body step {} failed: {message}", body_step.id()))
-                            }
-                            _ => None,
-                        };
-                        step_executions.push(StepExecution::new(
-                            StepResult::new(body_step.id().clone(), outcome),
-                            Some(occurrence.clone()),
-                        ));
-                        notify_progress(
-                            &mut on_event,
-                            WorkflowRunEvent::StepCompleted(
-                                step_executions.last().unwrap().clone(),
-                            ),
-                        );
-                        if let Some(message) = failure {
-                            return StepOutcome::Failed { message };
-                        }
-                    }
-                    if produces_rows {
-                        result_rows.push(ResultRow::new(staged_outputs, Some(occurrence)));
-                        notify_progress(
-                            &mut on_event,
-                            WorkflowRunEvent::ResultRowCommitted(
-                                result_rows.last().unwrap().clone(),
-                            ),
-                        );
-                    }
-                    if should_stop_after_iteration(step.id()) {
-                        break;
-                    }
-                }
-                StepOutcome::Succeeded {
-                    output: Value::Null,
-                }
-            })();
-            clear_body_step_outputs(body, &mut data_context);
-            if let Some(value) = previous_value {
-                data_context.set_variable(variable.clone(), value);
-            } else {
-                data_context.remove_variable(variable);
-            }
-            outcome
-        } else if let StepKind::While {
-            condition,
-            max_iterations,
-            body,
-        } = step.kind()
-        {
-            let produces_rows = body
-                .iter()
-                .any(|step| matches!(step.kind(), StepKind::Output { .. }));
-            let outcome = (|| {
-                let mut iteration_index = 0;
-                loop {
-                    match data_context.resolve(&InputValue::Expression(condition.clone())) {
-                        Ok(Value::Bool(false)) => {
-                            return StepOutcome::Succeeded {
-                                output: Value::Null,
-                            };
-                        }
-                        Ok(Value::Bool(true)) => {}
-                        Ok(_) => {
-                            return StepOutcome::Failed {
-                                message: "While condition must resolve to a boolean".to_owned(),
-                            };
-                        }
-                        Err(error) => {
-                            return StepOutcome::Failed {
-                                message: error.to_string(),
-                            };
-                        }
-                    }
-                    if max_iterations.is_some_and(|limit| iteration_index >= limit) {
-                        return StepOutcome::Failed {
-                            message: "While reached max_iterations while condition is still true"
-                                .to_owned(),
-                        };
-                    }
-                    clear_body_step_outputs(body, &mut data_context);
-                    let occurrence = WhileIteration::new(step.id().clone(), iteration_index);
-                    let mut staged_outputs = Vec::new();
-                    for body_step in body {
-                        let outcome = execute_non_loop_step(
-                            body_step,
-                            template,
-                            &mut data_context,
-                            sessions,
-                            execution_mode,
-                            action_timeout,
-                        );
-                        if let StepOutcome::Succeeded { output } = &outcome {
-                            data_context.set_step_output(body_step.id().clone(), output.clone());
-                            if let StepKind::Output { name, .. } = body_step.kind() {
-                                staged_outputs
-                                    .push(WorkflowOutput::new(name.clone(), output.clone()));
-                            }
-                        }
-                        let failure = match &outcome {
-                            StepOutcome::Failed { message } => {
-                                Some(format!("body step {} failed: {message}", body_step.id()))
-                            }
-                            _ => None,
-                        };
-                        step_executions.push(StepExecution::in_while(
-                            StepResult::new(body_step.id().clone(), outcome),
-                            occurrence.clone(),
-                        ));
-                        notify_progress(
-                            &mut on_event,
-                            WorkflowRunEvent::StepCompleted(
-                                step_executions.last().unwrap().clone(),
-                            ),
-                        );
-                        if let Some(message) = failure {
-                            return StepOutcome::Failed { message };
-                        }
-                    }
-                    if produces_rows {
-                        result_rows.push(ResultRow::in_while(staged_outputs, occurrence));
-                        notify_progress(
-                            &mut on_event,
-                            WorkflowRunEvent::ResultRowCommitted(
-                                result_rows.last().unwrap().clone(),
-                            ),
-                        );
-                    }
-                    if should_stop_after_iteration(step.id()) {
-                        return StepOutcome::Succeeded {
-                            output: Value::Null,
-                        };
-                    }
-                    iteration_index += 1;
-                }
-            })();
-            clear_body_step_outputs(body, &mut data_context);
-            outcome
-        } else {
-            execute_non_loop_step(
-                step,
-                template,
-                &mut data_context,
-                sessions,
-                execution_mode,
-                action_timeout,
-            )
-        };
-
-        if let StepOutcome::Succeeded { output } = &outcome {
-            data_context.set_step_output(step.id().clone(), output.clone());
-        }
-        let is_failed = matches!(outcome, StepOutcome::Failed { .. });
-        let result = StepResult::new(step.id().clone(), outcome);
-        step_executions.push(StepExecution::new(result.clone(), None));
-        notify_progress(
-            &mut on_event,
-            WorkflowRunEvent::StepCompleted(step_executions.last().unwrap().clone()),
-        );
-        root_results.push(result);
-        if is_failed {
-            completed_successfully = false;
-            break;
-        }
-    }
-
-    if completed_successfully && !has_body_output {
-        result_rows.push(ResultRow::new(
-            workflow
-                .project_outputs(&root_results)
-                .expect("all validated workflow steps succeeded"),
-            None,
-        ));
-        notify_progress(
-            &mut on_event,
-            WorkflowRunEvent::ResultRowCommitted(result_rows.last().unwrap().clone()),
-        );
-    }
-    Ok(WorkflowRunResult::new(step_executions, result_rows))
+    let mut execution = Execution {
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        on_event: &mut on_event,
+        should_stop: &mut should_stop_after_iteration,
+        data: DataContext::new(),
+        executions: Vec::new(),
+        rows: Vec::new(),
+    };
+    let _ = execution.scope(workflow.steps(), &[], None);
+    Ok(WorkflowRunResult::new(execution.executions, execution.rows))
 }
 
-fn notify_progress(on_event: &mut impl FnMut(WorkflowRunEvent), event: WorkflowRunEvent) {
+#[derive(Clone)]
+enum Iteration {
+    For(ForIteration),
+    While(WhileIteration),
+}
+
+struct Execution<'a> {
+    template: &'a Template,
+    sessions: &'a HashMap<ToolInstanceId, &'a WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+    on_event: &'a mut dyn FnMut(WorkflowRunEvent),
+    should_stop: &'a mut dyn FnMut(&StepId) -> bool,
+    data: DataContext,
+    executions: Vec<StepExecution>,
+    rows: Vec<ResultRow>,
+}
+
+impl Execution<'_> {
+    // A stop target travels up the stack until its owning loop consumes it.
+    fn scope(
+        &mut self,
+        steps: &[Step],
+        path: &[StepId],
+        iteration: Option<&Iteration>,
+    ) -> Result<Option<StepId>, String> {
+        let mut staged = Vec::<(String, Vec<WorkflowOutput>)>::new();
+        for step in steps {
+            let (outcome, unwind) = match step.kind() {
+                StepKind::For { .. } | StepKind::While { .. } => match self.run_loop(step, path) {
+                    Ok(target) => (
+                        StepOutcome::Succeeded {
+                            output: Value::Null,
+                        },
+                        target,
+                    ),
+                    Err(message) => (StepOutcome::Failed { message }, None),
+                },
+                _ => (
+                    execute_non_loop_step(
+                        step,
+                        self.template,
+                        &mut self.data,
+                        self.sessions,
+                        self.execution_mode,
+                        self.action_timeout,
+                    ),
+                    None,
+                ),
+            };
+            if let StepOutcome::Succeeded { output } = &outcome {
+                self.data.set_step_output(step.id().clone(), output.clone());
+                if let StepKind::Output { name, .. } = step.kind() {
+                    let index = staged
+                        .iter()
+                        .position(|(page, _)| page == step.output_page())
+                        .unwrap_or_else(|| {
+                            staged.push((step.output_page().to_owned(), Vec::new()));
+                            staged.len() - 1
+                        });
+                    staged[index]
+                        .1
+                        .push(WorkflowOutput::new(name.clone(), output.clone()));
+                }
+            }
+            let failure = match &outcome {
+                StepOutcome::Failed { message } => {
+                    Some(format!("body step {} failed: {message}", step.id()))
+                }
+                _ => None,
+            };
+            let result = StepResult::new(step.id().clone(), outcome);
+            let completed = match iteration {
+                Some(Iteration::For(i)) => StepExecution::new(result, Some(i.clone())),
+                Some(Iteration::While(i)) => StepExecution::in_while(result, i.clone()),
+                None => StepExecution::new(result, None),
+            };
+            self.executions.push(completed.clone());
+            notify_progress(self.on_event, WorkflowRunEvent::StepCompleted(completed));
+            if let Some(message) = failure {
+                return Err(message);
+            }
+            if unwind.is_some() {
+                return Ok(unwind);
+            }
+        }
+        // No synthetic rows for zero-iteration pages. Retain the existing no-Output root row.
+        if path.is_empty() && self.template.workflow().output_pages().is_empty() {
+            staged.push(("Results".to_owned(), Vec::new()));
+        }
+        for (page, outputs) in staged {
+            let row = match iteration {
+                Some(Iteration::For(i)) => ResultRow::new(outputs, Some(i.clone())),
+                Some(Iteration::While(i)) => ResultRow::in_while(outputs, i.clone()),
+                None => ResultRow::new(outputs, None),
+            }
+            .with_page(page);
+            self.rows.push(row.clone());
+            notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
+        }
+        // Only a fully successful scope reaches its safe point. Ancestors are checked here,
+        // so stopping one never requires finishing remaining descendant iterations.
+        for id in path {
+            if (self.should_stop)(id) {
+                return Ok(Some(id.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    fn run_loop(&mut self, step: &Step, ancestors: &[StepId]) -> Result<Option<StepId>, String> {
+        let (body, variable) = match step.kind() {
+            StepKind::For { body, variable, .. } => (body, Some(variable)),
+            StepKind::While { body, .. } => (body, None),
+            _ => unreachable!(),
+        };
+        let previous = variable.and_then(|variable| self.data.variable(variable).cloned());
+        let mut path = ancestors.to_vec();
+        path.push(step.id().clone());
+        let result = (|| {
+            let mut index = 0;
+            loop {
+                let occurrence = match step.kind() {
+                    StepKind::For {
+                        variable, range, ..
+                    } => {
+                        let Some(value) = range.value_at(index) else {
+                            return Ok(None);
+                        };
+                        self.data
+                            .set_variable(variable.clone(), decimal_to_json_value(value)?);
+                        Iteration::For(ForIteration::new(step.id().clone(), index))
+                    }
+                    StepKind::While {
+                        condition,
+                        max_iterations,
+                        ..
+                    } => {
+                        match self
+                            .data
+                            .resolve(&InputValue::Expression(condition.clone()))
+                            .map_err(|e| e.to_string())?
+                        {
+                            Value::Bool(false) => return Ok(None),
+                            Value::Bool(true) => {}
+                            _ => return Err("While condition must resolve to a boolean".to_owned()),
+                        }
+                        if max_iterations.is_some_and(|limit| index >= limit) {
+                            return Err(
+                                "While reached max_iterations while condition is still true"
+                                    .to_owned(),
+                            );
+                        }
+                        Iteration::While(WhileIteration::new(step.id().clone(), index))
+                    }
+                    _ => unreachable!(),
+                };
+                clear_body_step_outputs(body, &mut self.data);
+                let inherited = self.data.variable_scope();
+                let body_result = self.scope(body, &path, Some(&occurrence));
+                self.data.leave_variable_scope(&inherited);
+                if let Some(target) = body_result? {
+                    return Ok(if target == *step.id() {
+                        None
+                    } else {
+                        Some(target)
+                    });
+                }
+                index += 1;
+            }
+        })();
+        clear_body_step_outputs(body, &mut self.data);
+        if let Some(variable) = variable {
+            if let Some(value) = previous {
+                self.data.set_variable(variable.clone(), value);
+            } else {
+                self.data.remove_variable(variable);
+            }
+        }
+        result
+    }
+}
+
+fn notify_progress(
+    on_event: &mut (impl FnMut(WorkflowRunEvent) + ?Sized),
+    event: WorkflowRunEvent,
+) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_event(event)));
 }
 
@@ -404,9 +367,9 @@ fn execute_non_loop_step(
             ),
             Err(message) => StepOutcome::Failed { message },
         },
-        StepKind::For { .. } | StepKind::While { .. } => StepOutcome::Failed {
-            message: "nested loop execution is not supported".to_owned(),
-        },
+        StepKind::For { .. } | StepKind::While { .. } => {
+            unreachable!("loops execute through run_loop")
+        }
     }
 }
 
@@ -506,7 +469,7 @@ mod tests {
     fn graceful_stop_run(is_while: bool, fail_body: bool) {
         use std::cell::RefCell;
         let body = json!([
-            { "type": "output", "id": "out", "name": "value",
+            { "type": "output", "id": "out", "name": "value", "page": "Results",
               "value": { "source": "literal", "value": 42 } },
             { "type": "assert", "id": "body-last",
               "left": { "source": "literal", "value": if fail_body { 2 } else { 0 } },
@@ -769,9 +732,9 @@ mod tests {
                         "operator": "greater-than-or-equal",
                         "right": { "source": "variable", "variable": "x" }, "message": "Count must persist." }
                   ] },
-                { "type": "output", "id": "out-x", "name": "x",
+                { "type": "output", "id": "out-x", "name": "x", "page": "Results",
                   "value": { "source": "variable", "variable": "x" } },
-                { "type": "output", "id": "out-count", "name": "count",
+                { "type": "output", "id": "out-count", "name": "count", "page": "Results",
                   "value": { "source": "variable", "variable": "count" } },
                 { "type": "set-variable", "id": "read-for", "variable": "aggregate",
                   "value": { "source": "step-output", "step_id": "sweep", "pointer": "" } }
@@ -816,11 +779,11 @@ mod tests {
                   "value": { "source": "literal", "value": 42 } },
                 { "type": "for", "id": "sweep", "variable": "voltage",
                   "range": { "start": "0", "stop": "0.3", "step": "0.1" }, "steps": [
-                    { "type": "output", "id": "voltage-out", "name": "voltage",
+                    { "type": "output", "id": "voltage-out", "name": "voltage", "page": "Results",
                       "value": { "source": "variable", "variable": "voltage" } },
-                    { "type": "output", "id": "sibling-out", "name": "sibling",
+                    { "type": "output", "id": "sibling-out", "name": "sibling", "page": "Results",
                       "value": { "source": "step-output", "step_id": "voltage-out", "pointer": "" } },
-                    { "type": "output", "id": "root-out", "name": "baseline",
+                    { "type": "output", "id": "root-out", "name": "baseline", "page": "Results",
                       "value": { "source": "step-output", "step_id": "before", "pointer": "" } }
                   ] }
             ] }
@@ -864,7 +827,7 @@ mod tests {
                 "workflow": { "steps": [
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
-                        { "type": "output", "id": "out-x", "name": "x",
+                        { "type": "output", "id": "out-x", "name": "x", "page": "Results",
                           "value": { "source": "variable", "variable": "x" } },
                         { "type": "assert", "id": "check-x",
                             "left": { "source": "variable", "variable": "x" },

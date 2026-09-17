@@ -6,6 +6,15 @@ use serde_json::Value;
 
 use crate::workflow::{ResultRow, WorkflowOutput};
 
+/// Shared textual representation for CSV and XLSX cells.
+pub fn export_cell(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Null => String::new(),
+        value => value.to_string(),
+    }
+}
+
 /// Writes Output names as the header and one data record per row, excluding iteration metadata.
 /// Strings retain their contents, null becomes empty, and other values use compact JSON.
 pub fn serialize_result_rows_csv(rows: &[ResultRow]) -> Result<String, CsvSerializationError> {
@@ -75,11 +84,11 @@ impl<W: Write> ResultRowsCsvWriter<W> {
             });
         }
         if !self.names.is_empty() {
-            self.write_record(row.outputs().iter().map(|output| match output.value() {
-                Value::String(value) => value.clone(),
-                Value::Null => String::new(),
-                value => value.to_string(),
-            }))?;
+            self.write_record(
+                row.outputs()
+                    .iter()
+                    .map(|output| export_cell(output.value())),
+            )?;
         }
         self.row_index += 1;
         Ok(())

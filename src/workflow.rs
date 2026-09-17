@@ -234,6 +234,7 @@ impl ExpressionOperator {
 pub struct Step {
     id: StepId,
     kind: StepKind,
+    output_page: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -346,7 +347,20 @@ impl Error for NumericRangeError {}
 impl Step {
     /// Creates a workflow step.
     pub fn new(id: StepId, kind: StepKind) -> Self {
-        Self { id, kind }
+        Self {
+            id,
+            kind,
+            output_page: "Results".to_owned(),
+        }
+    }
+
+    pub fn with_output_page(mut self, name: impl Into<String>) -> Self {
+        self.output_page = name.into();
+        self
+    }
+
+    pub fn output_page(&self) -> &str {
+        &self.output_page
     }
 
     /// Returns the stable step ID.
@@ -397,10 +411,59 @@ pub enum StepKind {
     },
 }
 
+/// One independent dataset, bound to a complete lexical loop path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutputPage {
+    name: String,
+    row_scope: Vec<StepId>,
+    headers: Vec<String>,
+}
+
+impl OutputPage {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn row_scope(&self) -> &[StepId] {
+        &self.row_scope
+    }
+    pub fn headers(&self) -> &[String] {
+        &self.headers
+    }
+}
+
+/// Page names are also CSV file stems and Excel worksheet names.
+pub fn validate_page_name(name: &str) -> Result<(), String> {
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
+        });
+    if name.trim().is_empty()
+        || name != name.trim()
+        || name.chars().count() > 31
+        || name.ends_with('.')
+        || name.starts_with('\'')
+        || name.ends_with('\'')
+        || name
+            .chars()
+            .any(|c| c.is_control() || r#"<>:"/\|?*[]"#.contains(c))
+        || reserved
+        || name.eq_ignore_ascii_case("History")
+    {
+        return Err(format!(
+            "Invalid Page name {name:?}: use 1-31 characters safe for CSV filenames and Excel worksheets"
+        ));
+    }
+    Ok(())
+}
+
 /// An ordered collection of top-level workflow steps.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workflow {
     steps: Vec<Step>,
+    pages: Vec<OutputPage>,
 }
 
 impl Workflow {
@@ -408,22 +471,15 @@ impl Workflow {
     pub fn new(steps: Vec<Step>) -> Result<Self, WorkflowError> {
         let mut seen = HashSet::new();
         let mut output_names = HashSet::new();
-        let mut root_outputs = false;
-        let mut body_outputs = false;
-        let mut row_loop = None;
-
-        #[allow(clippy::too_many_arguments)]
+        let mut pages = Vec::<OutputPage>::new();
         fn validate_steps(
             steps: &[Step],
             seen: &mut HashSet<StepId>,
             output_names: &mut HashSet<String>,
             available: &HashSet<StepId>,
-            root_outputs: &mut bool,
-            body_outputs: &mut bool,
-            in_loop: bool,
-            loop_variable: Option<&VariableId>,
-            current_loop: Option<&StepId>,
-            row_loop: &mut Option<StepId>,
+            path: &[StepId],
+            variables: &[VariableId],
+            pages: &mut Vec<OutputPage>,
         ) -> Result<(), WorkflowError> {
             let mut prior = available.clone();
             for step in steps {
@@ -455,59 +511,52 @@ impl Workflow {
                     }
                 };
                 match step.kind() {
-                    StepKind::For {
-                        variable,
-                        range,
-                        body,
-                    } => {
-                        let _ = range.iteration_count();
-                        if in_loop {
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                        if path.len() >= 5 {
                             return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
+                        let mut child_variables = variables.to_vec();
+                        if let StepKind::For { variable, .. } = step.kind() {
+                            child_variables.push(variable.clone());
+                        }
+                        if let StepKind::While {
+                            condition,
+                            max_iterations,
+                            ..
+                        } = step.kind()
+                        {
+                            if !condition.operator().is_comparison() {
+                                return Err(WorkflowError::InvalidWhileOperator(step.id().clone()));
+                            }
+                            if *max_iterations == Some(0) {
+                                return Err(WorkflowError::InvalidWhileMaxIterations(
+                                    step.id().clone(),
+                                ));
+                            }
+                            if max_iterations.is_none() {
+                                if !path.is_empty() {
+                                    return Err(WorkflowError::NestedUnlimitedWhile(
+                                        step.id().clone(),
+                                    ));
+                                }
+                                if body.is_empty() {
+                                    return Err(WorkflowError::EmptyUnlimitedWhileBody(
+                                        step.id().clone(),
+                                    ));
+                                }
+                            }
+                            validate_input(&InputValue::Expression(condition.clone()))?;
+                        }
+                        let mut child_path = path.to_vec();
+                        child_path.push(step.id().clone());
                         validate_steps(
                             body,
                             seen,
                             output_names,
                             &prior,
-                            root_outputs,
-                            body_outputs,
-                            true,
-                            Some(variable),
-                            Some(step.id()),
-                            row_loop,
-                        )?;
-                    }
-                    StepKind::While {
-                        condition,
-                        max_iterations,
-                        body,
-                    } => {
-                        if in_loop {
-                            return Err(WorkflowError::NestedLoop(step.id().clone()));
-                        }
-                        if !condition.operator().is_comparison() {
-                            return Err(WorkflowError::InvalidWhileOperator(step.id().clone()));
-                        }
-                        if *max_iterations == Some(0) {
-                            return Err(WorkflowError::InvalidWhileMaxIterations(
-                                step.id().clone(),
-                            ));
-                        }
-                        if max_iterations.is_none() && body.is_empty() {
-                            return Err(WorkflowError::EmptyUnlimitedWhileBody(step.id().clone()));
-                        }
-                        validate_input(&InputValue::Expression(condition.clone()))?;
-                        validate_steps(
-                            body,
-                            seen,
-                            output_names,
-                            &prior,
-                            root_outputs,
-                            body_outputs,
-                            true,
-                            None,
-                            Some(step.id()),
-                            row_loop,
+                            &child_path,
+                            &child_variables,
+                            pages,
                         )?;
                     }
                     StepKind::Assert { condition, .. } => {
@@ -517,7 +566,7 @@ impl Workflow {
                         validate_input(&InputValue::Expression(condition.clone()))?;
                     }
                     StepKind::SetVariable { variable, value } => {
-                        if loop_variable == Some(variable) {
+                        if variables.contains(variable) {
                             return Err(WorkflowError::LoopVariableAssignment(step.id().clone()));
                         }
                         validate_input(value)?;
@@ -530,22 +579,29 @@ impl Workflow {
                             return Err(WorkflowError::DuplicateOutputName(name.clone()));
                         }
                         validate_input(value)?;
-                        if in_loop {
-                            if let Some(loop_id) = current_loop {
-                                if let Some(previous) = row_loop {
-                                    if previous != loop_id {
-                                        return Err(WorkflowError::MultipleRowProducingLoops {
-                                            first: previous.clone(),
-                                            second: loop_id.clone(),
-                                        });
-                                    }
-                                } else {
-                                    *row_loop = Some(loop_id.clone());
-                                }
+                        validate_page_name(step.output_page())
+                            .map_err(WorkflowError::InvalidPage)?;
+                        if let Some(page) = pages
+                            .iter_mut()
+                            .find(|page| page.name == step.output_page())
+                        {
+                            if page.row_scope != path {
+                                return Err(WorkflowError::PageScopeMismatch(page.name.clone()));
                             }
-                            *body_outputs = true;
+                            page.headers.push(name.clone());
                         } else {
-                            *root_outputs = true;
+                            if pages.iter().any(|page| {
+                                page.name.to_lowercase() == step.output_page().to_lowercase()
+                            }) {
+                                return Err(WorkflowError::InvalidPage(
+                                    "Page names must be unique ignoring case".to_owned(),
+                                ));
+                            }
+                            pages.push(OutputPage {
+                                name: step.output_page().to_owned(),
+                                row_scope: path.to_vec(),
+                                headers: vec![name.clone()],
+                            });
                         }
                     }
                     StepKind::ToolAction { bindings, .. } => {
@@ -559,24 +615,20 @@ impl Workflow {
             }
             Ok(())
         }
-
         validate_steps(
             &steps,
             &mut seen,
             &mut output_names,
             &HashSet::new(),
-            &mut root_outputs,
-            &mut body_outputs,
-            false,
-            None,
-            None,
-            &mut row_loop,
+            &[],
+            &[],
+            &mut pages,
         )?;
-        if root_outputs && body_outputs {
-            return Err(WorkflowError::MixedOutputPlacement);
-        }
+        Ok(Self { steps, pages })
+    }
 
-        Ok(Self { steps })
+    pub fn output_pages(&self) -> &[OutputPage] {
+        &self.pages
     }
 
     /// Projects successful Output results in workflow order.
@@ -677,9 +729,10 @@ pub enum WorkflowError {
     DuplicateOutputName(String),
     InvalidStepOutputReference { step_id: StepId, target: StepId },
     NestedLoop(StepId),
+    NestedUnlimitedWhile(StepId),
+    InvalidPage(String),
+    PageScopeMismatch(String),
     LoopVariableAssignment(StepId),
-    MixedOutputPlacement,
-    MultipleRowProducingLoops { first: StepId, second: StepId },
     InvalidRange(String),
 }
 
@@ -717,22 +770,24 @@ impl fmt::Display for WorkflowError {
             Self::DuplicateStepId(step_id) => {
                 write!(formatter, "duplicate workflow step ID {step_id}")
             }
+            Self::InvalidPage(message) => formatter.write_str(message),
+            Self::PageScopeMismatch(name) => write!(
+                formatter,
+                "Page {name:?} cannot be shared by different row scopes / loop paths"
+            ),
+            Self::NestedUnlimitedWhile(id) => write!(
+                formatter,
+                "nested Unlimited While {id} is not allowed; Unlimited must be top-level"
+            ),
             Self::NestedLoop(step_id) => {
                 write!(
                     formatter,
-                    "nested For/While is not supported at step {step_id}"
+                    "nested For/While depth exceeds 5 at step {step_id}"
                 )
             }
             Self::LoopVariableAssignment(step_id) => write!(
                 formatter,
                 "step {step_id} cannot assign its For loop variable"
-            ),
-            Self::MixedOutputPlacement => {
-                write!(formatter, "root and loop-body outputs cannot be mixed")
-            }
-            Self::MultipleRowProducingLoops { first, second } => write!(
-                formatter,
-                "Loop steps {first} and {second} both produce workflow rows"
             ),
             Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
         }
@@ -871,14 +926,24 @@ impl StepExecution {
 /// One externally produced row, with Output names as columns.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResultRow {
+    page: String,
     outputs: Vec<WorkflowOutput>,
     for_iteration: Option<ForIteration>,
     while_iteration: Option<WhileIteration>,
 }
 
 impl ResultRow {
+    pub fn with_page(mut self, page: impl Into<String>) -> Self {
+        self.page = page.into();
+        self
+    }
+    pub fn page(&self) -> &str {
+        &self.page
+    }
+
     pub fn in_while(outputs: Vec<WorkflowOutput>, while_iteration: WhileIteration) -> Self {
         Self {
+            page: "Results".to_owned(),
             outputs,
             for_iteration: None,
             while_iteration: Some(while_iteration),
@@ -891,6 +956,7 @@ impl ResultRow {
 
     pub fn new(outputs: Vec<WorkflowOutput>, for_iteration: Option<ForIteration>) -> Self {
         Self {
+            page: "Results".to_owned(),
             outputs,
             for_iteration,
             while_iteration: None,
@@ -1367,7 +1433,7 @@ mod tests {
     }
 
     #[test]
-    fn only_one_for_may_produce_rows() {
+    fn default_page_cannot_mix_row_scopes() {
         let output = |id: &str, name: &str| {
             Step::new(
                 StepId::new(id).unwrap(),
@@ -1393,14 +1459,14 @@ mod tests {
                 output("root-output", "root"),
                 for_step("for-a", vec![output("body-output", "body")]),
             ]),
-            Err(WorkflowError::MixedOutputPlacement)
+            Err(WorkflowError::PageScopeMismatch(_))
         ));
         assert!(matches!(
             Workflow::new(vec![
                 for_step("for-a", vec![output("out-a", "a")]),
                 for_step("for-b", vec![output("out-b", "b")]),
             ]),
-            Err(WorkflowError::MultipleRowProducingLoops { .. })
+            Err(WorkflowError::PageScopeMismatch(_))
         ));
         assert!(Workflow::new(vec![for_step("for-a", vec![]), for_step("for-b", vec![])]).is_ok());
     }
@@ -1440,13 +1506,7 @@ mod tests {
             )]),
             Err(WorkflowError::DuplicateStepId(step_id)) if step_id == duplicate_body_id
         ));
-        assert!(matches!(
-            Workflow::new(vec![for_step(
-                "outer",
-                vec![for_step("inner", vec![])],
-            )]),
-            Err(WorkflowError::NestedLoop(step_id)) if step_id.as_str() == "inner"
-        ));
+        assert!(Workflow::new(vec![for_step("outer", vec![for_step("inner", vec![])])]).is_ok());
 
         let root_id = StepId::new("root-a").unwrap();
         let body_id = StepId::new("body-a").unwrap();

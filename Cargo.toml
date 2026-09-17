@@ -9,6 +9,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4.6", features = ["derive"] }
 csv = "1"
 rust_decimal = { version = "1.43", default-features = false, features = ["std"] }
+rust_xlsxwriter = { version = "0.99.1", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9"
@@ -18,3 +19,6 @@ ureq = { version = "3.4", default-features = false, features = ["json"] }
 name = "worker"
 path = "tests/worker.rs"
 harness = false
+
+[dev-dependencies]
+calamine = { version = "0.35", default-features = false }

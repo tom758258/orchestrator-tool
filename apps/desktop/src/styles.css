@@ -224,14 +224,22 @@ body {
 
 .workflow-builder {
   display: grid;
-  grid-template-columns: 170px minmax(340px, 1fr) 300px;
+  grid-template-columns: 220px minmax(340px, 1fr) 300px;
   align-items: start;
   gap: 16px;
   margin-top: 16px;
   min-width: 0;
 }
 
-.step-palette {
+.workflow-sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.step-palette,
+.streaming-panel {
   min-width: 0;
   border: 1px solid #c9ced6;
   border-radius: 8px;
@@ -239,9 +247,36 @@ body {
   background: #fafafa;
 }
 
-.step-palette h3 {
+.step-palette h3,
+.streaming-panel h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.streaming-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.streaming-fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.streaming-fields select {
+  min-width: 0;
+  width: 100%;
+}
+
+.streaming-destination {
+  color: #5a6270;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .step-palette-items {
@@ -911,13 +946,17 @@ body {
   height: 350px;
 }
 
-.csv-stream-controls,
 .csv-stream-feedback {
   margin: 12px 0;
   overflow-wrap: anywhere;
 }
 
-.csv-stream-controls p,
 .csv-stream-feedback p {
   margin: 6px 0;
+}
+
+.page-name-editor p {
+  margin: 4px 0 0;
+  color: #5a6270;
+  font-size: 0.85rem;
 }

@@ -17,6 +17,7 @@ type OutputStep = {
   type: 'output'
   id: string
   name: string
+  page: string
   value: InputValueWire
 }
 
@@ -44,7 +45,7 @@ export type ForStep = {
   id: string
   variable: string
   range: { start: string; stop: string; step: string }
-  steps: NonLoopWorkflowStep[]
+  steps: WorkflowStep[]
 }
 export type WhileStep = {
   type: 'while'
@@ -53,7 +54,7 @@ export type WhileStep = {
   operator: ComparisonOperator
   right: ExpressionOperandWire
   max_iterations: number | null
-  steps: NonLoopWorkflowStep[]
+  steps: WorkflowStep[]
 }
 export type WorkflowStep = NonLoopWorkflowStep | ForStep | WhileStep
 
@@ -68,6 +69,7 @@ export type StepExecutionDto = {
   while_iteration: WhileIterationDto | null
 }
 export type ResultRowDto = {
+  page: string
   outputs: { name: string; value: unknown }[]
   for_iteration: ForIterationDto | null
   while_iteration: WhileIterationDto | null
@@ -82,36 +84,84 @@ export type WorkflowRunEventDto =
   | { type: 'result-row-committed'; row: ResultRowDto }
 
 export function allWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
-  return steps.flatMap(step => (step.type === 'for' || step.type === 'while') ? [step, ...step.steps] : [step])
+  return steps.flatMap(step => (step.type === 'for' || step.type === 'while') ? [step, ...allWorkflowSteps(step.steps)] : [step])
 }
 
-export function enclosingLoop(steps: readonly WorkflowStep[], stepId: string | null): ForStep | WhileStep | undefined {
-  return steps.find((step): step is ForStep | WhileStep =>
-    (step.type === 'for' || step.type === 'while') && step.steps.some(body => body.id === stepId))
+export function loopPath(steps: readonly WorkflowStep[], stepId: string | null): (ForStep | WhileStep)[] {
+  for (const step of steps) {
+    if (step.id === stepId) return []
+    if (step.type === 'for' || step.type === 'while') {
+      if (allWorkflowSteps(step.steps).some(child => child.id === stepId)) {
+        return [step, ...loopPath(step.steps, stepId)]
+      }
+    }
+  }
+  return []
 }
 
-export function insertionLoop(steps: readonly WorkflowStep[], stepId: string | null): ForStep | WhileStep | undefined {
-  const selected = steps.find(step => step.id === stepId)
+export function enclosingLoop(steps: readonly WorkflowStep[], stepId: string | null) {
+  return loopPath(steps, stepId).at(-1)
+}
+
+export function insertionLoop(steps: readonly WorkflowStep[], stepId: string | null) {
+  const selected = allWorkflowSteps(steps).find(step => step.id === stepId)
   return selected?.type === 'for' || selected?.type === 'while' ? selected : enclosingLoop(steps, stepId)
 }
 
+export function mapWorkflowSteps(steps: readonly WorkflowStep[], update: (step: WorkflowStep) => WorkflowStep | null): WorkflowStep[] {
+  return steps.flatMap(step => {
+    const next = update(step)
+    if (!next) return []
+    return [(next.type === 'for' || next.type === 'while')
+      ? { ...next, steps: mapWorkflowSteps(next.steps, update) } : next]
+  })
+}
+
 export function inputScope(steps: readonly WorkflowStep[], stepId: string | null) {
-  const parent = enclosingLoop(steps, stepId)
-  const rootIndex = steps.findIndex(step => step.id === (parent?.id ?? stepId))
-  const priorRoots = rootIndex < 0 ? [] : steps.slice(0, rootIndex)
-  const priorBody = parent ? parent.steps.slice(0, parent.steps.findIndex(step => step.id === stepId)) : []
-  const earlierSteps = parent
-    ? [...priorRoots, ...priorBody]
-    : priorRoots
-  const setVariables = (items: readonly WorkflowStep[]) => items.flatMap(step =>
-    step.type === 'set-variable' ? [step.variable] : [])
-  const variables = priorRoots.flatMap(step => step.type === 'for'
-    ? setVariables(step.steps).filter(variable => variable !== step.variable)
-    : step.type === 'while' ? setVariables(step.steps) : setVariables([step]))
-  if (parent?.type === 'for') variables.push(parent.variable)
-  if (parent) variables.push(...setVariables(priorBody))
-  const earlierVariables = [...new Set(variables.filter(variable => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(variable)))]
-  return { earlierSteps, earlierVariables }
+  const path = loopPath(steps, stepId)
+  const earlierSteps: WorkflowStep[] = []
+  const variables: string[] = []
+  let siblings = steps
+  for (const target of [...path.map(step => step.id), stepId]) {
+    const index = siblings.findIndex(step => step.id === target)
+    if (index < 0) break
+    const prior = siblings.slice(0, index)
+    earlierSteps.push(...prior)
+    variables.push(...prior.flatMap(step => step.type === 'set-variable' ? [step.variable] : []))
+    const step = siblings[index]
+    if (step.id === stepId) break
+    if (step.type === 'for') variables.push(step.variable)
+    if (step.type === 'for' || step.type === 'while') siblings = step.steps
+  }
+  return { earlierSteps, earlierVariables: [...new Set(variables.filter(variable => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(variable)))] }
+}
+
+export function outputPages(steps: readonly WorkflowStep[]) {
+  const pages: { name: string; scope: string[]; outputs: OutputStep[] }[] = []
+  for (const output of outputDefinitions(steps)) {
+    const name = output.page
+    const page = pages.find(page => page.name === name)
+    if (page) page.outputs.push(output)
+    else pages.push({ name, scope: loopPath(steps, output.id).map(loop => loop.id), outputs: [output] })
+  }
+  return pages
+}
+
+export function compatibleOutputPages(steps: readonly WorkflowStep[], outputId: string): string[] {
+  const scope = loopPath(steps, outputId).map(loop => loop.id)
+  return outputPages(steps)
+    .filter(page => page.scope.length === scope.length && page.scope.every((id, index) => id === scope[index]))
+    .map(page => page.name)
+}
+
+export function hasExportableRows(
+  rows: readonly ResultRowDto[],
+  currentPage: string | undefined,
+  allPages: boolean,
+): boolean {
+  return allPages
+    ? rows.length > 0
+    : currentPage !== undefined && rows.some(row => row.page === currentPage)
 }
 
 export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] {
