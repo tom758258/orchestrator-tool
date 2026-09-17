@@ -607,6 +607,8 @@ body {
 
 .sequence-editor {
   min-width: 0;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 .sequence-editor h3 {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { EXPRESSION_OPERATORS } from './inputValue'
+import { EXPRESSION_OPERATORS, isMeterMeasureStep, stepOutputReference } from './inputValue'
 import type { ExpressionOperandWire, InputValueWire } from './inputValue'
 import type { WorkflowStep } from './App'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -110,16 +110,17 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
       )
     case 'step-output': {
       const previousStep = earlierSteps.find((step) => step.id === value.step_id)
-      const isMeterMeasure = previousStep?.type === 'tool-action'
-        && previousStep.action === 'measure'
-        && instances.find((instance) => instance.id === previousStep.target)?.tool === 'meters'
+      const isMeterMeasure = isMeterMeasureStep(previousStep, instances)
       return (
         <>
           <label className="step-property-field">
             <span className="step-property-label">Previous step</span>
             <select value={earlierSteps.some((step) => step.id === value.step_id) ? value.step_id : ''}
               disabled={disabled || earlierSteps.length === 0}
-              onChange={(event) => onChange({ ...value, step_id: event.target.value })}>
+              onChange={(event) => {
+                const step = earlierSteps.find(candidate => candidate.id === event.target.value)
+                if (step) onChange(stepOutputReference(step, instances))
+              }}>
               <option value="" disabled>Select an earlier step...</option>
               {earlierSteps.map((step) => <option key={step.id} value={step.id}>{stepLabel(step)} ({step.id})</option>)}
             </select>
@@ -148,7 +149,7 @@ function SourceOptions({ earlierSteps, earlierVariables }: ReferenceOptions) {
 function defaultOperand(source: string, references: ReferenceOptions, literal = 0): ExpressionOperandWire {
   switch (source) {
     case 'variable': return { source, variable: references.earlierVariables[0] }
-    case 'step-output': return { source, step_id: references.earlierSteps[0].id, pointer: '/value' }
+    case 'step-output': return stepOutputReference(references.earlierSteps[0], references.instances)
     default: return { source: 'literal', value: literal }
   }
 }

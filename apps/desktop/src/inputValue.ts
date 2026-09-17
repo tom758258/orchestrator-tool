@@ -28,6 +28,35 @@ export type InputValueWire = ExpressionOperandWire | { source: 'elapsed-time' } 
   right: ExpressionOperandWire
 }
 
+type StepOutputCandidate = {
+  id: string
+  type: string
+  target?: string
+  action?: string
+}
+
+type ToolIdentity = {
+  id: string
+  tool: string
+}
+
+export function isMeterMeasureStep(step: StepOutputCandidate | undefined, instances: readonly ToolIdentity[]): boolean {
+  return step?.type === 'tool-action'
+    && step.action === 'measure'
+    && instances.find(instance => instance.id === step.target)?.tool === 'meters'
+}
+
+export function stepOutputReference(
+  step: StepOutputCandidate,
+  instances: readonly ToolIdentity[],
+): Extract<ExpressionOperandWire, { source: 'step-output' }> {
+  return {
+    source: 'step-output',
+    step_id: step.id,
+    pointer: isMeterMeasureStep(step, instances) ? '/value' : '',
+  }
+}
+
 export function expressionSummary(value: Omit<Extract<InputValueWire, { source: 'expression' }>, 'source'>): string {
   const operandSummary = (operand: ExpressionOperandWire): string => {
     switch (operand.source) {
