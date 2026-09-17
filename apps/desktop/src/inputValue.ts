@@ -40,10 +40,39 @@ type ToolIdentity = {
   tool: string
 }
 
-export function isMeterMeasureStep(step: StepOutputCandidate | undefined, instances: readonly ToolIdentity[]): boolean {
-  return step?.type === 'tool-action'
-    && step.action === 'measure'
-    && instances.find(instance => instance.id === step.target)?.tool === 'meters'
+export type CuratedResultField = {
+  label: string
+  pointer: string
+}
+
+export const CUSTOM_RESULT = 'custom'
+
+const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[]>> = {
+  'meters/measure': [
+    { label: 'Value', pointer: '/value' },
+    { label: 'Unit', pointer: '/unit' },
+  ],
+  'powers/set-voltage': [
+    { label: 'Voltage', pointer: '/request/arguments/voltage' },
+    { label: 'Channel', pointer: '/request/arguments/channel' },
+  ],
+}
+
+export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {
+  return steps.filter(step => step.type === 'tool-action')
+}
+
+export function curatedResultFields(
+  step: StepOutputCandidate | undefined,
+  instances: readonly ToolIdentity[],
+): readonly CuratedResultField[] {
+  if (step?.type !== 'tool-action') return []
+  const tool = instances.find(instance => instance.id === step.target)?.tool
+  return ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []
+}
+
+export function resultSelection(pointer: string, fields: readonly CuratedResultField[]): string {
+  return fields.some(field => field.pointer === pointer) ? pointer : CUSTOM_RESULT
 }
 
 export function stepOutputReference(
@@ -53,7 +82,7 @@ export function stepOutputReference(
   return {
     source: 'step-output',
     step_id: step.id,
-    pointer: isMeterMeasureStep(step, instances) ? '/value' : '',
+    pointer: curatedResultFields(step, instances)[0]?.pointer ?? '',
   }
 }
 

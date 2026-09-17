@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { stepOutputReference } from '../src/inputValue.ts'
+import {
+  CUSTOM_RESULT,
+  curatedResultFields,
+  resultSelection,
+  stepOutputCandidates,
+  stepOutputReference,
+} from '../src/inputValue.ts'
 
 const instances = [
   { id: 'meter-1', tool: 'meters' },
@@ -12,17 +18,63 @@ const meterMeasure = {
 const powerSetVoltage = {
   type: 'tool-action', id: 'set-voltage-1', target: 'power-1', action: 'set-voltage', arguments: {},
 }
+const powerOutputOn = {
+  type: 'tool-action', id: 'output-on-1', target: 'power-1', action: 'output-on', arguments: {},
+}
+const powerOutputOff = {
+  type: 'tool-action', id: 'output-off-1', target: 'power-1', action: 'output-off', arguments: {},
+}
 
-test('step output defaults follow the selected earlier step', () => {
+test('curated results map Meter Measure Value and Unit pointers', () => {
+  const fields = curatedResultFields(meterMeasure, instances)
+  assert.deepEqual(fields, [
+    { label: 'Value', pointer: '/value' },
+    { label: 'Unit', pointer: '/unit' },
+  ])
   assert.deepEqual(stepOutputReference(meterMeasure, instances), {
     source: 'step-output', step_id: 'measure-1', pointer: '/value',
   })
-  assert.deepEqual(stepOutputReference(powerSetVoltage, instances), {
-    source: 'step-output', step_id: 'set-voltage-1', pointer: '',
-  })
+})
 
+test('curated results map Powers Set Voltage pointers', () => {
+  const fields = curatedResultFields(powerSetVoltage, instances)
+  assert.deepEqual(fields, [
+    { label: 'Voltage', pointer: '/request/arguments/voltage' },
+    { label: 'Channel', pointer: '/request/arguments/channel' },
+  ])
+  assert.deepEqual(stepOutputReference(powerSetVoltage, instances), {
+    source: 'step-output', step_id: 'set-voltage-1', pointer: '/request/arguments/voltage',
+  })
+})
+
+test('known and custom pointers select without rewriting the pointer', () => {
+  const fields = curatedResultFields(powerSetVoltage, instances)
+  assert.equal(resultSelection('/request/arguments/channel', fields), '/request/arguments/channel')
+
+  const existing = { source: 'step-output', step_id: 'set-voltage-1', pointer: '/data/custom' }
+  assert.equal(resultSelection(existing.pointer, fields), CUSTOM_RESULT)
+  assert.equal(existing.pointer, '/data/custom')
+})
+
+test('switching incompatible actions replaces the previous curated pointer', () => {
   const previous = stepOutputReference(meterMeasure, instances)
   const switched = stepOutputReference(powerSetVoltage, instances)
   assert.equal(previous.pointer, '/value')
-  assert.equal(switched.pointer, '')
+  assert.equal(switched.pointer, '/request/arguments/voltage')
+})
+
+test('Powers Output On and Output Off have no curated results', () => {
+  assert.deepEqual(curatedResultFields(powerOutputOn, instances), [])
+  assert.deepEqual(curatedResultFields(powerOutputOff, instances), [])
+})
+
+test('only Tool Actions are offered as Step Output candidates', () => {
+  const structuralSteps = [
+    { type: 'set-variable', id: 'set-1' },
+    { type: 'wait', id: 'wait-1' },
+    { type: 'output', id: 'output-1' },
+    { type: 'for', id: 'for-1' },
+    { type: 'while', id: 'while-1' },
+  ]
+  assert.deepEqual(stepOutputCandidates([...structuralSteps, meterMeasure]), [meterMeasure])
 })
