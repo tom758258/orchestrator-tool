@@ -17,20 +17,31 @@ function harness(approved) {
   const original = {
     schema_version: 1,
     name: 'Bench workflow',
-    tool_instances: [{ id: 'meter-1', tool: 'meters', setup: { measurement: 'voltage-dc' } }],
-    variables: { threshold: 4.5 },
-    setup: { operator: 'Ada' },
+    tool_instances: [{
+      id: 'meter-1',
+      tool: 'meters',
+      setup: {
+        measurement: 'voltage-dc',
+        range_mode: 'auto',
+        manual_range: null,
+        nplc: 1,
+        auto_zero: 'on',
+        dcv_input_impedance: null,
+        current_terminal: null,
+      },
+    }],
     workflow: {
       steps: [
+        { type: 'set-variable', id: 'set-threshold', variable: 'threshold', value: { source: 'literal', value: 4.5 } },
         {
           type: 'for', id: 'for-1', variable: 'index', range: { start: '0', stop: '2', step: '1' },
           steps: [
             { type: 'tool-action', id: 'measure-1', target: 'meter-1', action: 'measure', arguments: {} },
-            { type: 'output', id: 'output-1', name: 'reading', value: { source: 'step-output', step_id: 'measure-1', pointer: '/value' } },
+            { type: 'output', id: 'output-1', name: 'reading', page: 'Results', value: { source: 'step-output', step_id: 'measure-1', pointer: '/value' } },
           ],
         },
         {
-          type: 'while', id: 'while-1', left: { source: 'variable', variable: 'threshold' }, operator: 'gt',
+          type: 'while', id: 'while-1', left: { source: 'variable', variable: 'threshold' }, operator: 'greater-than',
           right: { source: 'literal', value: 0 }, max_iterations: 2,
           steps: [{ type: 'wait', id: 'wait-1', duration_ms: 10 }],
         },
@@ -58,7 +69,7 @@ function harness(approved) {
   }
 }
 
-test('Cancel leaves the workflow and project-level state unchanged', async () => {
+test('Cancel leaves the workflow, tool instances, and their Setup unchanged', async () => {
   const h = harness(false)
   await h.clear()
 
@@ -67,15 +78,13 @@ test('Cancel leaves the workflow and project-level state unchanged', async () =>
   assert.equal(h.state().confirmations.length, 1)
 })
 
-test('Confirm clears root, nested, and Output steps while preserving project-level state', async () => {
+test('Confirm clears all steps including set-variable while preserving tool instances and their Setup', async () => {
   const h = harness(true)
   await h.clear()
 
   const { draft, selectedStepId, confirmations } = h.state()
   assert.equal(draft.workflow.steps.length, 0)
   assert.deepEqual(draft.tool_instances, h.original.tool_instances)
-  assert.deepEqual(draft.variables, h.original.variables)
-  assert.deepEqual(draft.setup, h.original.setup)
   assert.equal(draft.name, h.original.name)
   assert.equal(draft.schema_version, h.original.schema_version)
   assert.equal(selectedStepId, null)
