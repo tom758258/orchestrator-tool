@@ -500,6 +500,23 @@ function App() {
     [updateSteps, workflowDraft],
   )
 
+  const clearWorkflow = useCallback(async () => {
+    if (!workflowDraft || workflowDraft.workflow.steps.length === 0) {
+      return
+    }
+
+    const approved = await confirm(
+      'Clear all workflow steps?\n\nThis action cannot be undone.',
+      { title: 'Clear Workflow', kind: 'warning', okLabel: 'Clear', cancelLabel: 'Cancel' },
+    )
+    if (!approved) {
+      return
+    }
+
+    updateSteps(() => [])
+    setSelectedStepId(null)
+  }, [updateSteps, workflowDraft])
+
   const updateStep = useCallback(
     (stepId: string, update: (step: WorkflowStep) => WorkflowStep) => {
       updateSteps((steps) =>
@@ -1321,6 +1338,7 @@ function App() {
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
                   onDeleteStep={deleteStep}
+                  onClearWorkflow={() => void clearWorkflow()}
                 />
 
                 <section className="step-properties" aria-labelledby="step-properties-title">

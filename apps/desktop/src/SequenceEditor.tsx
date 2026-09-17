@@ -13,6 +13,7 @@ type SequenceEditorProps = {
   workflowBusy: boolean
   onMoveStep: (stepId: string, offset: -1 | 1) => void
   onDeleteStep: (stepId: string) => void
+  onClearWorkflow: () => void
 }
 
 function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
@@ -82,6 +83,7 @@ function SequenceEditor({
   workflowBusy,
   onMoveStep,
   onDeleteStep,
+  onClearWorkflow,
 }: SequenceEditorProps) {
   function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep | WhileStep, parentOrder?: string): React.ReactNode {
     return (
@@ -170,7 +172,14 @@ function SequenceEditor({
 
   return (
     <section className="sequence-editor" aria-labelledby="sequence-editor-title">
-      <h3 id="sequence-editor-title">Sequence</h3>
+      <div className="section-header">
+        <h3 id="sequence-editor-title">Sequence</h3>
+        <button className="action-button" type="button"
+          disabled={workflowBusy || steps.length === 0}
+          onClick={onClearWorkflow}>
+          Clear Workflow
+        </button>
+      </div>
       {steps.length === 0 ? (
         <div className="sequence-empty">
           <h4>Create your first workflow</h4>
