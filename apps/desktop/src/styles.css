@@ -844,7 +844,9 @@ body {
 }
 
 .output-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-left: 1px solid #d8dce2;
   font-size: 0.85rem;
   background: #ffffff;
 }
@@ -855,6 +857,7 @@ body {
   max-width: 320px;
   padding: 8px 12px;
   border: 1px solid #d8dce2;
+  border-width: 0 1px 1px 0;
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -862,11 +865,26 @@ body {
 }
 
 .output-table thead th {
+  border-top-width: 1px;
   position: sticky;
   top: 0;
   z-index: 1;
   background: #f0f2f5;
   font-weight: 600;
+}
+
+.output-table td {
+  height: var(--output-row-height);
+  line-height: calc(var(--output-row-height) - 17px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.output-table .output-table-spacer {
+  padding: 0;
+  border: 0;
+  line-height: 0;
 }
 
 .result-chart {

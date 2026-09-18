@@ -3,6 +3,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
+import VirtualizedOutputTable from './VirtualizedOutputTable'
 import type { ChartPanel } from './chartPanels'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -330,6 +331,7 @@ function App() {
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
+  const [workflowChangedSinceRun, setWorkflowChangedSinceRun] = useState(false)
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
@@ -389,7 +391,6 @@ function App() {
   const displayedRun = runWorkflowSnapshot ? runResult ?? runProgress : null
   const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
   const pageRows = (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
-  const displayedOutputRows = [...pageRows].reverse()
   const iterationRows = pageRows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
   useEffect(() => {
@@ -428,6 +429,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
     } catch (message) {
@@ -437,6 +439,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
     } finally {
@@ -464,6 +467,7 @@ function App() {
           },
         }
       })
+      setWorkflowChangedSinceRun(true)
       setValidationStatus('idle')
       setValidationError(null)
       setTemplateIoMessage(null)
@@ -473,6 +477,7 @@ function App() {
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
     setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
+    setWorkflowChangedSinceRun(true)
     setValidationStatus('idle')
     setValidationError(null)
     setTemplateIoMessage(null)
@@ -651,6 +656,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
       setTemplateIoMessage('Template loaded.')
@@ -850,6 +856,7 @@ function App() {
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setWorkflowChangedSinceRun(false)
       setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
         ? current : snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -895,6 +902,7 @@ function App() {
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setWorkflowChangedSinceRun(false)
       setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
         ? current : snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1401,7 +1409,7 @@ function App() {
                   onSelectStep={setSelectedStepId}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
-                  runResults={workflowDraft === runWorkflowSnapshot ? displayedRun?.step_executions ?? null : null}
+                  runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_executions ?? null : null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
@@ -1747,11 +1755,11 @@ function App() {
 
               {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
-                  <h3 id="run-results-title">Execution Results</h3>
+                  <h3 id="run-results-title">Last Run Execution Results</h3>
                   <p className="run-result-count">
                     {displayedExecutions.length} {displayedExecutions.length === 1 ? 'execution' : 'executions'} · latest first
                   </p>
-                  <ol className="run-result-list" aria-label="Execution Results" tabIndex={0}>
+                  <ol className="run-result-list" aria-label="Last Run Execution Results" tabIndex={0}>
                     {displayedExecutions.map((result, executionIndex) => {
                       const isOutput = allWorkflowSteps(runWorkflowSteps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
@@ -1852,41 +1860,20 @@ function App() {
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {pageRows.length === 0 && <p>No committed output rows.</p>}
               <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputs.map(step => step.name)} page={runPage?.name ?? 'Results'} pages={runPages} onSavingChange={setChartSaving} />
-              {displayedOutputRows.length > 0 && (
+              {pageRows.length > 0 && (
                 <section className="output-data" aria-labelledby="output-data-title">
                   <h3 id="output-data-title">Output Data</h3>
                   <p className="output-row-count">
                     {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
                   </p>
-                  <div className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}>
-                    <table className="output-table" aria-labelledby="output-data-title">
-                      <thead>
-                        <tr>
-                          {iterationRows && <th scope="col">Iteration</th>}
-                          {runOutputs.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedOutputRows.map((row, index) => (
-                          <tr key={index}>
-                            {iterationRows && <td>{pageRows.length - index}</td>}
-                            {runOutputs.map(step => {
-                              const output = row.outputs.find(output => output.name === step.name) ?? { value: undefined }
-                              return <td key={step.id}>
-                              {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
-                            </td>})}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <VirtualizedOutputTable rows={pageRows} outputs={runOutputs} iterationRows={iterationRows} />
                 </section>
               )}
             </section>
           )}
           <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
             onChange={event => setExportAllPages(event.target.value === 'all')}>
-            <option value="current">Current Page</option><option value="all">All Pages</option>
+            <option value="current">Run Page</option><option value="all">All Run Pages</option>
           </select>
           <select aria-label="Export format" disabled={workflowBusy} value={exportFormat}
             onChange={event => setExportFormat(event.target.value as 'csv' | 'xlsx')}>

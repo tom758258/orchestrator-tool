@@ -23,6 +23,7 @@ function harness({ streamingError = null } = {}) {
   const dialog = deferred()
   const execution = deferred()
   const previous = {
+    workflowChangedSinceRun: true,
     runStatus: 'idle',
     runWorkflowSnapshot: { name: 'Previous snapshot', tool_instances: [], workflow: { steps: [] } },
     runResult: {
@@ -111,6 +112,7 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.deepEqual(h.counts(), { confirmations: 1, channels: 1, streamOptions: 1 })
   assert.equal(h.calls.filter(call => call.command === 'run_workflow_live').length, 1)
   assert.equal(h.state.runStatus, 'running')
+  assert.equal(h.state.workflowChangedSinceRun, false)
   assert.equal(h.state.runWorkflowSnapshot, h.context.workflowDraft)
   assert.equal(h.state.selectedRunPage, 'Results')
   assert.equal(h.state.runResult, null)
@@ -144,7 +146,7 @@ test('Invalid Streaming config after confirmation preserves the previous Last Ru
   await flush()
   h.dialog.resolve(true)
   await pending
-  for (const key of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+  for (const key of ['workflowChangedSinceRun', 'runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
     assert.equal(h.state[key], h.previous[key])
   }
   assert.equal(h.state.runStatus, 'idle')
@@ -168,7 +170,7 @@ test('Confirmation and execution errors release the guard; running blocks Live',
     assert.equal(h.state.liveConfirmationPending, false)
     assert.equal(h.state.runStatus, 'idle')
     if (phase === 'confirmation') {
-      for (const key of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+      for (const key of ['workflowChangedSinceRun', 'runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
         assert.equal(h.state[key], h.previous[key])
       }
     }

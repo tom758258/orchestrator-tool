@@ -49,6 +49,7 @@ test('Workflow and Tool Setup edits preserve Last Run state', () => {
   let validationStatus = 'valid'
   let validationError = 'old validation'
   let templateIoMessage = 'Template saved.'
+  let workflowChangedSinceRun = false
   const previous = {
     runWorkflowSnapshot: { ...draft, name: 'Run snapshot' },
     runResult: { step_executions: [{ step_id: 'wait-1' }], result_rows: [] },
@@ -63,12 +64,14 @@ test('Workflow and Tool Setup edits preserve Last Run state', () => {
     setValidationStatus(value) { validationStatus = value },
     setValidationError(value) { validationError = value },
     setTemplateIoMessage(value) { templateIoMessage = value },
+    setWorkflowChangedSinceRun(value) { workflowChangedSinceRun = value },
   }
 
   const updateSteps = runInNewContext(updateStepsCallback(), context)
   updateSteps(steps => steps.map(step => ({ ...step, duration_ms: 10 })))
 
   assert.equal(workflowDraft.workflow.steps[0].duration_ms, 10)
+  assert.equal(workflowChangedSinceRun, true)
   assert.equal(validationStatus, 'idle')
   assert.equal(validationError, null)
   assert.equal(templateIoMessage, null)
@@ -78,12 +81,14 @@ test('Workflow and Tool Setup edits preserve Last Run state', () => {
   assert.equal(previous.runError, 'previous run error')
 
   const updateToolInstances = runInNewContext(updateToolInstancesCallback(), context)
+  workflowChangedSinceRun = false
   updateToolInstances([{ id: 'powers-1', tool: 'powers', setup: {} }])
+  assert.equal(workflowChangedSinceRun, true)
   assert.equal(workflowDraft.tool_instances[0].id, 'powers-1')
   assert.equal(previous.runProgress.step_executions[0].step_id, 'partial')
 })
 
-test('manual Current Page export uses the Last Run snapshot and Run Page', async () => {
+test('manual Run Page export uses the Last Run snapshot and Run Page', async () => {
   const runWorkflowSnapshot = {
     ...draft,
     name: 'Run snapshot',
@@ -128,6 +133,7 @@ test('Open Template clears the Last Run context after a successful load', async 
   const loadedDraft = { ...draft, name: 'Loaded' }
   const previous = {
     workflowDraft: draft,
+    workflowChangedSinceRun: true,
     runWorkflowSnapshot: { ...draft, name: 'Run snapshot' },
     runResult: { step_executions: [], result_rows: [] },
     runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
@@ -151,6 +157,7 @@ test('Open Template clears the Last Run context after a successful load', async 
     setRunResult(value) { state.runResult = value },
     setRunProgress(value) { state.runProgress = value },
     setRunWorkflowSnapshot(value) { state.runWorkflowSnapshot = value },
+    setWorkflowChangedSinceRun(value) { state.workflowChangedSinceRun = value },
     setCsvStreamStatus(value) { state.csvStreamStatus = value },
     setRunError(value) { state.runError = value },
   }
@@ -162,7 +169,52 @@ test('Open Template clears the Last Run context after a successful load', async 
   await handleLoadTemplate()
 
   assert.equal(state.workflowDraft.name, 'Loaded')
+  assert.equal(state.workflowChangedSinceRun, false)
   for (const key of ['runResult', 'runProgress', 'runWorkflowSnapshot', 'csvStreamStatus', 'runError']) {
     assert.equal(state[key], null)
+  }
+})
+
+test('Validate and Save canonicalization preserve dirty state and badge applicability', async () => {
+  const badgeExpression = source.match(/runResults=\{([^\n]+)\}/)[1]
+  for (const [start, end, command] of [
+    ['  const validateDraft = useCallback(', '\n  const handleLoadTemplate =', 'validate_workflow_draft'],
+    ['  const handleSaveTemplate = useCallback(', '\n  const handleBrowseToolExecutable =', 'save_workflow_template'],
+  ]) {
+    for (const dirty of [false, true]) {
+      const context = {
+        workflowDraft: draft, runWorkflowSnapshot: draft, workflowChangedSinceRun: dirty,
+        displayedRun: { step_executions: [{ step_id: 'wait-1', status: 'succeeded' }] },
+        async save() { return 'template.json' },
+        async invoke(actual) { assert.equal(actual, command); return JSON.stringify(draft) },
+        setWorkflowDraft(value) { context.workflowDraft = value },
+        setWorkflowChangedSinceRun(value) { context.workflowChangedSinceRun = value },
+        setSelectedStepId() {}, setValidationStatus() {}, setValidationError() {},
+        setTemplateIoStatus() {}, setTemplateIoError() {}, setTemplateIoMessage() {},
+      }
+      await runInNewContext(asyncCallback(start, end), context)()
+      assert.notEqual(context.workflowDraft, context.runWorkflowSnapshot)
+      assert.equal(context.workflowChangedSinceRun, dirty)
+      assert.equal(runInNewContext(badgeExpression, context), dirty ? null : context.displayedRun.step_executions)
+    }
+  }
+})
+
+test('creating a new draft clears Last Run and resets dirty state', async () => {
+  const state = {
+    workflowChangedSinceRun: true, workflowDraft: draft, runWorkflowSnapshot: draft,
+    runResult: {}, runProgress: {}, csvStreamStatus: {}, runError: 'old error',
+  }
+  const context = {
+    async invoke(command) { assert.equal(command, 'create_workflow_draft'); return JSON.stringify(draft) },
+    setDraftLoading() {}, setSelectedStepId() {}, setDraftCreationError() {},
+  }
+  for (const name of Object.keys(state)) {
+    context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
+  }
+  await runInNewContext(asyncCallback('  const createDraft = useCallback(', '\n  useEffect('), context)()
+  assert.equal(state.workflowChangedSinceRun, false)
+  for (const name of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'runError']) {
+    assert.equal(state[name], null)
   }
 })

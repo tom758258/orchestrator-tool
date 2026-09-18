@@ -15,6 +15,7 @@ const code = stripTypeScriptTypes('(' + callback + ')')
 
 test('Invalid Streaming config preserves the previous Last Run and does not execute', async () => {
   const previous = {
+    workflowChangedSinceRun: true,
     runStatus: 'idle',
     runWorkflowSnapshot: { name: 'Previous snapshot', tool_instances: [], workflow: { steps: [] } },
     runResult: {
@@ -65,6 +66,7 @@ test('Simulation captures the Workflow snapshot only after pre-run validation su
   }
   const result = { step_executions: [], result_rows: [] }
   const state = {
+    workflowChangedSinceRun: true,
     runWorkflowSnapshot: { name: 'Previous snapshot' },
     runResult: { step_executions: [{ step_id: 'previous' }], result_rows: [] },
     runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
@@ -95,7 +97,7 @@ test('Simulation captures the Workflow snapshot only after pre-run validation su
       state.selectedRunPage = typeof value === 'function' ? value(state.selectedRunPage) : value
     },
   }
-  for (const name of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest', 'runError', 'runStatus']) {
+  for (const name of ['workflowChangedSinceRun', 'runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest', 'runError', 'runStatus']) {
     context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
   }
 
@@ -103,6 +105,7 @@ test('Simulation captures the Workflow snapshot only after pre-run validation su
   await run()
 
   assert.equal(state.runWorkflowSnapshot, workflowDraft)
+  assert.equal(state.workflowChangedSinceRun, false)
   assert.equal(state.selectedRunPage, 'Results')
   assert.equal(state.runResult, result)
   assert.equal(state.runProgress, null)
