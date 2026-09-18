@@ -1,12 +1,56 @@
+/* Light values; component rules consume semantic tokens only. */
+:root {
+  color-scheme: light;
+  /* Surfaces and text */
+  --bg: #f2f4f7;
+  --panel: #ffffff;
+  --panel-soft: #f7f9fb;
+  --field: #ffffff;
+  --ink: #18202a;
+  --muted: #5e6e7e;
+  --disabled-ink: #75808c;
+  --line: #dde2e9;
+  --line-strong: #b8c2cc;
+  --accent: #0071e3;
+  --accent-strong: #0058b5;
+  --on-accent: #ffffff;
+  --focus: rgb(0 113 227 / 22%);
+  /* Feedback and interaction */
+  --success: #16794c;
+  --success-surface: #eaf7f0;
+  --warning: #855900;
+  --warning-surface: #fff8e1;
+  --danger: #b42318;
+  --danger-surface: #fdecea;
+  --surface-hover: #edf1f6;
+  --surface-selected: #edf5ff;
+  --surface-disabled: #eef1f4;
+  /* Data surfaces */
+  --table-header: #f2f5f8;
+  --table-line: #dde2e9;
+  --canvas: #f7f9fb;
+  --canvas-grid: #ccd4de;
+  --node: #ffffff;
+  --chart-surface: #ffffff;
+  --chart-grid: #e5e9ef;
+  --chart-axis: #5e6e7e;
+  /* Geometry and elevation */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --shadow-sm: 0 1px 3px rgb(24 32 42 / 6%);
+  --shadow-md: 0 4px 16px rgb(24 32 42 / 8%);
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
-  color: #1f2430;
-  background: #fafafa;
+  font-family: -apple-system, "SF Pro Display", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
 }
 
 .app {
@@ -18,13 +62,15 @@ body {
 .app-header h1 {
   margin: 0;
   font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.035em;
 }
 
 .tabs {
   display: flex;
   gap: 4px;
   margin: 20px 0;
-  border-bottom: 1px solid #d8dce2;
+  border-bottom: 1px solid var(--line);
 }
 
 .tab {
@@ -32,18 +78,19 @@ body {
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.95rem;
   cursor: pointer;
 }
 
 .tab:hover {
-  color: #1f2430;
+  background: var(--surface-hover);
+  color: var(--ink);
 }
 
 .tab-active {
-  border-bottom-color: #1f2430;
-  color: #1f2430;
+  border-bottom-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -58,35 +105,38 @@ body {
   margin: 0;
   font-size: 1rem;
   font-weight: 500;
-  color: #5a6270;
+  color: var(--muted);
 }
 
 .action-button {
   padding: 6px 16px;
   font-size: 0.9rem;
-  border: 1px solid #c9ced6;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #1f2430;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
   cursor: pointer;
 }
 
 .action-button:hover:not(:disabled) {
-  background: #f0f2f5;
+  background: var(--surface-hover);
 }
 
 .action-button:disabled {
-  opacity: 0.55;
+  background: var(--surface-disabled);
+  color: var(--disabled-ink);
+  border-color: var(--line);
+  box-shadow: none;
   cursor: default;
 }
 
 .error {
   padding: 10px 14px;
   margin-top: 20px;
-  border: 1px solid #e4b6b3;
-  border-radius: 8px;
-  background: #fdf3f2;
-  color: #a12b21;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-surface);
+  color: var(--danger);
   overflow-wrap: anywhere;
 }
 
@@ -101,9 +151,9 @@ body {
 
 .tool-card {
   padding: 12px 16px;
-  border: 1px solid #e3e6ea;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
 }
 
 .tool-title {
@@ -126,23 +176,23 @@ body {
 }
 
 .status-available {
-  background: #e7f4e8;
-  color: #226b2c;
+  background: var(--success-surface);
+  color: var(--success);
 }
 
 .status-missing {
-  background: #fdeceb;
-  color: #a12b21;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .status-not-file {
-  background: #fdf3e0;
-  color: #8a5a00;
+  background: var(--warning-surface);
+  color: var(--warning);
 }
 
 .status-error {
-  background: #fdeceb;
-  color: #a12b21;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .tool-details {
@@ -160,7 +210,7 @@ body {
 
 .detail-label {
   min-width: 120px;
-  color: #5a6270;
+  color: var(--muted);
   font-weight: 500;
 }
 
@@ -171,24 +221,24 @@ body {
 }
 
 .compatibility-compatible {
-  color: #226b2c;
+  color: var(--success);
   font-weight: 600;
 }
 
 .compatibility-incompatible {
-  color: #a12b21;
+  color: var(--danger);
   font-weight: 600;
 }
 
 .compatibility-error {
-  color: #a12b21;
+  color: var(--danger);
   font-weight: 600;
 }
 
 .tool-source {
   margin: 6px 0 0;
   font-size: 0.85rem;
-  color: #5a6270;
+  color: var(--muted);
 }
 
 .tool-path {
@@ -197,7 +247,7 @@ body {
 
 .tool-reason {
   overflow-wrap: anywhere;
-  color: #a12b21;
+  color: var(--danger);
 }
 
 .tool-actions {
@@ -210,9 +260,9 @@ body {
 .workflow-summary {
   margin-top: 20px;
   padding: 16px;
-  border: 1px solid #e3e6ea;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
 }
 
 .workflow-details {
@@ -241,10 +291,10 @@ body {
 .step-palette,
 .streaming-panel {
   min-width: 0;
-  border: 1px solid #c9ced6;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 12px;
-  background: #fafafa;
+  background: var(--panel-soft);
 }
 
 .step-palette h3,
@@ -274,7 +324,7 @@ body {
 }
 
 .streaming-destination {
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
@@ -297,22 +347,23 @@ body {
   min-width: 0;
   height: 480px;
   overflow: hidden;
-  border: 1px solid #e3e6ea;
-  border-radius: 8px;
-  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
 }
 
 .workflow-canvas .react-flow__node-default {
   width: 240px;
   padding: 12px;
-  border-color: #c9ced6;
-  border-radius: 6px;
-  color: #1f2430;
+  border-color: var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
 }
 
 .workflow-canvas .react-flow__node-default.selected {
-  border-color: #5a6270;
-  box-shadow: 0 0 0 2px rgb(90 98 112 / 20%);
+  border-color: var(--accent);
+  background: var(--surface-selected);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .workflow-canvas-node-content {
@@ -334,8 +385,8 @@ body {
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: #e3e6ea;
-  color: #454d5b;
+  background: var(--line);
+  color: var(--muted);
   font-size: 0.8rem;
   font-weight: 600;
   place-items: center;
@@ -353,7 +404,7 @@ body {
 }
 
 .workflow-canvas-node-identity code {
-  color: #5a6270;
+  color: var(--muted);
   font-weight: 400;
   overflow-wrap: anywhere;
 }
@@ -367,19 +418,19 @@ body {
 }
 
 .workflow-canvas-node-result-succeeded {
-  color: #226b2c;
+  color: var(--success);
 }
 
 .workflow-canvas-node-result-failed {
-  color: #a12b21;
+  color: var(--danger);
 }
 
 .workflow-canvas-node-result-cancelled {
-  color: #5a6270;
+  color: var(--muted);
 }
 
 .workflow-canvas-node-measurement {
-  color: #1f2430;
+  color: var(--ink);
 }
 
 .workflow-canvas-node-actions {
@@ -400,12 +451,12 @@ body {
   display: grid;
   margin: 0;
   place-items: center;
-  color: #5a6270;
+  color: var(--muted);
   pointer-events: none;
 }
 
 .workflow-step-id {
-  color: #5a6270;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
@@ -417,8 +468,8 @@ body {
   overflow: auto;
   overflow-wrap: anywhere;
   padding: 12px;
-  border: 1px solid #c9ced6;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
 .step-properties h3 {
@@ -428,7 +479,7 @@ body {
 
 .step-properties-empty {
   margin: 12px 0 0;
-  color: #5a6270;
+  color: var(--muted);
 }
 
 .step-properties-step-title {
@@ -438,7 +489,7 @@ body {
 
 .step-context-help,
 .value-source-help {
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.4;
 }
@@ -453,7 +504,7 @@ body {
 
 .step-property-error {
   margin: -6px 0 0;
-  color: #a12b21;
+  color: var(--danger);
   font-size: 0.85rem;
   line-height: 1.4;
 }
@@ -474,26 +525,30 @@ body {
 }
 
 .step-property-label {
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.9rem;
   font-weight: 500;
 }
 
-.step-property-field input,
-.step-property-field select,
-.result-chart-axis-titles input {
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid #c9ced6;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #1f2430;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  color: var(--ink);
   font: inherit;
 }
 
-.step-property-field input:disabled,
-.step-property-field select:disabled {
-  opacity: 0.55;
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--surface-disabled);
+  color: var(--disabled-ink);
+  border-color: var(--line);
+  box-shadow: none;
 }
 
 .template-toolbar,
@@ -511,14 +566,14 @@ body {
 
 .validation-success {
   margin: 12px 0 0;
-  color: #226b2c;
+  color: var(--success);
   font-weight: 600;
 }
 
 .run-results {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e3e6ea;
+  border-top: 1px solid var(--line);
 }
 
 .run-results h3 {
@@ -528,7 +583,7 @@ body {
 
 .run-result-count {
   margin: 4px 0 0;
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -548,9 +603,9 @@ body {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid #e3e6ea;
-  border-radius: 6px;
-  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
 }
 
 .run-result-mark {
@@ -575,25 +630,25 @@ body {
 }
 
 .run-result-succeeded {
-  color: #226b2c;
+  color: var(--success);
 }
 
 .run-result-failed {
-  color: #a12b21;
+  color: var(--danger);
 }
 
 .run-result-cancelled {
-  color: #5a6270;
+  color: var(--muted);
 }
 
 .run-result-measurement {
-  color: #1f2430;
+  color: var(--ink);
   font-weight: 600;
 }
 
 .run-result-message {
   margin: 6px 0 0;
-  color: #a12b21;
+  color: var(--danger);
   overflow-wrap: anywhere;
 }
 
@@ -617,14 +672,14 @@ body {
 }
 
 .sequence-empty {
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.4;
 }
 
 .sequence-empty h4 {
   margin: 16px 0 6px;
-  color: #1f2430;
+  color: var(--ink);
 }
 
 .sequence-empty p {
@@ -641,7 +696,7 @@ body {
 }
 
 .sequence-examples strong {
-  color: #1f2430;
+  color: var(--ink);
 }
 
 .sequence-steps {
@@ -674,27 +729,27 @@ body {
   width: 100%;
   min-width: 0;
   padding: 12px;
-  border: 1px solid #c9ced6;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #1f2430;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .sequence-step-card:hover {
-  background: #f0f2f5;
+  background: var(--surface-hover);
 }
 
 .sequence-step-card[aria-pressed='true'] {
-  border-color: #315da8;
-  background: #edf3ff;
-  box-shadow: inset 3px 0 #315da8;
+  border-color: var(--accent);
+  background: var(--surface-selected);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .sequence-step-card:focus-visible {
-  outline: 2px solid #315da8;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -704,7 +759,7 @@ body {
   height: 28px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #e3e6ea;
+  background: var(--line);
   font-size: 0.85rem;
   place-items: center;
 }
@@ -758,16 +813,16 @@ body {
 }
 
 .sequence-step-identity code {
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.85rem;
 }
 
 .tool-setup {
   margin-top: 16px;
   padding: 12px;
-  border: 1px solid #c9ced6;
-  border-radius: 8px;
-  background: #fafafa;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
 }
 
 .tool-setup h3 {
@@ -796,7 +851,7 @@ body {
 
 .tool-setup-hint {
   margin: 8px 0;
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -816,7 +871,7 @@ body {
 .tool-setup > fieldset + fieldset {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e3e6ea;
+  border-top: 1px solid var(--line);
 }
 
 .tool-setup-toggle {
@@ -832,7 +887,7 @@ body {
 
 .output-row-count {
   margin: 4px 0 12px;
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -846,9 +901,9 @@ body {
 .output-table {
   border-collapse: separate;
   border-spacing: 0;
-  border-left: 1px solid #d8dce2;
+  border-left: 1px solid var(--table-line);
   font-size: 0.85rem;
-  background: #ffffff;
+  background: var(--panel);
 }
 
 .output-table th,
@@ -856,7 +911,7 @@ body {
   min-width: 140px;
   max-width: 320px;
   padding: 8px 12px;
-  border: 1px solid #d8dce2;
+  border: 1px solid var(--table-line);
   border-width: 0 1px 1px 0;
   text-align: left;
   vertical-align: top;
@@ -869,7 +924,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f0f2f5;
+  background: var(--table-header);
   font-weight: 600;
 }
 
@@ -900,9 +955,9 @@ body {
 .result-chart-panel {
   min-width: 0;
   padding: 16px;
-  border: 1px solid #d8dce2;
-  border-radius: 6px;
-  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
 }
 
 .result-chart-panel-actions {
@@ -977,6 +1032,198 @@ body {
 
 .page-name-editor p {
   margin: 4px 0 0;
-  color: #5a6270;
+  color: var(--muted);
   font-size: 0.85rem;
+}
+
+
+/* Shared surfaces retain the existing layout and overflow boundaries. */
+.tool-card,
+.workflow-summary,
+.step-properties,
+.result-chart-panel {
+  background: var(--panel);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.action-button {
+  font-family: inherit;
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+}
+
+.action-button-primary:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.action-button-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.action-button-danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.action-button-danger:hover:not(:disabled) {
+  background: var(--danger-surface);
+  border-color: var(--danger);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  box-shadow: var(--shadow-sm);
+}
+
+input:hover:not(:disabled):not(:read-only),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled):not(:read-only) {
+  border-color: var(--line-strong);
+}
+
+input[readonly],
+textarea[readonly] {
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.sequence-step-card {
+  box-shadow: var(--shadow-sm);
+}
+
+.sequence-step-order,
+.workflow-canvas-node-order {
+  background: var(--surface-hover);
+  color: var(--muted);
+}
+
+.sequence-step-card[aria-pressed='true'] .sequence-step-order,
+.react-flow__node.selected .workflow-canvas-node-order {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.sequence-step-summary,
+.result-chart > p,
+.page-result-summary > p {
+  color: var(--muted);
+}
+
+.validation-success {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--success-surface);
+}
+
+.output-table-scroll {
+  border-radius: var(--radius-sm);
+  scrollbar-color: var(--line-strong) var(--panel-soft);
+}
+
+/* Keep cell padding, line-height and borders unchanged: rows remain 36px. */
+.output-table tbody tr:hover > :not(.output-table-spacer) {
+  background: var(--surface-hover);
+}
+
+.page-result-summary h4,
+.result-chart-panel h4 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.page-result-summary {
+  margin-top: 20px;
+}
+
+.result-chart-plot {
+  background: var(--chart-surface);
+}
+
+.result-chart .recharts-cartesian-axis-tick-value,
+.result-chart .recharts-label {
+  fill: var(--chart-axis);
+}
+
+.result-chart .recharts-legend-item-text {
+  /* Recharts supplies inline series colors; icons retain series identity. */
+  color: var(--ink) !important;
+}
+
+.workflow-canvas {
+  background: var(--canvas);
+}
+
+.workflow-canvas .react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-background-pattern-dots-color: var(--canvas-grid);
+  --xy-background-pattern-lines-color: var(--canvas-grid);
+  --xy-background-pattern-cross-color: var(--canvas-grid);
+  --xy-node-background-color: var(--node);
+  --xy-edge-stroke: var(--line-strong);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-node-color: var(--ink);
+  --xy-node-boxshadow-hover: var(--shadow-md);
+  --xy-handle-background-color: var(--muted);
+  --xy-handle-border-color: var(--node);
+  --xy-controls-button-background-color: var(--panel);
+  --xy-controls-button-background-color-hover: var(--surface-hover);
+  --xy-controls-button-color: var(--ink);
+  --xy-controls-button-color-hover: var(--ink);
+  --xy-controls-button-border-color: var(--line);
+  --xy-controls-box-shadow: var(--shadow-sm);
+  --xy-attribution-background-color: var(--panel-soft);
+}
+
+.workflow-canvas .react-flow__node-default {
+  box-shadow: var(--shadow-sm);
+}
+
+.workflow-canvas .react-flow__node-default.selected {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.workflow-canvas .react-flow__attribution a {
+  color: var(--muted);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--surface-disabled);
+  color: var(--disabled-ink);
+  box-shadow: none;
+}
+
+.workflow-canvas .react-flow__controls-button:disabled {
+  background: var(--surface-disabled);
+  color: var(--disabled-ink);
+  opacity: 1;
+}
+
+.feedback-warning {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-surface);
+  color: var(--warning);
 }

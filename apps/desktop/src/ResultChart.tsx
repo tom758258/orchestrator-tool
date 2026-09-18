@@ -117,7 +117,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
             <div className="result-chart-panel-actions">
               <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
-              {displayedPanels.length > 1 && <button className="action-button" type="button"
+              {displayedPanels.length > 1 && <button className="action-button action-button-danger" type="button"
                 aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null}
                 onClick={() => {
                   if (saving.current) return
@@ -159,14 +159,17 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
               aria-label={`Line chart: ${selectedSeries.map(item => item.name).join(', ')} versus Iteration, ${points.length} points per series`}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={points} margin={{ top: 16, right: 24, bottom: 32, left: 24 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" dataKey="iteration" name="Iteration" allowDecimals={false}
+                  <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
+                  <XAxis stroke="var(--chart-axis)" type="number" dataKey="iteration" name="Iteration" allowDecimals={false}
                     label={panel.xAxisTitle ? { value: panel.xAxisTitle, position: 'bottom', offset: 0 } : undefined} />
-                  <YAxis type="number" width={72}
+                  <YAxis stroke="var(--chart-axis)" type="number" width={72}
                     label={panel.yAxisTitle
                       ? { value: panel.yAxisTitle, angle: -90, position: 'insideLeft', offset: 0, style: { textAnchor: 'middle' } }
                       : undefined} />
-                  <Tooltip labelFormatter={value => `Iteration: ${value}`} />
+                  <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--line)',
+                    borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)', color: 'var(--ink)' }}
+                    labelStyle={{ color: 'var(--muted)' }} cursor={{ stroke: 'var(--chart-axis)' }}
+                    labelFormatter={value => `Iteration: ${value}`} />
                   {selectedSeries.length > 1 && <Legend verticalAlign="top" />}
                   {selectedSeries.map(item => <Line key={item.key} type="linear"
                     dataKey={item.key} name={item.name} stroke={item.color}

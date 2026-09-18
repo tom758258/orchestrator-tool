@@ -5,7 +5,7 @@ export default function PageResultSummary({ rows }: { rows: ResultRowDto[] }) {
   const summaries = summarizePageResults(rows)
   if (rows.length === 0) return null
 
-  return <section aria-labelledby="page-result-summary-title">
+  return <section className="page-result-summary" aria-labelledby="page-result-summary-title">
     <h4 id="page-result-summary-title">Summary</h4>
     {summaries.length === 0 ? <p>No numeric outputs to summarize.</p> : (
       <div className="output-table-scroll">

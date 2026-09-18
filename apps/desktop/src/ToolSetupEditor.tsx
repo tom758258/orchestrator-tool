@@ -213,7 +213,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
             ? <MetersSetupFields metersExecutableKey={metersExecutableKey} model={resourceIdentities[instance.id]?.model} value={{ meters: instance.setup }} onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
             : <p>No additional setup</p>}
           {renderResource(instance)}
-          <button type="button" className="action-button" disabled={referenced}
+          <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
         </>}

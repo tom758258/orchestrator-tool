@@ -378,9 +378,9 @@ function App() {
   }
   const stopControls = <>
     {activeLoop && <>
-      {activeAncestors.map(loop => <button className="action-button" type="button" key={loop.id}
+      {activeAncestors.map(loop => <button className="action-button action-button-danger" type="button" key={loop.id}
         disabled={stopRequest !== null && !stopRequest.error} onClick={() => void requestStop(loop.id)}>Stop {loop.id}</button>)}
-      <button className="action-button" type="button" onClick={() => void requestStop()} disabled={stopRequest !== null && !stopRequest.error}>
+      <button className="action-button action-button-danger" type="button" onClick={() => void requestStop()} disabled={stopRequest !== null && !stopRequest.error}>
         {stopping ? 'Stopping…' : 'Stop'}
       </button>
     </>}
@@ -939,7 +939,7 @@ function App() {
       <strong>Streaming CSV</strong>
       <p>{csvStreamStatus.path}</p>
       {csvStreamStatus.error ? <p className="error">CSV streaming failed: {csvStreamStatus.error}</p>
-        : csvStreamStatus.finished && <p>{csvStreamStatus.workflow_succeeded
+        : csvStreamStatus.finished && <p className={csvStreamStatus.workflow_succeeded ? 'validation-success' : 'feedback-warning'}>{csvStreamStatus.workflow_succeeded
           ? 'CSV streamed successfully.'
           : csvStreamStatus.rows > 0
             ? 'Workflow failed. Streamed CSV contains committed rows from this partial run.'
@@ -1716,7 +1716,7 @@ function App() {
                   {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
                 </button>
                 <button
-                  className="action-button"
+                  className="action-button action-button-primary"
                   type="button"
                   onClick={() => void runSimulation()}
                   disabled={workflowBusy}
@@ -1724,7 +1724,7 @@ function App() {
                   Run Simulation
                 </button>
                 <button
-                  className="action-button"
+                  className="action-button action-button-primary"
                   type="button"
                   onClick={() => void runLive()}
                   disabled={workflowBusy || toolConfigBusy !== null || loading}

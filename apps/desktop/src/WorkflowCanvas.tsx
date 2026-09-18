@@ -153,7 +153,7 @@ function WorkflowCanvas({
                   Later
                 </button>
                 <button
-                  className="action-button"
+                  className="action-button action-button-danger"
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()

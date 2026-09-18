@@ -154,7 +154,7 @@ function SequenceEditor({
                   onClick={() => onMoveStep(step.id, 1)}>
                   Down
                 </button>
-                <button className="action-button" type="button"
+                <button className="action-button action-button-danger" type="button"
                   disabled={workflowBusy}
                   onClick={() => onDeleteStep(step.id)}>
                   Delete
@@ -174,7 +174,7 @@ function SequenceEditor({
     <section className="sequence-editor" aria-labelledby="sequence-editor-title">
       <div className="section-header">
         <h3 id="sequence-editor-title">Sequence</h3>
-        <button className="action-button" type="button"
+        <button className="action-button action-button-danger" type="button"
           disabled={workflowBusy || steps.length === 0}
           onClick={onClearWorkflow}>
           Clear Workflow
