@@ -38,11 +38,16 @@ test('Outputs are summarized independently', () => {
 
 test('Summary uses the selected Run Page rows without mixing Pages', () => {
   const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const declaration = source.match(/const pageRows = (.+)/)[1]
+  const declaration = source.match(/const pageRows = ([\s\S]+?)\r?\n  const iterationRows/)[1]
   assert.ok(source.includes('<PageResultSummary rows={pageRows} />'))
   const displayedRun = { result_rows: [row(100, 'A'), row(2, 'B'), row(4, 'B')] }
+  const workflowRows = runInNewContext(declaration, {
+    displayedRun: { result_rows: { filter() { throw new Error('Workflow must not scan Output rows') } } },
+    runPage: { name: 'A' }, activeTab: 'workflow', useMemo: derive => derive(),
+  })
+  assert.equal(workflowRows.length, 0)
   for (const [name, count, min, max, avg] of [['A', 1, 100, 100, 100], ['B', 2, 2, 4, 3]]) {
-    const rows = runInNewContext(declaration, { displayedRun, runPage: { name } })
+    const rows = runInNewContext(declaration, { displayedRun, runPage: { name }, activeTab: 'output', useMemo: derive => derive() })
     assert.deepEqual(summarizePageResults(rows), [{ name: 'Voltage', count, min, max, avg }])
   }
 })

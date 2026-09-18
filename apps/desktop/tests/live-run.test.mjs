@@ -23,6 +23,7 @@ function harness({ streamingError = null } = {}) {
   const dialog = deferred()
   const execution = deferred()
   const previous = {
+    executionOffset: 400,
     workflowChangedSinceRun: true,
     runStatus: 'idle',
     runWorkflowSnapshot: { name: 'Previous snapshot', tool_instances: [], workflow: { steps: [] } },
@@ -111,6 +112,7 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   await h.run()
   assert.deepEqual(h.counts(), { confirmations: 1, channels: 1, streamOptions: 1 })
   assert.equal(h.calls.filter(call => call.command === 'run_workflow_live').length, 1)
+  assert.equal(h.state.executionOffset, 0)
   assert.equal(h.state.runStatus, 'running')
   assert.equal(h.state.workflowChangedSinceRun, false)
   assert.equal(h.state.runWorkflowSnapshot, h.context.workflowDraft)

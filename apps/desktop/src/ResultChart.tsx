@@ -173,7 +173,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
                   {selectedSeries.length > 1 && <Legend verticalAlign="top" />}
                   {selectedSeries.map(item => <Line key={item.key} type="linear"
                     dataKey={item.key} name={item.name} stroke={item.color}
-                    dot={{ r: 4 }} isAnimationActive={false} />)}
+                    dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />)}
                 </LineChart>
               </ResponsiveContainer>
             </div>

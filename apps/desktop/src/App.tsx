@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
+import { EXECUTION_WINDOW_SIZE, executionWindow } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import type { ChartPanel } from './chartPanels'
@@ -333,6 +334,7 @@ function App() {
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
   const [workflowChangedSinceRun, setWorkflowChangedSinceRun] = useState(false)
+  const [executionOffset, setExecutionOffset] = useState(0)
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
@@ -390,9 +392,12 @@ function App() {
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runResult ?? runProgress : null
-  const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
-  const pageRows = (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
-  const iterationRows = pageRows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
+  const executions = executionWindow(displayedRun?.step_executions ?? [], executionOffset, EXECUTION_WINDOW_SIZE)
+  const pageRows = useMemo(() => activeTab === 'output'
+    ? (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
+    : [], [activeTab, displayedRun?.result_rows, runPage?.name])
+  const iterationRows = useMemo(() => pageRows.some(row =>
+    row.for_iteration !== null || row.while_iteration !== null), [pageRows])
 
   useEffect(() => {
     setExportError(null)
@@ -864,6 +869,7 @@ function App() {
       setLiveConfirmationPending(false)
       setStopRequest(null)
       setCsvStreamStatus(null)
+      setExecutionOffset(0)
       setRunStatus('running')
       setRunResult(null)
       setRunProgress({ step_executions: [], result_rows: [] })
@@ -909,6 +915,7 @@ function App() {
       started = true
       setStopRequest(null)
       setCsvStreamStatus(null)
+      setExecutionOffset(0)
       setRunStatus('running')
       setRunResult(null)
       setRunProgress({ step_executions: [], result_rows: [] })
@@ -1758,10 +1765,21 @@ function App() {
                 <section className="run-results" aria-labelledby="run-results-title">
                   <h3 id="run-results-title">Last Run Execution Results</h3>
                   <p className="run-result-count">
-                    {displayedExecutions.length} {displayedExecutions.length === 1 ? 'execution' : 'executions'} · latest first
+                    {executions.total.toLocaleString('en-US')} {executions.total === 1 ? 'execution' : 'executions'} · latest first
                   </p>
-                  <ol className="run-result-list" aria-label="Last Run Execution Results" tabIndex={0}>
-                    {displayedExecutions.map((result, executionIndex) => {
+                  {executions.total > EXECUTION_WINDOW_SIZE && <div className="section-header">
+                    <p aria-live="polite">
+                      Showing {executions.start.toLocaleString('en-US')}&ndash;{executions.end.toLocaleString('en-US')} of {executions.total.toLocaleString('en-US')}
+                    </p>
+                    <div className="result-chart-panel-actions">
+                      <button className="action-button" type="button" disabled={!executions.hasNewer}
+                        onClick={() => setExecutionOffset(Math.max(0, executions.offset - EXECUTION_WINDOW_SIZE))}>Newer</button>
+                      <button className="action-button" type="button" disabled={!executions.hasOlder}
+                        onClick={() => setExecutionOffset(executions.offset + EXECUTION_WINDOW_SIZE)}>Older</button>
+                    </div>
+                  </div>}
+                  <ol key={executions.offset} className="run-result-list" aria-label="Last Run Execution Results" tabIndex={0}>
+                    {executions.items.map((result, executionIndex) => {
                       const isOutput = allWorkflowSteps(runWorkflowSteps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
