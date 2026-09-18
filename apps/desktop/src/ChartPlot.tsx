@@ -20,6 +20,8 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const tooltip = useRef<HTMLDivElement>(null)
   const pointer = useRef<HTMLDivElement>(null)
   const instance = useRef<EChartsType | null>(null)
+  const lastValidSizeRef = useRef<{ width: number; height: number } | null>(null)
+  const resizeFrameRef = useRef<number | null>(null)
   const [width, setWidth] = useState(0)
   const [themeRevision, setThemeRevision] = useState(0)
   const rawSeries = useMemo(() => panel.outputs.map(name => ({ name, values: data.getSeries(name) })),
@@ -33,18 +35,37 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
     instance.current = chart
     charts.set(panel.id, chart)
+    const initialWidth = Math.floor(chart.getWidth())
+    const initialHeight = Math.floor(chart.getHeight())
+    if (initialWidth > 0 && initialHeight > 0) {
+      lastValidSizeRef.current = { width: initialWidth, height: initialHeight }
+      setWidth(initialWidth)
+    }
     const resize = new ResizeObserver(() => {
-      chart.resize()
-      setWidth(chart.getWidth())
-      tooltip.current!.hidden = true
-      pointer.current!.hidden = true
+      if (resizeFrameRef.current !== null) return
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null
+        const rect = container.current!.getBoundingClientRect()
+        const width = Math.floor(rect.width)
+        const height = Math.floor(rect.height)
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+        const previous = lastValidSizeRef.current
+        if (previous?.width === width && previous.height === height) return
+        lastValidSizeRef.current = { width, height }
+        chart.resize({ width, height })
+        if (previous?.width !== width) setWidth(width)
+        tooltip.current!.hidden = true
+        pointer.current!.hidden = true
+      })
     })
-    setWidth(chart.getWidth())
     resize.observe(container.current!)
     const theme = new MutationObserver(() => setThemeRevision(value => value + 1))
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => {
       resize.disconnect()
+      if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current)
+      resizeFrameRef.current = null
+      lastValidSizeRef.current = null
       theme.disconnect()
       charts.delete(panel.id)
       instance.current = null

@@ -16,7 +16,7 @@ import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey, compatibleOutputPages, hasExportableRows } from './workflow'
-import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto, StepExecutionDto, ResultRowDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -368,6 +368,11 @@ function App() {
   const [executionOffset, setExecutionOffset] = useState(0)
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
+  const pendingStepExecutionsRef = useRef<StepExecutionDto[]>([])
+  const pendingResultRowsRef = useRef<ResultRowDto[]>([])
+  const pendingCompletedStepIdsRef = useRef(new Set<string>())
+  const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const progressChannelRef = useRef<Channel<DesktopRunEvent> | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const [streamCsv, setStreamCsv] = useState(false)
@@ -841,21 +846,47 @@ function App() {
     }
   }, [toolConfigBusy])
 
+  const resetRunProgressBatch = useCallback(() => {
+    if (progressFlushTimerRef.current !== null) clearTimeout(progressFlushTimerRef.current)
+    progressFlushTimerRef.current = null
+    pendingStepExecutionsRef.current = []
+    pendingResultRowsRef.current = []
+    pendingCompletedStepIdsRef.current = new Set()
+  }, [])
+
+  const flushRunProgressBatch = useCallback(() => {
+    const executions = pendingStepExecutionsRef.current
+    const rows = pendingResultRowsRef.current
+    const completedIds = pendingCompletedStepIdsRef.current
+    resetRunProgressBatch()
+    if (executions.length === 0 && rows.length === 0) return
+    setRunProgress(current => ({
+      step_executions: (current?.step_executions ?? []).concat(executions),
+      result_rows: (current?.result_rows ?? []).concat(rows),
+    }))
+    setStopRequest(current => current && completedIds.has(current.loopId) ? null : current)
+  }, [resetRunProgressBatch])
+
+  useEffect(() => () => {
+    if (progressChannelRef.current) progressChannelRef.current.onmessage = () => {}
+    resetRunProgressBatch()
+  }, [resetRunProgressBatch])
+
   const receiveRunProgress = useCallback((event: DesktopRunEvent) => {
     if (event.type === 'csv-stream') {
       setCsvStreamStatus(event.status)
       return
     }
     if (event.type === 'step-completed') {
-      setStopRequest(current => current?.loopId === event.execution.step_id ? null : current)
+      pendingStepExecutionsRef.current.push(event.execution)
+      pendingCompletedStepIdsRef.current.add(event.execution.step_id)
+    } else {
+      pendingResultRowsRef.current.push(event.row)
     }
-    setRunProgress(current => {
-      const progress = current ?? { step_executions: [], result_rows: [] }
-      return event.type === 'step-completed'
-        ? { ...progress, step_executions: [...progress.step_executions, event.execution] }
-        : { ...progress, result_rows: [...progress.result_rows, event.row] }
-    })
-  }, [])
+    if (progressFlushTimerRef.current === null) {
+      progressFlushTimerRef.current = setTimeout(flushRunProgressBatch, 100)
+    }
+  }, [flushRunProgressBatch])
 
   const runLive = useCallback(async () => {
     if (!workflowDraft || runStatus === 'running' || liveRunInFlight.current) {
@@ -903,7 +934,9 @@ function App() {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
+      resetRunProgressBatch()
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setWorkflowChangedSinceRun(false)
@@ -923,12 +956,17 @@ function App() {
         streamCsv: streamOptions,
         confirmedResources,
       })
+      resetRunProgressBatch()
       setRunResult(results)
       setRunProgress(null)
     } catch (message) {
+      if (started) flushRunProgressBatch()
       setRunError(String(message))
     } finally {
-      if (onProgress) onProgress.onmessage = () => {}
+      if (onProgress) {
+        onProgress.onmessage = () => {}
+        progressChannelRef.current = null
+      }
       if (started) {
         setStopRequest(null)
         setRunStatus('idle')
@@ -936,7 +974,7 @@ function App() {
       liveRunInFlight.current = false
       setLiveConfirmationPending(false)
     }
-  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, resetRunProgressBatch, flushRunProgressBatch, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
@@ -949,7 +987,9 @@ function App() {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
+      resetRunProgressBatch()
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setWorkflowChangedSinceRun(false)
@@ -967,18 +1007,23 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
       })
+      resetRunProgressBatch()
       setRunResult(results)
       setRunProgress(null)
     } catch (message) {
+      if (started) flushRunProgressBatch()
       setRunError(String(message))
     } finally {
-      if (onProgress) onProgress.onmessage = () => {}
+      if (onProgress) {
+        onProgress.onmessage = () => {}
+        progressChannelRef.current = null
+      }
       if (started) {
         setStopRequest(null)
         setRunStatus('idle')
       }
     }
-  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [workflowDraft, receiveRunProgress, resetRunProgressBatch, flushRunProgressBatch, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const workflowBusy =
     choosingStreamDestination || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting

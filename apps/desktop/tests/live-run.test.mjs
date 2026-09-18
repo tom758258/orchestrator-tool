@@ -52,7 +52,7 @@ function harness({ streamingError = null } = {}) {
     resourceDrafts: {}, runStatus: 'idle', liveRunInFlight: { current: false },
     streamCsv: true, hasWorkflowOutputs: true, outputFolder: 'data',
     streamingPage: 'Results', streamAllPages: false, streamDestination: 'results.csv',
-    setTools() {}, receiveRunProgress() {},
+    setTools() {}, receiveRunProgress() {}, resetRunProgressBatch() {}, flushRunProgressBatch() {}, progressChannelRef: { current: null },
     outputPages() { return [] },
     setSelectedRunPage(value) {
       state.selectedRunPage = typeof value === 'function' ? value(state.selectedRunPage) : value
