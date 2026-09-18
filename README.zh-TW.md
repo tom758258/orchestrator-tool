@@ -89,6 +89,8 @@ Desktop 可選擇在 Simulation 或 Live run 期間串流 CSV，預設為關閉�
 
 兩個 Desktop run command 都回傳保留 iteration metadata 與 committed ResultRows 的 `WorkflowRunResult` DTO。Execution Results 可區分重複的 For／While body occurrence，iteration 顯示從 1 開始；root execution metadata 維持 null。Output 頁直接使用 ResultRows，呈現 root 單列或 For／While iteration 多列。Iteration 欄只屬於 UI metadata，不是 Workflow Output。
 
+Desktop 只在記憶體中保留一個 Last Run。Last Run 會綁定該次 execution 使用的 Workflow definition，因此編輯目前 Workflow 不會重新解讀或移除 Last Run results；開啟另一份 Template 或建立 new draft 則會清除 Last Run。
+
 Desktop Charts 將所選 Page 的迭代 ResultRows 呈現為折線圖，X 軸固定為該 Page 從 1 開始的 ResultRow sequence。每個 chart panel 綁定一個 Page，只能選擇該 Page 的一個或多個 numeric Outputs；最多 8 個 panels，並在 Page／tab 切換後保留設定與 reconciliation。Output table 顯示 newest-first，Chart 與 CSV 維持 chronological。圖表設定僅屬於 Desktop session state，不儲存於 Template。
 
 Manual export 支援 Current Page 匯出為 CSV 或單一 worksheet XLSX，也支援 All Pages 匯出為多個 CSV 或單一 XLSX workbook（每個 Page 一個 worksheet）。CSV 與 XLSX 共用文字 cell conversion：string 不變、null 為空字串、其他 JSON 使用 compact 文字；目前不提供 formula、styling、chart 或 native numeric cell typing。Iteration metadata 不寫入檔案。匯出仍要求 authoritative final success 與至少一筆 committed row；Current Page 必須由該 Page 自己擁有 row，All Pages 則可由任一 Page 提供 row。Failed、cancelled 或 incomplete run 僅供檢視，backend 仍拒絕匯出。Break 與 continue 尚未支援。

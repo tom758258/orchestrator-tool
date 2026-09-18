@@ -24,6 +24,7 @@ function harness({ streamingError = null } = {}) {
   const execution = deferred()
   const previous = {
     runStatus: 'idle',
+    runWorkflowSnapshot: { name: 'Previous snapshot', tool_instances: [], workflow: { steps: [] } },
     runResult: {
       step_executions: [{ step_id: 'previous' }],
       result_rows: [{
@@ -38,7 +39,7 @@ function harness({ streamingError = null } = {}) {
     stopRequest: { loopId: 'previous-loop' },
     runError: 'previous error',
   }
-  const state = { ...previous }
+  const state = { ...previous, selectedRunPage: 'Results' }
   const changes = []
   const calls = []
   let confirmations = 0
@@ -50,6 +51,10 @@ function harness({ streamingError = null } = {}) {
     streamCsv: true, hasWorkflowOutputs: true, outputFolder: 'data',
     streamingPage: 'Results', streamAllPages: false, streamDestination: 'results.csv',
     setTools() {}, receiveRunProgress() {},
+    outputPages() { return [] },
+    setSelectedRunPage(value) {
+      state.selectedRunPage = typeof value === 'function' ? value(state.selectedRunPage) : value
+    },
     streamingOptions() {
       streamOptions++
       if (streamingError) throw new Error(streamingError)
@@ -106,6 +111,8 @@ test('Rapid calls share one confirmation and execution; Confirm resets state', a
   assert.deepEqual(h.counts(), { confirmations: 1, channels: 1, streamOptions: 1 })
   assert.equal(h.calls.filter(call => call.command === 'run_workflow_live').length, 1)
   assert.equal(h.state.runStatus, 'running')
+  assert.equal(h.state.runWorkflowSnapshot, h.context.workflowDraft)
+  assert.equal(h.state.selectedRunPage, 'Results')
   assert.equal(h.state.runResult, null)
   assert.equal(h.state.csvStreamStatus, null)
   assert.equal(h.state.runError, null)
@@ -137,7 +144,7 @@ test('Invalid Streaming config after confirmation preserves the previous Last Ru
   await flush()
   h.dialog.resolve(true)
   await pending
-  for (const key of ['runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+  for (const key of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
     assert.equal(h.state[key], h.previous[key])
   }
   assert.equal(h.state.runStatus, 'idle')
@@ -161,7 +168,7 @@ test('Confirmation and execution errors release the guard; running blocks Live',
     assert.equal(h.state.liveConfirmationPending, false)
     assert.equal(h.state.runStatus, 'idle')
     if (phase === 'confirmation') {
-      for (const key of ['runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
+      for (const key of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest']) {
         assert.equal(h.state[key], h.previous[key])
       }
     }

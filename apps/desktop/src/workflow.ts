@@ -147,6 +147,12 @@ export function outputPages(steps: readonly WorkflowStep[]) {
   return pages
 }
 
+export function outputPageContext(steps: readonly WorkflowStep[], selectedPage: string) {
+  const pages = outputPages(steps)
+  const page = pages.find(page => page.name === selectedPage) ?? pages[0]
+  return { pages, page, outputs: page?.outputs ?? [] }
+}
+
 export function compatibleOutputPages(steps: readonly WorkflowStep[], outputId: string): string[] {
   const scope = loopPath(steps, outputId).map(loop => loop.id)
   return outputPages(steps)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compatibleOutputPages, hasExportableRows } from '../src/workflow.ts'
+import { compatibleOutputPages, hasExportableRows, outputPageContext } from '../src/workflow.ts'
 
 const literal = { source: 'literal', value: 1 }
 const output = (id, page) => ({ type: 'output', id, name: id, page, value: literal })
@@ -24,4 +24,22 @@ test('export row gating distinguishes Current Page from All Pages', () => {
 
   assert.equal(hasExportableRows(rows, 'Inner', false), false)
   assert.equal(hasExportableRows(rows, 'Inner', true), true)
+})
+
+test('Last Run Page definitions come from the run snapshot', () => {
+  const runSteps = [
+    { ...output('run-output', 'Results'), name: 'Voltage' },
+  ]
+  const currentSteps = [
+    { ...output('current-output', 'Measurements'), name: 'Current' },
+  ]
+
+  const runContext = outputPageContext(runSteps, 'Results')
+  const currentContext = outputPageContext(currentSteps, 'Measurements')
+
+  assert.deepEqual(runContext.pages.map(page => page.name), ['Results'])
+  assert.deepEqual(runContext.outputs.map(item => item.name), ['Voltage'])
+  assert.equal(runContext.page.name, 'Results')
+  assert.deepEqual(currentContext.pages.map(page => page.name), ['Measurements'])
+  assert.deepEqual(currentContext.outputs.map(item => item.name), ['Current'])
 })

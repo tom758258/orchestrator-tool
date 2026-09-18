@@ -9,7 +9,7 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey, compatibleOutputPages, hasExportableRows } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey, compatibleOutputPages, hasExportableRows } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
@@ -295,6 +295,7 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 
 function App() {
   const [selectedPage, setSelectedPage] = useState('Results')
+  const [selectedRunPage, setSelectedRunPage] = useState('Results')
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
   const [streamDestination, setStreamDestination] = useState<string | null>(null)
@@ -328,6 +329,7 @@ function App() {
   const liveRunInFlight = useRef(false)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
+  const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
   const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
   const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
@@ -339,14 +341,15 @@ function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
-  const pages = outputPages(workflowDraft?.workflow.steps ?? [])
-  const currentPage = pages.find(page => page.name === selectedPage) ?? pages[0]
+  const { pages, page: currentPage } = outputPageContext(workflowDraft?.workflow.steps ?? [], selectedPage)
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
-  const currentOutputs = currentPage?.outputs ?? []
   const hasWorkflowOutputs = outputSteps.length > 0
-  const runSucceeded = successfulRun(workflowDraft?.workflow.steps ?? [], runResult)
+  const runWorkflowSteps = runWorkflowSnapshot?.workflow.steps ?? []
+  const { pages: runPages, page: runPage, outputs: runOutputs } = outputPageContext(runWorkflowSteps, selectedRunPage)
+  const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
+  const runSucceeded = successfulRun(runWorkflowSteps, runResult)
   const hasExportableOutputRows = hasExportableRows(
-    runResult?.result_rows ?? [], currentPage?.name, exportAllPages,
+    runResult?.result_rows ?? [], runPage?.name, exportAllPages,
   )
   const latestExecution = runProgress?.step_executions.at(-1)
   const activeLoop = runStatus !== 'running' ? null : latestExecution?.for_iteration
@@ -358,7 +361,7 @@ function App() {
   const runningText = activeLoop
     ? `${activeLoop.kind} ${activeLoop.id} · Iteration ${activeLoop.index + 1} · ${stopping ? 'Stopping…' : 'Running'}`
     : 'Running…'
-  const activeAncestors = activeLoop ? loopPath(workflowDraft?.workflow.steps ?? [], activeLoop.id) : []
+  const activeAncestors = activeLoop ? loopPath(runWorkflowSteps, activeLoop.id) : []
   const requestStop = async (loopId = activeLoop?.id) => {
     if (!loopId || stopping) return
     const request = { loopId }
@@ -383,9 +386,9 @@ function App() {
     {activeLoop && <p>Finishes the current innermost iteration, then stops the selected loop.</p>}
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
-  const displayedRun = runResult ?? runProgress
+  const displayedRun = runWorkflowSnapshot ? runResult ?? runProgress : null
   const displayedExecutions = [...(displayedRun?.step_executions ?? [])].reverse()
-  const pageRows = (displayedRun?.result_rows ?? []).filter(row => row.page === currentPage?.name)
+  const pageRows = (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
   const displayedOutputRows = [...pageRows].reverse()
   const iterationRows = pageRows.some(row => (row.for_iteration !== null || row.while_iteration !== null)) ?? false
 
@@ -424,6 +427,7 @@ function App() {
       setDraftCreationError(null)
       setRunResult(null)
       setRunProgress(null)
+      setRunWorkflowSnapshot(null)
       setCsvStreamStatus(null)
       setRunError(null)
     } catch (message) {
@@ -432,6 +436,7 @@ function App() {
       setDraftCreationError(String(message))
       setRunResult(null)
       setRunProgress(null)
+      setRunWorkflowSnapshot(null)
       setCsvStreamStatus(null)
       setRunError(null)
     } finally {
@@ -461,10 +466,6 @@ function App() {
       })
       setValidationStatus('idle')
       setValidationError(null)
-      setRunResult(null)
-      setRunProgress(null)
-      setCsvStreamStatus(null)
-      setRunError(null)
       setTemplateIoMessage(null)
     },
     [],
@@ -474,10 +475,6 @@ function App() {
     setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
     setValidationStatus('idle')
     setValidationError(null)
-    setRunResult(null)
-    setRunProgress(null)
-    setCsvStreamStatus(null)
-    setRunError(null)
     setTemplateIoMessage(null)
   }, [])
 
@@ -653,6 +650,7 @@ function App() {
       setValidationError(null)
       setRunResult(null)
       setRunProgress(null)
+      setRunWorkflowSnapshot(null)
       setCsvStreamStatus(null)
       setRunError(null)
       setTemplateIoMessage('Template loaded.')
@@ -850,6 +848,10 @@ function App() {
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      const snapshotPages = outputPages(workflowDraft.workflow.steps)
+      setRunWorkflowSnapshot(workflowDraft)
+      setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
+        ? current : snapshotPages[0]?.name ?? 'Results')
       started = true
       setLiveConfirmationPending(false)
       setStopRequest(null)
@@ -891,6 +893,10 @@ function App() {
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      const snapshotPages = outputPages(workflowDraft.workflow.steps)
+      setRunWorkflowSnapshot(workflowDraft)
+      setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
+        ? current : snapshotPages[0]?.name ?? 'Results')
       started = true
       setStopRequest(null)
       setCsvStreamStatus(null)
@@ -945,7 +951,7 @@ function App() {
   }
 
   const handleExport = useCallback(async () => {
-    if (!workflowDraft || !runResult || !hasWorkflowOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy) {
+    if (!runWorkflowSnapshot || !runResult || !hasRunOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy) {
       return
     }
 
@@ -960,10 +966,10 @@ function App() {
         return
       }
       await invoke('export_workflow_pages', {
-        templateJson: JSON.stringify(workflowDraft),
+        templateJson: JSON.stringify(runWorkflowSnapshot),
         runResult,
         destinationPath: selectedPath,
-        page: exportAllPages ? null : currentPage?.name,
+        page: exportAllPages ? null : runPage?.name,
         format: exportFormat,
       })
       setExportMessage('Pages exported successfully.')
@@ -972,7 +978,7 @@ function App() {
     } finally {
       setExporting(false)
     }
-  }, [workflowDraft, runResult, hasWorkflowOutputs, runSucceeded, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, currentPage?.name])
+  }, [runWorkflowSnapshot, runResult, hasRunOutputs, runSucceeded, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -1395,7 +1401,7 @@ function App() {
                   onSelectStep={setSelectedStepId}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
-                  runResults={displayedRun?.step_executions ?? null}
+                  runResults={workflowDraft === runWorkflowSnapshot ? displayedRun?.step_executions ?? null : null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
@@ -1747,7 +1753,7 @@ function App() {
                   </p>
                   <ol className="run-result-list" aria-label="Execution Results" tabIndex={0}>
                     {displayedExecutions.map((result, executionIndex) => {
-                      const isOutput = allWorkflowSteps(workflowDraft.workflow.steps).some((step) =>
+                      const isOutput = allWorkflowSteps(runWorkflowSteps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
                       const measurement = isOutput && result.status === 'succeeded'
@@ -1806,7 +1812,7 @@ function App() {
             <h2>Output</h2>
           </div>
           {currentPage && <div className="workflow-actions">
-            <label>Page <select value={currentPage.name} disabled={chartSaving} onChange={event => setSelectedPage(event.target.value)}>
+            <label>Workflow Page <select value={currentPage.name} disabled={chartSaving} onChange={event => setSelectedPage(event.target.value)}>
               {pages.map(page => <option key={page.name}>{page.name}</option>)}
             </select></label>
             <div className="page-name-editor">
@@ -1821,12 +1827,13 @@ function App() {
           {stopControls}
           {stopFeedback}
           {csvStreamFeedback}
-          {!hasWorkflowOutputs ? (
+          {!hasWorkflowOutputs && (
             <>
               <p>No workflow outputs defined.</p>
               <p>Add Output steps to the Workflow to publish final result values.</p>
             </>
-          ) : !displayedRun ? (
+          )}
+          {!displayedRun ? (
             <>
               <p>No run results yet.</p>
               <p>Run the Workflow to view its outputs.</p>
@@ -1835,9 +1842,16 @@ function App() {
             <section aria-labelledby="last-run-title">
               <h3 id="last-run-title">Last Run</h3>
               {runStatus === 'running' && <p role="status">{runningText}</p>}
+              {runPage && <div className="workflow-actions">
+                <label>Run Page <select value={runPage.name} disabled={chartSaving}
+                  onChange={event => setSelectedRunPage(event.target.value)}>
+                  {runPages.map(page => <option key={page.name}>{page.name}</option>)}
+                </select></label>
+              </div>}
+              {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {pageRows.length === 0 && <p>No committed output rows.</p>}
-              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={currentOutputs.map(step => step.name)} page={currentPage?.name ?? 'Results'} pages={pages} onSavingChange={setChartSaving} />
+              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputs.map(step => step.name)} page={runPage?.name ?? 'Results'} pages={runPages} onSavingChange={setChartSaving} />
               {displayedOutputRows.length > 0 && (
                 <section className="output-data" aria-labelledby="output-data-title">
                   <h3 id="output-data-title">Output Data</h3>
@@ -1849,16 +1863,18 @@ function App() {
                       <thead>
                         <tr>
                           {iterationRows && <th scope="col">Iteration</th>}
-                          {currentOutputs.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
+                          {runOutputs.map((step) => <th key={step.id} scope="col">{step.name}</th>)}
                         </tr>
                       </thead>
                       <tbody>
                         {displayedOutputRows.map((row, index) => (
                           <tr key={index}>
                             {iterationRows && <td>{pageRows.length - index}</td>}
-                            {row.outputs.map(output => <td key={output.name}>
+                            {runOutputs.map(step => {
+                              const output = row.outputs.find(output => output.name === step.name) ?? { value: undefined }
+                              return <td key={step.id}>
                               {typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'}
-                            </td>)}
+                            </td>})}
                           </tr>
                         ))}
                       </tbody>
@@ -1880,7 +1896,7 @@ function App() {
             className="action-button"
             type="button"
             onClick={() => void handleExport()}
-            disabled={!hasWorkflowOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy}
+            disabled={!hasRunOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy}
           >
             {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
           </button>
