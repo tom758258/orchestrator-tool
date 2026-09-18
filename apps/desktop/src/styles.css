@@ -11,10 +11,10 @@
   --disabled-ink: #75808c;
   --line: #dde2e9;
   --line-strong: #b8c2cc;
-  --accent: #0071e3;
-  --accent-strong: #0058b5;
+  --accent: #1f6fbd;
+  --accent-strong: #175a99;
   --on-accent: #ffffff;
-  --focus: rgb(0 113 227 / 22%);
+  --focus: rgb(31 111 189 / 22%);
   /* Feedback and interaction */
   --success: #16794c;
   --success-surface: #eaf7f0;
@@ -1175,24 +1175,24 @@ input[type="radio"] {
 }
 
 .workflow-canvas .react-flow {
-  --xy-background-color: var(--canvas);
-  --xy-background-pattern-dots-color: var(--canvas-grid);
-  --xy-background-pattern-lines-color: var(--canvas-grid);
-  --xy-background-pattern-cross-color: var(--canvas-grid);
-  --xy-node-background-color: var(--node);
-  --xy-edge-stroke: var(--line-strong);
-  --xy-edge-stroke-selected: var(--accent);
-  --xy-node-color: var(--ink);
-  --xy-node-boxshadow-hover: var(--shadow-md);
-  --xy-handle-background-color: var(--muted);
-  --xy-handle-border-color: var(--node);
-  --xy-controls-button-background-color: var(--panel);
-  --xy-controls-button-background-color-hover: var(--surface-hover);
-  --xy-controls-button-color: var(--ink);
-  --xy-controls-button-color-hover: var(--ink);
-  --xy-controls-button-border-color: var(--line);
-  --xy-controls-box-shadow: var(--shadow-sm);
-  --xy-attribution-background-color: var(--panel-soft);
+  --xy-background-color-default: var(--canvas);
+  --xy-background-pattern-dots-color-default: var(--canvas-grid);
+  --xy-background-pattern-lines-color-default: var(--canvas-grid);
+  --xy-background-pattern-cross-color-default: var(--canvas-grid);
+  --xy-node-background-color-default: var(--node);
+  --xy-edge-stroke-default: var(--line-strong);
+  --xy-edge-stroke-selected-default: var(--accent);
+  --xy-node-color-default: var(--ink);
+  --xy-node-boxshadow-hover-default: var(--shadow-md);
+  --xy-handle-background-color-default: var(--muted);
+  --xy-handle-border-color-default: var(--node);
+  --xy-controls-button-background-color-default: var(--panel);
+  --xy-controls-button-background-color-hover-default: var(--surface-hover);
+  --xy-controls-button-color-default: var(--ink);
+  --xy-controls-button-color-hover-default: var(--ink);
+  --xy-controls-button-border-color-default: var(--line);
+  --xy-controls-box-shadow-default: var(--shadow-sm);
+  --xy-attribution-background-color-default: var(--panel-soft);
 }
 
 .workflow-canvas .react-flow__node-default {
