@@ -4,6 +4,7 @@ import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
+import PageResultSummary from './PageResultSummary'
 import type { ChartPanel } from './chartPanels'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -1867,6 +1868,7 @@ function App() {
                     {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
                   </p>
                   <VirtualizedOutputTable rows={pageRows} outputs={runOutputs} iterationRows={iterationRows} />
+                  <PageResultSummary rows={pageRows} />
                 </section>
               )}
             </section>
