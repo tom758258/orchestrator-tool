@@ -91,3 +91,27 @@ test('eligibility still requires every cell to be a finite number', () => {
   assert.deepEqual(numericOutputNames(rows, ['finite', 'mixed', 'infinite', 'nan', 'missing']), ['finite'])
   assert.deepEqual(numericOutputNames([], ['finite']), [])
 })
+
+test('eligibility rejects missing and nonnumeric cells independently and preserves candidate order', () => {
+  const invalid = [null, '2', true, {}, NaN, Infinity, -Infinity]
+  const names = ['Power', 'Voltage', ...invalid.map((_, index) => `invalid-${index}`), 'missing']
+  const rows = [1, 2, 3].map(value => ({ outputs: [
+    { name: 'Voltage', value }, { name: 'Power', value: value * 2 },
+    ...invalid.map((bad, index) => ({ name: `invalid-${index}`, value: value === 2 ? bad : value })),
+    ...(value === 2 ? [] : [{ name: 'missing', value }]),
+    { name: 'unrequested', value },
+  ] }))
+  assert.deepEqual(numericOutputNames(rows, names), ['Power', 'Voltage'])
+  assert.deepEqual(numericOutputNames(rows, []), [])
+})
+
+test('duplicate cells cannot replace a missing row and retain first-cell eligibility', () => {
+  const rows = [{ outputs: [
+    { name: 'missing', value: 1 }, { name: 'missing', value: 2 },
+    { name: 'invalidFirst', value: null }, { name: 'invalidFirst', value: 2 },
+    { name: 'validFirst', value: 1 }, { name: 'validFirst', value: Infinity },
+  ] }, { outputs: [
+    { name: 'invalidFirst', value: 3 }, { name: 'validFirst', value: 3 },
+  ] }]
+  assert.deepEqual(numericOutputNames(rows, ['missing', 'invalidFirst', 'validFirst']), ['validFirst'])
+})

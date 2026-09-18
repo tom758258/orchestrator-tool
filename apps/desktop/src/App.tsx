@@ -329,7 +329,6 @@ function App() {
     return () => media?.removeEventListener('change', updateTheme)
   }, [themePreference])
 
-  const [selectedPage, setSelectedPage] = useState('Results')
   const [selectedRunPage, setSelectedRunPage] = useState('Results')
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
@@ -378,7 +377,7 @@ function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
-  const { pages, page: currentPage } = outputPageContext(workflowDraft?.workflow.steps ?? [], selectedPage)
+  const pages = outputPages(workflowDraft?.workflow.steps ?? [])
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
   const hasWorkflowOutputs = outputSteps.length > 0
   const runWorkflowSteps = runWorkflowSnapshot?.workflow.steps ?? []
@@ -1909,19 +1908,6 @@ function App() {
           <div className="section-header">
             <h2>Output</h2>
           </div>
-          {currentPage && <div className="workflow-actions">
-            <label>Workflow Page <select value={currentPage.name} disabled={chartSaving} onChange={event => setSelectedPage(event.target.value)}>
-              {pages.map(page => <option key={page.name}>{page.name}</option>)}
-            </select></label>
-            <div className="page-name-editor">
-              <label>Page name <input value={currentPage.name} disabled={workflowBusy} onChange={event => {
-                const name = event.target.value
-                updateSteps(steps => mapWorkflowSteps(steps, step => step.type === 'output' && step.page === currentPage.name ? { ...step, page: name } : step))
-                setSelectedPage(name)
-              }} /></label>
-              <p>Rename this Page. All Outputs assigned to this Page are updated together.</p>
-            </div>
-          </div>}
           {stopControls}
           {stopFeedback}
           {csvStreamFeedback}

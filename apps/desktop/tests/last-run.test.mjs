@@ -268,3 +268,17 @@ test('Clear Last Run is unavailable while busy or without a Last Run', async () 
     })()
   }
 })
+
+test('Output shows Last Run Page tabs while Page editing stays in Workflow Properties', () => {
+  const output = source.slice(source.indexOf('<section id="output-panel"'))
+  assert.ok(output.includes('aria-label="Last Run Pages"'))
+  assert.ok(output.includes('setSelectedRunPage(page.name)'))
+  assert.ok(!output.includes('Workflow Page'))
+  assert.ok(!output.includes('Page name'))
+  assert.ok(!output.includes('Rename this Page'))
+  const properties = source.slice(0, source.indexOf('<section id="output-panel"'))
+  assert.ok(properties.includes('Existing compatible Page'))
+  assert.ok(properties.includes('selectedCompatiblePages.map'))
+  assert.ok(properties.includes('<input value={selectedStep.page}'))
+  assert.ok(properties.includes('id="output-page-help"'))
+})

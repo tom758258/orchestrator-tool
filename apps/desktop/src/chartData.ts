@@ -1,10 +1,18 @@
 import type { ResultRowDto } from './workflow'
 
 export function numericOutputNames(rows: readonly ResultRowDto[], names: readonly string[]): string[] {
-  return rows.length === 0 ? [] : names.filter(name => rows.every(row => {
-    const value = row.outputs.find(output => output.name === name)?.value
-    return typeof value === 'number' && Number.isFinite(value)
-  }))
+  if (rows.length === 0) return []
+  const candidates = new Map(names.map(name => [name, { count: 0, lastRow: -1 }]))
+  for (let index = 0; index < rows.length; index++) {
+    for (const output of rows[index].outputs) {
+      const candidate = candidates.get(output.name)
+      if (!candidate || candidate.lastRow === index) continue
+      // Preserve find() semantics: only the first cell with this name counts per row.
+      candidate.lastRow = index
+      if (typeof output.value === 'number' && Number.isFinite(output.value)) candidate.count++
+    }
+  }
+  return names.filter(name => candidates.get(name)!.count === rows.length)
 }
 
 // Presentation-only, owned by one Page in one Last Run. ResultRows remain authoritative.
