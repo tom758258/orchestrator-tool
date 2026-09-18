@@ -7,7 +7,8 @@ use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_with_stream};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Condvar, Mutex},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -578,46 +579,98 @@ fn while_iteration_dto(iteration: &WhileIteration) -> WhileIterationDto {
 
 const PROGRESS_BATCH_INTERVAL: Duration = Duration::from_millis(100);
 
-struct DesktopProgressBatcher<'a> {
-    channel: &'a Channel<WorkflowRunEventDto>,
-    step_executions: Vec<StepExecutionDto>,
-    result_rows: Vec<ResultRowDto>,
-    last_flush: Instant,
+struct DesktopProgressBatcher {
+    shared: Arc<(Mutex<DesktopProgressPending>, Condvar)>,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
-impl<'a> DesktopProgressBatcher<'a> {
-    fn new(channel: &'a Channel<WorkflowRunEventDto>) -> Self {
-        Self {
-            channel,
-            step_executions: Vec::new(),
-            result_rows: Vec::new(),
-            last_flush: Instant::now(),
-        }
-    }
+struct DesktopProgressPending {
+    channel: Channel<WorkflowRunEventDto>,
+    step_executions: Vec<StepExecutionDto>,
+    result_rows: Vec<ResultRowDto>,
+    deadline: Option<Instant>,
+    closed: bool,
+}
 
-    fn push(&mut self, event: &WorkflowRunEvent) {
-        match event {
-            WorkflowRunEvent::StepCompleted(execution) => {
-                self.step_executions.push(step_execution_dto(execution));
-            }
-            WorkflowRunEvent::ResultRowCommitted(row) => {
-                self.result_rows.push(result_row_dto(row));
-            }
-        }
-        if self.last_flush.elapsed() >= PROGRESS_BATCH_INTERVAL {
-            self.flush();
-        }
-    }
-
+impl DesktopProgressPending {
     fn flush(&mut self) {
+        self.deadline = None;
         if self.step_executions.is_empty() && self.result_rows.is_empty() {
             return;
         }
+        // Serialize sends with pushes and final flush to preserve batch ordering.
         let _ = self.channel.send(WorkflowRunEventDto::ProgressBatch {
             step_executions: std::mem::take(&mut self.step_executions),
             result_rows: std::mem::take(&mut self.result_rows),
         });
-        self.last_flush = Instant::now();
+    }
+}
+
+impl DesktopProgressBatcher {
+    fn new(channel: &Channel<WorkflowRunEventDto>) -> Self {
+        let shared = Arc::new((
+            Mutex::new(DesktopProgressPending {
+                channel: channel.clone(),
+                step_executions: Vec::new(),
+                result_rows: Vec::new(),
+                deadline: None,
+                closed: false,
+            }),
+            Condvar::new(),
+        ));
+        let timer = shared.clone();
+        let worker = thread::spawn(move || {
+            let (lock, wake) = &*timer;
+            let mut pending = lock.lock().unwrap();
+            while !pending.closed {
+                if let Some(deadline) = pending.deadline {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        pending.flush();
+                    } else {
+                        pending = wake.wait_timeout(pending, remaining).unwrap().0;
+                    }
+                } else {
+                    pending = wake.wait(pending).unwrap();
+                }
+            }
+        });
+        Self {
+            shared,
+            worker: Some(worker),
+        }
+    }
+
+    fn push(&mut self, event: &WorkflowRunEvent) {
+        let (lock, wake) = &*self.shared;
+        let mut pending = lock.lock().unwrap();
+        match event {
+            WorkflowRunEvent::StepCompleted(execution) => {
+                pending.step_executions.push(step_execution_dto(execution));
+            }
+            WorkflowRunEvent::ResultRowCommitted(row) => {
+                pending.result_rows.push(result_row_dto(row));
+            }
+        }
+        if pending.deadline.is_none() {
+            pending.deadline = Some(Instant::now() + PROGRESS_BATCH_INTERVAL);
+            wake.notify_one();
+        }
+    }
+
+    fn flush(&mut self) {
+        self.shared.0.lock().unwrap().flush();
+    }
+}
+
+impl Drop for DesktopProgressBatcher {
+    fn drop(&mut self) {
+        let (lock, wake) = &*self.shared;
+        lock.lock().unwrap().closed = true;
+        wake.notify_one();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -1135,7 +1188,8 @@ mod tests {
         batcher.flush();
         assert!(messages.lock().unwrap().is_empty());
         // Keep the interval unexpired without depending on test execution speed.
-        batcher.last_flush = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        batcher.shared.0.lock().unwrap().deadline =
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
         for (id, value) in [("a", 1), ("b", 2)] {
             batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
                 StepResult::new(
@@ -1153,8 +1207,8 @@ mod tests {
         }
         assert!(messages.lock().unwrap().is_empty());
         batcher.flush();
-        assert!(batcher.step_executions.is_empty());
-        assert!(batcher.result_rows.is_empty());
+        assert!(batcher.shared.0.lock().unwrap().step_executions.is_empty());
+        assert!(batcher.shared.0.lock().unwrap().result_rows.is_empty());
         batcher.flush();
         let messages = messages.lock().unwrap();
         assert_eq!(messages.len(), 1);
@@ -1181,6 +1235,56 @@ mod tests {
     }
 
     #[test]
+    fn sparse_progress_flushes_without_another_event() {
+        let (sent, received) = std::sync::mpsc::channel();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            sent.send(body).unwrap();
+            Ok(())
+        });
+        let mut batcher = super::DesktopProgressBatcher::new(&channel);
+        batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Succeeded { output: json!(1) },
+            ),
+            None,
+        )));
+        let body = received
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+            panic!("expected JSON progress");
+        };
+        let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(wire["type"], "progress-batch");
+        assert_eq!(wire["step_executions"][0]["step_id"], "out");
+    }
+
+    #[test]
+    fn final_flush_does_not_duplicate_when_timer_wakes() {
+        let (sent, received) = std::sync::mpsc::channel();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            sent.send(body).unwrap();
+            Ok(())
+        });
+        let mut batcher = super::DesktopProgressBatcher::new(&channel);
+        batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
+            Vec::new(),
+            None,
+        )));
+        batcher.flush();
+        received
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(matches!(
+            received.recv_timeout(super::PROGRESS_BATCH_INTERVAL * 3),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        batcher.flush();
+        assert!(received.try_recv().is_err());
+    }
+
+    #[test]
     fn progress_batch_send_failure_does_not_fail_execution() {
         let channel = tauri::ipc::Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage));
         let mut batcher = super::DesktopProgressBatcher::new(&channel);
@@ -1189,7 +1293,7 @@ mod tests {
             None,
         )));
         batcher.flush();
-        assert!(batcher.result_rows.is_empty());
+        assert!(batcher.shared.0.lock().unwrap().result_rows.is_empty());
     }
 
     #[test]
