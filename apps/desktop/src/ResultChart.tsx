@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -24,13 +24,27 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
   const saving = useRef(false)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
-  const numericNames = rows.length === 0 ? [] : outputNames.filter(name =>
+  const numericNames = useMemo(() => rows.length === 0 ? [] : outputNames.filter(name =>
     rows.every(row => {
       const value = row.outputs.find(output => output.name === name)?.value
       return typeof value === 'number' && Number.isFinite(value)
-    }))
-  const hasIteration = rows.length > 0 && rows.every(row =>
-    row.for_iteration != null || row.while_iteration != null)
+    })), [rows, outputNames])
+  const hasIteration = useMemo(() => rows.length > 0 && rows.every(row =>
+    row.for_iteration != null || row.while_iteration != null), [rows])
+
+  // Safe local keys keep user Output names out of Recharts path resolution.
+  const series = useMemo(() => numericNames.map((name, index) => ({
+    name, key: `series${index}`, color: SERIES_COLORS[index % SERIES_COLORS.length],
+  })), [numericNames])
+  const points = useMemo(() => !hasIteration || series.length === 0 ? [] : rows.map((row, index) => {
+    const point: Record<string, number> = {
+      iteration: index + 1,
+    }
+    series.forEach(item => {
+      point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
+    })
+    return point
+  }), [rows, series, hasIteration])
 
   // Reconcile definitions across every Page without clearing other Pages on tab switches.
   let displayedPanels = panels
@@ -75,20 +89,6 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
     <p>No numeric Outputs are available for charts.</p>
   </section>
   if (!displayedPanels) return null
-
-  // Safe local keys keep user Output names out of Recharts path resolution.
-  const series = numericNames.map((name, index) => ({
-    name, key: `series${index}`, color: SERIES_COLORS[index % SERIES_COLORS.length],
-  }))
-  const points = rows.map((row, index) => {
-    const point: Record<string, number> = {
-      iteration: index + 1,
-    }
-    series.forEach(item => {
-      point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
-    })
-    return point
-  })
 
   function addChart() {
     if (saving.current) return

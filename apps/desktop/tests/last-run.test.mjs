@@ -133,6 +133,7 @@ test('Open Template clears the Last Run context after a successful load', async 
   const loadedDraft = { ...draft, name: 'Loaded' }
   const previous = {
     workflowDraft: draft,
+    executionOffset: 400,
     workflowChangedSinceRun: true,
     runWorkflowSnapshot: { ...draft, name: 'Run snapshot' },
     runResult: { step_executions: [], result_rows: [] },
@@ -154,6 +155,7 @@ test('Open Template clears the Last Run context after a successful load', async 
     setSelectedStepId(value) { state.selectedStepId = value },
     setValidationStatus(value) { state.validationStatus = value },
     setValidationError(value) { state.validationError = value },
+    setExecutionOffset(value) { state.executionOffset = value },
     setRunResult(value) { state.runResult = value },
     setRunProgress(value) { state.runProgress = value },
     setRunWorkflowSnapshot(value) { state.runWorkflowSnapshot = value },
@@ -168,6 +170,7 @@ test('Open Template clears the Last Run context after a successful load', async 
   ), context)
   await handleLoadTemplate()
 
+  assert.equal(state.executionOffset, 0)
   assert.equal(state.workflowDraft.name, 'Loaded')
   assert.equal(state.workflowChangedSinceRun, false)
   for (const key of ['runResult', 'runProgress', 'runWorkflowSnapshot', 'csvStreamStatus', 'runError']) {
@@ -202,7 +205,7 @@ test('Validate and Save canonicalization preserve dirty state and badge applicab
 
 test('creating a new draft clears Last Run and resets dirty state', async () => {
   const state = {
-    workflowChangedSinceRun: true, workflowDraft: draft, runWorkflowSnapshot: draft,
+    executionOffset: 400, workflowChangedSinceRun: true, workflowDraft: draft, runWorkflowSnapshot: draft,
     runResult: {}, runProgress: {}, csvStreamStatus: {}, runError: 'old error',
   }
   const context = {
@@ -213,8 +216,55 @@ test('creating a new draft clears Last Run and resets dirty state', async () => 
     context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
   }
   await runInNewContext(asyncCallback('  const createDraft = useCallback(', '\n  useEffect('), context)()
+  assert.equal(state.executionOffset, 0)
   assert.equal(state.workflowChangedSinceRun, false)
   for (const name of ['runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'runError']) {
     assert.equal(state[name], null)
+  }
+})
+
+for (const approved of [true, false]) {
+  test(`Clear Last Run ${approved ? 'confirmed clears results only' : 'cancelled preserves all state'}`, async () => {
+    const previous = {
+      runWorkflowSnapshot: draft,
+      runResult: { step_executions: [{ step_id: 'wait-1' }], result_rows: [{ page: 'Results' }] },
+      runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
+      executionOffset: 400, workflowChangedSinceRun: true,
+      runError: 'run error', stopRequest: { loopId: 'loop' },
+      csvStreamStatus: { path: 'run.csv' }, exportError: 'export error', exportMessage: 'exported',
+      workflowDraft: structuredClone(draft),
+      chartPanels: [{ id: 0, page: 'Results', outputs: ['Voltage'], xAxisTitle: 'Iteration', yAxisTitle: '' }],
+    }
+    const state = { ...previous }
+    const original = structuredClone(previous)
+    const context = {
+      ...previous, workflowBusy: false,
+      async confirm(message, options) {
+        assert.equal(message, 'Clear the Last Run results?\n\nExecution Results and committed Output rows from the last run will be removed.\n\nThis action cannot be undone.')
+        assert.deepEqual({ ...options }, {
+          title: 'Clear Last Run', kind: 'warning', okLabel: 'Clear', cancelLabel: 'Cancel',
+        })
+        return approved
+      },
+    }
+    for (const name of Object.keys(previous)) {
+      context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
+    }
+    await runInNewContext(asyncCallback('  const handleClearLastRun = useCallback(', '\n  const csvStreamFeedback ='), context)()
+    assert.deepEqual(previous, original)
+    for (const name of Object.keys(previous)) {
+      const expected = !approved || name === 'workflowDraft' || name === 'chartPanels'
+        ? previous[name] : name === 'executionOffset' ? 0 : name === 'workflowChangedSinceRun' ? false : null
+      assert.equal(state[name], expected, name)
+    }
+  })
+}
+
+test('Clear Last Run is unavailable while busy or without a Last Run', async () => {
+  for (const [runWorkflowSnapshot, workflowBusy] of [[draft, true], [null, false]]) {
+    await runInNewContext(asyncCallback('  const handleClearLastRun = useCallback(', '\n  const csvStreamFeedback ='), {
+      runWorkflowSnapshot, workflowBusy,
+      async confirm() { assert.fail('Must not open confirmation') },
+    })()
   }
 })

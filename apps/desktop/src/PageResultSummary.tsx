@@ -1,8 +1,9 @@
+import { useMemo } from 'react'
 import { summarizePageResults } from './numericSummary'
 import type { ResultRowDto } from './workflow'
 
 export default function PageResultSummary({ rows }: { rows: ResultRowDto[] }) {
-  const summaries = summarizePageResults(rows)
+  const summaries = useMemo(() => summarizePageResults(rows), [rows])
   if (rows.length === 0) return null
 
   return <section className="page-result-summary" aria-labelledby="page-result-summary-title">

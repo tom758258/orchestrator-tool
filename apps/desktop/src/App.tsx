@@ -350,7 +350,9 @@ function App() {
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
   const hasWorkflowOutputs = outputSteps.length > 0
   const runWorkflowSteps = runWorkflowSnapshot?.workflow.steps ?? []
-  const { pages: runPages, page: runPage, outputs: runOutputs } = outputPageContext(runWorkflowSteps, selectedRunPage)
+  const { pages: runPages, page: runPage, outputs: runOutputs } = useMemo(() =>
+    outputPageContext(runWorkflowSnapshot?.workflow.steps ?? [], selectedRunPage), [runWorkflowSnapshot, selectedRunPage])
+  const runOutputNames = useMemo(() => runOutputs.map(step => step.name), [runOutputs])
   const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
   const runSucceeded = successfulRun(runWorkflowSteps, runResult)
   const hasExportableOutputRows = hasExportableRows(
@@ -435,6 +437,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
@@ -445,6 +448,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
@@ -662,6 +666,7 @@ function App() {
       setRunResult(null)
       setRunProgress(null)
       setRunWorkflowSnapshot(null)
+      setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       setRunError(null)
@@ -940,6 +945,26 @@ function App() {
 
   const workflowBusy =
     choosingStreamDestination || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+
+  const handleClearLastRun = useCallback(async () => {
+    if (!runWorkflowSnapshot || workflowBusy) return
+    const approved = await confirm(
+      'Clear the Last Run results?\n\nExecution Results and committed Output rows from the last run will be removed.\n\nThis action cannot be undone.',
+      { title: 'Clear Last Run', kind: 'warning', okLabel: 'Clear', cancelLabel: 'Cancel' },
+    )
+    if (!approved) return
+
+    setRunWorkflowSnapshot(null)
+    setRunResult(null)
+    setRunProgress(null)
+    setExecutionOffset(0)
+    setRunError(null)
+    setStopRequest(null)
+    setCsvStreamStatus(null)
+    setExportError(null)
+    setExportMessage(null)
+    setWorkflowChangedSinceRun(false)
+  }, [runWorkflowSnapshot, workflowBusy])
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
@@ -1867,7 +1892,11 @@ function App() {
             </>
           ) : (
             <section aria-labelledby="last-run-title">
-              <h3 id="last-run-title">Last Run</h3>
+              <div className="section-header">
+                <h3 id="last-run-title">Last Run</h3>
+                {runWorkflowSnapshot && <button className="action-button action-button-danger" type="button"
+                  disabled={workflowBusy} onClick={() => void handleClearLastRun()}>Clear Last Run</button>}
+              </div>
               {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runPage && <div className="workflow-actions">
                 <label>Run Page <select value={runPage.name} disabled={chartSaving}
@@ -1878,7 +1907,7 @@ function App() {
               {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
               {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
               {pageRows.length === 0 && <p>No committed output rows.</p>}
-              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputs.map(step => step.name)} page={runPage?.name ?? 'Results'} pages={runPages} onSavingChange={setChartSaving} />
+              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputNames} page={runPage?.name ?? 'Results'} pages={runPages} onSavingChange={setChartSaving} />
               {pageRows.length > 0 && (
                 <section className="output-data" aria-labelledby="output-data-title">
                   <h3 id="output-data-title">Output Data</h3>
