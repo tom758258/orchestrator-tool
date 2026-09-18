@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use orchestrator_tool::{
@@ -137,9 +137,13 @@ struct StepExecutionDto {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum WorkflowRunEventDto {
-    StepCompleted { execution: StepExecutionDto },
-    ResultRowCommitted { row: ResultRowDto },
-    CsvStream { status: StreamCsvStatus },
+    ProgressBatch {
+        step_executions: Vec<StepExecutionDto>,
+        result_rows: Vec<ResultRowDto>,
+    },
+    CsvStream {
+        status: StreamCsvStatus,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -280,7 +284,8 @@ async fn run_workflow_simulation(
             &application_dir,
             &config,
         )?;
-        let results = run_with_stream(
+        let mut batcher = DesktopProgressBatcher::new(&on_progress);
+        let run_result = run_with_stream(
             &template,
             stream_csv.as_ref(),
             &application_dir,
@@ -288,7 +293,7 @@ async fn run_workflow_simulation(
                 let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
             },
             |event| {
-                let _ = on_progress.send(workflow_run_event_dto(&event));
+                batcher.push(&event);
             },
             |on_event| {
                 run_workflow_with_loop_stop(
@@ -303,7 +308,9 @@ async fn run_workflow_simulation(
                 )
                 .map_err(|error| error.to_string())
             },
-        )?;
+        );
+        batcher.flush();
+        let results = run_result?;
 
         Ok(workflow_run_result_dto(&results))
     })
@@ -344,7 +351,8 @@ async fn run_workflow_live(
                 authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
             }
         }
-        let results = run_with_stream(
+        let mut batcher = DesktopProgressBatcher::new(&on_progress);
+        let run_result = run_with_stream(
             &template,
             stream_csv.as_ref(),
             &application_dir,
@@ -352,7 +360,7 @@ async fn run_workflow_live(
                 let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
             },
             |event| {
-                let _ = on_progress.send(workflow_run_event_dto(&event));
+                batcher.push(&event);
             },
             |on_event| {
                 run_workflow_with_loop_stop(
@@ -367,7 +375,9 @@ async fn run_workflow_live(
                 )
                 .map_err(|error| error.to_string())
             },
-        )?;
+        );
+        batcher.flush();
+        let results = run_result?;
         Ok(workflow_run_result_dto(&results))
     })
     .await
@@ -566,14 +576,48 @@ fn while_iteration_dto(iteration: &WhileIteration) -> WhileIterationDto {
     }
 }
 
-fn workflow_run_event_dto(event: &WorkflowRunEvent) -> WorkflowRunEventDto {
-    match event {
-        WorkflowRunEvent::StepCompleted(execution) => WorkflowRunEventDto::StepCompleted {
-            execution: step_execution_dto(execution),
-        },
-        WorkflowRunEvent::ResultRowCommitted(row) => WorkflowRunEventDto::ResultRowCommitted {
-            row: result_row_dto(row),
-        },
+const PROGRESS_BATCH_INTERVAL: Duration = Duration::from_millis(100);
+
+struct DesktopProgressBatcher<'a> {
+    channel: &'a Channel<WorkflowRunEventDto>,
+    step_executions: Vec<StepExecutionDto>,
+    result_rows: Vec<ResultRowDto>,
+    last_flush: Instant,
+}
+
+impl<'a> DesktopProgressBatcher<'a> {
+    fn new(channel: &'a Channel<WorkflowRunEventDto>) -> Self {
+        Self {
+            channel,
+            step_executions: Vec::new(),
+            result_rows: Vec::new(),
+            last_flush: Instant::now(),
+        }
+    }
+
+    fn push(&mut self, event: &WorkflowRunEvent) {
+        match event {
+            WorkflowRunEvent::StepCompleted(execution) => {
+                self.step_executions.push(step_execution_dto(execution));
+            }
+            WorkflowRunEvent::ResultRowCommitted(row) => {
+                self.result_rows.push(result_row_dto(row));
+            }
+        }
+        if self.last_flush.elapsed() >= PROGRESS_BATCH_INTERVAL {
+            self.flush();
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.step_executions.is_empty() && self.result_rows.is_empty() {
+            return;
+        }
+        let _ = self.channel.send(WorkflowRunEventDto::ProgressBatch {
+            step_executions: std::mem::take(&mut self.step_executions),
+            result_rows: std::mem::take(&mut self.result_rows),
+        });
+        self.last_flush = Instant::now();
     }
 }
 
@@ -1074,7 +1118,82 @@ mod tests {
     }
 
     #[test]
-    fn progress_event_dto_preserves_tags_and_occurrence_metadata() {
+    fn progress_batch_preserves_order_and_final_flush_drains_pending_events() {
+        let messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+                panic!("expected JSON progress");
+            };
+            received
+                .lock()
+                .unwrap()
+                .push(serde_json::from_str::<serde_json::Value>(&json).unwrap());
+            Ok(())
+        });
+        let mut batcher = super::DesktopProgressBatcher::new(&channel);
+        batcher.flush();
+        assert!(messages.lock().unwrap().is_empty());
+        // Keep the interval unexpired without depending on test execution speed.
+        batcher.last_flush = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        for (id, value) in [("a", 1), ("b", 2)] {
+            batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+                StepResult::new(
+                    StepId::new(id).unwrap(),
+                    StepOutcome::Succeeded {
+                        output: json!(value),
+                    },
+                ),
+                None,
+            )));
+            batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
+                vec![WorkflowOutput::new("value".to_owned(), json!(value))],
+                None,
+            )));
+        }
+        assert!(messages.lock().unwrap().is_empty());
+        batcher.flush();
+        assert!(batcher.step_executions.is_empty());
+        assert!(batcher.result_rows.is_empty());
+        batcher.flush();
+        let messages = messages.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        let wire = &messages[0];
+        assert_eq!(wire["type"], "progress-batch");
+        assert_eq!(
+            wire["step_executions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value["step_id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+        assert_eq!(
+            wire["result_rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value["outputs"][0]["value"].as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+    }
+
+    #[test]
+    fn progress_batch_send_failure_does_not_fail_execution() {
+        let channel = tauri::ipc::Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage));
+        let mut batcher = super::DesktopProgressBatcher::new(&channel);
+        batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
+            Vec::new(),
+            None,
+        )));
+        batcher.flush();
+        assert!(batcher.result_rows.is_empty());
+    }
+
+    #[test]
+    fn progress_event_dto_preserves_occurrence_metadata() {
         let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
         let execution = StepExecution::new(
             StepResult::new(
@@ -1087,28 +1206,20 @@ mod tests {
             vec![WorkflowOutput::new("value".to_owned(), json!(3))],
             Some(iteration),
         );
-        let step_event = serde_json::to_value(super::workflow_run_event_dto(
-            &WorkflowRunEvent::StepCompleted(execution),
-        ))
-        .unwrap();
-        let row_event = serde_json::to_value(super::workflow_run_event_dto(
-            &WorkflowRunEvent::ResultRowCommitted(row),
-        ))
-        .unwrap();
+        let step_event = serde_json::to_value(super::step_execution_dto(&execution)).unwrap();
+        let row_event = serde_json::to_value(super::result_row_dto(&row)).unwrap();
         assert_eq!(
             step_event,
             json!({
-                "type": "step-completed",
-                "execution": { "step_id": "out", "status": "succeeded", "output": 3, "message": null,
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
+                "step_id": "out", "status": "succeeded", "output": 3, "message": null,
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null
             })
         );
         assert_eq!(
             row_event,
             json!({
-                "type": "result-row-committed",
-                "row": { "page": "Results", "outputs": [{ "name": "value", "value": 3 }],
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null }
+                "page": "Results", "outputs": [{ "name": "value", "value": 3 }],
+                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null
             })
         );
     }
@@ -1282,19 +1393,15 @@ mod tests {
             ResultRow::try_from(super::result_row_dto(row)).unwrap(),
             *row
         );
-        for (event, field) in [
-            (
-                WorkflowRunEvent::StepCompleted(execution.clone()),
-                "execution",
-            ),
-            (WorkflowRunEvent::ResultRowCommitted(row.clone()), "row"),
+        for wire in [
+            serde_json::to_value(super::step_execution_dto(execution)).unwrap(),
+            serde_json::to_value(super::result_row_dto(row)).unwrap(),
         ] {
-            let wire = serde_json::to_value(super::workflow_run_event_dto(&event)).unwrap();
             assert_eq!(
-                wire[field]["while_iteration"],
+                wire["while_iteration"],
                 json!({ "while_step_id": "repeat", "iteration_index": 0 })
             );
-            assert!(wire[field]["for_iteration"].is_null());
+            assert!(wire["for_iteration"].is_null());
         }
         let mut ambiguous = super::step_execution_dto(execution);
         ambiguous.for_iteration = Some(super::ForIterationDto {

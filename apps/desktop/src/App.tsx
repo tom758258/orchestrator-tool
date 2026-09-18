@@ -502,8 +502,17 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void refresh()
-    void createDraft()
+    let secondFrame: number | null = null
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        void refresh()
+        void createDraft()
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame !== null) cancelAnimationFrame(secondFrame)
+    }
   }, [createDraft, refresh])
 
   const updateSteps = useCallback(
@@ -877,11 +886,12 @@ function App() {
       setCsvStreamStatus(event.status)
       return
     }
-    if (event.type === 'step-completed') {
-      pendingStepExecutionsRef.current.push(event.execution)
-      pendingCompletedStepIdsRef.current.add(event.execution.step_id)
-    } else {
-      pendingResultRowsRef.current.push(event.row)
+    for (const execution of event.step_executions) {
+      pendingStepExecutionsRef.current.push(execution)
+      pendingCompletedStepIdsRef.current.add(execution.step_id)
+    }
+    for (const row of event.result_rows) {
+      pendingResultRowsRef.current.push(row)
     }
     if (progressFlushTimerRef.current === null) {
       progressFlushTimerRef.current = setTimeout(flushRunProgressBatch, 100)

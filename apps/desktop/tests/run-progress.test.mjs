@@ -42,14 +42,14 @@ function harness() {
   return { state, timers, context }
 }
 
-const execution = step_id => ({ type: 'step-completed', execution: { step_id } })
-const row = id => ({ type: 'result-row-committed', row: { id } })
+const execution = step_id => ({ type: 'progress-batch', step_executions: [{ step_id }], result_rows: [] })
+const row = id => ({ type: 'progress-batch', step_executions: [], result_rows: [{ id }] })
 
 test('one batch preserves both event orders and clears only the completed targeted loop', () => {
   const { state, timers, context: c } = harness()
   state.progress = { step_executions: [{ step_id: 'A' }], result_rows: [{ id: 1 }] }
   state.stop = { loopId: 'loop' }
-  for (const event of [execution('B'), row(2), execution('C'), row(3)]) c.receiveRunProgress(event)
+  c.receiveRunProgress({ type: 'progress-batch', step_executions: [{ step_id: 'B' }, { step_id: 'C' }], result_rows: [{ id: 2 }, { id: 3 }] })
   assert.equal(state.progressUpdates, 0)
   assert.equal(state.stopUpdates, 0)
   assert.equal(timers.size, 1)
@@ -130,3 +130,49 @@ for (const mode of ['Simulation', 'Live']) {
     })
   }
 }
+
+for (const cancelAfterFirstFrame of [false, true]) {
+  test(`startup defers probes and cancels StrictMode replay after ${cancelAfterFirstFrame ? 'first' : 'zero'} frames`, () => {
+    const end = source.indexOf('}, [createDraft, refresh])')
+    const start = source.lastIndexOf('  useEffect(() => {', end)
+    assert.ok(start >= 0 && end > start)
+    const frames = new Map()
+    const calls = []
+    let nextFrame = 0
+    const setup = runInNewContext(stripTypeScriptTypes('(() => {' + source.slice(start + '  useEffect(() => {'.length, end) + '})'), {
+      requestAnimationFrame(fn) { const id = ++nextFrame; frames.set(id, fn); return id },
+      cancelAnimationFrame(id) { frames.delete(id) },
+      refresh() { calls.push('refresh') }, createDraft() { calls.push('draft') },
+    })
+    const paint = () => {
+      const pending = [...frames.values()]
+      frames.clear()
+      for (const fn of pending) fn()
+    }
+    const cleanup = setup()
+    assert.deepEqual(calls, [])
+    if (cancelAfterFirstFrame) paint()
+    assert.deepEqual(calls, [])
+    cleanup()
+    assert.equal(frames.size, 0)
+    const cleanupReplay = setup()
+    paint()
+    assert.deepEqual(calls, [])
+    paint()
+    assert.deepEqual(calls, ['refresh', 'draft'])
+    cleanupReplay()
+    paint()
+    assert.deepEqual(calls, ['refresh', 'draft'])
+  })
+}
+
+test('startup preserves StrictMode and direct manual Refresh', () => {
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8')
+  assert.match(main, /<StrictMode>/)
+  assert.match(source, /onClick=\{\(\) => void refresh\(\)\}/)
+})
+
+test('both Desktop run adapters flush before propagating run failure', () => {
+  const backend = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
+  assert.equal((backend.match(/batcher\.flush\(\);\s*let results = run_result\?;/g) ?? []).length, 2)
+})
