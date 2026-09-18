@@ -8,7 +8,8 @@ import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE, executionWindow } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
-import type { ChartPanel } from './chartPanels'
+import { reconcileRunChartPanels, type ChartPanel } from './chartPanels'
+import type { PageChartData } from './chartData'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -337,7 +338,7 @@ function App() {
   const [choosingStreamDestination, setChoosingStreamDestination] = useState(false)
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
-  const [chartPanels, setChartPanels] = useState<ChartPanel[] | null>(null)
+  const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [tools, setTools] = useState<ToolStatus[]>([])
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
@@ -425,6 +426,14 @@ function App() {
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runResult ?? runProgress : null
+  // Numeric arrays survive Page/Output tab switches, but never cross a result snapshot.
+  const chartData = useMemo(() => new Map<string, PageChartData>(), [runWorkflowSnapshot, displayedRun?.result_rows])
+  useEffect(() => {
+    if (!runWorkflowSnapshot || !displayedRun || runStatus === 'running') return
+    setChartPanels(panels => reconcileRunChartPanels(
+      panels, outputPages(runWorkflowSnapshot.workflow.steps), displayedRun.result_rows,
+    ))
+  }, [runWorkflowSnapshot, displayedRun, runStatus])
   const executions = executionWindow(displayedRun?.step_executions ?? [], executionOffset, EXECUTION_WINDOW_SIZE)
   const pageRows = useMemo(() => activeTab === 'output'
     ? (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
@@ -899,8 +908,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setWorkflowChangedSinceRun(false)
-      setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
-        ? current : snapshotPages[0]?.name ?? 'Results')
+      setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
       setLiveConfirmationPending(false)
       setStopRequest(null)
@@ -946,8 +954,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setWorkflowChangedSinceRun(false)
-      setSelectedRunPage(current => snapshotPages.some(page => page.name === current)
-        ? current : snapshotPages[0]?.name ?? 'Results')
+      setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
       setStopRequest(null)
       setCsvStreamStatus(null)
@@ -1937,26 +1944,38 @@ function App() {
                   disabled={workflowBusy} onClick={() => void handleClearLastRun()}>Clear Last Run</button>}
               </div>
               {runStatus === 'running' && <p role="status">{runningText}</p>}
-              {runPage && <div className="workflow-actions">
-                <label>Run Page <select value={runPage.name} disabled={chartSaving}
-                  onChange={event => setSelectedRunPage(event.target.value)}>
-                  {runPages.map(page => <option key={page.name}>{page.name}</option>)}
-                </select></label>
+              {runPage && <div className="last-run-page-tabs" role="tablist" aria-label="Last Run Pages">
+                {runPages.map((page, index) => <button key={page.name} type="button" role="tab"
+                  id={`last-run-page-${index}`} aria-controls="last-run-workspace"
+                  aria-selected={page.name === runPage.name} disabled={chartSaving}
+                  tabIndex={page.name === runPage.name ? 0 : -1}
+                  onClick={() => setSelectedRunPage(page.name)} onKeyDown={event => {
+                    const next = event.key === 'ArrowRight' ? (index + 1) % runPages.length
+                      : event.key === 'ArrowLeft' ? (index + runPages.length - 1) % runPages.length
+                      : event.key === 'Home' ? 0 : event.key === 'End' ? runPages.length - 1 : null
+                    if (next === null) return
+                    event.preventDefault()
+                    setSelectedRunPage(runPages[next].name)
+                    document.getElementById(`last-run-page-${next}`)?.focus()
+                  }}>{page.name}</button>)}
               </div>}
-              {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
-              {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
-              {pageRows.length === 0 && <p>No committed output rows.</p>}
-              <ResultChart panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputNames} page={runPage?.name ?? 'Results'} pages={runPages} onSavingChange={setChartSaving} />
-              {pageRows.length > 0 && (
-                <section className="output-data" aria-labelledby="output-data-title">
-                  <h3 id="output-data-title">Output Data</h3>
-                  <p className="output-row-count">
-                    {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
-                  </p>
-                  <VirtualizedOutputTable rows={pageRows} outputs={runOutputs} iterationRows={iterationRows} />
-                  <PageResultSummary rows={pageRows} />
-                </section>
-              )}
+              <div id="last-run-workspace" role="tabpanel"
+                aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
+                {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
+                {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
+                {pageRows.length === 0 && <p>No committed output rows.</p>}
+                <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputNames} page={runPage?.name ?? 'Results'} chartData={chartData} onSavingChange={setChartSaving} />
+                {pageRows.length > 0 && <PageResultSummary rows={pageRows} />}
+                {pageRows.length > 0 && (
+                  <section className="output-data" aria-labelledby="output-data-title">
+                    <h3 id="output-data-title">Output Data</h3>
+                    <p className="output-row-count">
+                      {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
+                    </p>
+                    <VirtualizedOutputTable key={runPage?.name} rows={pageRows} outputs={runOutputs} iterationRows={iterationRows} />
+                  </section>
+                )}
+              </div>
             </section>
           )}
           <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}

@@ -89,7 +89,9 @@ Both Desktop run commands return `WorkflowRunResult` DTOs with iteration metadat
 
 Desktop retains one Last Run in memory. That Last Run is associated with the Workflow definition used for its execution, so editing the current Workflow does not reinterpret or remove its results. Opening another Template or creating a new draft clears the Last Run.
 
-Desktop Charts show iterative Page rows chronologically as lines, with X fixed to the Page row sequence number (1-based Iteration). Each panel belongs to one Page and can select multiple numeric Outputs only from that Page. At most eight panels persist across Page/tab switches within the session; stale Page and Output selections are reconciled when definitions change. Axis titles and PNG export remain supported. Output tables display the selected Page newest-first; CSV and charts remain chronological.
+Desktop Charts use Apache ECharts Canvas line charts in a Page-local workspace. Last Run Page tabs follow the run snapshot and switch Charts, Summary, and Data together; Workflow edits do not reinterpret that run. Each panel belongs to one Page, selects only its numeric Outputs, and retains its session settings across Page/tab switches. There are at most eight panels across all Pages. A new Last Run preserves compatible panels; if none remain, only the first Page gets a default chart when it has numeric Outputs. Axis titles and single-chart PNG export remain supported. Chart settings are not saved in Templates.
+
+Large datasets use pixel-aware display decimation while retaining complete committed ResultRows in memory. Hover shows exact raw iteration/values, including points omitted from the display. X is the 1-based Page row sequence; charts and CSV remain chronological, while Data is newest-first. Run Page export follows the selected Last Run Page tab; All Run Pages export is unchanged.
 
 Output tables use virtualized UI rendering for large Last Run Pages while keeping complete committed ResultRows in memory for Charts, CSV, and XLSX export.
 Each Run Page also displays a numeric Count / Min / Max / Avg summary from its committed ResultRows.

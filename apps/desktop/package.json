@@ -13,9 +13,9 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@xyflow/react": "^12.11.2",
+    "echarts": "^6.1.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "recharts": "^3.10.1"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

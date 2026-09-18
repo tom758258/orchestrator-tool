@@ -91,7 +91,9 @@ Desktop 可選擇在 Simulation 或 Live run 期間串流 CSV，預設為關閉�
 
 Desktop 只在記憶體中保留一個 Last Run。Last Run 會綁定該次 execution 使用的 Workflow definition，因此編輯目前 Workflow 不會重新解讀或移除 Last Run results；開啟另一份 Template 或建立 new draft 則會清除 Last Run。
 
-Desktop Charts 將所選 Page 的迭代 ResultRows 呈現為折線圖，X 軸固定為該 Page 從 1 開始的 ResultRow sequence。每個 chart panel 綁定一個 Page，只能選擇該 Page 的一個或多個 numeric Outputs；最多 8 個 panels，並在 Page／tab 切換後保留設定與 reconciliation。Output table 顯示 newest-first，Chart 與 CSV 維持 chronological。圖表設定僅屬於 Desktop session state，不儲存於 Template。
+Desktop Charts 使用 Apache ECharts Canvas 折線圖與 Page-local workspace。Last Run Page tabs 依據 run snapshot，同步切換 Charts、Summary 與 Data，不受目前 Workflow 編輯重新解讀。每個 panel 綁定一個 Page，只能選擇該 Page 的 numeric Outputs；所有 Pages 合計最多 8 個 panels，切換 Page／tab 後保留 session 設定。新 Last Run 保留相容 panels；若沒有剩餘圖表，只有第一個 Page 有 numeric Outputs 時才建立一張預設圖表。保留軸標題與單張 PNG 匯出，圖表設定不儲存於 Template。
+
+大型資料使用依像素寬度調整的 display decimation，完整 committed ResultRows 仍保留在記憶體。Hover 顯示 exact raw iteration／value，包含未繪出的資料點。X 軸是 Page 從 1 開始的 ResultRow sequence；Chart 與 CSV 維持 chronological，Data 顯示 newest-first。Run Page 匯出跟隨目前 Last Run Page tab，All Run Pages 匯出不變。
 
 Output table 對大型 Last Run Pages 使用虛擬化 UI rendering；完整 committed ResultRows 仍保留在記憶體，供 Chart、CSV 與 XLSX 匯出使用。
 每個 Run Page 也能從自己的 committed ResultRows 顯示 numeric Count / Min / Max / Avg summary。

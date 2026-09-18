@@ -1,63 +1,37 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from 'recharts'
+import { useMemo, useRef, useState } from 'react'
+import type { EChartsType } from 'echarts/core'
+import ChartPlot from './ChartPlot'
+import { createPageChartData, numericOutputNames, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { reconcileChartPanels, nextChartPanelId, type ChartPanel } from './chartPanels'
+import { addChartPanel, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
 import type { ResultRowDto } from './workflow'
 
-const MAX_CHARTS = 8
-
-export default function ResultChart({ rows, outputNames, panels, onPanelsChange, page, pages, onSavingChange }: {
+export default function ResultChart({ rows, outputNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
   page: string
-  pages: { name: string; outputs: { name: string }[] }[]
+  chartData: Map<string, PageChartData>
   onSavingChange: (saving: boolean) => void
-  panels: ChartPanel[] | null
+  panels: ChartPanel[]
   onPanelsChange: (panels: ChartPanel[]) => void
   rows: ResultRowDto[]
   outputNames: string[]
 }) {
-  const plots = useRef(new Map<number, HTMLDivElement>())
+  const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
-  const numericNames = useMemo(() => rows.length === 0 ? [] : outputNames.filter(name =>
-    rows.every(row => {
-      const value = row.outputs.find(output => output.name === name)?.value
-      return typeof value === 'number' && Number.isFinite(value)
-    })), [rows, outputNames])
-  const hasIteration = useMemo(() => rows.length > 0 && rows.every(row =>
-    row.for_iteration != null || row.while_iteration != null), [rows])
-
-  // Safe local keys keep user Output names out of Recharts path resolution.
-  const series = useMemo(() => numericNames.map((name, index) => ({
-    name, key: `series${index}`, color: `var(--chart-series-${index % 6 + 1})`,
-  })), [numericNames])
-  // Reconcile definitions across every Page without clearing other Pages on tab switches.
-  const displayedPanels = useMemo(() => {
-    if (panels === null && hasIteration && numericNames.length > 0) {
-      return [{ id: 0, page, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
+  const numericNames = useMemo(() => numericOutputNames(rows, outputNames), [rows, outputNames])
+  const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
+  const data = useMemo(() => {
+    if (!localPanels.some(panel => panel.outputs.some(name => numericNames.includes(name)))) return null
+    let local = chartData.get(page)
+    if (!local) {
+      local = createPageChartData(rows)
+      chartData.set(page, local)
     }
-    return panels === null ? null
-      : reconcileChartPanels(panels, pages, page, rows.length > 0 ? numericNames : null)
-  }, [panels, pages, page, rows.length, numericNames, hasIteration])
-  const pointSeries = useMemo(() => {
-    const names = new Set(displayedPanels?.filter(panel => panel.page === page).flatMap(panel => panel.outputs))
-    return series.filter(item => names.has(item.name))
-  }, [displayedPanels, page, series])
-  const points = useMemo(() => !hasIteration || pointSeries.length === 0 ? [] : rows.map((row, index) => {
-    const point: Record<string, number> = { iteration: index + 1 }
-    pointSeries.forEach(item => {
-      point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
-    })
-    return point
-  }), [rows, pointSeries, hasIteration])
-
-  useEffect(() => {
-    if (displayedPanels !== panels && displayedPanels !== null) onPanelsChange(displayedPanels)
-  }, [displayedPanels, panels, onPanelsChange])
+    return local
+  }, [chartData, page, rows, localPanels, numericNames])
 
   async function saveImage(id: number, index: number) {
     if (saving.current) return
@@ -83,47 +57,37 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
     }
   }
 
-  if (!hasIteration) return null
-  if (numericNames.length === 0) return <section aria-label="Charts">
-    <h3>Charts</h3>
-    <p>No numeric Outputs are available for charts.</p>
-  </section>
-  if (!displayedPanels) return null
-
   function addChart() {
     if (saving.current) return
-    if (!displayedPanels || displayedPanels.length >= MAX_CHARTS) return
-    const name = numericNames.find(name => !displayedPanels.some(panel => panel.outputs.includes(name)))
-      ?? numericNames[0]
-    onPanelsChange([...displayedPanels, {
-      id: nextChartPanelId(displayedPanels), page, outputs: [name], xAxisTitle: 'Iteration', yAxisTitle: '',
-    }])
+    onPanelsChange(addChartPanel(panels, page, numericNames))
   }
 
   return <section className="result-chart" aria-label="Charts">
     <div className="section-header">
       <h3>Charts</h3>
       <button className="action-button" type="button" onClick={addChart}
-        disabled={savingId !== null || displayedPanels.length >= MAX_CHARTS}>+ Add chart</button>
+        disabled={savingId !== null || numericNames.length === 0 || panels.length >= MAX_CHARTS}>+ Add Chart</button>
     </div>
-    {displayedPanels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
-    <p>Select multiple numeric Outputs to compare them on the same chart.</p>
+    {panels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
+    {numericNames.length === 0 ? <p>No numeric Outputs are available for charts on this Page.</p>
+      : localPanels.length === 0 ? <p>No charts for this Page.</p>
+      : <p>Select multiple numeric Outputs to compare them on the same chart.</p>}
     <div className="result-charts-grid">
-      {displayedPanels.filter(panel => panel.page === page).map((panel, index) => {
-        const selectedSeries = series.filter(item => panel.outputs.includes(item.name))
+      {localPanels.map((panel, index) => {
+        const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
             <div className="result-chart-panel-actions">
-              <button className="action-button" type="button" disabled={savingId !== null}
+              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
-              {displayedPanels.length > 1 && <button className="action-button action-button-danger" type="button"
+              <button className="action-button action-button-danger" type="button"
                 aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null}
                 onClick={() => {
                   if (saving.current) return
                   if (feedback?.id === panel.id) setFeedback(null)
-                  onPanelsChange(displayedPanels.filter(item => item.id !== panel.id))
-                }}>Remove</button>}
+                  onPanelsChange(panels.filter(item => item.id !== panel.id))
+                }}>Remove</button>
             </div>
           </div>
           {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
@@ -133,7 +97,7 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
               <input type="checkbox" checked={panel.outputs.includes(name)} onChange={event => {
                 const outputs = event.target.checked
                   ? [...panel.outputs, name] : panel.outputs.filter(output => output !== name)
-                onPanelsChange(displayedPanels.map(item => item.id === panel.id ? { ...item, outputs } : item))
+                onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, outputs } : item))
               }} />
               {name}
             </label>)}
@@ -143,40 +107,19 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
             <label>
               X-axis title
               <input type="text" value={panel.xAxisTitle} onChange={event =>
-                onPanelsChange(displayedPanels.map(item => item.id === panel.id
+                onPanelsChange(panels.map(item => item.id === panel.id
                   ? { ...item, xAxisTitle: event.target.value } : item))} />
             </label>
             <label>
               Y-axis title
               <input type="text" value={panel.yAxisTitle} onChange={event =>
-                onPanelsChange(displayedPanels.map(item => item.id === panel.id
+                onPanelsChange(panels.map(item => item.id === panel.id
                   ? { ...item, yAxisTitle: event.target.value } : item))} />
             </label>
           </fieldset>
-          {selectedSeries.length === 0 ? <p>Select at least one Output to display this chart.</p> : (
-            <div className="result-chart-plot" role="img"
-              ref={element => { if (element) plots.current.set(panel.id, element); else plots.current.delete(panel.id) }}
-              aria-label={`Line chart: ${selectedSeries.map(item => item.name).join(', ')} versus Iteration, ${points.length} points per series`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={points} margin={{ top: 16, right: 24, bottom: 32, left: 24 }}>
-                  <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
-                  <XAxis stroke="var(--chart-axis)" type="number" dataKey="iteration" name="Iteration" allowDecimals={false}
-                    label={panel.xAxisTitle ? { value: panel.xAxisTitle, position: 'bottom', offset: 0 } : undefined} />
-                  <YAxis stroke="var(--chart-axis)" type="number" width={72}
-                    label={panel.yAxisTitle
-                      ? { value: panel.yAxisTitle, angle: -90, position: 'insideLeft', offset: 0, style: { textAnchor: 'middle' } }
-                      : undefined} />
-                  <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--line)',
-                    borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)', color: 'var(--ink)' }}
-                    labelStyle={{ color: 'var(--muted)' }} cursor={{ stroke: 'var(--chart-axis)' }}
-                    labelFormatter={value => `Iteration: ${value}`} />
-                  {selectedSeries.length > 1 && <Legend verticalAlign="top" />}
-                  {selectedSeries.map(item => <Line key={item.key} type="linear"
-                    dataKey={item.key} name={item.name} stroke={item.color}
-                    dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />)}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+          {selectedOutputs.length === 0 || !data ? <p>Select at least one Output to display this chart.</p> : (
+            <ChartPlot panel={selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }}
+              data={data} numericNames={numericNames} charts={plots.current} />
           )}
         </section>
       })}

@@ -1224,14 +1224,57 @@ input[type="radio"] {
   background: var(--chart-surface);
 }
 
-.result-chart .recharts-cartesian-axis-tick-value,
-.result-chart .recharts-label {
-  fill: var(--chart-axis);
+.last-run-page-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 12px 0 20px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 
-.result-chart .recharts-legend-item-text {
-  /* Recharts supplies inline series colors; icons retain series identity. */
-  color: var(--ink) !important;
+.last-run-page-tabs button {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.last-run-page-tabs button[aria-selected='true'] {
+  border-color: var(--line);
+  background: var(--surface-selected);
+  color: var(--ink);
+}
+
+.result-chart-view {
+  position: relative;
+}
+
+.result-chart-pointer {
+  position: absolute;
+  border-left: 1px solid var(--chart-axis);
+  pointer-events: none;
+}
+
+.result-chart-tooltip {
+  position: absolute;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  font-size: 0.85rem;
 }
 
 .workflow-canvas {
