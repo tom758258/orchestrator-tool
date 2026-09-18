@@ -34,12 +34,60 @@
   --chart-surface: #ffffff;
   --chart-grid: #e5e9ef;
   --chart-axis: #5e6e7e;
+  --chart-series-1: #2563eb;
+  --chart-series-2: #dc2626;
+  --chart-series-3: #15803d;
+  --chart-series-4: #9333ea;
+  --chart-series-5: #b45309;
+  --chart-series-6: #0891b2;
   /* Geometry and elevation */
   --radius-sm: 6px;
   --radius: 8px;
   --radius-md: 10px;
   --shadow-sm: 0 1px 3px rgb(24 32 42 / 6%);
   --shadow-md: 0 4px 16px rgb(24 32 42 / 8%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #17181a;
+  --panel: #222326;
+  --panel-soft: #1e1f22;
+  --field: #1b1c1f;
+  --ink: #f2f2f4;
+  --muted: #a8a8ae;
+  --disabled-ink: #777980;
+  --line: #414348;
+  --line-strong: #676a72;
+  --accent: #69aaf5;
+  --accent-strong: #8bbcf5;
+  --on-accent: #17181a;
+  --focus: rgb(105 170 245 / 28%);
+  --success: #68d391;
+  --success-surface: #234536;
+  --warning: #f0c36b;
+  --warning-surface: #493c20;
+  --danger: #ff817a;
+  --danger-surface: #4a2b30;
+  --surface-hover: #303136;
+  --surface-selected: #243a54;
+  --surface-disabled: #2a2b2f;
+  --table-header: #2b2c30;
+  --table-line: #414348;
+  --canvas: #1e1f22;
+  --canvas-grid: #555860;
+  --node: #222326;
+  --chart-surface: #222326;
+  --chart-grid: #414348;
+  --chart-axis: #a8a8ae;
+  --chart-series-1: #69aaf5;
+  --chart-series-2: #ff817a;
+  --chart-series-3: #68d391;
+  --chart-series-4: #c4a7ff;
+  --chart-series-5: #f0b35b;
+  --chart-series-6: #78d1dc;
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 24%);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 32%);
 }
 
 * {
@@ -57,6 +105,22 @@ body {
   width: min(1560px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 32px 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.appearance-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .app-header h1 {

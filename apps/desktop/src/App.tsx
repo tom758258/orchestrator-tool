@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Channel, invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
@@ -297,6 +299,35 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 }
 
 function App() {
+  const [themePreference, setThemePreference] = useState(readThemePreference)
+  const themeLabel = (value: string) => value[0].toUpperCase() + value.slice(1)
+  const nextThemeLabel = themeLabel(nextThemePreference(themePreference))
+
+  useEffect(() => {
+    writeThemePreference(themePreference)
+    let media: MediaQueryList | undefined
+    if (themePreference === 'system') {
+      try {
+        media = window.matchMedia('(prefers-color-scheme: dark)')
+      } catch {
+        // Use light when the system preference is unavailable.
+      }
+    }
+    const updateTheme = () => {
+      document.documentElement.dataset.theme = effectiveTheme(themePreference, media?.matches ?? false)
+    }
+    updateTheme()
+    media?.addEventListener('change', updateTheme)
+    void (async () => {
+      try {
+        await getCurrentWindow().setTheme(themePreference === 'system' ? null : themePreference)
+      } catch (error) {
+        console.warn('Could not sync native window theme:', error)
+      }
+    })()
+    return () => media?.removeEventListener('change', updateTheme)
+  }, [themePreference])
+
   const [selectedPage, setSelectedPage] = useState('Results')
   const [selectedRunPage, setSelectedRunPage] = useState('Results')
   const [streamPage, setStreamPage] = useState('Results')
@@ -1052,6 +1083,14 @@ function App() {
     <main className="app">
       <header className="app-header">
         <h1>orchestrator-tool</h1>
+        <div className="appearance-control">
+          <span>Appearance</span>
+          <button className="action-button" type="button"
+            aria-label={`Switch theme to ${nextThemeLabel}`} title={`Switch theme to ${nextThemeLabel}`}
+            onClick={() => setThemePreference(nextThemePreference)}>
+            ◐ {themeLabel(themePreference)}
+          </button>
+        </div>
       </header>
 
       <div className="template-toolbar" aria-label="Template actions">

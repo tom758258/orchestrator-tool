@@ -9,7 +9,6 @@ import { chartPng } from './chartPng'
 import type { ResultRowDto } from './workflow'
 
 const MAX_CHARTS = 8
-const SERIES_COLORS = ['#2563eb', '#dc2626', '#15803d', '#9333ea', '#b45309', '#0891b2']
 
 export default function ResultChart({ rows, outputNames, panels, onPanelsChange, page, pages, onSavingChange }: {
   page: string
@@ -34,26 +33,27 @@ export default function ResultChart({ rows, outputNames, panels, onPanelsChange,
 
   // Safe local keys keep user Output names out of Recharts path resolution.
   const series = useMemo(() => numericNames.map((name, index) => ({
-    name, key: `series${index}`, color: SERIES_COLORS[index % SERIES_COLORS.length],
+    name, key: `series${index}`, color: `var(--chart-series-${index % 6 + 1})`,
   })), [numericNames])
-  const points = useMemo(() => !hasIteration || series.length === 0 ? [] : rows.map((row, index) => {
-    const point: Record<string, number> = {
-      iteration: index + 1,
+  // Reconcile definitions across every Page without clearing other Pages on tab switches.
+  const displayedPanels = useMemo(() => {
+    if (panels === null && hasIteration && numericNames.length > 0) {
+      return [{ id: 0, page, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
     }
-    series.forEach(item => {
+    return panels === null ? null
+      : reconcileChartPanels(panels, pages, page, rows.length > 0 ? numericNames : null)
+  }, [panels, pages, page, rows.length, numericNames, hasIteration])
+  const pointSeries = useMemo(() => {
+    const names = new Set(displayedPanels?.filter(panel => panel.page === page).flatMap(panel => panel.outputs))
+    return series.filter(item => names.has(item.name))
+  }, [displayedPanels, page, series])
+  const points = useMemo(() => !hasIteration || pointSeries.length === 0 ? [] : rows.map((row, index) => {
+    const point: Record<string, number> = { iteration: index + 1 }
+    pointSeries.forEach(item => {
       point[item.key] = row.outputs.find(output => output.name === item.name)!.value as number
     })
     return point
-  }), [rows, series, hasIteration])
-
-  // Reconcile definitions across every Page without clearing other Pages on tab switches.
-  let displayedPanels = panels
-  if (panels === null && hasIteration && numericNames.length > 0) {
-    displayedPanels = [{ id: 0, page, outputs: [numericNames[0]], xAxisTitle: 'Iteration', yAxisTitle: '' }]
-  } else if (panels) {
-    const reconciled = reconcileChartPanels(panels, pages, page, rows.length > 0 ? numericNames : null)
-    if (JSON.stringify(reconciled) !== JSON.stringify(panels)) displayedPanels = reconciled
-  }
+  }), [rows, pointSeries, hasIteration])
 
   useEffect(() => {
     if (displayedPanels !== panels && displayedPanels !== null) onPanelsChange(displayedPanels)

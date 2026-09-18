@@ -194,6 +194,8 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 
 ### Desktop development
 
+Desktop supports System, Light, and Dark appearance preferences. System follows the operating-system theme and is the default.
+
 The Desktop application is located in `apps/desktop`.
 
 From the repository root, install frontend dependencies the first time you set up the Desktop application, or after its dependencies change:

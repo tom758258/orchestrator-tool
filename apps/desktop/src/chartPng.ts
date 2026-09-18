@@ -18,6 +18,9 @@ export async function chartPng(plot: HTMLDivElement | undefined): Promise<Uint8A
   if (!source) throw new Error('No rendered chart is available to export.')
   const bounds = source.getBoundingClientRect()
   if (bounds.width <= 0 || bounds.height <= 0) throw new Error('Chart dimensions are unavailable.')
+  const background = getComputedStyle(plot!).backgroundColor
+  const chartBackground = background && background !== 'transparent' && background !== 'rgba(0, 0, 0, 0)'
+    ? background : (document.documentElement.dataset.theme === 'dark' ? '#222326' : '#ffffff')
   const svg = styledClone(source)
   svg.setAttribute('width', String(bounds.width))
   svg.setAttribute('height', String(bounds.height))
@@ -66,7 +69,7 @@ export async function chartPng(plot: HTMLDivElement | undefined): Promise<Uint8A
     canvas.height = Math.ceil(bounds.height)
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Canvas is unavailable.')
-    context.fillStyle = '#ffffff'
+    context.fillStyle = chartBackground
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(image, 0, 0, bounds.width, bounds.height)
     const png = await new Promise<Blob>((resolve, reject) => {

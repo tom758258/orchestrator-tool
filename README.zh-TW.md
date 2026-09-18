@@ -198,6 +198,8 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 
 ### Desktop 開發
 
+Desktop 支援 System、Light 與 Dark 外觀偏好設定，預設的 System 會跟隨作業系統主題。
+
 Desktop 應用程式位於 `apps/desktop`。
 
 第一次設定 Desktop 應用程式，或 dependencies 變更後，請從 repository root 執行以下指令安裝 frontend dependencies：

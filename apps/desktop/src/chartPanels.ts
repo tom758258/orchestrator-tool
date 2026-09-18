@@ -16,11 +16,21 @@ export function reconcileChartPanels(
   currentPage: string,
   numericNames: string[] | null,
 ): ChartPanel[] {
-  return panels.flatMap(panel => {
+  let reconciled: ChartPanel[] | undefined
+  panels.forEach((panel, index) => {
     const page = pages.find(page => page.name === panel.page)
-    if (!page) return []
+    if (!page) {
+      reconciled ??= panels.slice(0, index)
+      return
+    }
     const names = panel.page === currentPage && numericNames !== null
       ? numericNames : page.outputs.map(output => output.name)
-    return [{ ...panel, outputs: panel.outputs.filter(name => names.includes(name)) }]
+    if (panel.outputs.every(name => names.includes(name))) {
+      reconciled?.push(panel)
+      return
+    }
+    reconciled ??= panels.slice(0, index)
+    reconciled.push({ ...panel, outputs: panel.outputs.filter(name => names.includes(name)) })
   })
+  return reconciled ?? panels
 }
