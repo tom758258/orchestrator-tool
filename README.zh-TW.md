@@ -95,7 +95,7 @@ Desktop Charts 將所選 Page 的迭代 ResultRows 呈現為折線圖，X 軸固
 
 Output table 對大型 Last Run Pages 使用虛擬化 UI rendering；完整 committed ResultRows 仍保留在記憶體，供 Chart、CSV 與 XLSX 匯出使用。
 
-Manual export 支援 Current Page 匯出為 CSV 或單一 worksheet XLSX，也支援 All Pages 匯出為多個 CSV 或單一 XLSX workbook（每個 Page 一個 worksheet）。CSV 與 XLSX 共用文字 cell conversion：string 不變、null 為空字串、其他 JSON 使用 compact 文字；目前不提供 formula、styling、chart 或 native numeric cell typing。Iteration metadata 不寫入檔案。匯出仍要求 authoritative final success 與至少一筆 committed row；Current Page 必須由該 Page 自己擁有 row，All Pages 則可由任一 Page 提供 row。Failed、cancelled 或 incomplete run 僅供檢視，backend 仍拒絕匯出。Break 與 continue 尚未支援。
+Manual export 支援 Run Page 匯出為 CSV 或單一 worksheet XLSX，也支援 All Run Pages 匯出為多個 CSV 或單一 XLSX workbook（每個 Page 一個 worksheet）。CSV 與 XLSX 共用文字 cell conversion：string 不變、null 為空字串、其他 JSON 使用 compact 文字；目前不提供 formula、styling、chart 或 native numeric cell typing。Iteration metadata 不寫入檔案。匯出仍要求 authoritative final success 與至少一筆 committed row；Run Page 必須由該 Page 自己擁有 row，All Run Pages 則可由任一 Page 提供 row。Failed、cancelled 或 incomplete run 僅供檢視，backend 仍拒絕匯出。Break 與 continue 尚未支援。
 
 Schema v1 的 Output Step 必須明確包含 `id`、`name`、`page` 與 `value`。`name` 不可為空白，且在同一 Workflow 中必須唯一；大小寫有區別，不進行 normalization。缺少 `name` 或 `page` 的 Template JSON 會在載入時被拒絕。
 
