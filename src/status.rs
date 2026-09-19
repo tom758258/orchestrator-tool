@@ -55,7 +55,13 @@ pub fn inspect_built_in_tool_statuses(
 
         let manifest = match &executable {
             Ok(inspection) if inspection.status() == ExecutableStatus::Available => {
-                match probe_manifest(inspection.resolved().path(), &tool_id) {
+                match probe_manifest(
+                    inspection
+                        .resolved()
+                        .path()
+                        .expect("available executable has a path"),
+                    &tool_id,
+                ) {
                     Ok(probe) => ManifestStatus::Probed(probe),
                     Err(error) => ManifestStatus::Error(error),
                 }
@@ -120,7 +126,11 @@ mod tests {
         let current_exe = std::env::current_exe().unwrap();
         let config_value = format!("{:?}", current_exe.to_string_lossy().to_string());
         fs::write(&config_path, format!("[tools]\nmeters = {config_value}\n")).unwrap();
-        let config = Config::load(&config_path).unwrap();
+        let mut config = Config::load(&config_path).unwrap();
+        config.set_executable_path(
+            &crate::tool::ToolId::powers(),
+            test_dir.path().join("missing.exe"),
+        );
 
         let statuses = inspect_built_in_tool_statuses(&app_dir, &config);
 
@@ -138,11 +148,18 @@ mod tests {
         );
         assert!(matches!(meters.manifest(), ManifestStatus::Error(_)));
 
-        for status in &statuses[1..] {
+        let powers = &statuses[1];
+        assert_eq!(
+            powers.executable().as_ref().unwrap().status(),
+            ExecutableStatus::Missing
+        );
+        assert!(matches!(powers.manifest(), ManifestStatus::NotProbed));
+
+        for status in &statuses[2..] {
             assert!(status.executable().is_ok(), "{}", status.tool_id());
             assert_eq!(
                 status.executable().as_ref().unwrap().status(),
-                ExecutableStatus::Missing,
+                ExecutableStatus::NotConfigured,
                 "{}",
                 status.tool_id()
             );

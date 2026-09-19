@@ -27,28 +27,27 @@ impl ToolInspection {
     }
 }
 
-/// Inspects a single built-in tool's executable.
+/// Inspects a configured executable; the application directory is not searched.
 pub fn inspect_tool(
-    application_dir: impl AsRef<Path>,
+    _application_dir: impl AsRef<Path>,
     config: &Config,
     definition: &ToolDefinition,
 ) -> io::Result<ToolInspection> {
-    let resolved = resolve_executable_path(
-        application_dir.as_ref(),
-        definition,
-        config.executable_path(definition.id()),
-    );
-    let status = validate_executable_path(resolved.path()).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!("failed to validate {} executable: {error}", definition.id()),
-        )
-    })?;
+    let resolved = resolve_executable_path(definition, config.executable_path(definition.id()));
+    let status = match resolved.path() {
+        None => ExecutableStatus::NotConfigured,
+        Some(path) => validate_executable_path(path).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("failed to validate {} executable: {error}", definition.id()),
+            )
+        })?,
+    };
 
     Ok(ToolInspection { resolved, status })
 }
 
-/// Inspects every built-in tool's executable under an application directory.
+/// Inspects every built-in tool's configured executable.
 ///
 /// The returned inspections follow `built_in_tool_definitions` order.
 pub fn inspect_built_in_tools(
@@ -146,24 +145,24 @@ mod tests {
                 ),
                 (
                     "powers",
-                    ExecutablePathSource::Portable,
-                    ExecutableStatus::Available
+                    ExecutablePathSource::NotConfigured,
+                    ExecutableStatus::NotConfigured
                 ),
                 (
                     "scopes",
-                    ExecutablePathSource::Portable,
-                    ExecutableStatus::Missing
+                    ExecutablePathSource::NotConfigured,
+                    ExecutableStatus::NotConfigured
                 ),
                 (
                     "wavegen",
-                    ExecutablePathSource::Portable,
-                    ExecutableStatus::Missing
+                    ExecutablePathSource::NotConfigured,
+                    ExecutableStatus::NotConfigured
                 ),
             ]
         );
         assert_eq!(
             inspections[0].resolved().path(),
-            configured_meters.as_path()
+            Some(configured_meters.as_path())
         );
     }
 }

@@ -143,6 +143,7 @@ const STEP_HELP: Record<string, string> = {
 }
 
 const EXECUTABLE_LABELS: Record<string, string> = {
+  'not-configured': 'Not configured',
   available: 'Available',
   missing: 'Missing',
   'not-file': 'Not a file',
@@ -158,7 +159,7 @@ const COMPATIBILITY_LABELS: Record<string, string> = {
 
 const SOURCE_LABELS: Record<string, string> = {
   configured: 'Configured',
-  portable: 'Portable',
+  'not-configured': 'Not configured',
 }
 
 function formatWorkerSchemas(versions: number[]): string {
@@ -1340,7 +1341,7 @@ function App() {
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
                       disabled={toolConfigBusy !== null || workflowBusy || tool.source !== 'configured'}
                     >
-                      Use Portable Default
+                      Clear Path
                     </button>
                   </div>
                 </li>

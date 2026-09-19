@@ -24,6 +24,9 @@
     }
   },
   "bundle": {
+    "windows": {
+      "webviewInstallMode": { "type": "skip" }
+    },
     "icon": [
       "icons/orchestrator-icon.png",
       "icons/orchestrator-icon.ico"

@@ -133,7 +133,7 @@ Desktop Tool Setup 可新增 built-in tool instance，自動產生唯一 ID，�
 
 ## Executable 設定
 
-Core 可以載入由呼叫端指定的 TOML 設定檔，並用它覆寫 built-in portable executable path：
+Core loads tool-type executable paths from a caller-selected TOML configuration file:
 
 ```toml
 [tools]
@@ -145,9 +145,9 @@ meters-1 = "USB0::VENDOR::METER_SERIAL::INSTR"
 powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
-Configured path 的優先順序高於 portable path。Configured path 不存在時會回報 missing，不會 fallback 到 portable path。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 支援 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
+Only configured executable paths are used. Unconfigured tools report `not-configured`; missing configured files report `missing`. There is no default location or executable auto-discovery. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
-Desktop 應用程式透過 Tools tab 提供相同的設定能力：每個 built-in tool 都提供 Browse... 來保存 configured executable path，以及 Use Portable Default 來移除該 override。獨立的 Setup tab 提供 Add Tool Instance、Meters setup，以及每個 Powers／Meters instance 的 Live Resource、Save Resource／Clear Resource 與手動 discovery。選定的 resource 會在同一份 local configuration 保存 last-known manufacturer、model、serial 與 raw identity metadata。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。設定檔不存在時使用 portable executable path。
+The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to select an executable and Clear Path to remove its setting. Browse runs `manifest --json`, validates the tool identity and Worker compatibility, and saves only a successful selection; a failed validation preserves the previous setting. Changing or clearing a path immediately refreshes status. The Setup tab offers Add Tool Instance, Meters setup, and Live Resource controls with Save Resource, Clear Resource, and on-demand discovery for each Powers or Meters instance. Selected resources retain last-known manufacturer, model, serial, and raw identity metadata in the same local configuration. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. Startup probes the saved executable paths. A missing config file leaves all tools unconfigured; existing `[tools]` entries remain valid. Each tool type shares one path across all its instances. Workflow JSON contains logical tool identities only, never machine-specific executable paths. Resources remain instance-level settings. External tools keep their own releases, including PyInstaller onedir layouts; select the executable inside its complete distribution without moving it away from `_internal/`. Orchestrator neither inspects that directory nor bundles external tools.
 
 可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。可選的 `live_resource_identities` table 只保存以 ToolInstanceId 為 key 的 last-known presentation metadata。這兩個 table 都不屬於 Template。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
 
@@ -179,7 +179,7 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-`tools list` 會列出四個 built-in external tools，並顯示 executable path 的 `configured` 或 `portable` source，以及 `available`、`missing` 或 `not-file` status。Missing tools 是正常的 discovery 結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
+`tools list` lists the four built-in external tools and reports each executable's `configured` or `not-configured` source and `available`, `not-configured`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
 
 `doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
 
@@ -236,3 +236,5 @@ npm.cmd run build
 ```
 
 目前 CLI 已提供 tool listing、manifest inspection、environment diagnostics，以及針對 Powers 與 Meters 的 Worker diagnostic。
+
+Windows Desktop requires the system WebView2 Runtime. See [Windows Desktop WebView2 prerequisite](README.md#windows-desktop-webview2-prerequisite) for startup behavior and manual release checks.

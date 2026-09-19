@@ -39,7 +39,7 @@ pub struct MetersRangeOptions {
     pub range_values: Vec<f64>,
 }
 
-/// Queries offline model capabilities using the configured or portable executable.
+/// Queries offline model capabilities using the configured executable.
 ///
 /// A missing model queries the executable without `--model` so meters-tool
 /// uses its own default fallback profile.
@@ -57,7 +57,11 @@ pub fn get_range_options(
     if inspection.status() != ExecutableStatus::Available {
         return Err(format!(
             "meters executable is unavailable: {}",
-            inspection.resolved().path().display()
+            inspection
+                .resolved()
+                .path()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "not configured".to_owned())
         ));
     }
     let mut arguments = vec![OsString::from("capabilities"), OsString::from("--json")];
@@ -66,7 +70,10 @@ pub fn get_range_options(
         arguments.push(OsString::from(model));
     }
     let output = run_output_with_timeout(
-        inspection.resolved().path(),
+        inspection
+            .resolved()
+            .path()
+            .expect("available executable has a path"),
         arguments,
         Duration::from_secs(10),
     )

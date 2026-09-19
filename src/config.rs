@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{discovery::built_in_tool_definitions, tool::ToolId, tool_instance::ToolInstanceId};
 
-/// Executable path overrides and exact live resources loaded from an orchestrator configuration file.
+/// Executable paths and exact live resources loaded from an orchestrator configuration file.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Config {
     tools: BTreeMap<String, PathBuf>,
@@ -99,7 +99,7 @@ impl Config {
         self.tools.get(tool_id.as_str()).map(PathBuf::as_path)
     }
 
-    /// Overrides the executable path for a tool.
+    /// Sets the executable path for a tool.
     ///
     /// Callers must only pass IDs from the built-in tool registry: saving an
     /// unknown tool ID produces a file that [`Config::load`] will reject.
@@ -108,9 +108,9 @@ impl Config {
             .insert(tool_id.as_str().to_owned(), path.as_ref().to_path_buf());
     }
 
-    /// Removes the executable path override for a tool.
+    /// Removes the executable path for a tool.
     ///
-    /// Returns false when no override was present.
+    /// Returns false when no path was present.
     pub fn remove_executable_path(&mut self, tool_id: &ToolId) -> bool {
         self.tools.remove(tool_id.as_str()).is_some()
     }

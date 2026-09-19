@@ -129,7 +129,7 @@ Desktop Tool Setup can add built-in tool instances with unique generated IDs and
 
 ## Executable configuration
 
-Core can load a TOML configuration file selected by its caller and use it to override built-in portable executable paths:
+Core loads tool-type executable paths from a caller-selected TOML configuration file:
 
 ```toml
 [tools]
@@ -141,9 +141,9 @@ meters-1 = "USB0::VENDOR::METER_SERIAL::INSTR"
 powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
-Configured paths take priority over portable paths. A missing configured path is reported as missing without falling back to the portable path. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
+Only configured executable paths are used. Unconfigured tools report `not-configured`; missing configured files report `missing`. There is no default location or executable auto-discovery. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
 
-The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to persist a configured executable path and Use Portable Default to remove that override. The Setup tab offers Add Tool Instance, Meters setup, and Live Resource controls with Save Resource, Clear Resource, and on-demand discovery for each Powers or Meters instance. Selected resources retain last-known manufacturer, model, serial, and raw identity metadata in the same local configuration. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. A missing config file uses portable executable paths.
+The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to select an executable and Clear Path to remove its setting. Browse runs `manifest --json`, validates the tool identity and Worker compatibility, and saves only a successful selection; a failed validation preserves the previous setting. Changing or clearing a path immediately refreshes status. The Setup tab offers Add Tool Instance, Meters setup, and Live Resource controls with Save Resource, Clear Resource, and on-demand discovery for each Powers or Meters instance. Selected resources retain last-known manufacturer, model, serial, and raw identity metadata in the same local configuration. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. Startup probes the saved executable paths. A missing config file leaves all tools unconfigured; existing `[tools]` entries remain valid. Each tool type shares one path across all its instances. Workflow JSON contains logical tool identities only, never machine-specific executable paths. Resources remain instance-level settings. External tools keep their own releases, including PyInstaller onedir layouts; select the executable inside its complete distribution without moving it away from `_internal/`. Orchestrator neither inspects that directory nor bundles external tools.
 
 The optional `live_resources` table preserves exact non-empty resource strings without path resolution, scanning, or fallback. The optional `live_resource_identities` table stores only last-known presentation metadata keyed by ToolInstanceId. Neither table is part of the Template. Live preparation rejects missing or whitespace-only resources and validates executables, manifests, and Worker compatibility before starting any Worker. Simulation remains available without live resources.
 
@@ -175,7 +175,7 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-`tools list` lists the four built-in external tools and reports each executable's `configured` or `portable` source and `available`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
+`tools list` lists the four built-in external tools and reports each executable's `configured` or `not-configured` source and `available`, `not-configured`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
 
 `doctor` reports the application directory, configuration state, the status of the four built-in external tools, and summary counts. Missing and not-file tools are normal diagnostic results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code. It does not perform instrument-level diagnostics.
 
@@ -232,3 +232,11 @@ npm.cmd run build
 ```
 
 The CLI provides tool listing, manifest inspection, environment diagnostics, and focused Powers and Meters Worker checks.
+
+### Windows Desktop WebView2 prerequisite
+
+Desktop uses the system Microsoft Edge WebView2 Runtime. Before creating Tauri windows, `tauri::webview_version()` calls the WebView2 loader's availability API. If no usable version is found, a native Windows dialog explains the prerequisite: Yes opens the [official Microsoft WebView2 page](https://developer.microsoft.com/microsoft-edge/webview2/), and No closes the application. Both paths exit without starting Tauri; install the Runtime manually and restart. If opening the browser fails, a second native dialog displays the URL.
+
+No Fixed Runtime, automatic download, or automatic installation is included (`webviewInstallMode` is `skip`). Non-Windows startup and the CLI are unchanged. The loader API can also recognize compatible Edge preview channels; no custom registry discovery is added.
+
+Manual release checks: on Windows with WebView2 installed, verify normal startup, Browse validation, restart persistence, and recovery after moving a configured tool. On a clean Windows VM without WebView2 or Edge preview channels, verify both native dialog choices, the download link, and clean exit without a WebView.

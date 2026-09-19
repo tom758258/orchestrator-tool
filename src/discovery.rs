@@ -41,27 +41,18 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
     ]
 }
 
-/// Builds the expected portable executable path for a tool.
-pub fn portable_tool_path(base_dir: impl AsRef<Path>, definition: &ToolDefinition) -> PathBuf {
-    base_dir
-        .as_ref()
-        .join("tools")
-        .join(definition.id().as_str())
-        .join(definition.executable_name())
-}
-
 /// The source selected for an external tool's executable path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExecutablePathSource {
     Configured,
-    Portable,
+    NotConfigured,
 }
 
-/// A tool executable path selected by configuration or portable discovery.
+/// A tool executable path selected by local configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedExecutable {
     tool_id: ToolId,
-    path: PathBuf,
+    path: Option<PathBuf>,
     source: ExecutablePathSource,
 }
 
@@ -72,8 +63,8 @@ impl ResolvedExecutable {
     }
 
     /// Returns the selected executable path.
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// Returns how the executable path was selected.
@@ -82,18 +73,16 @@ impl ResolvedExecutable {
     }
 }
 
-/// Selects a configured executable path or the portable default when absent.
+/// Selects only the configured executable path; there is no discovery fallback.
 pub fn resolve_executable_path(
-    portable_base_dir: impl AsRef<Path>,
     definition: &ToolDefinition,
     configured_path: Option<&Path>,
 ) -> ResolvedExecutable {
-    let (path, source) = match configured_path {
-        Some(path) => (path.to_path_buf(), ExecutablePathSource::Configured),
-        None => (
-            portable_tool_path(portable_base_dir, definition),
-            ExecutablePathSource::Portable,
-        ),
+    let path = configured_path.map(Path::to_path_buf);
+    let source = if path.is_some() {
+        ExecutablePathSource::Configured
+    } else {
+        ExecutablePathSource::NotConfigured
     };
 
     ResolvedExecutable {
@@ -106,6 +95,7 @@ pub fn resolve_executable_path(
 /// The filesystem-level availability of an external tool executable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExecutableStatus {
+    NotConfigured,
     Available,
     Missing,
     NotFile,
@@ -146,8 +136,8 @@ mod tests {
     };
 
     use super::{
-        ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, portable_tool_path,
-        resolve_executable_path, validate_executable_path,
+        ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, resolve_executable_path,
+        validate_executable_path,
     };
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
@@ -196,49 +186,29 @@ mod tests {
     }
 
     #[test]
-    fn portable_tool_path_uses_expected_layout() {
-        let base_dir = Path::new("portable-app");
-        let meters = built_in_tool_definitions()
-            .into_iter()
-            .next()
-            .expect("meters definition should be present");
-
-        assert_eq!(
-            portable_tool_path(base_dir, &meters),
-            base_dir
-                .join("tools")
-                .join("meters")
-                .join("meters-tool.exe")
-        );
-    }
-
-    #[test]
-    fn absent_configured_path_uses_portable_path() {
-        let base_dir = Path::new("portable-app");
+    fn absent_configured_path_has_no_executable() {
         let meters = built_in_tool_definitions().remove(0);
-
-        let resolved = resolve_executable_path(base_dir, &meters, None);
-
+        let resolved = resolve_executable_path(&meters, None);
         assert_eq!(resolved.tool_id(), meters.id());
-        assert_eq!(resolved.path(), portable_tool_path(base_dir, &meters));
-        assert_eq!(resolved.source(), ExecutablePathSource::Portable);
+        assert_eq!(resolved.path(), None);
+        assert_eq!(resolved.source(), ExecutablePathSource::NotConfigured);
     }
 
     #[test]
     fn configured_path_has_priority_without_portable_fallback() {
         let test_dir = TestDir::new();
         let meters = built_in_tool_definitions().remove(0);
-        let portable_path = portable_tool_path(test_dir.path(), &meters);
+        let portable_path = test_dir.path().join("tools/meters/meters-tool.exe");
         fs::create_dir_all(portable_path.parent().unwrap()).unwrap();
         fs::write(&portable_path, []).unwrap();
         let configured_path = test_dir.path().join("my-meter-build.exe");
 
-        let resolved = resolve_executable_path(test_dir.path(), &meters, Some(&configured_path));
+        let resolved = resolve_executable_path(&meters, Some(&configured_path));
 
-        assert_eq!(resolved.path(), configured_path);
+        assert_eq!(resolved.path(), Some(configured_path.as_path()));
         assert_eq!(resolved.source(), ExecutablePathSource::Configured);
         assert_eq!(
-            validate_executable_path(resolved.path()).unwrap(),
+            validate_executable_path(resolved.path().unwrap()).unwrap(),
             ExecutableStatus::Missing
         );
     }

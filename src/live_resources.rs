@@ -38,7 +38,10 @@ pub fn list_live_resources(
         .expect("supported discovery tool is built in");
     let inspection = inspect_tool(application_dir, config, &definition)
         .map_err(|error| format!("{tool} executable inspection failed: {error}"))?;
-    let executable = inspection.resolved().path();
+    let executable = inspection
+        .resolved()
+        .path()
+        .ok_or_else(|| format!("{tool} executable is not configured"))?;
     match inspection.status() {
         ExecutableStatus::Available => {}
         status => {

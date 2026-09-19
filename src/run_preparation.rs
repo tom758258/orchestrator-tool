@@ -171,22 +171,36 @@ pub fn prepare_worker_launch_specs(
             .map_err(|error| format!("{tool} executable inspection failed: {error}"))?;
 
         match inspection.status() {
+            ExecutableStatus::NotConfigured => {
+                return Err(format!("{tool} executable is not configured"));
+            }
             ExecutableStatus::Available => {}
             ExecutableStatus::Missing => {
                 return Err(format!(
                     "{tool} executable is missing: {}",
-                    inspection.resolved().path().display()
+                    inspection
+                        .resolved()
+                        .path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "not configured".to_owned())
                 ));
             }
             ExecutableStatus::NotFile => {
                 return Err(format!(
                     "{tool} executable is not a file: {}",
-                    inspection.resolved().path().display()
+                    inspection
+                        .resolved()
+                        .path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "not configured".to_owned())
                 ));
             }
         }
 
-        let executable = inspection.resolved().path();
+        let executable = inspection
+            .resolved()
+            .path()
+            .expect("available executable has a path");
         let probe = probe_manifest(executable, tool)
             .map_err(|error| format!("{tool} manifest probe failed: {error}"))?;
         if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {

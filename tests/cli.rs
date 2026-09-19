@@ -44,6 +44,7 @@ fn tools_list_succeeds_and_lists_built_in_tools() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("not-configured"), "output: {stdout}");
     for tool_id in ["meters", "powers", "scopes", "wavegen"] {
         assert!(
             stdout.contains(tool_id),

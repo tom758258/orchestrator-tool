@@ -112,12 +112,22 @@ fn tools_worker_check(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode
         eprintln!(
             "{PRODUCT_NAME}: {tool_id} executable is {}: {}",
             executable_status_label(inspection.status()),
-            inspection.resolved().path().display()
+            inspection
+                .resolved()
+                .path()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "not configured".to_owned())
         );
         return ExitCode::FAILURE;
     }
 
-    let probe = match probe_manifest(inspection.resolved().path(), &tool_id) {
+    let probe = match probe_manifest(
+        inspection
+            .resolved()
+            .path()
+            .expect("available executable has a path"),
+        &tool_id,
+    ) {
         Ok(probe) => probe,
         Err(error) => {
             eprintln!("{PRODUCT_NAME}: {tool_id} manifest probe failed: {error}");
@@ -131,7 +141,10 @@ fn tools_worker_check(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode
 
     let smoke_error = match raw_tool_id {
         "meters" => meters::run_worker_smoke(
-            inspection.resolved().path(),
+            inspection
+                .resolved()
+                .path()
+                .expect("available executable has a path"),
             Duration::from_secs(10),
             Duration::from_secs(10),
             Duration::from_secs(5),
@@ -139,7 +152,10 @@ fn tools_worker_check(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode
         .err()
         .map(|error| error.to_string()),
         "powers" => powers::run_worker_smoke(
-            inspection.resolved().path(),
+            inspection
+                .resolved()
+                .path()
+                .expect("available executable has a path"),
             Duration::from_secs(10),
             Duration::from_secs(10),
             Duration::from_secs(5),
@@ -196,6 +212,7 @@ fn doctor(config_path: Option<&Path>) -> ExitCode {
     let mut available = 0;
     let mut missing = 0;
     let mut not_file = 0;
+    let mut not_configured = 0;
 
     let inspections = match inspect_built_in_tools(&application_dir, &config) {
         Ok(inspections) => inspections,
@@ -209,6 +226,7 @@ fn doctor(config_path: Option<&Path>) -> ExitCode {
         let status = inspection.status();
 
         match status {
+            ExecutableStatus::NotConfigured => not_configured += 1,
             ExecutableStatus::Available => available += 1,
             ExecutableStatus::Missing => missing += 1,
             ExecutableStatus::NotFile => not_file += 1,
@@ -224,6 +242,7 @@ fn doctor(config_path: Option<&Path>) -> ExitCode {
     println!("  available: {available}");
     println!("  missing: {missing}");
     println!("  not-file: {not_file}");
+    println!("  not-configured: {not_configured}");
 
     ExitCode::SUCCESS
 }
@@ -265,7 +284,11 @@ fn tools_list(config_path: Option<&Path>) -> ExitCode {
             inspection.resolved().tool_id(),
             executable_status_label(inspection.status()),
             executable_source_label(inspection.resolved().source()),
-            inspection.resolved().path().display()
+            inspection
+                .resolved()
+                .path()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "not configured".to_owned())
         );
     }
 
@@ -327,7 +350,14 @@ fn tools_inspect(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode {
         "    source: {}",
         executable_source_label(inspection.resolved().source())
     );
-    println!("    path: {}", inspection.resolved().path().display());
+    println!(
+        "    path: {}",
+        inspection
+            .resolved()
+            .path()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "not configured".to_owned())
+    );
     println!();
 
     if inspection.status() != ExecutableStatus::Available {
@@ -336,7 +366,13 @@ fn tools_inspect(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    match probe_manifest(inspection.resolved().path(), &tool_id) {
+    match probe_manifest(
+        inspection
+            .resolved()
+            .path()
+            .expect("available executable has a path"),
+        &tool_id,
+    ) {
         Ok(probe) => {
             println!("  manifest");
             println!("    tool-id: {}", probe.manifest().tool_id());
@@ -386,6 +422,7 @@ fn tools_inspect(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode {
 
 fn executable_status_label(status: ExecutableStatus) -> &'static str {
     match status {
+        ExecutableStatus::NotConfigured => "not-configured",
         ExecutableStatus::Available => "available",
         ExecutableStatus::Missing => "missing",
         ExecutableStatus::NotFile => "not-file",
@@ -395,12 +432,13 @@ fn executable_status_label(status: ExecutableStatus) -> &'static str {
 fn executable_source_label(source: ExecutablePathSource) -> &'static str {
     match source {
         ExecutablePathSource::Configured => "configured",
-        ExecutablePathSource::Portable => "portable",
+        ExecutablePathSource::NotConfigured => "not-configured",
     }
 }
 
 fn doctor_status_label(status: ExecutableStatus) -> &'static str {
     match status {
+        ExecutableStatus::NotConfigured => "not-configured",
         ExecutableStatus::Available => "[OK]",
         ExecutableStatus::Missing => "[MISSING]",
         ExecutableStatus::NotFile => "[NOT-FILE]",

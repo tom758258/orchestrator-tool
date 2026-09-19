@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod stream_csv;
+#[cfg(windows)]
+mod webview2;
 
 use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_with_stream};
 
@@ -14,7 +16,9 @@ use std::{
 
 use orchestrator_tool::{
     config::{Config, ConfigError, ResourceIdentity},
-    discovery::{ExecutableStatus, built_in_tool_definitions, current_application_dir},
+    discovery::{
+        ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
+    },
     live_resources::LiveResourceCandidate,
     run::{ExecutionMode, run_workflow_with_loop_stop},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
@@ -191,16 +195,16 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
             .map(|status| {
                 let (path, source, executable_status, reason) = match status.executable() {
                     Ok(inspection) => (
-                        Some(inspection.resolved().path().display().to_string()),
+                        inspection
+                            .resolved()
+                            .path()
+                            .map(|path| path.display().to_string()),
                         Some(match inspection.resolved().source() {
-                            orchestrator_tool::discovery::ExecutablePathSource::Configured => {
-                                "configured".to_owned()
-                            }
-                            orchestrator_tool::discovery::ExecutablePathSource::Portable => {
-                                "portable".to_owned()
-                            }
+                            ExecutablePathSource::Configured => "configured".to_owned(),
+                            ExecutablePathSource::NotConfigured => "not-configured".to_owned(),
                         }),
                         match inspection.status() {
+                            ExecutableStatus::NotConfigured => "not-configured".to_owned(),
                             ExecutableStatus::Available => "available".to_owned(),
                             ExecutableStatus::Missing => "missing".to_owned(),
                             ExecutableStatus::NotFile => "not-file".to_owned(),
@@ -442,7 +446,7 @@ fn desktop_config_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Loads the persisted Desktop configuration.
 ///
-/// A missing file falls back to portable behavior; any other load failure is
+/// A missing file leaves tools unconfigured; any other load failure is
 /// reported instead of being silently ignored.
 fn load_desktop_config(app: &AppHandle) -> Result<Config, String> {
     let path = desktop_config_path(app)?;
@@ -480,6 +484,15 @@ fn set_desktop_tool_executable(
     tool_id: &ToolId,
     executable_path: &Path,
 ) -> Result<(), String> {
+    let executable_path =
+        std::path::absolute(executable_path).map_err(|error| error.to_string())?;
+    let probe = orchestrator_tool::manifest_probe::probe_manifest(&executable_path, tool_id)
+        .map_err(|error| error.to_string())?;
+    if probe.manifest().worker_compatibility()
+        != orchestrator_tool::manifest::WorkerCompatibility::Compatible
+    {
+        return Err(format!("{tool_id} Worker protocol is incompatible"));
+    }
     let mut config = load_desktop_config_from_path(config_path)?;
     config.set_executable_path(tool_id, executable_path);
     config.save(config_path).map_err(|error| error.to_string())
@@ -492,11 +505,15 @@ fn reset_desktop_tool_executable(config_path: &Path, tool_id: &ToolId) -> Result
 }
 
 #[tauri::command]
-fn set_tool_executable(app: AppHandle, tool_id: String, path: String) -> Result<(), String> {
+async fn set_tool_executable(app: AppHandle, tool_id: String, path: String) -> Result<(), String> {
     let tool_id = resolve_built_in_tool_id(&tool_id)?;
     let config_path = desktop_config_path(&app)?;
 
-    set_desktop_tool_executable(&config_path, &tool_id, Path::new(&path))
+    tauri::async_runtime::spawn_blocking(move || {
+        set_desktop_tool_executable(&config_path, &tool_id, Path::new(&path))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -925,6 +942,11 @@ fn load_workflow_template(path: String) -> Result<String, String> {
 }
 
 fn main() {
+    #[cfg(windows)]
+    if !webview2::preflight() {
+        return;
+    }
+
     tauri::Builder::default()
         .manage(ActiveRun::default())
         .plugin(tauri_plugin_dialog::init())
@@ -1612,12 +1634,39 @@ mod tests {
         dir
     }
 
+    fn manifest_fixture(
+        dir: &std::path::Path,
+        tool: &str,
+        worker_version: u32,
+    ) -> std::path::PathBuf {
+        let manifest = serde_json::json!({
+            "event": "tool_manifest", "schema_version": 2, "tool_id": tool,
+            "tool_version": "1.0.0", "worker_protocol": {
+                "schema_versions": [worker_version], "compatibility_policy": "v2-only"
+            }
+        });
+        #[cfg(windows)]
+        {
+            let path = dir.join(format!("{tool}-{worker_version}.cmd"));
+            std::fs::write(&path, format!("@echo off\r\necho {manifest}\r\n")).unwrap();
+            path
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join(format!("{tool}-{worker_version}"));
+            std::fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' '{manifest}'\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+    }
+
     #[test]
     fn desktop_tool_config_set_load_reset_round_trip() {
         let dir = unique_test_dir("orchestrator-tool-desktop-config-test");
         let config_path = dir.join("orchestrator.toml");
-        let meters_exe = dir.join("meters-tool.exe");
-        let powers_exe = dir.join("powers-tool.exe");
+        let meters_exe = manifest_fixture(&dir, "meters", 2);
+        let powers_exe = manifest_fixture(&dir, "powers", 2);
 
         let config = load_desktop_config_from_path(&config_path).unwrap();
         assert_eq!(config.executable_path(&ToolId::meters()), None);
@@ -1634,6 +1683,18 @@ mod tests {
             config.executable_path(&ToolId::powers()),
             Some(powers_exe.as_path())
         );
+
+        let saved = std::fs::read(&config_path).unwrap();
+        for rejected in [
+            dir.join("missing.exe"),
+            powers_exe.clone(),
+            manifest_fixture(&dir, "meters", 99),
+        ] {
+            assert!(
+                set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err()
+            );
+            assert_eq!(std::fs::read(&config_path).unwrap(), saved);
+        }
 
         reset_desktop_tool_executable(&config_path, &ToolId::meters()).unwrap();
 
