@@ -194,7 +194,7 @@ nested loops. A row-producing While that executes zero iterations commits no
 synthetic row.
 
 Desktop presents completed iteration numbers starting at 1, but the contract
-metadata is zero-based. For does not expose a percentage for unlimited
+metadata is zero-based. While does not expose a percentage for unlimited
 execution, and external tool limits still apply.
 
 ## Output Pages and ResultRow semantics
@@ -264,7 +264,9 @@ durability.
 
 Batch CSV and XLSX export consume page_datasets: shared Page columns and
 committed chronological rows. CSV excludes For/While iteration metadata.
-Every row must match the first row's Output names, order, and count.
+Every committed row must match its owning Page's declared Output names, order,
+and count. Page export also validates that the row's loop occurrence scope
+matches the Page's declared row scope.
 Cell conversion is shared: strings retain their contents, null becomes empty,
 and other JSON values use compact JSON text.
 
@@ -273,5 +275,9 @@ produce multiple CSV files or one workbook with one worksheet per Page.
 XLSX uses rust_xlsxwriter and writes plain text cells without formulas,
 styling, charts, or native numeric cell typing. All-Page export does not
 overwrite existing CSV files. Export is allowed only for an authoritative
-successful run; failed, stopped, or incomplete runs remain inspection-only
-unless already committed streaming files are being preserved.
+successful run. Failed or incomplete runs remain inspection-only. Graceful
+Stop does not by itself mark a run as failed or cancelled. If the workflow
+completes successfully according to the normal completion gate after the
+selected loop is gracefully unwound, its committed ResultRows remain eligible
+for manual export. Already committed streaming CSV data is preserved after
+workflow failure or graceful Stop.

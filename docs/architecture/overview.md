@@ -138,10 +138,11 @@ The current Desktop presentation architecture has these properties:
   rows needed by charts or exports. Page summaries expose Count, Min, Max, and
   Avg calculated from committed rows.
 
-Desktop run commands expose the same WorkflowRunResult data through their
-Tauri DTO boundary. Tauri Channels carry StepCompleted and
-ResultRowCommitted events to the Desktop while the run is active; the
-authoritative result remains the completed Core data.
+Desktop derives incremental progress from Core StepCompleted and
+ResultRowCommitted events. The Tauri boundary batches those updates into
+ProgressBatch messages and delivers them to the frontend through a Tauri
+Channel, including a final flush before completion. The final
+WorkflowRunResult remains authoritative for a successful completed run.
 
 CSV streaming and XLSX serialization are contract-level behaviors documented
 in [Template Schema v1](../contracts/template-schema-v1.md). The key
