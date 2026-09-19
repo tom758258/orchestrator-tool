@@ -53,3 +53,10 @@ These instructions define long-term, repository-specific boundaries for agents w
 - Prefer the smallest implementation that establishes the current requirement.
 - Do not implement future phases opportunistically.
 - Ask for user confirmation before changing durable component ownership, contract boundaries, workflow/template semantics, external process lifecycle semantics, or distribution strategy.
+
+## 7. Documentation Boundary
+
+- Keep the root README as the project overview and entry point, not a complete specification dump.
+- Keep future USER_GUIDE content operator-facing. Put build, validation, maintainer, architecture, and contract details in the README or focused documentation.
+- Keep tracked documentation durable; do not add transient review notes, temporary validation results, or run-specific evidence.
+- Future generated Help HTML must not be edited by hand. Keep maintained documentation as its canonical source; do not add a Help generator or USER_GUIDE unless explicitly requested.
