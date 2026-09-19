@@ -13,6 +13,17 @@ const declaration = source.slice(start, end)
 const callback = declaration.slice(declaration.indexOf('async () =>'), declaration.lastIndexOf('}, [') + 1)
 const code = stripTypeScriptTypes('(' + callback + ')')
 
+test('Run Simulation is disabled while loading or tool configuration is busy', () => {
+  const onClick = source.indexOf('onClick={() => void runSimulation()}')
+  const buttonStart = source.lastIndexOf('<button', onClick)
+  const buttonEnd = source.indexOf('</button>', onClick)
+  assert.ok(onClick >= 0 && buttonStart >= 0 && buttonEnd > onClick, 'Run Simulation button exists')
+  assert.match(
+    source.slice(buttonStart, buttonEnd),
+    /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading\}/,
+  )
+})
+
 test('Invalid Streaming config preserves the previous Last Run and does not execute', async () => {
   const previous = {
     executionOffset: 400,

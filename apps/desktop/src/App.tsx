@@ -1852,7 +1852,7 @@ function App() {
                   className="action-button action-button-primary"
                   type="button"
                   onClick={() => void runSimulation()}
-                  disabled={workflowBusy}
+                  disabled={workflowBusy || toolConfigBusy !== null || loading}
                 >
                   Run Simulation
                 </button>
