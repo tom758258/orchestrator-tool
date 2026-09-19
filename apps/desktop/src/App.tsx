@@ -1256,7 +1256,7 @@ function App() {
               className="action-button"
               type="button"
               onClick={() => void refresh()}
-              disabled={loading}
+              disabled={loading || toolConfigBusy !== null}
             >
               Refresh
             </button>
@@ -1331,7 +1331,7 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => void handleBrowseToolExecutable(tool.tool_id)}
-                      disabled={toolConfigBusy !== null || workflowBusy}
+                      disabled={toolConfigBusy !== null || workflowBusy || loading}
                     >
                       Browse...
                     </button>
@@ -1339,7 +1339,7 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
-                      disabled={toolConfigBusy !== null || workflowBusy || tool.source !== 'configured'}
+                      disabled={toolConfigBusy !== null || workflowBusy || loading || tool.source !== 'configured'}
                     >
                       Clear Path
                     </button>
@@ -1381,7 +1381,7 @@ function App() {
                           <input
                             type="text"
                             value={resourceDrafts[instance.id] ?? ''}
-                            disabled={toolConfigBusy !== null || workflowBusy}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onChange={(event) => {
                               setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
                               setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: null }))
@@ -1392,7 +1392,7 @@ function App() {
                           <button
                             className="action-button"
                             type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleListResources(instance.tool)}
                           >
                             List Resources
@@ -1400,7 +1400,7 @@ function App() {
                           <button
                             className="action-button"
                             type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleResource(instance.id, false)}
                           >
                             Save Resource
@@ -1408,7 +1408,7 @@ function App() {
                           <button
                             className="action-button"
                             type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleResource(instance.id, true)}
                           >
                             Clear Resource
@@ -1427,7 +1427,7 @@ function App() {
                             <span className="step-property-label">Discovered Resources</span>
                             <select
                               value=""
-                              disabled={toolConfigBusy !== null || workflowBusy}
+                              disabled={toolConfigBusy !== null || workflowBusy || loading}
                               onChange={(event) => {
                                 const resource = event.target.value
                                 if (resource) {

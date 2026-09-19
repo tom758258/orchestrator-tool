@@ -172,6 +172,23 @@ test('startup preserves StrictMode and direct manual Refresh', () => {
   assert.match(source, /onClick=\{\(\) => void refresh\(\)\}/)
 })
 
+test('status Refresh and local tool configuration controls are mutually exclusive', () => {
+  const toolsPanel = source.slice(
+    source.indexOf('<section id="tools-panel"'),
+    source.indexOf('<section id="setup-panel"'),
+  )
+  assert.match(toolsPanel, /onClick=\{\(\) => void refresh\(\)\}\s+disabled=\{loading \|\| toolConfigBusy !== null\}/)
+  assert.match(toolsPanel, /handleBrowseToolExecutable\(tool\.tool_id\)[\s\S]+?disabled=\{toolConfigBusy !== null \|\| workflowBusy \|\| loading\}/)
+  assert.match(toolsPanel, /handleResetToolExecutable\(tool\.tool_id\)[\s\S]+?disabled=\{toolConfigBusy !== null \|\| workflowBusy \|\| loading \|\| tool\.source !== 'configured'\}/)
+
+  const setupStart = source.indexOf('<section id="setup-panel"')
+  const setupPanel = source.slice(setupStart, source.indexOf("{activeTab === 'workflow'", setupStart))
+  assert.equal(
+    (setupPanel.match(/disabled=\{toolConfigBusy !== null \|\| workflowBusy \|\| loading\}/g) ?? []).length,
+    5,
+  )
+})
+
 test('both Desktop run adapters flush before propagating run failure', () => {
   const backend = readFileSync(new URL('../src-tauri/src/main.rs', import.meta.url), 'utf8')
   assert.equal((backend.match(/batcher\.flush\(\);\s*let results = run_result\?;/g) ?? []).length, 2)
