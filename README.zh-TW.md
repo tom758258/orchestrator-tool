@@ -133,7 +133,7 @@ Desktop Tool Setup 可新增 built-in tool instance，自動產生唯一 ID，�
 
 ## Executable 設定
 
-Core loads tool-type executable paths from a caller-selected TOML configuration file:
+Core 會從呼叫端指定的 TOML 設定檔載入各 tool type 的 executable path：
 
 ```toml
 [tools]
@@ -145,9 +145,9 @@ meters-1 = "USB0::VENDOR::METER_SERIAL::INSTR"
 powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 ```
 
-Only configured executable paths are used. Unconfigured tools report `not-configured`; missing configured files report `missing`. There is no default location or executable auto-discovery. Relative configured paths are resolved from the directory containing the configuration file. `tools list` accepts an optional caller-supplied configuration path and does not auto-discover configuration files.
+只會使用已設定的 executable path。未設定的 tool 會回報 `not-configured`；已設定但檔案不存在則回報 `missing`。不提供 portable fallback、預設位置或 executable auto-discovery。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 接受 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
-The Desktop application exposes the same configuration through its Tools tab: each built-in tool offers Browse... to select an executable and Clear Path to remove its setting. Browse runs `manifest --json`, validates the tool identity and Worker compatibility, and saves only a successful selection; a failed validation preserves the previous setting. Changing or clearing a path immediately refreshes status. The Setup tab offers Add Tool Instance, Meters setup, and Live Resource controls with Save Resource, Clear Resource, and on-demand discovery for each Powers or Meters instance. Selected resources retain last-known manufacturer, model, serial, and raw identity metadata in the same local configuration. Desktop persists these settings in a single `orchestrator.toml` file inside the OS / Tauri application config directory (under the application bundle identifier). Tool Status, Run Simulation, and Run Live load this same configuration. Startup probes the saved executable paths. A missing config file leaves all tools unconfigured; existing `[tools]` entries remain valid. Each tool type shares one path across all its instances. Workflow JSON contains logical tool identities only, never machine-specific executable paths. Resources remain instance-level settings. External tools keep their own releases, including PyInstaller onedir layouts; select the executable inside its complete distribution without moving it away from `_internal/`. Orchestrator neither inspects that directory nor bundles external tools.
+Desktop 應用程式透過 Tools tab 提供相同設定：每個 built-in tool 都可使用 Browse... 選擇 executable，並使用 Clear Path 移除設定。Browse 會執行 `manifest --json`、驗證 tool identity 與 Worker compatibility，且只在選擇通過驗證時保存；驗證失敗會保留先前設定。變更或清除 path 後會立即重新整理 status。Setup tab 提供 Add Tool Instance、Meters setup，以及每個 Powers／Meters instance 的 Live Resource、Save Resource、Clear Resource 與 on-demand discovery。選定的 resource 會在同一份 local configuration 保存 last-known manufacturer、model、serial 與 raw identity metadata。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。啟動時會檢查已保存的 executable path。設定檔不存在時，所有 tool 都維持未設定；既有的 `[tools]` entry 仍然有效。每個 tool type 的所有 instance 共用一個 path。Workflow JSON 只包含 logical tool identity，不會保存 machine-specific executable path。Resource 仍是 instance-level setting。External tool 維持各自的 release，包含 PyInstaller onedir layout；請選擇完整 distribution 內的 executable，不要將它移出 `_internal/`。Orchestrator 不會檢查該目錄，也不會 bundle external tool。
 
 可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。可選的 `live_resource_identities` table 只保存以 ToolInstanceId 為 key 的 last-known presentation metadata。這兩個 table 都不屬於 Template。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
 
@@ -179,7 +179,7 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-`tools list` lists the four built-in external tools and reports each executable's `configured` or `not-configured` source and `available`, `not-configured`, `missing`, or `not-file` status. Missing tools are normal discovery results and do not cause the command to fail. Configuration errors and other discovery I/O errors are reported to stderr with a non-zero exit code.
+`tools list` 會列出四個 built-in external tools，並顯示每個 executable 的 `configured` 或 `not-configured` source，以及 `available`、`not-configured`、`missing` 或 `not-file` status。Missing tool 是正常的 discovery 結果，不會使 command 失敗。設定錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
 
 `doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
 
@@ -237,4 +237,10 @@ npm.cmd run build
 
 目前 CLI 已提供 tool listing、manifest inspection、environment diagnostics，以及針對 Powers 與 Meters 的 Worker diagnostic。
 
-Windows Desktop requires the system WebView2 Runtime. See [Windows Desktop WebView2 prerequisite](README.md#windows-desktop-webview2-prerequisite) for startup behavior and manual release checks.
+### Windows Desktop WebView2 prerequisite
+
+Desktop 使用系統安裝的 Microsoft Edge WebView2 Runtime。在建立 Tauri window 前，`tauri::webview_version()` 會呼叫 WebView2 loader 的 availability API。若找不到可用版本，native Windows dialog 會說明此 prerequisite：選擇 Yes 會開啟 [Microsoft 官方 WebView2 頁面](https://developer.microsoft.com/microsoft-edge/webview2/)，選擇 No 則會關閉程式。兩種選擇都不會啟動 Tauri，程式會直接結束；請手動安裝 Runtime 後重新啟動。若無法開啟瀏覽器，第二個 native dialog 會顯示該 URL。
+
+本專案不包含 Fixed Runtime、自動下載或自動安裝（`webviewInstallMode` 設為 `skip`）。非 Windows 平台的啟動流程與 CLI 維持不變。Loader API 也可辨識相容的 Edge preview channel；本專案未新增自訂 registry discovery。
+
+Manual release checks：在已安裝 WebView2 的 Windows 上，確認程式可正常啟動、Browse 驗證正常、重新啟動後設定仍保留，並確認移動已設定的 tool 後可正常復原。在未安裝 WebView2 或 Edge preview channel 的全新 Windows VM 上，確認 native dialog 的兩種選擇、下載連結，以及未建立 WebView 即正常結束程式。
