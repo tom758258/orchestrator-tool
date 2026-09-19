@@ -147,7 +147,7 @@ powers-1 = "USB0::VENDOR::POWER_SERIAL::INSTR"
 
 只會使用已設定的 executable path。未設定的 tool 會回報 `not-configured`；已設定但檔案不存在則回報 `missing`。不提供 portable fallback、預設位置或 executable auto-discovery。Relative configured path 以設定檔所在目錄為基準解析。`tools list` 接受 optional 的呼叫端指定設定檔路徑，不會自動搜尋設定檔。
 
-Desktop 應用程式透過 Tools tab 提供相同設定：每個 built-in tool 都可使用 Browse... 選擇 executable，並使用 Clear Path 移除設定。Browse 會執行 `manifest --json`、驗證 tool identity 與 Worker compatibility，且只在選擇通過驗證時保存；驗證失敗會保留先前設定。變更或清除 path 後會立即重新整理 status。Setup tab 提供 Add Tool Instance、Meters setup，以及每個 Powers／Meters instance 的 Live Resource、Save Resource、Clear Resource 與 on-demand discovery。選定的 resource 會在同一份 local configuration 保存 last-known manufacturer、model、serial 與 raw identity metadata。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。啟動時會檢查已保存的 executable path。設定檔不存在時，所有 tool 都維持未設定；既有的 `[tools]` entry 仍然有效。每個 tool type 的所有 instance 共用一個 path。Workflow JSON 只包含 logical tool identity，不會保存 machine-specific executable path。Resource 仍是 instance-level setting。External tool 維持各自的 release，包含 PyInstaller onedir layout；請選擇完整 distribution 內的 executable，不要將它移出 `_internal/`。Orchestrator 不會檢查該目錄，也不會 bundle external tool。
+Desktop 應用程式透過 Tools tab 提供相同設定：每個 built-in tool 都可使用 Browse... 選擇 executable，並使用 Clear Path 移除設定。Browse 會執行 `manifest --json`、驗證 tool identity 與 Worker compatibility，且只在選擇通過驗證時保存；驗證失敗會保留先前設定。變更或清除 path 後會立即重新整理 status。Setup tab 提供 Add Tool Instance、Meters setup，以及每個 Powers／Meters instance 的 Live Resource、Save Resource、Clear Resource 與 on-demand discovery。選定的 resource 會在同一份 local configuration 保存 last-known manufacturer、model、serial 與 raw identity metadata。Desktop 將這些設定保存到 OS / Tauri application config directory（application bundle identifier 之下）的單一 `orchestrator.toml`。Tool Status、Run Simulation 與 Run Live 讀取同一份設定。啟動時會檢查已保存的 executable path。設定檔不存在時，所有 tool 都維持未設定；既有的 `[tools]` entry 仍然有效。每個 tool type 的所有 instance 共用一個 path。Workflow JSON 只包含 logical tool identity，不會保存 machine-specific executable path。Resource 仍是 instance-level setting。External tool 維持各自的 release，包含 PyInstaller onedir layout；請直接選擇完整 distribution 內的 executable，並保持 executable 與 `_internal/` 目錄原本的相對位置，不要只將 executable 單獨搬走。Orchestrator 不會檢查 `_internal/`，也不會 bundle external tool。
 
 可選的 `live_resources` table 會原樣保存非空白 resource 字串，不做 path 解析、掃描或 fallback。可選的 `live_resource_identities` table 只保存以 ToolInstanceId 為 key 的 last-known presentation metadata。這兩個 table 都不屬於 Template。Live preparation 會拒絕缺少或僅含空白的 resource，並在啟動任何 Worker 前驗證 executable、manifest 與 Worker compatibility。Simulation 仍可使用，且不需要 live resource。
 
@@ -179,7 +179,7 @@ orchestrator-tool --config <PATH> doctor
 orchestrator-tool --config <PATH> tools list
 ```
 
-`tools list` 會列出四個 built-in external tools，並顯示每個 executable 的 `configured` 或 `not-configured` source，以及 `available`、`not-configured`、`missing` 或 `not-file` status。Missing tool 是正常的 discovery 結果，不會使 command 失敗。設定錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
+`tools list` 會列出四個 built-in external tools，並顯示每個 executable 的 `configured` 或 `not-configured` source，以及 `available`、`not-configured`、`missing` 或 `not-file` status。`missing` 是正常的 Tool 狀態檢查結果，不會使 command 失敗。設定錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。
 
 `doctor` 會顯示 application directory、configuration 狀態、四個 built-in external tools 的 status，以及 summary counts。Missing 與 not-file tools 是正常的診斷結果，不會使 command 失敗。設定檔錯誤與其他 discovery I/O error 會輸出到 stderr，並回傳非 0 exit code。`doctor` 不會執行 instrument-level diagnostics。
 
