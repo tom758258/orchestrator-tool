@@ -84,14 +84,14 @@ corresponding external instrument tool.
 ## Manifest and Worker compatibility boundary
 
 Before starting a supported external Worker, Core probes the selected
-executable with its manifest command and validates:
+executable with its manifest command and:
 
-- the manifest event identity;
-- manifest schema version 2;
-- the declared Tool Type ID;
-- the tool version and Worker compatibility metadata; and
-- overlap between the declared Worker protocol schema versions and the
-  orchestrator's supported Worker schema version 2.
+- validates the manifest event identity;
+- validates manifest schema version 2;
+- validates the declared Tool Type ID;
+- reads the tool version and Worker protocol metadata; and
+- validates overlap between the declared Worker protocol schema versions and
+  the orchestrator's supported Worker schema version 2.
 
 Worker startup then validates the Worker Ready information and exposes the
 status, command, and stop endpoints through the generic Worker session. Core

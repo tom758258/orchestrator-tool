@@ -265,8 +265,8 @@ durability.
 Batch CSV and XLSX export consume page_datasets: shared Page columns and
 committed chronological rows. CSV excludes For/While iteration metadata.
 Every committed row must match its owning Page's declared Output names, order,
-and count. Page export also validates that the row's loop occurrence scope
-matches the Page's declared row scope.
+and count. Page export also validates row occurrence metadata against the Page's
+innermost owning loop. Root Page rows must carry no loop occurrence metadata.
 Cell conversion is shared: strings retain their contents, null becomes empty,
 and other JSON values use compact JSON text.
 

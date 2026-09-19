@@ -13,8 +13,8 @@ These instructions define long-term, repository-specific boundaries for agents w
 
 - The root `orchestrator-tool` Cargo package contains the Core library in `src/lib.rs` and the CLI binary in `src/main.rs`.
 - The CLI may depend on Core. Core must not contain CLI-specific behavior.
-- The future Desktop/Tauri application may depend on Core. Core must not depend on Tauri, frontend frameworks, TypeScript, or WebView APIs.
-- Keep Tauri commands thin. Tool discovery, process management, workflow validation, scheduling, template semantics, and tool adapters belong in Core when those features are introduced.
+- The Desktop/Tauri application depends on Core. Core must not depend on Tauri, frontend frameworks, TypeScript, or WebView APIs.
+- Keep Tauri commands thin. Tool discovery, process management, workflow validation, scheduling, template semantics, and tool adapters belong in Core.
 - Do not introduce WebUI, an HTTP server, VISA/SCPI control, embedded Python, tool contracts, IPC schemas, workflow schemas, or plugin systems without a concrete requirement.
 
 ## 3. External Tool Boundary

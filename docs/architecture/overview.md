@@ -44,8 +44,11 @@ A run follows this high-level flow:
 5. The Executor evaluates the ordered workflow sequentially, including nested
    For and While bodies, and emits progress events as steps complete and rows
    commit.
-6. The run returns a WorkflowRunResult and then performs the applicable
-   external-tool cleanup and Worker shutdown.
+6. After Executor completion, run orchestration performs the applicable
+   external-tool cleanup and Worker shutdown. The WorkflowRunResult is
+   returned to the caller only after that lifecycle completes successfully;
+   a cleanup or shutdown failure can make the run API return an error
+   instead.
 
 The Template contains the durable test definition: Tool Instances, setup
 data, and Workflow steps. Execution mode, executable paths, Live Resources,
@@ -77,8 +80,8 @@ WorkerSession adds the Common Worker protocol around a managed process:
   polls for process exit within a bounded timeout, and force-cleans the
   process if the request fails or the timeout expires.
 - Run orchestration attempts cleanup and shutdown for every started Worker,
-  including paths where preparation, execution, or another Worker startup
-  fails. Original workflow errors and cleanup errors remain distinguishable.
+  including workflow execution failure and failure while starting a later
+  Worker. Original workflow errors and cleanup errors remain distinguishable.
 
 The current manifest and Worker compatibility boundary uses manifest schema
 version 2 and the supported Worker protocol schema version 2. The
