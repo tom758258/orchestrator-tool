@@ -274,8 +274,8 @@ Desktop 只在 memory 中保留一個 **Last Run**，沒有 Run History、databa
 storage。
 
 Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
-不會重新解讀 Last Run。Open Template 或啟動新的 blank draft 會清除 Last Run；
-**Clear Last Run** 會移除目前 memory 中的 result 與 snapshot。
+不會重新解讀 Last Run。Open Template 會清除 Last Run；**Clear Last Run**
+會移除目前 memory 中的 result 與 snapshot。
 
 若 run 沒有成功完成，committed rows 仍可供檢查，但不能 manual export。
 

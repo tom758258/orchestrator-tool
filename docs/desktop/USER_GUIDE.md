@@ -312,8 +312,8 @@ database, or SQL storage.
 
 At run start, Desktop saves a Workflow snapshot for that run. Editing the
 current Workflow afterward does not reinterpret the Last Run. Opening a
-Template or starting a new blank draft clears the Last Run, and **Clear Last
-Run** removes the current in-memory result and snapshot.
+Template clears the Last Run, and **Clear Last Run** removes the current
+in-memory result and snapshot.
 
 If a run did not complete successfully, committed rows remain available for
 inspection, but manual export is unavailable.
