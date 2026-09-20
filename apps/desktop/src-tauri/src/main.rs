@@ -941,6 +941,39 @@ fn load_workflow_template(path: String) -> Result<String, String> {
     template.to_json_string().map_err(|error| error.to_string())
 }
 
+fn help_url(theme: &str) -> Result<tauri::WebviewUrl, String> {
+    match theme {
+        "system" | "light" | "dark" => Ok(tauri::WebviewUrl::App(
+            format!("help/desktop.html?theme={theme}").into(),
+        )),
+        _ => Err("Help theme must be system, light, or dark".to_owned()),
+    }
+}
+
+#[tauri::command]
+async fn open_help(app: AppHandle, theme: String) -> Result<(), String> {
+    let url = help_url(&theme)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // Serialize lookup and creation, including concurrent toolbar clicks.
+        static HELP_WINDOW: Mutex<()> = Mutex::new(());
+        let _guard = HELP_WINDOW.lock().map_err(|error| error.to_string())?;
+        if let Some(window) = app.get_webview_window("help") {
+            window.show().map_err(|error| error.to_string())?;
+            window.set_focus().map_err(|error| error.to_string())?;
+        } else {
+            tauri::WebviewWindowBuilder::new(&app, "help", url)
+                .title("Orchestrator Tool Help")
+                .inner_size(1200.0, 800.0)
+                .resizable(true)
+                .build()
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn main() {
     #[cfg(windows)]
     if !webview2::preflight() {
@@ -951,6 +984,7 @@ fn main() {
         .manage(ActiveRun::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            open_help,
             get_tool_status,
             list_live_resources,
             get_meters_range_options,
@@ -976,6 +1010,19 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn help_url_accepts_only_supported_themes() {
+        for theme in ["system", "light", "dark"] {
+            assert_eq!(
+                super::help_url(theme).unwrap(),
+                tauri::WebviewUrl::App(format!("help/desktop.html?theme={theme}").into())
+            );
+        }
+        for theme in ["", "Dark", "auto", "dark&url=https://example.com"] {
+            assert!(super::help_url(theme).is_err());
+        }
+    }
+
     use super::{
         create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
         reset_desktop_tool_executable, resolve_built_in_tool_id, save_workflow_template,

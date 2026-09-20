@@ -302,6 +302,15 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 
 function App() {
   const [themePreference, setThemePreference] = useState(readThemePreference)
+  const [helpError, setHelpError] = useState<string | null>(null)
+  async function handleOpenHelp() {
+    setHelpError(null)
+    try {
+      await invoke('open_help', { theme: themePreference })
+    } catch (message) {
+      setHelpError(String(message))
+    }
+  }
   const themeLabel = (value: string) => value[0].toUpperCase() + value.slice(1)
   const nextThemeLabel = themeLabel(nextThemePreference(themePreference))
 
@@ -1172,7 +1181,12 @@ function App() {
         >
           Save Template
         </button>
+        <button className="action-button" type="button" onClick={() => void handleOpenHelp()}>
+          Help
+        </button>
       </div>
+
+      {helpError && <p className="error" role="alert">Failed to open Help: {helpError}</p>}
 
       {templateIoStatus === 'saving' && <p role="status">Saving…</p>}
       {templateIoStatus === 'loading' && <p role="status">Loading…</p>}

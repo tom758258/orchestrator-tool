@@ -48,6 +48,17 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
+      - name: Install Python for Help verification
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify tracked Help bundle
+        run: |
+          python -m pip install -r scripts/requirements-help.txt
+          python -B scripts/test_generate_help.py
+          python scripts/generate_help.py --check
+
       - name: Test frontend
         working-directory: apps/desktop
         run: node --test tests/*.test.mjs

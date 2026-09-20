@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrator Tool Desktop User Guide</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <nav class="help-languages" aria-label="Language">
+      <a href="desktop.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true"> | </span>
+      <a href="desktop.zh-TW.html" hreflang="zh-TW" lang="zh-TW">繁體中文</a>
+    </nav>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1 id="orchestrator-tool-desktop-user-guide">Orchestrator Tool Desktop User Guide</h1>
+<p>This guide describes the Desktop behavior currently available in
+Orchestrator Tool. It is written for operators and engineers who configure
+external tools, build reusable Templates, run workflows, and inspect or export
+their results.</p>
+<h2 id="1-overview">1. Overview</h2>
+<p>Orchestrator Tool Desktop coordinates independent external tools through a
+reusable Template. You can configure Tool Types, create logical Tool
+Instances, build an ordered Workflow, and run it in Simulation or Live mode.
+After a run, Desktop shows committed Results, Output Pages, Charts, and Data,
+and can export the available results.</p>
+<p>Desktop is the main workflow operation interface. External tools remain
+separate programs and distributions; they are not bundled into
+orchestrator-tool.</p>
+<h2 id="2-requirements">2. Requirements</h2>
+<ul>
+<li>The application is Windows-first.</li>
+<li>It uses the system Microsoft Edge WebView2 Runtime. If WebView2 is missing,
+  Desktop shows a native warning before creating the Tauri WebView and does not
+  start the application window. The application does not download or install
+  WebView2 automatically.</li>
+<li>Meters, Powers, Scopes, and Wavegen are independent external tool
+  distributions. Install and maintain those tools separately, then configure
+  their actual executable paths in Desktop.</li>
+</ul>
+<p>This guide does not assume an installer or package deployment flow for the
+external tools.</p>
+<h2 id="3-main-desktop-areas">3. Main Desktop areas</h2>
+<p>The Desktop tabs are:</p>
+<ul>
+<li><strong>Tools</strong> — configure each Tool Type's executable path and inspect its
+  availability and compatibility.</li>
+<li><strong>Setup</strong> — create Tool Instances, edit their per-instance setup, and save
+  or clear local Live Resources where supported.</li>
+<li><strong>Workflow</strong> — edit the ordered steps, validate the Template, run
+  Simulation or Live mode, request a graceful Stop, and configure CSV
+  streaming.</li>
+<li><strong>Output</strong> — inspect the Last Run, execution results, Output Pages, Charts,
+  Summary, Output Data, and manual exports.</li>
+</ul>
+<p>The application also has an <strong>Appearance</strong> control for the Desktop theme and
+toolbar actions for <strong>Open Template</strong> and <strong>Save Template</strong>.</p>
+<h2 id="4-configure-external-tools">4. Configure external Tools</h2>
+<p>Executable paths belong to a Tool Type. They are shared by all Tool Instances
+of that type; an individual Tool Instance does not store its own executable
+path.</p>
+<p>In <strong>Tools</strong>, choose <strong>Browse...</strong> and select the actual executable supplied by
+the external tool distribution. Desktop validates the executable's manifest
+and Worker compatibility for the expected Tool Type before saving the path. A
+path with the wrong Tool ID or incompatible Worker is rejected, and an
+existing valid path is not replaced by the invalid selection. Use <strong>Clear
+Path</strong> when the saved path should be removed.</p>
+<p>The status area reports states such as <strong>Not configured</strong>, <strong>Available</strong>,
+<strong>Missing</strong>, <strong>Not a file</strong>, or <strong>Error</strong>, together with compatibility and an
+explanation when one is available. Desktop does not search <code>PATH</code>, the
+Windows registry, or arbitrary folders, and does not silently fall back to a
+different executable.</p>
+<p>If an external tool is distributed by PyInstaller in <code>onedir</code> form, select
+the real executable inside that distribution. Orchestrator Tool does not move
+or copy the executable or its <code>_internal</code> directory.</p>
+<h2 id="5-setup-and-tool-instances">5. Setup and Tool Instances</h2>
+<p>A Tool Instance is a logical, named instance stored in the Template. A
+Template can contain multiple instances of the same Tool Type, and each
+instance has its own setup values. Tool setup is part of the Template;
+machine-specific executable paths and Live Resources are not.</p>
+<h3 id="51-meters-setup">5.1 Meters Setup</h3>
+<p>For a Meters Tool Instance, the current Setup controls:</p>
+<ul>
+<li>Measurement: <strong>DC Voltage</strong> or <strong>DC Current</strong>.</li>
+<li>Range Mode: <strong>Auto</strong> or <strong>Manual</strong>.</li>
+<li>Manual Range: a fixed list of choices supplied from the configured meters
+  tool's capabilities. It is not an arbitrary text value.</li>
+<li>NPLC: the currently exposed standard choices are <code>0.02</code>, <code>0.2</code>, <code>1</code>, <code>10</code>,
+  and <code>100</code>.</li>
+<li>Auto Zero: <strong>On</strong>, <strong>Off</strong>, or <strong>Once</strong>.</li>
+<li>For DC Voltage, DCV Input Impedance: <strong>Not specified</strong>, <strong>Default</strong>,
+  <strong>10 MΩ</strong>, or <strong>Auto</strong>.</li>
+<li>For DC Current, Current Terminal: <strong>Not specified</strong>, <strong>3 A terminal</strong>, or
+  <strong>10 A terminal</strong>.</li>
+</ul>
+<p>Only fields applicable to the selected measurement are shown. The external
+meters-tool remains authoritative for the actual model capability and numeric
+limits. Desktop does not replace its capability database.</p>
+<h3 id="52-live-resources">5.2 Live Resources</h3>
+<p>A Live Resource is bound to a Tool Instance and is stored in the machine-local
+Desktop configuration. It is not carried in a Template. Optional last-known
+identity information is also stored locally for display; that cached identity
+is not a current connection check.</p>
+<p>The current Desktop supports resource discovery for <strong>Meters</strong> and <strong>Powers</strong>.
+Do not expect discovery for unsupported Tool Types. Use the resource controls
+in Setup to list available resources, choose one, <strong>Save Resource</strong>, or
+<strong>Clear Resource</strong>.</p>
+<p>Before a Live run, every referenced supported Tool Instance must have a
+non-empty saved resource. Two referenced instances may not use the same resource in one
+run. Live confirmation displays the referenced instances and resources. If a
+resource changes after confirmation, the run is rejected and must be
+confirmed again.</p>
+<p>For a DC Current measurement using the <strong>10 A terminal</strong>, Live confirmation
+also asks you to verify that the physical leads are connected to the 10 A
+terminal.</p>
+<h2 id="6-workflow-editor">6. Workflow Editor</h2>
+<p>The Workflow editor builds an ordered sequence of steps. The current step
+types are:</p>
+<ul>
+<li><strong>Assert</strong> — check a condition and fail the workflow if it is not true.</li>
+<li><strong>Set Variable</strong> — create or update a workflow variable.</li>
+<li><strong>Output</strong> — publish a value as a final workflow result column. It does not
+  control a Powers output.</li>
+<li><strong>Wait</strong> — wait for a specified duration.</li>
+<li><strong>Tool Action</strong> — invoke an action on a configured Tool Instance, such as a
+  Powers set or output action or a Meters measurement.</li>
+<li><strong>For</strong> — repeat a body over an exact decimal range.</li>
+<li><strong>While</strong> — repeat a body while a condition remains true.</li>
+</ul>
+<p>Steps can be placed in the root workflow or inside loop bodies. Use the step
+properties area to edit the selected step. Use Validate when you want to
+check the current Template before running; Simulation and Live also validate
+the Template when the run starts, so pressing Validate first is useful but is
+not a separate run prerequisite.</p>
+<h3 id="61-input-values-and-data-flow">6.1 Input values and data flow</h3>
+<p>The current InputValue choices in the editor are:</p>
+<ul>
+<li><strong>Fixed value</strong> — a literal value.</li>
+<li><strong>Variable</strong> — the current value of a workflow variable.</li>
+<li><strong>Previous step result</strong> — a result from an earlier visible step. The current
+  UI offers results from prior Tool Actions.</li>
+<li><strong>Calculation</strong> — one left operand, one operator, and one right operand.</li>
+<li><strong>Elapsed time</strong> — a runtime elapsed-time value.</li>
+<li><strong>Timestamp</strong> — a runtime timestamp value.</li>
+</ul>
+<p>Set Variable steps create or update variables. A Previous step result can
+refer only to a step that is earlier and visible in the current lexical scope.
+Calculations use the currently supported arithmetic and comparison operators,
+including addition, subtraction, multiplication, division, and the displayed
+greater-than/less-than comparisons. A Calculation is not an arbitrary nested
+expression tree.</p>
+<p>An Output step is what creates a ResultRow column. Values used as inputs do
+not become result columns merely because they were referenced.</p>
+<h3 id="62-for">6.2 For</h3>
+<p>Configure a For step with <strong>Start</strong>, <strong>Stop</strong>, <strong>Step</strong>, a loop variable, and a
+body.</p>
+<ul>
+<li>The Stop value is included when the step grid reaches it.</li>
+<li>Positive and negative directions must agree with Start and Stop.</li>
+<li>A zero Step is invalid.</li>
+<li>Equal Start and Stop values execute one iteration.</li>
+<li>Loop nesting is limited to five levels.</li>
+</ul>
+<p>For ranges use exact decimal range semantics rather than floating-point
+tolerance. The range is evaluated according to the configured step, so a Stop
+value that is not reachable is not rounded into an extra iteration.</p>
+<h3 id="63-while">6.3 While</h3>
+<p>A While condition is evaluated before each iteration. Its iteration limit can
+be:</p>
+<ul>
+<li>a positive finite <code>max_iterations</code> value; or</li>
+<li><strong>Unlimited</strong>, meaning no finite iteration limit is imposed.</li>
+</ul>
+<p>If the condition is initially false, the body executes zero times. An
+Unlimited While is currently allowed only at the top level, must have a
+non-empty body, and may contain finite nested loops. It may not contain
+another Unlimited While.</p>
+<p>Simulation currently rejects a Meters <strong>Measure</strong> inside an Unlimited While
+because it cannot establish a finite sample bound. Use a finite
+<code>max_iterations</code> for that Simulation workflow, or use Live mode when the
+operation is appropriate. A Live Meters Measure inside an Unlimited While is
+allowed and does not set a finite <code>max-samples</code> limit.</p>
+<h3 id="64-graceful-stop">6.4 Graceful Stop</h3>
+<p>During an active run, Stop targets a loop selected by the operator. It is a
+graceful loop stop, not an immediate termination of the current step:</p>
+<ol>
+<li>The active innermost iteration continues until its successful commit point.</li>
+<li>The selected loop then unwinds.</li>
+<li>A parent loop or the root workflow can continue after that unwind.</li>
+</ol>
+<p>If the current iteration fails, the failure takes precedence over the Stop
+request. Stop is not Pause, Resume, or Hard Cancel, and Stop by itself does
+not automatically mark the entire run as cancelled. The final run status is
+still subject to the normal workflow success rules.</p>
+<h3 id="65-output-pages">6.5 Output Pages</h3>
+<p>An Output step has a name and a Page. Outputs on the same Page form columns in
+one dataset. Different Pages are independent datasets, and a nested loop can
+own its own Page.</p>
+<p>Each Page belongs to one fixed owning lexical loop path. The same Page name
+cannot be shared by different lexical loop paths. Page names also have to be
+valid as CSV filename stems and Excel worksheet names, so the same naming
+restrictions apply to both export formats.</p>
+<h2 id="7-run-simulation">7. Run Simulation</h2>
+<p>Before Simulation, configure every referenced external executable and ensure
+its manifest and Worker compatibility checks can succeed. You can use
+Validate first for an explicit Template check; the run also validates the
+Template when it starts.</p>
+<p>Simulation does not require Live Resources. It uses the external Workers'
+simulate mode and is not intended to operate physical hardware. The
+Unlimited While plus Meters Measure restriction described above still
+applies.</p>
+<h2 id="8-run-live">8. Run Live</h2>
+<p>Before starting Live, Desktop:</p>
+<ul>
+<li>checks the referenced Tool Instances;</li>
+<li>loads their persisted Live Resources;</li>
+<li>rejects any unsaved Live Resource draft changes;</li>
+<li>shows a Live confirmation listing each referenced instance and resource;</li>
+<li>warns that Live mode can change Powers outputs; and</li>
+<li>adds the 10 A terminal warning for the applicable Meters setup.</li>
+</ul>
+<p>Confirm only after checking the displayed resources and the connected
+hardware. The run validates that the resources are still exactly the ones
+confirmed. A changed resource or duplicate resource causes Live execution to
+be rejected and require a new confirmation.</p>
+<p>The currently supported Live external tools are Powers and Meters. An
+unsupported Tool Type is reported as an error; the Desktop does not currently
+promise Scopes or Wavegen runtime execution.</p>
+<h3 id="81-powers-actions-and-cleanup">8.1 Powers actions and cleanup</h3>
+<p>Powers Live actions include setting values and the <code>output-on</code> and
+<code>output-off</code> actions. Live Powers write authorization exists only for the
+runtime of the Live run.</p>
+<p>At run completion, and also on workflow failure or later Worker startup
+failure paths, the orchestrator requests Powers <code>safe-off</code> for every started
+Powers instance before Worker shutdown. A cleanup failure makes the run fail,
+while preserving the original workflow failure when one already exists. The
+temporary runtime authorization file is used only for the run and removed on
+a best-effort basis.</p>
+<p>An explicit Powers <code>output-off</code> Tool Action does not replace the run-level
+cleanup. Simulation does not perform this additional Live safe-off sequence.</p>
+<h2 id="9-streaming-csv">9. Streaming CSV</h2>
+<p>Streaming CSV is configured in the Workflow area's <strong>Streaming</strong> panel. It
+is different from exporting a completed run later.</p>
+<p>Streaming requires at least one Output. Choose one of these modes:</p>
+<ul>
+<li><strong>Selected Page</strong> — choose one Output Page and one CSV destination. The
+  selected Page is fixed once the run starts.</li>
+<li><strong>All Pages</strong> — choose a destination folder. Desktop creates a timestamped
+  destination directory and one CSV file for each Page.</li>
+</ul>
+<p>Streaming behavior:</p>
+<ul>
+<li>Headers are created and flushed before workflow execution.</li>
+<li>Only committed ResultRows are written.</li>
+<li>Each written row is flushed.</li>
+<li>A CSV write or flush failure stops further streaming attempts, but workflow
+  execution continues.</li>
+<li>CSV data already written from committed rows remains after workflow failure
+  or Graceful Stop.</li>
+<li>Streaming does not produce XLSX files.</li>
+<li>Streaming settings are locked while the run is active.</li>
+</ul>
+<h2 id="10-run-results">10. Run Results</h2>
+<p>After a run, the Output area can show the following visible sections:</p>
+<ul>
+<li><strong>Last Run Execution Results</strong> — execution statuses and progress results,
+  shown latest first when the result list is paged.</li>
+<li><strong>Last Run</strong> — the current run's Output Pages and result workspace.</li>
+<li><strong>Charts</strong> — chart panels for the selected Page.</li>
+<li><strong>Summary</strong> — numeric Count, Min, Max, and Avg values when applicable.</li>
+<li><strong>Output Data</strong> — committed rows for the selected Page, shown latest first.</li>
+</ul>
+<h3 id="101-last-run">10.1 Last Run</h3>
+<p>Desktop keeps one <strong>Last Run</strong> in memory. It does not provide Run History, a
+database, or SQL storage.</p>
+<p>At run start, Desktop saves a Workflow snapshot for that run. Editing the
+current Workflow afterward does not reinterpret the Last Run. Opening a
+Template clears the Last Run, and <strong>Clear Last Run</strong> removes the current
+in-memory result and snapshot.</p>
+<p>If a run did not complete successfully, committed rows remain available for
+inspection, but manual export is unavailable.</p>
+<h3 id="102-charts">10.2 Charts</h3>
+<p>Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
+Output Page and can plot numeric Outputs from that Page. Desktop supports up
+to eight chart panels across the run's Pages.</p>
+<p>Large datasets may be decimated for chart presentation. Decimation does not
+discard raw ResultRows: hover values still use the exact raw iteration and
+value. The chart X coordinate is the Page row sequence. Charts and CSV output
+are chronological, while <strong>Output Data</strong> is displayed latest first.</p>
+<p>Each chart has an individual <strong>Save image</strong> action that exports a PNG.
+Chart panel settings belong to the current Desktop session rather than the
+Template.</p>
+<h3 id="103-data-and-summary">10.3 Data and Summary</h3>
+<p><strong>Output Data</strong> is built from committed ResultRows. Large tables use
+virtualization for display, but the rows remain available for charts and
+export.</p>
+<p><strong>Summary</strong> reports Count, Min, Max, and Avg for applicable numeric Outputs.
+If a Page has no numeric Outputs, there is no numeric summary to show.</p>
+<h2 id="11-manual-export">11. Manual export</h2>
+<p>Manual export is available from the Output area after an authoritative,
+successfully completed run with exportable Output rows.</p>
+<p>Choose <strong>Run Page</strong> or <strong>All Run Pages</strong>, then choose <strong>CSV</strong> or <strong>XLSX</strong>:</p>
+<ul>
+<li><strong>Run Page / CSV</strong> — exports the selected Page as one CSV file.</li>
+<li><strong>Run Page / XLSX</strong> — exports the selected Page as one worksheet.</li>
+<li><strong>All Run Pages / CSV</strong> — creates one CSV file per Page in the selected
+  destination folder.</li>
+<li><strong>All Run Pages / XLSX</strong> — creates one workbook with one worksheet per Page.</li>
+</ul>
+<p>Exports use committed ResultRows. XLSX cells are currently written as plain
+text; exports do not add formulas, embedded charts, or native numeric cell
+types. All-Pages CSV export does not overwrite existing Page CSV files.</p>
+<p>Graceful Stop is not itself a failure or cancellation. If the workflow later
+completes under the normal success gate, its authoritative committed results
+can be exported. Failed or incomplete runs cannot be manually exported.</p>
+<h2 id="12-templates-and-local-machine-settings">12. Templates and local machine settings</h2>
+<p>When the application starts, it creates a blank <code>Untitled</code> draft. There is no
+separate <code>New</code> button in the current UI.</p>
+<ul>
+<li><strong>Open Template</strong> loads an existing Template.</li>
+<li><strong>Save Template</strong> writes the current Template.</li>
+</ul>
+<p>A Template contains:</p>
+<ul>
+<li>Template name</li>
+<li>Tool Instances</li>
+<li>Tool setup</li>
+<li>Workflow</li>
+</ul>
+<p>A Template does not contain:</p>
+<ul>
+<li>executable paths;</li>
+<li>Live Resources or last-known resource identity;</li>
+<li>Simulation/Live mode;</li>
+<li>Last Run or committed results;</li>
+<li>chart session state; or</li>
+<li>runtime Powers authorization.</li>
+</ul>
+<p>This separation keeps Templates portable while keeping executable paths,
+resources, and other machine/runtime state local to the Desktop installation.</p>
+<h2 id="13-theme">13. Theme</h2>
+<p>The <strong>Appearance</strong> control supports <strong>System</strong>, <strong>Light</strong>, and <strong>Dark</strong>. The
+theme choice is a Desktop preference. It is not part of the Template
+contract.</p>
+<h2 id="14-common-problems">14. Common problems</h2>
+<h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
+<p>In <strong>Tools</strong>, browse to the correct external executable and save the path.</p>
+<h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
+<p>The executable may have the wrong manifest Tool ID or an incompatible Worker.
+Select the executable for the intended Tool Type.</p>
+<h3 id="executable-shows-missing-or-not-a-file">Executable shows Missing or Not a file</h3>
+<p>The saved path no longer exists or does not identify a file. Browse to the
+current executable; Desktop does not silently search for a replacement.</p>
+<h3 id="live-resource-is-missing">Live Resource is missing</h3>
+<p>In <strong>Setup</strong>, select or enter the resource for the referenced Tool Instance
+and save it before running Live.</p>
+<h3 id="live-resource-changes-are-unsaved">Live Resource changes are unsaved</h3>
+<p>Use <strong>Save Resource</strong>, then start Live again so the confirmation uses the
+persisted value.</p>
+<h3 id="duplicate-live-resource">Duplicate Live Resource</h3>
+<p>Different referenced Tool Instances cannot point to the same resource in one
+Live run. Assign distinct resources.</p>
+<h3 id="simulation-rejects-unlimited-while-with-meters-measure">Simulation rejects Unlimited While with Meters Measure</h3>
+<p>Set a finite <code>max_iterations</code>, or use Live mode when that operation is
+appropriate.</p>
+<h3 id="manual-export-is-unavailable">Manual export is unavailable</h3>
+<p>Manual export requires an authoritative successfully completed run with
+exportable committed rows. A failed or incomplete run can still be inspected
+but cannot be exported.</p>
+<h3 id="streaming-csv-failed">Streaming CSV failed</h3>
+<p>A stream write or flush error stops CSV streaming but does not necessarily
+stop workflow execution. CSV data already written from committed rows remains
+available.</p>
+<h3 id="webview2-is-missing">WebView2 is missing</h3>
+<p>Install the system Microsoft Edge WebView2 Runtime, then restart the
+application.</p>
+<h2 id="15-safety-notes">15. Safety notes</h2>
+<ul>
+<li>Live mode can affect connected hardware.</li>
+<li>Verify every Live Resource before confirmation.</li>
+<li>Powers output writes require Live confirmation and runtime authorization.</li>
+<li>Run-level Powers <code>safe-off</code> is cleanup behavior; it does not replace the
+  external tool's or instrument's safety requirements.</li>
+<li>For Meters DC Current with the 10 A terminal, verify the physical lead
+  connection before confirming Live.</li>
+<li>External tools remain responsible for instrument-specific limits and safety
+  behavior.</li>
+</ul>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      document.querySelectorAll('.help-languages a').forEach(link => {
+        if (['system', 'light', 'dark'].includes(theme)) {
+          link.setAttribute('href', link.getAttribute('href') + '?theme=' + theme);
+        }
+        if (link.hreflang === document.documentElement.lang) {
+          link.setAttribute('aria-current', 'page');
+        }
+      });
+
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrator Tool Desktop 使用者指南</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <nav class="help-languages" aria-label="Language">
+      <a href="desktop.html" hreflang="en" lang="en">English</a>
+      <span aria-hidden="true"> | </span>
+      <a href="desktop.zh-TW.html" hreflang="zh-TW" lang="zh-TW">繁體中文</a>
+    </nav>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1 id="orchestrator-tool-desktop-使用者指南">Orchestrator Tool Desktop 使用者指南</h1>
+<p>本指南描述目前 Orchestrator Tool Desktop 已實作且可使用的行為，讀者是
+需要設定 external tools、建立 reusable Template、執行 Workflow，以及檢視或
+匯出結果的 operator 與 engineer。</p>
+<h2 id="1-overview">1. Overview</h2>
+<p>Orchestrator Tool Desktop 透過 reusable Template 協調獨立的 external tools。
+你可以設定 Tool Type、建立 logical Tool Instance、編排有順序的 Workflow，
+並以 Simulation 或 Live mode 執行。Run 完成後，Desktop 會顯示 committed
+Results、Output Pages、Charts 與 Data，並可匯出目前可用的結果。</p>
+<p>Desktop 是主要的 Workflow 操作介面。External tools 仍是獨立的程式與
+distribution，不包含在 orchestrator-tool 內。</p>
+<h2 id="2-requirements">2. Requirements</h2>
+<ul>
+<li>Application 以 Windows 為優先平台。</li>
+<li>Application 使用系統的 Microsoft Edge WebView2 Runtime。若 WebView2
+  不存在，Desktop 會在建立 Tauri WebView 前顯示 native warning，且不會啟動
+  application window。Application 不會自動下載或安裝 WebView2。</li>
+<li>Meters、Powers、Scopes 與 Wavegen 是獨立的 external tool distributions。
+  請分別安裝與維護，再於 Desktop 設定實際 executable path。</li>
+</ul>
+<p>本指南不假設目前存在 external tool 的 installer 或 package deployment 流程。</p>
+<h2 id="3-main-desktop-areas">3. Main Desktop areas</h2>
+<p>Desktop 目前的 tabs 是：</p>
+<ul>
+<li><strong>Tools</strong> — 設定各 Tool Type 的 executable path，檢查 availability 與
+  compatibility。</li>
+<li><strong>Setup</strong> — 建立 Tool Instance、編輯各 instance 的 setup，並在支援時
+  保存或清除 local Live Resource。</li>
+<li><strong>Workflow</strong> — 編輯有順序的 steps、驗證 Template、執行 Simulation 或
+  Live、要求 graceful Stop，以及設定 CSV streaming。</li>
+<li><strong>Output</strong> — 檢視 Last Run、execution results、Output Pages、Charts、
+  Summary、Output Data，並進行 manual export。</li>
+</ul>
+<p>Application 另有 <strong>Appearance</strong> 控制項可切換 Desktop theme，toolbar 有
+<strong>Open Template</strong> 與 <strong>Save Template</strong> 操作。</p>
+<h2 id="4-設定-external-tools">4. 設定 external Tools</h2>
+<p>Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
+個別 Tool Instance 不會各自保存一份 executable path。</p>
+<p>在 <strong>Tools</strong> 中使用 <strong>Browse...</strong>，選擇 external tool distribution 提供的
+真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
+是否符合預期 Tool Type 的 Worker compatibility。Tool ID 錯誤或 Worker 不相容
+的 path 會被拒絕，且不會取代原本有效的 path。需要移除已保存的 path 時使用
+<strong>Clear Path</strong>。</p>
+<p>狀態區會顯示 <strong>Not configured</strong>、<strong>Available</strong>、<strong>Missing</strong>、<strong>Not a file</strong>
+或 <strong>Error</strong> 等狀態，並在可用時顯示 compatibility 與原因。Desktop 不會搜尋
+<code>PATH</code>、Windows registry 或任意資料夾，也不會靜默 fallback 到其他 executable。</p>
+<p>若 external tool 以 PyInstaller <code>onedir</code> 形式發行，operator 應選擇該
+distribution 裡真正的 executable。Orchestrator Tool 不會搬移或複製 executable
+或其 <code>_internal</code> 目錄。</p>
+<h2 id="5-setup-與-tool-instances">5. Setup 與 Tool Instances</h2>
+<p>Tool Instance 是保存於 Template 中的 logical、具名稱的 instance。一個
+Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
+setup values。Tool setup 屬於 Template；machine-specific executable paths 與
+Live Resources 不屬於 Template。</p>
+<h3 id="51-meters-setup">5.1 Meters Setup</h3>
+<p>目前 Meters Tool Instance 的 Setup 提供：</p>
+<ul>
+<li>Measurement：<strong>DC Voltage</strong> 或 <strong>DC Current</strong>。</li>
+<li>Range Mode：<strong>Auto</strong> 或 <strong>Manual</strong>。</li>
+<li>Manual Range：由已設定的 meters tool capability 提供的固定選項，不是任意
+  文字值。</li>
+<li>NPLC：目前 UI 暴露的標準選項為 <code>0.02</code>、<code>0.2</code>、<code>1</code>、<code>10</code> 與 <code>100</code>。</li>
+<li>Auto Zero：<strong>On</strong>、<strong>Off</strong> 或 <strong>Once</strong>。</li>
+<li>DC Voltage 的 DCV Input Impedance：<strong>Not specified</strong>、<strong>Default</strong>、
+  <strong>10 MΩ</strong> 或 <strong>Auto</strong>。</li>
+<li>DC Current 的 Current Terminal：<strong>Not specified</strong>、<strong>3 A terminal</strong> 或
+  <strong>10 A terminal</strong>。</li>
+</ul>
+<p>UI 只會顯示符合目前 measurement 的欄位。實際 model capability 與 numeric
+limits 仍由 external meters-tool 最終驗證；Desktop 不會重新建立它的
+capability database。</p>
+<h3 id="52-live-resources">5.2 Live Resources</h3>
+<p>Live Resource 綁定到 Tool Instance，並保存於 machine-local Desktop
+configuration，不會隨 Template 攜帶。可選的 last-known identity information
+也保存在 local state 中供 UI 顯示；這些 cached identity 資訊不代表目前的
+connection state 已被即時確認。</p>
+<p>目前 Desktop 支援 <strong>Meters</strong> 與 <strong>Powers</strong> 的 resource discovery。不要把
+unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
+列出可用 resources、選擇 resource、<strong>Save Resource</strong> 或 <strong>Clear Resource</strong>。</p>
+<p>執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
+非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
+resource。Live confirmation 會顯示 referenced instances 與 resources；若
+confirmation 後 resource 改變，run 會被拒絕，必須重新確認。</p>
+<p>若 DC Current 使用 <strong>10 A terminal</strong>，Live confirmation 也會要求確認實體
+導線確實接在 10 A terminal。</p>
+<h2 id="6-workflow-editor">6. Workflow Editor</h2>
+<p>Workflow editor 用來建立有順序的 steps。目前的 step types 是：</p>
+<ul>
+<li><strong>Assert</strong> — 檢查 condition，不成立時使 Workflow failure。</li>
+<li><strong>Set Variable</strong> — 建立或更新 Workflow variable。</li>
+<li><strong>Output</strong> — 將值發布為 final workflow result column，不控制 Powers output。</li>
+<li><strong>Wait</strong> — 等待指定時間。</li>
+<li><strong>Tool Action</strong> — 對設定好的 Tool Instance 執行 action，例如 Powers set、
+  output action 或 Meters measurement。</li>
+<li><strong>For</strong> — 依 exact decimal range 重複執行 body。</li>
+<li><strong>While</strong> — 在 condition 為 true 時重複執行 body。</li>
+</ul>
+<p>Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
+step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
+啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。</p>
+<h3 id="61-input-values-與-data-flow">6.1 Input values 與 data flow</h3>
+<p>Editor 目前的 InputValue 選項是：</p>
+<ul>
+<li><strong>Fixed value</strong> — literal value。</li>
+<li><strong>Variable</strong> — Workflow variable 的目前值。</li>
+<li><strong>Previous step result</strong> — 較早且可見的 step result。目前 UI 會提供先前
+  Tool Actions 的 results。</li>
+<li><strong>Calculation</strong> — 一個左 operand、一個 operator 與一個右 operand。</li>
+<li><strong>Elapsed time</strong> — runtime elapsed-time value。</li>
+<li><strong>Timestamp</strong> — runtime timestamp value。</li>
+</ul>
+<p>Set Variable 會建立或更新 variables。Previous step result 只能引用目前 lexical
+scope 中較早且可見的 step。Calculation 使用目前支援的 arithmetic 與
+comparison operators，包括加、減、乘、除，以及 UI 顯示的 greater-than / less-
+than comparisons。Calculation 不是任意 nested expression tree。</p>
+<p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
+result column。</p>
+<h3 id="62-for">6.2 For</h3>
+<p>For step 具有 <strong>Start</strong>、<strong>Stop</strong>、<strong>Step</strong>、loop variable 與 body。</p>
+<ul>
+<li>當 step grid 能到達 Stop 時，Stop 會包含在執行範圍內。</li>
+<li>Positive 或 negative direction 必須與 Start、Stop 的方向一致。</li>
+<li>Zero Step 無效。</li>
+<li>Start 與 Stop 相等時執行一次。</li>
+<li>Loop nesting 最多 5 層。</li>
+</ul>
+<p>For ranges 使用 exact decimal range semantics，而不是 floating-point tolerance。
+Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了湊整而額外執行一次。</p>
+<h3 id="63-while">6.3 While</h3>
+<p>While condition 會在每次 iteration 前判斷。Iteration limit 可以是：</p>
+<ul>
+<li>正的 finite <code>max_iterations</code>；或</li>
+<li><strong>Unlimited</strong>，表示不設定 finite iteration limit。</li>
+</ul>
+<p>若 condition 一開始就是 false，body 執行 0 次。Unlimited While 目前只允許
+在 top-level，body 不可為空，可以包含 finite nested loops，但不可再包含另一個
+Unlimited While。</p>
+<p>Simulation 目前不允許 Meters <strong>Measure</strong> 位於 Unlimited While 內，因為無法建立
+finite sample bound。對該 Simulation workflow 設定 finite <code>max_iterations</code>，
+或在適合的情況下使用 Live。Live 的 Meters Measure 可以位於 Unlimited While
+內，且不會設定 finite <code>max-samples</code> limit。</p>
+<h3 id="64-graceful-stop">6.4 Graceful Stop</h3>
+<p>Run 進行中，operator 可選擇要停止的 loop，再按 Stop。這是 graceful loop stop，
+不是立即終止目前 step：</p>
+<ol>
+<li>Active innermost iteration 會執行到 successful commit point。</li>
+<li>之後 unwind 指定的 loop。</li>
+<li>Parent loop 或 root workflow 可以在 unwind 後繼續執行。</li>
+</ol>
+<p>若目前 iteration failure，failure 優先於 Stop request。Stop 不是 Pause、Resume
+或 Hard Cancel，也不會單獨把整個 run 自動標成 cancelled。最終 run status 仍依
+一般 Workflow success rules 決定。</p>
+<h3 id="65-output-pages">6.5 Output Pages</h3>
+<p>Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的 columns；
+不同 Pages 是獨立 datasets，nested loop 也可以擁有自己的 Page。</p>
+<p>每個 Page 綁定一個固定的 owning lexical loop path。不同 lexical loop paths 不可
+共用同名 Page。Page name 同時要符合 CSV filename stem 與 Excel worksheet name
+限制，因此兩種 export format 會套用相同的命名限制。</p>
+<h2 id="7-run-simulation">7. Run Simulation</h2>
+<p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
+manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
+使用 Validate；run 啟動時也會驗證 Template。</p>
+<p>Simulation 不需要 Live Resources，會使用 external Workers 的 simulate mode，
+不應操作實體 hardware。前述 Unlimited While 加上 Meters Measure 的限制仍然
+適用。</p>
+<h2 id="8-run-live">8. Run Live</h2>
+<p>開始 Live 前，Desktop 會：</p>
+<ul>
+<li>確認 referenced Tool Instances；</li>
+<li>取得已保存的 Live Resources；</li>
+<li>拒絕尚未保存的 Live Resource draft changes；</li>
+<li>顯示列出每個 referenced instance 與 resource 的 Live confirmation；</li>
+<li>提醒 Live mode 可能改變 Powers outputs；以及</li>
+<li>對適用的 Meters setup 額外顯示 10 A terminal warning。</li>
+</ul>
+<p>請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 resource
+仍與確認時完全相同。Resource 改變或重複使用會使 Live execution 被拒絕，並要求
+重新確認。</p>
+<p>目前支援 Live 的 external tools 是 Powers 與 Meters。Unsupported Tool Type 會
+直接回報 error；目前 Desktop 不保證 Scopes 或 Wavegen 的 runtime execution。</p>
+<h3 id="81-powers-actions-與-cleanup">8.1 Powers actions 與 cleanup</h3>
+<p>Powers Live actions 包括設定值，以及 <code>output-on</code> 與 <code>output-off</code> actions。Live
+Powers write authorization 只存在於該次 Live run 的 runtime。</p>
+<p>Run 結束時，以及 Workflow failure 或後續 Worker startup failure path，orchestrator
+會在 Worker shutdown 前對每個已啟動的 Powers instance 要求 <code>safe-off</code>。Cleanup
+failure 會使 run failure；若原本已有 Workflow failure，仍保留原始 failure。Temporary
+runtime authorization file 只用於該次 run，並會 best-effort remove。</p>
+<p>明確的 Powers <code>output-off</code> Tool Action 不會取代 run-level cleanup。Simulation 不會
+執行這個額外的 Live safe-off sequence。</p>
+<h2 id="9-streaming-csv">9. Streaming CSV</h2>
+<p>Streaming CSV 在 Workflow 區域的 <strong>Streaming</strong> panel 設定，和 run 完成後再做的
+manual export 不同。</p>
+<p>Streaming 至少需要一個 Output。可選擇：</p>
+<ul>
+<li><strong>Selected Page</strong> — 選一個 Output Page 與一個 CSV destination。Run 開始後
+  Selected Page 會固定。</li>
+<li><strong>All Pages</strong> — 選一個 destination folder。Desktop 會建立 timestamped
+  destination directory，並為每個 Page 建立一份 CSV。</li>
+</ul>
+<p>Streaming behavior：</p>
+<ul>
+<li>Workflow execution 前建立並 flush header。</li>
+<li>只有 committed ResultRows 會寫入。</li>
+<li>每筆寫入的 row 都會 flush。</li>
+<li>CSV write 或 flush failure 會停止後續 streaming attempts，但 Workflow execution
+  會繼續。</li>
+<li>Workflow failure 或 Graceful Stop 後，已寫入的 committed CSV data 不會被刪除。</li>
+<li>Streaming 不產生 XLSX。</li>
+<li>Run 進行中會鎖定 streaming settings。</li>
+</ul>
+<h2 id="10-run-results">10. Run Results</h2>
+<p>Run 後，Output 區域目前可顯示以下 visible sections：</p>
+<ul>
+<li><strong>Last Run Execution Results</strong> — execution statuses 與 progress results；大量
+  execution results 以 latest first 顯示並可分頁瀏覽。</li>
+<li><strong>Last Run</strong> — 目前 run 的 Output Pages 與 result workspace。</li>
+<li><strong>Charts</strong> — 所選 Page 的 chart panels。</li>
+<li><strong>Summary</strong> — 適用時顯示 numeric Count、Min、Max 與 Avg。</li>
+<li><strong>Output Data</strong> — 所選 Page 的 committed rows，以 latest first 顯示。</li>
+</ul>
+<h3 id="101-last-run">10.1 Last Run</h3>
+<p>Desktop 只在 memory 中保留一個 <strong>Last Run</strong>，沒有 Run History、database 或 SQL
+storage。</p>
+<p>Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
+不會重新解讀 Last Run。Open Template 會清除 Last Run；<strong>Clear Last Run</strong>
+會移除目前 memory 中的 result 與 snapshot。</p>
+<p>若 run 沒有成功完成，committed rows 仍可供檢查，但不能 manual export。</p>
+<h3 id="102-charts">10.2 Charts</h3>
+<p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
+可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
+panels。</p>
+<p>大型 dataset 可能為了 chart presentation 而 decimate。Decimation 不會丟棄 raw
+ResultRows；hover 仍使用 exact raw iteration 與 value。Chart X coordinate 是
+Page row sequence。Chart 與 CSV 按 chronological 順序，<strong>Output Data</strong> 則以
+latest first 顯示。</p>
+<p>每個 chart 都有個別的 <strong>Save image</strong> 操作，可匯出 PNG。Chart panel settings
+屬於目前的 Desktop session，不屬於 Template。</p>
+<h3 id="103-data-與-summary">10.3 Data 與 Summary</h3>
+<p><strong>Output Data</strong> 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
+但 rows 仍保留，可供 charts 與 export 使用。</p>
+<p><strong>Summary</strong> 對適用的 numeric Outputs 提供 Count、Min、Max 與 Avg。若 Page 沒有
+numeric Outputs，則不會顯示 numeric summary。</p>
+<h2 id="11-manual-export">11. Manual export</h2>
+<p>Manual export 只在有 authoritative、successfully completed run 且存在可匯出的
+Output rows 時提供。</p>
+<p>選擇 <strong>Run Page</strong> 或 <strong>All Run Pages</strong>，再選 <strong>CSV</strong> 或 <strong>XLSX</strong>：</p>
+<ul>
+<li><strong>Run Page / CSV</strong> — 將選取的 Page 匯出為一份 CSV。</li>
+<li><strong>Run Page / XLSX</strong> — 將選取的 Page 匯出為一個 worksheet。</li>
+<li><strong>All Run Pages / CSV</strong> — 在指定 destination folder 中為每個 Page 建立一份 CSV。</li>
+<li><strong>All Run Pages / XLSX</strong> — 建立一個 workbook，每個 Page 一個 worksheet。</li>
+</ul>
+<p>Export 使用 committed ResultRows。XLSX cells 目前以 plain text 寫出，不會加入
+formulas、embedded charts 或 native numeric cell types。All-Pages CSV export 不會
+覆寫既有 Page CSV files。</p>
+<p>Graceful Stop 本身不是 failure 或 cancellation。若 Workflow 之後依一般 success
+gate 正常完成，其 authoritative committed results 仍可匯出；failed 或 incomplete
+run 不能 manual export。</p>
+<h2 id="12-templates-與-local-machine-settings">12. Templates 與 local machine settings</h2>
+<p>Application 啟動時會建立 blank <code>Untitled</code> draft。目前 UI 沒有獨立的 <code>New</code> button。</p>
+<ul>
+<li><strong>Open Template</strong> 載入既有 Template。</li>
+<li><strong>Save Template</strong> 保存目前 Template。</li>
+</ul>
+<p>Template 會保存：</p>
+<ul>
+<li>Template name</li>
+<li>Tool Instances</li>
+<li>Tool setup</li>
+<li>Workflow</li>
+</ul>
+<p>Template 不會保存：</p>
+<ul>
+<li>executable paths；</li>
+<li>Live Resources 或 last-known resource identity；</li>
+<li>Simulation/Live mode；</li>
+<li>Last Run 或 committed results；</li>
+<li>chart session state；或</li>
+<li>runtime Powers authorization。</li>
+</ul>
+<p>這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他
+machine/runtime state 保留在 Desktop local configuration。</p>
+<h2 id="13-theme">13. Theme</h2>
+<p><strong>Appearance</strong> 支援 <strong>System</strong>、<strong>Light</strong> 與 <strong>Dark</strong>。Theme choice 是 Desktop
+preference，不屬於 Template contract。</p>
+<h2 id="14-common-problems">14. Common problems</h2>
+<h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
+<p>在 <strong>Tools</strong> 中瀏覽到正確的 external executable，並保存 path。</p>
+<h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
+<p>Executable 可能有錯誤的 manifest Tool ID，或 Worker 不相容。請選擇符合預期
+Tool Type 的 executable。</p>
+<h3 id="executable-shows-missing-or-not-a-file">Executable shows Missing or Not a file</h3>
+<p>已保存的 path 不存在，或不是一個 file。請瀏覽到目前的 executable；Desktop 不會
+靜默搜尋替代檔案。</p>
+<h3 id="live-resource-is-missing">Live Resource is missing</h3>
+<p>在 <strong>Setup</strong> 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
+保存。</p>
+<h3 id="live-resource-changes-are-unsaved">Live Resource changes are unsaved</h3>
+<p>使用 <strong>Save Resource</strong>，再重新開始 Live，讓 confirmation 使用已保存的 value。</p>
+<h3 id="duplicate-live-resource">Duplicate Live Resource</h3>
+<p>同一次 Live run 中，不同 referenced Tool Instances 不可指向相同 resource。請
+指定不同 resources。</p>
+<h3 id="simulation-rejects-unlimited-while-with-meters-measure">Simulation rejects Unlimited While with Meters Measure</h3>
+<p>設定 finite <code>max_iterations</code>，或在適合的情況下改用 Live mode。</p>
+<h3 id="manual-export-is-unavailable">Manual export is unavailable</h3>
+<p>Manual export 需要 authoritative successfully completed run 與可匯出的 committed
+rows。Failed 或 incomplete run 仍可檢查，但不能 export。</p>
+<h3 id="streaming-csv-failed">Streaming CSV failed</h3>
+<p>Stream write 或 flush error 會停止 CSV streaming，但不一定停止 Workflow execution。
+已由 committed rows 寫出的 CSV data 會保留。</p>
+<h3 id="webview2-is-missing">WebView2 is missing</h3>
+<p>安裝系統的 Microsoft Edge WebView2 Runtime，然後重新啟動 application。</p>
+<h2 id="15-safety-notes">15. Safety notes</h2>
+<ul>
+<li>Live mode 可能影響連接中的 hardware。</li>
+<li>在 confirmation 前確認每個 Live Resource。</li>
+<li>Powers output writes 需要 Live confirmation 與 runtime authorization。</li>
+<li>Run-level Powers <code>safe-off</code> 是 cleanup behavior，不取代 external tool 或 instrument
+  的 safety requirements。</li>
+<li>Meters DC Current 使用 10 A terminal 時，確認 physical lead connection 後再
+  確認 Live。</li>
+<li>External tools 仍負責 instrument-specific limits 與 safety behavior。</li>
+</ul>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      document.querySelectorAll('.help-languages a').forEach(link => {
+        if (['system', 'light', 'dark'].includes(theme)) {
+          link.setAttribute('href', link.getAttribute('href') + '?theme=' + theme);
+        }
+        if (link.hreflang === document.documentElement.lang) {
+          link.setAttribute('aria-current', 'page');
+        }
+      });
+
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>
