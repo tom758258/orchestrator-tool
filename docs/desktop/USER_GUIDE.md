@@ -46,7 +46,8 @@ The Desktop tabs are:
   Summary, Output Data, and manual exports.
 
 The application also has an **Appearance** control for the Desktop theme and
-toolbar actions for **Open Template** and **Save Template**.
+toolbar actions for **Open Template**, **Save Template**, and **Help**. Help
+opens the bundled offline Desktop User Guide in a separate application window.
 
 ## 4. Configure external Tools
 

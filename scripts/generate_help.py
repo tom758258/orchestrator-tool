@@ -20,6 +20,7 @@ SOURCES = (
 )
 FILES = ("desktop.html", "desktop.zh-TW.html", "help.css")
 TOKENS = ("{{lang}}", "{{title}}", "{{content}}")
+HTML_WARNING = "<!-- Generated file. Do not edit directly. -->"
 
 
 class HelpLinks(HTMLParser):
@@ -52,6 +53,7 @@ def render(source, lang, template):
     ])
     values = dict(zip(TOKENS, (html.escape(lang), html.escape(title[1]), content)))
     result = re.sub(r"\{\{\w+\}\}", lambda match: values.get(match[0], match[0]), template)
+    result = result.replace("<!DOCTYPE html>\n", f"<!DOCTYPE html>\n{HTML_WARNING}\n", 1)
     if re.search(r"\{\{\w+\}\}", result):
         raise ValueError("Unexpanded template placeholder in Help output")
     links = HelpLinks()

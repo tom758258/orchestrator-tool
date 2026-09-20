@@ -111,8 +111,10 @@ durable details to focused documentation:
 Keep English engineering documents as the canonical focused source unless a
 translation is explicitly requested. Keep tracked documentation durable:
 omit temporary review notes, run-specific evidence, local paths, private
-hardware identifiers, and transient validation output. Future generated Help
-HTML must come from maintained documentation and must not be hand-edited.
+hardware identifiers, and transient validation output. Generated Help must
+come from maintained canonical sources. Do not edit the generated runtime
+bundle by hand; regenerate it after changing Help content, template, or CSS,
+and keep the tracked bundle synchronized with those sources.
 
 Update the relevant README or focused document when a public architecture or
 contract changes. Do not create placeholder documents, empty documentation
@@ -131,5 +133,5 @@ categories, or a documentation framework for a single change.
 - [ ] README links and terminology remain consistent in English and
       Traditional Chinese entry points.
 - [ ] The diff contains no transient validation evidence, private resource
-      identifiers, generated Help output, or unrelated refactor.
+      identifiers, hand-edited generated Help output, or unrelated refactor.
 - [ ] The PR summary states what was tested and what was not run.

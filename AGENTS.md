@@ -59,4 +59,4 @@ These instructions define long-term, repository-specific boundaries for agents w
 - Keep the root README as the project overview and entry point, not a complete specification dump.
 - Keep USER_GUIDE content operator-facing. Put build, validation, maintainer, architecture, and contract details in the README or focused documentation.
 - Keep tracked documentation durable; do not add transient review notes, temporary validation results, or run-specific evidence.
-- Future generated Help HTML must not be edited by hand. Keep maintained documentation as its canonical source; do not add a Help generator unless explicitly requested.
+- Generated Help runtime files must not be edited by hand. Canonical Help content and presentation sources live under `docs/`; use `scripts/generate_help.py` after changing them and keep the tracked generated bundle synchronized. Do not expand the Help architecture or scope without a concrete requirement.

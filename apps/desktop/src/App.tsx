@@ -1164,7 +1164,7 @@ function App() {
         </div>
       </header>
 
-      <div className="template-toolbar" aria-label="Template actions">
+      <div className="template-toolbar" aria-label="Application actions">
         <button
           className="action-button"
           type="button"

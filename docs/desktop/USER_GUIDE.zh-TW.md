@@ -38,8 +38,9 @@ Desktop 目前的 tabs 是：
 - **Output** — 檢視 Last Run、execution results、Output Pages、Charts、
   Summary、Output Data，並進行 manual export。
 
-Application 另有 **Appearance** 控制項可切換 Desktop theme，toolbar 有
-**Open Template** 與 **Save Template** 操作。
+Application 另有 **Appearance** 控制項可切換 Desktop theme，toolbar 提供
+**Open Template**、**Save Template** 與 **Help**。Help 會在獨立的 application
+window 開啟 bundled offline Desktop User Guide。
 
 ## 4. 設定 external Tools
 
