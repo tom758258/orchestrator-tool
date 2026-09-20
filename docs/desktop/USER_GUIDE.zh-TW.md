@@ -89,15 +89,16 @@ capability database。
 ### 5.2 Live Resources
 
 Live Resource 綁定到 Tool Instance，並保存於 machine-local Desktop
-configuration，不會隨 Template 攜帶。可選的 discovered identity information
-也屬於 local state，只供 UI 顯示；resource discovery 不是 connection check。
+configuration，不會隨 Template 攜帶。可選的 last-known identity information
+也保存在 local state 中供 UI 顯示；這些 cached identity 資訊不代表目前的
+connection state 已被即時確認。
 
 目前 Desktop 支援 **Meters** 與 **Powers** 的 resource discovery。不要把
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
 列出可用 resources、選擇 resource、**Save Resource** 或 **Clear Resource**。
 
-執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有有效且已
-保存的 resource。同一次 run 中，不同 referenced instances 不可使用相同
+執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
+非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
 resource。Live confirmation 會顯示 referenced instances 與 resources；若
 confirmation 後 resource 改變，run 會被拒絕，必須重新確認。
 
@@ -118,7 +119,8 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **While** — 在 condition 為 true 時重複執行 body。
 
 Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
-step，並在執行前驗證 Template。
+step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
+啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
 ### 6.1 Input values 與 data flow
 
@@ -193,11 +195,9 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 
 ## 7. Run Simulation
 
-執行 Simulation 前：
-
-1. 驗證 Template。
-2. 為每個 referenced external executable 完成設定，並確認 manifest 與 Worker
-   compatibility checks 通過。
+執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
+manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
+使用 Validate；run 啟動時也會驗證 Template。
 
 Simulation 不需要 Live Resources，會使用 external Workers 的 simulate mode，
 不應操作實體 hardware。前述 Unlimited While 加上 Meters Measure 的限制仍然

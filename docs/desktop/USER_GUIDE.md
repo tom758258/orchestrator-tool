@@ -101,17 +101,17 @@ limits. Desktop does not replace its capability database.
 ### 5.2 Live Resources
 
 A Live Resource is bound to a Tool Instance and is stored in the machine-local
-Desktop configuration. It is not carried in a Template. Optional discovered
-identity information is also local state and is used for display; resource
-discovery is not a connection check.
+Desktop configuration. It is not carried in a Template. Optional last-known
+identity information is also stored locally for display; that cached identity
+is not a current connection check.
 
 The current Desktop supports resource discovery for **Meters** and **Powers**.
 Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, **Save Resource**, or
 **Clear Resource**.
 
-Before a Live run, every referenced supported Tool Instance must have a valid
-saved resource. Two referenced instances may not use the same resource in one
+Before a Live run, every referenced supported Tool Instance must have a
+non-empty saved resource. Two referenced instances may not use the same resource in one
 run. Live confirmation displays the referenced instances and resources. If a
 resource changes after confirmation, the run is rejected and must be
 confirmed again.
@@ -136,8 +136,10 @@ types are:
 - **While** — repeat a body while a condition remains true.
 
 Steps can be placed in the root workflow or inside loop bodies. Use the step
-properties area to edit the selected step, and validate the Template before
-running it.
+properties area to edit the selected step. Use Validate when you want to
+check the current Template before running; Simulation and Live also validate
+the Template when the run starts, so pressing Validate first is useful but is
+not a separate run prerequisite.
 
 ### 6.1 Input values and data flow
 
@@ -222,11 +224,10 @@ restrictions apply to both export formats.
 
 ## 7. Run Simulation
 
-Before Simulation:
-
-1. Validate the Template.
-2. Configure every referenced external executable and ensure its manifest and
-   Worker compatibility checks succeed.
+Before Simulation, configure every referenced external executable and ensure
+its manifest and Worker compatibility checks can succeed. You can use
+Validate first for an explicit Template check; the run also validates the
+Template when it starts.
 
 Simulation does not require Live Resources. It uses the external Workers'
 simulate mode and is not intended to operate physical hardware. The
@@ -328,7 +329,7 @@ discard raw ResultRows: hover values still use the exact raw iteration and
 value. The chart X coordinate is the Page row sequence. Charts and CSV output
 are chronological, while **Output Data** is displayed latest first.
 
-Each chart has an individual **Save image** action that exports a PNG. There
+Each chart has an individual **Save image** action that exports a PNG.
 Chart panel settings belong to the current Desktop session rather than the
 Template.
 
