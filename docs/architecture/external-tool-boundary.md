@@ -131,7 +131,7 @@ behavior; the orchestrator guarantees the run-level cleanup sequence:
 2. Every started Powers instance receives a bounded safe-off request before
    its Worker is shut down, including after workflow failure or a later Worker
    startup failure.
-3. An explicit Workflow Output OFF step does not replace the run-level
+3. An explicit Powers `output-off` Tool Action does not replace the run-level
    cleanup.
 4. Cleanup is best-effort and its failure makes the run fail while preserving
    the original workflow failure when one exists. Worker shutdown is still

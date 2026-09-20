@@ -109,6 +109,7 @@ interface and does not require a CLI USER_GUIDE in this phase.
 
 ## Documentation
 
+- [Desktop User Guide](docs/desktop/USER_GUIDE.md)
 - [Architecture Overview](docs/architecture/overview.md)
 - [External Tool Boundary](docs/architecture/external-tool-boundary.md)
 - [Template Schema v1](docs/contracts/template-schema-v1.md)

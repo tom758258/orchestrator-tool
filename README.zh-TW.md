@@ -108,6 +108,7 @@ simulate-mode Worker checks。CLI 不取代 Desktop Workflow interface；本階�
 
 ## Documentation
 
+- [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)
 - [Architecture Overview](docs/architecture/overview.md)
 - [External Tool Boundary](docs/architecture/external-tool-boundary.md)
 - [Template Schema v1](docs/contracts/template-schema-v1.md)
