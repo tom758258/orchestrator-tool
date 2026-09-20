@@ -460,11 +460,3 @@ application.
   connection before confirming Live.
 - External tools remain responsible for instrument-specific limits and safety
   behavior.
-
-## 16. Related engineering documentation
-
-For implementation and contract details, see:
-
-- [Architecture Overview](../architecture/overview.md)
-- [External Tool Boundary](../architecture/external-tool-boundary.md)
-- [Template Schema v1](../contracts/template-schema-v1.md)

@@ -410,11 +410,3 @@ Stream write 或 flush error 會停止 CSV streaming，但不一定停止 Workfl
 - Meters DC Current 使用 10 A terminal 時，確認 physical lead connection 後再
   確認 Live。
 - External tools 仍負責 instrument-specific limits 與 safety behavior。
-
-## 16. Related engineering documentation
-
-需要 implementation 與 contract 詳情時，請參閱：
-
-- [Architecture Overview](../architecture/overview.md)
-- [External Tool Boundary](../architecture/external-tool-boundary.md)
-- [Template Schema v1](../contracts/template-schema-v1.md)
