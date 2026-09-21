@@ -25,7 +25,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const [width, setWidth] = useState(0)
   const [themeRevision, setThemeRevision] = useState(0)
   const rawSeries = useMemo(() => panel.outputs.map(name => ({ name, values: data.getSeries(name) })),
-    [data, panel.outputs])
+    [data, data.version, panel.outputs])
   const display = useMemo(() => rawSeries.map(series => ({
     name: series.name,
     data: minMaxDecimate(data.iteration, series.values, Math.max(1, width - GRID.left - GRID.right)),
