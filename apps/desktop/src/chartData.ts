@@ -1,5 +1,3 @@
-import type { ResultRowDto } from './workflow'
-
 type NumericBuffer = { values: Float64Array; length: number }
 
 function appendBuffer(buffer: NumericBuffer | undefined, tail: readonly number[]): NumericBuffer {
