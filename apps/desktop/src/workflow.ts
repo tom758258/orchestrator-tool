@@ -67,6 +67,7 @@ export type StepExecutionDto = {
   message: string | null
   for_iteration: ForIterationDto | null
   while_iteration: WhileIterationDto | null
+  output_omitted: boolean
 }
 export type ResultRowDto = {
   page: string
@@ -74,15 +75,38 @@ export type ResultRowDto = {
   for_iteration: ForIterationDto | null
   while_iteration: WhileIterationDto | null
 }
-export type WorkflowRunResultDto = {
-  step_executions: StepExecutionDto[]
-  result_rows: ResultRowDto[]
+export type NumericSummary = { name: string; count: number; min: number; max: number; avg: number }
+export type RunPageMetadata = {
+  name: string
+  output_names: string[]
+  row_count: number
+  revision: number
+  iteration_rows: boolean
+  numeric_outputs: string[]
+  summaries: NumericSummary[]
+}
+export type StepSummaryDto = Pick<StepExecutionDto, 'step_id' | 'status' | 'output' | 'output_omitted' | 'message'> & {
+  has_occurrence: boolean
+  any_failed: boolean
+  all_succeeded: boolean
+  any_cancelled: boolean
+}
+export type RunMetadataDto = {
+  run_id: number
+  status: 'running' | 'succeeded' | 'failed'
+  error: string | null
+  manual_exportable: boolean
+  execution_count: number
+  execution_revision: number
+  latest_execution: StepExecutionDto | null
+  pages: RunPageMetadata[]
+  step_summaries: StepSummaryDto[]
 }
 
 export type WorkflowRunEventDto = {
   type: 'progress-batch'
-  step_executions: StepExecutionDto[]
-  result_rows: ResultRowDto[]
+  run: RunMetadataDto
+  completed_step_ids: string[]
 }
 
 export function allWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
@@ -162,24 +186,18 @@ export function compatibleOutputPages(steps: readonly WorkflowStep[], outputId: 
     .map(page => page.name)
 }
 
-export function hasExportableRows(
-  rows: readonly ResultRowDto[],
-  currentPage: string | undefined,
-  allPages: boolean,
-): boolean {
-  return allPages
-    ? rows.length > 0
-    : currentPage !== undefined && rows.some(row => row.page === currentPage)
-}
-
 export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] {
   return allWorkflowSteps(steps).filter((step): step is OutputStep => step.type === 'output')
 }
 
-export function successfulRun(steps: readonly WorkflowStep[], result: WorkflowRunResultDto | null): boolean {
+export function hasExportableRows(rows: readonly ResultRowDto[], currentPage: string | undefined, allPages: boolean): boolean {
+  return allPages ? rows.length > 0 : currentPage !== undefined && rows.some(row => row.page === currentPage)
+}
+
+export function successfulRun(steps: readonly WorkflowStep[], result: { step_executions: StepExecutionDto[] } | null): boolean {
   return result !== null && result.step_executions.every(execution => execution.status === 'succeeded')
-    && steps.every(step => result.step_executions.some(execution =>
-      execution.for_iteration === null && execution.while_iteration === null && execution.step_id === step.id))
+    && steps.every(step => result.step_executions.some(execution => execution.for_iteration === null
+      && execution.while_iteration === null && execution.step_id === step.id))
 }
 
 export function occurrenceKey(execution: StepExecutionDto): string {

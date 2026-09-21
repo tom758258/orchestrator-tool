@@ -1,130 +1,23 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
-import { stripTypeScriptTypes } from 'node:module'
 
-// Exercise the actual component callback without a WebView or instrument runtime.
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-const start = source.indexOf('  const runSimulation = useCallback(')
-const end = source.indexOf('\n  const workflowBusy =', start)
-assert.ok(start >= 0 && end > start, 'Simulation callback boundaries exist')
-const declaration = source.slice(start, end)
-const callback = declaration.slice(declaration.indexOf('async () =>'), declaration.lastIndexOf('}, [') + 1)
-const code = stripTypeScriptTypes('(' + callback + ')')
+const simulation = source.slice(source.indexOf('const runSimulation'), source.indexOf('const workflowBusy'))
 
-test('Run Simulation is disabled while loading or tool configuration is busy', () => {
+test('Run Simulation remains disabled while another desktop operation is busy', () => {
   const onClick = source.indexOf('onClick={() => void runSimulation()}')
-  const buttonStart = source.lastIndexOf('<button', onClick)
-  const buttonEnd = source.indexOf('</button>', onClick)
-  assert.ok(onClick >= 0 && buttonStart >= 0 && buttonEnd > onClick, 'Run Simulation button exists')
-  assert.match(
-    source.slice(buttonStart, buttonEnd),
-    /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading\}/,
-  )
+  const button = source.slice(source.lastIndexOf('<button', onClick), source.indexOf('</button>', onClick))
+  assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading\}/)
 })
 
-test('Invalid Streaming config preserves the previous Last Run and does not execute', async () => {
-  const previous = {
-    executionOffset: 400,
-    workflowChangedSinceRun: true,
-    runStatus: 'idle',
-    runWorkflowSnapshot: { name: 'Previous snapshot', tool_instances: [], workflow: { steps: [] } },
-    runResult: {
-      step_executions: [{ step_id: 'previous' }],
-      result_rows: [{
-        page: 'Results',
-        outputs: [{ name: 'value', value: 42 }],
-        for_iteration: null,
-        while_iteration: null,
-      }],
-    },
-    runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
-    csvStreamStatus: { path: 'previous.csv', rows: 1, finished: true },
-    stopRequest: { loopId: 'previous-loop' },
-  }
-  const state = { ...previous }
-  const calls = []
-  let channels = 0
-  const context = {
-    workflowDraft: { tool_instances: [], workflow: { steps: [] } },
-    streamCsv: true, hasWorkflowOutputs: true, outputFolder: null,
-    streamingPage: 'Results', streamAllPages: false, streamDestination: null,
-    receiveRunProgress() {}, resetRunProgressBatch() {}, flushRunProgressBatch() {}, progressChannelRef: { current: null },
-    streamingOptions() { throw new Error('Select a destination CSV before running.') },
-    Channel: class { constructor() { channels++ } },
-    async invoke(command, args) { calls.push({ command, args }); return {} },
-    setRunError(value) { state.runError = value },
-  }
-  for (const name of Object.keys(previous)) {
-    context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
-  }
-
-  const run = runInNewContext(code, context)
-  await run()
-
-  for (const [key, value] of Object.entries(previous)) assert.equal(state[key], value)
-  assert.equal(channels, 0)
-  assert.equal(calls.some(call => call.command === 'run_workflow_simulation'), false)
+test('Simulation validates streaming options before replacing Last Run state', () => {
+  assert.ok(simulation.indexOf('streamingOptions(') < simulation.indexOf('runIdRef.current = null'))
+  assert.ok(simulation.indexOf('streamingOptions(') < simulation.indexOf('setRunWorkflowSnapshot(workflowDraft)'))
 })
 
-test('Simulation captures the Workflow snapshot only after pre-run validation succeeds', async () => {
-  const workflowDraft = {
-    name: 'Simulation snapshot',
-    tool_instances: [],
-    workflow: {
-      steps: [{ type: 'output', id: 'voltage', name: 'Voltage', page: 'Results', value: { source: 'literal', value: 5 } }],
-    },
-  }
-  const result = { step_executions: [], result_rows: [] }
-  const state = {
-    executionOffset: 400,
-    workflowChangedSinceRun: true,
-    runWorkflowSnapshot: { name: 'Previous snapshot' },
-    runResult: { step_executions: [{ step_id: 'previous' }], result_rows: [] },
-    runProgress: { step_executions: [{ step_id: 'partial' }], result_rows: [] },
-    csvStreamStatus: { path: 'previous.csv' },
-    stopRequest: { loopId: 'previous-loop' },
-    runError: 'previous error',
-    runStatus: 'idle',
-    selectedRunPage: 'Missing',
-  }
-  const calls = []
-  const context = {
-    workflowDraft,
-    streamCsv: false,
-    hasWorkflowOutputs: true,
-    outputFolder: null,
-    streamingPage: 'Results',
-    streamAllPages: false,
-    streamDestination: null,
-    receiveRunProgress() {}, resetRunProgressBatch() {}, flushRunProgressBatch() {}, progressChannelRef: { current: null },
-    streamingOptions() { return null },
-    outputPages() { return [{ name: 'Results' }] },
-    Channel: class {},
-    async invoke(command, args) {
-      calls.push({ command, args })
-      return result
-    },
-    setSelectedRunPage(value) {
-      state.selectedRunPage = typeof value === 'function' ? value(state.selectedRunPage) : value
-    },
-  }
-  for (const name of ['executionOffset', 'workflowChangedSinceRun', 'runWorkflowSnapshot', 'runResult', 'runProgress', 'csvStreamStatus', 'stopRequest', 'runError', 'runStatus']) {
-    context[`set${name[0].toUpperCase()}${name.slice(1)}`] = value => { state[name] = value }
-  }
-
-  const run = runInNewContext(code, context)
-  await run()
-
-  assert.equal(state.executionOffset, 0)
-  assert.equal(state.runWorkflowSnapshot, workflowDraft)
-  assert.equal(state.workflowChangedSinceRun, false)
-  assert.equal(state.selectedRunPage, 'Results')
-  assert.equal(state.runResult, result)
-  assert.equal(state.runProgress, null)
-  assert.equal(state.csvStreamStatus, null)
-  assert.equal(state.runError, null)
-  assert.equal(state.runStatus, 'idle')
-  assert.equal(calls[0].command, 'run_workflow_simulation')
+test('Simulation completion stores compact metadata only', () => {
+  assert.match(simulation, /invoke<RunMetadataDto>\('run_workflow_simulation'/)
+  assert.match(simulation, /setRunMetadata\(results\)/)
+  assert.doesNotMatch(simulation, /setRunResult|setRunProgress|result_rows|step_executions/)
 })

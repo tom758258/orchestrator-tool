@@ -2,14 +2,17 @@ use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Du
 
 use crate::{
     adapters::powers::{PowersActionError, safe_off_all},
-    executor::{WorkflowExecutionError, execute_workflow_with_loop_stop},
+    executor::{
+        WorkflowExecutionError, execute_workflow_streaming_with_loop_stop,
+        execute_workflow_with_loop_stop,
+    },
     template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepId, StepOutcome, WorkflowRunEvent, WorkflowRunResult},
+    workflow::{StepId, StepOutcome, WorkflowRunEvent, WorkflowRunResult, WorkflowRunSummary},
 };
 
 /// Runtime execution mode for a workflow run.
@@ -85,6 +88,79 @@ pub fn run_workflow_with_loop_stop(
     on_event: impl FnMut(WorkflowRunEvent),
     should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunResult, WorkflowRunError> {
+    match run_workflow_internal(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        on_event,
+        should_stop_after_iteration,
+        true,
+    )? {
+        RunCompletion::Full(result) => Ok(result),
+        RunCompletion::Streaming(_) => unreachable!(),
+    }
+}
+
+/// Runs with graceful loop stopping while the caller retains results from events.
+#[allow(clippy::too_many_arguments)]
+pub fn run_workflow_streaming_with_loop_stop(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    on_event: impl FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunSummary, WorkflowRunError> {
+    match run_workflow_internal(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        on_event,
+        should_stop_after_iteration,
+        false,
+    )? {
+        RunCompletion::Streaming(summary) => Ok(summary),
+        RunCompletion::Full(_) => unreachable!(),
+    }
+}
+
+enum RunCompletion {
+    Full(WorkflowRunResult),
+    Streaming(WorkflowRunSummary),
+}
+
+impl RunCompletion {
+    fn failure(&self) -> Option<String> {
+        match self {
+            Self::Streaming(summary) => summary.failure().map(str::to_owned),
+            Self::Full(result) => result
+                .step_executions()
+                .iter()
+                .find_map(step_execution_failure),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_workflow_internal(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    mut on_event: impl FnMut(WorkflowRunEvent),
+    mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+    retain_results: bool,
+) -> Result<RunCompletion, WorkflowRunError> {
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
@@ -128,14 +204,27 @@ pub fn run_workflow_with_loop_stop(
         .iter()
         .map(|(instance, session)| (instance.clone(), session))
         .collect();
-    let execution = execute_workflow_with_loop_stop(
-        template,
-        &session_refs,
-        execution_mode,
-        action_timeout,
-        on_event,
-        should_stop_after_iteration,
-    );
+    let execution = if retain_results {
+        execute_workflow_with_loop_stop(
+            template,
+            &session_refs,
+            execution_mode,
+            action_timeout,
+            &mut on_event,
+            &mut should_stop_after_iteration,
+        )
+        .map(RunCompletion::Full)
+    } else {
+        execute_workflow_streaming_with_loop_stop(
+            template,
+            &session_refs,
+            execution_mode,
+            action_timeout,
+            &mut on_event,
+            &mut should_stop_after_iteration,
+        )
+        .map(RunCompletion::Streaming)
+    };
     drop(session_refs);
 
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
@@ -143,31 +232,7 @@ pub fn run_workflow_with_loop_stop(
     if let Some((instance, source)) = cleanup {
         let prior_failure = match &execution {
             Err(error) => Some(error.to_string()),
-            Ok(results) => {
-                results
-                    .step_executions()
-                    .iter()
-                    .find_map(|result| match result.outcome() {
-                        StepOutcome::Failed { message } => Some(match result.for_iteration() {
-                            Some(iteration) => format!(
-                                "step {} (For {} iteration {}) failed: {message}",
-                                result.step_id(),
-                                iteration.for_step_id(),
-                                iteration.iteration_index(),
-                            ),
-                            None => match result.while_iteration() {
-                                Some(iteration) => format!(
-                                    "step {} (While {} iteration {}) failed: {message}",
-                                    result.step_id(),
-                                    iteration.while_step_id(),
-                                    iteration.iteration_index()
-                                ),
-                                None => format!("step {} failed: {message}", result.step_id()),
-                            },
-                        }),
-                        _ => None,
-                    })
-            }
+            Ok(results) => results.failure(),
         }
         .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
         return Err(WorkflowRunError::SafetyCleanup {
@@ -180,6 +245,29 @@ pub fn run_workflow_with_loop_stop(
         (Err(error), _) => Err(WorkflowRunError::WorkflowExecution(error)),
         (Ok(_), Some(error)) => Err(error),
         (Ok(results), None) => Ok(results),
+    }
+}
+
+fn step_execution_failure(result: &crate::workflow::StepExecution) -> Option<String> {
+    match result.outcome() {
+        StepOutcome::Failed { message } => Some(match result.for_iteration() {
+            Some(iteration) => format!(
+                "step {} (For {} iteration {}) failed: {message}",
+                result.step_id(),
+                iteration.for_step_id(),
+                iteration.iteration_index(),
+            ),
+            None => match result.while_iteration() {
+                Some(iteration) => format!(
+                    "step {} (While {} iteration {}) failed: {message}",
+                    result.step_id(),
+                    iteration.while_step_id(),
+                    iteration.iteration_index()
+                ),
+                None => format!("step {} failed: {message}", result.step_id()),
+            },
+        }),
+        _ => None,
     }
 }
 

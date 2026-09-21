@@ -18,6 +18,13 @@ export function virtualRowRange({ rowCount, rowHeight, scrollTop, viewportHeight
   return { start, end, topSpacerHeight: start * rowHeight, bottomSpacerHeight: (rowCount - end) * rowHeight }
 }
 
+export function virtualOutputWindow(rows: readonly ResultRowDto[], offset: number, totalRows: number) {
+  return rows.map((row, localIndex) => {
+    const index = offset + localIndex
+    return { row, index, iteration: totalRows - index }
+  })
+}
+
 export function virtualOutputRows(rows: readonly ResultRowDto[], start: number, end: number) {
   return Array.from({ length: end - start }, (_, offset) => {
     const index = start + offset

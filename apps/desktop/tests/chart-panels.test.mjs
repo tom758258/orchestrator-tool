@@ -42,7 +42,9 @@ test('unchanged reconciliation preserves array and panel identity', () => {
 })
 
 const pages = ['A', 'B'].map(name => ({ name, outputs: [{ name: 'V' }, { name: 'I' }] }))
-const rows = ['A', 'B'].map(page => ({ page, outputs: [{ name: 'V', value: 1 }, { name: 'I', value: 2 }] }))
+const metadata = ['A', 'B'].map(name => ({
+  name, row_count: 1, revision: 1, numeric_outputs: ['V', 'I'], summaries: [], iteration_rows: false,
+}))
 
 test('multiple Charts per Page share a session-wide maximum of eight', () => {
   let panels = []
@@ -61,30 +63,30 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
 })
 
 test('new Last Run defaults to exactly one Chart on its first Page', () => {
-  const panels = reconcileRunChartPanels([], pages, rows)
+  const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', outputs: ['V'], xAxisTitle: 'Iteration', yAxisTitle: '' }])
-  assert.equal(reconcileRunChartPanels(panels, pages, rows), panels)
+  assert.equal(reconcileRunChartPanels(panels, pages, metadata), panels)
   const onlySecond = addChartPanel([], 'B', ['I'])
-  assert.equal(reconcileRunChartPanels(onlySecond, pages, rows), onlySecond)
+  assert.equal(reconcileRunChartPanels(onlySecond, pages, metadata), onlySecond)
 })
 
 test('first Page without numeric data never falls through to the second Page', () => {
-  const nonnumeric = [{ page: 'A', outputs: [{ name: 'V', value: 'text' }] }, rows[1]]
+  const nonnumeric = [{ ...metadata[0], numeric_outputs: [] }, metadata[1]]
   assert.deepEqual(reconcileRunChartPanels([], pages, nonnumeric), [])
-  assert.deepEqual(reconcileRunChartPanels([], pages, [rows[1]]), [])
-  assert.deepEqual(reconcileRunChartPanels([], [], rows), [])
+  assert.deepEqual(reconcileRunChartPanels([], pages, [metadata[1]]), [])
+  assert.deepEqual(reconcileRunChartPanels([], [], metadata), [])
 })
 
 test('a Page without committed cells retains compatible selections until numeric eligibility is known', () => {
   const panels = addChartPanel([], 'B', ['V'])
-  assert.equal(reconcileRunChartPanels(panels, pages, [rows[0]]), panels)
+  assert.equal(reconcileRunChartPanels(panels, pages, [metadata[0]]), panels)
 })
 
 test('new Last Run reconciles every owned Page and preserves unaffected panel identity', () => {
   const panels = [...addChartPanel([], 'A', ['V']),
     { id: 1, page: 'B', outputs: ['V', 'I'], xAxisTitle: 'Custom', yAxisTitle: 'Value' },
     { id: 2, page: 'Deleted', outputs: ['V'], xAxisTitle: '', yAxisTitle: '' }]
-  const changed = [rows[0], { page: 'B', outputs: [{ name: 'V', value: null }, { name: 'I', value: 2 }] }]
+  const changed = [metadata[0], { ...metadata[1], numeric_outputs: ['I'] }]
   const result = reconcileRunChartPanels(panels, pages, changed)
   assert.notEqual(result, panels)
   assert.equal(result.length, 2)
@@ -94,5 +96,5 @@ test('new Last Run reconciles every owned Page and preserves unaffected panel id
   assert.equal(result[1].xAxisTitle, 'Custom')
   assert.equal(reconcileRunChartPanels(result, pages, changed), result)
   const stale = [panels[2]]
-  assert.equal(reconcileRunChartPanels(stale, pages, rows)[0].page, 'A')
+  assert.equal(reconcileRunChartPanels(stale, pages, metadata)[0].page, 'A')
 })

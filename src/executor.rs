@@ -18,6 +18,7 @@ use crate::{
     workflow::{
         ForIteration, InputValue, ResultRow, Step, StepExecution, StepId, StepKind, StepOutcome,
         StepResult, WhileIteration, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
+        WorkflowRunSummary,
     },
 };
 
@@ -78,6 +79,54 @@ pub fn execute_workflow_with_loop_stop(
     mut on_event: impl FnMut(WorkflowRunEvent),
     mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunResult, WorkflowExecutionError> {
+    let execution = execute_workflow_internal(
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        &mut on_event,
+        &mut should_stop_after_iteration,
+        true,
+    )?;
+    Ok(WorkflowRunResult::new(
+        execution.executions.expect("retained executions"),
+        execution.rows.expect("retained rows"),
+    ))
+}
+
+/// Executes a workflow without retaining completed executions or committed rows.
+///
+/// Full runtime values remain available through `DataContext` while the workflow runs. Callers
+/// that select this path own any durable result storage through `on_event`.
+pub fn execute_workflow_streaming_with_loop_stop(
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+    mut on_event: impl FnMut(WorkflowRunEvent),
+    mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunSummary, WorkflowExecutionError> {
+    let execution = execute_workflow_internal(
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        &mut on_event,
+        &mut should_stop_after_iteration,
+        false,
+    )?;
+    Ok(WorkflowRunSummary::new(execution.failure))
+}
+
+fn execute_workflow_internal(
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+    on_event: &mut dyn FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: &mut dyn FnMut(&StepId) -> bool,
+    retain_results: bool,
+) -> Result<ExecutionResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
         return Err(WorkflowExecutionError::EmptyWorkflow);
@@ -88,14 +137,25 @@ pub fn execute_workflow_with_loop_stop(
         sessions,
         execution_mode,
         action_timeout,
-        on_event: &mut on_event,
-        should_stop: &mut should_stop_after_iteration,
+        on_event,
+        should_stop: should_stop_after_iteration,
         data: DataContext::new(),
-        executions: Vec::new(),
-        rows: Vec::new(),
+        executions: retain_results.then(Vec::new),
+        rows: retain_results.then(Vec::new),
+        failure: None,
     };
     let _ = execution.scope(workflow.steps(), &[], None);
-    Ok(WorkflowRunResult::new(execution.executions, execution.rows))
+    Ok(ExecutionResult {
+        executions: execution.executions,
+        rows: execution.rows,
+        failure: execution.failure,
+    })
+}
+
+struct ExecutionResult {
+    executions: Option<Vec<StepExecution>>,
+    rows: Option<Vec<ResultRow>>,
+    failure: Option<String>,
 }
 
 #[derive(Clone)]
@@ -112,8 +172,9 @@ struct Execution<'a> {
     on_event: &'a mut dyn FnMut(WorkflowRunEvent),
     should_stop: &'a mut dyn FnMut(&StepId) -> bool,
     data: DataContext,
-    executions: Vec<StepExecution>,
-    rows: Vec<ResultRow>,
+    executions: Option<Vec<StepExecution>>,
+    rows: Option<Vec<ResultRow>>,
+    failure: Option<String>,
 }
 
 struct StagedOutput {
@@ -181,9 +242,14 @@ impl Execution<'_> {
                 Some(Iteration::While(i)) => StepExecution::in_while(result, i.clone()),
                 None => StepExecution::new(result, None),
             };
-            self.executions.push(completed.clone());
+            if let Some(executions) = &mut self.executions {
+                executions.push(completed.clone());
+            }
             notify_progress(self.on_event, WorkflowRunEvent::StepCompleted(completed));
             if let Some(message) = failure {
+                if self.failure.is_none() {
+                    self.failure = Some(message.clone());
+                }
                 return Err(message);
             }
             if unwind.is_some() {
@@ -225,7 +291,9 @@ impl Execution<'_> {
                     None => ResultRow::new(row_outputs, None),
                 }
                 .with_page(page.clone());
-                self.rows.push(row.clone());
+                if let Some(rows) = &mut self.rows {
+                    rows.push(row.clone());
+                }
                 notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
             }
         }
@@ -519,7 +587,44 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{WorkflowExecutionError, execute_workflow, execute_workflow_with_events};
+    use super::{
+        WorkflowExecutionError, execute_workflow, execute_workflow_streaming_with_loop_stop,
+        execute_workflow_with_events,
+    };
+
+    #[test]
+    fn streaming_execution_emits_full_runtime_values_without_retaining_a_run_result() {
+        let output = Step::new(
+            StepId::new("output").unwrap(),
+            StepKind::Output {
+                name: "value".to_owned(),
+                value: InputValue::Literal(json!([1, 2, 3])),
+            },
+        );
+        let workflow = Workflow::new(vec![output]).unwrap();
+        let mut events = Vec::new();
+        let summary = execute_workflow_streaming_with_loop_stop(
+            &test_template(&workflow),
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+            |event| events.push(event),
+            |_| false,
+        )
+        .unwrap();
+
+        assert!(summary.succeeded());
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            WorkflowRunEvent::StepCompleted(execution)
+                if execution.outcome() == &StepOutcome::Succeeded { output: json!([1, 2, 3]) }
+        ));
+        assert!(matches!(
+            &events[1],
+            WorkflowRunEvent::ResultRowCommitted(_)
+        ));
+    }
     use crate::{
         run::ExecutionMode,
         tool_instance::ToolInstanceId,

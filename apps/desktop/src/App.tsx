@@ -6,7 +6,7 @@ import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePre
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import ResultChart from './ResultChart'
-import { EXECUTION_WINDOW_SIZE, executionWindow } from './executionWindow'
+import { EXECUTION_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { reconcileRunChartPanels, type ChartPanel } from './chartPanels'
@@ -16,8 +16,8 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, successfulRun, occurrenceKey, compatibleOutputPages, hasExportableRows } from './workflow'
-import type { WorkflowStep, ToolActionStep, WorkflowRunResultDto, WorkflowRunEventDto, StepExecutionDto, ResultRowDto } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -291,6 +291,12 @@ type CsvStreamStatus = {
   workflow_succeeded: boolean
 }
 type DesktopRunEvent = WorkflowRunEventDto | { type: 'csv-stream'; status: CsvStreamStatus }
+type ExecutionRowsResponse = {
+  run_id: number
+  total_executions: number
+  offset: number
+  executions: StepExecutionDto[]
+}
 
 function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean, destinationPath: string | null) {
   if (!enabled) return null
@@ -387,17 +393,15 @@ function App() {
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
   const liveRunInFlight = useRef(false)
+  const runGenerationRef = useRef(0)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
   const [workflowChangedSinceRun, setWorkflowChangedSinceRun] = useState(false)
   const [executionOffset, setExecutionOffset] = useState(0)
-  const [runResult, setRunResult] = useState<WorkflowRunResultDto | null>(null)
-  const [runProgress, setRunProgress] = useState<WorkflowRunResultDto | null>(null)
-  const pendingStepExecutionsRef = useRef<StepExecutionDto[]>([])
-  const pendingResultRowsRef = useRef<ResultRowDto[]>([])
-  const pendingCompletedStepIdsRef = useRef(new Set<string>())
-  const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [runMetadata, setRunMetadata] = useState<RunMetadataDto | null>(null)
+  const runIdRef = useRef<number | null>(null)
+  const [executionPage, setExecutionPage] = useState<ExecutionRowsResponse | null>(null)
   const progressChannelRef = useRef<Channel<DesktopRunEvent> | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
@@ -414,13 +418,14 @@ function App() {
   const runWorkflowSteps = runWorkflowSnapshot?.workflow.steps ?? []
   const { pages: runPages, page: runPage, outputs: runOutputs } = useMemo(() =>
     outputPageContext(runWorkflowSnapshot?.workflow.steps ?? [], selectedRunPage), [runWorkflowSnapshot, selectedRunPage])
-  const runOutputNames = useMemo(() => runOutputs.map(step => step.name), [runOutputs])
   const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
-  const runSucceeded = successfulRun(runWorkflowSteps, runResult)
-  const hasExportableOutputRows = hasExportableRows(
-    runResult?.result_rows ?? [], runPage?.name, exportAllPages,
-  )
-  const latestExecution = runProgress?.step_executions.at(-1)
+  const runSucceeded = runMetadata?.status === 'succeeded'
+  const runExportable = runMetadata?.manual_exportable === true
+  const runPageMetadata = runMetadata?.pages.find(page => page.name === runPage?.name)
+  const hasExportableOutputRows = exportAllPages
+    ? runMetadata?.pages.some(page => page.row_count > 0) ?? false
+    : (runPageMetadata?.row_count ?? 0) > 0
+  const latestExecution = runMetadata?.latest_execution
   const activeLoop = runStatus !== 'running' ? null : latestExecution?.for_iteration
     ? { kind: 'For', id: latestExecution.for_iteration.for_step_id, index: latestExecution.for_iteration.iteration_index }
     : latestExecution?.while_iteration
@@ -455,26 +460,38 @@ function App() {
     {activeLoop && <p>Finishes the current innermost iteration, then stops the selected loop.</p>}
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
-  const displayedRun = runWorkflowSnapshot ? runResult ?? runProgress : null
-  // Numeric arrays survive Page/Output tab switches, but never cross a result snapshot.
-  const chartData = useMemo(() => new Map<string, PageChartData>(), [runWorkflowSnapshot, displayedRun?.result_rows])
+  const displayedRun = runWorkflowSnapshot ? runMetadata : null
+  // Numeric arrays survive Page/Output tab switches, but never cross a run ID.
+  const chartData = useMemo(() => new Map<string, PageChartData>(), [runMetadata?.run_id])
   useEffect(() => {
-    if (!runWorkflowSnapshot || !displayedRun || runStatus === 'running') return
+    if (!runWorkflowSnapshot || !displayedRun) return
     setChartPanels(panels => reconcileRunChartPanels(
-      panels, outputPages(runWorkflowSnapshot.workflow.steps), displayedRun.result_rows,
+      panels, outputPages(runWorkflowSnapshot.workflow.steps), displayedRun.pages,
     ))
-  }, [runWorkflowSnapshot, displayedRun, runStatus])
-  const executions = executionWindow(displayedRun?.step_executions ?? [], executionOffset, EXECUTION_WINDOW_SIZE)
-  const pageRows = useMemo(() => activeTab === 'output'
-    ? (displayedRun?.result_rows ?? []).filter(row => row.page === runPage?.name)
-    : [], [activeTab, displayedRun?.result_rows, runPage?.name])
-  const iterationRows = useMemo(() => pageRows.some(row =>
-    row.for_iteration !== null || row.while_iteration !== null), [pageRows])
+  }, [runWorkflowSnapshot, displayedRun])
+  useEffect(() => {
+    if (!displayedRun) { setExecutionPage(null); return }
+    let cancelled = false
+    void invoke<ExecutionRowsResponse>('get_last_run_executions', {
+      runId: displayedRun.run_id, offset: executionOffset, limit: EXECUTION_WINDOW_SIZE,
+    }).then(response => {
+      if (!cancelled && response.run_id === runIdRef.current) setExecutionPage(response)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [displayedRun?.run_id, displayedRun?.execution_revision, executionOffset])
+  const executionTotal = executionPage?.total_executions ?? displayedRun?.execution_count ?? 0
+  const executions = {
+    items: executionPage?.executions ?? [], offset: executionOffset, total: executionTotal,
+    start: executionTotal === 0 ? 0 : executionOffset + 1,
+    end: Math.min(executionTotal, executionOffset + (executionPage?.executions.length ?? 0)),
+    hasNewer: executionOffset > 0,
+    hasOlder: executionOffset + (executionPage?.executions.length ?? 0) < executionTotal,
+  }
 
   useEffect(() => {
     setExportError(null)
     setExportMessage(null)
-  }, [workflowDraft, runResult, runStatus])
+  }, [workflowDraft, runMetadata, runStatus])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -504,8 +521,11 @@ function App() {
       setWorkflowDraft(draft)
       setSelectedStepId(null)
       setDraftCreationError(null)
-      setRunResult(null)
-      setRunProgress(null)
+      runGenerationRef.current += 1
+      if (runIdRef.current !== null) await invoke('clear_last_run', { runId: runIdRef.current })
+      runIdRef.current = null
+      setRunMetadata(null)
+      setExecutionPage(null)
       setRunWorkflowSnapshot(null)
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
@@ -515,8 +535,10 @@ function App() {
       setWorkflowDraft(null)
       setSelectedStepId(null)
       setDraftCreationError(String(message))
-      setRunResult(null)
-      setRunProgress(null)
+      runGenerationRef.current += 1
+      runIdRef.current = null
+      setRunMetadata(null)
+      setExecutionPage(null)
       setRunWorkflowSnapshot(null)
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
@@ -742,8 +764,11 @@ function App() {
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
-      setRunResult(null)
-      setRunProgress(null)
+      runGenerationRef.current += 1
+      if (runIdRef.current !== null) await invoke('clear_last_run', { runId: runIdRef.current })
+      runIdRef.current = null
+      setRunMetadata(null)
+      setExecutionPage(null)
       setRunWorkflowSnapshot(null)
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
@@ -881,48 +906,21 @@ function App() {
     }
   }, [toolConfigBusy])
 
-  const resetRunProgressBatch = useCallback(() => {
-    if (progressFlushTimerRef.current !== null) clearTimeout(progressFlushTimerRef.current)
-    progressFlushTimerRef.current = null
-    pendingStepExecutionsRef.current = []
-    pendingResultRowsRef.current = []
-    pendingCompletedStepIdsRef.current = new Set()
-  }, [])
-
-  const flushRunProgressBatch = useCallback(() => {
-    const executions = pendingStepExecutionsRef.current
-    const rows = pendingResultRowsRef.current
-    const completedIds = pendingCompletedStepIdsRef.current
-    resetRunProgressBatch()
-    if (executions.length === 0 && rows.length === 0) return
-    setRunProgress(current => ({
-      step_executions: (current?.step_executions ?? []).concat(executions),
-      result_rows: (current?.result_rows ?? []).concat(rows),
-    }))
-    setStopRequest(current => current && completedIds.has(current.loopId) ? null : current)
-  }, [resetRunProgressBatch])
-
   useEffect(() => () => {
     if (progressChannelRef.current) progressChannelRef.current.onmessage = () => {}
-    resetRunProgressBatch()
-  }, [resetRunProgressBatch])
+  }, [])
 
-  const receiveRunProgress = useCallback((event: DesktopRunEvent) => {
+  const receiveRunProgress = useCallback((event: DesktopRunEvent, generation = runGenerationRef.current) => {
+    if (generation !== runGenerationRef.current) return
     if (event.type === 'csv-stream') {
       setCsvStreamStatus(event.status)
       return
     }
-    for (const execution of event.step_executions) {
-      pendingStepExecutionsRef.current.push(execution)
-      pendingCompletedStepIdsRef.current.add(execution.step_id)
-    }
-    for (const row of event.result_rows) {
-      pendingResultRowsRef.current.push(row)
-    }
-    if (progressFlushTimerRef.current === null) {
-      progressFlushTimerRef.current = setTimeout(flushRunProgressBatch, 100)
-    }
-  }, [flushRunProgressBatch])
+    if (runIdRef.current !== null && event.run.run_id !== runIdRef.current) return
+    runIdRef.current = event.run.run_id
+    setRunMetadata(event.run)
+    setStopRequest(current => current && event.completed_step_ids.includes(current.loopId) ? null : current)
+  }, [])
 
   const runLive = useCallback(async () => {
     if (!workflowDraft || runStatus === 'running' || liveRunInFlight.current) {
@@ -970,8 +968,9 @@ function App() {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
-      resetRunProgressBatch()
-      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      runIdRef.current = null
+      const generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -983,20 +982,18 @@ function App() {
       setCsvStreamStatus(null)
       setExecutionOffset(0)
       setRunStatus('running')
-      setRunResult(null)
-      setRunProgress({ step_executions: [], result_rows: [] })
+      setRunMetadata(null)
+      setExecutionPage(null)
       setRunError(null)
-      const results = await invoke<WorkflowRunResultDto>('run_workflow_live', {
+      const results = await invoke<RunMetadataDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
         streamCsv: streamOptions,
         confirmedResources,
       })
-      resetRunProgressBatch()
-      setRunResult(results)
-      setRunProgress(null)
+      runIdRef.current = results.run_id
+      setRunMetadata(results)
     } catch (message) {
-      if (started) flushRunProgressBatch()
       setRunError(String(message))
     } finally {
       if (onProgress) {
@@ -1010,7 +1007,7 @@ function App() {
       liveRunInFlight.current = false
       setLiveConfirmationPending(false)
     }
-  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, resetRunProgressBatch, flushRunProgressBatch, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft) {
@@ -1023,8 +1020,9 @@ function App() {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
-      resetRunProgressBatch()
-      onProgress = new Channel<DesktopRunEvent>(receiveRunProgress)
+      runIdRef.current = null
+      const generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -1035,19 +1033,17 @@ function App() {
       setCsvStreamStatus(null)
       setExecutionOffset(0)
       setRunStatus('running')
-      setRunResult(null)
-      setRunProgress({ step_executions: [], result_rows: [] })
+      setRunMetadata(null)
+      setExecutionPage(null)
       setRunError(null)
-      const results = await invoke<WorkflowRunResultDto>('run_workflow_simulation', {
+      const results = await invoke<RunMetadataDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
         streamCsv: streamOptions,
       })
-      resetRunProgressBatch()
-      setRunResult(results)
-      setRunProgress(null)
+      runIdRef.current = results.run_id
+      setRunMetadata(results)
     } catch (message) {
-      if (started) flushRunProgressBatch()
       setRunError(String(message))
     } finally {
       if (onProgress) {
@@ -1059,7 +1055,7 @@ function App() {
         setRunStatus('idle')
       }
     }
-  }, [workflowDraft, receiveRunProgress, resetRunProgressBatch, flushRunProgressBatch, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const workflowBusy =
     choosingStreamDestination || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
@@ -1072,9 +1068,16 @@ function App() {
     )
     if (!approved) return
 
+    runGenerationRef.current += 1
+    if (runMetadata) {
+      await invoke('clear_last_run', { runId: runMetadata.run_id })
+    } else if (runIdRef.current !== null) {
+      await invoke('clear_last_run', { runId: runIdRef.current })
+    }
     setRunWorkflowSnapshot(null)
-    setRunResult(null)
-    setRunProgress(null)
+    setRunMetadata(null)
+    runIdRef.current = null
+    setExecutionPage(null)
     setExecutionOffset(0)
     setRunError(null)
     setStopRequest(null)
@@ -1082,7 +1085,7 @@ function App() {
     setExportError(null)
     setExportMessage(null)
     setWorkflowChangedSinceRun(false)
-  }, [runWorkflowSnapshot, workflowBusy])
+  }, [runWorkflowSnapshot, runMetadata, workflowBusy])
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
@@ -1110,7 +1113,7 @@ function App() {
   }
 
   const handleExport = useCallback(async () => {
-    if (!runWorkflowSnapshot || !runResult || !hasRunOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy) {
+    if (!runMetadata || !hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy) {
       return
     }
 
@@ -1124,9 +1127,8 @@ function App() {
       if (typeof selectedPath !== 'string') {
         return
       }
-      await invoke('export_workflow_pages', {
-        templateJson: JSON.stringify(runWorkflowSnapshot),
-        runResult,
+      await invoke('export_last_run_pages', {
+        runId: runMetadata.run_id,
         destinationPath: selectedPath,
         page: exportAllPages ? null : runPage?.name,
         format: exportFormat,
@@ -1137,7 +1139,7 @@ function App() {
     } finally {
       setExporting(false)
     }
-  }, [runWorkflowSnapshot, runResult, hasRunOutputs, runSucceeded, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name])
+  }, [runMetadata, hasRunOutputs, runExportable, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -1578,7 +1580,7 @@ function App() {
                   onSelectStep={setSelectedStepId}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
-                  runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_executions ?? null : null}
+                  runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_summaries ?? null : null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
                   onMoveStep={moveStep}
@@ -2040,16 +2042,20 @@ function App() {
                 aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
                 {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
                 {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
-                {pageRows.length === 0 && <p>No committed output rows.</p>}
-                <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels} rows={pageRows} outputNames={runOutputNames} page={runPage?.name ?? 'Results'} chartData={chartData} onSavingChange={setChartSaving} />
-                {pageRows.length > 0 && <PageResultSummary rows={pageRows} />}
-                {pageRows.length > 0 && (
+                {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
+                {displayedRun && runPageMetadata && <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels}
+                  runId={displayedRun.run_id} revision={runPageMetadata.revision} numericNames={runPageMetadata.numeric_outputs}
+                  page={runPage?.name ?? 'Results'} chartData={chartData} onSavingChange={setChartSaving} />}
+                {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
+                {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">
                     <h3 id="output-data-title">Output Data</h3>
                     <p className="output-row-count">
-                      {pageRows.length} {pageRows.length === 1 ? 'row' : 'rows'} · latest first
+                      {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} · latest first
                     </p>
-                    <VirtualizedOutputTable key={runPage?.name} rows={pageRows} outputs={runOutputs} iterationRows={iterationRows} />
+                    <VirtualizedOutputTable key={runPage.name} runId={displayedRun.run_id} page={runPage.name}
+                      rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
+                      outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} />
                   </section>
                 )}
               </div>
@@ -2067,7 +2073,7 @@ function App() {
             className="action-button"
             type="button"
             onClick={() => void handleExport()}
-            disabled={!hasRunOutputs || !runSucceeded || !hasExportableOutputRows || workflowBusy}
+            disabled={!hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy}
           >
             {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
           </button>

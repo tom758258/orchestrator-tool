@@ -1,37 +1,65 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
-import { createPageChartData, numericOutputNames, type PageChartData } from './chartData'
+import { createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { addChartPanel, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
-import type { ResultRowDto } from './workflow'
 
-export default function ResultChart({ rows, outputNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
+type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
+
+export default function ResultChart({ runId, revision, numericNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
+  runId: number
+  revision: number
   page: string
   chartData: Map<string, PageChartData>
   onSavingChange: (saving: boolean) => void
   panels: ChartPanel[]
   onPanelsChange: (panels: ChartPanel[]) => void
-  rows: ResultRowDto[]
-  outputNames: string[]
+  numericNames: string[]
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
-  const numericNames = useMemo(() => numericOutputNames(rows, outputNames), [rows, outputNames])
+  const [dataVersion, setDataVersion] = useState(0)
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const data = useMemo(() => {
     if (!localPanels.some(panel => panel.outputs.some(name => numericNames.includes(name)))) return null
     let local = chartData.get(page)
     if (!local) {
-      local = createPageChartData(rows)
+      local = createPageChartData()
       chartData.set(page, local)
     }
     return local
-  }, [chartData, page, rows, localPanels, numericNames])
+  }, [chartData, page, localPanels, numericNames, dataVersion])
+  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(panel => panel.outputs))]
+    .filter(name => numericNames.includes(name)), [localPanels, numericNames])
+
+  useEffect(() => {
+    let cancelled = false
+    const local = chartData.get(page) ?? createPageChartData()
+    chartData.set(page, local)
+    const requested = new Set(requestedNames)
+    local.removeExcept(requested)
+    const groups = new Map<number, string[]>()
+    for (const name of requestedNames) {
+      const start = local.length(name)
+      groups.set(start, [...(groups.get(start) ?? []), name])
+    }
+    void Promise.all([...groups].map(([startRow, outputs]) =>
+      invoke<ChartSeriesResponse>('get_last_run_chart_series', { runId, page, outputs, startRow }),
+    )).then(responses => {
+      if (cancelled || responses.some(response => response.run_id !== runId || response.page !== page)) return
+      let changed = false
+      for (const response of responses) for (const [name, tail] of Object.entries(response.series)) {
+        changed = local.append(name, response.start_row, tail) || changed
+      }
+      if (changed) setDataVersion(version => version + 1)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [runId, page, revision, requestedNames, chartData])
 
   async function saveImage(id: number, index: number) {
     if (saving.current) return

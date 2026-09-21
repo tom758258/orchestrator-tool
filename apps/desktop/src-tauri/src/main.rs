@@ -1,39 +1,41 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod stored_run;
 mod stream_csv;
 #[cfg(windows)]
 mod webview2;
 
-use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_with_stream};
+use stored_run::{
+    ChartSeriesDto, ExecutionRowsDto, PageRowsDto, RunMetadataDto, StoredRun, StoredRuns,
+};
+use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_streaming_with_stream};
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex, RwLock},
     thread,
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
+use orchestrator_tool::workflow::{StepExecution, StepOutcome};
 use orchestrator_tool::{
     config::{Config, ConfigError, ResourceIdentity},
     discovery::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
     },
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, run_workflow_with_loop_stop},
+    run::{ExecutionMode, run_workflow_streaming_with_loop_stop},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
-    workflow::{
-        ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult, WhileIteration,
-        Workflow, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
-    },
+    workflow::{StepId, Workflow, WorkflowRunEvent},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 use tauri::{AppHandle, Manager, ipc::Channel};
 
 const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -129,58 +131,16 @@ struct ToolStatusDto {
     reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct StepExecutionDto {
-    step_id: String,
-    status: String,
-    output: Option<Value>,
-    message: Option<String>,
-    for_iteration: Option<ForIterationDto>,
-    while_iteration: Option<WhileIterationDto>,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum WorkflowRunEventDto {
     ProgressBatch {
-        step_executions: Vec<StepExecutionDto>,
-        result_rows: Vec<ResultRowDto>,
+        run: Box<RunMetadataDto>,
+        completed_step_ids: Vec<String>,
     },
     CsvStream {
         status: StreamCsvStatus,
     },
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct WorkflowRunResultDto {
-    step_executions: Vec<StepExecutionDto>,
-    result_rows: Vec<ResultRowDto>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ForIterationDto {
-    for_step_id: String,
-    iteration_index: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct WhileIterationDto {
-    while_step_id: String,
-    iteration_index: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ResultRowDto {
-    page: String,
-    outputs: Vec<WorkflowOutputDto>,
-    for_iteration: Option<ForIterationDto>,
-    while_iteration: Option<WhileIterationDto>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct WorkflowOutputDto {
-    name: String,
-    value: Value,
 }
 
 #[tauri::command]
@@ -272,52 +232,63 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
 async fn run_workflow_simulation(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
+    runs: tauri::State<'_, StoredRuns>,
     template_json: String,
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
-) -> Result<WorkflowRunResultDto, String> {
+) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
+    let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-        let application_dir = current_application_dir()
-            .map_err(|error| format!("could not determine application directory: {error}"))?;
-        let config = load_desktop_config(&app)?;
-        let launch_specs = prepare_worker_launch_specs(
-            &template,
-            ExecutionMode::Simulate,
-            &application_dir,
-            &config,
-        )?;
-        let mut batcher = DesktopProgressBatcher::new(&on_progress);
-        let run_result = run_with_stream(
-            &template,
-            stream_csv.as_ref(),
-            &application_dir,
-            |status| {
-                let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
-            },
-            |event| {
-                batcher.push(&event);
-            },
-            |on_event| {
-                run_workflow_with_loop_stop(
-                    &template,
-                    ExecutionMode::Simulate,
-                    &launch_specs,
-                    RUN_STARTUP_TIMEOUT,
-                    RUN_ACTION_TIMEOUT,
-                    RUN_SHUTDOWN_TIMEOUT,
-                    on_event,
-                    |step_id| consume_loop_stop(&control, step_id),
-                )
-                .map_err(|error| error.to_string())
-            },
-        );
+        let stored = runs.begin(template.clone());
+        let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
+        let outcome = (|| {
+            let application_dir = current_application_dir()
+                .map_err(|error| format!("could not determine application directory: {error}"))?;
+            let config = load_desktop_config(&app)?;
+            let launch_specs = prepare_worker_launch_specs(
+                &template,
+                ExecutionMode::Simulate,
+                &application_dir,
+                &config,
+            )?;
+            run_streaming_with_stream(
+                &template,
+                stream_csv.as_ref(),
+                &application_dir,
+                |status| {
+                    let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
+                },
+                |event| batcher.push(&event),
+                |on_event| {
+                    run_workflow_streaming_with_loop_stop(
+                        &template,
+                        ExecutionMode::Simulate,
+                        &launch_specs,
+                        RUN_STARTUP_TIMEOUT,
+                        RUN_ACTION_TIMEOUT,
+                        RUN_SHUTDOWN_TIMEOUT,
+                        on_event,
+                        |step_id| consume_loop_stop(&control, step_id),
+                    )
+                    .map_err(|error| error.to_string())
+                },
+                |summary| summary.succeeded() && stored.read().unwrap().completed_successfully(),
+            )
+        })();
+        match outcome {
+            Ok(summary) if summary.succeeded() => stored.write().unwrap().succeed(),
+            Ok(summary) => stored
+                .write()
+                .unwrap()
+                .fail(summary.failure().unwrap_or("workflow failed")),
+            Err(error) => stored.write().unwrap().fail(error.clone()),
+        }
         batcher.flush();
-        let results = run_result?;
-
-        Ok(workflow_run_result_dto(&results))
+        let metadata = stored.read().unwrap().metadata();
+        Ok(metadata)
     })
     .await
     .map_err(|error| error.to_string());
@@ -329,61 +300,77 @@ async fn run_workflow_simulation(
 async fn run_workflow_live(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
+    runs: tauri::State<'_, StoredRuns>,
     template_json: String,
     confirmed_resources: HashMap<String, String>,
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
-) -> Result<WorkflowRunResultDto, String> {
+) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
+    let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        validate_confirmed_live_resources(&template, &config, &confirmed_resources)?;
-        let mut launch_specs =
-            prepare_worker_launch_specs(&template, ExecutionMode::Live, &application_dir, &config)?;
-        let mut authorizations = Vec::new();
-        for instance in template.referenced_tool_instances() {
-            if instance.tool == ToolId::powers() {
-                let dir = app
-                    .path()
-                    .app_cache_dir()
-                    .map_err(|error| error.to_string())?;
-                let spec = launch_specs
-                    .get_mut(&instance.id)
-                    .expect("referenced instance was prepared");
-                authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
+        let stored = runs.begin(template.clone());
+        let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
+        let outcome = (|| {
+            let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+            let config = load_desktop_config(&app)?;
+            validate_confirmed_live_resources(&template, &config, &confirmed_resources)?;
+            let mut launch_specs = prepare_worker_launch_specs(
+                &template,
+                ExecutionMode::Live,
+                &application_dir,
+                &config,
+            )?;
+            let mut authorizations = Vec::new();
+            for instance in template.referenced_tool_instances() {
+                if instance.tool == ToolId::powers() {
+                    let dir = app
+                        .path()
+                        .app_cache_dir()
+                        .map_err(|error| error.to_string())?;
+                    let spec = launch_specs
+                        .get_mut(&instance.id)
+                        .expect("referenced instance was prepared");
+                    authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
+                }
             }
+            run_streaming_with_stream(
+                &template,
+                stream_csv.as_ref(),
+                &application_dir,
+                |status| {
+                    let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
+                },
+                |event| batcher.push(&event),
+                |on_event| {
+                    run_workflow_streaming_with_loop_stop(
+                        &template,
+                        ExecutionMode::Live,
+                        &launch_specs,
+                        RUN_STARTUP_TIMEOUT,
+                        RUN_ACTION_TIMEOUT,
+                        RUN_SHUTDOWN_TIMEOUT,
+                        on_event,
+                        |step_id| consume_loop_stop(&control, step_id),
+                    )
+                    .map_err(|error| error.to_string())
+                },
+                |summary| summary.succeeded() && stored.read().unwrap().completed_successfully(),
+            )
+        })();
+        match outcome {
+            Ok(summary) if summary.succeeded() => stored.write().unwrap().succeed(),
+            Ok(summary) => stored
+                .write()
+                .unwrap()
+                .fail(summary.failure().unwrap_or("workflow failed")),
+            Err(error) => stored.write().unwrap().fail(error.clone()),
         }
-        let mut batcher = DesktopProgressBatcher::new(&on_progress);
-        let run_result = run_with_stream(
-            &template,
-            stream_csv.as_ref(),
-            &application_dir,
-            |status| {
-                let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
-            },
-            |event| {
-                batcher.push(&event);
-            },
-            |on_event| {
-                run_workflow_with_loop_stop(
-                    &template,
-                    ExecutionMode::Live,
-                    &launch_specs,
-                    RUN_STARTUP_TIMEOUT,
-                    RUN_ACTION_TIMEOUT,
-                    RUN_SHUTDOWN_TIMEOUT,
-                    on_event,
-                    |step_id| consume_loop_stop(&control, step_id),
-                )
-                .map_err(|error| error.to_string())
-            },
-        );
         batcher.flush();
-        let results = run_result?;
-        Ok(workflow_run_result_dto(&results))
+        let metadata = stored.read().unwrap().metadata();
+        Ok(metadata)
     })
     .await
     .map_err(|error| error.to_string());
@@ -580,20 +567,6 @@ fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), Strin
     edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None)
 }
 
-fn for_iteration_dto(iteration: &ForIteration) -> ForIterationDto {
-    ForIterationDto {
-        for_step_id: iteration.for_step_id().as_str().to_owned(),
-        iteration_index: iteration.iteration_index(),
-    }
-}
-
-fn while_iteration_dto(iteration: &WhileIteration) -> WhileIterationDto {
-    WhileIterationDto {
-        while_step_id: iteration.while_step_id().as_str().to_owned(),
-        iteration_index: iteration.iteration_index(),
-    }
-}
-
 const PROGRESS_BATCH_INTERVAL: Duration = Duration::from_millis(100);
 
 struct DesktopProgressBatcher {
@@ -603,8 +576,9 @@ struct DesktopProgressBatcher {
 
 struct DesktopProgressPending {
     channel: Channel<WorkflowRunEventDto>,
-    step_executions: Vec<StepExecutionDto>,
-    result_rows: Vec<ResultRowDto>,
+    run: Arc<RwLock<StoredRun>>,
+    completed_step_ids: BTreeSet<String>,
+    dirty: bool,
     deadline: Option<Instant>,
     closed: bool,
 }
@@ -612,24 +586,29 @@ struct DesktopProgressPending {
 impl DesktopProgressPending {
     fn flush(&mut self) {
         self.deadline = None;
-        if self.step_executions.is_empty() && self.result_rows.is_empty() {
+        if !self.dirty {
             return;
         }
+        self.dirty = false;
+        let run = self.run.read().unwrap().metadata();
         // Serialize sends with pushes and final flush to preserve batch ordering.
         let _ = self.channel.send(WorkflowRunEventDto::ProgressBatch {
-            step_executions: std::mem::take(&mut self.step_executions),
-            result_rows: std::mem::take(&mut self.result_rows),
+            run: Box::new(run),
+            completed_step_ids: std::mem::take(&mut self.completed_step_ids)
+                .into_iter()
+                .collect(),
         });
     }
 }
 
 impl DesktopProgressBatcher {
-    fn new(channel: &Channel<WorkflowRunEventDto>) -> Self {
+    fn new(channel: &Channel<WorkflowRunEventDto>, run: Arc<RwLock<StoredRun>>) -> Self {
         let shared = Arc::new((
             Mutex::new(DesktopProgressPending {
                 channel: channel.clone(),
-                step_executions: Vec::new(),
-                result_rows: Vec::new(),
+                run,
+                completed_step_ids: BTreeSet::new(),
+                dirty: false,
                 deadline: None,
                 closed: false,
             }),
@@ -661,14 +640,13 @@ impl DesktopProgressBatcher {
     fn push(&mut self, event: &WorkflowRunEvent) {
         let (lock, wake) = &*self.shared;
         let mut pending = lock.lock().unwrap();
-        match event {
-            WorkflowRunEvent::StepCompleted(execution) => {
-                pending.step_executions.push(step_execution_dto(execution));
-            }
-            WorkflowRunEvent::ResultRowCommitted(row) => {
-                pending.result_rows.push(result_row_dto(row));
-            }
+        pending.run.write().unwrap().append_event(event);
+        if let WorkflowRunEvent::StepCompleted(execution) = event {
+            pending
+                .completed_step_ids
+                .insert(execution.step_id().as_str().to_owned());
         }
+        pending.dirty = true;
         if pending.deadline.is_none() {
             pending.deadline = Some(Instant::now() + PROGRESS_BATCH_INTERVAL);
             wake.notify_one();
@@ -691,134 +669,7 @@ impl Drop for DesktopProgressBatcher {
     }
 }
 
-fn workflow_run_result_dto(result: &WorkflowRunResult) -> WorkflowRunResultDto {
-    WorkflowRunResultDto {
-        step_executions: result
-            .step_executions()
-            .iter()
-            .map(step_execution_dto)
-            .collect(),
-        result_rows: result.result_rows().iter().map(result_row_dto).collect(),
-    }
-}
-
-fn result_row_dto(row: &ResultRow) -> ResultRowDto {
-    ResultRowDto {
-        page: row.page().to_owned(),
-        outputs: row
-            .outputs()
-            .iter()
-            .map(|output| WorkflowOutputDto {
-                name: output.name().to_owned(),
-                value: output.value().clone(),
-            })
-            .collect(),
-        for_iteration: row.for_iteration().map(for_iteration_dto),
-        while_iteration: row.while_iteration().map(while_iteration_dto),
-    }
-}
-
-fn step_execution_dto(execution: &StepExecution) -> StepExecutionDto {
-    let result = execution.result();
-    let (status, output, message) = match result.outcome() {
-        StepOutcome::Succeeded { output } => ("succeeded".to_owned(), Some(output.clone()), None),
-        StepOutcome::Failed { message } => ("failed".to_owned(), None, Some(message.clone())),
-        StepOutcome::Cancelled => ("cancelled".to_owned(), None, None),
-    };
-
-    StepExecutionDto {
-        step_id: result.step_id().as_str().to_owned(),
-        status,
-        output,
-        message,
-        for_iteration: execution.for_iteration().map(for_iteration_dto),
-        while_iteration: execution.while_iteration().map(while_iteration_dto),
-    }
-}
-
-impl TryFrom<ForIterationDto> for ForIteration {
-    type Error = String;
-
-    fn try_from(dto: ForIterationDto) -> Result<Self, Self::Error> {
-        let id = StepId::new(dto.for_step_id).map_err(|error| error.to_string())?;
-        Ok(Self::new(id, dto.iteration_index))
-    }
-}
-
-impl TryFrom<WhileIterationDto> for WhileIteration {
-    type Error = String;
-
-    fn try_from(dto: WhileIterationDto) -> Result<Self, Self::Error> {
-        let id = StepId::new(dto.while_step_id).map_err(|error| error.to_string())?;
-        Ok(Self::new(id, dto.iteration_index))
-    }
-}
-
-impl TryFrom<ResultRowDto> for ResultRow {
-    type Error = String;
-
-    fn try_from(dto: ResultRowDto) -> Result<Self, Self::Error> {
-        if dto.for_iteration.is_some() && dto.while_iteration.is_some() {
-            return Err("a row cannot have both For and While iteration metadata".to_owned());
-        }
-        let outputs = dto
-            .outputs
-            .into_iter()
-            .map(|output| WorkflowOutput::new(output.name, output.value))
-            .collect();
-        Ok(if let Some(iteration) = dto.while_iteration {
-            Self::in_while(outputs, iteration.try_into()?)
-        } else {
-            Self::new(
-                outputs,
-                dto.for_iteration.map(ForIteration::try_from).transpose()?,
-            )
-        }
-        .with_page(dto.page))
-    }
-}
-
-impl TryFrom<StepExecutionDto> for StepExecution {
-    type Error = String;
-
-    fn try_from(dto: StepExecutionDto) -> Result<Self, Self::Error> {
-        let step_id = StepId::new(&dto.step_id)
-            .map_err(|error| format!("invalid step ID {:?}: {error}", dto.step_id))?;
-        let outcome = match dto.status.as_str() {
-            "succeeded" => StepOutcome::Succeeded {
-                // Option<Value> deserializes a JSON null output as None.
-                output: dto.output.unwrap_or(Value::Null),
-            },
-            "failed" => StepOutcome::Failed {
-                message: dto.message.ok_or_else(|| {
-                    format!("failed step {:?} is missing its message", dto.step_id)
-                })?,
-            },
-            "cancelled" => StepOutcome::Cancelled,
-            _ => {
-                return Err(format!(
-                    "unknown result status {:?} for step {:?}",
-                    dto.status, dto.step_id
-                ));
-            }
-        };
-        if dto.for_iteration.is_some() && dto.while_iteration.is_some() {
-            return Err(
-                "an execution cannot have both For and While iteration metadata".to_owned(),
-            );
-        }
-        let result = StepResult::new(step_id, outcome);
-        Ok(if let Some(iteration) = dto.while_iteration {
-            Self::in_while(result, iteration.try_into()?)
-        } else {
-            Self::new(
-                result,
-                dto.for_iteration.map(ForIteration::try_from).transpose()?,
-            )
-        })
-    }
-}
-
+#[cfg(test)]
 fn validate_completed_successful_run(
     workflow: &Workflow,
     results: &[StepExecution],
@@ -846,64 +697,112 @@ fn save_chart_png(destination_path: String, png_bytes: Vec<u8>) -> Result<(), St
 }
 
 #[tauri::command]
-fn export_workflow_pages(
-    template_json: String,
-    run_result: WorkflowRunResultDto,
+fn get_last_run_page_rows(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    page: String,
+    offset: usize,
+    limit: usize,
+) -> Result<PageRowsDto, String> {
+    state.with_current(run_id, |run| run.page_rows(&page, offset, limit))?
+}
+
+#[tauri::command]
+fn get_last_run_executions(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<ExecutionRowsDto, String> {
+    state.with_current(run_id, |run| run.executions(offset, limit))
+}
+
+#[tauri::command]
+fn get_last_run_chart_series(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    page: String,
+    outputs: Vec<String>,
+    start_row: usize,
+) -> Result<ChartSeriesDto, String> {
+    state.with_current(run_id, |run| run.chart_series(&page, &outputs, start_row))?
+}
+
+#[tauri::command]
+fn clear_last_run(state: tauri::State<'_, StoredRuns>, run_id: u64) -> Result<(), String> {
+    state.clear(run_id)
+}
+
+#[tauri::command]
+fn export_last_run_pages(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
     destination_path: String,
     page: Option<String>,
     format: String,
 ) -> Result<(), String> {
-    use orchestrator_tool::workflow_export::{page_csv, page_datasets, pages_xlsx};
-    let template = Template::from_json_str(&template_json).map_err(|e| e.to_string())?;
-    let executions = run_result
-        .step_executions
-        .into_iter()
-        .map(StepExecution::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-    validate_completed_successful_run(template.workflow(), &executions)?;
-    let rows = run_result
-        .result_rows
-        .into_iter()
-        .map(ResultRow::try_from)
-        .collect::<Result<Vec<_>, _>>()?;
-    let datasets = page_datasets(template.workflow(), &rows, page.as_deref())?;
-    if datasets.is_empty() || !datasets.iter().any(|dataset| !dataset.rows.is_empty()) {
+    state.with_current(run_id, |run| {
+        export_stored_run_pages(run, &destination_path, page.as_deref(), &format)
+    })?
+}
+
+fn export_stored_run_pages(
+    run: &StoredRun,
+    destination_path: &str,
+    page: Option<&str>,
+    format: &str,
+) -> Result<(), String> {
+    use orchestrator_tool::workflow_export::{PageDataset, pages_xlsx, write_page_csv_rows};
+    if !run.manual_exportable() {
+        return Err("workflow run did not complete successfully; export is unavailable".to_owned());
+    }
+    if let Some(name) = page
+        && run.page(name).is_none()
+    {
+        return Err(format!("Unknown Output Page {name:?}"));
+    }
+    let selected_pages = run
+        .pages()
+        .filter(|(definition, _)| page.is_none_or(|name| name == definition.name()))
+        .collect::<Vec<_>>();
+    if selected_pages.is_empty() || !selected_pages.iter().any(|(_, rows)| !rows.is_empty()) {
         return Err("workflow has no outputs available for export".to_owned());
     }
-    match format.as_str() {
+    match format {
         "xlsx" => {
-            std::fs::write(&destination_path, pages_xlsx(&datasets)?).map_err(|e| e.to_string())
+            let datasets = selected_pages
+                .iter()
+                .map(|(page, rows)| PageDataset {
+                    page,
+                    rows: rows.iter().collect(),
+                })
+                .collect::<Vec<_>>();
+            std::fs::write(destination_path, pages_xlsx(&datasets)?).map_err(|e| e.to_string())
         }
         "csv" if page.is_some() => {
-            std::fs::write(&destination_path, page_csv(&datasets[0])?).map_err(|e| e.to_string())
+            let file = std::fs::File::create(destination_path).map_err(|e| e.to_string())?;
+            let (page, rows) = selected_pages[0];
+            write_page_csv_rows(page, rows.iter(), file)
         }
         "csv" => {
-            use std::io::Write;
-            let folder = Path::new(&destination_path);
-            let files = datasets
+            let folder = Path::new(destination_path);
+            let files = selected_pages
                 .iter()
-                .map(|dataset| {
-                    Ok((
-                        folder.join(format!("{}.csv", dataset.page.name())),
-                        page_csv(dataset)?,
-                    ))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            if files.iter().any(|(path, _)| path.exists()) {
+                .map(|(page, _)| folder.join(format!("{}.csv", page.name())))
+                .collect::<Vec<_>>();
+            if files.iter().any(|path| path.exists()) {
                 return Err(
                     "Destination already contains Page CSV files; choose another folder".to_owned(),
                 );
             }
             std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-            for (path, bytes) in files {
-                let mut file = std::fs::OpenOptions::new()
+            for ((page, rows), path) in selected_pages.iter().zip(files) {
+                let file = std::fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
                     .open(path)
                     .map_err(|e| e.to_string())?;
-                file.write_all(&bytes)
-                    .and_then(|()| file.flush())
-                    .map_err(|e| e.to_string())?;
+                write_page_csv_rows(page, rows.iter(), file)?;
             }
             Ok(())
         }
@@ -982,6 +881,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(ActiveRun::default())
+        .manage(StoredRuns::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             open_help,
@@ -1001,7 +901,11 @@ fn main() {
             validate_workflow_draft,
             save_workflow_template,
             load_workflow_template,
-            export_workflow_pages,
+            get_last_run_page_rows,
+            get_last_run_executions,
+            get_last_run_chart_series,
+            clear_last_run,
+            export_last_run_pages,
             save_chart_png
         ])
         .run(tauri::generate_context!())
@@ -1010,6 +914,107 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use super::{export_stored_run_pages, stored_run::StoredRuns};
+    use orchestrator_tool::workflow::{
+        ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput, WorkflowRunEvent,
+    };
+    use serde_json::json;
+
+    pub fn unique_test_dir(label: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "orchestrator-tool-{label}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn export_template() -> orchestrator_tool::template::Template {
+        orchestrator_tool::template::Template::from_json_str(
+            &json!({
+                "schema_version": 1,
+                "name": "export",
+                "tool_instances": [],
+                "workflow": { "steps": [{
+                    "type": "output", "id": "out", "name": "Voltage", "page": "Results",
+                    "value": { "source": "literal", "value": 1 }
+                }] }
+            })
+            .to_string(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn successful_stored_run_exports_selected_csv_without_frontend_payload() {
+        let runs = StoredRuns::default();
+        let stored = runs.begin(export_template());
+        let run_id = stored.read().unwrap().run_id;
+        stored
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
+                    None,
+                )
+                .with_page("Results"),
+            ));
+        stored
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+                StepResult::new(
+                    StepId::new("out").unwrap(),
+                    StepOutcome::Succeeded { output: json!(1) },
+                ),
+                None,
+            )));
+        stored.write().unwrap().succeed();
+
+        let dir = unique_test_dir("stored-export-success");
+        let path = dir.join("results.csv");
+        let guard = stored.read().unwrap();
+        export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "Voltage\n1\n");
+        assert_eq!(runs.with_current(run_id, |run| run.run_id).unwrap(), run_id);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_stored_run_cannot_be_manually_exported() {
+        let runs = StoredRuns::default();
+        let stored = runs.begin(export_template());
+        stored
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
+                    None,
+                )
+                .with_page("Results"),
+            ));
+        stored.write().unwrap().fail("workflow failed");
+
+        let dir = unique_test_dir("stored-export-failed");
+        let path = dir.join("results.csv");
+        let guard = stored.read().unwrap();
+        let error =
+            export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
+                .unwrap_err();
+        assert!(error.contains("export is unavailable"));
+        assert!(!path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(all(test, any()))]
+mod legacy_tests {
     #[test]
     fn help_url_accepts_only_supported_themes() {
         for theme in ["system", "light", "dark"] {

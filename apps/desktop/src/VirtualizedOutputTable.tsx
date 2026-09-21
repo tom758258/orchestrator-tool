@@ -1,10 +1,16 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import type { ResultRowDto } from './workflow'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputRows } from './virtualRows'
+import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputWindow } from './virtualRows'
 
-export default function VirtualizedOutputTable({ rows, outputs, iterationRows }: {
-  rows: readonly ResultRowDto[]
+type PageRowsResponse = { run_id: number; page: string; total_rows: number; offset: number; rows: ResultRowDto[] }
+
+export default function VirtualizedOutputTable({ runId, page, rowCount, revision, outputs, iterationRows }: {
+  runId: number
+  page: string
+  rowCount: number
+  revision: number
   outputs: readonly { id: string; name: string }[]
   iterationRows: boolean
 }) {
@@ -12,6 +18,7 @@ export default function VirtualizedOutputTable({ rows, outputs, iterationRows }:
   const header = useRef<HTMLTableSectionElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
+  const [window, setWindow] = useState<PageRowsResponse | null>(null)
 
   useLayoutEffect(() => {
     const container = scroll.current!
@@ -28,15 +35,27 @@ export default function VirtualizedOutputTable({ rows, outputs, iterationRows }:
   }, [])
 
   const range = virtualRowRange({
-    rowCount: rows.length, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
+    rowCount, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
     overscan: OUTPUT_ROW_OVERSCAN,
   })
-  const items = virtualOutputRows(rows, range.start, range.end)
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void invoke<PageRowsResponse>('get_last_run_page_rows', {
+        runId, page, offset: range.start, limit: range.end - range.start,
+      }).then(response => {
+        if (!cancelled && response.run_id === runId && response.page === page) setWindow(response)
+      }).catch(() => {})
+    }, 30)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [runId, page, revision, range.start, range.end])
+  const items = window && window.run_id === runId && window.page === page && window.offset === range.start
+    ? virtualOutputWindow(window.rows, window.offset, rowCount) : []
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
 
   return <div ref={scroll} className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}
     onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
-    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={rows.length + 1}
+    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={rowCount + 1}
       style={{ '--output-row-height': `${OUTPUT_ROW_HEIGHT}px` } as CSSProperties}>
       <thead ref={header}>
         <tr aria-rowindex={1}>

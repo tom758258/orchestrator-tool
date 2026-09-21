@@ -827,6 +827,26 @@ impl WorkflowRunResult {
     }
 }
 
+/// Lightweight completion information for callers that consume run events directly.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkflowRunSummary {
+    failure: Option<String>,
+}
+
+impl WorkflowRunSummary {
+    pub fn new(failure: Option<String>) -> Self {
+        Self { failure }
+    }
+
+    pub fn succeeded(&self) -> bool {
+        self.failure.is_none()
+    }
+
+    pub fn failure(&self) -> Option<&str> {
+        self.failure.as_deref()
+    }
+}
+
 /// Occurrence metadata, separate from stable step definition IDs and output columns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForIteration {

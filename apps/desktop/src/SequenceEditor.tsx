@@ -1,11 +1,11 @@
 import type { ToolInstance } from './ToolSetupEditor'
-import type { StepExecutionDto, WorkflowStep, ForStep, WhileStep } from './workflow'
+import type { StepSummaryDto, WorkflowStep, ForStep, WhileStep } from './workflow'
 import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
   instances: ToolInstance[]
   steps: readonly WorkflowStep[]
-  runResults: readonly StepExecutionDto[] | null
+  runResults: readonly StepSummaryDto[] | null
   formatMeasurement: (output: unknown) => string | null
   selectedStepId: string | null
   onSelectStep: (stepId: string) => void
@@ -89,14 +89,7 @@ function SequenceEditor({
     return (
       <ol className="sequence-steps">
         {siblings.map((step, index) => {
-          const occurrences = runResults?.filter(result => result.step_id === step.id &&
-            (parent ? parent.type === 'for'
-              ? result.for_iteration?.for_step_id === parent.id
-              : result.while_iteration?.while_step_id === parent.id
-              : result.for_iteration === null && result.while_iteration === null)) ?? []
-          const result = occurrences.find(result => result.status === 'failed')
-            ?? (occurrences.length > 0 && occurrences.every(result => result.status === 'succeeded')
-              ? occurrences[occurrences.length - 1] : occurrences.find(result => result.status === 'cancelled'))
+          const result = runResults?.find(result => result.step_id === step.id)
           const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
           let outputSummary: string | null = null
           if (!parent && result?.status === 'succeeded') {

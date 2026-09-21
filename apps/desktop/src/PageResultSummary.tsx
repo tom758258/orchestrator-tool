@@ -1,11 +1,6 @@
-import { useMemo } from 'react'
-import { summarizePageResults } from './numericSummary'
-import type { ResultRowDto } from './workflow'
+import type { NumericSummary } from './workflow'
 
-export default function PageResultSummary({ rows }: { rows: ResultRowDto[] }) {
-  const summaries = useMemo(() => summarizePageResults(rows), [rows])
-  if (rows.length === 0) return null
-
+export default function PageResultSummary({ summaries }: { summaries: readonly NumericSummary[] }) {
   return <section className="page-result-summary" aria-labelledby="page-result-summary-title">
     <h4 id="page-result-summary-title">Summary</h4>
     {summaries.length === 0 ? <p>No numeric outputs to summarize.</p> : (

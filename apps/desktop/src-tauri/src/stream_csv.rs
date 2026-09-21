@@ -4,9 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
+use orchestrator_tool::workflow::WorkflowRunResult;
 use orchestrator_tool::{
     template::Template,
-    workflow::{OutputPage, WorkflowRunEvent, WorkflowRunResult},
+    workflow::{OutputPage, WorkflowRunEvent},
     workflow_csv::ResultRowsCsvWriter,
 };
 use serde::{Deserialize, Serialize};
@@ -184,14 +186,58 @@ fn prepare(
 }
 
 /// Opens and flushes the header before invoking any workflow execution.
+#[cfg(test)]
 pub fn run_with_stream(
+    template: &Template,
+    options: Option<&StreamCsvOptions>,
+    application_dir: &Path,
+    on_status: impl FnMut(StreamCsvStatus),
+    on_event: impl FnMut(WorkflowRunEvent),
+    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<WorkflowRunResult, String>,
+) -> Result<WorkflowRunResult, String> {
+    run_with_stream_completion(
+        template,
+        options,
+        application_dir,
+        on_status,
+        on_event,
+        run,
+        |run| {
+            crate::validate_completed_successful_run(template.workflow(), run.step_executions())
+                .is_ok()
+        },
+    )
+}
+
+pub fn run_streaming_with_stream<T>(
+    template: &Template,
+    options: Option<&StreamCsvOptions>,
+    application_dir: &Path,
+    on_status: impl FnMut(StreamCsvStatus),
+    on_event: impl FnMut(WorkflowRunEvent),
+    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<T, String>,
+    is_successful: impl FnOnce(&T) -> bool,
+) -> Result<T, String> {
+    run_with_stream_completion(
+        template,
+        options,
+        application_dir,
+        on_status,
+        on_event,
+        run,
+        is_successful,
+    )
+}
+
+fn run_with_stream_completion<T>(
     template: &Template,
     options: Option<&StreamCsvOptions>,
     application_dir: &Path,
     mut on_status: impl FnMut(StreamCsvStatus),
     mut on_event: impl FnMut(WorkflowRunEvent),
-    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<WorkflowRunResult, String>,
-) -> Result<WorkflowRunResult, String> {
+    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<T, String>,
+    is_successful: impl FnOnce(&T) -> bool,
+) -> Result<T, String> {
     let mut stream = options
         .map(|options| prepare(template, options, application_dir))
         .transpose()?;
@@ -216,10 +262,7 @@ pub fn run_with_stream(
     });
     if let Some((_, mut status)) = stream {
         status.finished = true;
-        status.workflow_succeeded = result.as_ref().is_ok_and(|run| {
-            crate::validate_completed_successful_run(template.workflow(), run.step_executions())
-                .is_ok()
-        });
+        status.workflow_succeeded = result.as_ref().is_ok_and(is_successful);
         on_status(status);
     }
     result

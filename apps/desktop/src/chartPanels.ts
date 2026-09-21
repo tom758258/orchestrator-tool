@@ -1,5 +1,4 @@
-import type { ResultRowDto } from './workflow'
-import { numericOutputNames } from './chartData.ts'
+import type { RunPageMetadata } from './workflow'
 
 export type ChartPanel = {
   page: string
@@ -50,25 +49,13 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
 export function reconcileRunChartPanels(
   panels: ChartPanel[],
   pages: { name: string; outputs: { name: string }[] }[],
-  rows: readonly ResultRowDto[],
+  metadata: readonly RunPageMetadata[],
 ): ChartPanel[] {
   let reconciled = reconcileChartPanels(panels, pages, '', null)
-  const neededPages = new Set(reconciled.map(panel => panel.page))
-  if (pages[0]) neededPages.add(pages[0].name)
-  const pageRows = new Map<string, ResultRowDto[]>()
-  for (const row of rows) {
-    if (!neededPages.has(row.page)) continue
-    let local = pageRows.get(row.page)
-    if (!local) { local = []; pageRows.set(row.page, local) }
-    local.push(row)
-  }
-  let firstNumeric: string[] = []
+  const firstNumeric: string[] = metadata.find(page => page.name === pages[0]?.name)?.numeric_outputs ?? []
   for (const page of pages) {
-    if (!neededPages.has(page.name)) continue
-    const localRows = pageRows.get(page.name) ?? []
-    const numeric = numericOutputNames(localRows, page.outputs.map(output => output.name))
-    if (page === pages[0]) firstNumeric = numeric
-    reconciled = reconcileChartPanels(reconciled, pages, page.name, localRows.length > 0 ? numeric : null)
+    const current = metadata.find(item => item.name === page.name)
+    reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null)
   }
   return reconciled.length === 0 && pages[0]
     ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled

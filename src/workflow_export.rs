@@ -65,12 +65,30 @@ pub fn page_datasets<'a>(
 
 pub fn page_csv(dataset: &PageDataset<'_>) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    let mut writer = ResultRowsCsvWriter::new(&mut bytes, dataset.page.headers().to_vec())
+    write_page_csv(dataset, &mut bytes)?;
+    Ok(bytes)
+}
+
+/// Writes one Page directly to the provided destination.
+pub fn write_page_csv(
+    dataset: &PageDataset<'_>,
+    destination: impl std::io::Write,
+) -> Result<(), String> {
+    write_page_csv_rows(dataset.page, dataset.rows.iter().copied(), destination)
+}
+
+/// Writes a Page's rows directly without constructing a second row-reference collection.
+pub fn write_page_csv_rows<'a>(
+    page: &OutputPage,
+    rows: impl IntoIterator<Item = &'a ResultRow>,
+    destination: impl std::io::Write,
+) -> Result<(), String> {
+    let mut writer = ResultRowsCsvWriter::new(destination, page.headers().to_vec())
         .map_err(|error| error.to_string())?;
-    for row in &dataset.rows {
+    for row in rows {
         writer.write_row(row).map_err(|error| error.to_string())?;
     }
-    Ok(bytes)
+    Ok(())
 }
 
 /// Uses the same text conversion as CSV, without formulas or automatic type coercion.
