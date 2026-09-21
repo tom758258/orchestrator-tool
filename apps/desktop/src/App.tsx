@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
@@ -302,6 +303,7 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 
 function App() {
   const [themePreference, setThemePreference] = useState(readThemePreference)
+  const [applicationVersion, setApplicationVersion] = useState<string | null>(null)
   const [helpError, setHelpError] = useState<string | null>(null)
   async function handleOpenHelp() {
     setHelpError(null)
@@ -311,6 +313,20 @@ function App() {
       setHelpError(String(message))
     }
   }
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const version = await getVersion()
+        if (version.trim()) {
+          setApplicationVersion(version)
+        }
+      } catch {
+        // Tauri runtime is unavailable, such as browser-only Vite mode.
+      }
+    })()
+  }, [])
+
   const themeLabel = (value: string) => value[0].toUpperCase() + value.slice(1)
   const nextThemeLabel = themeLabel(nextThemePreference(themePreference))
 
@@ -1153,7 +1169,12 @@ function App() {
   return (
     <main className="app">
       <header className="app-header">
-        <h1>orchestrator-tool</h1>
+        <div className="app-brand">
+          <h1>orchestrator-tool</h1>
+          {applicationVersion && (
+            <p className="app-version">v{applicationVersion}</p>
+          )}
+        </div>
         <div className="appearance-control">
           <span>Appearance</span>
           <button className="action-button" type="button"
