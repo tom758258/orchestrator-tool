@@ -180,15 +180,23 @@ impl WorkerSession {
 
         let client = WorkerClient::new(&self.ready);
         if let Err(error) = client.stop_with_timeout(deadline.saturating_duration_since(now)) {
-            if let Some(status) = self
-                .process_mut()
-                .try_wait()
-                .map_err(WorkerShutdownError::ProcessIo)?
-            {
-                return self.finish_exited_process(status);
+            loop {
+                if let Some(status) = self
+                    .process_mut()
+                    .try_wait()
+                    .map_err(WorkerShutdownError::ProcessIo)?
+                {
+                    return self.finish_exited_process(status);
+                }
+
+                let now = Instant::now();
+                if now >= deadline {
+                    self.force_cleanup()?;
+                    return Err(WorkerShutdownError::Stop(error));
+                }
+
+                thread::sleep(SHUTDOWN_POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
             }
-            self.force_cleanup()?;
-            return Err(WorkerShutdownError::Stop(error));
         }
 
         loop {

@@ -127,6 +127,7 @@ fn main() {
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
     meters_custom_auto_exit_completes_workflow();
+    meters_custom_shutdown_waits_for_exit_after_stop_failure();
     meters_custom_outputs_expand_rows_and_preserve_staging();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
@@ -441,12 +442,15 @@ fn run_fixture(scenario: &OsStr) {
         | "live-startup-failure"
         | "live-multi-cleanup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
         "meters-runtime-measure" => run_meters_runtime_fixture(1, 2, json!(3.3)),
-        "meters-runtime-custom" => run_meters_custom_runtime_fixture(Duration::ZERO, false),
+        "meters-runtime-custom" => run_meters_custom_runtime_fixture(Duration::ZERO, None),
         "meters-runtime-custom-auto-exit" => {
-            run_meters_custom_runtime_fixture(Duration::ZERO, true)
+            run_meters_custom_runtime_fixture(Duration::ZERO, Some(Duration::ZERO))
+        }
+        "meters-runtime-custom-delayed-auto-exit" => {
+            run_meters_custom_runtime_fixture(Duration::ZERO, Some(Duration::from_millis(250)))
         }
         "meters-runtime-custom-slow" => {
-            run_meters_custom_runtime_fixture(Duration::from_millis(400), false)
+            run_meters_custom_runtime_fixture(Duration::from_millis(400), None)
         }
         "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
@@ -823,7 +827,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
-fn run_meters_custom_runtime_fixture(sample_delay: Duration, auto_exit: bool) {
+fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<Duration>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = format!("meters-custom-runtime-run-{}", process::id());
@@ -846,17 +850,37 @@ fn run_meters_custom_runtime_fixture(sample_delay: Duration, auto_exit: bool) {
         202,
         r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
     );
-    for (sequence, value) in [0.055, 0.056, 0.057].into_iter().enumerate() {
-        thread::sleep(sample_delay);
-        print_json_line(
-            &json!({
-                "event": "sample", "run_id": run_id, "value": value,
-                "sequence": sequence + 1, "unit": "V"
-            })
-            .to_string(),
-        );
-    }
-    if !auto_exit {
+    if let Some(exit_delay) = exit_delay {
+        // Make the samples visible only after the HTTP endpoint is closed.
+        let stdout = io::stdout();
+        let mut output = io::BufWriter::new(stdout.lock());
+        for (sequence, value) in [0.055, 0.056, 0.057].into_iter().enumerate() {
+            thread::sleep(sample_delay);
+            writeln!(
+                output,
+                "{}",
+                json!({
+                    "event": "sample", "run_id": run_id, "value": value,
+                    "sequence": sequence + 1, "unit": "V"
+                })
+            )
+            .unwrap();
+        }
+        drop(listener);
+        output.flush().unwrap();
+        drop(output);
+        thread::sleep(exit_delay);
+    } else {
+        for (sequence, value) in [0.055, 0.056, 0.057].into_iter().enumerate() {
+            thread::sleep(sample_delay);
+            print_json_line(
+                &json!({
+                    "event": "sample", "run_id": run_id, "value": value,
+                    "sequence": sequence + 1, "unit": "V"
+                })
+                .to_string(),
+            );
+        }
         let request = accept_request(&listener);
         assert_eq!(
             (request.method.as_str(), request.path.as_str()),
@@ -1296,6 +1320,28 @@ fn meters_custom_auto_exit_completes_workflow() {
 
     assert_eq!(run.result_rows().len(), 3);
     assert_eq!(run.result_rows()[2].outputs()[0].value(), &json!(0.057));
+}
+
+fn meters_custom_shutdown_waits_for_exit_after_stop_failure() {
+    let template = custom_meter_template(json!([
+        { "type": "tool-action", "id": "measure", "target": "meters-1",
+          "action": "measure", "arguments": {} },
+        { "type": "output", "id": "value", "name": "value", "page": "Batch",
+          "value": { "source": "step-output", "step_id": "measure", "pointer": "/value" } }
+    ]));
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-runtime-custom-delayed-auto-exit"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    assert_eq!(run.result_rows().len(), 3);
 }
 
 fn custom_meter_template(steps: serde_json::Value) -> Template {
