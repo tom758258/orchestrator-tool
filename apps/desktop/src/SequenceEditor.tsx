@@ -94,13 +94,18 @@ function SequenceEditor({
           let outputSummary: string | null = null
           if (!parent && result?.status === 'succeeded') {
             outputSummary = formatMeasurement(result.output)
+            if (outputSummary !== null && result.output_omitted) outputSummary += ' …'
             if (step.type === 'output' && (
               result.output === null ||
               typeof result.output === 'number' ||
               typeof result.output === 'string' ||
               typeof result.output === 'boolean'
             )) {
-              outputSummary = JSON.stringify(result.output)
+              outputSummary = result.output_omitted && result.output === null
+                ? 'Preview omitted'
+                : `${JSON.stringify(result.output)}${result.output_omitted ? ' …' : ''}`
+            } else if (result.output_omitted && outputSummary === null) {
+              outputSummary = 'Preview omitted'
             }
           }
 
