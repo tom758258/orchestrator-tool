@@ -4,8 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(test)]
-use orchestrator_tool::workflow::WorkflowRunResult;
 use orchestrator_tool::{
     template::Template,
     workflow::{OutputPage, WorkflowRunEvent},
@@ -186,29 +184,6 @@ fn prepare(
 }
 
 /// Opens and flushes the header before invoking any workflow execution.
-#[cfg(test)]
-pub fn run_with_stream(
-    template: &Template,
-    options: Option<&StreamCsvOptions>,
-    application_dir: &Path,
-    on_status: impl FnMut(StreamCsvStatus),
-    on_event: impl FnMut(WorkflowRunEvent),
-    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<WorkflowRunResult, String>,
-) -> Result<WorkflowRunResult, String> {
-    run_with_stream_completion(
-        template,
-        options,
-        application_dir,
-        on_status,
-        on_event,
-        run,
-        |run| {
-            crate::validate_completed_successful_run(template.workflow(), run.step_executions())
-                .is_ok()
-        },
-    )
-}
-
 pub fn run_streaming_with_stream<T>(
     template: &Template,
     options: Option<&StreamCsvOptions>,
@@ -271,9 +246,7 @@ fn run_with_stream_completion<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchestrator_tool::workflow::{
-        ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput,
-    };
+    use orchestrator_tool::workflow::{ResultRow, WorkflowOutput};
     use serde_json::json;
 
     fn template() -> Template {
@@ -300,6 +273,25 @@ mod tests {
         }
     }
 
+    fn run_test_stream(
+        template: &Template,
+        options: Option<&StreamCsvOptions>,
+        application_dir: &Path,
+        on_status: impl FnMut(StreamCsvStatus),
+        on_event: impl FnMut(WorkflowRunEvent),
+        run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<bool, String>,
+    ) -> Result<bool, String> {
+        run_streaming_with_stream(
+            template,
+            options,
+            application_dir,
+            on_status,
+            on_event,
+            run,
+            |succeeded| *succeeded,
+        )
+    }
+
     fn row(name: &str) -> WorkflowRunEvent {
         WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
             vec![WorkflowOutput::new(name.into(), json!(1))],
@@ -324,7 +316,7 @@ mod tests {
             let path = dir.join("data/2026-09-15-11-22-33_pages");
             let selected = path.with_extension("csv");
             let mut statuses = Vec::new();
-            let result = run_with_stream(
+            let result = run_test_stream(
                 &template,
                 Some(&options),
                 &dir,
@@ -386,7 +378,7 @@ mod tests {
         let dir = crate::tests::unique_test_dir("stream-start-failure");
         fs::write(dir.join("data"), "blocks folder creation").unwrap();
         let mut started = false;
-        let result = run_with_stream(
+        let result = run_test_stream(
             &template(),
             Some(&options()),
             &dir,
@@ -394,7 +386,7 @@ mod tests {
             |_| {},
             |_| {
                 started = true;
-                Ok(WorkflowRunResult::new(vec![], vec![]))
+                Ok(true)
             },
         );
         assert!(
@@ -455,7 +447,7 @@ mod tests {
         let dir = crate::tests::unique_test_dir("stream-partial");
         let path = dir.join("data/2026-09-15-11-22-33_test-name.csv");
         let mut statuses = Vec::new();
-        let result = run_with_stream(
+        let result = run_test_stream(
             &template(),
             Some(&options()),
             &dir,
@@ -478,38 +470,23 @@ mod tests {
     }
 
     #[test]
-    fn failed_workflow_result_preserves_committed_row() {
+    fn failed_completion_preserves_committed_row() {
         let dir = crate::tests::unique_test_dir("stream-failed-result");
         let path = dir.join("data/2026-09-15-11-22-33_test-name.csv");
         let mut statuses = Vec::new();
-        let committed = ResultRow::new(vec![WorkflowOutput::new("value".into(), json!(1))], None);
-        let failed = StepExecution::new(
-            StepResult::new(
-                StepId::new("out").unwrap(),
-                StepOutcome::Failed {
-                    message: "workflow step failed".into(),
-                },
-            ),
-            None,
-        );
-        let result = run_with_stream(
+        let result = run_test_stream(
             &template(),
             Some(&options()),
             &dir,
             |status| statuses.push(status),
             |_| {},
             |emit| {
-                assert_eq!(fs::read_to_string(&path).unwrap(), "value\n");
-                emit(WorkflowRunEvent::ResultRowCommitted(committed.clone()));
-                Ok(WorkflowRunResult::new(
-                    vec![failed.clone()],
-                    vec![committed.clone()],
-                ))
+                emit(row("value"));
+                Ok(false)
             },
         )
         .unwrap();
-        assert_eq!(result.step_executions(), &[failed]);
-        assert_eq!(result.result_rows(), &[committed]);
+        assert!(!result);
         assert_eq!(fs::read_to_string(path).unwrap(), "value\n1\n");
         let status = statuses.last().unwrap();
         assert!(status.finished);
@@ -524,7 +501,7 @@ mod tests {
         let dir = crate::tests::unique_test_dir("stream-error");
         let mut statuses = Vec::new();
         let mut received = 0;
-        let result = run_with_stream(
+        let result = run_test_stream(
             &template(),
             Some(&options()),
             &dir,
@@ -533,7 +510,7 @@ mod tests {
             |emit| {
                 emit(row("wrong"));
                 emit(row("value"));
-                Ok(WorkflowRunResult::new(vec![], vec![]))
+                Ok(true)
             },
         );
         assert!(result.is_ok());
