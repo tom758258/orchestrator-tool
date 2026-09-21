@@ -1170,7 +1170,7 @@ function App() {
     <main className="app">
       <header className="app-header">
         <div className="app-brand">
-          <h1>orchestrator-tool</h1>
+          <h1>Orchestrator Tool</h1>
           {applicationVersion && (
             <p className="app-version">v{applicationVersion}</p>
           )}

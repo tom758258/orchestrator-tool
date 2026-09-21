@@ -179,6 +179,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
     <h3 id="tool-setup-title">Tool Setup</h3>
     <fieldset disabled={disabled}>
       <legend>Add Tool Instance</legend>
+      <div className="tool-setup-add-controls">
       <select aria-label="Tool type" value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
         {['meters', 'powers', 'scopes', 'wavegen'].map(type => <option key={type} value={type}>{type}</option>)}
       </select>
@@ -193,6 +194,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
         setCollapsedIds(current => current.filter(collapsedId => collapsedId !== id))
         onChange([...value, instance])
       }}>Add Tool Instance</button>
+      </div>
     </fieldset>
     {value.map(instance => {
       const collapsed = collapsedIds.includes(instance.id)

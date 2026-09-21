@@ -920,6 +920,13 @@ textarea:disabled {
   font-weight: 600;
 }
 
+.tool-setup-add-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .meters-setup-toggle {
   display: flex;
   align-items: center;
