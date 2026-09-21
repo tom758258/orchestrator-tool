@@ -16,6 +16,7 @@ use serde_json::{Map, Value};
 
 const PREVIEW_BYTES: usize = 2_048;
 const PREVIEW_STRING_CHARS: usize = 512;
+const CHART_SERIES_MAX_ROWS: usize = 25_000;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ForIterationDto {
@@ -179,6 +180,10 @@ impl StoredRuns {
             return Err(format!("Workflow run {run_id} is no longer current"));
         }
         Ok(result)
+    }
+
+    pub fn clear_current(&self) {
+        *self.current.lock().unwrap() = None;
     }
 
     pub fn clear(&self, run_id: u64) -> Result<(), String> {
@@ -403,6 +408,7 @@ impl StoredRun {
         page: &str,
         outputs: &[String],
         start_row: usize,
+        limit: usize,
     ) -> Result<ChartSeriesDto, String> {
         let page_data = self
             .pages
@@ -411,6 +417,12 @@ impl StoredRun {
         if start_row > page_data.rows.len() {
             return Err("Chart start row exceeds the current row count".to_owned());
         }
+        if limit == 0 {
+            return Err("Chart series limit must be greater than zero".to_owned());
+        }
+        let end_row = start_row
+            .saturating_add(limit.min(CHART_SERIES_MAX_ROWS))
+            .min(page_data.rows.len());
         let mut series = BTreeMap::new();
         for name in outputs {
             if !page_data
@@ -424,7 +436,7 @@ impl StoredRun {
                     "Output {name:?} is not numeric for every committed row"
                 ));
             }
-            let values = page_data.rows[start_row..]
+            let values = page_data.rows[start_row..end_row]
                 .iter()
                 .map(|row| {
                     row.outputs()
@@ -532,9 +544,9 @@ impl StoredPage {
                     .collect()
             },
             summaries: self
-                .summaries
+                .output_names
                 .iter()
-                .map(|(name, summary)| summary.dto(name))
+                .filter_map(|name| self.summaries.get(name).map(|summary| summary.dto(name)))
                 .collect(),
         }
     }
@@ -876,13 +888,22 @@ mod tests {
             vec![4, 3]
         );
         let bootstrap = run
-            .chart_series("Results", &["Voltage".to_owned()], 0)
+            .chart_series("Results", &["Voltage".to_owned()], 0, 2)
             .unwrap();
-        assert_eq!(bootstrap.series["Voltage"], vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(bootstrap.series["Voltage"], vec![1.0, 2.0]);
+        assert_eq!(bootstrap.row_count, 5);
+        let middle = run
+            .chart_series("Results", &["Voltage".to_owned()], 2, 2)
+            .unwrap();
+        assert_eq!(middle.series["Voltage"], vec![3.0, 4.0]);
         let tail = run
-            .chart_series("Results", &["Voltage".to_owned()], 3)
+            .chart_series("Results", &["Voltage".to_owned()], 4, 2)
             .unwrap();
-        assert_eq!(tail.series["Voltage"], vec![4.0, 5.0]);
+        assert_eq!(tail.series["Voltage"], vec![5.0]);
+        assert!(
+            run.chart_series("Results", &["Voltage".to_owned()], 0, 0)
+                .is_err()
+        );
         assert_eq!(run.executions(0, 200).executions.len(), 1);
         assert_eq!(run.metadata().status, "failed");
         assert_eq!(run.metadata().pages[0].row_count, 5);
@@ -956,8 +977,40 @@ mod tests {
         assert!(metadata.pages[0].numeric_outputs.is_empty());
         assert_eq!(metadata.pages[0].summaries[0].count, 1);
         assert!(
-            run.chart_series("Results", &["Voltage".to_owned()], 0)
+            run.chart_series("Results", &["Voltage".to_owned()], 0, 1)
                 .is_err()
         );
     }
+    #[test]
+    fn page_summary_order_follows_declared_outputs() {
+        let mut page = StoredPage::new(vec!["Zeta".to_owned(), "Alpha".to_owned()]);
+        page.append(
+            ResultRow::new(
+                vec![
+                    WorkflowOutput::new("Zeta".to_owned(), Value::from(2.0)),
+                    WorkflowOutput::new("Alpha".to_owned(), Value::from(1.0)),
+                ],
+                None,
+            )
+            .with_page("Page"),
+        );
+        assert_eq!(
+            page.metadata("Page")
+                .summaries
+                .iter()
+                .map(|summary| summary.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Zeta", "Alpha"]
+        );
+    }
+
+    #[test]
+    fn clear_current_drops_the_previous_run_without_retaining_it() {
+        let runs = StoredRuns::default();
+        let run = runs.begin(template());
+        let run_id = run.read().unwrap().run_id;
+        runs.clear_current();
+        assert!(runs.get(run_id).is_err());
+    }
+
 }
