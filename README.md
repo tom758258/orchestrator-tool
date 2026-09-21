@@ -61,14 +61,48 @@ Run the Rust package checks from the repository root:
     cargo fmt --all --check
     cargo clippy --locked --all-targets --all-features -- -D warnings
 
-Set up and check the Desktop frontend from apps/desktop:
+### First-time setup
 
+On a fresh clone, navigate to the Desktop application and install npm dependencies:
+
+    cd apps\desktop
     npm.cmd ci
+
+* Run this only on a fresh clone or when `package.json` / `package-lock.json` changes.
+* Do not run this every time you start development.
+* No separate installation step is required for Rust crate dependencies. Cargo resolves them from the Rust project manifests when the Desktop application is built or run.
+
+### Normal Desktop development
+
+To run the complete Tauri Desktop application:
+
+    cd apps\desktop
+    npm.cmd run tauri dev
+
+* This command starts both the Vite development server and the Tauri Desktop application together.
+* Vite is launched automatically via `beforeDevCommand` defined in `tauri.conf.json`.
+* You do not need to run `npm.cmd run dev` manually or open two terminals.
+
+Use this for regular development, including Tauri features, backend commands, and workflow execution.
+
+### Frontend-only development
+
+For frontend-only work (UI, layout, CSS, component development):
+
+    cd apps\desktop
+    npm.cmd run dev
+
+* This starts only the Vite development server without the Tauri backend.
+* The app loads in a browser; Tauri-specific environment may not be available.
+
+### Validation
+
+Common frontend static checks from `apps/desktop`:
+
     npm.cmd run typecheck
     npm.cmd run build
 
-Use npm.cmd run dev for the frontend-only Vite server, or
-npm.cmd run tauri dev for the complete Tauri Desktop application.
+### WebView2 runtime
 
 The Desktop uses the system Microsoft Edge WebView2 Runtime on Windows. It
 must be installed before creating a Tauri window. The application does not

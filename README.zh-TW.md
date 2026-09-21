@@ -61,18 +61,58 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
     cargo fmt --all --check
     cargo clippy --locked --all-targets --all-features -- -D warnings
 
+### First-time setup
+
+第一次 clone repository 時，前往 Desktop application 目錄並安裝 npm dependencies：
+
+    cd apps\desktop
+    npm.cmd ci
+
+* 這僅在第一次 clone 或 `package.json` / `package-lock.json` 變更時執行。
+* 不需要每一次開發前都執行。
+* Rust crate dependencies 無需另行安裝步驟。Cargo 會在 Desktop application 編譯或執行時從 Rust 專案 manifest 中解析依賴。
+
 在 apps/desktop 設定並檢查 Desktop frontend：
 
     npm.cmd ci
     npm.cmd run typecheck
     npm.cmd run build
 
-使用 npm.cmd run dev 啟動 frontend-only Vite server；使用
-npm.cmd run tauri dev 啟動完整的 Tauri Desktop application。
+### Normal Desktop development
+
+執行完整的 Tauri Desktop application：
+
+    cd apps\desktop
+    npm.cmd run tauri dev
+
+* 這個指令會同時啟動 Vite development server 與 Tauri Desktop application。
+* Vite 會透過 `tauri.conf.json` 中定義的 `beforeDevCommand` 自動啟動。
+* 不需要手動執行 `npm.cmd run dev` 或在兩個 terminal 中同時開啟。
+
+使用於 regular development，包括 Tauri features、backend commands、與 workflow execution。
+
+### Frontend-only development
+
+僅使用 Vite server 進行前端開發（UI、layout、CSS、component）：
+
+    cd apps\desktop
+    npm.cmd run dev
+
+* 只會啟動 Vite development server，不包含 Tauri backend。
+* 於 browser 中開啟應用；Tauri-specific 環境可能無法使用。
+
+### Validation
+
+來自 `apps/desktop` 的 frontend static checks：
+
+    npm.cmd run typecheck
+    npm.cmd run build
+
+### WebView2 runtime
 
 Desktop 在 Windows 上使用系統的 Microsoft Edge WebView2 Runtime。建立
 Tauri window 前必須先安裝它；application 不會自動下載或安裝 WebView2
-Runtime。必要條件請參閱
+Runtime。必要條件請參閲
 [Microsoft 官方 WebView2 頁面](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 ## Desktop
