@@ -528,7 +528,7 @@ pub fn run_action_with_setup(
     }
     validate_measure_arguments(arguments)?;
 
-    let deadline = Instant::now() + timeout;
+    let command_deadline = Instant::now() + timeout;
     let client = WorkerClient::new(session.ready());
 
     let request = json!({
@@ -537,7 +537,8 @@ pub fn run_action_with_setup(
         "arguments": {}
     });
 
-    let remaining = remaining_duration(deadline).ok_or(MetersActionError::Timeout(timeout))?;
+    let remaining =
+        remaining_duration(command_deadline).ok_or(MetersActionError::Timeout(timeout))?;
     let (http_status, response) = client
         .command_with_timeout(&request, remaining)
         .map_err(MetersActionError::Http)?;
@@ -547,9 +548,13 @@ pub fn run_action_with_setup(
         MetersTriggerMode::Software => 1,
         MetersTriggerMode::SoftwareCustom => setup.sample_count,
     };
+    let mut sample_deadline = match setup.trigger_mode {
+        MetersTriggerMode::Software => command_deadline,
+        MetersTriggerMode::SoftwareCustom => Instant::now() + timeout,
+    };
     let mut samples = Vec::with_capacity(expected_samples);
     loop {
-        let Some(remaining) = remaining_duration(deadline) else {
+        let Some(remaining) = remaining_duration(sample_deadline) else {
             return Err(MetersActionError::Timeout(timeout));
         };
         match session.recv_event(remaining) {
@@ -562,6 +567,9 @@ pub fn run_action_with_setup(
                             MetersTriggerMode::Software => samples.pop().unwrap(),
                             MetersTriggerMode::SoftwareCustom => Value::Array(samples),
                         });
+                    }
+                    if setup.trigger_mode == MetersTriggerMode::SoftwareCustom {
+                        sample_deadline = Instant::now() + timeout;
                     }
                 }
                 MetersEventDecision::Failure(error) => return Err(error),

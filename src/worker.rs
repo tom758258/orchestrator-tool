@@ -162,6 +162,14 @@ impl WorkerSession {
 
     /// Requests a graceful stop and waits within the caller-provided timeout.
     pub fn shutdown(mut self, timeout: Duration) -> Result<ExitStatus, WorkerShutdownError> {
+        if let Some(status) = self
+            .process_mut()
+            .try_wait()
+            .map_err(WorkerShutdownError::ProcessIo)?
+        {
+            return self.finish_exited_process(status);
+        }
+
         let deadline = Instant::now() + timeout;
         let now = Instant::now();
 
@@ -172,6 +180,13 @@ impl WorkerSession {
 
         let client = WorkerClient::new(&self.ready);
         if let Err(error) = client.stop_with_timeout(deadline.saturating_duration_since(now)) {
+            if let Some(status) = self
+                .process_mut()
+                .try_wait()
+                .map_err(WorkerShutdownError::ProcessIo)?
+            {
+                return self.finish_exited_process(status);
+            }
             self.force_cleanup()?;
             return Err(WorkerShutdownError::Stop(error));
         }
@@ -182,10 +197,7 @@ impl WorkerSession {
                 .try_wait()
                 .map_err(WorkerShutdownError::ProcessIo)?
             {
-                self.process.take();
-                drop(self.event_receiver.take());
-                self.join_stdout_reader()?;
-                return Ok(status);
+                return self.finish_exited_process(status);
             }
 
             let now = Instant::now();
@@ -202,6 +214,16 @@ impl WorkerSession {
         self.process
             .as_mut()
             .expect("WorkerSession process must exist")
+    }
+
+    fn finish_exited_process(
+        &mut self,
+        status: ExitStatus,
+    ) -> Result<ExitStatus, WorkerShutdownError> {
+        self.process.take();
+        drop(self.event_receiver.take());
+        self.join_stdout_reader()?;
+        Ok(status)
     }
 
     fn force_cleanup(&mut self) -> Result<(), WorkerShutdownError> {
