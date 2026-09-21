@@ -1,20 +1,5 @@
 import type { ResultRowDto } from './workflow'
 
-export function numericOutputNames(rows: readonly ResultRowDto[], names: readonly string[]): string[] {
-  if (rows.length === 0) return []
-  const candidates = new Map(names.map(name => [name, { count: 0, lastRow: -1 }]))
-  for (let index = 0; index < rows.length; index++) {
-    for (const output of rows[index].outputs) {
-      const candidate = candidates.get(output.name)
-      if (!candidate || candidate.lastRow === index) continue
-      // Preserve find() semantics: only the first cell with this name counts per row.
-      candidate.lastRow = index
-      if (typeof output.value === 'number' && Number.isFinite(output.value)) candidate.count++
-    }
-  }
-  return names.filter(name => candidates.get(name)!.count === rows.length)
-}
-
 type NumericBuffer = { values: Float64Array; length: number }
 
 function appendBuffer(buffer: NumericBuffer | undefined, tail: readonly number[]): NumericBuffer {
@@ -33,12 +18,14 @@ function appendBuffer(buffer: NumericBuffer | undefined, tail: readonly number[]
 export function createPageChartData() {
   const series = new Map<string, NumericBuffer>()
   let iteration: NumericBuffer = { values: new Float64Array(16), length: 0 }
+  let version = 0
   return {
     series,
     append(name: string, startRow: number, tail: readonly number[]) {
       const current = series.get(name)
       if ((current?.length ?? 0) !== startRow) return false
       series.set(name, appendBuffer(current, tail))
+      version++
       const required = startRow + tail.length
       if (required > iteration.length) {
         iteration = appendBuffer(iteration, Array.from(
@@ -52,6 +39,7 @@ export function createPageChartData() {
     },
     length(name: string) { return series.get(name)?.length ?? 0 },
     get rowCount() { return Math.max(0, ...[...series.values()].map(buffer => buffer.length)) },
+    get version() { return version },
     get iteration() { return iteration.values.subarray(0, iteration.length) },
     getSeries(name: string): Float64Array {
       const buffer = series.get(name)
