@@ -87,13 +87,14 @@ Use this for regular development, including Tauri features, backend commands, an
 
 ### Frontend-only development
 
-For frontend-only work (UI, layout, CSS, component development):
+For frontend work that does not require Tauri-backed application state or native commands:
 
     cd apps\desktop
     npm.cmd run dev
 
 * This starts only the Vite development server without the Tauri backend.
-* The app loads in a browser; Tauri-specific environment may not be available.
+* Open `http://localhost:5173` in a browser if needed.
+* The complete Desktop workflow experience is not available in a regular browser because it depends on Tauri commands.
 
 ### Validation
 

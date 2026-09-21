@@ -72,12 +72,6 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
 * 不需要每一次開發前都執行。
 * Rust crate dependencies 無需另行安裝步驟。Cargo 會在 Desktop application 編譯或執行時從 Rust 專案 manifest 中解析依賴。
 
-在 apps/desktop 設定並檢查 Desktop frontend：
-
-    npm.cmd ci
-    npm.cmd run typecheck
-    npm.cmd run build
-
 ### Normal Desktop development
 
 執行完整的 Tauri Desktop application：
@@ -93,13 +87,14 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
 
 ### Frontend-only development
 
-僅使用 Vite server 進行前端開發（UI、layout、CSS、component）：
+若要進行不依賴 Tauri application state 或 native commands 的前端工作：
 
     cd apps\desktop
     npm.cmd run dev
 
 * 只會啟動 Vite development server，不包含 Tauri backend。
-* 於 browser 中開啟應用；Tauri-specific 環境可能無法使用。
+* 如有需要，請在 browser 開啟 `http://localhost:5173`。
+* 一般 browser 無法使用完整的 Desktop workflow 功能，因為這些功能依賴 Tauri commands。
 
 ### Validation
 
@@ -112,7 +107,7 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
 
 Desktop 在 Windows 上使用系統的 Microsoft Edge WebView2 Runtime。建立
 Tauri window 前必須先安裝它；application 不會自動下載或安裝 WebView2
-Runtime。必要條件請參閲
+Runtime。必要條件請參閱
 [Microsoft 官方 WebView2 頁面](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 ## Desktop
