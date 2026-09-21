@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputRows } from '../src/virtualRows.ts'
+import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputWindow } from '../src/virtualRows.ts'
 
 test('Output ranges clamp at the top, middle, bottom, and an empty Page', () => {
   const options = { rowCount: 10_000, rowHeight: OUTPUT_ROW_HEIGHT, viewportHeight: 360, overscan: OUTPUT_ROW_OVERSCAN }
@@ -26,25 +26,19 @@ test('Output ranges clamp at the top, middle, bottom, and an empty Page', () => 
   })
 })
 
-test('virtual Output items retain absolute indices and newest-first Iteration without changing rows', () => {
-  const rows = Array.from({ length: 10_000 }, (_, index) => ({
-    page: 'Results', outputs: [{ name: 'Value', value: index + 1 }],
-    for_iteration: { for_step_id: 'loop', iteration_index: index }, while_iteration: null,
-  }))
-  const items = virtualOutputRows(rows, 5000, 5010)
-  assert.equal(items.length, 10)
-  assert.equal(items[0].index, 5000)
-  assert.equal(items[0].iteration, 5000)
-  assert.equal(items[0].row, rows[4999])
-  assert.equal(items[9].iteration, 4991)
-  assert.equal(virtualOutputRows(rows, 0, 1)[0].row, rows[9999])
-  assert.equal(virtualOutputRows(rows, 9999, 10_000)[0].row, rows[0])
-  assert.equal(rows.length, 10_000)
-  assert.equal(rows[0].outputs[0].value, 1)
-  assert.equal(rows[9999].outputs[0].value, 10_000)
-
-  rows.push({ ...rows[9999], outputs: [{ name: 'Value', value: 10_001 }] })
-  const newest = virtualOutputRows(rows, 0, 1)[0]
-  assert.equal(newest.row, rows[10_000])
-  assert.equal(newest.iteration, 10_001)
+test('server-side Output windows retain absolute indices and newest-first Iteration', () => {
+  const newest = [
+    { page: 'Results', outputs: [{ name: 'Value', value: 10 }] },
+    { page: 'Results', outputs: [{ name: 'Value', value: 9 }] },
+    { page: 'Results', outputs: [{ name: 'Value', value: 8 }] },
+  ]
+  const top = virtualOutputWindow(newest, 0, 10)
+  assert.deepEqual(top.map(item => [item.index, item.iteration, item.row.outputs[0].value]), [
+    [0, 10, 10], [1, 9, 9], [2, 8, 8],
+  ])
+  const middle = virtualOutputWindow([
+    { page: 'Results', outputs: [{ name: 'Value', value: 5 }] },
+    { page: 'Results', outputs: [{ name: 'Value', value: 4 }] },
+  ], 5, 10)
+  assert.deepEqual(middle.map(item => [item.index, item.iteration]), [[5, 5], [6, 4]])
 })
