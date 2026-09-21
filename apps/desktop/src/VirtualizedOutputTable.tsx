@@ -52,6 +52,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   const items = window && window.run_id === runId && window.page === page && window.offset === range.start
     ? virtualOutputWindow(window.rows, window.offset, rowCount) : []
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
+  const pendingRows = Math.max(0, range.end - range.start - items.length)
 
   return <div ref={scroll} className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}
     onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
@@ -77,6 +78,9 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
             })}
           </tr>
         ))}
+        {pendingRows > 0 && <tr aria-hidden="true">
+          <td className="output-table-spacer" colSpan={columnCount} style={{ height: pendingRows * OUTPUT_ROW_HEIGHT }} />
+        </tr>}
         {range.bottomSpacerHeight > 0 && <tr aria-hidden="true">
           <td className="output-table-spacer" colSpan={columnCount} style={{ height: range.bottomSpacerHeight }} />
         </tr>}
