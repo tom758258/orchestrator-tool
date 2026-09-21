@@ -1012,5 +1012,4 @@ mod tests {
         runs.clear_current();
         assert!(runs.get(run_id).is_err());
     }
-
 }
