@@ -35,3 +35,13 @@ test('Output shows Last Run Page tabs while Page editing stays in Workflow Prope
   assert.ok(properties.includes('Existing compatible Page'))
   assert.ok(properties.includes('selectedCompatiblePages.map'))
 })
+
+test('failed StoredRun diagnostics are rendered from compact metadata', () => {
+  assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error/)
+  assert.match(source, /Run failed: \{displayedRun\.error\}/)
+})
+
+test('bounded execution previews distinguish omitted data from a real null', () => {
+  assert.match(source, /result\.output_omitted && result\.output === null/)
+  assert.match(source, /Preview omitted/)
+})
