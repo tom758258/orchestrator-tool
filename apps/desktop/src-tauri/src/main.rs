@@ -669,7 +669,6 @@ impl Drop for DesktopProgressBatcher {
     }
 }
 
-
 #[tauri::command]
 fn save_chart_png(destination_path: String, png_bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(&destination_path, png_bytes)
@@ -998,12 +997,12 @@ mod tests {
 
 #[cfg(test)]
 mod regression_tests {
+    use super::stored_run::StoredRuns;
     use super::{
         create_workflow_draft, help_url, load_desktop_config_from_path, load_workflow_template,
         reset_desktop_tool_executable, resolve_built_in_tool_id, save_chart_png,
         save_workflow_template, set_desktop_tool_executable, validate_workflow_draft,
     };
-    use super::stored_run::StoredRuns;
     use orchestrator_tool::{
         template::Template,
         tool::ToolId,
@@ -1166,10 +1165,18 @@ mod regression_tests {
         super::edit_desktop_live_resource(&path, "powers-1", Some(powers), None).unwrap();
         super::edit_desktop_live_resource(&path, "meters-1", Some(meters), None).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
-        assert_eq!(loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()), Some(powers));
-        assert_eq!(loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()), Some(meters));
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
+            Some(powers)
+        );
+        assert_eq!(
+            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
+            Some(meters)
+        );
         for resource in ["", " ", "\t\r\n"] {
-            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err());
+            assert!(
+                super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err()
+            );
         }
         super::edit_desktop_live_resource(&path, "powers-1", None, None).unwrap();
         assert_eq!(
@@ -1231,9 +1238,11 @@ mod regression_tests {
                 { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
             ] }
         }"#;
-        assert!(validate_workflow_draft(invalid.to_owned())
-            .unwrap_err()
-            .contains("invalid step ID"));
+        assert!(
+            validate_workflow_draft(invalid.to_owned())
+                .unwrap_err()
+                .contains("invalid step ID")
+        );
     }
 
     #[test]
@@ -1248,7 +1257,8 @@ mod regression_tests {
                 { "type": "wait", "id": "wait-1", "duration_ms": 1 }
             ] }
         }"#;
-        let saved = save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
+        let saved =
+            save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
         let loaded = load_workflow_template(path.display().to_string()).unwrap();
         assert_eq!(saved, loaded);
         std::fs::remove_dir_all(dir).unwrap();
@@ -1287,7 +1297,11 @@ mod regression_tests {
         );
     }
 
-    fn manifest_fixture(dir: &std::path::Path, tool: &str, worker_version: u32) -> std::path::PathBuf {
+    fn manifest_fixture(
+        dir: &std::path::Path,
+        tool: &str,
+        worker_version: u32,
+    ) -> std::path::PathBuf {
         let manifest = serde_json::json!({
             "event": "tool_manifest", "schema_version": 2, "tool_id": tool,
             "tool_version": "1.0.0", "worker_protocol": {
@@ -1325,22 +1339,36 @@ mod regression_tests {
         set_desktop_tool_executable(&config_path, &ToolId::meters(), &meters_exe).unwrap();
         set_desktop_tool_executable(&config_path, &ToolId::powers(), &powers_exe).unwrap();
         let config = load_desktop_config_from_path(&config_path).unwrap();
-        assert_eq!(config.executable_path(&ToolId::meters()), Some(meters_exe.as_path()));
-        assert_eq!(config.executable_path(&ToolId::powers()), Some(powers_exe.as_path()));
+        assert_eq!(
+            config.executable_path(&ToolId::meters()),
+            Some(meters_exe.as_path())
+        );
+        assert_eq!(
+            config.executable_path(&ToolId::powers()),
+            Some(powers_exe.as_path())
+        );
         let saved = std::fs::read(&config_path).unwrap();
         for rejected in [
             dir.join("missing.exe"),
             powers_exe.clone(),
             manifest_fixture(&dir, "meters", 99),
         ] {
-            assert!(set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err());
+            assert!(
+                set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err()
+            );
             assert_eq!(std::fs::read(&config_path).unwrap(), saved);
         }
         reset_desktop_tool_executable(&config_path, &ToolId::meters()).unwrap();
         let config = load_desktop_config_from_path(&config_path).unwrap();
         assert_eq!(config.executable_path(&ToolId::meters()), None);
-        assert_eq!(config.executable_path(&ToolId::powers()), Some(powers_exe.as_path()));
-        assert_eq!(resolve_built_in_tool_id("meters").unwrap(), ToolId::meters());
+        assert_eq!(
+            config.executable_path(&ToolId::powers()),
+            Some(powers_exe.as_path())
+        );
+        assert_eq!(
+            resolve_built_in_tool_id("meters").unwrap(),
+            ToolId::meters()
+        );
         assert!(resolve_built_in_tool_id("foobar").is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
