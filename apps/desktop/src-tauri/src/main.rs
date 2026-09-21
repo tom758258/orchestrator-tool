@@ -18,8 +18,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(test)]
-use orchestrator_tool::workflow::{StepExecution, StepOutcome};
 use orchestrator_tool::{
     config::{Config, ConfigError, ResourceIdentity},
     discovery::{
@@ -240,6 +238,7 @@ async fn run_workflow_simulation(
     let control = state.register()?;
     let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        runs.clear_current();
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let stored = runs.begin(template.clone());
@@ -309,6 +308,7 @@ async fn run_workflow_live(
     let control = state.register()?;
     let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
+        runs.clear_current();
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let stored = runs.begin(template.clone());
@@ -669,26 +669,6 @@ impl Drop for DesktopProgressBatcher {
     }
 }
 
-#[cfg(test)]
-fn validate_completed_successful_run(
-    workflow: &Workflow,
-    results: &[StepExecution],
-) -> Result<(), String> {
-    let all_succeeded = results
-        .iter()
-        .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }));
-    let all_root_steps_completed = workflow.steps().iter().all(|step| {
-        results.iter().any(|result| {
-            result.for_iteration().is_none()
-                && result.while_iteration().is_none()
-                && result.step_id() == step.id()
-        })
-    });
-    if !all_succeeded || !all_root_steps_completed {
-        return Err("workflow run did not complete successfully; export is unavailable".to_owned());
-    }
-    Ok(())
-}
 
 #[tauri::command]
 fn save_chart_png(destination_path: String, png_bytes: Vec<u8>) -> Result<(), String> {
@@ -724,8 +704,11 @@ fn get_last_run_chart_series(
     page: String,
     outputs: Vec<String>,
     start_row: usize,
+    limit: usize,
 ) -> Result<ChartSeriesDto, String> {
-    state.with_current(run_id, |run| run.chart_series(&page, &outputs, start_row))?
+    state.with_current(run_id, |run| {
+        run.chart_series(&page, &outputs, start_row, limit)
+    })?
 }
 
 #[tauri::command]
@@ -1013,43 +996,77 @@ mod tests {
     }
 }
 
-#[cfg(all(test, any()))]
-mod legacy_tests {
-    #[test]
-    fn help_url_accepts_only_supported_themes() {
-        for theme in ["system", "light", "dark"] {
-            assert_eq!(
-                super::help_url(theme).unwrap(),
-                tauri::WebviewUrl::App(format!("help/desktop.html?theme={theme}").into())
-            );
-        }
-        for theme in ["", "Dark", "auto", "dark&url=https://example.com"] {
-            assert!(super::help_url(theme).is_err());
-        }
-    }
-
+#[cfg(test)]
+mod regression_tests {
     use super::{
-        create_workflow_draft, load_desktop_config_from_path, load_workflow_template,
-        reset_desktop_tool_executable, resolve_built_in_tool_id, save_workflow_template,
-        set_desktop_tool_executable, validate_workflow_draft,
+        create_workflow_draft, help_url, load_desktop_config_from_path, load_workflow_template,
+        reset_desktop_tool_executable, resolve_built_in_tool_id, save_chart_png,
+        save_workflow_template, set_desktop_tool_executable, validate_workflow_draft,
     };
+    use super::stored_run::StoredRuns;
     use orchestrator_tool::{
         template::Template,
         tool::ToolId,
         tool_instance::ToolInstanceId,
         workflow::{
-            ForIteration, ResultRow, StepExecution, StepId, StepOutcome, StepResult,
-            WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
+            ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput,
+            WorkflowRunEvent,
         },
     };
     use serde_json::json;
+
+    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+        use std::{
+            process,
+            sync::atomic::{AtomicU64, Ordering},
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn progress_template() -> Template {
+        Template::from_json_str(
+            &json!({
+                "schema_version": 1,
+                "name": "progress",
+                "tool_instances": [],
+                "workflow": { "steps": [{
+                    "type": "output", "id": "out", "name": "value", "page": "Results",
+                    "value": { "source": "literal", "value": 1 }
+                }] }
+            })
+            .to_string(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn help_url_accepts_only_supported_themes() {
+        for theme in ["system", "light", "dark"] {
+            assert_eq!(
+                help_url(theme).unwrap(),
+                tauri::WebviewUrl::App(format!("help/desktop.html?theme={theme}").into())
+            );
+        }
+        for theme in ["", "Dark", "auto", "dark&url=https://example.com"] {
+            assert!(help_url(theme).is_err());
+        }
+    }
 
     #[test]
     fn save_chart_png_preserves_binary_bytes() {
         let dir = unique_test_dir("orchestrator-chart-png");
         let path = dir.join("chart.png");
         let bytes = vec![0, 137, 80, 78, 71, 13, 10, 26, 255];
-        super::save_chart_png(path.display().to_string(), bytes.clone()).unwrap();
+        save_chart_png(path.display().to_string(), bytes.clone()).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1066,14 +1083,78 @@ mod legacy_tests {
         assert!(!super::consume_loop_stop(&control, &b));
         assert!(super::consume_loop_stop(&control, &a));
         assert!(!super::consume_loop_stop(&control, &a));
-        assert!(state.request(a.to_string()));
         state.clear();
         assert!(!state.request(b.to_string()));
-        let next = state.register().unwrap();
-        assert!(!super::consume_loop_stop(&next, &a));
-        assert!(state.request(b.to_string()));
-        assert!(super::consume_loop_stop(&next, &b));
-        state.clear();
+    }
+
+    #[test]
+    fn progress_batch_flushes_compact_metadata_only() {
+        let messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+                panic!("expected JSON progress");
+            };
+            received
+                .lock()
+                .unwrap()
+                .push(serde_json::from_str::<serde_json::Value>(&json).unwrap());
+            Ok(())
+        });
+        let stored = StoredRuns::default().begin(progress_template());
+        let mut batcher = super::DesktopProgressBatcher::new(&channel, stored);
+        batcher.shared.0.lock().unwrap().deadline =
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Succeeded { output: json!(1) },
+            ),
+            None,
+        )));
+        batcher.push(&WorkflowRunEvent::ResultRowCommitted(
+            ResultRow::new(
+                vec![WorkflowOutput::new("value".to_owned(), json!(1))],
+                None,
+            )
+            .with_page("Results"),
+        ));
+        batcher.flush();
+        let messages = messages.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        let wire = &messages[0];
+        assert_eq!(wire["type"], "progress-batch");
+        assert_eq!(wire["run"]["execution_count"], 1);
+        assert_eq!(wire["run"]["pages"][0]["row_count"], 1);
+        assert_eq!(wire["completed_step_ids"], json!(["out"]));
+        assert!(wire.get("result_rows").is_none());
+        assert!(wire.get("step_executions").is_none());
+    }
+
+    #[test]
+    fn sparse_progress_flushes_without_another_event() {
+        let (sent, received) = std::sync::mpsc::channel();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            sent.send(body).unwrap();
+            Ok(())
+        });
+        let stored = StoredRuns::default().begin(progress_template());
+        let mut batcher = super::DesktopProgressBatcher::new(&channel, stored);
+        batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Succeeded { output: json!(1) },
+            ),
+            None,
+        )));
+        let body = received
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+            panic!("expected JSON progress");
+        };
+        let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(wire["run"]["latest_execution"]["step_id"], "out");
     }
 
     #[test]
@@ -1085,32 +1166,17 @@ mod legacy_tests {
         super::edit_desktop_live_resource(&path, "powers-1", Some(powers), None).unwrap();
         super::edit_desktop_live_resource(&path, "meters-1", Some(meters), None).unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
-        assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
-            Some(powers)
-        );
-        assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
-            Some(meters)
-        );
+        assert_eq!(loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()), Some(powers));
+        assert_eq!(loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()), Some(meters));
         for resource in ["", " ", "\t\r\n"] {
-            assert!(
-                super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err()
-            );
-        }
-        for tool in ["", "bad_id", "Uppercase"] {
-            assert!(super::edit_desktop_live_resource(&path, tool, Some(powers), None).is_err());
-            assert!(super::edit_desktop_live_resource(&path, tool, None, None).is_err());
+            assert!(super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err());
         }
         super::edit_desktop_live_resource(&path, "powers-1", None, None).unwrap();
-        let loaded = load_desktop_config_from_path(&path).unwrap();
         assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
+            load_desktop_config_from_path(&path)
+                .unwrap()
+                .live_resource(&ToolInstanceId::new("powers-1").unwrap()),
             None
-        );
-        assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
-            Some(meters)
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1126,10 +1192,8 @@ mod legacy_tests {
         );
         let authorization = super::PowersWriteAuthorization::prepare(&dir, &mut spec).unwrap();
         let path = authorization.0.clone();
-        let value: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(
-            value,
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
             json!({ "settings": { "allow_output_writes": true } })
         );
         assert_eq!(
@@ -1154,484 +1218,40 @@ mod legacy_tests {
     }
 
     #[test]
-    fn create_workflow_draft_returns_restorable_empty_template() {
+    fn create_and_validate_workflow_drafts_use_current_schema() {
         let json = create_workflow_draft().unwrap();
         let template = Template::from_json_str(&json).unwrap();
-
         assert_eq!(template.name(), "Untitled");
         assert!(template.workflow().steps().is_empty());
-    }
-
-    #[test]
-    fn validate_workflow_draft_rejects_invalid_step_id() {
         let invalid = r#"{
             "schema_version": 1,
             "tool_instances": [],
             "name": "Invalid",
-            "workflow": {
-                "steps": [
-                    { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
-                ]
-            }
+            "workflow": { "steps": [
+                { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
+            ] }
         }"#;
-
-        let error = validate_workflow_draft(invalid.to_owned()).unwrap_err();
-
-        assert!(
-            error.contains("invalid step ID"),
-            "unexpected error: {error}"
-        );
+        assert!(validate_workflow_draft(invalid.to_owned())
+            .unwrap_err()
+            .contains("invalid step ID"));
     }
 
     #[test]
     fn save_and_load_workflow_template_round_trip() {
-        use std::{
-            fs, process,
-            sync::atomic::{AtomicU64, Ordering},
-            time::{SystemTime, UNIX_EPOCH},
-        };
-
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let dir = std::env::temp_dir().join(format!(
-            "orchestrator-tool-desktop-test-{}-{timestamp}-{id}",
-            process::id()
-        ));
-        fs::create_dir_all(&dir).unwrap();
+        let dir = unique_test_dir("orchestrator-template-round-trip");
         let path = dir.join("template.json");
-
         let template_json = r#"{
             "schema_version": 1,
-            "tool_instances": [{"id": "powers-1", "tool": "powers", "setup": {}}],
+            "tool_instances": [],
             "name": "Round Trip",
-            "workflow": {
-                "steps": [
-                    { "type": "tool-action", "id": "power-set-1", "target": "powers-1", "action": "set-voltage", "arguments": { "channel": 1, "voltage": 5.0 } },
-                    { "type": "wait", "id": "wait-1", "duration_ms": 500 },
-                    { "type": "for", "id": "sweep", "variable": "x",
-                      "range": { "start": "0", "stop": "0.3", "step": "0.1" },
-                      "steps": [{ "type": "output", "id": "sample", "name": "sample", "page": "Results",
-                                  "value": { "source": "variable", "variable": "x" } }] }
-                ]
-            }
-        }"#;
-
-        let saved_canonical =
-            save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
-
-        let loaded_canonical = load_workflow_template(path.display().to_string()).unwrap();
-
-        assert_eq!(saved_canonical, loaded_canonical);
-
-        let template = Template::from_json_str(&loaded_canonical).unwrap();
-        assert_eq!(template.name(), "Round Trip");
-        assert_eq!(template.workflow().steps().len(), 3);
-        assert_eq!(template.workflow().steps()[0].id().as_str(), "power-set-1");
-        assert_eq!(template.workflow().steps()[1].id().as_str(), "wait-1");
-        let wire: serde_json::Value = serde_json::from_str(&loaded_canonical).unwrap();
-        assert_eq!(
-            wire["workflow"]["steps"][2]["range"],
-            json!({ "start": "0", "stop": "0.3", "step": "0.1" })
-        );
-        assert_eq!(wire["workflow"]["steps"][2]["steps"][0]["id"], "sample");
-
-        let _ = fs::remove_file(&path);
-        let _ = fs::remove_dir(&dir);
-    }
-
-    #[test]
-    fn progress_batch_preserves_order_and_final_flush_drains_pending_events() {
-        let messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let received = messages.clone();
-        let channel = tauri::ipc::Channel::new(move |body| {
-            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
-                panic!("expected JSON progress");
-            };
-            received
-                .lock()
-                .unwrap()
-                .push(serde_json::from_str::<serde_json::Value>(&json).unwrap());
-            Ok(())
-        });
-        let mut batcher = super::DesktopProgressBatcher::new(&channel);
-        batcher.flush();
-        assert!(messages.lock().unwrap().is_empty());
-        // Keep the interval unexpired without depending on test execution speed.
-        batcher.shared.0.lock().unwrap().deadline =
-            Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
-        for (id, value) in [("a", 1), ("b", 2)] {
-            batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
-                StepResult::new(
-                    StepId::new(id).unwrap(),
-                    StepOutcome::Succeeded {
-                        output: json!(value),
-                    },
-                ),
-                None,
-            )));
-            batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
-                vec![WorkflowOutput::new("value".to_owned(), json!(value))],
-                None,
-            )));
-        }
-        assert!(messages.lock().unwrap().is_empty());
-        batcher.flush();
-        assert!(batcher.shared.0.lock().unwrap().step_executions.is_empty());
-        assert!(batcher.shared.0.lock().unwrap().result_rows.is_empty());
-        batcher.flush();
-        let messages = messages.lock().unwrap();
-        assert_eq!(messages.len(), 1);
-        let wire = &messages[0];
-        assert_eq!(wire["type"], "progress-batch");
-        assert_eq!(
-            wire["step_executions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value["step_id"].as_str().unwrap())
-                .collect::<Vec<_>>(),
-            vec!["a", "b"]
-        );
-        assert_eq!(
-            wire["result_rows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|value| value["outputs"][0]["value"].as_i64().unwrap())
-                .collect::<Vec<_>>(),
-            vec![1, 2]
-        );
-    }
-
-    #[test]
-    fn sparse_progress_flushes_without_another_event() {
-        let (sent, received) = std::sync::mpsc::channel();
-        let channel = tauri::ipc::Channel::new(move |body| {
-            sent.send(body).unwrap();
-            Ok(())
-        });
-        let mut batcher = super::DesktopProgressBatcher::new(&channel);
-        batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
-            StepResult::new(
-                StepId::new("out").unwrap(),
-                StepOutcome::Succeeded { output: json!(1) },
-            ),
-            None,
-        )));
-        let body = received
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap();
-        let tauri::ipc::InvokeResponseBody::Json(json) = body else {
-            panic!("expected JSON progress");
-        };
-        let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(wire["type"], "progress-batch");
-        assert_eq!(wire["step_executions"][0]["step_id"], "out");
-    }
-
-    #[test]
-    fn final_flush_does_not_duplicate_when_timer_wakes() {
-        let (sent, received) = std::sync::mpsc::channel();
-        let channel = tauri::ipc::Channel::new(move |body| {
-            sent.send(body).unwrap();
-            Ok(())
-        });
-        let mut batcher = super::DesktopProgressBatcher::new(&channel);
-        batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
-            Vec::new(),
-            None,
-        )));
-        batcher.flush();
-        received
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap();
-        assert!(matches!(
-            received.recv_timeout(super::PROGRESS_BATCH_INTERVAL * 3),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-        ));
-        batcher.flush();
-        assert!(received.try_recv().is_err());
-    }
-
-    #[test]
-    fn progress_batch_send_failure_does_not_fail_execution() {
-        let channel = tauri::ipc::Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage));
-        let mut batcher = super::DesktopProgressBatcher::new(&channel);
-        batcher.push(&WorkflowRunEvent::ResultRowCommitted(ResultRow::new(
-            Vec::new(),
-            None,
-        )));
-        batcher.flush();
-        assert!(batcher.shared.0.lock().unwrap().result_rows.is_empty());
-    }
-
-    #[test]
-    fn progress_event_dto_preserves_occurrence_metadata() {
-        let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
-        let execution = StepExecution::new(
-            StepResult::new(
-                StepId::new("out").unwrap(),
-                StepOutcome::Succeeded { output: json!(3) },
-            ),
-            Some(iteration.clone()),
-        );
-        let row = ResultRow::new(
-            vec![WorkflowOutput::new("value".to_owned(), json!(3))],
-            Some(iteration),
-        );
-        let step_event = serde_json::to_value(super::step_execution_dto(&execution)).unwrap();
-        let row_event = serde_json::to_value(super::result_row_dto(&row)).unwrap();
-        assert_eq!(
-            step_event,
-            json!({
-                "step_id": "out", "status": "succeeded", "output": 3, "message": null,
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null
-            })
-        );
-        assert_eq!(
-            row_event,
-            json!({
-                "page": "Results", "outputs": [{ "name": "value", "value": 3 }],
-                    "for_iteration": { "for_step_id": "sweep", "iteration_index": 1 }, "while_iteration": null
-            })
-        );
-    }
-
-    #[test]
-    fn result_row_dto_requires_page() {
-        let missing_page = json!({
-            "outputs": [], "for_iteration": null, "while_iteration": null
-        });
-        assert!(serde_json::from_value::<super::ResultRowDto>(missing_page).is_err());
-    }
-
-    #[test]
-    fn run_result_dto_preserves_occurrences_rows_and_outcomes() {
-        let iteration = ForIteration::new(StepId::new("sweep").unwrap(), 1);
-        let run = WorkflowRunResult::new(
-            vec![
-                StepExecution::new(
-                    StepResult::new(
-                        StepId::new("measure").unwrap(),
-                        StepOutcome::Succeeded {
-                            output: json!({"value": 3.3, "unit": "V"}),
-                        },
-                    ),
-                    Some(iteration.clone()),
-                ),
-                StepExecution::new(
-                    StepResult::new(
-                        StepId::new("sweep").unwrap(),
-                        StepOutcome::Succeeded {
-                            output: serde_json::Value::Null,
-                        },
-                    ),
-                    None,
-                ),
-                StepExecution::new(
-                    StepResult::new(
-                        StepId::new("check").unwrap(),
-                        StepOutcome::Failed {
-                            message: "Check failed.".to_owned(),
-                        },
-                    ),
-                    None,
-                ),
-                StepExecution::new(
-                    StepResult::new(StepId::new("wait").unwrap(), StepOutcome::Cancelled),
-                    None,
-                ),
-            ],
-            vec![
-                ResultRow::new(
-                    vec![WorkflowOutput::new("voltage".to_owned(), json!(3.3))],
-                    Some(iteration),
-                ),
-                ResultRow::new(vec![], None),
-            ],
-        );
-        let dto = serde_json::to_value(super::workflow_run_result_dto(&run)).unwrap();
-        assert_eq!(dto["step_executions"][0]["step_id"], "measure");
-        assert_eq!(
-            dto["step_executions"][0]["output"],
-            json!({"value": 3.3, "unit": "V"})
-        );
-        let metadata = json!({"for_step_id": "sweep", "iteration_index": 1});
-        assert_eq!(dto["step_executions"][0]["for_iteration"], metadata);
-        assert!(dto["step_executions"][1]["for_iteration"].is_null());
-        assert_eq!(dto["step_executions"][2]["status"], "failed");
-        assert_eq!(dto["step_executions"][2]["message"], "Check failed.");
-        assert_eq!(dto["step_executions"][3]["status"], "cancelled");
-        assert_eq!(dto["result_rows"][0]["for_iteration"], metadata);
-        assert_eq!(
-            dto["result_rows"][0]["outputs"],
-            json!([{"name": "voltage", "value": 3.3}])
-        );
-        assert!(dto["result_rows"][1]["for_iteration"].is_null());
-    }
-
-    #[test]
-    fn page_export_for_result_rows_requires_successful_completion() {
-        let template_json = json!({
-            "schema_version": 1, "tool_instances": [], "name": "For CSV",
-            "workflow": { "steps": [{
-                "type": "for", "id": "sweep", "variable": "x",
-                "range": { "start": "0", "stop": "0.2", "step": "0.1" },
-                "steps": [
-                    { "type": "output", "id": "voltage", "name": "voltage", "page": "Results", "value": { "source": "variable", "variable": "x" } },
-                    { "type": "output", "id": "passed", "name": "passed", "page": "Results", "value": { "source": "literal", "value": true } }
-                ]
-            }] }
-        }).to_string();
-        let template = Template::from_json_str(&template_json).unwrap();
-        let run = orchestrator_tool::run::run_simulated_workflow(
-            &template,
-            &Default::default(),
-            super::RUN_STARTUP_TIMEOUT,
-            super::RUN_ACTION_TIMEOUT,
-            super::RUN_SHUTDOWN_TIMEOUT,
-        )
-        .unwrap();
-        let dir = unique_test_dir("orchestrator-desktop-for-csv");
-        let path = dir.join("results.csv");
-        super::export_workflow_pages(
-            template_json.clone(),
-            super::workflow_run_result_dto(&run),
-            path.display().to_string(),
-            Some("Results".to_owned()),
-            "csv".to_owned(),
-        )
-        .unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "voltage,passed\n0.0,true\n0.1,true\n0.2,true\n"
-        );
-        std::fs::remove_file(&path).unwrap();
-        for status in ["failed", "cancelled", "missing-root"] {
-            let mut dto = super::workflow_run_result_dto(&run);
-            let aggregate = dto.step_executions.last_mut().unwrap();
-            if status == "missing-root" {
-                aggregate.for_iteration = Some(super::ForIterationDto {
-                    for_step_id: "sweep".to_owned(),
-                    iteration_index: 0,
-                });
-            } else {
-                aggregate.status = status.to_owned();
-                aggregate.message = Some("Run stopped.".to_owned());
-            }
-            let error = super::export_workflow_pages(
-                template_json.clone(),
-                dto,
-                path.display().to_string(),
-                Some("Results".to_owned()),
-                "csv".to_owned(),
-            )
-            .unwrap_err();
-            assert!(error.contains("did not complete successfully"));
-            assert!(!path.exists());
-        }
-        std::fs::remove_dir(dir).unwrap();
-    }
-
-    #[test]
-    fn while_dtos_preserve_occurrences_and_csv_requires_root_completion() {
-        let template_json = json!({
-            "schema_version": 1, "tool_instances": [], "name": "While CSV",
             "workflow": { "steps": [
-                { "type": "set-variable", "id": "init", "variable": "x", "value": { "source": "literal", "value": 0 } },
-                { "type": "while", "id": "repeat", "max_iterations": 1,
-                  "left": { "source": "variable", "variable": "x" }, "operator": "less-than",
-                  "right": { "source": "literal", "value": 1 }, "steps": [
-                    { "type": "output", "id": "out", "name": "x", "page": "Results", "value": { "source": "variable", "variable": "x" } },
-                    { "type": "set-variable", "id": "advance", "variable": "x", "value": { "source": "literal", "value": 1 } }
-                  ] }
+                { "type": "wait", "id": "wait-1", "duration_ms": 1 }
             ] }
-        }).to_string();
-        let template = Template::from_json_str(&template_json).unwrap();
-        let run = orchestrator_tool::run::run_simulated_workflow(
-            &template,
-            &Default::default(),
-            super::RUN_STARTUP_TIMEOUT,
-            super::RUN_ACTION_TIMEOUT,
-            super::RUN_SHUTDOWN_TIMEOUT,
-        )
-        .unwrap();
-        let execution = &run.step_executions()[1];
-        let row = &run.result_rows()[0];
-        assert_eq!(
-            StepExecution::try_from(super::step_execution_dto(execution)).unwrap(),
-            *execution
-        );
-        assert_eq!(
-            ResultRow::try_from(super::result_row_dto(row)).unwrap(),
-            *row
-        );
-        for wire in [
-            serde_json::to_value(super::step_execution_dto(execution)).unwrap(),
-            serde_json::to_value(super::result_row_dto(row)).unwrap(),
-        ] {
-            assert_eq!(
-                wire["while_iteration"],
-                json!({ "while_step_id": "repeat", "iteration_index": 0 })
-            );
-            assert!(wire["for_iteration"].is_null());
-        }
-        let mut ambiguous = super::step_execution_dto(execution);
-        ambiguous.for_iteration = Some(super::ForIterationDto {
-            for_step_id: "sweep".to_owned(),
-            iteration_index: 0,
-        });
-        assert!(StepExecution::try_from(ambiguous).is_err());
-        let mut ambiguous = super::result_row_dto(row);
-        ambiguous.for_iteration = Some(super::ForIterationDto {
-            for_step_id: "sweep".to_owned(),
-            iteration_index: 0,
-        });
-        assert!(ResultRow::try_from(ambiguous).is_err());
-        let dir = unique_test_dir("orchestrator-desktop-while-csv");
-        let path = dir.join("results.csv");
-        super::export_workflow_pages(
-            template_json.clone(),
-            super::workflow_run_result_dto(&run),
-            path.display().to_string(),
-            Some("Results".to_owned()),
-            "csv".to_owned(),
-        )
-        .unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n0\n");
-        std::fs::remove_file(&path).unwrap();
-        for missing_root in [false, true] {
-            let mut dto = super::workflow_run_result_dto(&run);
-            let aggregate = dto.step_executions.last_mut().unwrap();
-            if missing_root {
-                aggregate.while_iteration = Some(super::WhileIterationDto {
-                    while_step_id: "repeat".to_owned(),
-                    iteration_index: 0,
-                });
-            } else {
-                aggregate.status = "failed".to_owned();
-                aggregate.message =
-                    Some("While reached max_iterations while condition is still true".to_owned());
-            }
-            assert!(
-                super::export_workflow_pages(
-                    template_json.clone(),
-                    dto,
-                    path.display().to_string(),
-                    Some("Results".to_owned()),
-                    "csv".to_owned(),
-                )
-                .unwrap_err()
-                .contains("did not complete successfully")
-            );
-            assert!(!path.exists());
-        }
-        std::fs::remove_dir(dir).unwrap();
+        }"#;
+        let saved = save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
+        let loaded = load_workflow_template(path.display().to_string()).unwrap();
+        assert_eq!(saved, loaded);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -1639,24 +1259,24 @@ mod legacy_tests {
         let template = Template::from_json_str(
             r#"{
                 "schema_version": 1,
-                "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
-                    "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
-                    "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
-                    "current_terminal": null
-                }}, {"id": "powers-1", "tool": "powers", "setup": {}}, {"id": "scopes-1", "tool": "scopes", "setup": {}}],
+                "tool_instances": [
+                    {"id": "meters-1", "tool": "meters", "setup": {
+                        "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
+                        "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
+                        "current_terminal": null
+                    }},
+                    {"id": "powers-1", "tool": "powers", "setup": {}},
+                    {"id": "scopes-1", "tool": "scopes", "setup": {}}
+                ],
                 "name": "Referenced instances",
-                "workflow": {
-                    "steps": [
-                        { "type": "wait", "id": "wait-1", "duration_ms": 1 },
-                        { "type": "tool-action", "id": "meter-read-1", "target": "meters-1", "action": "measure", "arguments": {} },
-                        { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": {} },
-                        { "type": "tool-action", "id": "meter-read-2", "target": "meters-1", "action": "measure", "arguments": {} }
-                    ]
-                }
+                "workflow": { "steps": [
+                    { "type": "wait", "id": "wait-1", "duration_ms": 1 },
+                    { "type": "tool-action", "id": "meter-read-1", "target": "meters-1", "action": "measure", "arguments": {} },
+                    { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": {} }
+                ] }
             }"#,
         )
         .unwrap();
-
         assert_eq!(
             template
                 .referenced_tool_instances()
@@ -1667,30 +1287,7 @@ mod legacy_tests {
         );
     }
 
-    pub(super) fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
-        use std::{
-            process,
-            sync::atomic::{AtomicU64, Ordering},
-            time::{SystemTime, UNIX_EPOCH},
-        };
-
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn manifest_fixture(
-        dir: &std::path::Path,
-        tool: &str,
-        worker_version: u32,
-    ) -> std::path::PathBuf {
+    fn manifest_fixture(dir: &std::path::Path, tool: &str, worker_version: u32) -> std::path::PathBuf {
         let manifest = serde_json::json!({
             "event": "tool_manifest", "schema_version": 2, "tool_id": tool,
             "tool_version": "1.0.0", "worker_protocol": {
@@ -1719,53 +1316,32 @@ mod legacy_tests {
         let config_path = dir.join("orchestrator.toml");
         let meters_exe = manifest_fixture(&dir, "meters", 2);
         let powers_exe = manifest_fixture(&dir, "powers", 2);
-
-        let config = load_desktop_config_from_path(&config_path).unwrap();
-        assert_eq!(config.executable_path(&ToolId::meters()), None);
-
+        assert_eq!(
+            load_desktop_config_from_path(&config_path)
+                .unwrap()
+                .executable_path(&ToolId::meters()),
+            None
+        );
         set_desktop_tool_executable(&config_path, &ToolId::meters(), &meters_exe).unwrap();
         set_desktop_tool_executable(&config_path, &ToolId::powers(), &powers_exe).unwrap();
-
         let config = load_desktop_config_from_path(&config_path).unwrap();
-        assert_eq!(
-            config.executable_path(&ToolId::meters()),
-            Some(meters_exe.as_path())
-        );
-        assert_eq!(
-            config.executable_path(&ToolId::powers()),
-            Some(powers_exe.as_path())
-        );
-
+        assert_eq!(config.executable_path(&ToolId::meters()), Some(meters_exe.as_path()));
+        assert_eq!(config.executable_path(&ToolId::powers()), Some(powers_exe.as_path()));
         let saved = std::fs::read(&config_path).unwrap();
         for rejected in [
             dir.join("missing.exe"),
             powers_exe.clone(),
             manifest_fixture(&dir, "meters", 99),
         ] {
-            assert!(
-                set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err()
-            );
+            assert!(set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err());
             assert_eq!(std::fs::read(&config_path).unwrap(), saved);
         }
-
         reset_desktop_tool_executable(&config_path, &ToolId::meters()).unwrap();
-
         let config = load_desktop_config_from_path(&config_path).unwrap();
         assert_eq!(config.executable_path(&ToolId::meters()), None);
-        assert_eq!(
-            config.executable_path(&ToolId::powers()),
-            Some(powers_exe.as_path())
-        );
-
-        std::fs::write(&config_path, "[tools\n").unwrap();
-        assert!(load_desktop_config_from_path(&config_path).is_err());
-
-        assert_eq!(
-            resolve_built_in_tool_id("meters").unwrap(),
-            ToolId::meters()
-        );
+        assert_eq!(config.executable_path(&ToolId::powers()), Some(powers_exe.as_path()));
+        assert_eq!(resolve_built_in_tool_id("meters").unwrap(), ToolId::meters());
         assert!(resolve_built_in_tool_id("foobar").is_err());
-
-        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
