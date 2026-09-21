@@ -24,11 +24,3 @@ export function virtualOutputWindow(rows: readonly ResultRowDto[], offset: numbe
     return { row, index, iteration: totalRows - index }
   })
 }
-
-export function virtualOutputRows(rows: readonly ResultRowDto[], start: number, end: number) {
-  return Array.from({ length: end - start }, (_, offset) => {
-    const index = start + offset
-    const iteration = rows.length - index
-    return { row: rows[iteration - 1], index, iteration }
-  })
-}
