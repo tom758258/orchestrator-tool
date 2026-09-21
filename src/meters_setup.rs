@@ -16,12 +16,64 @@ pub struct MetersSetup {
     pub auto_zero: AutoZero,
     pub dcv_input_impedance: Option<DcvInputImpedance>,
     pub current_terminal: Option<u32>,
+    #[serde(default, skip_serializing_if = "MetersTriggerMode::is_software")]
+    pub trigger_mode: MetersTriggerMode,
+    #[serde(
+        default = "default_sample_count",
+        skip_serializing_if = "is_default_sample_count"
+    )]
+    pub sample_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buffer_drain_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_buffer_overflow_risk: bool,
+}
+
+impl Default for MetersSetup {
+    fn default() -> Self {
+        Self {
+            measurement: MetersMeasurement::VoltageDc,
+            range_mode: RangeMode::Auto,
+            manual_range: None,
+            nplc: 1.0,
+            auto_zero: AutoZero::On,
+            dcv_input_impedance: None,
+            current_terminal: None,
+            trigger_mode: MetersTriggerMode::Software,
+            sample_count: 1,
+            buffer_drain_size: None,
+            allow_buffer_overflow_risk: false,
+        }
+    }
+}
+
+const fn default_sample_count() -> usize {
+    1
+}
+
+fn is_default_sample_count(value: &usize) -> bool {
+    *value == default_sample_count()
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl MetersSetup {
     /// Checks setup consistency and current terminal values; range and NPLC support are validated by meters-tool.
     /// Auto range does not require or validate a manual range value.
     pub fn validate(&self) -> Result<(), MetersSetupError> {
+        if self.trigger_mode == MetersTriggerMode::SoftwareCustom {
+            if !(1..=1_000_000).contains(&self.sample_count) {
+                return Err(MetersSetupError::InvalidSampleCount);
+            }
+            if self
+                .buffer_drain_size
+                .is_some_and(|size| !(1..=10_000).contains(&size))
+            {
+                return Err(MetersSetupError::InvalidBufferDrainSize);
+            }
+        }
         if self.range_mode == RangeMode::Manual && self.manual_range.is_none() {
             return Err(MetersSetupError::MissingManualRange);
         }
@@ -48,6 +100,8 @@ pub enum MetersSetupError {
     CurrentTerminalForVoltageDc,
     InputImpedanceForCurrentDc,
     InvalidCurrentTerminal,
+    InvalidSampleCount,
+    InvalidBufferDrainSize,
 }
 
 impl fmt::Display for MetersSetupError {
@@ -55,6 +109,12 @@ impl fmt::Display for MetersSetupError {
         formatter.write_str(match self {
             Self::InvalidCurrentTerminal => "current terminal must be 3 or 10",
             Self::MissingManualRange => "manual range mode requires a manual range value",
+            Self::InvalidSampleCount => {
+                "software custom sample count must be between 1 and 1000000"
+            }
+            Self::InvalidBufferDrainSize => {
+                "software custom buffer drain size must be between 1 and 10000"
+            }
             Self::CurrentTerminalForVoltageDc => {
                 "DC voltage setup must not contain a current terminal"
             }
@@ -66,6 +126,21 @@ impl fmt::Display for MetersSetupError {
 }
 
 impl Error for MetersSetupError {}
+
+/// Supported Meters software trigger behavior.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MetersTriggerMode {
+    #[default]
+    Software,
+    SoftwareCustom,
+}
+
+impl MetersTriggerMode {
+    fn is_software(&self) -> bool {
+        *self == Self::Software
+    }
+}
 
 /// Supported Meters measurements.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -104,7 +179,8 @@ pub enum DcvInputImpedance {
 #[cfg(test)]
 mod tests {
     use super::{
-        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError, RangeMode,
+        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError,
+        MetersTriggerMode, RangeMode,
     };
 
     #[test]
@@ -117,9 +193,22 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
             current_terminal: None,
+            ..MetersSetup::default()
         };
 
         assert!(meters.validate().is_ok());
+    }
+
+    #[test]
+    fn existing_setup_without_trigger_fields_defaults_to_software() {
+        let setup: MetersSetup = serde_json::from_str(
+            r#"{"measurement":"voltage-dc","range_mode":"auto","manual_range":null,"nplc":1.0,"auto_zero":"on","dcv_input_impedance":null,"current_terminal":null}"#,
+        )
+        .unwrap();
+        assert_eq!(setup.trigger_mode, MetersTriggerMode::Software);
+        assert_eq!(setup.sample_count, 1);
+        assert_eq!(setup.buffer_drain_size, None);
+        assert!(!setup.allow_buffer_overflow_risk);
     }
 
     #[test]
@@ -132,6 +221,7 @@ mod tests {
             auto_zero: AutoZero::Once,
             dcv_input_impedance: None,
             current_terminal: Some(3),
+            ..MetersSetup::default()
         };
 
         assert!(meters.validate().is_ok());
@@ -147,6 +237,7 @@ mod tests {
             auto_zero: AutoZero::Once,
             dcv_input_impedance: None,
             current_terminal: Some(4),
+            ..MetersSetup::default()
         };
 
         let error = setup.validate().unwrap_err();
@@ -164,6 +255,7 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: None,
+            ..MetersSetup::default()
         };
 
         let error = setup.validate().unwrap_err();
@@ -184,6 +276,7 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: Some(3),
+            ..MetersSetup::default()
         };
 
         let error = setup.validate().unwrap_err();
@@ -207,6 +300,7 @@ mod tests {
             auto_zero: AutoZero::Once,
             dcv_input_impedance: Some(DcvInputImpedance::Default),
             current_terminal: Some(3),
+            ..MetersSetup::default()
         };
 
         let error = setup.validate().unwrap_err();

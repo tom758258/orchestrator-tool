@@ -11,14 +11,20 @@ use std::{
 
 use orchestrator_tool::{
     adapters::{
-        meters::{run_action as run_meters_action, run_worker_smoke as run_meters_worker_smoke},
+        meters::{
+            run_action as run_meters_action, run_action_with_setup as run_meters_action_with_setup,
+            run_worker_smoke as run_meters_worker_smoke,
+        },
         powers::{
             PowersSmokeError, run_action as run_powers_action,
             run_worker_smoke as run_powers_worker_smoke,
         },
     },
-    meters_setup::{AutoZero, MetersMeasurement, MetersSetup, RangeMode},
-    run::{ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow},
+    meters_setup::{AutoZero, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode},
+    run::{
+        ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow,
+        run_workflow_with_events,
+    },
     template::Template,
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
@@ -26,6 +32,7 @@ use orchestrator_tool::{
     workflow::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
         Step, StepId, StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
+        WorkflowRunEvent,
     },
     workflow_csv::serialize_result_rows_csv,
 };
@@ -117,6 +124,8 @@ fn main() {
     powers_runtime_action_succeeds();
     powers_set_voltage_step_outputs_reach_result_row();
     meters_runtime_measure_returns_sample();
+    meters_runtime_custom_measure_drains_the_complete_batch();
+    meters_custom_outputs_expand_rows_and_preserve_staging();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
     three_meter_measurements_shutdown_normally();
@@ -430,6 +439,7 @@ fn run_fixture(scenario: &OsStr) {
         | "live-startup-failure"
         | "live-multi-cleanup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
         "meters-runtime-measure" => run_meters_runtime_fixture(1, 2, json!(3.3)),
+        "meters-runtime-custom" => run_meters_custom_runtime_fixture(),
         "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
     }
@@ -805,6 +815,46 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
+fn run_meters_custom_runtime_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = format!("meters-custom-runtime-run-{}", process::id());
+    print_json_line(
+        &json!({
+            "event": "ready", "schema_version": 2, "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop")
+        })
+        .to_string(),
+    );
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/command")
+    );
+    write_response(
+        request.stream,
+        202,
+        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
+    );
+    for (sequence, value) in [0.055, 0.056, 0.057].into_iter().enumerate() {
+        print_json_line(
+            &json!({
+                "event": "sample", "run_id": run_id, "value": value,
+                "sequence": sequence + 1, "unit": "V"
+            })
+            .to_string(),
+        );
+    }
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop")
+    );
+    write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
 struct TestRequest {
     stream: TcpStream,
     method: String,
@@ -1159,6 +1209,184 @@ fn meters_runtime_measure_returns_sample() {
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
+fn meters_runtime_custom_measure_drains_the_complete_batch() {
+    let session = start_worker(
+        &fixture_spec("meters-runtime-custom"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let setup = MetersSetup {
+        trigger_mode: MetersTriggerMode::SoftwareCustom,
+        sample_count: 3,
+        ..MetersSetup::default()
+    };
+    let result = run_meters_action_with_setup(
+        &session,
+        &ActionId::new("measure").unwrap(),
+        &json!({}),
+        &setup,
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(result.as_array().unwrap().len(), 3);
+    assert_eq!(result[2]["value"], 0.057);
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn custom_meter_template(steps: serde_json::Value) -> Template {
+    Template::from_json_str(
+        &json!({
+            "schema_version": 1, "name": "Custom meter", "tool_instances": [{
+                "id": "meters-1", "tool": "meters", "setup": {
+                    "measurement": "voltage-dc", "range_mode": "auto",
+                    "manual_range": null, "nplc": 1.0, "auto_zero": "on",
+                    "dcv_input_impedance": null, "current_terminal": null,
+                    "trigger_mode": "software-custom", "sample_count": 3,
+                    "buffer_drain_size": null, "allow_buffer_overflow_risk": false
+                }
+            }], "workflow": { "steps": steps }
+        })
+        .to_string(),
+    )
+    .unwrap()
+}
+
+fn meters_custom_outputs_expand_rows_and_preserve_staging() {
+    let measure = json!({
+        "type": "tool-action", "id": "measure", "target": "meters-1",
+        "action": "measure", "arguments": {}
+    });
+    let template = custom_meter_template(json!([
+        measure,
+        { "type": "output", "id": "scalar", "name": "power", "page": "Batch",
+          "value": { "source": "literal", "value": 3.0 } },
+        { "type": "output", "id": "value", "name": "value", "page": "Batch",
+          "value": { "source": "step-output", "step_id": "measure", "pointer": "/value" } },
+        { "type": "output", "id": "millivolts", "name": "millivolts", "page": "Batch",
+          "value": { "source": "expression",
+            "left": { "source": "step-output", "step_id": "measure", "pointer": "/value" },
+            "operator": "multiply", "right": { "source": "literal", "value": 1000 } } },
+        { "type": "output", "id": "other", "name": "temperature", "page": "Scalar",
+          "value": { "source": "literal", "value": 25 } }
+    ]));
+    let mut events = Vec::new();
+    let run = run_workflow_with_events(
+        &template,
+        ExecutionMode::Simulate,
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-runtime-custom"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        |event| events.push(event),
+    )
+    .unwrap();
+    let batch = run
+        .result_rows()
+        .iter()
+        .filter(|row| row.page() == "Batch")
+        .collect::<Vec<_>>();
+    assert_eq!(batch.len(), 3);
+    for (index, expected) in [0.055, 0.056, 0.057].into_iter().enumerate() {
+        assert_eq!(batch[index].outputs()[0].value(), &json!(3.0));
+        assert_eq!(batch[index].outputs()[1].value(), &json!(expected));
+        assert_eq!(batch[index].outputs()[2].value(), &json!(expected * 1000.0));
+    }
+    assert_eq!(
+        run.result_rows()
+            .iter()
+            .filter(|row| row.page() == "Scalar")
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, WorkflowRunEvent::ResultRowCommitted(row) if row.page() == "Batch"))
+            .count(),
+        3
+    );
+
+    let failed = custom_meter_template(json!([
+        { "type": "tool-action", "id": "measure", "target": "meters-1",
+          "action": "measure", "arguments": {} },
+        { "type": "output", "id": "value", "name": "value", "page": "Batch",
+          "value": { "source": "step-output", "step_id": "measure", "pointer": "/value" } },
+        { "type": "assert", "id": "failure", "left": { "source": "literal", "value": 0 },
+          "operator": "greater-than", "right": { "source": "literal", "value": 1 },
+          "message": "later failure" }
+    ]));
+    let run = run_simulated_workflow(
+        &failed,
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-runtime-custom"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(run.result_rows().is_empty());
+
+    let error = Template::from_json_str(
+        &json!({
+            "schema_version": 1, "name": "Two batches", "tool_instances": [{
+                "id": "meters-1", "tool": "meters", "setup": {
+                    "measurement": "voltage-dc", "range_mode": "auto",
+                    "manual_range": null, "nplc": 1.0, "auto_zero": "on",
+                    "dcv_input_impedance": null, "current_terminal": null,
+                    "trigger_mode": "software-custom", "sample_count": 3,
+                    "buffer_drain_size": null, "allow_buffer_overflow_risk": false
+                }
+            }],
+            "workflow": { "steps": [
+                { "type": "tool-action", "id": "measure-a", "target": "meters-1", "action": "measure", "arguments": {} },
+                { "type": "output", "id": "out-a", "name": "a", "page": "Batch",
+                  "value": { "source": "step-output", "step_id": "measure-a", "pointer": "/value" } },
+                { "type": "tool-action", "id": "measure-b", "target": "meters-1", "action": "measure", "arguments": {} },
+                { "type": "output", "id": "out-b", "name": "b", "page": "Batch",
+                  "value": { "source": "step-output", "step_id": "measure-b", "pointer": "/value" } }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("more than one independent batch source")
+    );
+
+    let error = Template::from_json_str(
+        &json!({
+            "schema_version": 1, "name": "Batch used by Assert", "tool_instances": [{
+                "id": "meters-1", "tool": "meters", "setup": {
+                    "measurement": "voltage-dc", "range_mode": "auto",
+                    "manual_range": null, "nplc": 1.0, "auto_zero": "on",
+                    "dcv_input_impedance": null, "current_terminal": null,
+                    "trigger_mode": "software-custom", "sample_count": 3
+                }
+            }],
+            "workflow": { "steps": [
+                { "type": "tool-action", "id": "measure", "target": "meters-1", "action": "measure", "arguments": {} },
+                { "type": "assert", "id": "assert-batch",
+                  "left": { "source": "step-output", "step_id": "measure", "pointer": "/value" },
+                  "operator": "greater-than", "right": { "source": "literal", "value": 0 },
+                  "message": "batch assert" }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("supported only by Output steps"),
+        "{error}"
+    );
+}
+
 fn powers_and_meters_workflow_executes_end_to_end() {
     let workflow = Workflow::new(vec![
         Step::new(
@@ -1359,6 +1587,7 @@ fn three_meter_measurements_shutdown_normally() {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: None,
+            ..MetersSetup::default()
         },
     );
     let run = run_simulated_workflow(
@@ -1708,6 +1937,7 @@ fn test_template(workflow: &Workflow) -> Template {
                     auto_zero: AutoZero::On,
                     dcv_input_impedance: None,
                     current_terminal: None,
+                    ..MetersSetup::default()
                 }),
             },
         ],

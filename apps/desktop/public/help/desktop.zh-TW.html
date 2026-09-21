@@ -96,6 +96,9 @@ Live Resources 不屬於 Template。</p>
   文字值。</li>
 <li>NPLC：目前 UI 暴露的標準選項為 <code>0.02</code>、<code>0.2</code>、<code>1</code>、<code>10</code> 與 <code>100</code>。</li>
 <li>Auto Zero：<strong>On</strong>、<strong>Off</strong> 或 <strong>Once</strong>。</li>
+<li>Trigger Mode：<strong>Software</strong>（預設）或 <strong>Software Custom</strong>。</li>
+<li>Software Custom 會顯示 <strong>Sample Count</strong>、可選的 <strong>Buffer Drain Size</strong>，以及
+  <strong>Allow Buffer Overflow Risk</strong>。Trigger Count 由 Workflow 計算，不能編輯。</li>
 <li>DC Voltage 的 DCV Input Impedance：<strong>Not specified</strong>、<strong>Default</strong>、
   <strong>10 MΩ</strong> 或 <strong>Auto</strong>。</li>
 <li>DC Current 的 Current Terminal：<strong>Not specified</strong>、<strong>3 A terminal</strong> 或
@@ -170,10 +173,15 @@ Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了�
 <p>若 condition 一開始就是 false，body 執行 0 次。Unlimited While 目前只允許
 在 top-level，body 不可為空，可以包含 finite nested loops，但不可再包含另一個
 Unlimited While。</p>
-<p>Simulation 目前不允許 Meters <strong>Measure</strong> 位於 Unlimited While 內，因為無法建立
-finite sample bound。對該 Simulation workflow 設定 finite <code>max_iterations</code>，
-或在適合的情況下使用 Live。Live 的 Meters Measure 可以位於 Unlimited While
-內，且不會設定 finite <code>max-samples</code> limit。</p>
+<p>Simulation 目前不允許 Software Meters <strong>Measure</strong> 位於 Unlimited While 內，
+因為無法建立 finite sample bound。對該 Simulation workflow 設定 finite
+<code>max_iterations</code>，或在適合的情況下使用 Live。Live 的 Software Meters Measure
+可以位於 Unlimited While 內，且不會設定 finite <code>max-samples</code> limit。</p>
+<p>Software Custom 在 Simulation 與 Live 都需要 finite maximum trigger count。計算時
+會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence 乘上外層
+For iteration counts 與 finite While <code>max_iterations</code>。Software Custom Measure 位於
+Unlimited While 內時會被拒絕；計算結果不可超過 <code>1,000,000</code>。While 提早結束時，
+未使用的 trigger capacity 不需要補送。</p>
 <h3 id="64-graceful-stop">6.4 Graceful Stop</h3>
 <p>Run 進行中，operator 可選擇要停止的 loop，再按 Stop。這是 graceful loop stop，
 不是立即終止目前 step：</p>
@@ -191,6 +199,15 @@ finite sample bound。對該 Simulation workflow 設定 finite <code>max_iterati
 <p>每個 Page 綁定一個固定的 owning lexical loop path。不同 lexical loop paths 不可
 共用同名 Page。Page name 同時要符合 CSV filename stem 與 Excel worksheet name
 限制，因此兩種 export format 會套用相同的命名限制。</p>
+<p>Software Custom Meters Measure 的每個 Measure step 會產生一個 batch。Output 直接
+引用該 step，或 Calculation 引用該 step 時，會逐一解析每個 sample。該 Page 的
+logical row 會依 batch size 展開，同 Page 的 scalar Outputs 會複製到每個 expanded
+row。多個 Outputs 可以使用同一個 Measure batch，但同一 Page 不可組合兩個獨立的
+Measure batches。Assert、Set Variable、While condition 與 Tool Action binding 不
+支援 batch-dependent values。</p>
+<p>Expansion 只影響所屬 Page，且會維持 staged 狀態直到 owning scope 或 iteration
+成功。CSV streaming、manual CSV/XLSX export 與 Charts 直接使用展開後的 committed
+rows，不會再做第二次 expansion。</p>
 <h2 id="7-run-simulation">7. Run Simulation</h2>
 <p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先

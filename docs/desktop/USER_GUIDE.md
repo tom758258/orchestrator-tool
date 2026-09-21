@@ -90,6 +90,10 @@ For a Meters Tool Instance, the current Setup controls:
 - NPLC: the currently exposed standard choices are `0.02`, `0.2`, `1`, `10`,
   and `100`.
 - Auto Zero: **On**, **Off**, or **Once**.
+- Trigger Mode: **Software** (the default) or **Software Custom**.
+- Software Custom exposes **Sample Count**, optional **Buffer Drain Size**, and
+  **Allow Buffer Overflow Risk**. Trigger Count is derived from the Workflow
+  and is not editable.
 - For DC Voltage, DCV Input Impedance: **Not specified**, **Default**,
   **10 MΩ**, or **Auto**.
 - For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
@@ -192,11 +196,18 @@ Unlimited While is currently allowed only at the top level, must have a
 non-empty body, and may contain finite nested loops. It may not contain
 another Unlimited While.
 
-Simulation currently rejects a Meters **Measure** inside an Unlimited While
-because it cannot establish a finite sample bound. Use a finite
+Simulation currently rejects a Software Meters **Measure** inside an Unlimited
+While because it cannot establish a finite sample bound. Use a finite
 `max_iterations` for that Simulation workflow, or use Live mode when the
-operation is appropriate. A Live Meters Measure inside an Unlimited While is
-allowed and does not set a finite `max-samples` limit.
+operation is appropriate. A Live Software Meters Measure inside an Unlimited
+While is allowed and does not set a finite `max-samples` limit.
+
+Software Custom requires a finite maximum trigger count in both Simulation and
+Live. The count adds every Measure occurrence for the same Tool Instance and
+multiplies each occurrence by its enclosing For iteration counts and finite
+While `max_iterations`. A Software Custom Measure inside an Unlimited While is
+rejected. The calculated count may not exceed `1,000,000`; a While that exits
+early simply leaves the unused trigger capacity unused.
 
 ### 6.4 Graceful Stop
 
@@ -222,6 +233,18 @@ Each Page belongs to one fixed owning lexical loop path. The same Page name
 cannot be shared by different lexical loop paths. Page names also have to be
 valid as CSV filename stems and Excel worksheet names, so the same naming
 restrictions apply to both export formats.
+
+A Software Custom Meters Measure produces one batch per Measure step. An
+Output that directly references that step, or a Calculation that references
+it, is resolved once per sample. Its Page expands the logical row to the batch
+size, while scalar Outputs on that Page are copied to every expanded row.
+Several Outputs may use the same Measure batch, but one Page cannot combine
+two independent Measure batches. Batch-dependent values are not supported by
+Assert, Set Variable, While conditions, or Tool Action bindings.
+
+Expansion is Page-local and remains staged until the owning scope or iteration
+succeeds. CSV streaming, manual CSV/XLSX export, and Charts consume the
+resulting committed rows without another expansion pass.
 
 ## 7. Run Simulation
 

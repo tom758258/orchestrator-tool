@@ -15,7 +15,9 @@ use crate::{
     config::Config,
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
-    meters_setup::{AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode},
+    meters_setup::{
+        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode,
+    },
     process::{CaptureError, run_output_with_timeout},
     tool::ToolId,
     worker::{
@@ -172,6 +174,43 @@ pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
     arguments
 }
 
+fn trigger_arguments(limit: Option<usize>, setup: &MetersSetup) -> Vec<OsString> {
+    match setup.trigger_mode {
+        MetersTriggerMode::Software => {
+            [OsString::from("--trigger-mode"), OsString::from("software")]
+                .into_iter()
+                .chain(limit.into_iter().flat_map(|limit| {
+                    [
+                        OsString::from("--max-samples"),
+                        OsString::from(limit.to_string()),
+                    ]
+                }))
+                .collect()
+        }
+        MetersTriggerMode::SoftwareCustom => {
+            let trigger_count = limit.expect("Software Custom requires a planned trigger count");
+            let mut arguments = vec![
+                OsString::from("--trigger-mode"),
+                OsString::from("software-custom"),
+                OsString::from("--trigger-count"),
+                OsString::from(trigger_count.to_string()),
+                OsString::from("--sample-count"),
+                OsString::from(setup.sample_count.to_string()),
+            ];
+            if let Some(size) = setup.buffer_drain_size {
+                arguments.extend([
+                    OsString::from("--buffer-drain-size"),
+                    OsString::from(size.to_string()),
+                ]);
+            }
+            if setup.allow_buffer_overflow_risk {
+                arguments.push(OsString::from("--allow-buffer-overflow-risk"));
+            }
+            arguments
+        }
+    }
+}
+
 /// Builds a simulate Worker launch specification from a validated setup.
 pub fn simulate_worker_launch_spec(
     executable: impl AsRef<Path>,
@@ -185,16 +224,9 @@ pub fn simulate_worker_launch_spec(
             OsString::from("--resource"),
             OsString::from("SIM::34461A"),
             OsString::from("--simulate"),
-            OsString::from("--trigger-mode"),
-            OsString::from("software"),
         ]
         .into_iter()
-        .chain(max_samples.into_iter().flat_map(|limit| {
-            [
-                OsString::from("--max-samples"),
-                OsString::from(limit.to_string()),
-            ]
-        }))
+        .chain(trigger_arguments(max_samples, setup))
         .chain([
             OsString::from("--status-format"),
             OsString::from("jsonl"),
@@ -219,16 +251,9 @@ pub fn live_worker_launch_spec(
             OsString::from("start-trigger-record"),
             OsString::from("--resource"),
             OsString::from(resource),
-            OsString::from("--trigger-mode"),
-            OsString::from("software"),
         ]
         .into_iter()
-        .chain(max_samples.into_iter().flat_map(|limit| {
-            [
-                OsString::from("--max-samples"),
-                OsString::from(limit.to_string()),
-            ]
-        }))
+        .chain(trigger_arguments(max_samples, setup))
         .chain([
             OsString::from("--status-format"),
             OsString::from("jsonl"),
@@ -255,6 +280,7 @@ pub fn run_worker_smoke(
         auto_zero: AutoZero::On,
         dcv_input_impedance: None,
         current_terminal: None,
+        ..MetersSetup::default()
     };
     let spec = simulate_worker_launch_spec(executable, Some(2), &setup);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
@@ -486,6 +512,17 @@ pub fn run_action(
     arguments: &Value,
     timeout: Duration,
 ) -> Result<Value, MetersActionError> {
+    run_action_with_setup(session, action, arguments, &MetersSetup::default(), timeout)
+}
+
+/// Runs a Meters action using the configured trigger mode.
+pub fn run_action_with_setup(
+    session: &WorkerSession,
+    action: &ActionId,
+    arguments: &Value,
+    setup: &MetersSetup,
+    timeout: Duration,
+) -> Result<Value, MetersActionError> {
     if action.as_str() != "measure" {
         return Err(MetersActionError::UnsupportedAction(action.clone()));
     }
@@ -506,6 +543,11 @@ pub fn run_action(
         .map_err(MetersActionError::Http)?;
     validate_runtime_accepted_response(http_status, response)?;
 
+    let expected_samples = match setup.trigger_mode {
+        MetersTriggerMode::Software => 1,
+        MetersTriggerMode::SoftwareCustom => setup.sample_count,
+    };
+    let mut samples = Vec::with_capacity(expected_samples);
     loop {
         let Some(remaining) = remaining_duration(deadline) else {
             return Err(MetersActionError::Timeout(timeout));
@@ -513,7 +555,15 @@ pub fn run_action(
         match session.recv_event(remaining) {
             Ok(value) => match classify_meters_event(&value, session.ready().run_id()) {
                 MetersEventDecision::Continue => {}
-                MetersEventDecision::Success(sample) => return Ok(sample),
+                MetersEventDecision::Success(sample) => {
+                    samples.push(sample);
+                    if samples.len() == expected_samples {
+                        return Ok(match setup.trigger_mode {
+                            MetersTriggerMode::Software => samples.pop().unwrap(),
+                            MetersTriggerMode::SoftwareCustom => Value::Array(samples),
+                        });
+                    }
+                }
                 MetersEventDecision::Failure(error) => return Err(error),
             },
             Err(WorkerEventError::Timeout(_)) => {
@@ -751,7 +801,7 @@ mod tests {
     use serde_json::json;
 
     use crate::meters_setup::{
-        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, RangeMode,
+        AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode,
     };
 
     use super::{
@@ -769,6 +819,7 @@ mod tests {
             auto_zero: AutoZero::Once,
             dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
             current_terminal: None,
+            ..MetersSetup::default()
         };
         setup.validate().unwrap();
         let expected = [
@@ -805,6 +856,7 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: Some(3),
+            ..MetersSetup::default()
         };
         setup.validate().unwrap();
         let expected = [
@@ -843,6 +895,7 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: None,
+            ..MetersSetup::default()
         };
         let spec = super::live_worker_launch_spec("meters-tool.exe", resource, Some(2), &setup);
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
@@ -973,6 +1026,7 @@ mod tests {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: None,
+            ..MetersSetup::default()
         };
         let spec = simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(2), &setup);
 
@@ -1006,5 +1060,41 @@ mod tests {
                 "job_id": "orchestrator-meter-smoke"
             })
         );
+    }
+
+    #[test]
+    fn meters_software_custom_launch_uses_batch_contract_without_max_samples() {
+        let setup = MetersSetup {
+            trigger_mode: MetersTriggerMode::SoftwareCustom,
+            sample_count: 3,
+            buffer_drain_size: Some(50),
+            allow_buffer_overflow_risk: true,
+            ..MetersSetup::default()
+        };
+        for spec in [
+            simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
+            super::live_worker_launch_spec(
+                "meters-tool.exe",
+                "USB0::Meter::INSTR",
+                Some(7),
+                &setup,
+            ),
+        ] {
+            let arguments = spec.arguments();
+            for pair in [
+                ["--trigger-mode", "software-custom"],
+                ["--trigger-count", "7"],
+                ["--sample-count", "3"],
+                ["--buffer-drain-size", "50"],
+            ] {
+                assert!(arguments.windows(2).any(|window| window == pair));
+            }
+            assert!(
+                arguments
+                    .iter()
+                    .any(|argument| argument == "--allow-buffer-overflow-risk")
+            );
+            assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
+        }
     }
 }

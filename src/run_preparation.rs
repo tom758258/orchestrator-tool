@@ -6,13 +6,75 @@ use crate::{
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
+    meters_setup::MetersTriggerMode,
     run::ExecutionMode,
     template::Template,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
-    workflow::StepKind,
+    workflow::{Step, StepKind},
 };
 use std::{collections::HashMap, path::Path};
+
+const METERS_MAX_TRIGGER_COUNT: usize = 1_000_000;
+
+fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize>, String> {
+    steps.iter().try_fold(Some(0usize), |total, step| {
+        let count = match step.kind() {
+            StepKind::ToolAction {
+                target: step_target,
+                action,
+                ..
+            } if step_target == target && action.as_str() == "measure" => Some(1),
+            StepKind::For { range, body, .. } => measure_count(body, target)?
+                .map(|count| {
+                    range
+                        .iteration_count()
+                        .checked_mul(count)
+                        .ok_or_else(|| "Meter trigger count overflow".to_owned())
+                })
+                .transpose()?,
+            StepKind::While {
+                max_iterations,
+                body,
+                ..
+            } => match (max_iterations, measure_count(body, target)?) {
+                (_, Some(0)) => Some(0),
+                (Some(limit), Some(count)) => Some(
+                    limit
+                        .checked_mul(count)
+                        .ok_or_else(|| "Meter trigger count overflow".to_owned())?,
+                ),
+                _ => None,
+            },
+            _ => Some(0),
+        };
+        match (total, count) {
+            (Some(total), Some(count)) => total
+                .checked_add(count)
+                .map(Some)
+                .ok_or_else(|| "Meter trigger count overflow".to_owned()),
+            _ => Ok(None),
+        }
+    })
+}
+
+fn custom_trigger_count(
+    measured: Option<usize>,
+    instance: &ToolInstanceId,
+) -> Result<usize, String> {
+    match measured {
+        None => Err(format!(
+            "Software Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
+        )),
+        Some(0) => Err(format!(
+            "Software Custom Meter {instance} requires at least one Measure action"
+        )),
+        Some(count) if count > METERS_MAX_TRIGGER_COUNT => Err(format!(
+            "Software Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
+        )),
+        Some(count) => Ok(count),
+    }
+}
 
 /// Checks that every selected resource still matches the operator confirmation.
 pub fn validate_confirmed_live_resources(
@@ -103,60 +165,27 @@ pub fn prepare_worker_launch_specs(
 
     for instance in instances {
         let tool = &instance.tool;
-        // Reserve capacity until orchestrator shutdown, separately for each instance.
-        fn measure_count(
-            steps: &[crate::workflow::Step],
-            target: &ToolInstanceId,
-        ) -> Result<Option<usize>, String> {
-            steps.iter().try_fold(Some(0usize), |total, step| {
-                let count = match step.kind() {
-                    StepKind::ToolAction {
-                        target: step_target,
-                        action,
-                        ..
-                    } if step_target == target && action.as_str() == "measure" => Some(1),
-                    StepKind::For { range, body, .. } => measure_count(body, target)?
-                        .map(|count| {
-                            range
-                                .iteration_count()
-                                .checked_mul(count)
-                                .ok_or_else(|| "meter sample count overflow".to_owned())
-                        })
-                        .transpose()?,
-                    StepKind::While {
-                        max_iterations,
-                        body,
-                        ..
-                    } => match (max_iterations, measure_count(body, target)?) {
-                        (_, Some(0)) => Some(0),
-                        (Some(limit), Some(count)) => Some(
-                            limit
-                                .checked_mul(count)
-                                .ok_or_else(|| "meter sample count overflow".to_owned())?,
-                        ),
-                        _ => None,
-                    },
-                    _ => Some(0),
-                };
-                match (total, count) {
-                    (Some(total), Some(count)) => total
-                        .checked_add(count)
-                        .map(Some)
-                        .ok_or_else(|| "meter sample count overflow".to_owned()),
-                    _ => Ok(None),
+        let measured = measure_count(template.workflow().steps(), &instance.id)?;
+        let meters_limit = if tool.as_str() == "meters" {
+            let setup = instance.meters_setup().expect("Meters setup was validated");
+            match setup.trigger_mode {
+                MetersTriggerMode::Software => measured
+                    .map(|count| {
+                        count
+                            .checked_add(1)
+                            .ok_or_else(|| "meter sample reserve count overflow".to_owned())
+                    })
+                    .transpose()?,
+                MetersTriggerMode::SoftwareCustom => {
+                    Some(custom_trigger_count(measured, &instance.id)?)
                 }
-            })
-        }
-        let meters_max_samples = measure_count(template.workflow().steps(), &instance.id)?
-            .map(|count| {
-                count
-                    .checked_add(1)
-                    .ok_or_else(|| "meter sample reserve count overflow".to_owned())
-            })
-            .transpose()?;
+            }
+        } else {
+            None
+        };
         if execution_mode == ExecutionMode::Simulate
             && tool.as_str() == "meters"
-            && meters_max_samples.is_none()
+            && meters_limit.is_none()
         {
             return Err(format!(
                 "Run Simulation cannot use Meter Measure inside Unlimited While for {}; choose a finite max_iterations or Run Live",
@@ -211,7 +240,7 @@ pub fn prepare_worker_launch_specs(
             (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
             (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(
                 executable,
-                meters_max_samples,
+                meters_limit,
                 instance.meters_setup().expect("Meters setup was validated"),
             ),
             (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
@@ -225,7 +254,7 @@ pub fn prepare_worker_launch_specs(
                 config
                     .live_resource(&instance.id)
                     .expect("live resources were validated"),
-                meters_max_samples,
+                meters_limit,
                 instance.meters_setup().expect("Meters setup was validated"),
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
@@ -241,6 +270,96 @@ mod tests {
     use super::*;
     use crate::{template::Template, tool::ToolId, tool_instance::ToolSetup};
     use serde_json::json;
+
+    #[test]
+    fn software_custom_trigger_planning_counts_paths_and_rejects_invalid_bounds() {
+        use crate::workflow::{ActionId, NumericRange, Step, StepId, StepKind, VariableId};
+        let target = ToolInstanceId::new("meters-1").unwrap();
+        let measure = |id: &str| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::ToolAction {
+                    target: target.clone(),
+                    action: ActionId::new("measure").unwrap(),
+                    arguments: json!({}),
+                    bindings: Default::default(),
+                },
+            )
+        };
+        let finite_while = |id: &str, limit, body| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::While {
+                    condition: crate::workflow::Expression::new(
+                        crate::workflow::ExpressionOperand::Literal(json!(0)),
+                        crate::workflow::ExpressionOperator::LessThan,
+                        crate::workflow::ExpressionOperand::Literal(json!(1)),
+                    ),
+                    max_iterations: limit,
+                    body,
+                },
+            )
+        };
+        let nested = Step::new(
+            StepId::new("for").unwrap(),
+            StepKind::For {
+                variable: VariableId::new("i").unwrap(),
+                range: NumericRange::new(1.into(), 10.into(), 1.into()).unwrap(),
+                body: vec![finite_while(
+                    "while",
+                    Some(20),
+                    vec![measure("nested-measure")],
+                )],
+            },
+        );
+        assert_eq!(measure_count(&[measure("root")], &target).unwrap(), Some(1));
+        assert_eq!(
+            measure_count(std::slice::from_ref(&nested), &target).unwrap(),
+            Some(200)
+        );
+        assert_eq!(
+            measure_count(&[measure("other-root"), nested], &target).unwrap(),
+            Some(201)
+        );
+        assert_eq!(
+            measure_count(
+                &[finite_while(
+                    "unlimited",
+                    None,
+                    vec![measure("unlimited-measure")]
+                )],
+                &target,
+            )
+            .unwrap(),
+            None
+        );
+        assert!(
+            measure_count(
+                &[finite_while(
+                    "overflow-while",
+                    Some(usize::MAX),
+                    vec![measure("overflow-a"), measure("overflow-b")],
+                )],
+                &target,
+            )
+            .unwrap_err()
+            .contains("overflow")
+        );
+        assert_eq!(
+            custom_trigger_count(Some(1_000_000), &target).unwrap(),
+            1_000_000
+        );
+        assert!(
+            custom_trigger_count(Some(1_000_001), &target)
+                .unwrap_err()
+                .contains("maximum")
+        );
+        assert!(
+            custom_trigger_count(None, &target)
+                .unwrap_err()
+                .contains("Unlimited While")
+        );
+    }
     #[test]
     fn confirmed_live_resources_require_exact_current_values() {
         let template = instance_template();
@@ -420,6 +539,30 @@ mod tests {
                     pair == [OsString::from("--max-samples"), OsString::from("12")]
                 })
             );
+        }
+
+        let mut custom_instances = for_template.tool_instances().to_vec();
+        let custom_setup = match &mut custom_instances[0].setup {
+            ToolSetup::Meters(setup) => setup,
+            _ => unreachable!(),
+        };
+        custom_setup.trigger_mode = crate::meters_setup::MetersTriggerMode::SoftwareCustom;
+        custom_setup.sample_count = 3;
+        let custom_template = Template::new(
+            "Custom trigger planning".to_owned(),
+            custom_instances,
+            for_template.workflow().clone(),
+        )
+        .unwrap();
+        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+            let specs = prepare_worker_launch_specs(&custom_template, mode, &dir, &config).unwrap();
+            let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair == ["--trigger-count", "11"])
+            );
+            assert!(args.windows(2).any(|pair| pair == ["--sample-count", "3"]));
+            assert!(!args.iter().any(|arg| arg == "--max-samples"));
         }
 
         let mut while_wire: serde_json::Value =

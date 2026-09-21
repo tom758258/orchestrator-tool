@@ -1,10 +1,15 @@
-use std::{collections::BTreeMap, error::Error, fmt, fs, io, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    fmt, fs, io,
+    path::Path,
+};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::{
-    meters_setup::MetersSetupError,
+    meters_setup::{MetersSetupError, MetersTriggerMode},
     tool::{InvalidToolId, ToolId},
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
@@ -23,6 +28,7 @@ pub struct Template {
     name: String,
     tool_instances: Vec<ToolInstance>,
     workflow: Workflow,
+    batch_sources: HashMap<StepId, StepId>,
 }
 
 impl Template {
@@ -82,10 +88,12 @@ impl Template {
                 "unknown tool instance target {target}"
             )));
         }
+        let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
         Ok(Self {
             name,
             tool_instances,
             workflow,
+            batch_sources,
         })
     }
 
@@ -133,6 +141,35 @@ impl Template {
     /// Returns the workflow.
     pub fn workflow(&self) -> &Workflow {
         &self.workflow
+    }
+
+    pub(crate) fn batch_source_for_step(&self, step_id: &StepId) -> Option<&StepId> {
+        self.batch_sources.get(step_id)
+    }
+
+    pub(crate) fn batch_size(&self, source: &StepId) -> Option<usize> {
+        fn find<'a>(steps: &'a [Step], id: &StepId) -> Option<&'a Step> {
+            for step in steps {
+                if step.id() == id {
+                    return Some(step);
+                }
+                if let StepKind::For { body, .. } | StepKind::While { body, .. } = step.kind()
+                    && let Some(found) = find(body, id)
+                {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let step = find(self.workflow.steps(), source)?;
+        let StepKind::ToolAction { target, .. } = step.kind() else {
+            return None;
+        };
+        self.tool_instances
+            .iter()
+            .find(|instance| &instance.id == target)?
+            .meters_setup()
+            .map(|setup| setup.sample_count)
     }
 
     /// Serializes the template to pretty JSON.
@@ -193,6 +230,133 @@ impl Template {
         })?;
         Self::from_json_str(&contents)
     }
+}
+
+fn validate_batch_sources(
+    workflow: &Workflow,
+    instances: &[ToolInstance],
+) -> Result<HashMap<StepId, StepId>, TemplateError> {
+    fn collect_custom_measures(
+        steps: &[Step],
+        instances: &[ToolInstance],
+        sources: &mut HashMap<StepId, StepId>,
+    ) {
+        for step in steps {
+            match step.kind() {
+                StepKind::ToolAction { target, action, .. }
+                    if action.as_str() == "measure"
+                        && instances.iter().any(|instance| {
+                            &instance.id == target
+                                && instance.meters_setup().is_some_and(|setup| {
+                                    setup.trigger_mode == MetersTriggerMode::SoftwareCustom
+                                })
+                        }) =>
+                {
+                    sources.insert(step.id().clone(), step.id().clone());
+                }
+                StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                    collect_custom_measures(body, instances, sources)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn input_source(
+        input: &InputValue,
+        sources: &HashMap<StepId, StepId>,
+    ) -> Result<Option<StepId>, String> {
+        let reference_source =
+            |reference: &StepOutputReference| Ok(sources.get(reference.step_id()).cloned());
+        match input {
+            InputValue::StepOutput(reference) => reference_source(reference),
+            InputValue::Expression(expression) => {
+                let operand_source = |operand: &ExpressionOperand| match operand {
+                    ExpressionOperand::StepOutput(reference) => reference_source(reference),
+                    _ => Ok(None),
+                };
+                let left = operand_source(expression.left())?;
+                let right = operand_source(expression.right())?;
+                match (&left, &right) {
+                    (Some(left), Some(right)) if left != right => {
+                        Err("an expression cannot combine two independent batch sources".to_owned())
+                    }
+                    _ => Ok(left.or(right)),
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn reject_batch(
+        input: &InputValue,
+        sources: &HashMap<StepId, StepId>,
+        context: &str,
+    ) -> Result<(), TemplateError> {
+        if input_source(input, sources)
+            .map_err(TemplateError::Instance)?
+            .is_some()
+        {
+            return Err(TemplateError::Instance(format!(
+                "batch-dependent value cannot be used by {context}; Software Custom batches are supported only by Output steps"
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_steps(
+        steps: &[Step],
+        sources: &mut HashMap<StepId, StepId>,
+        page_sources: &mut HashMap<String, StepId>,
+    ) -> Result<(), TemplateError> {
+        for step in steps {
+            match step.kind() {
+                StepKind::Output { value, .. } => {
+                    if let Some(source) =
+                        input_source(value, sources).map_err(TemplateError::Instance)?
+                    {
+                        if let Some(existing) = page_sources.get(step.output_page())
+                            && existing != &source
+                        {
+                            return Err(TemplateError::Instance(format!(
+                                "Output Page {:?} depends on more than one independent batch source",
+                                step.output_page()
+                            )));
+                        }
+                        page_sources.insert(step.output_page().to_owned(), source.clone());
+                        sources.insert(step.id().clone(), source);
+                    }
+                }
+                StepKind::Assert { condition, .. } | StepKind::While { condition, .. } => {
+                    reject_batch(
+                        &InputValue::Expression(condition.clone()),
+                        sources,
+                        &format!("step {}", step.id()),
+                    )?;
+                    if let StepKind::While { body, .. } = step.kind() {
+                        validate_steps(body, sources, page_sources)?;
+                    }
+                }
+                StepKind::SetVariable { value, .. } => {
+                    reject_batch(value, sources, &format!("step {}", step.id()))?;
+                }
+                StepKind::ToolAction { bindings, .. } => {
+                    for input in bindings.values() {
+                        reject_batch(input, sources, &format!("step {}", step.id()))?;
+                    }
+                }
+                StepKind::For { body, .. } => validate_steps(body, sources, page_sources)?,
+                StepKind::Wait { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    let mut sources = HashMap::new();
+    collect_custom_measures(workflow.steps(), instances, &mut sources);
+    let mut page_sources = HashMap::new();
+    validate_steps(workflow.steps(), &mut sources, &mut page_sources)?;
+    Ok(sources)
 }
 
 #[derive(Debug)]
@@ -869,6 +1033,7 @@ mod tests {
                     auto_zero: AutoZero::Once,
                     dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
                     current_terminal: None,
+                    ..MetersSetup::default()
                 }),
             },
             ToolInstance {

@@ -12,6 +12,10 @@ export type MetersSetup = {
   auto_zero: 'on' | 'off' | 'once'
   dcv_input_impedance: 'default' | 'ten-megohm' | 'auto' | null
   current_terminal: number | null
+  trigger_mode?: 'software' | 'software-custom'
+  sample_count?: number
+  buffer_drain_size?: number | null
+  allow_buffer_overflow_risk?: boolean
 }
 
 export type ToolInstance =
@@ -57,8 +61,36 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey }: {
   const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   return (
     <>
-      <p className="tool-setup-hint">Applied before the run starts. Trigger: Software.</p>
+      <p className="tool-setup-hint">Applied before the run starts.</p>
       <div className="meters-setup-fields">
+        <label className="step-property-field">
+          <span className="step-property-label">Trigger Mode</span>
+          <select value={meters.trigger_mode ?? 'software'} onChange={(event) => onChange({
+            ...value, meters: { ...meters, trigger_mode: event.target.value as NonNullable<MetersSetup['trigger_mode']> },
+          })}>
+            <option value="software">Software</option>
+            <option value="software-custom">Software Custom</option>
+          </select>
+        </label>
+        {(meters.trigger_mode ?? 'software') === 'software-custom' && <>
+          <label className="step-property-field">
+            <span className="step-property-label">Sample Count</span>
+            <input type="number" required min={1} max={1000000} step={1} value={meters.sample_count ?? 1}
+              onChange={event => onChange({ ...value, meters: { ...meters, sample_count: Number(event.target.value) } })} />
+          </label>
+          <label className="step-property-field">
+            <span className="step-property-label">Buffer Drain Size (optional)</span>
+            <input type="number" min={1} max={10000} step={1} value={meters.buffer_drain_size ?? ''}
+              onChange={event => onChange({ ...value, meters: {
+                ...meters, buffer_drain_size: event.target.value === '' ? null : Number(event.target.value),
+              } })} />
+          </label>
+          <label className="step-property-field step-property-checkbox">
+            <input type="checkbox" checked={meters.allow_buffer_overflow_risk ?? false}
+              onChange={event => onChange({ ...value, meters: { ...meters, allow_buffer_overflow_risk: event.target.checked } })} />
+            <span>Allow Buffer Overflow Risk</span>
+          </label>
+        </>}
         <label className="step-property-field">
           <span className="step-property-label">Measurement</span>
           <select value={meters.measurement} onChange={(event) => {
@@ -189,7 +221,9 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
         const id = `${tool}-${n}`
         const instance: ToolInstance = tool === 'meters'
           ? { id, tool, setup: { measurement: 'voltage-dc', range_mode: 'auto', manual_range: null,
-              nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
+              nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null,
+              trigger_mode: 'software', sample_count: 1, buffer_drain_size: null,
+              allow_buffer_overflow_risk: false } }
           : { id, tool, setup: {} }
         setCollapsedIds(current => current.filter(collapsedId => collapsedId !== id))
         onChange([...value, instance])

@@ -78,6 +78,9 @@ Live Resources 不屬於 Template。
   文字值。
 - NPLC：目前 UI 暴露的標準選項為 `0.02`、`0.2`、`1`、`10` 與 `100`。
 - Auto Zero：**On**、**Off** 或 **Once**。
+- Trigger Mode：**Software**（預設）或 **Software Custom**。
+- Software Custom 會顯示 **Sample Count**、可選的 **Buffer Drain Size**，以及
+  **Allow Buffer Overflow Risk**。Trigger Count 由 Workflow 計算，不能編輯。
 - DC Voltage 的 DCV Input Impedance：**Not specified**、**Default**、
   **10 MΩ** 或 **Auto**。
 - DC Current 的 Current Terminal：**Not specified**、**3 A terminal** 或
@@ -167,10 +170,16 @@ While condition 會在每次 iteration 前判斷。Iteration limit 可以是：
 在 top-level，body 不可為空，可以包含 finite nested loops，但不可再包含另一個
 Unlimited While。
 
-Simulation 目前不允許 Meters **Measure** 位於 Unlimited While 內，因為無法建立
-finite sample bound。對該 Simulation workflow 設定 finite `max_iterations`，
-或在適合的情況下使用 Live。Live 的 Meters Measure 可以位於 Unlimited While
-內，且不會設定 finite `max-samples` limit。
+Simulation 目前不允許 Software Meters **Measure** 位於 Unlimited While 內，
+因為無法建立 finite sample bound。對該 Simulation workflow 設定 finite
+`max_iterations`，或在適合的情況下使用 Live。Live 的 Software Meters Measure
+可以位於 Unlimited While 內，且不會設定 finite `max-samples` limit。
+
+Software Custom 在 Simulation 與 Live 都需要 finite maximum trigger count。計算時
+會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence 乘上外層
+For iteration counts 與 finite While `max_iterations`。Software Custom Measure 位於
+Unlimited While 內時會被拒絕；計算結果不可超過 `1,000,000`。While 提早結束時，
+未使用的 trigger capacity 不需要補送。
 
 ### 6.4 Graceful Stop
 
@@ -193,6 +202,17 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 每個 Page 綁定一個固定的 owning lexical loop path。不同 lexical loop paths 不可
 共用同名 Page。Page name 同時要符合 CSV filename stem 與 Excel worksheet name
 限制，因此兩種 export format 會套用相同的命名限制。
+
+Software Custom Meters Measure 的每個 Measure step 會產生一個 batch。Output 直接
+引用該 step，或 Calculation 引用該 step 時，會逐一解析每個 sample。該 Page 的
+logical row 會依 batch size 展開，同 Page 的 scalar Outputs 會複製到每個 expanded
+row。多個 Outputs 可以使用同一個 Measure batch，但同一 Page 不可組合兩個獨立的
+Measure batches。Assert、Set Variable、While condition 與 Tool Action binding 不
+支援 batch-dependent values。
+
+Expansion 只影響所屬 Page，且會維持 staged 狀態直到 owning scope 或 iteration
+成功。CSV streaming、manual CSV/XLSX export 與 Charts 直接使用展開後的 committed
+rows，不會再做第二次 expansion。
 
 ## 7. Run Simulation
 
