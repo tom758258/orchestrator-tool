@@ -1,4 +1,4 @@
-//! Page datasets shared by manual CSV and XLSX export.
+//! Page export helpers for committed ResultRows; Desktop CSV may stream rows directly.
 
 use crate::{
     workflow::{OutputPage, ResultRow, Workflow},
