@@ -16,7 +16,7 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
@@ -392,7 +392,7 @@ function App() {
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
-  const liveRunInFlight = useRef(false)
+  const runInFlightRef = useRef(false)
   const runGenerationRef = useRef(0)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
@@ -923,10 +923,10 @@ function App() {
   }, [])
 
   const runLive = useCallback(async () => {
-    if (!workflowDraft || runStatus === 'running' || liveRunInFlight.current) {
+    if (!workflowDraft || runInFlightRef.current) {
       return
     }
-    liveRunInFlight.current = true
+    runInFlightRef.current = true
     setLiveConfirmationPending(true)
     let started = false
     let onProgress: Channel<DesktopRunEvent> | undefined
@@ -1004,15 +1004,16 @@ function App() {
         setStopRequest(null)
         setRunStatus('idle')
       }
-      liveRunInFlight.current = false
+      runInFlightRef.current = false
       setLiveConfirmationPending(false)
     }
   }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
-    if (!workflowDraft) {
+    if (!workflowDraft || runInFlightRef.current) {
       return
     }
+    runInFlightRef.current = true
 
     let started = false
     let onProgress: Channel<DesktopRunEvent> | undefined
@@ -1054,6 +1055,7 @@ function App() {
         setStopRequest(null)
         setRunStatus('idle')
       }
+      runInFlightRef.current = false
     }
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
@@ -1153,6 +1155,7 @@ function App() {
     : null
   const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedParent = enclosingLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const selectedEnclosingForVariables = enclosingForVariables(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const addingToLoop = insertionLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
@@ -1640,8 +1643,8 @@ function App() {
                         {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
                           <p className="error">Loop variable and range fields must not be blank.</p>}
                       </>}
-                      {selectedStep.type === 'set-variable' && selectedParent?.type === 'for' && selectedParent.variable === selectedStep.variable &&
-                        <p className="error">A body Set Variable cannot write the enclosing loop variable.</p>}
+                      {selectedStep.type === 'set-variable' && selectedEnclosingForVariables.includes(selectedStep.variable) &&
+                        <p className="error">A body Set Variable cannot write an enclosing For loop variable.</p>}
                       {selectedStep.type === 'set-variable' && (
                         <>
                           <label className="step-property-field">
