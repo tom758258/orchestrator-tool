@@ -60,7 +60,9 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
     loaderActiveRef.current = token
     const local = existing ?? createPageChartData()
     chartData.set(page, local)
-    local.removeExcept(new Set(outputs))
+    if (local.removeExcept(new Set(outputs))) {
+      setDataVersion(version => version + 1)
+    }
 
     async function runLoader() {
       try {
