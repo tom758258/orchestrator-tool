@@ -143,8 +143,15 @@ Simulation does not perform this additional Live safe-off sequence. This
 boundary does not move Powers safety logic into Core; it defines when Core
 requests the external tool's cleanup operation.
 
-Meters capacity is calculated independently for each Tool Instance. Finite
-measurement bounds retain the extra sample reserved until orchestrator
-shutdown. Live measurement inside an Unlimited While omits the
-max-samples argument; Simulation does not support Meter Measure inside an
-Unlimited While and requires a finite limit.
+Meters capacity is calculated independently for each Tool Instance. Standard
+Software mode uses the existing finite measurement bound and reserves one
+extra max-samples slot until orchestrator shutdown; Live measurement inside an
+Unlimited While omits max-samples, while Simulation requires a finite limit.
+
+Software Custom is planned differently: the orchestrator derives an exact
+maximum Trigger Count from the Workflow, passes trigger-count and sample-count
+to meters-tool, and rejects a reachable Unlimited While. Trigger Count may not
+exceed 1,000,000, and run preparation checked-multiplies Trigger Count by
+sample-count to detect arithmetic overflow. Buffer capacity, supported model
+memory, and the meaning of allow-buffer-overflow-risk remain owned and
+validated by meters-tool rather than duplicated in the orchestrator.
