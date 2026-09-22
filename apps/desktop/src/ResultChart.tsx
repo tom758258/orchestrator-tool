@@ -39,50 +39,76 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   }, [chartData, page, localPanels, numericNames, dataVersion])
   const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(panel => panel.outputs))]
     .filter(name => numericNames.includes(name)), [localPanels, numericNames])
+  const requestedKey = useMemo(() => [...requestedNames].sort().join('\0'), [requestedNames])
+  const latestRowCountRef = useRef(rowCount)
+  latestRowCountRef.current = rowCount
+  const [loadGeneration, setLoadGeneration] = useState(0)
+  const loaderActiveRef = useRef<object | null>(null)
 
   useEffect(() => {
+    const outputs = requestedKey.length === 0 ? [] : requestedKey.split('\0')
+    if (outputs.length === 0) return
     let cancelled = false
+    const token = {}
+    loaderActiveRef.current = token
     const local = chartData.get(page) ?? createPageChartData()
     chartData.set(page, local)
-    const requested = new Set(requestedNames)
-    local.removeExcept(requested)
-    const groups = new Map<number, string[]>()
-    for (const name of requestedNames) {
-      const start = local.length(name)
-      groups.set(start, [...(groups.get(start) ?? []), name])
-    }
+    local.removeExcept(new Set(outputs))
 
-    async function loadGroup(startRow: number, outputs: string[]) {
-      let cursor = startRow
-      let changed = false
-      while (!cancelled && cursor < rowCount) {
-        const response = await invoke<ChartSeriesResponse>('get_last_run_chart_series', {
-          runId, page, outputs, startRow: cursor,
-          limit: Math.min(CHART_SERIES_CHUNK_ROWS, rowCount - cursor),
-        })
-        if (cancelled || response.run_id !== runId || response.page !== page || response.start_row !== cursor) {
-          return changed
+    async function runLoader() {
+      try {
+        while (!cancelled) {
+          const target = latestRowCountRef.current
+          const pending = outputs.filter(name => local.length(name) < target)
+          if (pending.length === 0) break
+          const groups = new Map<number, string[]>()
+          for (const name of pending) {
+            const start = local.length(name)
+            groups.set(start, [...(groups.get(start) ?? []), name])
+          }
+          let progressed = false
+          for (const [startRow, names] of groups) {
+            if (cancelled) break
+            if (!names.every(name => local.length(name) === startRow)) break
+            const latest = latestRowCountRef.current
+            const limit = Math.min(CHART_SERIES_CHUNK_ROWS, latest - startRow)
+            if (limit <= 0) continue
+            const response = await invoke<ChartSeriesResponse>('get_last_run_chart_series', {
+              runId, page, outputs: names, startRow,
+              limit,
+            })
+            if (cancelled || response.run_id !== runId || response.page !== page || response.start_row !== startRow) {
+              return
+            }
+            const tails = names.map(name => response.series[name])
+            if (tails.some(tail => !Array.isArray(tail))) return
+            const tailLength = tails[0].length
+            if (tailLength === 0 || tails.some(tail => tail.length !== tailLength)) return
+            if (!names.every(name => local.length(name) === startRow)) return
+            for (let index = 0; index < names.length; index++) {
+              if (!local.append(names[index], startRow, tails[index])) return
+            }
+            setDataVersion(version => version + 1)
+            progressed = true
+          }
+          if (!progressed) break
         }
-        const tails = Object.entries(response.series)
-        if (tails.length === 0) return changed
-        const tailLength = tails[0][1].length
-        if (tailLength === 0 || tails.some(([, tail]) => tail.length !== tailLength)) return changed
-        for (const [name, tail] of tails) {
-          if (!local.append(name, response.start_row, tail)) return changed
-        }
-        changed = true
-        cursor += tailLength
+      } finally {
+        if (loaderActiveRef.current === token) loaderActiveRef.current = null
       }
-      return changed
     }
 
-    void Promise.all([...groups].map(([startRow, outputs]) => loadGroup(startRow, outputs)))
-      .then(changed => {
-        if (!cancelled && changed.some(Boolean)) setDataVersion(version => version + 1)
-      })
-      .catch(() => {})
+    void runLoader().catch(() => {})
     return () => { cancelled = true }
-  }, [runId, page, revision, rowCount, requestedNames, chartData])
+  }, [runId, page, requestedKey, chartData, loadGeneration])
+
+  useEffect(() => {
+    if (requestedKey.length === 0 || loaderActiveRef.current !== null) return
+    const names = requestedKey.split('\0')
+    const local = chartData.get(page)
+    const behind = names.some(name => (local?.length(name) ?? 0) < rowCount)
+    if (behind) setLoadGeneration(generation => generation + 1)
+  }, [runId, page, requestedKey, revision, rowCount, chartData])
 
   async function saveImage(id: number, index: number) {
     if (saving.current) return

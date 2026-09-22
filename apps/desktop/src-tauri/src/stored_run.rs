@@ -105,6 +105,7 @@ pub struct RunMetadataDto {
 pub struct PageRowsDto {
     pub run_id: u64,
     pub page: String,
+    pub revision: u64,
     pub total_rows: usize,
     pub offset: usize,
     pub rows: Vec<ResultRowDto>,
@@ -370,6 +371,7 @@ impl StoredRun {
             .get(page)
             .ok_or_else(|| format!("Unknown Output Page {page:?}"))?;
         let total = page_data.rows.len();
+        let revision = page_data.revision;
         let rows = page_data
             .rows
             .iter()
@@ -381,6 +383,7 @@ impl StoredRun {
         Ok(PageRowsDto {
             run_id: self.run_id,
             page: page.to_owned(),
+            revision,
             total_rows: total,
             offset,
             rows,
@@ -1011,5 +1014,29 @@ mod tests {
         let run_id = run.read().unwrap().run_id;
         runs.clear_current();
         assert!(runs.get(run_id).is_err());
+    }
+
+    #[test]
+    fn page_rows_responses_carry_a_coherent_revision_snapshot() {
+        let runs = StoredRuns::default();
+        let run = runs.begin(template());
+        run.write().unwrap().append_event(
+            &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(Value::from(
+                1.0,
+            ))),
+        );
+        let first = run.read().unwrap().page_rows("Results", 0, 10).unwrap();
+        assert_eq!(first.revision, 1);
+        assert_eq!(first.total_rows, 1);
+        assert_eq!(first.rows.len(), 1);
+        run.write().unwrap().append_event(
+            &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(Value::from(
+                2.0,
+            ))),
+        );
+        let second = run.read().unwrap().page_rows("Results", 0, 10).unwrap();
+        assert_eq!(second.revision, 2);
+        assert_eq!(second.total_rows, 2);
+        assert_eq!(second.rows.len(), 2);
     }
 }

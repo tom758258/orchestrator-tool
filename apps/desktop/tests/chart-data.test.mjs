@@ -94,6 +94,6 @@ test('ChartPlot refreshes raw typed-array views after live appends', () => {
 test('ResultChart loads large raw series through bounded incremental queries', () => {
   const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
   assert.match(source, /CHART_SERIES_CHUNK_ROWS = 25_000/)
-  assert.match(source, /limit: Math\.min\(CHART_SERIES_CHUNK_ROWS, rowCount - cursor\)/)
-  assert.match(source, /while \(!cancelled && cursor < rowCount\)/)
+  assert.match(source, /Math\.min\(CHART_SERIES_CHUNK_ROWS, latest - startRow\)/)
+  assert.match(source, /while \(!cancelled\)/)
 })
