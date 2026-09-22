@@ -2,9 +2,22 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ResultRowDto } from './workflow'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputWindow } from './virtualRows'
+import {
+  OUTPUT_ROW_HEIGHT,
+  OUTPUT_ROW_OVERSCAN,
+  preserveLiveHistoryScrollTop,
+  virtualOutputWindow,
+  virtualRowRange,
+} from './virtualRows'
 
-type PageRowsResponse = { run_id: number; page: string; revision: number; total_rows: number; offset: number; rows: ResultRowDto[] }
+type PageRowsResponse = {
+  run_id: number
+  page: string
+  revision: number
+  total_rows: number
+  offset: number
+  rows: ResultRowDto[]
+}
 
 export default function VirtualizedOutputTable({ runId, page, rowCount, revision, outputs, iterationRows }: {
   runId: number
@@ -16,11 +29,11 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
 }) {
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
+  const previousRowCountRef = useRef(rowCount)
+  const requestGenerationRef = useRef(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [window, setWindow] = useState<PageRowsResponse | null>(null)
-  const desiredRef = useRef({ runId, page, start: 0, end: 0 })
-  const activeQueryRef = useRef<{ key: string; settled: boolean } | null>(null)
 
   useLayoutEffect(() => {
     const container = scroll.current!
@@ -36,59 +49,66 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
     return () => observer.disconnect()
   }, [])
 
+  useLayoutEffect(() => {
+    const previousRowCount = previousRowCountRef.current
+    previousRowCountRef.current = rowCount
+    const container = scroll.current
+    if (!container || rowCount <= previousRowCount) return
+    const nextScrollTop = preserveLiveHistoryScrollTop(
+      container.scrollTop, previousRowCount, rowCount, OUTPUT_ROW_HEIGHT,
+    )
+    if (nextScrollTop !== container.scrollTop) {
+      container.scrollTop = nextScrollTop
+      setScrollTop(nextScrollTop)
+    }
+  }, [rowCount])
+
   const range = virtualRowRange({
     rowCount, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
     overscan: OUTPUT_ROW_OVERSCAN,
   })
-  desiredRef.current = { runId, page, start: range.start, end: range.end }
+
   useEffect(() => {
-    const key = `${runId}|${page}|${range.start}|${range.end}`
-    if (activeQueryRef.current && activeQueryRef.current.key === key && !activeQueryRef.current.settled) {
-      return
-    }
+    const generation = ++requestGenerationRef.current
+    const requestedRevision = revision
+    const requestedRowCount = rowCount
+    const requestedOffset = range.start
+    const requestedLimit = range.end - range.start
     let cancelled = false
     const timer = setTimeout(() => {
-      const query = { key, settled: false }
-      activeQueryRef.current = query
       void invoke<PageRowsResponse>('get_last_run_page_rows', {
-        runId, page, offset: range.start, limit: range.end - range.start,
+        runId, page, offset: requestedOffset, limit: requestedLimit,
       }).then(response => {
-        query.settled = true
-        if (cancelled) return
-        const desired = desiredRef.current
-        if (response.run_id !== desired.runId || response.page !== desired.page) return
-        if (response.offset !== desired.start) return
-        setWindow(current => {
-          if (current && current.run_id === response.run_id && current.page === response.page
-            && response.revision < current.revision) {
-            return current
-          }
-          return response
-        })
-      }).catch(() => {
-        query.settled = true
-      })
+        if (cancelled || requestGenerationRef.current !== generation) return
+        if (response.run_id !== runId || response.page !== page) return
+        if (response.offset !== requestedOffset || response.revision !== requestedRevision) return
+        if (response.total_rows !== requestedRowCount) return
+        setWindow(response)
+      }).catch(() => {})
     }, 30)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [runId, page, revision, range.start, range.end])
-  // The displayed window is a coherent snapshot: geometry, Iteration numbers,
-  // and rows all derive from window.total_rows, never from the newer rowCount prop.
-  const displayRowCount = window && window.run_id === runId && window.page === page
-    ? window.total_rows : rowCount
-  const displayRange = window && window.run_id === runId && window.page === page
-    ? virtualRowRange({
-      rowCount: window.total_rows, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
-      overscan: OUTPUT_ROW_OVERSCAN,
-    })
-    : range
-  const items = window && window.run_id === runId && window.page === page && window.offset === displayRange.start
-    ? virtualOutputWindow(window.rows, window.offset, window.total_rows) : []
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [runId, page, revision, rowCount, range.start, range.end])
+
+  const currentWindow = window
+    && window.run_id === runId
+    && window.page === page
+    && window.revision === revision
+    && window.total_rows === rowCount
+    && window.offset === range.start
+    ? window
+    : null
+  const items = currentWindow
+    ? virtualOutputWindow(currentWindow.rows, currentWindow.offset, currentWindow.total_rows)
+    : []
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
-  const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
+  const pendingRows = Math.max(0, range.end - range.start - items.length)
 
   return <div ref={scroll} className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}
     onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
-    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={displayRowCount + 1}
+    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={rowCount + 1}
       style={{ '--output-row-height': `${OUTPUT_ROW_HEIGHT}px` } as CSSProperties}>
       <thead ref={header}>
         <tr aria-rowindex={1}>
@@ -97,8 +117,8 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         </tr>
       </thead>
       <tbody>
-        {displayRange.topSpacerHeight > 0 && <tr aria-hidden="true">
-          <td className="output-table-spacer" colSpan={columnCount} style={{ height: displayRange.topSpacerHeight }} />
+        {range.topSpacerHeight > 0 && <tr aria-hidden="true">
+          <td className="output-table-spacer" colSpan={columnCount} style={{ height: range.topSpacerHeight }} />
         </tr>}
         {items.map(({ row, index, iteration }) => (
           <tr key={index} aria-rowindex={index + 2}>
@@ -113,8 +133,8 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         {pendingRows > 0 && <tr aria-hidden="true">
           <td className="output-table-spacer" colSpan={columnCount} style={{ height: pendingRows * OUTPUT_ROW_HEIGHT }} />
         </tr>}
-        {displayRange.bottomSpacerHeight > 0 && <tr aria-hidden="true">
-          <td className="output-table-spacer" colSpan={columnCount} style={{ height: displayRange.bottomSpacerHeight }} />
+        {range.bottomSpacerHeight > 0 && <tr aria-hidden="true">
+          <td className="output-table-spacer" colSpan={columnCount} style={{ height: range.bottomSpacerHeight }} />
         </tr>}
       </tbody>
     </table>
