@@ -372,12 +372,12 @@ impl StoredRun {
             .ok_or_else(|| format!("Unknown Output Page {page:?}"))?;
         let total = page_data.rows.len();
         let revision = page_data.revision;
-        let rows = page_data
-            .rows
+        let limit = limit.min(1_000);
+        let end = total.saturating_sub(offset);
+        let start = end.saturating_sub(limit);
+        let rows = page_data.rows[start..end]
             .iter()
             .rev()
-            .skip(offset)
-            .take(limit.min(1_000))
             .map(result_row_dto)
             .collect();
         Ok(PageRowsDto {
@@ -395,14 +395,12 @@ impl StoredRun {
             run_id: self.run_id,
             total_executions: self.executions.len(),
             offset,
-            executions: self
-                .executions
-                .iter()
-                .rev()
-                .skip(offset)
-                .take(limit.min(1_000))
-                .cloned()
-                .collect(),
+            executions: {
+                let total = self.executions.len();
+                let end = total.saturating_sub(offset);
+                let start = end.saturating_sub(limit.min(1_000));
+                self.executions[start..end].iter().rev().cloned().collect()
+            },
         }
     }
 
@@ -1014,6 +1012,51 @@ mod tests {
         let run_id = run.read().unwrap().run_id;
         runs.clear_current();
         assert!(runs.get(run_id).is_err());
+    }
+
+    #[test]
+    fn deep_windows_slice_directly_and_keep_latest_first_order() {
+        let runs = StoredRuns::default();
+        let run = runs.begin(template());
+        {
+            let mut run = run.write().unwrap();
+            for value in 1..=2_000 {
+                run.append_event(
+                    &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(
+                        Value::from(value),
+                    )),
+                );
+            }
+            for value in 1..=2_000 {
+                run.executions.push(CompactExecutionDto {
+                    step_id: format!("step-{value}"),
+                    status: "succeeded".to_owned(),
+                    output: None,
+                    output_omitted: false,
+                    message: None,
+                    for_iteration: None,
+                    while_iteration: None,
+                });
+            }
+        }
+        let run = run.read().unwrap();
+        let rows = run.page_rows("Results", 1_500, 3).unwrap();
+        assert_eq!(
+            rows.rows
+                .iter()
+                .map(|row| row.outputs[0].value.as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![500, 499, 498]
+        );
+        let executions = run.executions(1_500, 3);
+        assert_eq!(
+            executions
+                .executions
+                .iter()
+                .map(|execution| execution.step_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["step-500", "step-499", "step-498"]
+        );
     }
 
     #[test]
