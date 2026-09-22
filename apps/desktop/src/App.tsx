@@ -10,7 +10,8 @@ import { EXECUTION_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { reconcileRunChartPanels, type ChartPanel } from './chartPanels'
-import type { PageChartData } from './chartData'
+import { pruneChartData, type PageChartData } from './chartData'
+import { claimRunGate, isCurrentRunGeneration, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -470,6 +471,9 @@ function App() {
     ))
   }, [runWorkflowSnapshot, displayedRun])
   useEffect(() => {
+    pruneChartData(chartData, chartPanels)
+  }, [chartData, chartPanels])
+  useEffect(() => {
     if (!displayedRun) { setExecutionPage(null); return }
     let cancelled = false
     void invoke<ExecutionRowsResponse>('get_last_run_executions', {
@@ -527,6 +531,7 @@ function App() {
       setRunMetadata(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
+      setChartPanels([])
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
@@ -540,6 +545,7 @@ function App() {
       setRunMetadata(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
+      setChartPanels([])
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
@@ -770,6 +776,7 @@ function App() {
       setRunMetadata(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
+      setChartPanels([])
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
@@ -911,7 +918,7 @@ function App() {
   }, [])
 
   const receiveRunProgress = useCallback((event: DesktopRunEvent, generation = runGenerationRef.current) => {
-    if (generation !== runGenerationRef.current) return
+    if (!isCurrentRunGeneration(generation, runGenerationRef.current)) return
     if (event.type === 'csv-stream') {
       setCsvStreamStatus(event.status)
       return
@@ -923,10 +930,9 @@ function App() {
   }, [])
 
   const runLive = useCallback(async () => {
-    if (!workflowDraft || runInFlightRef.current) {
+    if (!workflowDraft || !claimRunGate(runInFlightRef)) {
       return
     }
-    runInFlightRef.current = true
     setLiveConfirmationPending(true)
     let started = false
     let generation: number | null = null
@@ -975,6 +981,7 @@ function App() {
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -992,31 +999,30 @@ function App() {
         streamCsv: streamOptions,
         confirmedResources,
       })
-      if (generation === runGenerationRef.current) {
+      if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
         setRunMetadata(results)
       }
     } catch (message) {
-      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
+      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
         if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started && generation === runGenerationRef.current) {
+      if (started && isCurrentRunGeneration(generation, runGenerationRef.current)) {
         setStopRequest(null)
         setRunStatus('idle')
       }
-      runInFlightRef.current = false
+      releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
   }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
-    if (!workflowDraft || runInFlightRef.current) {
+    if (!workflowDraft || !claimRunGate(runInFlightRef)) {
       return
     }
-    runInFlightRef.current = true
 
     let started = false
     let generation: number | null = null
@@ -1031,6 +1037,7 @@ function App() {
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1046,22 +1053,22 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
       })
-      if (generation === runGenerationRef.current) {
+      if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
         setRunMetadata(results)
       }
     } catch (message) {
-      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
+      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
         if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started && generation === runGenerationRef.current) {
+      if (started && isCurrentRunGeneration(generation, runGenerationRef.current)) {
         setStopRequest(null)
         setRunStatus('idle')
       }
-      runInFlightRef.current = false
+      releaseRunGate(runInFlightRef)
     }
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
@@ -1083,6 +1090,7 @@ function App() {
       await invoke('clear_last_run', { runId: runIdRef.current })
     }
     setRunWorkflowSnapshot(null)
+    setChartPanels([])
     setRunMetadata(null)
     runIdRef.current = null
     setExecutionPage(null)
