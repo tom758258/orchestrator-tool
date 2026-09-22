@@ -31,3 +31,8 @@ export function preserveLiveHistoryScrollTop(
   if (nextRowCount <= previousRowCount || scrollTop <= 1) return scrollTop <= 1 ? 0 : scrollTop
   return scrollTop + (nextRowCount - previousRowCount) * rowHeight
 }
+
+export function rebaseNewestFirstWindow(offset: number, totalRows: number, nextTotalRows: number) {
+  const added = Math.max(0, nextTotalRows - totalRows)
+  return { offset: offset + added, totalRows: nextTotalRows }
+}
