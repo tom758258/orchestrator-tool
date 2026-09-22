@@ -80,6 +80,9 @@ test('Page adapter appends compact tails and shares each raw series once', () =>
   assert.equal(page.append('V', 1, [99]), false)
   assert.equal(page.version, 3)
   assert.equal(page.series.size, 2)
+  assert.equal(page.commonLength(['V']), 3)
+  assert.equal(page.commonLength(['V', 'I']), 2)
+  assert.equal(page.commonLength(['missing']), 0)
   const other = createPageChartData()
   other.append('V', 0, [99])
   assert.deepEqual([...other.getSeries('V')], [99])
@@ -96,4 +99,14 @@ test('ResultChart loads large raw series through bounded incremental queries', (
   assert.match(source, /CHART_SERIES_CHUNK_ROWS = 25_000/)
   assert.match(source, /Math\.min\(CHART_SERIES_CHUNK_ROWS, latest - startRow\)/)
   assert.match(source, /while \(!cancelled\)/)
+})
+
+
+test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
+  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
+  assert.match(source, /const rawRowCount = useMemo\(\(\) => data\.commonLength\(panel\.outputs\)/)
+  assert.match(source, /data\.iteration\.subarray\(0, rawRowCount\)/)
+  assert.match(source, /data\.getSeries\(name\)\.subarray\(0, rawRowCount\)/)
+  assert.match(source, /exactHoverIndex\(x, rawRowCount\)/)
+  assert.doesNotMatch(source, /exactHoverIndex\(x, data\.rowCount\)/)
 })
