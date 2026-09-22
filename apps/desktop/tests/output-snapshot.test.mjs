@@ -25,9 +25,9 @@ test('an older viewport is rebased in place when live rows append', () => {
 })
 
 test('only a current coherent window supplies rows and Iteration numbers', () => {
-  assert.match(source, /window\.revision === revision/)
-  assert.match(source, /window\.total_rows === rowCount/)
-  assert.match(source, /window\.offset === range\.start/)
+  assert.match(source, /samePageWindow\.revision === revision/)
+  assert.match(source, /samePageWindow\.total_rows === rowCount/)
+  assert.match(source, /samePageWindow\.offset === range\.start/)
   assert.match(source, /virtualOutputWindow\(currentWindow\.rows, currentWindow\.offset, currentWindow\.total_rows\)/)
 })
 
