@@ -6,6 +6,7 @@ import {
   OUTPUT_ROW_HEIGHT,
   OUTPUT_ROW_OVERSCAN,
   preserveLiveHistoryScrollTop,
+  rebaseNewestFirstWindow,
   virtualOutputWindow,
   virtualRowRange,
 } from './virtualRows'
@@ -58,17 +59,33 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
       container.scrollTop, previousRowCount, rowCount, OUTPUT_ROW_HEIGHT,
     )
     if (nextScrollTop !== container.scrollTop) {
+      setWindow(current => {
+        if (!current || current.run_id !== runId || current.page !== page
+          || current.total_rows !== previousRowCount) return current
+        const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
+        return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
+      })
       container.scrollTop = nextScrollTop
       setScrollTop(nextScrollTop)
     }
-  }, [rowCount])
+  }, [runId, page, revision, rowCount])
 
   const range = virtualRowRange({
     rowCount, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
     overscan: OUTPUT_ROW_OVERSCAN,
   })
 
+  const currentWindow = window
+    && window.run_id === runId
+    && window.page === page
+    && window.revision === revision
+    && window.total_rows === rowCount
+    && window.offset === range.start
+    ? window
+    : null
+
   useEffect(() => {
+    if (currentWindow) return
     const generation = ++requestGenerationRef.current
     const requestedRevision = revision
     const requestedRowCount = rowCount
@@ -90,16 +107,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
       cancelled = true
       clearTimeout(timer)
     }
-  }, [runId, page, revision, rowCount, range.start, range.end])
-
-  const currentWindow = window
-    && window.run_id === runId
-    && window.page === page
-    && window.revision === revision
-    && window.total_rows === rowCount
-    && window.offset === range.start
-    ? window
-    : null
+  }, [runId, page, revision, rowCount, range.start, range.end, currentWindow])
   const items = currentWindow
     ? virtualOutputWindow(currentWindow.rows, currentWindow.offset, currentWindow.total_rows)
     : []
