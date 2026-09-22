@@ -929,6 +929,7 @@ function App() {
     runInFlightRef.current = true
     setLiveConfirmationPending(true)
     let started = false
+    let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
@@ -969,8 +970,8 @@ function App() {
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       runIdRef.current = null
-      const generation = ++runGenerationRef.current
-      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
+      generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -991,23 +992,25 @@ function App() {
         streamCsv: streamOptions,
         confirmedResources,
       })
-      runIdRef.current = results.run_id
-      setRunMetadata(results)
+      if (generation === runGenerationRef.current) {
+        runIdRef.current = results.run_id
+        setRunMetadata(results)
+      }
     } catch (message) {
-      setRunError(String(message))
+      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
-        progressChannelRef.current = null
+        if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started) {
+      if (started && generation === runGenerationRef.current) {
         setStopRequest(null)
         setRunStatus('idle')
       }
       runInFlightRef.current = false
       setLiveConfirmationPending(false)
     }
-  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || runInFlightRef.current) {
@@ -1016,14 +1019,15 @@ function App() {
     runInFlightRef.current = true
 
     let started = false
+    let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       runIdRef.current = null
-      const generation = ++runGenerationRef.current
-      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
+      generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -1042,16 +1046,18 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
       })
-      runIdRef.current = results.run_id
-      setRunMetadata(results)
+      if (generation === runGenerationRef.current) {
+        runIdRef.current = results.run_id
+        setRunMetadata(results)
+      }
     } catch (message) {
-      setRunError(String(message))
+      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
-        progressChannelRef.current = null
+        if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started) {
+      if (started && generation === runGenerationRef.current) {
         setStopRequest(null)
         setRunStatus('idle')
       }
