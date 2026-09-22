@@ -3,39 +3,35 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 const source = readFileSync(new URL('../src/VirtualizedOutputTable.tsx', import.meta.url), 'utf8')
+const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
-test('window responses carry the page revision alongside rows and totals', () => {
-  assert.match(source, /revision: number; total_rows: number/)
+test('window responses carry the exact page revision and total used by the request', () => {
+  assert.match(source, /revision: number/)
+  assert.match(source, /response\.revision !== requestedRevision/)
+  assert.match(source, /response\.total_rows !== requestedRowCount/)
 })
 
-test('displayed rows and Iteration numbers use the snapshot total, not live metadata', () => {
-  assert.match(source, /virtualOutputWindow\(window\.rows, window\.offset, window\.total_rows\)/)
-  assert.doesNotMatch(source, /virtualOutputWindow\(window\.rows, window\.offset, rowCount\)/)
+test('every live revision gets a new request generation instead of deduping an old in-flight request', () => {
+  assert.match(source, /const generation = \+\+requestGenerationRef\.current/)
+  assert.match(source, /requestGenerationRef\.current !== generation/)
+  assert.doesNotMatch(source, /activeQueryRef|settled/)
+  assert.match(source, /\[runId, page, revision, rowCount, range\.start, range\.end\]/)
 })
 
-test('table geometry follows the displayed snapshot total', () => {
-  assert.match(source, /const displayRowCount = window/)
-  assert.match(source, /window\.total_rows : rowCount/)
-  assert.match(source, /aria-rowcount=\{displayRowCount \+ 1\}/)
-  assert.match(source, /displayRange\.topSpacerHeight/)
-  assert.match(source, /displayRange\.bottomSpacerHeight/)
+test('only a current coherent window supplies rows and Iteration numbers', () => {
+  assert.match(source, /window\.revision === revision/)
+  assert.match(source, /window\.total_rows === rowCount/)
+  assert.match(source, /window\.offset === range\.start/)
+  assert.match(source, /virtualOutputWindow\(currentWindow\.rows, currentWindow\.offset, currentWindow\.total_rows\)/)
 })
 
-test('stale windows never match on revision equality with live metadata', () => {
-  assert.doesNotMatch(source, /window\.revision === revision/)
-  assert.doesNotMatch(source, /window\.revision === current/)
+test('table geometry follows current metadata while a replacement window is pending', () => {
+  assert.match(source, /aria-rowcount=\{rowCount \+ 1\}/)
+  assert.match(source, /range\.topSpacerHeight/)
+  assert.match(source, /range\.bottomSpacerHeight/)
+  assert.match(source, /const pendingRows = Math\.max\(0, range\.end - range\.start - items\.length\)/)
 })
 
-test('late older snapshots cannot overwrite newer windows', () => {
-  assert.match(source, /response\.revision < current\.revision/)
-})
-
-test('stale run, page, and range responses are rejected', () => {
-  assert.match(source, /response\.run_id !== desired\.runId \|\| response\.page !== desired\.page/)
-  assert.match(source, /response\.offset !== desired\.start/)
-})
-
-test('revision updates refresh without starving the active range query', () => {
-  assert.match(source, /activeQueryRef/)
-  assert.match(source, /!activeQueryRef\.current\.settled/)
+test('a new run remounts the Output table at the latest position', () => {
+  assert.ok(app.includes("key={`${displayedRun.run_id}:${runPage.name}`}"))
 })
