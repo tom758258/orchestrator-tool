@@ -114,6 +114,26 @@ export function virtualOutputWindow(rows: readonly ResultRowDto[], offset: numbe
   })
 }
 
+export function preserveVirtualScrollTop(
+  scrollTop: number,
+  previousRowCount: number,
+  nextRowCount: number,
+  rowHeight: number,
+  previousViewportHeight: number,
+  nextViewportHeight: number,
+) {
+  if (scrollTop <= 1) return 0
+  const logicalTop = logicalScrollTopForPhysical(
+    scrollTop, previousRowCount, rowHeight, previousViewportHeight,
+  )
+  return physicalScrollTopForLogical(
+    logicalTop + Math.max(0, nextRowCount - previousRowCount) * rowHeight,
+    nextRowCount,
+    rowHeight,
+    nextViewportHeight,
+  )
+}
+
 export function preserveLiveHistoryScrollTop(
   scrollTop: number,
   previousRowCount: number,
@@ -121,14 +141,13 @@ export function preserveLiveHistoryScrollTop(
   rowHeight: number,
   viewportHeight = 0,
 ) {
-  if (nextRowCount <= previousRowCount || scrollTop <= 1) return scrollTop <= 1 ? 0 : scrollTop
-  const logicalTop = logicalScrollTopForPhysical(
-    scrollTop, previousRowCount, rowHeight, viewportHeight,
-  )
-  return physicalScrollTopForLogical(
-    logicalTop + (nextRowCount - previousRowCount) * rowHeight,
+  if (nextRowCount <= previousRowCount) return scrollTop <= 1 ? 0 : scrollTop
+  return preserveVirtualScrollTop(
+    scrollTop,
+    previousRowCount,
     nextRowCount,
     rowHeight,
+    viewportHeight,
     viewportHeight,
   )
 }
