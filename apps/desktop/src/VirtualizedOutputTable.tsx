@@ -2,9 +2,23 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ResultRowDto } from './workflow'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputWindow } from './virtualRows'
+import {
+  OUTPUT_ROW_HEIGHT,
+  OUTPUT_ROW_OVERSCAN,
+  preserveLiveHistoryScrollTop,
+  rebaseNewestFirstWindow,
+  virtualOutputWindow,
+  virtualRowRange,
+} from './virtualRows'
 
-type PageRowsResponse = { run_id: number; page: string; revision: number; total_rows: number; offset: number; rows: ResultRowDto[] }
+type PageRowsResponse = {
+  run_id: number
+  page: string
+  revision: number
+  total_rows: number
+  offset: number
+  rows: ResultRowDto[]
+}
 
 export default function VirtualizedOutputTable({ runId, page, rowCount, revision, outputs, iterationRows }: {
   runId: number
@@ -16,11 +30,11 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
 }) {
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
+  const previousRowCountRef = useRef(rowCount)
+  const requestGenerationRef = useRef(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
   const [window, setWindow] = useState<PageRowsResponse | null>(null)
-  const desiredRef = useRef({ runId, page, start: 0, end: 0 })
-  const activeQueryRef = useRef<{ key: string; settled: boolean } | null>(null)
 
   useLayoutEffect(() => {
     const container = scroll.current!
@@ -36,53 +50,76 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
     return () => observer.disconnect()
   }, [])
 
+  useLayoutEffect(() => {
+    const previousRowCount = previousRowCountRef.current
+    previousRowCountRef.current = rowCount
+    const container = scroll.current
+    if (!container || rowCount <= previousRowCount) return
+    const nextScrollTop = preserveLiveHistoryScrollTop(
+      container.scrollTop, previousRowCount, rowCount, OUTPUT_ROW_HEIGHT,
+    )
+    if (nextScrollTop !== container.scrollTop) {
+      setWindow(current => {
+        if (!current || current.run_id !== runId || current.page !== page
+          || current.total_rows !== previousRowCount) return current
+        const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
+        return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
+      })
+      container.scrollTop = nextScrollTop
+      setScrollTop(container.scrollTop)
+    }
+  }, [runId, page, revision, rowCount])
+
   const range = virtualRowRange({
     rowCount, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
     overscan: OUTPUT_ROW_OVERSCAN,
   })
-  desiredRef.current = { runId, page, start: range.start, end: range.end }
+
+  const samePageWindow = window && window.run_id === runId && window.page === page ? window : null
+  const currentWindow = samePageWindow
+    && samePageWindow.revision === revision
+    && samePageWindow.total_rows === rowCount
+    && samePageWindow.offset === range.start
+    ? samePageWindow
+    : null
+
   useEffect(() => {
-    const key = `${runId}|${page}|${range.start}|${range.end}`
-    if (activeQueryRef.current && activeQueryRef.current.key === key && !activeQueryRef.current.settled) {
-      return
-    }
+    if (currentWindow) return
+    const generation = ++requestGenerationRef.current
+    const requestedRevision = revision
+    const requestedRowCount = rowCount
+    const requestedOffset = range.start
+    const requestedLimit = range.end - range.start
     let cancelled = false
     const timer = setTimeout(() => {
-      const query = { key, settled: false }
-      activeQueryRef.current = query
       void invoke<PageRowsResponse>('get_last_run_page_rows', {
-        runId, page, offset: range.start, limit: range.end - range.start,
+        runId, page, offset: requestedOffset, limit: requestedLimit,
       }).then(response => {
-        query.settled = true
-        if (cancelled) return
-        const desired = desiredRef.current
-        if (response.run_id !== desired.runId || response.page !== desired.page) return
-        if (response.offset !== desired.start) return
-        setWindow(current => {
-          if (current && current.run_id === response.run_id && current.page === response.page
-            && response.revision < current.revision) {
-            return current
-          }
-          return response
-        })
-      }).catch(() => {
-        query.settled = true
-      })
+        if (cancelled || requestGenerationRef.current !== generation) return
+        if (response.run_id !== runId || response.page !== page) return
+        if (response.offset !== requestedOffset || response.revision !== requestedRevision) return
+        if (response.total_rows !== requestedRowCount) return
+        setWindow(response)
+      }).catch(() => {})
     }, 30)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [runId, page, revision, range.start, range.end])
-  // The displayed window is a coherent snapshot: geometry, Iteration numbers,
-  // and rows all derive from window.total_rows, never from the newer rowCount prop.
-  const displayRowCount = window && window.run_id === runId && window.page === page
-    ? window.total_rows : rowCount
-  const displayRange = window && window.run_id === runId && window.page === page
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [runId, page, revision, rowCount, range.start, range.end, currentWindow])
+  // While a newer top window is loading, keep rendering the previous window
+  // with its own total/range so rows and Iteration numbers never mix revisions.
+  const displayRowCount = samePageWindow?.total_rows ?? rowCount
+  const displayRange = samePageWindow
     ? virtualRowRange({
-      rowCount: window.total_rows, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
+      rowCount: samePageWindow.total_rows, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
       overscan: OUTPUT_ROW_OVERSCAN,
     })
     : range
-  const items = window && window.run_id === runId && window.page === page && window.offset === displayRange.start
-    ? virtualOutputWindow(window.rows, window.offset, window.total_rows) : []
+  const displayWindow = samePageWindow?.offset === displayRange.start ? samePageWindow : null
+  const items = displayWindow
+    ? virtualOutputWindow(displayWindow.rows, displayWindow.offset, displayWindow.total_rows)
+    : []
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
   const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
 

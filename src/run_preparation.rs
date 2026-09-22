@@ -58,6 +58,16 @@ fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize
     })
 }
 
+fn custom_expected_readings(
+    trigger_count: usize,
+    sample_count: usize,
+    instance: &ToolInstanceId,
+) -> Result<usize, String> {
+    trigger_count
+        .checked_mul(sample_count)
+        .ok_or_else(|| format!("Software Custom Meter {instance} expected reading count overflow"))
+}
+
 fn custom_trigger_count(
     measured: Option<usize>,
     instance: &ToolInstanceId,
@@ -177,7 +187,9 @@ pub fn prepare_worker_launch_specs(
                     })
                     .transpose()?,
                 MetersTriggerMode::SoftwareCustom => {
-                    Some(custom_trigger_count(measured, &instance.id)?)
+                    let trigger_count = custom_trigger_count(measured, &instance.id)?;
+                    custom_expected_readings(trigger_count, setup.sample_count, &instance.id)?;
+                    Some(trigger_count)
                 }
             }
         } else {
@@ -358,6 +370,12 @@ mod tests {
             custom_trigger_count(None, &target)
                 .unwrap_err()
                 .contains("Unlimited While")
+        );
+        assert_eq!(custom_expected_readings(2, 5, &target).unwrap(), 10);
+        assert!(
+            custom_expected_readings(usize::MAX, 2, &target)
+                .unwrap_err()
+                .contains("expected reading count overflow")
         );
     }
     #[test]

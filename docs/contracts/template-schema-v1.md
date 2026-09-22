@@ -55,10 +55,16 @@ Input Impedance; DC Current additionally supports Current Terminal. These
 fields are mutually constrained by the selected measurement type.
 
 Manual range mode requires a manual range. Auto mode ignores any stored manual
-range and does not emit a range startup argument. Trigger is fixed to
-Software. Meter measurement remains a runtime action; it does not configure
-the session. Core validates setup consistency, while supported models and
-instrument-specific numeric limits remain the responsibility of meters-tool.
+range and does not emit a range startup argument. Meters trigger mode is
+Software by default and may be Software Custom. Software Custom requires
+sample_count from 1 through 1,000,000, may specify buffer_drain_size from 1
+through 10,000, and may opt into the external tool's buffer-overflow-risk
+override. Trigger Count is not Template input: run preparation derives it from
+the maximum number of Measure occurrences for that Tool Instance. Meter
+measurement remains a runtime action; it does not configure the session. Core
+validates setup shape and workflow planning consistency, while supported
+models, acquisition memory, and instrument-specific numeric limits remain the
+responsibility of meters-tool.
 
 Other current Tool Types may use an empty setup object. Declaring a Scopes or
 Wavegen instance does not imply that its runtime actions are supported.
@@ -222,6 +228,31 @@ Inner rows when all iterations succeed.
 
 ResultRow outputs reuse WorkflowOutput values and use the Page's Output names
 as columns. Iteration metadata is not a Workflow Output column.
+
+A Software Custom Meters Measure is a batch source. One Measure action sends
+one software trigger request and resolves exactly sample_count ordered samples
+for that occurrence. An Output that directly references that batch, or an
+expression that depends on it, is resolved once per sample. The owning Page
+therefore expands one logical row into sample_count physical committed
+ResultRows; scalar Outputs on that Page are broadcast to each physical row.
+
+Several Outputs on one Page may depend on the same batch source and remain
+index-aligned. A Page cannot combine two independent Software Custom Measure
+sources. Batch-dependent values are rejected for Assert, Set Variable, While
+conditions, and Tool Action bindings. Expansion is Page-local and remains
+staged until the owning scope or iteration succeeds, so a later failure
+discards the staged batch rows.
+
+Software Custom Trigger Count is planned per Meters Tool Instance from the
+maximum possible Measure occurrences: root occurrence counts once, For counts
+multiply by exact iteration counts, finite While counts multiply by
+max_iterations, nested counts multiply, and separate Measure occurrences add.
+An Unlimited While that can reach a Software Custom Measure is invalid.
+Trigger Count is capped at the meters-tool maximum of 1,000,000. Run
+preparation also checked-multiplies Trigger Count by sample_count to validate
+the expected reading count without imposing a separate ResultRow quota. A
+finite While that exits early or a graceful Stop may leave planned triggers
+unused; Worker cleanup terminates the session normally.
 
 ## Execution occurrence metadata
 

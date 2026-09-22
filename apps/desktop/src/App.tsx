@@ -16,7 +16,7 @@ import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
 export type { WorkflowStep } from './workflow'
 
@@ -392,7 +392,7 @@ function App() {
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
-  const liveRunInFlight = useRef(false)
+  const runInFlightRef = useRef(false)
   const runGenerationRef = useRef(0)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
@@ -923,12 +923,13 @@ function App() {
   }, [])
 
   const runLive = useCallback(async () => {
-    if (!workflowDraft || runStatus === 'running' || liveRunInFlight.current) {
+    if (!workflowDraft || runInFlightRef.current) {
       return
     }
-    liveRunInFlight.current = true
+    runInFlightRef.current = true
     setLiveConfirmationPending(true)
     let started = false
+    let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
@@ -969,8 +970,8 @@ function App() {
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       runIdRef.current = null
-      const generation = ++runGenerationRef.current
-      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
+      generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -991,38 +992,42 @@ function App() {
         streamCsv: streamOptions,
         confirmedResources,
       })
-      runIdRef.current = results.run_id
-      setRunMetadata(results)
+      if (generation === runGenerationRef.current) {
+        runIdRef.current = results.run_id
+        setRunMetadata(results)
+      }
     } catch (message) {
-      setRunError(String(message))
+      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
-        progressChannelRef.current = null
+        if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started) {
+      if (started && generation === runGenerationRef.current) {
         setStopRequest(null)
         setRunStatus('idle')
       }
-      liveRunInFlight.current = false
+      runInFlightRef.current = false
       setLiveConfirmationPending(false)
     }
-  }, [runStatus, resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
   const runSimulation = useCallback(async () => {
-    if (!workflowDraft) {
+    if (!workflowDraft || runInFlightRef.current) {
       return
     }
+    runInFlightRef.current = true
 
     let started = false
+    let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
       )
       runIdRef.current = null
-      const generation = ++runGenerationRef.current
-      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation))
+      generation = ++runGenerationRef.current
+      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
@@ -1041,19 +1046,22 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
       })
-      runIdRef.current = results.run_id
-      setRunMetadata(results)
+      if (generation === runGenerationRef.current) {
+        runIdRef.current = results.run_id
+        setRunMetadata(results)
+      }
     } catch (message) {
-      setRunError(String(message))
+      if (generation === null || generation === runGenerationRef.current) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
-        progressChannelRef.current = null
+        if (progressChannelRef.current === onProgress) progressChannelRef.current = null
       }
-      if (started) {
+      if (started && generation === runGenerationRef.current) {
         setStopRequest(null)
         setRunStatus('idle')
       }
+      runInFlightRef.current = false
     }
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
 
@@ -1153,6 +1161,7 @@ function App() {
     : null
   const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedParent = enclosingLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const selectedEnclosingForVariables = enclosingForVariables(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const addingToLoop = insertionLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
@@ -1640,8 +1649,8 @@ function App() {
                         {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
                           <p className="error">Loop variable and range fields must not be blank.</p>}
                       </>}
-                      {selectedStep.type === 'set-variable' && selectedParent?.type === 'for' && selectedParent.variable === selectedStep.variable &&
-                        <p className="error">A body Set Variable cannot write the enclosing loop variable.</p>}
+                      {selectedStep.type === 'set-variable' && selectedEnclosingForVariables.includes(selectedStep.variable) &&
+                        <p className="error">A body Set Variable cannot write an enclosing For loop variable.</p>}
                       {selectedStep.type === 'set-variable' && (
                         <>
                           <label className="step-property-field">
@@ -2071,7 +2080,7 @@ function App() {
                     <p className="output-row-count">
                       {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} · latest first
                     </p>
-                    <VirtualizedOutputTable key={runPage.name} runId={displayedRun.run_id} page={runPage.name}
+                    <VirtualizedOutputTable key={`${displayedRun.run_id}:${runPage.name}`} runId={displayedRun.run_id} page={runPage.name}
                       rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
                       outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} />
                   </section>

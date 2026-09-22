@@ -45,10 +45,12 @@ A run follows this high-level flow:
    For and While bodies, and emits progress events as steps complete and rows
    commit.
 6. After Executor completion, run orchestration performs the applicable
-   external-tool cleanup and Worker shutdown. The WorkflowRunResult is
-   returned to the caller only after that lifecycle completes successfully;
-   a cleanup or shutdown failure can make the run API return an error
-   instead.
+   external-tool cleanup and Worker shutdown. Core callers that request a
+   retained result receive WorkflowRunResult only after that lifecycle
+   completes successfully; a cleanup or shutdown failure can make the run API
+   return an error instead. Desktop uses the streaming execution path and
+   retains committed results in its current StoredRun rather than retaining a
+   second Core WorkflowRunResult.
 
 The Template contains the durable test definition: Tool Instances, setup
 data, and Workflow steps. Execution mode, executable paths, Live Resources,
@@ -102,17 +104,20 @@ loop occurrences use separate ForIteration or WhileIteration metadata. Root
 executions and root rows have no loop occurrence metadata. Detailed occurrence
 and row semantics are defined in the contract document.
 
-Desktop uses the event stream to update Execution Results and Output Pages
-incrementally. Partial progress can remain available when a command fails,
-but the returned WorkflowRunResult is the authoritative completed result when
-the run succeeds. Manual export requires an authoritative successful run.
-Pause and hard cancel are not part of the current execution model; graceful
-Stop is defined by the template/runtime contract.
+Desktop consumes the event stream through the non-retaining Core execution
+path. Its Rust StoredRun is the authoritative in-memory owner of the current
+Desktop run: committed ResultRows, compact execution records, the Template
+snapshot, status, and incremental Page metadata. Progress IPC carries compact
+metadata rather than full ResultRows or full execution history. A failed run
+keeps rows that were already committed, while manual export still requires a
+successfully completed run. Pause and hard cancel are not part of the current
+execution model; graceful Stop is defined by the template/runtime contract.
 
 Core does not provide Run History, a database, or SQL persistence. Desktop
-keeps one Last Run in memory and associates it with the Workflow definition
-that produced it. Editing that Workflow does not reinterpret the existing
-snapshot; opening another Template or creating a new draft clears it.
+keeps one current Last Run in Rust memory. Starting another run replaces it;
+opening another Template, creating a new draft, or clearing Last Run removes
+it. Editing the current Workflow does not reinterpret the existing run
+snapshot.
 
 ## Result data and Desktop projections
 
@@ -137,15 +142,25 @@ The current Desktop presentation architecture has these properties:
   raw iteration and values. The horizontal coordinate is the 1-based page row
   sequence; charts and CSV remain chronological while the Data view may show
   newest rows first.
-- Output tables use virtualized rendering for large pages without discarding
-  rows needed by charts or exports. Page summaries expose Count, Min, Max, and
-  Avg calculated from committed rows.
+- Output tables query newest-first row windows from the Rust StoredRun and
+  virtualize only the visible window in the frontend. Scrolling away from the
+  newest rows keeps the viewed history anchored while new committed rows
+  arrive.
+- Charts request only the selected numeric Output series. The frontend keeps
+  shared raw Float64 series needed for exact hover and appends bounded tails;
+  renderer input remains pixel-decimated. These numeric projections do not
+  replace the authoritative ResultRows.
+- Page numeric eligibility and Count, Min, Max, and Avg summaries are
+  maintained incrementally in Rust rather than rescanning all rows in the
+  frontend.
+- Execution Results are queried from Rust in bounded newest-first windows, and
+  Sequence status uses incremental per-Step summaries.
 
 Desktop derives incremental progress from Core StepCompleted and
-ResultRowCommitted events. The Tauri boundary batches those updates into
-ProgressBatch messages and delivers them to the frontend through a Tauri
-Channel, including a final flush before completion. The final
-WorkflowRunResult remains authoritative for a successful completed run.
+ResultRowCommitted events. The Tauri boundary batches compact run metadata
+into ProgressBatch messages and delivers it through a Tauri Channel, including
+a final flush before completion. Run completion returns compact metadata; it
+does not resend the full result dataset across the Tauri boundary.
 
 CSV streaming and XLSX serialization are contract-level behaviors documented
 in [Template Schema v1](../contracts/template-schema-v1.md). The key

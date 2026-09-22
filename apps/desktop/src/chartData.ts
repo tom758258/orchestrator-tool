@@ -36,6 +36,9 @@ export function createPageChartData() {
       for (const name of series.keys()) if (!names.has(name)) series.delete(name)
     },
     length(name: string) { return series.get(name)?.length ?? 0 },
+    commonLength(names: readonly string[]) {
+      return names.length === 0 ? 0 : Math.min(...names.map(name => series.get(name)?.length ?? 0))
+    },
     get rowCount() { return Math.max(0, ...[...series.values()].map(buffer => buffer.length)) },
     get version() { return version },
     get iteration() { return iteration.values.subarray(0, iteration.length) },
