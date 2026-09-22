@@ -2071,7 +2071,7 @@ function App() {
                     <p className="output-row-count">
                       {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} · latest first
                     </p>
-                    <VirtualizedOutputTable key={runPage.name} runId={displayedRun.run_id} page={runPage.name}
+                    <VirtualizedOutputTable key={`${displayedRun.run_id}:${runPage.name}`} runId={displayedRun.run_id} page={runPage.name}
                       rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
                       outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} />
                   </section>
