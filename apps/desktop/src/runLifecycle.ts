@@ -13,3 +13,13 @@ export function releaseRunGate(gate: RunGate): void {
 export function isCurrentRunGeneration(generation: number | null, currentGeneration: number): boolean {
   return generation !== null && generation === currentGeneration
 }
+
+export async function prepareLastRunReplacement<T>(
+  loadReplacement: () => Promise<T>,
+  currentRunId: number | null,
+  clearRun: (runId: number) => Promise<void>,
+): Promise<T> {
+  const replacement = await loadReplacement()
+  if (currentRunId !== null) await clearRun(currentRunId)
+  return replacement
+}
