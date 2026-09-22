@@ -471,8 +471,8 @@ function App() {
     ))
   }, [runWorkflowSnapshot, displayedRun])
   useEffect(() => {
-    pruneChartData(chartData, chartPanels)
-  }, [chartData, chartPanels])
+    pruneChartData(chartData, chartPanels, runPage?.name)
+  }, [chartData, chartPanels, runPage?.name])
   useEffect(() => {
     if (!displayedRun) { setExecutionPage(null); return }
     let cancelled = false
