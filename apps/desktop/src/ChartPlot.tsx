@@ -24,12 +24,18 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const resizeFrameRef = useRef<number | null>(null)
   const [width, setWidth] = useState(0)
   const [themeRevision, setThemeRevision] = useState(0)
-  const rawSeries = useMemo(() => panel.outputs.map(name => ({ name, values: data.getSeries(name) })),
+  const rawRowCount = useMemo(() => data.commonLength(panel.outputs),
     [data, data.version, panel.outputs])
+  const rawIteration = useMemo(() => data.iteration.subarray(0, rawRowCount),
+    [data, data.version, rawRowCount])
+  const rawSeries = useMemo(() => panel.outputs.map(name => ({
+    name,
+    values: data.getSeries(name).subarray(0, rawRowCount),
+  })), [data, data.version, panel.outputs, rawRowCount])
   const display = useMemo(() => rawSeries.map(series => ({
     name: series.name,
-    data: minMaxDecimate(data.iteration, series.values, Math.max(1, width - GRID.left - GRID.right)),
-  })), [data, rawSeries, width])
+    data: minMaxDecimate(rawIteration, series.values, Math.max(1, width - GRID.left - GRID.right)),
+  })), [rawIteration, rawSeries, width])
 
   useEffect(() => {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
@@ -83,7 +89,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       grid: GRID,
       legend: { show: display.length > 1, top: 8, type: 'plain', selectedMode: false,
         textStyle: { color: color('--ink') } },
-      xAxis: { type: 'value', min: 1, max: Math.max(2, data.rowCount), minInterval: 1,
+      xAxis: { type: 'value', min: 1, max: Math.max(2, rawRowCount), minInterval: 1,
         name: panel.xAxisTitle, nameLocation: 'middle', nameGap: 36,
         axisLine: { lineStyle: { color: color('--chart-axis') } },
         axisLabel: { color: color('--chart-axis') }, splitLine: { show: false } },
@@ -95,7 +101,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
         silent: true, emphasis: { disabled: true },
         itemStyle: { color: color(`--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`) } })),
     }, { notMerge: true })
-  }, [display, data.rowCount, numericNames, panel.xAxisTitle, panel.yAxisTitle, themeRevision])
+  }, [display, rawRowCount, numericNames, panel.xAxisTitle, panel.yAxisTitle, themeRevision])
 
   useEffect(() => {
     const chart = instance.current!
@@ -105,11 +111,11 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     const hide = () => { tip.hidden = true; line.hidden = true }
     const move = (event: { offsetX: number; offsetY: number }) => {
       const point = [event.offsetX, event.offsetY]
-      if (!chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
+      if (rawRowCount === 0 || !chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
       const x = chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX)
-      const index = exactHoverIndex(x, data.rowCount)
-      // Never use renderer points: each selected series reads the full raw array.
-      tip.textContent = [`Iteration ${data.iteration[index]}`,
+      const index = exactHoverIndex(x, rawRowCount)
+      // Never use renderer points: each selected series reads the coherent raw prefix.
+      tip.textContent = [`Iteration ${rawIteration[index]}`,
         ...rawSeries.map(series => `${series.name} ${series.values[index]}`)].join('\n')
       tip.hidden = false
       line.hidden = false
@@ -124,11 +130,11 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       zr.off('mousemove', move)
       zr.off('globalout', hide)
     }
-  }, [data, rawSeries])
+  }, [rawIteration, rawRowCount, rawSeries])
 
   return <div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
-      aria-label={`Line chart: ${panel.outputs.join(', ')} versus Iteration, ${data.rowCount} raw rows per series`} />
+      aria-label={`Line chart: ${panel.outputs.join(', ')} versus Iteration, ${rawRowCount} raw rows per series`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{ top: GRID.top, bottom: GRID.bottom }} />
     <div ref={tooltip} className="result-chart-tooltip" hidden />
   </div>
