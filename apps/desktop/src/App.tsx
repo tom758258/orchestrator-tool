@@ -11,7 +11,7 @@ import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { reconcileRunChartPanels, type ChartPanel } from './chartPanels'
 import { pruneChartData, type PageChartData } from './chartData'
-import { claimRunGate, isCurrentRunGeneration, releaseRunGate } from './runLifecycle'
+import { claimRunGate, isCurrentRunGeneration, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -471,8 +471,8 @@ function App() {
     ))
   }, [runWorkflowSnapshot, displayedRun])
   useEffect(() => {
-    pruneChartData(chartData, chartPanels, runPage?.name)
-  }, [chartData, chartPanels, runPage?.name])
+    pruneChartData(chartData, chartPanels, activeTab === 'output' ? runPage?.name : undefined)
+  }, [activeTab, chartData, chartPanels, runPage?.name])
   useEffect(() => {
     if (!displayedRun) { setExecutionPage(null); return }
     let cancelled = false
@@ -520,14 +520,16 @@ function App() {
   const createDraft = useCallback(async () => {
     setDraftLoading(true)
     try {
-      const canonicalJson = await invoke<string>('create_workflow_draft')
-      const draft = JSON.parse(canonicalJson) as WorkflowDraft
+      const draft = await prepareLastRunReplacement(
+        async () => JSON.parse(await invoke<string>('create_workflow_draft')) as WorkflowDraft,
+        runIdRef.current,
+        async runId => { await invoke('clear_last_run', { runId }) },
+      )
+      runGenerationRef.current += 1
+      runIdRef.current = null
       setWorkflowDraft(draft)
       setSelectedStepId(null)
       setDraftCreationError(null)
-      runGenerationRef.current += 1
-      if (runIdRef.current !== null) await invoke('clear_last_run', { runId: runIdRef.current })
-      runIdRef.current = null
       setRunMetadata(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
@@ -537,19 +539,7 @@ function App() {
       setCsvStreamStatus(null)
       setRunError(null)
     } catch (message) {
-      setWorkflowDraft(null)
-      setSelectedStepId(null)
       setDraftCreationError(String(message))
-      runGenerationRef.current += 1
-      runIdRef.current = null
-      setRunMetadata(null)
-      setExecutionPage(null)
-      setRunWorkflowSnapshot(null)
-      setChartPanels([])
-      setExecutionOffset(0)
-      setWorkflowChangedSinceRun(false)
-      setCsvStreamStatus(null)
-      setRunError(null)
     } finally {
       setDraftLoading(false)
     }
@@ -762,17 +752,17 @@ function App() {
         setTemplateIoStatus('idle')
         return
       }
-      const canonicalJson = await invoke<string>('load_workflow_template', {
-        path,
-      })
-      const loadedDraft = JSON.parse(canonicalJson) as WorkflowDraft
+      const loadedDraft = await prepareLastRunReplacement(
+        async () => JSON.parse(await invoke<string>('load_workflow_template', { path })) as WorkflowDraft,
+        runIdRef.current,
+        async runId => { await invoke('clear_last_run', { runId }) },
+      )
+      runGenerationRef.current += 1
+      runIdRef.current = null
       setWorkflowDraft(loadedDraft)
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
-      runGenerationRef.current += 1
-      if (runIdRef.current !== null) await invoke('clear_last_run', { runId: runIdRef.current })
-      runIdRef.current = null
       setRunMetadata(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
@@ -1083,24 +1073,25 @@ function App() {
     )
     if (!approved) return
 
-    runGenerationRef.current += 1
-    if (runMetadata) {
-      await invoke('clear_last_run', { runId: runMetadata.run_id })
-    } else if (runIdRef.current !== null) {
-      await invoke('clear_last_run', { runId: runIdRef.current })
+    try {
+      const runId = runMetadata?.run_id ?? runIdRef.current
+      if (runId !== null) await invoke('clear_last_run', { runId })
+      runGenerationRef.current += 1
+      runIdRef.current = null
+      setRunWorkflowSnapshot(null)
+      setChartPanels([])
+      setRunMetadata(null)
+      setExecutionPage(null)
+      setExecutionOffset(0)
+      setRunError(null)
+      setStopRequest(null)
+      setCsvStreamStatus(null)
+      setExportError(null)
+      setExportMessage(null)
+      setWorkflowChangedSinceRun(false)
+    } catch (message) {
+      setRunError('Could not clear Last Run: ' + String(message))
     }
-    setRunWorkflowSnapshot(null)
-    setChartPanels([])
-    setRunMetadata(null)
-    runIdRef.current = null
-    setExecutionPage(null)
-    setExecutionOffset(0)
-    setRunError(null)
-    setStopRequest(null)
-    setCsvStreamStatus(null)
-    setExportError(null)
-    setExportMessage(null)
-    setWorkflowChangedSinceRun(false)
   }, [runWorkflowSnapshot, runMetadata, workflowBusy])
 
   const csvStreamFeedback = csvStreamStatus && (
