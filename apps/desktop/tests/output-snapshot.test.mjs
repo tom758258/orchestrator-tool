@@ -1,45 +1,38 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { outputWindowCovers, outputWindowResponseIsCurrent } from '../src/virtualRows.ts'
 
-const source = readFileSync(new URL('../src/VirtualizedOutputTable.tsx', import.meta.url), 'utf8')
-const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const rows = count => Array.from({ length: count }, () => ({ page: 'Results', outputs: [] }))
+const window = {
+  run_id: 7,
+  page: 'Results',
+  revision: 10,
+  total_rows: 100,
+  offset: 0,
+  rows: rows(15),
+}
 
-test('window responses carry the exact page revision and total used by the request', () => {
-  assert.match(source, /revision: number/)
-  assert.match(source, /response\.revision !== requestedRevision/)
-  assert.match(source, /response\.total_rows !== requestedRowCount/)
+test('an unchanged revision still refetches when the viewport needs more rows at the same start', () => {
+  assert.equal(outputWindowCovers(window, {
+    runId: 7, page: 'Results', revision: 10, rowCount: 100, start: 0, end: 15,
+  }), true)
+  assert.equal(outputWindowCovers(window, {
+    runId: 7, page: 'Results', revision: 10, rowCount: 100, start: 0, end: 25,
+  }), false)
 })
 
-test('unresolved windows use request generations instead of deduping an old in-flight request', () => {
-  assert.match(source, /if \(currentWindow\) return/)
-  assert.match(source, /const generation = \+\+requestGenerationRef\.current/)
-  assert.match(source, /requestGenerationRef\.current !== generation/)
-  assert.doesNotMatch(source, /activeQueryRef|settled/)
-  assert.match(source, /\[runId, page, revision, rowCount, range\.start, range\.end, currentWindow\]/)
+test('window identity rejects a different run, Page, revision, total, or start', () => {
+  const base = { runId: 7, page: 'Results', revision: 10, rowCount: 100, start: 0, end: 15 }
+  for (const changed of [
+    { runId: 8 }, { page: 'Other' }, { revision: 11 }, { rowCount: 101 }, { start: 1, end: 16 },
+  ]) {
+    assert.equal(outputWindowCovers(window, { ...base, ...changed }), false)
+  }
 })
 
-test('an older viewport is rebased in place when live rows append', () => {
-  assert.match(source, /rebaseNewestFirstWindow\(current\.offset, current\.total_rows, rowCount\)/)
-  assert.match(source, /revision, total_rows: rebased\.totalRows, offset: rebased\.offset/)
-})
-
-test('only a current coherent window supplies rows and Iteration numbers', () => {
-  assert.match(source, /samePageWindow\.revision === revision/)
-  assert.match(source, /samePageWindow\.total_rows === rowCount/)
-  assert.match(source, /samePageWindow\.offset === range\.start/)
-  assert.match(source, /virtualOutputWindow\(displayWindow\.rows, displayWindow\.offset, displayWindow\.total_rows\)/)
-})
-
-test('a pending replacement keeps the previous snapshot geometry coherent', () => {
-  assert.match(source, /const displayRowCount = samePageWindow\?\.total_rows \?\? rowCount/)
-  assert.match(source, /rowCount: samePageWindow\.total_rows/)
-  assert.match(source, /aria-rowcount=\{displayRowCount \+ 1\}/)
-  assert.match(source, /displayRange\.topSpacerHeight/)
-  assert.match(source, /displayRange\.bottomSpacerHeight/)
-  assert.match(source, /virtualOutputWindow\(displayWindow\.rows, displayWindow\.offset, displayWindow\.total_rows\)/)
-})
-
-test('a new run remounts the Output table at the latest position', () => {
-  assert.ok(app.includes("key={`${displayedRun.run_id}:${runPage.name}`}"))
+test('a stale async response cannot overwrite the newest request generation', () => {
+  const request = { runId: 7, page: 'Results', revision: 10, rowCount: 100, start: 0, end: 15 }
+  assert.equal(outputWindowResponseIsCurrent(window, request, 2, 2), true)
+  assert.equal(outputWindowResponseIsCurrent(window, request, 1, 2), false)
+  assert.equal(outputWindowResponseIsCurrent({ ...window, revision: 9 }, request, 2, 2), false)
 })
