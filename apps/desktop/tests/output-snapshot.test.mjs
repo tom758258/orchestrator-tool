@@ -31,11 +31,13 @@ test('only a current coherent window supplies rows and Iteration numbers', () =>
   assert.match(source, /virtualOutputWindow\(currentWindow\.rows, currentWindow\.offset, currentWindow\.total_rows\)/)
 })
 
-test('table geometry follows current metadata while a replacement window is pending', () => {
-  assert.match(source, /aria-rowcount=\{rowCount \+ 1\}/)
-  assert.match(source, /range\.topSpacerHeight/)
-  assert.match(source, /range\.bottomSpacerHeight/)
-  assert.match(source, /const pendingRows = Math\.max\(0, range\.end - range\.start - items\.length\)/)
+test('a pending replacement keeps the previous snapshot geometry coherent', () => {
+  assert.match(source, /const displayRowCount = samePageWindow\?\.total_rows \?\? rowCount/)
+  assert.match(source, /rowCount: samePageWindow\.total_rows/)
+  assert.match(source, /aria-rowcount=\{displayRowCount \+ 1\}/)
+  assert.match(source, /displayRange\.topSpacerHeight/)
+  assert.match(source, /displayRange\.bottomSpacerHeight/)
+  assert.match(source, /virtualOutputWindow\(displayWindow\.rows, displayWindow\.offset, displayWindow\.total_rows\)/)
 })
 
 test('a new run remounts the Output table at the latest position', () => {
