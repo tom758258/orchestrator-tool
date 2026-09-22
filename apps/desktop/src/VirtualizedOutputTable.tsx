@@ -7,7 +7,7 @@ import {
   OUTPUT_ROW_OVERSCAN,
   outputWindowCovers,
   outputWindowResponseIsCurrent,
-  preserveLiveHistoryScrollTop,
+  preserveVirtualScrollTop,
   rebaseNewestFirstWindow,
   virtualOutputWindow,
   virtualRowRange,
@@ -33,6 +33,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
   const previousRowCountRef = useRef(rowCount)
+  const previousViewportHeightRef = useRef(0)
   const requestGenerationRef = useRef(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -54,19 +55,28 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
 
   useLayoutEffect(() => {
     const previousRowCount = previousRowCountRef.current
+    const previousViewportHeight = previousViewportHeightRef.current
     previousRowCountRef.current = rowCount
+    previousViewportHeightRef.current = viewportHeight
     const container = scroll.current
-    if (!container || rowCount <= previousRowCount) return
-    const nextScrollTop = preserveLiveHistoryScrollTop(
-      container.scrollTop, previousRowCount, rowCount, OUTPUT_ROW_HEIGHT, viewportHeight,
+    if (!container) return
+    const nextScrollTop = preserveVirtualScrollTop(
+      container.scrollTop,
+      previousRowCount,
+      rowCount,
+      OUTPUT_ROW_HEIGHT,
+      previousViewportHeight,
+      viewportHeight,
     )
     if (nextScrollTop !== container.scrollTop) {
-      setWindow(current => {
-        if (!current || current.run_id !== runId || current.page !== page
-          || current.total_rows !== previousRowCount) return current
-        const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
-        return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
-      })
+      if (rowCount > previousRowCount) {
+        setWindow(current => {
+          if (!current || current.run_id !== runId || current.page !== page
+            || current.total_rows !== previousRowCount) return current
+          const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
+          return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
+        })
+      }
       container.scrollTop = nextScrollTop
       setScrollTop(container.scrollTop)
     }
