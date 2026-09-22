@@ -8,6 +8,7 @@ import {
   physicalScrollHeight,
   physicalScrollTopForLogical,
   preserveLiveHistoryScrollTop,
+  preserveVirtualScrollTop,
   rebaseNewestFirstWindow,
   virtualRowRange,
   virtualOutputWindow,
@@ -85,6 +86,13 @@ test('compressed physical and logical scroll positions round-trip and preserve a
   assert.equal(preserveLiveHistoryScrollTop(
     0, previousRows, nextRows, OUTPUT_ROW_HEIGHT, viewportHeight,
   ), 0)
+
+  const resized = preserveVirtualScrollTop(
+    physicalTop, previousRows, previousRows, OUTPUT_ROW_HEIGHT, viewportHeight, 720,
+  )
+  assert.ok(Math.abs(logicalScrollTopForPhysical(
+    resized, previousRows, OUTPUT_ROW_HEIGHT, 720,
+  ) - logicalTop) < 1e-6)
 })
 
 test('server-side Output windows retain absolute indices and newest-first Iteration', () => {
