@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, virtualRowRange, virtualOutputWindow } from '../src/virtualRows.ts'
+import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, preserveLiveHistoryScrollTop, virtualRowRange, virtualOutputWindow } from '../src/virtualRows.ts'
 
 test('Output ranges clamp at the top, middle, bottom, and an empty Page', () => {
   const options = { rowCount: 10_000, rowHeight: OUTPUT_ROW_HEIGHT, viewportHeight: 360, overscan: OUTPUT_ROW_OVERSCAN }
@@ -41,4 +41,18 @@ test('server-side Output windows retain absolute indices and newest-first Iterat
     { page: 'Results', outputs: [{ name: 'Value', value: 4 }] },
   ], 5, 10)
   assert.deepEqual(middle.map(item => [item.index, item.iteration]), [[5, 5], [6, 4]])
+})
+
+
+test('live rows follow the latest view but preserve an older viewport anchor', () => {
+  assert.equal(preserveLiveHistoryScrollTop(0, 100, 105, OUTPUT_ROW_HEIGHT), 0)
+  assert.equal(preserveLiveHistoryScrollTop(1, 100, 105, OUTPUT_ROW_HEIGHT), 0)
+  assert.equal(
+    preserveLiveHistoryScrollTop(50 * OUTPUT_ROW_HEIGHT, 100, 105, OUTPUT_ROW_HEIGHT),
+    55 * OUTPUT_ROW_HEIGHT,
+  )
+  assert.equal(
+    preserveLiveHistoryScrollTop(50 * OUTPUT_ROW_HEIGHT, 105, 105, OUTPUT_ROW_HEIGHT),
+    50 * OUTPUT_ROW_HEIGHT,
+  )
 })
