@@ -28,7 +28,7 @@ test('only a current coherent window supplies rows and Iteration numbers', () =>
   assert.match(source, /samePageWindow\.revision === revision/)
   assert.match(source, /samePageWindow\.total_rows === rowCount/)
   assert.match(source, /samePageWindow\.offset === range\.start/)
-  assert.match(source, /virtualOutputWindow\(currentWindow\.rows, currentWindow\.offset, currentWindow\.total_rows\)/)
+  assert.match(source, /virtualOutputWindow\(displayWindow\.rows, displayWindow\.offset, displayWindow\.total_rows\)/)
 })
 
 test('a pending replacement keeps the previous snapshot geometry coherent', () => {
