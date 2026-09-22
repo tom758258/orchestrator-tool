@@ -129,6 +129,10 @@ export function enclosingLoop(steps: readonly WorkflowStep[], stepId: string | n
   return loopPath(steps, stepId).at(-1)
 }
 
+export function enclosingForVariables(steps: readonly WorkflowStep[], stepId: string | null): string[] {
+  return loopPath(steps, stepId).flatMap(step => step.type === 'for' ? [step.variable] : [])
+}
+
 export function insertionLoop(steps: readonly WorkflowStep[], stepId: string | null) {
   const selected = allWorkflowSteps(steps).find(step => step.id === stepId)
   return selected?.type === 'for' || selected?.type === 'while' ? selected : enclosingLoop(steps, stepId)
