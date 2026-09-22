@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, preserveLiveHistoryScrollTop, virtualRowRange, virtualOutputWindow } from '../src/virtualRows.ts'
+import { OUTPUT_ROW_HEIGHT, OUTPUT_ROW_OVERSCAN, preserveLiveHistoryScrollTop, rebaseNewestFirstWindow, virtualRowRange, virtualOutputWindow } from '../src/virtualRows.ts'
 
 test('Output ranges clamp at the top, middle, bottom, and an empty Page', () => {
   const options = { rowCount: 10_000, rowHeight: OUTPUT_ROW_HEIGHT, viewportHeight: 360, overscan: OUTPUT_ROW_OVERSCAN }
@@ -55,4 +55,10 @@ test('live rows follow the latest view but preserve an older viewport anchor', (
     preserveLiveHistoryScrollTop(50 * OUTPUT_ROW_HEIGHT, 105, 105, OUTPUT_ROW_HEIGHT),
     50 * OUTPUT_ROW_HEIGHT,
   )
+})
+
+
+test('newest-first windows rebase by exactly the appended row count', () => {
+  assert.deepEqual(rebaseNewestFirstWindow(50, 100, 105), { offset: 55, totalRows: 105 })
+  assert.deepEqual(rebaseNewestFirstWindow(0, 100, 100), { offset: 0, totalRows: 100 })
 })
