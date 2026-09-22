@@ -63,9 +63,9 @@ fn custom_expected_readings(
     sample_count: usize,
     instance: &ToolInstanceId,
 ) -> Result<usize, String> {
-    trigger_count.checked_mul(sample_count).ok_or_else(|| {
-        format!("Software Custom Meter {instance} expected reading count overflow")
-    })
+    trigger_count
+        .checked_mul(sample_count)
+        .ok_or_else(|| format!("Software Custom Meter {instance} expected reading count overflow"))
 }
 
 fn custom_trigger_count(
