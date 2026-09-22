@@ -12,12 +12,16 @@ test('manual export sends only the run selector and export options to Rust', () 
   assert.doesNotMatch(handler, /templateJson|runResult|result_rows|step_executions/)
 })
 
-test('Clear Last Run clears Rust ownership and all frontend windows', () => {
+test('Clear Last Run clears Rust ownership before dropping frontend state', () => {
   const handler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
-  assert.match(handler, /invoke\('clear_last_run', \{ runId: runMetadata\.run_id \}\)/)
+  assert.match(handler, /const runId = runMetadata\?\.run_id \?\? runIdRef\.current/)
+  assert.match(handler, /if \(runId !== null\) await invoke\('clear_last_run', \{ runId \}\)/)
+  assert.ok(handler.indexOf("invoke('clear_last_run'") < handler.indexOf('setRunMetadata(null)'))
   assert.match(handler, /setRunMetadata\(null\)/)
   assert.match(handler, /setExecutionPage\(null\)/)
+  assert.match(handler, /setChartPanels\(\[\]\)/)
   assert.match(handler, /runIdRef\.current = null/)
+  assert.match(handler, /Could not clear Last Run/)
 })
 
 test('frontend Last Run state is metadata and one execution window only', () => {
