@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
-import { createPageChartData, type PageChartData } from './chartData'
+import { chartLoadGroups, chartNeedsLoad, createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { addChartPanel, MAX_CHARTS, type ChartPanel } from './chartPanels'
+import { addChartPanel, canRemoveChartPanel, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
 
 type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
@@ -66,23 +66,15 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
       try {
         while (!cancelled) {
           const target = latestRowCountRef.current
-          const pending = outputs.filter(name => local.length(name) < target)
-          if (pending.length === 0) {
+          const groups = chartLoadGroups(local, outputs, target, CHART_SERIES_CHUNK_ROWS)
+          if (groups.length === 0) {
             caughtUp = true
             break
           }
-          const groups = new Map<number, string[]>()
-          for (const name of pending) {
-            const start = local.length(name)
-            groups.set(start, [...(groups.get(start) ?? []), name])
-          }
           let progressed = false
-          for (const [startRow, names] of groups) {
+          for (const { startRow, names, limit } of groups) {
             if (cancelled) break
             if (!names.every(name => local.length(name) === startRow)) return
-            const latest = latestRowCountRef.current
-            const limit = Math.min(CHART_SERIES_CHUNK_ROWS, latest - startRow)
-            if (limit <= 0) continue
             const response = await invoke<ChartSeriesResponse>('get_last_run_chart_series', {
               runId, page, outputs: names, startRow, limit,
             })
@@ -107,7 +99,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           loaderActiveRef.current = null
           if (!cancelled && caughtUp) {
             const latest = latestRowCountRef.current
-            if (outputs.some(name => local.length(name) < latest)) {
+            if (chartNeedsLoad(local, outputs, latest)) {
               setLoadGeneration(generation => generation + 1)
             }
           }
@@ -123,7 +115,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
     const outputs = JSON.parse(requestedKey) as string[]
     if (outputs.length === 0 || loaderActiveRef.current !== null) return
     const local = chartData.get(page)
-    const behind = outputs.some(name => (local?.length(name) ?? 0) < rowCount)
+    const behind = local ? chartNeedsLoad(local, outputs, rowCount) : rowCount > 0
     if (behind) setLoadGeneration(generation => generation + 1)
   }, [runId, page, requestedKey, revision, rowCount, chartData])
 
@@ -176,7 +168,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
               <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
               <button className="action-button action-button-danger" type="button"
-                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null}
+                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null || !canRemoveChartPanel(panels)}
                 onClick={() => {
                   if (saving.current) return
                   if (feedback?.id === panel.id) setFeedback(null)
