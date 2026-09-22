@@ -5,7 +5,9 @@ import type { ResultRowDto } from './workflow'
 import {
   OUTPUT_ROW_HEIGHT,
   OUTPUT_ROW_OVERSCAN,
-  preserveLiveHistoryScrollTop,
+  outputWindowCovers,
+  outputWindowResponseIsCurrent,
+  preserveVirtualScrollTop,
   rebaseNewestFirstWindow,
   virtualOutputWindow,
   virtualRowRange,
@@ -31,6 +33,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
   const previousRowCountRef = useRef(rowCount)
+  const previousViewportHeightRef = useRef(0)
   const requestGenerationRef = useRef(0)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -52,23 +55,32 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
 
   useLayoutEffect(() => {
     const previousRowCount = previousRowCountRef.current
+    const previousViewportHeight = previousViewportHeightRef.current
     previousRowCountRef.current = rowCount
+    previousViewportHeightRef.current = viewportHeight
     const container = scroll.current
-    if (!container || rowCount <= previousRowCount) return
-    const nextScrollTop = preserveLiveHistoryScrollTop(
-      container.scrollTop, previousRowCount, rowCount, OUTPUT_ROW_HEIGHT,
+    if (!container) return
+    const nextScrollTop = preserveVirtualScrollTop(
+      container.scrollTop,
+      previousRowCount,
+      rowCount,
+      OUTPUT_ROW_HEIGHT,
+      previousViewportHeight,
+      viewportHeight,
     )
     if (nextScrollTop !== container.scrollTop) {
-      setWindow(current => {
-        if (!current || current.run_id !== runId || current.page !== page
-          || current.total_rows !== previousRowCount) return current
-        const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
-        return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
-      })
+      if (rowCount > previousRowCount) {
+        setWindow(current => {
+          if (!current || current.run_id !== runId || current.page !== page
+            || current.total_rows !== previousRowCount) return current
+          const rebased = rebaseNewestFirstWindow(current.offset, current.total_rows, rowCount)
+          return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
+        })
+      }
       container.scrollTop = nextScrollTop
       setScrollTop(container.scrollTop)
     }
-  }, [runId, page, revision, rowCount])
+  }, [runId, page, revision, rowCount, viewportHeight])
 
   const range = virtualRowRange({
     rowCount, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
@@ -76,29 +88,27 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   })
 
   const samePageWindow = window && window.run_id === runId && window.page === page ? window : null
-  const currentWindow = samePageWindow
-    && samePageWindow.revision === revision
-    && samePageWindow.total_rows === rowCount
-    && samePageWindow.offset === range.start
-    ? samePageWindow
-    : null
+  const requestedWindow = {
+    runId, page, revision, rowCount, start: range.start, end: range.end,
+  }
+  const currentWindow = outputWindowCovers(samePageWindow, requestedWindow) ? samePageWindow : null
 
   useEffect(() => {
     if (currentWindow) return
     const generation = ++requestGenerationRef.current
-    const requestedRevision = revision
-    const requestedRowCount = rowCount
-    const requestedOffset = range.start
-    const requestedLimit = range.end - range.start
+    const requested = {
+      runId, page, revision, rowCount, start: range.start, end: range.end,
+    }
+    const requestedOffset = requested.start
+    const requestedLimit = requested.end - requested.start
     let cancelled = false
     const timer = setTimeout(() => {
       void invoke<PageRowsResponse>('get_last_run_page_rows', {
         runId, page, offset: requestedOffset, limit: requestedLimit,
       }).then(response => {
-        if (cancelled || requestGenerationRef.current !== generation) return
-        if (response.run_id !== runId || response.page !== page) return
-        if (response.offset !== requestedOffset || response.revision !== requestedRevision) return
-        if (response.total_rows !== requestedRowCount) return
+        if (cancelled || !outputWindowResponseIsCurrent(
+          response, requested, generation, requestGenerationRef.current,
+        )) return
         setWindow(response)
       }).catch(() => {})
     }, 30)

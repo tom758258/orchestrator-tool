@@ -19,6 +19,7 @@ test('progress IPC carries run metadata and completed IDs, not raw rows or execu
 
 test('frontend rejects stale progress metadata before updating current run state', () => {
   const receive = app.slice(app.indexOf('const receiveRunProgress'), app.indexOf('const runLive'))
+  assert.match(receive, /!isCurrentRunGeneration\(generation, runGenerationRef\.current\)\) return/)
   assert.match(receive, /event\.run\.run_id !== runIdRef\.current\) return/)
   assert.match(receive, /setRunMetadata\(event\.run\)/)
   assert.doesNotMatch(receive, /result_rows|step_executions/)

@@ -60,3 +60,7 @@ export function reconcileRunChartPanels(
   return reconciled.length === 0 && pages[0]
     ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled
 }
+
+export function canRemoveChartPanel(panels: readonly ChartPanel[]): boolean {
+  return panels.length > 1
+}

@@ -1157,6 +1157,62 @@ mod regression_tests {
     }
 
     #[test]
+    fn final_flush_does_not_duplicate_when_timer_wakes() {
+        let (sent, received) = std::sync::mpsc::channel();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            sent.send(body).unwrap();
+            Ok(())
+        });
+        let stored = StoredRuns::default().begin(progress_template());
+        let mut batcher = super::DesktopProgressBatcher::new(&channel, stored);
+        batcher.push(&WorkflowRunEvent::ResultRowCommitted(
+            ResultRow::new(
+                vec![WorkflowOutput::new("value".to_owned(), json!(1))],
+                None,
+            )
+            .with_page("Results"),
+        ));
+        batcher.flush();
+        received
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(matches!(
+            received.recv_timeout(super::PROGRESS_BATCH_INTERVAL * 3),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        batcher.flush();
+        assert!(received.try_recv().is_err());
+    }
+
+    #[test]
+    fn progress_batch_send_failure_does_not_lose_stored_run_updates() {
+        let channel = tauri::ipc::Channel::new(|_| Err(tauri::Error::FailedToReceiveMessage));
+        let stored = StoredRuns::default().begin(progress_template());
+        let observed = stored.clone();
+        let mut batcher = super::DesktopProgressBatcher::new(&channel, stored);
+        batcher.push(&WorkflowRunEvent::StepCompleted(StepExecution::new(
+            StepResult::new(
+                StepId::new("out").unwrap(),
+                StepOutcome::Succeeded { output: json!(1) },
+            ),
+            None,
+        )));
+        batcher.push(&WorkflowRunEvent::ResultRowCommitted(
+            ResultRow::new(
+                vec![WorkflowOutput::new("value".to_owned(), json!(1))],
+                None,
+            )
+            .with_page("Results"),
+        ));
+        batcher.flush();
+
+        let metadata = observed.read().unwrap().metadata();
+        assert_eq!(metadata.execution_count, 1);
+        assert_eq!(metadata.pages[0].row_count, 1);
+        assert_eq!(metadata.status, "running");
+    }
+
+    #[test]
     fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {
         let dir = unique_test_dir("orchestrator-live-resource-test");
         let path = dir.join("orchestrator.toml");

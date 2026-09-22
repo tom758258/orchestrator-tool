@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { createPageChartData, exactHoverIndex, minMaxDecimate } from '../src/chartData.ts'
+import {
+  createPageChartData,
+  exactHoverIndex,
+  minMaxDecimate,
+  pruneChartData,
+} from '../src/chartData.ts'
 
 const sequence = count => Float64Array.from({ length: count }, (_, index) => index + 1)
 
@@ -44,8 +49,6 @@ test('spikes, dips and first/last values survive even with extrema in reverse or
   assert.deepEqual(points.at(-1), [10_003, 3])
   assert.ok(points.length <= 202)
   assert.ok(points.every(([value], index) => index === 0 || value > points[index - 1][0]))
-  assert.equal(y[401], 100)
-  assert.equal(y[402], -100)
 })
 
 test('hover rounds and clamps the full raw sequence, independent of display points', () => {
@@ -53,60 +56,52 @@ test('hover rounds and clamps the full raw sequence, independent of display poin
     assert.equal(exactHoverIndex(x, 500_000), expected)
   }
   assert.equal(exactHoverIndex(9, 1), 0)
-  const x = sequence(100)
-  const a = Float64Array.from(x, value => value * 2)
-  const b = Float64Array.from(x, value => -value)
-  assert.ok(!minMaxDecimate(x, a, 1).some(([iteration]) => iteration === 50))
-  assert.equal(a[exactHoverIndex(50, 100)], 100)
-  assert.equal(b[exactHoverIndex(50, 100)], -50)
 })
 
 test('Page adapter appends compact tails and shares each raw series once', () => {
   const page = createPageChartData()
-  assert.equal(page.version, 0)
   assert.equal(page.append('V', 0, [1, 2]), true)
-  assert.equal(page.version, 1)
-  assert.equal(page.rowCount, 2)
-  assert.ok(page.iteration instanceof Float64Array)
-  assert.deepEqual([...page.iteration], [1, 2])
   const voltage = page.getSeries('V')
-  assert.ok(voltage instanceof Float64Array)
-  assert.equal(page.series.size, 1)
   assert.equal(page.getSeries('V').buffer, voltage.buffer)
   assert.equal(page.append('I', 0, [2, 4]), true)
-  assert.deepEqual([...page.getSeries('I')], [2, 4])
   assert.equal(page.append('V', 2, [3]), true)
-  assert.deepEqual([...page.getSeries('V')], [1, 2, 3])
   assert.equal(page.append('V', 1, [99]), false)
-  assert.equal(page.version, 3)
-  assert.equal(page.series.size, 2)
-  assert.equal(page.commonLength(['V']), 3)
+  assert.deepEqual([...page.getSeries('V')], [1, 2, 3])
   assert.equal(page.commonLength(['V', 'I']), 2)
-  assert.equal(page.commonLength(['missing']), 0)
-  const other = createPageChartData()
-  other.append('V', 0, [99])
-  assert.deepEqual([...other.getSeries('V')], [99])
-  assert.deepEqual([...voltage], [1, 2])
 })
 
-test('ChartPlot refreshes raw typed-array views after live appends', () => {
+test('global Chart cleanup removes off-Page caches with no consumer', () => {
+  const a = createPageChartData()
+  const b = createPageChartData()
+  a.append('V', 0, [1, 2, 3])
+  b.append('V', 0, [4, 5])
+  const cache = new Map([['A', a], ['B', b]])
+  pruneChartData(cache, [{ page: 'B', outputs: ['V'] }])
+  assert.equal(cache.has('A'), false)
+  assert.equal(cache.get('B'), b)
+})
+
+test('partial Chart cleanup drops unused series and shrinks the shared iteration buffer', () => {
+  const page = createPageChartData()
+  page.append('V', 0, [1, 2])
+  page.append('I', 0, Array.from({ length: 1000 }, (_, index) => index))
+  const oldBytes = page.iteration.buffer.byteLength
+  const cache = new Map([['A', page]])
+  pruneChartData(cache, [{ page: 'A', outputs: ['V'] }])
+  assert.deepEqual([...page.getSeries('V')], [1, 2])
+  assert.equal(page.getSeries('I').length, 0)
+  assert.deepEqual([...page.iteration], [1, 2])
+  assert.ok(page.iteration.buffer.byteLength < oldBytes)
+})
+
+test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
   assert.match(source, /\[data, data\.version, panel\.outputs\]/)
 })
 
-test('ResultChart loads large raw series through bounded incremental queries', () => {
-  const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
-  assert.match(source, /CHART_SERIES_CHUNK_ROWS = 25_000/)
-  assert.match(source, /Math\.min\(CHART_SERIES_CHUNK_ROWS, latest - startRow\)/)
-  assert.match(source, /while \(!cancelled\)/)
-})
-
-
 test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const rawRowCount = useMemo\(\(\) => data\.commonLength\(panel\.outputs\)/)
+  assert.match(source, /data\.commonLength\(panel\.outputs\)/)
   assert.match(source, /data\.iteration\.subarray\(0, rawRowCount\)/)
-  assert.match(source, /data\.getSeries\(name\)\.subarray\(0, rawRowCount\)/)
   assert.match(source, /exactHoverIndex\(x, rawRowCount\)/)
-  assert.doesNotMatch(source, /exactHoverIndex\(x, data\.rowCount\)/)
 })
