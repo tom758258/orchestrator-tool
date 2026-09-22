@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compatibleOutputPages, outputPageContext } from '../src/workflow.ts'
+import { compatibleOutputPages, enclosingForVariables, outputPageContext } from '../src/workflow.ts'
 
 const literal = { source: 'literal', value: 1 }
 const output = (id, page) => ({ type: 'output', id, name: id, page, value: literal })
@@ -28,4 +28,15 @@ test('Last Run Page definitions come from the run snapshot', () => {
   assert.equal(runContext.page.name, 'Results')
   assert.deepEqual(currentContext.pages.map(page => page.name), ['Measurements'])
   assert.deepEqual(currentContext.outputs.map(item => item.name), ['Current'])
+})
+
+
+test('nested Set Variable validation can see every enclosing For variable', () => {
+  const steps = [
+    loop('outer', [{
+      type: 'while', id: 'middle', left: literal, operator: 'less-than', right: literal,
+      max_iterations: 2, steps: [loop('inner', [{ type: 'set-variable', id: 'set', variable: 'outer', value: literal }])],
+    }]),
+  ]
+  assert.deepEqual(enclosingForVariables(steps, 'set'), ['outer', 'inner'])
 })
