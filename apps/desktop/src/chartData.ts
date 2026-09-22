@@ -69,6 +69,7 @@ export type PageChartData = ReturnType<typeof createPageChartData>
 export function pruneChartData(
   chartData: Map<string, PageChartData>,
   panels: readonly { page: string; outputs: readonly string[] }[],
+  preservePage?: string,
 ): void {
   const consumers = new Map<string, Set<string>>()
   for (const panel of panels) {
@@ -80,6 +81,7 @@ export function pruneChartData(
     for (const name of panel.outputs) names.add(name)
   }
   for (const [page, data] of [...chartData.entries()]) {
+    if (page === preservePage) continue
     const names = consumers.get(page)
     if (!names || names.size === 0) {
       chartData.delete(page)
