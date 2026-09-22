@@ -11,11 +11,17 @@ test('window responses carry the exact page revision and total used by the reque
   assert.match(source, /response\.total_rows !== requestedRowCount/)
 })
 
-test('every live revision gets a new request generation instead of deduping an old in-flight request', () => {
+test('unresolved windows use request generations instead of deduping an old in-flight request', () => {
+  assert.match(source, /if \(currentWindow\) return/)
   assert.match(source, /const generation = \+\+requestGenerationRef\.current/)
   assert.match(source, /requestGenerationRef\.current !== generation/)
   assert.doesNotMatch(source, /activeQueryRef|settled/)
-  assert.match(source, /\[runId, page, revision, rowCount, range\.start, range\.end\]/)
+  assert.match(source, /\[runId, page, revision, rowCount, range\.start, range\.end, currentWindow\]/)
+})
+
+test('an older viewport is rebased in place when live rows append', () => {
+  assert.match(source, /rebaseNewestFirstWindow\(current\.offset, current\.total_rows, rowCount\)/)
+  assert.match(source, /revision, total_rows: rebased\.totalRows, offset: rebased\.offset/)
 })
 
 test('only a current coherent window supplies rows and Iteration numbers', () => {
