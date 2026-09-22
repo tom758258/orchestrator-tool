@@ -39,19 +39,26 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   }, [chartData, page, localPanels, numericNames, dataVersion])
   const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(panel => panel.outputs))]
     .filter(name => numericNames.includes(name)), [localPanels, numericNames])
-  const requestedKey = useMemo(() => [...requestedNames].sort().join('\0'), [requestedNames])
+  const requestedKey = useMemo(() => JSON.stringify([...requestedNames].sort()), [requestedNames])
   const latestRowCountRef = useRef(rowCount)
   latestRowCountRef.current = rowCount
   const [loadGeneration, setLoadGeneration] = useState(0)
   const loaderActiveRef = useRef<object | null>(null)
 
   useEffect(() => {
-    const outputs = requestedKey.length === 0 ? [] : requestedKey.split('\0')
-    if (outputs.length === 0) return
+    const outputs = JSON.parse(requestedKey) as string[]
+    const existing = chartData.get(page)
+    if (outputs.length === 0) {
+      chartData.delete(page)
+      loaderActiveRef.current = null
+      return
+    }
+
     let cancelled = false
+    let caughtUp = false
     const token = {}
     loaderActiveRef.current = token
-    const local = chartData.get(page) ?? createPageChartData()
+    const local = existing ?? createPageChartData()
     chartData.set(page, local)
     local.removeExcept(new Set(outputs))
 
@@ -60,7 +67,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         while (!cancelled) {
           const target = latestRowCountRef.current
           const pending = outputs.filter(name => local.length(name) < target)
-          if (pending.length === 0) break
+          if (pending.length === 0) {
+            caughtUp = true
+            break
+          }
           const groups = new Map<number, string[]>()
           for (const name of pending) {
             const start = local.length(name)
@@ -69,13 +79,12 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           let progressed = false
           for (const [startRow, names] of groups) {
             if (cancelled) break
-            if (!names.every(name => local.length(name) === startRow)) break
+            if (!names.every(name => local.length(name) === startRow)) return
             const latest = latestRowCountRef.current
             const limit = Math.min(CHART_SERIES_CHUNK_ROWS, latest - startRow)
             if (limit <= 0) continue
             const response = await invoke<ChartSeriesResponse>('get_last_run_chart_series', {
-              runId, page, outputs: names, startRow,
-              limit,
+              runId, page, outputs: names, startRow, limit,
             })
             if (cancelled || response.run_id !== runId || response.page !== page || response.start_row !== startRow) {
               return
@@ -94,7 +103,15 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           if (!progressed) break
         }
       } finally {
-        if (loaderActiveRef.current === token) loaderActiveRef.current = null
+        if (loaderActiveRef.current === token) {
+          loaderActiveRef.current = null
+          if (!cancelled && caughtUp) {
+            const latest = latestRowCountRef.current
+            if (outputs.some(name => local.length(name) < latest)) {
+              setLoadGeneration(generation => generation + 1)
+            }
+          }
+        }
       }
     }
 
@@ -103,10 +120,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   }, [runId, page, requestedKey, chartData, loadGeneration])
 
   useEffect(() => {
-    if (requestedKey.length === 0 || loaderActiveRef.current !== null) return
-    const names = requestedKey.split('\0')
+    const outputs = JSON.parse(requestedKey) as string[]
+    if (outputs.length === 0 || loaderActiveRef.current !== null) return
     const local = chartData.get(page)
-    const behind = names.some(name => (local?.length(name) ?? 0) < rowCount)
+    const behind = outputs.some(name => (local?.length(name) ?? 0) < rowCount)
     if (behind) setLoadGeneration(generation => generation + 1)
   }, [runId, page, requestedKey, revision, rowCount, chartData])
 
