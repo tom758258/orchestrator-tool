@@ -293,8 +293,9 @@ failure or graceful Stop, and writers close on every completion path.
 Streaming XLSX is not supported, and flush does not guarantee power-loss
 durability.
 
-Batch CSV and XLSX export consume page_datasets: shared Page columns and
-committed chronological rows. CSV excludes For/While iteration metadata.
+Manual CSV writes committed chronological StoredRun rows directly with the
+Page's declared columns, while Core batch helpers and XLSX serialization may
+use PageDataset row references. CSV excludes For/While iteration metadata.
 Every committed row must match its owning Page's declared Output names, order,
 and count. Page export also validates row occurrence metadata against the Page's
 innermost owning loop. Root Page rows must carry no loop occurrence metadata.
