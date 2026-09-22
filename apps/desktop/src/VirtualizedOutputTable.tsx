@@ -75,13 +75,12 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
     overscan: OUTPUT_ROW_OVERSCAN,
   })
 
-  const currentWindow = window
-    && window.run_id === runId
-    && window.page === page
-    && window.revision === revision
-    && window.total_rows === rowCount
-    && window.offset === range.start
-    ? window
+  const samePageWindow = window && window.run_id === runId && window.page === page ? window : null
+  const currentWindow = samePageWindow
+    && samePageWindow.revision === revision
+    && samePageWindow.total_rows === rowCount
+    && samePageWindow.offset === range.start
+    ? samePageWindow
     : null
 
   useEffect(() => {
@@ -108,15 +107,25 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
       clearTimeout(timer)
     }
   }, [runId, page, revision, rowCount, range.start, range.end, currentWindow])
-  const items = currentWindow
-    ? virtualOutputWindow(currentWindow.rows, currentWindow.offset, currentWindow.total_rows)
+  // While a newer top window is loading, keep rendering the previous window
+  // with its own total/range so rows and Iteration numbers never mix revisions.
+  const displayRowCount = samePageWindow?.total_rows ?? rowCount
+  const displayRange = samePageWindow
+    ? virtualRowRange({
+      rowCount: samePageWindow.total_rows, rowHeight: OUTPUT_ROW_HEIGHT, scrollTop, viewportHeight,
+      overscan: OUTPUT_ROW_OVERSCAN,
+    })
+    : range
+  const displayWindow = samePageWindow?.offset === displayRange.start ? samePageWindow : null
+  const items = displayWindow
+    ? virtualOutputWindow(displayWindow.rows, displayWindow.offset, displayWindow.total_rows)
     : []
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
-  const pendingRows = Math.max(0, range.end - range.start - items.length)
+  const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
 
   return <div ref={scroll} className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}
     onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
-    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={rowCount + 1}
+    <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={displayRowCount + 1}
       style={{ '--output-row-height': `${OUTPUT_ROW_HEIGHT}px` } as CSSProperties}>
       <thead ref={header}>
         <tr aria-rowindex={1}>
@@ -125,8 +134,8 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         </tr>
       </thead>
       <tbody>
-        {range.topSpacerHeight > 0 && <tr aria-hidden="true">
-          <td className="output-table-spacer" colSpan={columnCount} style={{ height: range.topSpacerHeight }} />
+        {displayRange.topSpacerHeight > 0 && <tr aria-hidden="true">
+          <td className="output-table-spacer" colSpan={columnCount} style={{ height: displayRange.topSpacerHeight }} />
         </tr>}
         {items.map(({ row, index, iteration }) => (
           <tr key={index} aria-rowindex={index + 2}>
@@ -141,8 +150,8 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         {pendingRows > 0 && <tr aria-hidden="true">
           <td className="output-table-spacer" colSpan={columnCount} style={{ height: pendingRows * OUTPUT_ROW_HEIGHT }} />
         </tr>}
-        {range.bottomSpacerHeight > 0 && <tr aria-hidden="true">
-          <td className="output-table-spacer" colSpan={columnCount} style={{ height: range.bottomSpacerHeight }} />
+        {displayRange.bottomSpacerHeight > 0 && <tr aria-hidden="true">
+          <td className="output-table-spacer" colSpan={columnCount} style={{ height: displayRange.bottomSpacerHeight }} />
         </tr>}
       </tbody>
     </table>
