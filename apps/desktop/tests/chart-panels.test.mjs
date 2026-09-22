@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { nextChartPanelId, reconcileChartPanels, addChartPanel, reconcileRunChartPanels } from '../src/chartPanels.ts'
+import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels } from '../src/chartPanels.ts'
 
 test('persisted panels allocate a fresh ID after remount and removal', () => {
   const panels = [0, 1, 2].map(id => ({ id, outputs: ['Voltage'], xAxisTitle: 'Iteration', yAxisTitle: '' }))
@@ -97,4 +97,20 @@ test('new Last Run reconciles every owned Page and preserves unaffected panel id
   assert.equal(reconcileRunChartPanels(result, pages, changed), result)
   const stale = [panels[2]]
   assert.equal(reconcileRunChartPanels(stale, pages, metadata)[0].page, 'A')
+})
+
+test('the final Chart panel cannot be removed but either of two panels can be', () => {
+  const one = addChartPanel([], 'A', ['V'])
+  assert.equal(canRemoveChartPanel(one), false)
+  assert.equal(canRemoveChartPanel([...one, { ...one[0], id: 1, page: 'B' }]), true)
+})
+
+test('a new run starts from an empty panel configuration and receives one default panel', () => {
+  const previous = [
+    { id: 7, page: 'A', outputs: ['V', 'I'], xAxisTitle: 'Old', yAxisTitle: 'Old' },
+    { id: 8, page: 'B', outputs: ['I'], xAxisTitle: 'Old', yAxisTitle: 'Old' },
+  ]
+  assert.equal(previous.length, 2)
+  const next = reconcileRunChartPanels([], pages, metadata)
+  assert.deepEqual(next, [{ id: 0, page: 'A', outputs: ['V'], xAxisTitle: 'Iteration', yAxisTitle: '' }])
 })
