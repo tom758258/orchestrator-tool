@@ -33,7 +33,22 @@ export function createPageChartData() {
       return true
     },
     removeExcept(names: ReadonlySet<string>) {
-      for (const name of series.keys()) if (!names.has(name)) series.delete(name)
+      let changed = false
+      for (const name of [...series.keys()]) {
+        if (!names.has(name)) {
+          series.delete(name)
+          changed = true
+        }
+      }
+      if (!changed) return false
+      const required = Math.max(0, ...[...series.values()].map(buffer => buffer.length))
+      if (iteration.length > required) {
+        const values = new Float64Array(Math.max(16, required))
+        values.set(iteration.values.subarray(0, required))
+        iteration = { values, length: required }
+      }
+      version++
+      return true
     },
     length(name: string) { return series.get(name)?.length ?? 0 },
     commonLength(names: readonly string[]) {
@@ -50,6 +65,56 @@ export function createPageChartData() {
 }
 
 export type PageChartData = ReturnType<typeof createPageChartData>
+
+export function pruneChartData(
+  chartData: Map<string, PageChartData>,
+  panels: readonly { page: string; outputs: readonly string[] }[],
+): void {
+  const consumers = new Map<string, Set<string>>()
+  for (const panel of panels) {
+    let names = consumers.get(panel.page)
+    if (!names) {
+      names = new Set()
+      consumers.set(panel.page, names)
+    }
+    for (const name of panel.outputs) names.add(name)
+  }
+  for (const [page, data] of [...chartData.entries()]) {
+    const names = consumers.get(page)
+    if (!names || names.size === 0) {
+      chartData.delete(page)
+    } else {
+      data.removeExcept(names)
+    }
+  }
+}
+
+export function chartNeedsLoad(
+  data: PageChartData,
+  outputs: readonly string[],
+  targetRowCount: number,
+): boolean {
+  return outputs.some(name => data.length(name) < targetRowCount)
+}
+
+export function chartLoadGroups(
+  data: PageChartData,
+  outputs: readonly string[],
+  targetRowCount: number,
+  chunkRows: number,
+): { startRow: number; names: string[]; limit: number }[] {
+  const grouped = new Map<number, string[]>()
+  for (const name of outputs) {
+    const startRow = data.length(name)
+    if (startRow >= targetRowCount) continue
+    grouped.set(startRow, [...(grouped.get(startRow) ?? []), name])
+  }
+  return [...grouped].map(([startRow, names]) => ({
+    startRow,
+    names,
+    limit: Math.min(chunkRows, targetRowCount - startRow),
+  })).filter(group => group.limit > 0)
+}
 
 export function exactHoverIndex(x: number, rowCount: number): number {
   return Math.max(0, Math.min(rowCount - 1, Math.round(x) - 1))
