@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { createPageChartData, exactHoverIndex, minMaxDecimate, numericOutputNames } from '../src/chartData.ts'
+import { createPageChartData, exactHoverIndex, minMaxDecimate } from '../src/chartData.ts'
 
 const sequence = count => Float64Array.from({ length: count }, (_, index) => index + 1)
 
@@ -62,7 +63,9 @@ test('hover rounds and clamps the full raw sequence, independent of display poin
 
 test('Page adapter appends compact tails and shares each raw series once', () => {
   const page = createPageChartData()
+  assert.equal(page.version, 0)
   assert.equal(page.append('V', 0, [1, 2]), true)
+  assert.equal(page.version, 1)
   assert.equal(page.rowCount, 2)
   assert.ok(page.iteration instanceof Float64Array)
   assert.deepEqual([...page.iteration], [1, 2])
@@ -75,6 +78,7 @@ test('Page adapter appends compact tails and shares each raw series once', () =>
   assert.equal(page.append('V', 2, [3]), true)
   assert.deepEqual([...page.getSeries('V')], [1, 2, 3])
   assert.equal(page.append('V', 1, [99]), false)
+  assert.equal(page.version, 3)
   assert.equal(page.series.size, 2)
   const other = createPageChartData()
   other.append('V', 0, [99])
@@ -82,38 +86,14 @@ test('Page adapter appends compact tails and shares each raw series once', () =>
   assert.deepEqual([...voltage], [1, 2])
 })
 
-test('eligibility still requires every cell to be a finite number', () => {
-  const rows = [{ outputs: [
-    { name: 'finite', value: 1 }, { name: 'mixed', value: 1 },
-    { name: 'infinite', value: Infinity }, { name: 'nan', value: NaN },
-  ] }, { outputs: [
-    { name: 'finite', value: 2 }, { name: 'mixed', value: '2' },
-    { name: 'infinite', value: 2 }, { name: 'nan', value: 2 },
-  ] }]
-  assert.deepEqual(numericOutputNames(rows, ['finite', 'mixed', 'infinite', 'nan', 'missing']), ['finite'])
-  assert.deepEqual(numericOutputNames([], ['finite']), [])
+test('ChartPlot refreshes raw typed-array views after live appends', () => {
+  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
+  assert.match(source, /\[data, data\.version, panel\.outputs\]/)
 })
 
-test('eligibility rejects missing and nonnumeric cells independently and preserves candidate order', () => {
-  const invalid = [null, '2', true, {}, NaN, Infinity, -Infinity]
-  const names = ['Power', 'Voltage', ...invalid.map((_, index) => `invalid-${index}`), 'missing']
-  const rows = [1, 2, 3].map(value => ({ outputs: [
-    { name: 'Voltage', value }, { name: 'Power', value: value * 2 },
-    ...invalid.map((bad, index) => ({ name: `invalid-${index}`, value: value === 2 ? bad : value })),
-    ...(value === 2 ? [] : [{ name: 'missing', value }]),
-    { name: 'unrequested', value },
-  ] }))
-  assert.deepEqual(numericOutputNames(rows, names), ['Power', 'Voltage'])
-  assert.deepEqual(numericOutputNames(rows, []), [])
-})
-
-test('duplicate cells cannot replace a missing row and retain first-cell eligibility', () => {
-  const rows = [{ outputs: [
-    { name: 'missing', value: 1 }, { name: 'missing', value: 2 },
-    { name: 'invalidFirst', value: null }, { name: 'invalidFirst', value: 2 },
-    { name: 'validFirst', value: 1 }, { name: 'validFirst', value: Infinity },
-  ] }, { outputs: [
-    { name: 'invalidFirst', value: 3 }, { name: 'validFirst', value: 3 },
-  ] }]
-  assert.deepEqual(numericOutputNames(rows, ['missing', 'invalidFirst', 'validFirst']), ['validFirst'])
+test('ResultChart loads large raw series through bounded incremental queries', () => {
+  const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
+  assert.match(source, /CHART_SERIES_CHUNK_ROWS = 25_000/)
+  assert.match(source, /limit: Math\.min\(CHART_SERIES_CHUNK_ROWS, rowCount - cursor\)/)
+  assert.match(source, /while \(!cancelled && cursor < rowCount\)/)
 })

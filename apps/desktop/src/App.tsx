@@ -1923,6 +1923,11 @@ function App() {
                   Run failed: {runError}
                 </p>
               )}
+              {displayedRun?.status === 'failed' && displayedRun.error && (
+                <p className="error" role="alert">
+                  Run failed: {displayedRun.error}
+                </p>
+              )}
 
               {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
@@ -1946,9 +1951,18 @@ function App() {
                       const isOutput = allWorkflowSteps(runWorkflowSteps).some((step) =>
                         step.id === result.step_id && step.type === 'output',
                       )
-                      const measurement = isOutput && result.status === 'succeeded'
-                        ? JSON.stringify(result.output)
-                        : formatMeasurement(result.output)
+                      const formattedMeasurement = formatMeasurement(result.output)
+                      const measurement = result.status !== 'succeeded'
+                        ? null
+                        : isOutput
+                          ? result.output_omitted && result.output === null
+                            ? 'Preview omitted'
+                            : `${JSON.stringify(result.output)}${result.output_omitted ? ' …' : ''}`
+                          : formattedMeasurement
+                            ? `${formattedMeasurement}${result.output_omitted ? ' …' : ''}`
+                            : result.output_omitted
+                              ? 'Preview omitted'
+                              : null
                       const statusLabel =
                         result.status === 'succeeded'
                           ? 'Success'
@@ -2042,10 +2056,14 @@ function App() {
                 aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
                 {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
                 {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
+                {displayedRun.status === 'failed' && displayedRun.error && (
+                  <p className="error" role="alert">{displayedRun.error}</p>
+                )}
                 {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
                 {displayedRun && runPageMetadata && <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels}
-                  runId={displayedRun.run_id} revision={runPageMetadata.revision} numericNames={runPageMetadata.numeric_outputs}
-                  page={runPage?.name ?? 'Results'} chartData={chartData} onSavingChange={setChartSaving} />}
+                  runId={displayedRun.run_id} revision={runPageMetadata.revision} rowCount={runPageMetadata.row_count}
+                  numericNames={runPageMetadata.numeric_outputs} page={runPage?.name ?? 'Results'}
+                  chartData={chartData} onSavingChange={setChartSaving} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">

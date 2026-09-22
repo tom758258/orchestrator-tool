@@ -190,15 +190,6 @@ export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] 
   return allWorkflowSteps(steps).filter((step): step is OutputStep => step.type === 'output')
 }
 
-export function hasExportableRows(rows: readonly ResultRowDto[], currentPage: string | undefined, allPages: boolean): boolean {
-  return allPages ? rows.length > 0 : currentPage !== undefined && rows.some(row => row.page === currentPage)
-}
-
-export function successfulRun(steps: readonly WorkflowStep[], result: { step_executions: StepExecutionDto[] } | null): boolean {
-  return result !== null && result.step_executions.every(execution => execution.status === 'succeeded')
-    && steps.every(step => result.step_executions.some(execution => execution.for_iteration === null
-      && execution.while_iteration === null && execution.step_id === step.id))
-}
 
 export function occurrenceKey(execution: StepExecutionDto): string {
   const whileIteration = execution.while_iteration

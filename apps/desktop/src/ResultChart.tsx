@@ -9,9 +9,12 @@ import { chartPng } from './chartPng'
 
 type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
 
-export default function ResultChart({ runId, revision, numericNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
+const CHART_SERIES_CHUNK_ROWS = 25_000
+
+export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
   runId: number
   revision: number
+  rowCount: number
   page: string
   chartData: Map<string, PageChartData>
   onSavingChange: (saving: boolean) => void
@@ -48,18 +51,38 @@ export default function ResultChart({ runId, revision, numericNames, panels, onP
       const start = local.length(name)
       groups.set(start, [...(groups.get(start) ?? []), name])
     }
-    void Promise.all([...groups].map(([startRow, outputs]) =>
-      invoke<ChartSeriesResponse>('get_last_run_chart_series', { runId, page, outputs, startRow }),
-    )).then(responses => {
-      if (cancelled || responses.some(response => response.run_id !== runId || response.page !== page)) return
+
+    async function loadGroup(startRow: number, outputs: string[]) {
+      let cursor = startRow
       let changed = false
-      for (const response of responses) for (const [name, tail] of Object.entries(response.series)) {
-        changed = local.append(name, response.start_row, tail) || changed
+      while (!cancelled && cursor < rowCount) {
+        const response = await invoke<ChartSeriesResponse>('get_last_run_chart_series', {
+          runId, page, outputs, startRow: cursor,
+          limit: Math.min(CHART_SERIES_CHUNK_ROWS, rowCount - cursor),
+        })
+        if (cancelled || response.run_id !== runId || response.page !== page || response.start_row !== cursor) {
+          return changed
+        }
+        const tails = Object.entries(response.series)
+        if (tails.length === 0) return changed
+        const tailLength = tails[0][1].length
+        if (tailLength === 0 || tails.some(([, tail]) => tail.length !== tailLength)) return changed
+        for (const [name, tail] of tails) {
+          if (!local.append(name, response.start_row, tail)) return changed
+        }
+        changed = true
+        cursor += tailLength
       }
-      if (changed) setDataVersion(version => version + 1)
-    }).catch(() => {})
+      return changed
+    }
+
+    void Promise.all([...groups].map(([startRow, outputs]) => loadGroup(startRow, outputs)))
+      .then(changed => {
+        if (!cancelled && changed.some(Boolean)) setDataVersion(version => version + 1)
+      })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [runId, page, revision, requestedNames, chartData])
+  }, [runId, page, revision, rowCount, requestedNames, chartData])
 
   async function saveImage(id: number, index: number) {
     if (saving.current) return

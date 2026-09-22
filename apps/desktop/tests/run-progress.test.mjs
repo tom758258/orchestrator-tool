@@ -25,7 +25,7 @@ test('frontend rejects stale progress metadata before updating current run state
 })
 
 test('both Desktop run commands use streaming Core execution and return compact metadata', () => {
-  const production = backend.slice(0, backend.indexOf('#[cfg(all(test, any()))]'))
+  const production = backend.slice(0, backend.indexOf('#[cfg(test)]\nmod tests'))
   assert.equal((production.match(/run_workflow_streaming_with_loop_stop\s*\(/g) ?? []).length, 2)
   assert.equal((production.match(/Result<RunMetadataDto, String>/g) ?? []).length, 2)
   assert.doesNotMatch(production, /workflow_run_result_dto/)
@@ -34,4 +34,9 @@ test('both Desktop run commands use streaming Core execution and return compact 
 test('run completion in App stores metadata rather than a full WorkflowRunResult', () => {
   assert.equal((app.match(/invoke<RunMetadataDto>\('run_workflow_/g) ?? []).length, 2)
   assert.doesNotMatch(app, /WorkflowRunResultDto|setRunResult|setRunProgress/)
+})
+
+test('disabled compatibility test blocks are not retained', () => {
+  assert.doesNotMatch(backend, /cfg\(all\(test, any\(\)\)\)/)
+  assert.doesNotMatch(backend, /workflow_run_result_dto|export_workflow_pages/)
 })
