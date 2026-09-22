@@ -24,3 +24,10 @@ export function virtualOutputWindow(rows: readonly ResultRowDto[], offset: numbe
     return { row, index, iteration: totalRows - index }
   })
 }
+
+export function preserveLiveHistoryScrollTop(
+  scrollTop: number, previousRowCount: number, nextRowCount: number, rowHeight: number,
+) {
+  if (nextRowCount <= previousRowCount || scrollTop <= 1) return scrollTop <= 1 ? 0 : scrollTop
+  return scrollTop + (nextRowCount - previousRowCount) * rowHeight
+}
