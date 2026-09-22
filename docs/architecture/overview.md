@@ -131,21 +131,23 @@ The current Desktop presentation architecture has these properties:
 - Output Pages are independent page-local datasets. A chart workspace belongs
   to one Last Run Page and selects numeric Outputs from that page.
 - Charts use Apache ECharts Canvas rendering. There are at most eight chart
-  panels across the run pages. Last Run Page tabs keep Charts, Summary, and
-  Data views on the same run snapshot. Compatible chart panels are retained
-  for a new Last Run; when none remain, only the first Page receives a
-  default panel when it has numeric Outputs. Axis titles and single-chart PNG
-  export remain presentation features, and chart settings are session state
-  rather than Template data.
+  panels across the run pages, and the final remaining panel cannot be
+  removed. Last Run Page tabs keep Charts, Summary, and Data views on the same
+  run snapshot. Chart panel configuration survives Page/tab changes only
+  within that Last Run; starting a new run resets the configuration, and the
+  first Page receives one default panel when it has numeric Outputs. Axis
+  titles and single-chart PNG export remain presentation features, and chart
+  settings are session state rather than Template data.
 - Large datasets use pixel-aware display decimation. Omitted display points
   remain in the committed ResultRows, and hover inspection resolves the exact
   raw iteration and values. The horizontal coordinate is the 1-based page row
   sequence; charts and CSV remain chronological while the Data view may show
   newest rows first.
 - Output tables query newest-first row windows from the Rust StoredRun and
-  virtualize only the visible window in the frontend. Scrolling away from the
-  newest rows keeps the viewed history anchored while new committed rows
-  arrive.
+  virtualize only the visible window in the frontend. Logical row indices map
+  onto a bounded physical scroll space so million-row Pages do not require a
+  tens-of-millions-of-pixels DOM layout. Scrolling away from the newest rows
+  keeps the viewed history anchored while new committed rows arrive.
 - Charts request only the selected numeric Output series. The frontend keeps
   shared raw Float64 series needed for exact hover and appends bounded tails;
   renderer input remains pixel-decimated. These numeric projections do not
