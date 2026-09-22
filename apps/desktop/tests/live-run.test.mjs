@@ -6,16 +6,15 @@ const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const live = source.slice(source.indexOf('const runLive'), source.indexOf('const runSimulation'))
 
 test('Live shares the immediate cross-mode run guard and keeps confirmation before replacing Last Run', () => {
-  assert.match(live, /if \(!workflowDraft \|\| runInFlightRef\.current\)/)
-  assert.match(live, /runInFlightRef\.current = true/)
+  assert.match(live, /if \(!workflowDraft \|\| !claimRunGate\(runInFlightRef\)\)/)
   assert.ok(live.indexOf('await confirm(') < live.indexOf('runIdRef.current = null'))
   assert.ok(live.indexOf('streamingOptions(') < live.indexOf('runIdRef.current = null'))
-  assert.match(live, /finally \{[\s\S]*runInFlightRef\.current = false/)
+  assert.match(live, /finally \{[\s\S]*releaseRunGate\(runInFlightRef\)/)
 })
 
 test('Live completion stores compact metadata only and ignores stale generations', () => {
   assert.match(live, /invoke<RunMetadataDto>\('run_workflow_live'/)
-  assert.match(live, /if \(generation === runGenerationRef\.current\) \{[\s\S]*setRunMetadata\(results\)/)
+  assert.match(live, /if \(isCurrentRunGeneration\(generation, runGenerationRef\.current\)\) \{[\s\S]*setRunMetadata\(results\)/)
   assert.doesNotMatch(live, /setRunResult|setRunProgress|result_rows|step_executions/)
 })
 
