@@ -66,7 +66,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         return { ...current, revision, total_rows: rebased.totalRows, offset: rebased.offset }
       })
       container.scrollTop = nextScrollTop
-      setScrollTop(nextScrollTop)
+      setScrollTop(container.scrollTop)
     }
   }, [runId, page, revision, rowCount])
 
