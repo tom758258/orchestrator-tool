@@ -899,7 +899,11 @@ mod tests {
         assert_eq!(capabilities.limits.sample_count.max, 1_000_000);
         assert_eq!(capabilities.limits.buffer_drain_size.max, 10_000);
         assert_eq!(capabilities.measurements[0].nplc_values, vec![0.02, 0.2, 1.0]);
-
+        assert_eq!(capabilities.measurements[0].range_values, vec![0.1, 10.0]);
+        assert_eq!(
+            capabilities.measurements[1].range_values,
+            vec![0.0001, 0.001]
+        );
     }
 
     #[test]
