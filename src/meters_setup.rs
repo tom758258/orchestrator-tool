@@ -109,12 +109,8 @@ impl fmt::Display for MetersSetupError {
         formatter.write_str(match self {
             Self::InvalidCurrentTerminal => "current terminal must be 3 or 10",
             Self::MissingManualRange => "manual range mode requires a manual range value",
-            Self::InvalidSampleCount => {
-                "custom sample count must be between 1 and 1000000"
-            }
-            Self::InvalidBufferDrainSize => {
-                "custom buffer drain size must be between 1 and 10000"
-            }
+            Self::InvalidSampleCount => "custom sample count must be between 1 and 1000000",
+            Self::InvalidBufferDrainSize => "custom buffer drain size must be between 1 and 10000",
             Self::CurrentTerminalForVoltageDc => {
                 "DC voltage setup must not contain a current terminal"
             }

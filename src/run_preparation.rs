@@ -592,7 +592,10 @@ mod tests {
                 let specs =
                     prepare_worker_launch_specs(&custom_template, mode, &dir, &config).unwrap();
                 let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
-                assert!(args.windows(2).any(|pair| pair == ["--trigger-mode", cli_mode]));
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--trigger-mode", cli_mode])
+                );
                 assert!(
                     args.windows(2)
                         .any(|pair| pair == ["--trigger-count", "11"])

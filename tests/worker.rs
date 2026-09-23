@@ -460,22 +460,16 @@ fn run_fixture(scenario: &OsStr) {
         "meters-runtime-passive-custom-4" => {
             run_meters_passive_custom_runtime_fixture(Duration::ZERO, &[1.0, 2.0, 3.0, 4.0], false)
         }
-        "meters-runtime-passive-custom-delayed-3" => {
-            run_meters_passive_custom_runtime_fixture(
-                Duration::from_millis(200),
-                &[0.101, 0.102, 0.103],
-                false,
-            )
-        }
+        "meters-runtime-passive-custom-delayed-3" => run_meters_passive_custom_runtime_fixture(
+            Duration::from_millis(200),
+            &[0.101, 0.102, 0.103],
+            false,
+        ),
         "meters-runtime-passive-custom-empty" => {
             run_meters_passive_custom_runtime_fixture(Duration::ZERO, &[], false)
         }
         "meters-runtime-passive-custom-auto-exit-3" => {
-            run_meters_passive_custom_runtime_fixture(
-                Duration::ZERO,
-                &[0.201, 0.202, 0.203],
-                true,
-            )
+            run_meters_passive_custom_runtime_fixture(Duration::ZERO, &[0.201, 0.202, 0.203], true)
         }
         "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),

@@ -897,10 +897,17 @@ mod tests {
         assert_eq!(capabilities.model, "34461A");
         assert_eq!(capabilities.model_id, "keysight-34461a");
         assert_eq!(capabilities.reading_memory_limit, 10_000);
-        assert!(capabilities.trigger_modes.contains(&"external-custom".to_owned()));
+        assert!(
+            capabilities
+                .trigger_modes
+                .contains(&"external-custom".to_owned())
+        );
         assert_eq!(capabilities.limits.sample_count.max, 1_000_000);
         assert_eq!(capabilities.limits.buffer_drain_size.max, 10_000);
-        assert_eq!(capabilities.measurements[0].nplc_values, vec![0.02, 0.2, 1.0]);
+        assert_eq!(
+            capabilities.measurements[0].nplc_values,
+            vec![0.02, 0.2, 1.0]
+        );
         assert_eq!(capabilities.measurements[0].range_values, vec![0.1, 10.0]);
         assert_eq!(
             capabilities.measurements[1].range_values,
@@ -1225,4 +1232,5 @@ mod tests {
                 assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
             }
         }
-    }}
+    }
+}

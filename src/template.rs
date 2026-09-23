@@ -247,9 +247,9 @@ fn validate_batch_sources(
                     if action.as_str() == "measure"
                         && instances.iter().any(|instance| {
                             &instance.id == target
-                                && instance.meters_setup().is_some_and(|setup| {
-                                    setup.trigger_mode.is_custom()
-                                })
+                                && instance
+                                    .meters_setup()
+                                    .is_some_and(|setup| setup.trigger_mode.is_custom())
                         }) =>
                 {
                     sources.insert(step.id().clone(), step.id().clone());
