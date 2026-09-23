@@ -12,7 +12,8 @@ use std::{
 use orchestrator_tool::{
     adapters::{
         meters::{
-            run_action as run_meters_action, run_action_with_setup as run_meters_action_with_setup,
+            MetersActionError, run_action as run_meters_action,
+            run_action_with_setup as run_meters_action_with_setup,
             run_worker_smoke as run_meters_worker_smoke,
         },
         powers::{
