@@ -188,7 +188,10 @@ count。計算時會加總同一 Tool Instance 的每個 Measure occurrence，�
 乘上外層 For iteration counts 與 finite While `max_iterations`。Custom Measure 位於
 Unlimited While 內時會被拒絕。Trigger Count 與 Sample Count 各自沿用 meters-tool
 目前的 1 到 1,000,000 限制；Orchestrator 不另外加入「總讀值最多 100 萬」的限制。
-While 提早結束時，未使用的 trigger capacity 不需要補送。
+Software Custom 與 External Custom 在 While 提早結束時可能留下未使用的 planned
+triggers。Immediate Custom 不同：Worker session 啟動時就會開始完整的 planned
+acquisition，因此 Workflow 即使提早結束，後續 planned Measure 所對應的 readings
+也可能已經取得；尚未被 Measure 消費的 readings 會在 Worker cleanup 時捨棄。
 
 ### 6.4 Graceful Stop
 
