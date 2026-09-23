@@ -945,6 +945,31 @@ textarea:disabled {
   gap: 12px;
 }
 
+.meters-setup-trigger-mode {
+  grid-column: 1 / -1;
+}
+
+.meters-setup-trigger-mode > select {
+  width: 100%;
+  max-width: 220px;
+}
+
+.meters-setup-overflow-risk {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meters-setup-overflow-risk > input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.meters-setup-overflow-risk > input:disabled + span {
+  color: var(--disabled-ink);
+}
+
 .meters-setup-summary {
   grid-column: 1 / -1;
   margin: 8px 0;
