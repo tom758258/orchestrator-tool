@@ -248,7 +248,7 @@ fn validate_batch_sources(
                         && instances.iter().any(|instance| {
                             &instance.id == target
                                 && instance.meters_setup().is_some_and(|setup| {
-                                    setup.trigger_mode == MetersTriggerMode::SoftwareCustom
+                                    setup.trigger_mode.is_custom()
                                 })
                         }) =>
                 {
@@ -298,7 +298,7 @@ fn validate_batch_sources(
             .is_some()
         {
             return Err(TemplateError::Instance(format!(
-                "batch-dependent value cannot be used by {context}; Software Custom batches are supported only by Output steps"
+                "batch-dependent value cannot be used by {context}; Custom Meters batches are supported only by Output steps"
             )));
         }
         Ok(())
