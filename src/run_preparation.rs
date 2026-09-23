@@ -186,13 +186,12 @@ pub fn prepare_worker_launch_specs(
                             .ok_or_else(|| "meter sample reserve count overflow".to_owned())
                     })
                     .transpose()?,
-                mode if mode.is_custom() => {
+                MetersTriggerMode::SoftwareCustom
+                | MetersTriggerMode::ImmediateCustom
+                | MetersTriggerMode::ExternalCustom => {
                     let trigger_count = custom_trigger_count(measured, &instance.id)?;
                     custom_expected_readings(trigger_count, setup.sample_count, &instance.id)?;
                     Some(trigger_count)
-                }
-                MetersTriggerMode::ImmediateCustom | MetersTriggerMode::ExternalCustom => {
-                    unreachable!("custom modes are matched above")
                 }
             }
         } else {
