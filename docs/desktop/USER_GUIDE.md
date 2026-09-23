@@ -216,8 +216,11 @@ Instance and multiplies each occurrence by its enclosing For iteration counts
 and finite While `max_iterations`. A Custom Measure inside an Unlimited While
 is rejected. Trigger Count and Sample Count each follow meters-tool's current
 1-to-1,000,000 limits; Orchestrator does not add a separate one-million
-total-reading limit. A While that exits early simply leaves unused trigger
-capacity unused.
+total-reading limit. For Software Custom and External Custom, a While that exits early can leave planned
+triggers unused. Immediate Custom is different: the Worker starts the complete
+planned acquisition when the session starts, so readings for later planned
+Measure occurrences may already have been acquired even if the Workflow exits
+early; unconsumed readings are discarded when the Worker is cleaned up.
 
 ### 6.4 Graceful Stop
 
