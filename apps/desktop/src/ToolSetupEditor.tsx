@@ -46,7 +46,7 @@ function parseDecimal(value: string): { coefficient: bigint; scale: number } | n
   if (!match) return null
   const fraction = match[3] ?? ''
   const exponent = Number(match[4] ?? '0')
-  if (!Number.isSafeInteger(exponent)) return null
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 28) return null
   let coefficient = BigInt(`${match[2]}${fraction}`)
   if (match[1] === '-') coefficient = -coefficient
   let scale = fraction.length - exponent
@@ -89,7 +89,9 @@ function plannedMeterMeasureCount(steps: readonly WorkflowStep[], target: string
       const body = plannedMeterMeasureCount(step.steps, target)
       if (body === null) return null
       if (body === 0n) continue
-      if (step.max_iterations === null) return null
+      if (step.max_iterations === null
+        || !Number.isSafeInteger(step.max_iterations)
+        || step.max_iterations < 0) return null
       total += body * BigInt(step.max_iterations)
     }
   }
@@ -159,6 +161,8 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
     : null
   const memoryOverflow = meterCapabilities !== null && expectedReadings !== null
     && expectedReadings > BigInt(meterCapabilities.reading_memory_limit)
+  const triggerCountOverflow = meterCapabilities !== null && plannedTriggerCount !== null
+    && plannedTriggerCount > BigInt(meterCapabilities.limits.trigger_count.max)
   const selectedModeSupported = meterCapabilities === null
     || meterCapabilities.trigger_modes.includes(triggerMode)
 
@@ -214,6 +218,12 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
               {plannedTriggerCount === null
                 ? ' Planned trigger count is unbounded; Custom mode requires finite loop bounds.'
                 : ` Planned triggers: ${formatInteger(plannedTriggerCount)}.`}
+            </p>
+          )}
+          {triggerCountOverflow && meterCapabilities && plannedTriggerCount !== null && (
+            <p className="tool-setup-hint">
+              <strong>Warning:</strong> planned trigger count is {formatInteger(plannedTriggerCount)}, exceeding
+              the meters-tool limit of {formatInteger(meterCapabilities.limits.trigger_count.max)}.
             </p>
           )}
           {memoryOverflow && meterCapabilities && expectedReadings !== null && (
