@@ -69,10 +69,15 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let child = Command::new(executable.as_ref())
-        .args(args)
-        .stdout(Stdio::piped())
-        .spawn()?;
+    let mut command = Command::new(executable.as_ref());
+    command.args(args).stdout(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = command.spawn()?;
     let mut process = ManagedProcess { child };
     let stdout = process
         .child
