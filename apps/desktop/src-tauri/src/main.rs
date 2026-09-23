@@ -100,6 +100,24 @@ async fn list_live_resources(
 }
 
 #[tauri::command]
+async fn get_meters_capabilities(
+    app: AppHandle,
+    model: Option<String>,
+) -> Result<orchestrator_tool::adapters::meters::MetersCapabilities, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::adapters::meters::get_capabilities(
+            &application_dir,
+            &config,
+            model.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn get_meters_range_options(
     app: AppHandle,
     model: Option<String>,
@@ -869,6 +887,7 @@ fn main() {
             open_help,
             get_tool_status,
             list_live_resources,
+            get_meters_capabilities,
             get_meters_range_options,
             run_workflow_simulation,
             run_workflow_live,
