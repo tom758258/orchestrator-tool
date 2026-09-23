@@ -467,7 +467,7 @@ fn run_fixture(scenario: &OsStr) {
             )
         }
         "meters-runtime-passive-custom-empty" => {
-            run_meters_passive_custom_runtime_fixture(Duration::from_secs(60), &[], false)
+            run_meters_passive_custom_runtime_fixture(Duration::ZERO, &[], false)
         }
         "meters-runtime-passive-custom-auto-exit-3" => {
             run_meters_passive_custom_runtime_fixture(
