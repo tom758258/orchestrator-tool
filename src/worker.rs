@@ -311,7 +311,7 @@ pub enum WorkerStartError {
     StartupTimeout(Duration),
     ExitedBeforeReady {
         status: ExitStatus,
-        stderr: Option<String>,
+        diagnostic: Option<String>,
     },
     InvalidReady(serde_json::Error),
     UnsupportedSchemaVersion(u32),
@@ -322,11 +322,11 @@ impl fmt::Display for WorkerStartError {
         match self {
             Self::Spawn(error) => write!(formatter, "failed to spawn Worker: {error}"),
             Self::ProcessIo(error) => write!(formatter, "Worker process I/O error: {error}"),
-            Self::Reader(error) => write!(formatter, "Worker stdout reader error: {error}"),
+            Self::Reader(error) => write!(formatter, "Worker stream reader error: {error}"),
             Self::StartupTimeout(timeout) => {
                 write!(formatter, "Worker startup timed out after {timeout:?}")
             }
-            Self::ExitedBeforeReady { status, stderr } => match stderr {
+            Self::ExitedBeforeReady { status, diagnostic } => match diagnostic {
                 Some(diagnostic) => write!(
                     formatter,
                     "Worker exited before ready with {status}: {diagnostic}"
@@ -490,6 +490,31 @@ fn parse_ready(line: &[u8]) -> Result<Option<WorkerReady>, WorkerStartError> {
     }))
 }
 
+#[derive(Deserialize)]
+struct RawWorkerErrorEvent {
+    event: String,
+    message: Option<String>,
+}
+
+/// Best-effort extraction of a Common Worker startup `event:"error"` message.
+///
+/// Returns `None` for malformed JSON, non-error events, or missing/empty
+/// messages. Never alters the existing `parse_ready()` error contract:
+/// callers must still run `parse_ready()` first so malformed lines keep
+/// producing `WorkerStartError::InvalidReady`.
+fn startup_error_message(line: &[u8]) -> Option<String> {
+    let event: RawWorkerErrorEvent = serde_json::from_slice(line).ok()?;
+    if event.event != "error" {
+        return None;
+    }
+    let message = event.message?.trim().to_owned();
+    if message.is_empty() {
+        None
+    } else {
+        Some(message)
+    }
+}
+
 fn disconnected_reader_error() -> WorkerStartError {
     WorkerStartError::Reader(io::Error::other(
         "Worker stdout reader stopped before reporting ready",
@@ -556,7 +581,10 @@ fn drain_stderr(stderr: ChildStderr, tail: Arc<StderrTail>) {
 }
 
 enum WaitForReadyError {
-    ProcessExited(ExitStatus),
+    ProcessExited {
+        status: ExitStatus,
+        diagnostic: Option<String>,
+    },
     Startup(WorkerStartError),
 }
 
@@ -567,6 +595,8 @@ fn wait_for_ready(
 ) -> Result<WorkerReady, WaitForReadyError> {
     let deadline = Instant::now() + startup_timeout;
     let mut stdout_closed = false;
+    // Latest non-empty structured `event:"error"` message seen so far.
+    let mut diagnostic: Option<String> = None;
 
     loop {
         if !stdout_closed {
@@ -574,6 +604,9 @@ fn wait_for_ready(
                 Ok(StdoutMessage::Line(line)) => {
                     if let Some(ready) = parse_ready(&line).map_err(WaitForReadyError::Startup)? {
                         return Ok(ready);
+                    }
+                    if let Some(message) = startup_error_message(&line) {
+                        diagnostic = Some(message);
                     }
                 }
                 Ok(StdoutMessage::Error(error)) => {
@@ -599,6 +632,9 @@ fn wait_for_ready(
                         {
                             return Ok(ready);
                         }
+                        if let Some(message) = startup_error_message(&line) {
+                            diagnostic = Some(message);
+                        }
                         continue;
                     }
                     Ok(StdoutMessage::Error(error)) => {
@@ -609,7 +645,7 @@ fn wait_for_ready(
                     | Err(RecvTimeoutError::Disconnected) => {}
                 }
             }
-            return Err(WaitForReadyError::ProcessExited(status));
+            return Err(WaitForReadyError::ProcessExited { status, diagnostic });
         }
 
         let now = Instant::now();
@@ -629,6 +665,9 @@ fn wait_for_ready(
             Ok(StdoutMessage::Line(line)) => {
                 if let Some(ready) = parse_ready(&line).map_err(WaitForReadyError::Startup)? {
                     return Ok(ready);
+                }
+                if let Some(message) = startup_error_message(&line) {
+                    diagnostic = Some(message);
                 }
             }
             Ok(StdoutMessage::Error(error)) => {
@@ -678,15 +717,45 @@ pub fn start_worker(
             stderr_reader: Some(stderr_reader),
             event_receiver: Some(receiver),
         }),
-        Err(WaitForReadyError::ProcessExited(status)) => {
+        Err(WaitForReadyError::ProcessExited {
+            status,
+            mut diagnostic,
+        }) => {
             // The child has exited, so both pipes will reach EOF; join readers
-            // first to guarantee the stderr tail is fully drained before the
-            // startup error is built.
+            // first to guarantee both tails are fully drained before the
+            // startup error is built. The stdout reader has joined, so no new
+            // sender writes can arrive; draining to Empty/Disconnected ends.
             drop(process);
             let _ = stdout_reader.join();
+            // A late structured `event:"error"` line may still sit queued in
+            // the channel; the newest one overwrites the earlier diagnostic.
+            // Malformed queued lines are ignored here: any malformed line
+            // seen during `wait_for_ready` already returned `InvalidReady`
+            // through the existing `parse_ready()` path above.
+            // A queued stdout I/O error keeps the existing Reader semantics
+            // instead of being downgraded to an exit-code failure.
+            let mut stdout_reader_error: Option<io::Error> = None;
+            loop {
+                match receiver.try_recv() {
+                    Ok(StdoutMessage::Line(line)) => {
+                        if let Some(message) = startup_error_message(&line) {
+                            diagnostic = Some(message);
+                        }
+                    }
+                    Ok(StdoutMessage::Error(error)) => {
+                        stdout_reader_error = Some(error);
+                        break;
+                    }
+                    Ok(StdoutMessage::Eof) => {}
+                    Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+                }
+            }
             let _ = stderr_reader.join();
-            let stderr = stderr_tail.diagnostic();
-            Err(WorkerStartError::ExitedBeforeReady { status, stderr })
+            if let Some(error) = stdout_reader_error {
+                return Err(WorkerStartError::Reader(error));
+            }
+            let diagnostic = diagnostic.or_else(|| stderr_tail.diagnostic());
+            Err(WorkerStartError::ExitedBeforeReady { status, diagnostic })
         }
         Err(WaitForReadyError::Startup(error)) => {
             // Ensure the child is terminated (or already exited) before joining

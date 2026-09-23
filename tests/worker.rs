@@ -112,6 +112,7 @@ fn main() {
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
     worker_exit_before_ready_surfaces_stderr_diagnostic();
+    worker_exit_before_ready_prefers_structured_stdout_diagnostic();
     startup_timeout_terminates_worker();
     common_worker_http_round_trip();
     non_2xx_http_response_is_rejected();
@@ -371,6 +372,15 @@ fn run_fixture(scenario: &OsStr) {
         "exit-before-ready" => {}
         "exit-before-ready-with-stderr" => {
             eprint!(" \nfixture startup validation failed\n \n");
+            io::stderr().flush().unwrap();
+            process::exit(2);
+        }
+        "exit-before-ready-with-stdout-error" => {
+            print_json_line(
+                r#"{"event":"error","schema_version":2,"exit_code":2,"message":"  fixture structured startup validation failed  "}"#,
+            );
+            io::stdout().flush().unwrap();
+            eprint!("fixture stderr fallback");
             io::stderr().flush().unwrap();
             process::exit(2);
         }
@@ -1072,11 +1082,11 @@ fn worker_exit_before_ready_returns_early() {
         .err()
         .expect("Worker exit before ready should fail startup");
 
-    let WorkerStartError::ExitedBeforeReady { status, stderr } = &error else {
+    let WorkerStartError::ExitedBeforeReady { status, diagnostic } = &error else {
         panic!("unexpected startup error: {error:?}");
     };
     assert!(status.success());
-    assert_eq!(*stderr, None);
+    assert_eq!(*diagnostic, None);
     assert_eq!(
         error.to_string(),
         format!("Worker exited before ready with {status}")
@@ -1095,11 +1105,14 @@ fn worker_exit_before_ready_surfaces_stderr_diagnostic() {
     .err()
     .expect("Worker exit with stderr should fail startup");
 
-    let WorkerStartError::ExitedBeforeReady { status, stderr } = &error else {
+    let WorkerStartError::ExitedBeforeReady { status, diagnostic } = &error else {
         panic!("unexpected startup error: {error:?}");
     };
     assert_eq!(status.code(), Some(2));
-    assert_eq!(stderr.as_deref(), Some("fixture startup validation failed"));
+    assert_eq!(
+        diagnostic.as_deref(),
+        Some("fixture startup validation failed")
+    );
     let message = error.to_string();
     assert!(
         message.contains("Worker exited before ready"),
@@ -1112,6 +1125,41 @@ fn worker_exit_before_ready_surfaces_stderr_diagnostic() {
     assert!(
         message.contains("fixture startup validation failed"),
         "message missing stderr diagnostic: {message:?}"
+    );
+}
+
+fn worker_exit_before_ready_prefers_structured_stdout_diagnostic() {
+    let error = start_worker(
+        &fixture_spec("exit-before-ready-with-stdout-error"),
+        Duration::from_secs(5),
+    )
+    .err()
+    .expect("Worker exit with stdout error should fail startup");
+
+    let WorkerStartError::ExitedBeforeReady { status, diagnostic } = &error else {
+        panic!("unexpected startup error: {error:?}");
+    };
+    assert_eq!(status.code(), Some(2));
+    assert_eq!(
+        diagnostic.as_deref(),
+        Some("fixture structured startup validation failed")
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("Worker exited before ready"),
+        "message missing exit context: {message:?}"
+    );
+    assert!(
+        message.contains(&status.to_string()),
+        "message missing exit status: {message:?}"
+    );
+    assert!(
+        message.contains("fixture structured startup validation failed"),
+        "message missing structured diagnostic: {message:?}"
+    );
+    assert!(
+        !message.contains("fixture stderr fallback"),
+        "structured diagnostic should win over stderr: {message:?}"
     );
 }
 
@@ -2022,8 +2070,8 @@ fn partial_startup_failure_shuts_down_started_worker() {
         result,
         Err(WorkflowRunError::WorkerStartup {
             instance,
-            source: WorkerStartError::ExitedBeforeReady { status, stderr },
-        }) if instance == ToolInstanceId::new("meters-1").unwrap() && status.success() && stderr.is_none()
+            source: WorkerStartError::ExitedBeforeReady { status, diagnostic },
+        }) if instance == ToolInstanceId::new("meters-1").unwrap() && status.success() && diagnostic.is_none()
     ));
     assert_eq!(marker_contents, "stopped");
 }

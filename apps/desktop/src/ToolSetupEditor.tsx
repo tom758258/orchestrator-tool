@@ -225,29 +225,31 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
             <span>Allow Buffer Overflow Risk</span>
           </label>
           {meterCapabilities && (
-            <p className="tool-setup-hint">
-              {meterCapabilities.model} reading memory: {formatInteger(meterCapabilities.reading_memory_limit)} readings.
-              {plannedTriggerCount === null
-                ? ' Planned trigger count is unbounded; Custom mode requires finite loop bounds.'
-                : ` Planned triggers: ${formatInteger(plannedTriggerCount)}.`}
+            <p className="meters-setup-summary">
+              {meterCapabilities.model} · Memory {formatInteger(meterCapabilities.reading_memory_limit)} · Planned triggers {plannedTriggerCount === null
+                ? 'unbounded'
+                : formatInteger(plannedTriggerCount)}
+              {plannedTriggerCount === null && '. Custom mode requires finite loop bounds.'}
             </p>
           )}
           {triggerCountOverflow && meterCapabilities && plannedTriggerCount !== null && (
-            <p className="tool-setup-hint">
-              <strong>Warning:</strong> planned trigger count is {formatInteger(plannedTriggerCount)}, exceeding
-              the meters-tool limit of {formatInteger(meterCapabilities.limits.trigger_count.max)}.
-            </p>
+            <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
+              <strong>Trigger count exceeds limit</strong>
+              <span>{formatInteger(plannedTriggerCount)} planned / {formatInteger(meterCapabilities.limits.trigger_count.max)} maximum.</span>
+            </div>
           )}
           {memoryOverflow && meterCapabilities && expectedReadings !== null && (
-            <p className="tool-setup-hint">
-              <strong>Warning:</strong> planned acquisition is {formatInteger(expectedReadings)} readings, exceeding
-              the instrument memory of {formatInteger(meterCapabilities.reading_memory_limit)}. Continuous draining
-              must keep up with acquisition; readings may be lost or instrument errors may occur. Lower NPLC increases
-              acquisition rate and therefore increases this risk.
-              {meters.allow_buffer_overflow_risk
-                ? ' Buffer overflow risk override is enabled.'
-                : ' meters-tool will reject this plan unless Buffer Overflow Risk is explicitly allowed.'}
-            </p>
+            meters.allow_buffer_overflow_risk
+              ? <div className="meters-setup-feedback meters-setup-feedback-warning" role="status">
+                  <strong>Buffer overflow risk allowed</strong>
+                  <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity.</span>
+                  <span>Continuous draining must keep up; lower NPLC increases data-loss risk.</span>
+                </div>
+              : <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
+                  <strong>Reading memory exceeded</strong>
+                  <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity.</span>
+                  <span>Enable “Allow Buffer Overflow Risk” to proceed.</span>
+                </div>
           )}
         </>}
 
