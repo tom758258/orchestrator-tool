@@ -178,17 +178,6 @@ fn parse_capabilities(stdout: &[u8]) -> Result<MetersCapabilities, String> {
     })
 }
 
-fn parse_range_options(stdout: &[u8]) -> Result<Vec<MetersRangeOptions>, String> {
-    Ok(parse_capabilities(stdout)?
-        .measurements
-        .into_iter()
-        .map(|measurement| MetersRangeOptions {
-            measurement_name: measurement.measurement_name,
-            range_values: measurement.range_values,
-        })
-        .collect())
-}
-
 /// Maps setup to `meters-tool start-trigger-record` setup arguments.
 /// Call [`MetersSetup::validate`] before using this mapping.
 ///
@@ -911,11 +900,6 @@ mod tests {
         assert_eq!(capabilities.limits.buffer_drain_size.max, 10_000);
         assert_eq!(capabilities.measurements[0].nplc_values, vec![0.02, 0.2, 1.0]);
 
-        let ranges = super::parse_range_options(payload.as_bytes()).unwrap();
-        assert_eq!(ranges[0].measurement_name, "voltage-dc");
-        assert_eq!(ranges[0].range_values, vec![0.1, 10.0]);
-        assert_eq!(ranges[1].measurement_name, "current-dc");
-        assert_eq!(ranges[1].range_values, vec![0.0001, 0.001]);
     }
 
     #[test]
