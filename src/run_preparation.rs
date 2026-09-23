@@ -65,7 +65,7 @@ fn custom_expected_readings(
 ) -> Result<usize, String> {
     trigger_count
         .checked_mul(sample_count)
-        .ok_or_else(|| format!("Software Custom Meter {instance} expected reading count overflow"))
+        .ok_or_else(|| format!("Custom Meter {instance} expected reading count overflow"))
 }
 
 fn custom_trigger_count(
@@ -74,13 +74,13 @@ fn custom_trigger_count(
 ) -> Result<usize, String> {
     match measured {
         None => Err(format!(
-            "Software Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
+            "Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
         )),
         Some(0) => Err(format!(
-            "Software Custom Meter {instance} requires at least one Measure action"
+            "Custom Meter {instance} requires at least one Measure action"
         )),
         Some(count) if count > METERS_MAX_TRIGGER_COUNT => Err(format!(
-            "Software Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
+            "Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
         )),
         Some(count) => Ok(count),
     }
@@ -186,7 +186,9 @@ pub fn prepare_worker_launch_specs(
                             .ok_or_else(|| "meter sample reserve count overflow".to_owned())
                     })
                     .transpose()?,
-                MetersTriggerMode::SoftwareCustom => {
+                MetersTriggerMode::SoftwareCustom
+                | MetersTriggerMode::ImmediateCustom
+                | MetersTriggerMode::ExternalCustom => {
                     let trigger_count = custom_trigger_count(measured, &instance.id)?;
                     custom_expected_readings(trigger_count, setup.sample_count, &instance.id)?;
                     Some(trigger_count)
@@ -559,28 +561,48 @@ mod tests {
             );
         }
 
-        let mut custom_instances = for_template.tool_instances().to_vec();
-        let custom_setup = match &mut custom_instances[0].setup {
-            ToolSetup::Meters(setup) => setup,
-            _ => unreachable!(),
-        };
-        custom_setup.trigger_mode = crate::meters_setup::MetersTriggerMode::SoftwareCustom;
-        custom_setup.sample_count = 3;
-        let custom_template = Template::new(
-            "Custom trigger planning".to_owned(),
-            custom_instances,
-            for_template.workflow().clone(),
-        )
-        .unwrap();
-        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-            let specs = prepare_worker_launch_specs(&custom_template, mode, &dir, &config).unwrap();
-            let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair == ["--trigger-count", "11"])
-            );
-            assert!(args.windows(2).any(|pair| pair == ["--sample-count", "3"]));
-            assert!(!args.iter().any(|arg| arg == "--max-samples"));
+        for (trigger_mode, cli_mode) in [
+            (
+                crate::meters_setup::MetersTriggerMode::SoftwareCustom,
+                "software-custom",
+            ),
+            (
+                crate::meters_setup::MetersTriggerMode::ImmediateCustom,
+                "immediate-custom",
+            ),
+            (
+                crate::meters_setup::MetersTriggerMode::ExternalCustom,
+                "external-custom",
+            ),
+        ] {
+            let mut custom_instances = for_template.tool_instances().to_vec();
+            let custom_setup = match &mut custom_instances[0].setup {
+                ToolSetup::Meters(setup) => setup,
+                _ => unreachable!(),
+            };
+            custom_setup.trigger_mode = trigger_mode;
+            custom_setup.sample_count = 3;
+            let custom_template = Template::new(
+                "Custom trigger planning".to_owned(),
+                custom_instances,
+                for_template.workflow().clone(),
+            )
+            .unwrap();
+            for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+                let specs =
+                    prepare_worker_launch_specs(&custom_template, mode, &dir, &config).unwrap();
+                let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--trigger-mode", cli_mode])
+                );
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--trigger-count", "11"])
+                );
+                assert!(args.windows(2).any(|pair| pair == ["--sample-count", "3"]));
+                assert!(!args.iter().any(|arg| arg == "--max-samples"));
+            }
         }
 
         let mut while_wire: serde_json::Value =

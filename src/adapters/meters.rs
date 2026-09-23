@@ -41,15 +41,49 @@ pub struct MetersRangeOptions {
     pub range_values: Vec<f64>,
 }
 
+/// Integer limits advertised by meters-tool capabilities.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MetersIntegerLimit {
+    pub min: usize,
+    pub max: usize,
+}
+
+/// Capability limits used by the Desktop Meters setup UI.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MetersCapabilityLimits {
+    pub buffer_drain_size: MetersIntegerLimit,
+    pub sample_count: MetersIntegerLimit,
+    pub trigger_count: MetersIntegerLimit,
+}
+
+/// Measurement capabilities used by Orchestrator.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MetersMeasurementCapabilities {
+    pub measurement_name: String,
+    pub range_values: Vec<f64>,
+    pub nplc_values: Vec<f64>,
+}
+
+/// Model capabilities used by Orchestrator without duplicating meters-tool policy.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MetersCapabilities {
+    pub model: String,
+    pub model_id: String,
+    pub reading_memory_limit: usize,
+    pub trigger_modes: Vec<String>,
+    pub limits: MetersCapabilityLimits,
+    pub measurements: Vec<MetersMeasurementCapabilities>,
+}
+
 /// Queries offline model capabilities using the configured executable.
 ///
 /// A missing model queries the executable without `--model` so meters-tool
 /// uses its own default fallback profile.
-pub fn get_range_options(
+pub fn get_capabilities(
     application_dir: &Path,
     config: &Config,
     model: Option<&str>,
-) -> Result<Vec<MetersRangeOptions>, String> {
+) -> Result<MetersCapabilities, String> {
     let definition = built_in_tool_definitions()
         .into_iter()
         .find(|definition| definition.id() == &ToolId::meters())
@@ -90,16 +124,43 @@ pub fn get_range_options(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    parse_range_options(&output.stdout)
+    parse_capabilities(&output.stdout)
 }
 
-fn parse_range_options(stdout: &[u8]) -> Result<Vec<MetersRangeOptions>, String> {
+/// Backward-compatible range-only projection for callers that do not need full capabilities.
+pub fn get_range_options(
+    application_dir: &Path,
+    config: &Config,
+    model: Option<&str>,
+) -> Result<Vec<MetersRangeOptions>, String> {
+    Ok(get_capabilities(application_dir, config, model)?
+        .measurements
+        .into_iter()
+        .map(|measurement| MetersRangeOptions {
+            measurement_name: measurement.measurement_name,
+            range_values: measurement.range_values,
+        })
+        .collect())
+}
+
+fn parse_capabilities(stdout: &[u8]) -> Result<MetersCapabilities, String> {
+    #[derive(Deserialize)]
+    struct CapabilityProfile {
+        model: String,
+        model_id: String,
+        reading_memory_limit: usize,
+    }
+
     #[derive(Deserialize)]
     struct Capabilities {
         schema_version: u32,
         event: String,
-        measurements: Vec<MetersRangeOptions>,
+        capability_profile: CapabilityProfile,
+        limits: MetersCapabilityLimits,
+        measurements: Vec<MetersMeasurementCapabilities>,
+        trigger_modes: Vec<String>,
     }
+
     let response: Capabilities = serde_json::from_slice(stdout)
         .map_err(|error| format!("meters capabilities returned invalid JSON or shape: {error}"))?;
     if response.schema_version != 2 || response.event != "capabilities" {
@@ -107,7 +168,14 @@ fn parse_range_options(stdout: &[u8]) -> Result<Vec<MetersRangeOptions>, String>
             "meters capabilities expected schema_version 2 and event capabilities".to_owned(),
         );
     }
-    Ok(response.measurements)
+    Ok(MetersCapabilities {
+        model: response.capability_profile.model,
+        model_id: response.capability_profile.model_id,
+        reading_memory_limit: response.capability_profile.reading_memory_limit,
+        trigger_modes: response.trigger_modes,
+        limits: response.limits,
+        measurements: response.measurements,
+    })
 }
 
 /// Maps setup to `meters-tool start-trigger-record` setup arguments.
@@ -187,11 +255,17 @@ fn trigger_arguments(limit: Option<usize>, setup: &MetersSetup) -> Vec<OsString>
                 }))
                 .collect()
         }
-        MetersTriggerMode::SoftwareCustom => {
-            let trigger_count = limit.expect("Software Custom requires a planned trigger count");
+        mode => {
+            let trigger_count = limit.expect("Custom Meters mode requires a planned trigger count");
+            let mode = match mode {
+                MetersTriggerMode::SoftwareCustom => "software-custom",
+                MetersTriggerMode::ImmediateCustom => "immediate-custom",
+                MetersTriggerMode::ExternalCustom => "external-custom",
+                MetersTriggerMode::Software => unreachable!(),
+            };
             let mut arguments = vec![
                 OsString::from("--trigger-mode"),
-                OsString::from("software-custom"),
+                OsString::from(mode),
                 OsString::from("--trigger-count"),
                 OsString::from(trigger_count.to_string()),
                 OsString::from("--sample-count"),
@@ -504,8 +578,10 @@ impl Error for MetersSmokeError {
 
 /// Runs a single runtime Meters action on an already-started Worker session.
 ///
-/// Supported action: `measure` → `software_trigger`.
-/// The request contains no `context` or `job_id` field.
+/// The default Single setup sends `software_trigger`. Custom behavior follows
+/// the configured trigger mode: Software Custom sends the trigger, while
+/// Immediate Custom and External Custom only consume Worker sample events.
+/// Software-trigger requests contain no `context` or `job_id` field.
 pub fn run_action(
     session: &WorkerSession,
     action: &ActionId,
@@ -528,30 +604,30 @@ pub fn run_action_with_setup(
     }
     validate_measure_arguments(arguments)?;
 
-    let command_deadline = Instant::now() + timeout;
     let client = WorkerClient::new(session.ready());
 
-    let request = json!({
-        "schema_version": WORKER_SCHEMA_VERSION,
-        "command": SOFTWARE_TRIGGER_COMMAND,
-        "arguments": {}
-    });
+    if setup.trigger_mode.uses_software_trigger() {
+        let command_deadline = Instant::now() + timeout;
+        let request = json!({
+            "schema_version": WORKER_SCHEMA_VERSION,
+            "command": SOFTWARE_TRIGGER_COMMAND,
+            "arguments": {}
+        });
 
-    let remaining =
-        remaining_duration(command_deadline).ok_or(MetersActionError::Timeout(timeout))?;
-    let (http_status, response) = client
-        .command_with_timeout(&request, remaining)
-        .map_err(MetersActionError::Http)?;
-    validate_runtime_accepted_response(http_status, response)?;
+        let remaining =
+            remaining_duration(command_deadline).ok_or(MetersActionError::Timeout(timeout))?;
+        let (http_status, response) = client
+            .command_with_timeout(&request, remaining)
+            .map_err(MetersActionError::Http)?;
+        validate_runtime_accepted_response(http_status, response)?;
+    }
 
-    let expected_samples = match setup.trigger_mode {
-        MetersTriggerMode::Software => 1,
-        MetersTriggerMode::SoftwareCustom => setup.sample_count,
+    let expected_samples = if setup.trigger_mode.is_custom() {
+        setup.sample_count
+    } else {
+        1
     };
-    let mut sample_deadline = match setup.trigger_mode {
-        MetersTriggerMode::Software => command_deadline,
-        MetersTriggerMode::SoftwareCustom => Instant::now() + timeout,
-    };
+    let mut sample_deadline = Instant::now() + timeout;
     let mut samples = Vec::with_capacity(expected_samples);
     loop {
         let Some(remaining) = remaining_duration(sample_deadline) else {
@@ -563,12 +639,13 @@ pub fn run_action_with_setup(
                 MetersEventDecision::Success(sample) => {
                     samples.push(sample);
                     if samples.len() == expected_samples {
-                        return Ok(match setup.trigger_mode {
-                            MetersTriggerMode::Software => samples.pop().unwrap(),
-                            MetersTriggerMode::SoftwareCustom => Value::Array(samples),
+                        return Ok(if setup.trigger_mode.is_custom() {
+                            Value::Array(samples)
+                        } else {
+                            samples.pop().unwrap()
                         });
                     }
-                    if setup.trigger_mode == MetersTriggerMode::SoftwareCustom {
+                    if setup.trigger_mode.is_custom() {
                         sample_deadline = Instant::now() + timeout;
                     }
                 }
@@ -775,32 +852,77 @@ impl Error for MetersActionError {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn range_capabilities_parse_v2_with_additive_fields() {
-        let ranges = super::parse_range_options(
-            br#"{
-            "schema_version": 2, "event": "capabilities", "model": "example",
+    fn capabilities_payload(event: &str, schema_version: u32) -> String {
+        serde_json::json!({
+            "schema_version": schema_version,
+            "event": event,
+            "capability_profile": {
+                "model": "34461A",
+                "model_id": "keysight-34461a",
+                "reading_memory_limit": 10000,
+                "other": true
+            },
+            "limits": {
+                "buffer_drain_size": { "min": 1, "max": 10000 },
+                "sample_count": { "min": 1, "max": 1000000 },
+                "trigger_count": { "min": 1, "max": 1000000 },
+                "other": { "min": 0, "max": 1 }
+            },
             "measurements": [
-                {"measurement_name": "voltage-dc", "range_values": [0.1, 10], "other": true},
-                {"measurement_name": "current-dc", "range_values": [0.0001, 0.001]}
-            ]
-        }"#,
-        )
-        .unwrap();
-        assert_eq!(ranges[0].measurement_name, "voltage-dc");
-        assert_eq!(ranges[0].range_values, vec![0.1, 10.0]);
-        assert_eq!(ranges[1].measurement_name, "current-dc");
-        assert_eq!(ranges[1].range_values, vec![0.0001, 0.001]);
+                {
+                    "measurement_name": "voltage-dc",
+                    "range_values": [0.1, 10],
+                    "nplc_values": [0.02, 0.2, 1],
+                    "other": true
+                },
+                {
+                    "measurement_name": "current-dc",
+                    "range_values": [0.0001, 0.001],
+                    "nplc_values": [0.02, 1]
+                }
+            ],
+            "trigger_modes": [
+                "software", "immediate", "immediate-custom",
+                "software-custom", "external-custom"
+            ],
+            "other": true
+        })
+        .to_string()
     }
 
     #[test]
-    fn range_capabilities_reject_invalid_contract() {
+    fn capabilities_parse_v2_with_additive_fields() {
+        let payload = capabilities_payload("capabilities", 2);
+        let capabilities = super::parse_capabilities(payload.as_bytes()).unwrap();
+        assert_eq!(capabilities.model, "34461A");
+        assert_eq!(capabilities.model_id, "keysight-34461a");
+        assert_eq!(capabilities.reading_memory_limit, 10_000);
+        assert!(
+            capabilities
+                .trigger_modes
+                .contains(&"external-custom".to_owned())
+        );
+        assert_eq!(capabilities.limits.sample_count.max, 1_000_000);
+        assert_eq!(capabilities.limits.buffer_drain_size.max, 10_000);
+        assert_eq!(
+            capabilities.measurements[0].nplc_values,
+            vec![0.02, 0.2, 1.0]
+        );
+        assert_eq!(capabilities.measurements[0].range_values, vec![0.1, 10.0]);
+        assert_eq!(
+            capabilities.measurements[1].range_values,
+            vec![0.0001, 0.001]
+        );
+    }
+
+    #[test]
+    fn capabilities_reject_invalid_contract() {
         for payload in [
-            r#"{"schema_version":1,"event":"capabilities","measurements":[]}"#,
-            r#"{"schema_version":2,"event":"other","measurements":[]}"#,
-            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":["10"]}]}"#,
+            capabilities_payload("capabilities", 1),
+            capabilities_payload("other", 2),
+            r#"{"schema_version":2,"event":"capabilities","measurements":[]}"#.to_owned(),
         ] {
-            assert!(super::parse_range_options(payload.as_bytes()).is_err());
+            assert!(super::parse_capabilities(payload.as_bytes()).is_err());
         }
     }
 
@@ -1071,38 +1193,44 @@ mod tests {
     }
 
     #[test]
-    fn meters_software_custom_launch_uses_batch_contract_without_max_samples() {
-        let setup = MetersSetup {
-            trigger_mode: MetersTriggerMode::SoftwareCustom,
-            sample_count: 3,
-            buffer_drain_size: Some(50),
-            allow_buffer_overflow_risk: true,
-            ..MetersSetup::default()
-        };
-        for spec in [
-            simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
-            super::live_worker_launch_spec(
-                "meters-tool.exe",
-                "USB0::Meter::INSTR",
-                Some(7),
-                &setup,
-            ),
+    fn meters_custom_launch_modes_use_batch_contract_without_max_samples() {
+        for (trigger_mode, cli_mode) in [
+            (MetersTriggerMode::SoftwareCustom, "software-custom"),
+            (MetersTriggerMode::ImmediateCustom, "immediate-custom"),
+            (MetersTriggerMode::ExternalCustom, "external-custom"),
         ] {
-            let arguments = spec.arguments();
-            for pair in [
-                ["--trigger-mode", "software-custom"],
-                ["--trigger-count", "7"],
-                ["--sample-count", "3"],
-                ["--buffer-drain-size", "50"],
+            let setup = MetersSetup {
+                trigger_mode,
+                sample_count: 3,
+                buffer_drain_size: Some(50),
+                allow_buffer_overflow_risk: true,
+                ..MetersSetup::default()
+            };
+            for spec in [
+                simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
+                super::live_worker_launch_spec(
+                    "meters-tool.exe",
+                    "USB0::Meter::INSTR",
+                    Some(7),
+                    &setup,
+                ),
             ] {
-                assert!(arguments.windows(2).any(|window| window == pair));
+                let arguments = spec.arguments();
+                for pair in [
+                    ["--trigger-mode", cli_mode],
+                    ["--trigger-count", "7"],
+                    ["--sample-count", "3"],
+                    ["--buffer-drain-size", "50"],
+                ] {
+                    assert!(arguments.windows(2).any(|window| window == pair));
+                }
+                assert!(
+                    arguments
+                        .iter()
+                        .any(|argument| argument == "--allow-buffer-overflow-risk")
+                );
+                assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
             }
-            assert!(
-                arguments
-                    .iter()
-                    .any(|argument| argument == "--allow-buffer-overflow-risk")
-            );
-            assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
         }
     }
 }

@@ -63,7 +63,7 @@ impl MetersSetup {
     /// Checks setup consistency and current terminal values; range and NPLC support are validated by meters-tool.
     /// Auto range does not require or validate a manual range value.
     pub fn validate(&self) -> Result<(), MetersSetupError> {
-        if self.trigger_mode == MetersTriggerMode::SoftwareCustom {
+        if self.trigger_mode.is_custom() {
             if !(1..=1_000_000).contains(&self.sample_count) {
                 return Err(MetersSetupError::InvalidSampleCount);
             }
@@ -109,12 +109,8 @@ impl fmt::Display for MetersSetupError {
         formatter.write_str(match self {
             Self::InvalidCurrentTerminal => "current terminal must be 3 or 10",
             Self::MissingManualRange => "manual range mode requires a manual range value",
-            Self::InvalidSampleCount => {
-                "software custom sample count must be between 1 and 1000000"
-            }
-            Self::InvalidBufferDrainSize => {
-                "software custom buffer drain size must be between 1 and 10000"
-            }
+            Self::InvalidSampleCount => "custom sample count must be between 1 and 1000000",
+            Self::InvalidBufferDrainSize => "custom buffer drain size must be between 1 and 10000",
             Self::CurrentTerminalForVoltageDc => {
                 "DC voltage setup must not contain a current terminal"
             }
@@ -127,18 +123,31 @@ impl fmt::Display for MetersSetupError {
 
 impl Error for MetersSetupError {}
 
-/// Supported Meters software trigger behavior.
+/// Supported Meters trigger behavior exposed by Orchestrator.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MetersTriggerMode {
     #[default]
     Software,
     SoftwareCustom,
+    ImmediateCustom,
+    ExternalCustom,
 }
 
 impl MetersTriggerMode {
     fn is_software(&self) -> bool {
         *self == Self::Software
+    }
+
+    pub fn is_custom(&self) -> bool {
+        matches!(
+            self,
+            Self::SoftwareCustom | Self::ImmediateCustom | Self::ExternalCustom
+        )
+    }
+
+    pub fn uses_software_trigger(&self) -> bool {
+        matches!(self, Self::Software | Self::SoftwareCustom)
     }
 }
 
@@ -209,6 +218,41 @@ mod tests {
         assert_eq!(setup.sample_count, 1);
         assert_eq!(setup.buffer_drain_size, None);
         assert!(!setup.allow_buffer_overflow_risk);
+    }
+
+    #[test]
+    fn all_custom_trigger_modes_validate_batch_fields() {
+        for trigger_mode in [
+            MetersTriggerMode::SoftwareCustom,
+            MetersTriggerMode::ImmediateCustom,
+            MetersTriggerMode::ExternalCustom,
+        ] {
+            let setup = MetersSetup {
+                trigger_mode,
+                sample_count: 1_000_000,
+                buffer_drain_size: Some(10_000),
+                ..MetersSetup::default()
+            };
+            assert!(setup.validate().is_ok());
+
+            let invalid_samples = MetersSetup {
+                sample_count: 0,
+                ..setup.clone()
+            };
+            assert!(matches!(
+                invalid_samples.validate(),
+                Err(MetersSetupError::InvalidSampleCount)
+            ));
+
+            let invalid_drain = MetersSetup {
+                buffer_drain_size: Some(10_001),
+                ..setup
+            };
+            assert!(matches!(
+                invalid_drain.validate(),
+                Err(MetersSetupError::InvalidBufferDrainSize)
+            ));
+        }
     }
 
     #[test]

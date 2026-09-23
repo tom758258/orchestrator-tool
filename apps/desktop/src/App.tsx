@@ -141,7 +141,7 @@ const STEP_HELP: Record<string, string> = {
   'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
   'powers/output-off': 'Disable the selected Power channel.',
-  'meters/measure': 'Take one measurement using the Meter configuration defined in Setup. The result can be used by later steps.',
+  'meters/measure': 'Acquire the next Meter reading or Custom batch using the trigger mode defined in Setup. The result can be used by later steps.',
 }
 
 const EXECUTABLE_LABELS: Record<string, string> = {

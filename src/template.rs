@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::{
-    meters_setup::{MetersSetupError, MetersTriggerMode},
+    meters_setup::MetersSetupError,
     tool::{InvalidToolId, ToolId},
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
@@ -247,9 +247,9 @@ fn validate_batch_sources(
                     if action.as_str() == "measure"
                         && instances.iter().any(|instance| {
                             &instance.id == target
-                                && instance.meters_setup().is_some_and(|setup| {
-                                    setup.trigger_mode == MetersTriggerMode::SoftwareCustom
-                                })
+                                && instance
+                                    .meters_setup()
+                                    .is_some_and(|setup| setup.trigger_mode.is_custom())
                         }) =>
                 {
                     sources.insert(step.id().clone(), step.id().clone());
@@ -298,7 +298,7 @@ fn validate_batch_sources(
             .is_some()
         {
             return Err(TemplateError::Instance(format!(
-                "batch-dependent value cannot be used by {context}; Software Custom batches are supported only by Output steps"
+                "batch-dependent value cannot be used by {context}; Custom Meters batches are supported only by Output steps"
             )));
         }
         Ok(())
