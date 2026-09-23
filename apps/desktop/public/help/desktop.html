@@ -283,11 +283,15 @@ cleanup. Simulation does not perform this additional Live safe-off sequence.</p>
 is different from exporting a completed run later.</p>
 <p>Streaming requires at least one Output. Choose one of these modes:</p>
 <ul>
-<li><strong>Selected Page</strong> — choose one Output Page and one CSV destination. The
+<li><strong>Selected Page</strong> — choose one Output Page and optionally choose an output
+  folder. Desktop automatically creates a timestamped CSV filename. The
   selected Page is fixed once the run starts.</li>
-<li><strong>All Pages</strong> — choose a destination folder. Desktop creates a timestamped
-  destination directory and one CSV file for each Page.</li>
+<li><strong>All Pages</strong> — optionally choose an output folder. Desktop creates a
+  timestamped destination directory and one CSV file for each Page.</li>
 </ul>
+<p>If no folder is selected, Streaming output uses the application's data
+folder:</p>
+<p>Default output folder: <code>&lt;application folder&gt;/data</code></p>
 <p>Streaming behavior:</p>
 <ul>
 <li>Headers are created and flushed before workflow execution.</li>

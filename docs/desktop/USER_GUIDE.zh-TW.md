@@ -262,10 +262,14 @@ manual export 不同。
 
 Streaming 至少需要一個 Output。可選擇：
 
-- **Selected Page** — 選一個 Output Page 與一個 CSV destination。Run 開始後
-  Selected Page 會固定。
-- **All Pages** — 選一個 destination folder。Desktop 會建立 timestamped
+- **Selected Page** — 選一個 Output Page，可選擇是否指定輸出資料夾。
+  Desktop 會自動產生 timestamped CSV 檔名。Run 開始後 Selected Page 會固定。
+- **All Pages** — 可選擇是否指定輸出資料夾。Desktop 會建立 timestamped
   destination directory，並為每個 Page 建立一份 CSV。
+
+若未指定輸出資料夾，Streaming 資料會儲存在應用程式所在目錄的 data 資料夾。
+
+預設輸出資料夾：`<application folder>/data`
 
 Streaming behavior：
 

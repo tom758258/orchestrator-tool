@@ -299,13 +299,11 @@ type ExecutionRowsResponse = {
   executions: StepExecutionDto[]
 }
 
-function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean, destinationPath: string | null) {
+function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {
   if (!enabled) return null
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
     .slice(0, 19).replace(/[T:]/g, '-')
-  if (!allPages && !destinationPath) throw new Error('Select a destination CSV before running.')
-  if (allPages && !outputFolder) throw new Error('Select a destination folder before running.')
-  return { output_folder: outputFolder, timestamp, page, all_pages: allPages, destination_path: destinationPath }
+  return { output_folder: outputFolder, timestamp, page, all_pages: allPages }
 }
 
 function App() {
@@ -365,9 +363,9 @@ function App() {
   const [selectedRunPage, setSelectedRunPage] = useState('Results')
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
-  const [streamDestination, setStreamDestination] = useState<string | null>(null)
+  const [streamOutputFolder, setStreamOutputFolder] = useState<string | null>(null)
   const [chartSaving, setChartSaving] = useState(false)
-  const [choosingStreamDestination, setChoosingStreamDestination] = useState(false)
+  const [choosingStreamOutputFolder, setChoosingStreamOutputFolder] = useState(false)
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
@@ -407,7 +405,6 @@ function App() {
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const [streamCsv, setStreamCsv] = useState(false)
-  const [outputFolder, setOutputFolder] = useState<string | null>(null)
   const [csvStreamStatus, setCsvStreamStatus] = useState<CsvStreamStatus | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -963,7 +960,7 @@ function App() {
         return
       }
       const streamOptions = streamingOptions(
-        streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
+        streamCsv && hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages,
       )
       runIdRef.current = null
       generation = ++runGenerationRef.current
@@ -1007,7 +1004,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1019,7 +1016,7 @@ function App() {
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       const streamOptions = streamingOptions(
-        streamCsv && hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination,
+        streamCsv && hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages,
       )
       runIdRef.current = null
       generation = ++runGenerationRef.current
@@ -1060,10 +1057,10 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, outputFolder, streamingPage, streamAllPages, streamDestination])
+  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const workflowBusy =
-    choosingStreamDestination || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
 
   const handleClearLastRun = useCallback(async () => {
     if (!runWorkflowSnapshot || workflowBusy) return
@@ -1108,14 +1105,14 @@ function App() {
   )
 
   async function selectOutputFolder() {
-    setChoosingStreamDestination(true)
+    setChoosingStreamOutputFolder(true)
     try {
       const folder = await open({ directory: true, multiple: false, title: 'Select CSV output folder' })
-      if (typeof folder === 'string') setOutputFolder(folder)
+      if (typeof folder === 'string') setStreamOutputFolder(folder)
     } catch (message) {
       setRunError('Could not select CSV output folder: ' + String(message))
     } finally {
-      setChoosingStreamDestination(false)
+      setChoosingStreamOutputFolder(false)
     }
   }
 
@@ -1567,16 +1564,9 @@ function App() {
                       </select>
                       {!streamAllPages && <select aria-label="Streaming Page" value={streamingPage} disabled={workflowBusy}
                         onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
-                      <span className="streaming-destination">{streamAllPages ? outputFolder ?? 'Select a folder' : streamDestination ?? 'Select a new CSV file'}</span>
-                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
-                        if (streamAllPages) void selectOutputFolder()
-                        else {
-                          setChoosingStreamDestination(true)
-                          void save({ filters: [{ name: 'CSV', extensions: ['csv'] }] }).then(path => {
-                            if (path) setStreamDestination(path)
-                          }).catch(error => setRunError(String(error))).finally(() => setChoosingStreamDestination(false))
-                        }
-                      }}>{streamAllPages ? 'Select Folder' : 'Select CSV'}</button>
+                      <span className="streaming-destination">{streamOutputFolder ?? 'Default: <application folder>/data'}</span>
+                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectOutputFolder()}>Select Folder</button>
+                      {streamOutputFolder !== null && <button className="action-button" type="button" disabled={workflowBusy} onClick={() => setStreamOutputFolder(null)}>Use Default</button>}
                     </div>}
                     {csvStreamFeedback}
                   </section>

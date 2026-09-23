@@ -18,8 +18,6 @@ pub struct StreamCsvOptions {
     #[serde(default)]
     pub page: Option<String>,
     #[serde(default)]
-    pub destination_path: Option<String>,
-    #[serde(default)]
     pub all_pages: bool,
 }
 
@@ -149,18 +147,8 @@ fn prepare(
     } else {
         writers = Vec::new();
         let page = pages.iter().find(|page| page.name() == selected).unwrap();
-        let (file_path, file) = if let Some(destination) = &options.destination_path {
-            let destination = PathBuf::from(destination);
-            let file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&destination)
-                .map_err(|e| format!("Could not create streaming CSV: {e}"))?;
-            (destination, file)
-        } else {
-            create_unique_csv(&folder, &stem)
-                .map_err(|e| format!("Could not create streaming CSV: {e}"))?
-        };
+        let (file_path, file) = create_unique_csv(&folder, &stem)
+            .map_err(|e| format!("Could not create streaming CSV: {e}"))?;
         path = file_path;
         let writer = ResultRowsCsvWriter::new(file, page.headers().to_vec()).map_err(|error| {
             let _ = fs::remove_file(&path);
@@ -267,7 +255,6 @@ mod tests {
         StreamCsvOptions {
             output_folder: None,
             page: None,
-            destination_path: None,
             all_pages: false,
             timestamp: "2026-09-15-11-22-33".into(),
         }
@@ -519,6 +506,34 @@ mod tests {
         assert!(status.error.is_some());
         assert_eq!(status.rows, 0);
         assert_eq!(fs::read_to_string(&status.path).unwrap(), "value\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn absolute_custom_folder_writes_selected_page_directly() {
+        let dir = crate::tests::unique_test_dir("stream-custom-absolute");
+        let custom = dir.join("custom-absolute");
+        std::fs::create_dir_all(&custom).unwrap();
+        let mut options = options();
+        options.output_folder = Some(custom.to_string_lossy().into_owned());
+        let expected = custom.join("2026-09-15-11-22-33_test-name.csv");
+        let mut statuses = Vec::new();
+        let result = run_test_stream(
+            &template(),
+            Some(&options),
+            &dir,
+            |status| statuses.push(status),
+            |_| {},
+            |emit| {
+                emit(row("value"));
+                Ok(true)
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!(fs::read_to_string(&expected).unwrap(), "value\n1\n");
+        let status = statuses.last().unwrap();
+        assert_eq!(status.path, expected.display().to_string());
+        assert!(!dir.join("data/2026-09-15-11-22-33_test-name.csv").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

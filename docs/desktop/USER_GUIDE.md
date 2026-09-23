@@ -301,10 +301,16 @@ is different from exporting a completed run later.
 
 Streaming requires at least one Output. Choose one of these modes:
 
-- **Selected Page** — choose one Output Page and one CSV destination. The
+- **Selected Page** — choose one Output Page and optionally choose an output
+  folder. Desktop automatically creates a timestamped CSV filename. The
   selected Page is fixed once the run starts.
-- **All Pages** — choose a destination folder. Desktop creates a timestamped
-  destination directory and one CSV file for each Page.
+- **All Pages** — optionally choose an output folder. Desktop creates a
+  timestamped destination directory and one CSV file for each Page.
+
+If no folder is selected, Streaming output uses the application's data
+folder:
+
+Default output folder: `<application folder>/data`
 
 Streaming behavior:
 

@@ -244,11 +244,13 @@ runtime authorization file 只用於該次 run，並會 best-effort remove。</p
 manual export 不同。</p>
 <p>Streaming 至少需要一個 Output。可選擇：</p>
 <ul>
-<li><strong>Selected Page</strong> — 選一個 Output Page 與一個 CSV destination。Run 開始後
-  Selected Page 會固定。</li>
-<li><strong>All Pages</strong> — 選一個 destination folder。Desktop 會建立 timestamped
+<li><strong>Selected Page</strong> — 選一個 Output Page，可選擇是否指定輸出資料夾。
+  Desktop 會自動產生 timestamped CSV 檔名。Run 開始後 Selected Page 會固定。</li>
+<li><strong>All Pages</strong> — 可選擇是否指定輸出資料夾。Desktop 會建立 timestamped
   destination directory，並為每個 Page 建立一份 CSV。</li>
 </ul>
+<p>若未指定輸出資料夾，Streaming 資料會儲存在應用程式所在目錄的 data 資料夾。</p>
+<p>預設輸出資料夾：<code>&lt;application folder&gt;/data</code></p>
 <p>Streaming behavior：</p>
 <ul>
 <li>Workflow execution 前建立並 flush header。</li>
