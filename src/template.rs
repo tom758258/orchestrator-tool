@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::{
-    meters_setup::{MetersSetupError, MetersTriggerMode},
+    meters_setup::MetersSetupError,
     tool::{InvalidToolId, ToolId},
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
