@@ -179,9 +179,21 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
       <div className="meters-setup-fields">
         <label className="step-property-field">
           <span className="step-property-label">Trigger Mode</span>
-          <select value={triggerMode} onChange={(event) => onChange({
-            ...value, meters: { ...meters, trigger_mode: event.target.value as NonNullable<MetersSetup['trigger_mode']> },
-          })}>
+          <select value={triggerMode} onChange={(event) => {
+            const trigger_mode = event.target.value as NonNullable<MetersSetup['trigger_mode']>
+            onChange({
+              ...value,
+              meters: trigger_mode === 'software'
+                ? {
+                    ...meters,
+                    trigger_mode,
+                    sample_count: 1,
+                    buffer_drain_size: null,
+                    allow_buffer_overflow_risk: false,
+                  }
+                : { ...meters, trigger_mode },
+            })
+          }}>
             {triggerOptions.map(option => {
               const supported = meterCapabilities === null || meterCapabilities.trigger_modes.includes(option.value)
               return <option key={option.value} value={option.value} disabled={!supported}>
