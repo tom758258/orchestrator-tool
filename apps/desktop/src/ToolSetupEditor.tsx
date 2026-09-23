@@ -177,7 +177,7 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
     <>
       <p className="tool-setup-hint">Applied before the run starts.</p>
       <div className="meters-setup-fields">
-        <label className="step-property-field">
+        <label className="step-property-field meters-setup-trigger-mode">
           <span className="step-property-label">Trigger Mode</span>
           <select value={triggerMode} onChange={(event) => {
             const trigger_mode = event.target.value as NonNullable<MetersSetup['trigger_mode']>
@@ -206,24 +206,25 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
           )}
         </label>
 
+        <label className="step-property-field">
+          <span className="step-property-label">Sample Count</span>
+          <input type="number" required disabled={!customMode} min={1} max={sampleCountMax} step={1} value={sampleCount}
+            onChange={event => onChange({ ...value, meters: { ...meters, sample_count: Number(event.target.value) } })} />
+        </label>
+        <label className="step-property-field">
+          <span className="step-property-label">Buffer Drain Size (optional)</span>
+          <input type="number" disabled={!customMode} min={1} max={bufferDrainMax} step={1} value={meters.buffer_drain_size ?? ''}
+            onChange={event => onChange({ ...value, meters: {
+              ...meters, buffer_drain_size: event.target.value === '' ? null : Number(event.target.value),
+            } })} />
+        </label>
+        <label className="step-property-field step-property-checkbox meters-setup-overflow-risk">
+          <input type="checkbox" disabled={!customMode} checked={meters.allow_buffer_overflow_risk ?? false}
+            onChange={event => onChange({ ...value, meters: { ...meters, allow_buffer_overflow_risk: event.target.checked } })} />
+          <span>Allow Buffer Overflow Risk</span>
+        </label>
+
         {customMode && <>
-          <label className="step-property-field">
-            <span className="step-property-label">Sample Count</span>
-            <input type="number" required min={1} max={sampleCountMax} step={1} value={sampleCount}
-              onChange={event => onChange({ ...value, meters: { ...meters, sample_count: Number(event.target.value) } })} />
-          </label>
-          <label className="step-property-field">
-            <span className="step-property-label">Buffer Drain Size (optional)</span>
-            <input type="number" min={1} max={bufferDrainMax} step={1} value={meters.buffer_drain_size ?? ''}
-              onChange={event => onChange({ ...value, meters: {
-                ...meters, buffer_drain_size: event.target.value === '' ? null : Number(event.target.value),
-              } })} />
-          </label>
-          <label className="step-property-field step-property-checkbox">
-            <input type="checkbox" checked={meters.allow_buffer_overflow_risk ?? false}
-              onChange={event => onChange({ ...value, meters: { ...meters, allow_buffer_overflow_risk: event.target.checked } })} />
-            <span>Allow Buffer Overflow Risk</span>
-          </label>
           {meterCapabilities && (
             <p className="meters-setup-summary">
               {meterCapabilities.model} · Memory {formatInteger(meterCapabilities.reading_memory_limit)} · Planned triggers {plannedTriggerCount === null
