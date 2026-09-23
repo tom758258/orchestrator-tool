@@ -128,6 +128,7 @@ fn main() {
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
     meters_runtime_passive_custom_modes_preserve_batches();
     meters_runtime_passive_custom_waits_for_samples();
+    meters_runtime_passive_custom_times_out_without_samples();
     meters_immediate_custom_auto_exit_completes_workflow();
     meters_custom_auto_exit_completes_workflow();
     meters_custom_shutdown_waits_for_exit_after_stop_failure();
@@ -464,6 +465,9 @@ fn run_fixture(scenario: &OsStr) {
                 &[0.101, 0.102, 0.103],
                 false,
             )
+        }
+        "meters-runtime-passive-custom-empty" => {
+            run_meters_passive_custom_runtime_fixture(Duration::from_secs(60), &[], false)
         }
         "meters-runtime-passive-custom-auto-exit-3" => {
             run_meters_passive_custom_runtime_fixture(
@@ -1441,6 +1445,30 @@ fn meters_runtime_passive_custom_waits_for_samples() {
     assert!(start.elapsed() >= Duration::from_millis(150));
     assert_eq!(result.as_array().unwrap().len(), 3);
     assert_eq!(result[2]["value"], 0.103);
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn meters_runtime_passive_custom_times_out_without_samples() {
+    let session = start_worker(
+        &fixture_spec("meters-runtime-passive-custom-empty"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let setup = MetersSetup {
+        trigger_mode: MetersTriggerMode::ExternalCustom,
+        sample_count: 1,
+        ..MetersSetup::default()
+    };
+
+    let error = run_meters_action_with_setup(
+        &session,
+        &ActionId::new("measure").unwrap(),
+        &json!({}),
+        &setup,
+        Duration::from_millis(200),
+    )
+    .unwrap_err();
+    assert!(matches!(error, MetersActionError::Timeout(_)));
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
