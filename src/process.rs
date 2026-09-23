@@ -2,7 +2,7 @@ use std::{
     ffi::OsStr,
     io::{self, Read},
     path::Path,
-    process::{Child, ChildStdout, Command, ExitStatus, Stdio},
+    process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -60,17 +60,20 @@ where
     Ok(ManagedProcess { child })
 }
 
-/// Starts a managed process and returns ownership of its piped stdout.
-pub(crate) fn spawn_with_piped_stdout<I, S>(
+/// Starts a managed process and returns ownership of its piped stdout and stderr.
+pub(crate) fn spawn_with_piped_stdio<I, S>(
     executable: impl AsRef<Path>,
     args: I,
-) -> io::Result<(ManagedProcess, ChildStdout)>
+) -> io::Result<(ManagedProcess, ChildStdout, ChildStderr)>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
     let mut command = Command::new(executable.as_ref());
-    command.args(args).stdout(Stdio::piped());
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -84,8 +87,13 @@ where
         .stdout
         .take()
         .ok_or_else(|| io::Error::other("child stdout was not piped"))?;
+    let stderr = process
+        .child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("child stderr was not piped"))?;
 
-    Ok((process, stdout))
+    Ok((process, stdout, stderr))
 }
 
 /// Captured output from a one-shot process.

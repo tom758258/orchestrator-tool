@@ -2,10 +2,13 @@ use std::{
     error::Error,
     ffi::OsString,
     fmt,
-    io::{self, BufRead, BufReader},
+    io::{self, BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{ChildStdout, ExitStatus},
-    sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+    process::{ChildStderr, ChildStdout, ExitStatus},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -14,7 +17,7 @@ use serde::Deserialize;
 
 use crate::{
     manifest::supports_worker_schema_version,
-    process::{ManagedProcess, spawn_with_piped_stdout},
+    process::{ManagedProcess, spawn_with_piped_stdio},
     worker_http::{WorkerClient, WorkerHttpError},
 };
 
@@ -108,6 +111,7 @@ pub struct WorkerSession {
     process: Option<ManagedProcess>,
     ready: WorkerReady,
     stdout_reader: Option<JoinHandle<io::Result<()>>>,
+    stderr_reader: Option<JoinHandle<()>>,
     event_receiver: Option<Receiver<StdoutMessage>>,
 }
 
@@ -231,6 +235,7 @@ impl WorkerSession {
         self.process.take();
         drop(self.event_receiver.take());
         self.join_stdout_reader()?;
+        self.join_stderr_reader();
         Ok(status)
     }
 
@@ -257,7 +262,9 @@ impl WorkerSession {
         // Worker termination closes stdout; dropping the event receiver allows the
         // reader thread to switch to its existing drain path before joining.
         drop(self.event_receiver.take());
-        self.join_stdout_reader()
+        let result = self.join_stdout_reader();
+        self.join_stderr_reader();
+        result
     }
 
     fn join_stdout_reader(&mut self) -> Result<(), WorkerShutdownError> {
@@ -273,6 +280,13 @@ impl WorkerSession {
             ))),
         }
     }
+
+    fn join_stderr_reader(&mut self) {
+        // Stderr is best-effort diagnostics: a drain failure must not fail shutdown.
+        if let Some(reader) = self.stderr_reader.take() {
+            let _ = reader.join();
+        }
+    }
 }
 
 impl Drop for WorkerSession {
@@ -280,6 +294,9 @@ impl Drop for WorkerSession {
         drop(self.process.take());
         drop(self.event_receiver.take());
         if let Some(reader) = self.stdout_reader.take() {
+            let _ = reader.join();
+        }
+        if let Some(reader) = self.stderr_reader.take() {
             let _ = reader.join();
         }
     }
@@ -292,7 +309,10 @@ pub enum WorkerStartError {
     ProcessIo(io::Error),
     Reader(io::Error),
     StartupTimeout(Duration),
-    ExitedBeforeReady(ExitStatus),
+    ExitedBeforeReady {
+        status: ExitStatus,
+        stderr: Option<String>,
+    },
     InvalidReady(serde_json::Error),
     UnsupportedSchemaVersion(u32),
 }
@@ -306,9 +326,13 @@ impl fmt::Display for WorkerStartError {
             Self::StartupTimeout(timeout) => {
                 write!(formatter, "Worker startup timed out after {timeout:?}")
             }
-            Self::ExitedBeforeReady(status) => {
-                write!(formatter, "Worker exited before ready with {status}")
-            }
+            Self::ExitedBeforeReady { status, stderr } => match stderr {
+                Some(diagnostic) => write!(
+                    formatter,
+                    "Worker exited before ready with {status}: {diagnostic}"
+                ),
+                None => write!(formatter, "Worker exited before ready with {status}"),
+            },
             Self::InvalidReady(error) => write!(formatter, "invalid Worker ready payload: {error}"),
             Self::UnsupportedSchemaVersion(version) => {
                 write!(formatter, "unsupported Worker schema version {version}")
@@ -323,7 +347,7 @@ impl Error for WorkerStartError {
             Self::Spawn(source) | Self::ProcessIo(source) | Self::Reader(source) => Some(source),
             Self::InvalidReady(source) => Some(source),
             Self::StartupTimeout(_)
-            | Self::ExitedBeforeReady(_)
+            | Self::ExitedBeforeReady { .. }
             | Self::UnsupportedSchemaVersion(_) => None,
         }
     }
@@ -472,11 +496,75 @@ fn disconnected_reader_error() -> WorkerStartError {
     ))
 }
 
+/// Recent stderr bytes kept for startup diagnostics.
+const MAX_STARTUP_STDERR_BYTES: usize = 8 * 1024;
+
+#[derive(Debug, Default)]
+struct StderrTail {
+    bytes: Mutex<Vec<u8>>,
+}
+
+impl StderrTail {
+    fn push(&self, chunk: &[u8]) {
+        let mut bytes = self
+            .bytes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if chunk.len() >= MAX_STARTUP_STDERR_BYTES {
+            bytes.clear();
+            bytes.extend_from_slice(&chunk[chunk.len() - MAX_STARTUP_STDERR_BYTES..]);
+        } else {
+            let overflow = bytes
+                .len()
+                .saturating_add(chunk.len())
+                .saturating_sub(MAX_STARTUP_STDERR_BYTES);
+            if overflow > 0 {
+                bytes.drain(..overflow);
+            }
+            bytes.extend_from_slice(chunk);
+        }
+    }
+
+    fn diagnostic(&self) -> Option<String> {
+        let bytes = self
+            .bytes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let text = String::from_utf8_lossy(&bytes).trim().to_owned();
+        if text.is_empty() { None } else { Some(text) }
+    }
+}
+
+/// Continuously drains piped stderr while keeping a bounded recent tail and
+/// passing output through to the parent stderr.
+///
+/// Stderr is best-effort diagnostics: read or passthrough failures only end
+/// this thread and never fail the Worker itself.
+fn drain_stderr(stderr: ChildStderr, tail: Arc<StderrTail>) {
+    let mut pipe = stderr;
+    let mut chunk = [0_u8; 4096];
+    loop {
+        match pipe.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                tail.push(&chunk[..read]);
+                let _ = io::stderr().write_all(&chunk[..read]);
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+enum WaitForReadyError {
+    ProcessExited(ExitStatus),
+    Startup(WorkerStartError),
+}
+
 fn wait_for_ready(
     process: &mut ManagedProcess,
     receiver: &Receiver<StdoutMessage>,
     startup_timeout: Duration,
-) -> Result<WorkerReady, WorkerStartError> {
+) -> Result<WorkerReady, WaitForReadyError> {
     let deadline = Instant::now() + startup_timeout;
     let mut stdout_closed = false;
 
@@ -484,42 +572,51 @@ fn wait_for_ready(
         if !stdout_closed {
             match receiver.try_recv() {
                 Ok(StdoutMessage::Line(line)) => {
-                    if let Some(ready) = parse_ready(&line)? {
+                    if let Some(ready) = parse_ready(&line).map_err(WaitForReadyError::Startup)? {
                         return Ok(ready);
                     }
                 }
                 Ok(StdoutMessage::Error(error)) => {
-                    return Err(WorkerStartError::Reader(error));
+                    return Err(WaitForReadyError::Startup(WorkerStartError::Reader(error)));
                 }
                 Ok(StdoutMessage::Eof) => stdout_closed = true,
-                Err(TryRecvError::Disconnected) => return Err(disconnected_reader_error()),
+                Err(TryRecvError::Disconnected) => {
+                    return Err(WaitForReadyError::Startup(disconnected_reader_error()));
+                }
                 Err(TryRecvError::Empty) => {}
             }
         }
 
-        if let Some(status) = process.try_wait().map_err(WorkerStartError::ProcessIo)? {
+        if let Some(status) = process
+            .try_wait()
+            .map_err(|error| WaitForReadyError::Startup(WorkerStartError::ProcessIo(error)))?
+        {
             if !stdout_closed {
                 match receiver.recv_timeout(STARTUP_POLL_INTERVAL) {
                     Ok(StdoutMessage::Line(line)) => {
-                        if let Some(ready) = parse_ready(&line)? {
+                        if let Some(ready) =
+                            parse_ready(&line).map_err(WaitForReadyError::Startup)?
+                        {
                             return Ok(ready);
                         }
                         continue;
                     }
                     Ok(StdoutMessage::Error(error)) => {
-                        return Err(WorkerStartError::Reader(error));
+                        return Err(WaitForReadyError::Startup(WorkerStartError::Reader(error)));
                     }
                     Ok(StdoutMessage::Eof)
                     | Err(RecvTimeoutError::Timeout)
                     | Err(RecvTimeoutError::Disconnected) => {}
                 }
             }
-            return Err(WorkerStartError::ExitedBeforeReady(status));
+            return Err(WaitForReadyError::ProcessExited(status));
         }
 
         let now = Instant::now();
         if now >= deadline {
-            return Err(WorkerStartError::StartupTimeout(startup_timeout));
+            return Err(WaitForReadyError::Startup(
+                WorkerStartError::StartupTimeout(startup_timeout),
+            ));
         }
 
         let wait = STARTUP_POLL_INTERVAL.min(deadline.saturating_duration_since(now));
@@ -530,14 +627,18 @@ fn wait_for_ready(
 
         match receiver.recv_timeout(wait) {
             Ok(StdoutMessage::Line(line)) => {
-                if let Some(ready) = parse_ready(&line)? {
+                if let Some(ready) = parse_ready(&line).map_err(WaitForReadyError::Startup)? {
                     return Ok(ready);
                 }
             }
-            Ok(StdoutMessage::Error(error)) => return Err(WorkerStartError::Reader(error)),
+            Ok(StdoutMessage::Error(error)) => {
+                return Err(WaitForReadyError::Startup(WorkerStartError::Reader(error)));
+            }
             Ok(StdoutMessage::Eof) => stdout_closed = true,
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return Err(disconnected_reader_error()),
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(WaitForReadyError::Startup(disconnected_reader_error()));
+            }
         }
     }
 }
@@ -547,27 +648,53 @@ pub fn start_worker(
     spec: &WorkerLaunchSpec,
     startup_timeout: Duration,
 ) -> Result<WorkerSession, WorkerStartError> {
-    let (mut process, stdout) = spawn_with_piped_stdout(spec.executable(), spec.arguments())
+    let (mut process, stdout, stderr) = spawn_with_piped_stdio(spec.executable(), spec.arguments())
         .map_err(WorkerStartError::Spawn)?;
     let (sender, receiver) = mpsc::channel();
     let stdout_reader = thread::Builder::new()
         .name("worker-stdout-reader".to_owned())
         .spawn(move || read_and_drain_stdout(stdout, sender))
         .map_err(WorkerStartError::Reader)?;
-
-    let ready = match wait_for_ready(&mut process, &receiver, startup_timeout) {
-        Ok(ready) => ready,
+    let stderr_tail = Arc::new(StderrTail::default());
+    let stderr_reader = match thread::Builder::new()
+        .name("worker-stderr-reader".to_owned())
+        .spawn({
+            let tail = Arc::clone(&stderr_tail);
+            move || drain_stderr(stderr, tail)
+        }) {
+        Ok(reader) => reader,
         Err(error) => {
             drop(process);
             let _ = stdout_reader.join();
-            return Err(error);
+            return Err(WorkerStartError::Reader(error));
         }
     };
 
-    Ok(WorkerSession {
-        process: Some(process),
-        ready,
-        stdout_reader: Some(stdout_reader),
-        event_receiver: Some(receiver),
-    })
+    match wait_for_ready(&mut process, &receiver, startup_timeout) {
+        Ok(ready) => Ok(WorkerSession {
+            process: Some(process),
+            ready,
+            stdout_reader: Some(stdout_reader),
+            stderr_reader: Some(stderr_reader),
+            event_receiver: Some(receiver),
+        }),
+        Err(WaitForReadyError::ProcessExited(status)) => {
+            // The child has exited, so both pipes will reach EOF; join readers
+            // first to guarantee the stderr tail is fully drained before the
+            // startup error is built.
+            drop(process);
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            let stderr = stderr_tail.diagnostic();
+            Err(WorkerStartError::ExitedBeforeReady { status, stderr })
+        }
+        Err(WaitForReadyError::Startup(error)) => {
+            // Ensure the child is terminated (or already exited) before joining
+            // readers so neither thread waits on a pipe that never closes.
+            drop(process);
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            Err(error)
+        }
+    }
 }
