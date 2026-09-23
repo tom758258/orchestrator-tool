@@ -126,6 +126,9 @@ fn main() {
     meters_runtime_measure_returns_sample();
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
+    meters_runtime_passive_custom_modes_preserve_batches();
+    meters_runtime_passive_custom_waits_for_samples();
+    meters_immediate_custom_auto_exit_completes_workflow();
     meters_custom_auto_exit_completes_workflow();
     meters_custom_shutdown_waits_for_exit_after_stop_failure();
     meters_custom_outputs_expand_rows_and_preserve_staging();
@@ -451,6 +454,23 @@ fn run_fixture(scenario: &OsStr) {
         }
         "meters-runtime-custom-slow" => {
             run_meters_custom_runtime_fixture(Duration::from_millis(400), None)
+        }
+        "meters-runtime-passive-custom-4" => {
+            run_meters_passive_custom_runtime_fixture(Duration::ZERO, &[1.0, 2.0, 3.0, 4.0], false)
+        }
+        "meters-runtime-passive-custom-delayed-3" => {
+            run_meters_passive_custom_runtime_fixture(
+                Duration::from_millis(200),
+                &[0.101, 0.102, 0.103],
+                false,
+            )
+        }
+        "meters-runtime-passive-custom-auto-exit-3" => {
+            run_meters_passive_custom_runtime_fixture(
+                Duration::ZERO,
+                &[0.201, 0.202, 0.203],
+                true,
+            )
         }
         "meters-csv-measure" => run_meters_runtime_fixture(1, 2, json!(5)),
         unknown => panic!("unknown Worker fixture scenario {unknown:?}"),
@@ -890,6 +910,49 @@ fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<
     }
 }
 
+fn run_meters_passive_custom_runtime_fixture(
+    initial_delay: Duration,
+    values: &[f64],
+    auto_exit: bool,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = format!("meters-passive-custom-run-{}", process::id());
+    print_json_line(
+        &json!({
+            "event": "ready", "schema_version": 2, "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop")
+        })
+        .to_string(),
+    );
+
+    thread::sleep(initial_delay);
+    for (sequence, value) in values.iter().enumerate() {
+        print_json_line(
+            &json!({
+                "event": "sample", "run_id": run_id, "value": value,
+                "sequence": sequence + 1, "unit": "V"
+            })
+            .to_string(),
+        );
+    }
+
+    if auto_exit {
+        drop(listener);
+        return;
+    }
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop"),
+        "passive Custom Measure must not send software_trigger"
+    );
+    write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
 struct TestRequest {
     stream: TcpStream,
     method: String,
@@ -1298,6 +1361,116 @@ fn meters_runtime_custom_measure_uses_sample_inactivity_timeout() {
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
+fn meters_runtime_passive_custom_modes_preserve_batches() {
+    for trigger_mode in [
+        MetersTriggerMode::ImmediateCustom,
+        MetersTriggerMode::ExternalCustom,
+    ] {
+        let session = start_worker(
+            &fixture_spec("meters-runtime-passive-custom-4"),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let setup = MetersSetup {
+            trigger_mode,
+            sample_count: 2,
+            ..MetersSetup::default()
+        };
+
+        let first = run_meters_action_with_setup(
+            &session,
+            &ActionId::new("measure").unwrap(),
+            &json!({}),
+            &setup,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let second = run_meters_action_with_setup(
+            &session,
+            &ActionId::new("measure").unwrap(),
+            &json!({}),
+            &setup,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+
+        assert_eq!(
+            first
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|sample| sample["value"].as_f64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![1.0, 2.0]
+        );
+        assert_eq!(
+            second
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|sample| sample["value"].as_f64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![3.0, 4.0]
+        );
+        assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+    }
+}
+
+fn meters_runtime_passive_custom_waits_for_samples() {
+    let session = start_worker(
+        &fixture_spec("meters-runtime-passive-custom-delayed-3"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let setup = MetersSetup {
+        trigger_mode: MetersTriggerMode::ExternalCustom,
+        sample_count: 3,
+        ..MetersSetup::default()
+    };
+
+    let start = Instant::now();
+    let result = run_meters_action_with_setup(
+        &session,
+        &ActionId::new("measure").unwrap(),
+        &json!({}),
+        &setup,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+
+    assert!(start.elapsed() >= Duration::from_millis(150));
+    assert_eq!(result.as_array().unwrap().len(), 3);
+    assert_eq!(result[2]["value"], 0.103);
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
+}
+
+fn meters_immediate_custom_auto_exit_completes_workflow() {
+    let template = custom_meter_template_with_mode(
+        json!([
+            { "type": "tool-action", "id": "measure", "target": "meters-1",
+              "action": "measure", "arguments": {} },
+            { "type": "output", "id": "value", "name": "value", "page": "Batch",
+              "value": { "source": "step-output", "step_id": "measure", "pointer": "/value" } }
+        ]),
+        "immediate-custom",
+    );
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            fixture_spec("meters-runtime-passive-custom-auto-exit-3"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    assert_eq!(run.result_rows().len(), 3);
+    assert_eq!(run.result_rows()[0].outputs()[0].value(), &json!(0.201));
+    assert_eq!(run.result_rows()[2].outputs()[0].value(), &json!(0.203));
+}
+
 fn meters_custom_auto_exit_completes_workflow() {
     let template = custom_meter_template(json!([
         { "type": "tool-action", "id": "measure", "target": "meters-1",
@@ -1345,6 +1518,10 @@ fn meters_custom_shutdown_waits_for_exit_after_stop_failure() {
 }
 
 fn custom_meter_template(steps: serde_json::Value) -> Template {
+    custom_meter_template_with_mode(steps, "software-custom")
+}
+
+fn custom_meter_template_with_mode(steps: serde_json::Value, trigger_mode: &str) -> Template {
     Template::from_json_str(
         &json!({
             "schema_version": 1, "name": "Custom meter", "tool_instances": [{
@@ -1352,7 +1529,7 @@ fn custom_meter_template(steps: serde_json::Value) -> Template {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
                     "dcv_input_impedance": null, "current_terminal": null,
-                    "trigger_mode": "software-custom", "sample_count": 3,
+                    "trigger_mode": trigger_mode, "sample_count": 3,
                     "buffer_drain_size": null, "allow_buffer_overflow_risk": false
                 }
             }], "workflow": { "steps": steps }
