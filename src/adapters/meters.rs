@@ -861,18 +861,57 @@ impl Error for MetersActionError {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn range_capabilities_parse_v2_with_additive_fields() {
-        let ranges = super::parse_range_options(
-            br#"{
-            "schema_version": 2, "event": "capabilities", "model": "example",
+    fn capabilities_payload(event: &str, schema_version: u32) -> String {
+        serde_json::json!({
+            "schema_version": schema_version,
+            "event": event,
+            "capability_profile": {
+                "model": "34461A",
+                "model_id": "keysight-34461a",
+                "reading_memory_limit": 10000,
+                "other": true
+            },
+            "limits": {
+                "buffer_drain_size": { "min": 1, "max": 10000 },
+                "sample_count": { "min": 1, "max": 1000000 },
+                "trigger_count": { "min": 1, "max": 1000000 },
+                "other": { "min": 0, "max": 1 }
+            },
             "measurements": [
-                {"measurement_name": "voltage-dc", "range_values": [0.1, 10], "other": true},
-                {"measurement_name": "current-dc", "range_values": [0.0001, 0.001]}
-            ]
-        }"#,
-        )
-        .unwrap();
+                {
+                    "measurement_name": "voltage-dc",
+                    "range_values": [0.1, 10],
+                    "nplc_values": [0.02, 0.2, 1],
+                    "other": true
+                },
+                {
+                    "measurement_name": "current-dc",
+                    "range_values": [0.0001, 0.001],
+                    "nplc_values": [0.02, 1]
+                }
+            ],
+            "trigger_modes": [
+                "software", "immediate", "immediate-custom",
+                "software-custom", "external-custom"
+            ],
+            "other": true
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn capabilities_parse_v2_with_additive_fields() {
+        let payload = capabilities_payload("capabilities", 2);
+        let capabilities = super::parse_capabilities(payload.as_bytes()).unwrap();
+        assert_eq!(capabilities.model, "34461A");
+        assert_eq!(capabilities.model_id, "keysight-34461a");
+        assert_eq!(capabilities.reading_memory_limit, 10_000);
+        assert!(capabilities.trigger_modes.contains(&"external-custom".to_owned()));
+        assert_eq!(capabilities.limits.sample_count.max, 1_000_000);
+        assert_eq!(capabilities.limits.buffer_drain_size.max, 10_000);
+        assert_eq!(capabilities.measurements[0].nplc_values, vec![0.02, 0.2, 1.0]);
+
+        let ranges = super::parse_range_options(payload.as_bytes()).unwrap();
         assert_eq!(ranges[0].measurement_name, "voltage-dc");
         assert_eq!(ranges[0].range_values, vec![0.1, 10.0]);
         assert_eq!(ranges[1].measurement_name, "current-dc");
@@ -880,13 +919,13 @@ mod tests {
     }
 
     #[test]
-    fn range_capabilities_reject_invalid_contract() {
+    fn capabilities_reject_invalid_contract() {
         for payload in [
-            r#"{"schema_version":1,"event":"capabilities","measurements":[]}"#,
-            r#"{"schema_version":2,"event":"other","measurements":[]}"#,
-            r#"{"schema_version":2,"event":"capabilities","measurements":[{"measurement_name":"voltage-dc","range_values":["10"]}]}"#,
+            capabilities_payload("capabilities", 1),
+            capabilities_payload("other", 2),
+            r#"{"schema_version":2,"event":"capabilities","measurements":[]}"#.to_owned(),
         ] {
-            assert!(super::parse_range_options(payload.as_bytes()).is_err());
+            assert!(super::parse_capabilities(payload.as_bytes()).is_err());
         }
     }
 
@@ -1157,38 +1196,43 @@ mod tests {
     }
 
     #[test]
-    fn meters_software_custom_launch_uses_batch_contract_without_max_samples() {
-        let setup = MetersSetup {
-            trigger_mode: MetersTriggerMode::SoftwareCustom,
-            sample_count: 3,
-            buffer_drain_size: Some(50),
-            allow_buffer_overflow_risk: true,
-            ..MetersSetup::default()
-        };
-        for spec in [
-            simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
-            super::live_worker_launch_spec(
-                "meters-tool.exe",
-                "USB0::Meter::INSTR",
-                Some(7),
-                &setup,
-            ),
+    fn meters_custom_launch_modes_use_batch_contract_without_max_samples() {
+        for (trigger_mode, cli_mode) in [
+            (MetersTriggerMode::SoftwareCustom, "software-custom"),
+            (MetersTriggerMode::ImmediateCustom, "immediate-custom"),
+            (MetersTriggerMode::ExternalCustom, "external-custom"),
         ] {
-            let arguments = spec.arguments();
-            for pair in [
-                ["--trigger-mode", "software-custom"],
-                ["--trigger-count", "7"],
-                ["--sample-count", "3"],
-                ["--buffer-drain-size", "50"],
+            let setup = MetersSetup {
+                trigger_mode,
+                sample_count: 3,
+                buffer_drain_size: Some(50),
+                allow_buffer_overflow_risk: true,
+                ..MetersSetup::default()
+            };
+            for spec in [
+                simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
+                super::live_worker_launch_spec(
+                    "meters-tool.exe",
+                    "USB0::Meter::INSTR",
+                    Some(7),
+                    &setup,
+                ),
             ] {
-                assert!(arguments.windows(2).any(|window| window == pair));
+                let arguments = spec.arguments();
+                for pair in [
+                    ["--trigger-mode", cli_mode],
+                    ["--trigger-count", "7"],
+                    ["--sample-count", "3"],
+                    ["--buffer-drain-size", "50"],
+                ] {
+                    assert!(arguments.windows(2).any(|window| window == pair));
+                }
+                assert!(
+                    arguments
+                        .iter()
+                        .any(|argument| argument == "--allow-buffer-overflow-risk")
+                );
+                assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
             }
-            assert!(
-                arguments
-                    .iter()
-                    .any(|argument| argument == "--allow-buffer-overflow-risk")
-            );
-            assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
         }
-    }
-}
+    }}
