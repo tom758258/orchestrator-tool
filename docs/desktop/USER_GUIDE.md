@@ -90,10 +90,18 @@ For a Meters Tool Instance, the current Setup controls:
 - NPLC: the currently exposed standard choices are `0.02`, `0.2`, `1`, `10`,
   and `100`.
 - Auto Zero: **On**, **Off**, or **Once**.
-- Trigger Mode: **Software** (the default) or **Software Custom**.
-- Software Custom exposes **Sample Count**, optional **Buffer Drain Size**, and
+- Trigger Mode: **Single** (stored as `software`), **Software Custom**,
+  **Immediate Custom**, or **External Custom**. Unsupported modes are disabled
+  when the selected model capability is available.
+- Single sends one software trigger for each Measure and returns one reading.
+  Software Custom sends a software trigger and returns one batch. Immediate
+  Custom and External Custom do not send a software trigger from Measure; they
+  return the next ordered batch produced by the Meter Worker.
+- All Custom modes expose **Sample Count**, optional **Buffer Drain Size**, and
   **Allow Buffer Overflow Risk**. Trigger Count is derived from the Workflow
-  and is not editable.
+  and is not editable. The UI shows the selected model's reading-memory limit
+  and warns when the planned acquisition exceeds it. Lower NPLC increases
+  acquisition rate and therefore increases buffer-drain risk.
 - For DC Voltage, DCV Input Impedance: **Not specified**, **Default**,
   **10 MΩ**, or **Auto**.
 - For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
@@ -202,12 +210,14 @@ While because it cannot establish a finite sample bound. Use a finite
 operation is appropriate. A Live Software Meters Measure inside an Unlimited
 While is allowed and does not set a finite `max-samples` limit.
 
-Software Custom requires a finite maximum trigger count in both Simulation and
-Live. The count adds every Measure occurrence for the same Tool Instance and
-multiplies each occurrence by its enclosing For iteration counts and finite
-While `max_iterations`. A Software Custom Measure inside an Unlimited While is
-rejected. The calculated count may not exceed `1,000,000`; a While that exits
-early simply leaves the unused trigger capacity unused.
+All Custom trigger modes require a finite maximum trigger count in both
+Simulation and Live. The count adds every Measure occurrence for the same Tool
+Instance and multiplies each occurrence by its enclosing For iteration counts
+and finite While `max_iterations`. A Custom Measure inside an Unlimited While
+is rejected. Trigger Count and Sample Count each follow meters-tool's current
+1-to-1,000,000 limits; Orchestrator does not add a separate one-million
+total-reading limit. A While that exits early simply leaves unused trigger
+capacity unused.
 
 ### 6.4 Graceful Stop
 
@@ -234,7 +244,7 @@ cannot be shared by different lexical loop paths. Page names also have to be
 valid as CSV filename stems and Excel worksheet names, so the same naming
 restrictions apply to both export formats.
 
-A Software Custom Meters Measure produces one batch per Measure step. An
+A Custom Meters Measure produces one batch per Measure step. An
 Output that directly references that step, or a Calculation that references
 it, is resolved once per sample. Its Page expands the logical row to the batch
 size, while scalar Outputs on that Page are copied to every expanded row.
