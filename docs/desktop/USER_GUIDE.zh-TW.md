@@ -78,9 +78,17 @@ Live Resources 不屬於 Template。
   文字值。
 - NPLC：目前 UI 暴露的標準選項為 `0.02`、`0.2`、`1`、`10` 與 `100`。
 - Auto Zero：**On**、**Off** 或 **Once**。
-- Trigger Mode：**Software**（預設）或 **Software Custom**。
-- Software Custom 會顯示 **Sample Count**、可選的 **Buffer Drain Size**，以及
-  **Allow Buffer Overflow Risk**。Trigger Count 由 Workflow 計算，不能編輯。
+- Trigger Mode：**Single**（Template 仍存為 `software`）、**Software Custom**、
+  **Immediate Custom** 或 **External Custom**。取得選定型號的 capability 後，不支援
+  的模式會 disabled。
+- Single 的每次 Measure 會送出一次 software trigger 並回傳一筆讀值；Software
+  Custom 會送出 software trigger 並回傳一批資料；Immediate Custom 與 External
+  Custom 的 Measure 不會送 software trigger，而是取回 Meter Worker 已產生或接下來
+  到達的下一批 ordered samples。
+- 所有 Custom 模式都會顯示 **Sample Count**、可選的 **Buffer Drain Size**，以及
+  **Allow Buffer Overflow Risk**。Trigger Count 由 Workflow 計算，不能編輯。UI 會
+  顯示目前型號的 reading memory，當 planned acquisition 超過記憶體時提出警告；
+  NPLC 越低 acquisition rate 越高，buffer drain 跟不上的風險也越高。
 - DC Voltage 的 DCV Input Impedance：**Not specified**、**Default**、
   **10 MΩ** 或 **Auto**。
 - DC Current 的 Current Terminal：**Not specified**、**3 A terminal** 或
@@ -175,11 +183,12 @@ Simulation 目前不允許 Software Meters **Measure** 位於 Unlimited While �
 `max_iterations`，或在適合的情況下使用 Live。Live 的 Software Meters Measure
 可以位於 Unlimited While 內，且不會設定 finite `max-samples` limit。
 
-Software Custom 在 Simulation 與 Live 都需要 finite maximum trigger count。計算時
-會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence 乘上外層
-For iteration counts 與 finite While `max_iterations`。Software Custom Measure 位於
-Unlimited While 內時會被拒絕；計算結果不可超過 `1,000,000`。While 提早結束時，
-未使用的 trigger capacity 不需要補送。
+所有 Custom trigger mode 在 Simulation 與 Live 都需要 finite maximum trigger
+count。計算時會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence
+乘上外層 For iteration counts 與 finite While `max_iterations`。Custom Measure 位於
+Unlimited While 內時會被拒絕。Trigger Count 與 Sample Count 各自沿用 meters-tool
+目前的 1 到 1,000,000 限制；Orchestrator 不另外加入「總讀值最多 100 萬」的限制。
+While 提早結束時，未使用的 trigger capacity 不需要補送。
 
 ### 6.4 Graceful Stop
 
@@ -203,7 +212,7 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 共用同名 Page。Page name 同時要符合 CSV filename stem 與 Excel worksheet name
 限制，因此兩種 export format 會套用相同的命名限制。
 
-Software Custom Meters Measure 的每個 Measure step 會產生一個 batch。Output 直接
+Custom Meters Measure 的每個 Measure step 會產生一個 batch。Output 直接
 引用該 step，或 Calculation 引用該 step 時，會逐一解析每個 sample。該 Page 的
 logical row 會依 batch size 展開，同 Page 的 scalar Outputs 會複製到每個 expanded
 row。多個 Outputs 可以使用同一個 Measure batch，但同一 Page 不可組合兩個獨立的
