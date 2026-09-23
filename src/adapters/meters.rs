@@ -578,8 +578,10 @@ impl Error for MetersSmokeError {
 
 /// Runs a single runtime Meters action on an already-started Worker session.
 ///
-/// Supported action: `measure` → `software_trigger`.
-/// The request contains no `context` or `job_id` field.
+/// The default Single setup sends `software_trigger`. Custom behavior follows
+/// the configured trigger mode: Software Custom sends the trigger, while
+/// Immediate Custom and External Custom only consume Worker sample events.
+/// Software-trigger requests contain no `context` or `job_id` field.
 pub fn run_action(
     session: &WorkerSession,
     action: &ActionId,
