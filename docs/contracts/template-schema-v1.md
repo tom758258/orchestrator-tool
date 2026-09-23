@@ -258,9 +258,11 @@ nested counts multiply, and separate Measure occurrences add. An Unlimited
 While that can reach a Custom Measure is invalid. Trigger Count is capped at
 the meters-tool maximum of 1,000,000. Run preparation checked-multiplies
 Trigger Count by `sample_count` only for arithmetic overflow; model reading
-memory and overflow-risk policy are validated by meters-tool. A finite While
-that exits early or a graceful Stop may leave planned triggers unused; Worker
-cleanup terminates the session normally.
+memory and overflow-risk policy are validated by meters-tool. For Software Custom and External Custom, a finite While that exits early or a
+graceful Stop may leave planned triggers unused. Immediate Custom starts the
+complete planned acquisition when its Worker session starts, so readings for
+later planned Measure occurrences may already exist even if execution exits
+early; any unconsumed readings are discarded during Worker cleanup.
 
 ## Execution occurrence metadata
 
