@@ -65,7 +65,7 @@ fn custom_expected_readings(
 ) -> Result<usize, String> {
     trigger_count
         .checked_mul(sample_count)
-        .ok_or_else(|| format!("Software Custom Meter {instance} expected reading count overflow"))
+        .ok_or_else(|| format!("Custom Meter {instance} expected reading count overflow"))
 }
 
 fn custom_trigger_count(
@@ -74,13 +74,13 @@ fn custom_trigger_count(
 ) -> Result<usize, String> {
     match measured {
         None => Err(format!(
-            "Software Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
+            "Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
         )),
         Some(0) => Err(format!(
-            "Software Custom Meter {instance} requires at least one Measure action"
+            "Custom Meter {instance} requires at least one Measure action"
         )),
         Some(count) if count > METERS_MAX_TRIGGER_COUNT => Err(format!(
-            "Software Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
+            "Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
         )),
         Some(count) => Ok(count),
     }
@@ -186,10 +186,13 @@ pub fn prepare_worker_launch_specs(
                             .ok_or_else(|| "meter sample reserve count overflow".to_owned())
                     })
                     .transpose()?,
-                MetersTriggerMode::SoftwareCustom => {
+                mode if mode.is_custom() => {
                     let trigger_count = custom_trigger_count(measured, &instance.id)?;
                     custom_expected_readings(trigger_count, setup.sample_count, &instance.id)?;
                     Some(trigger_count)
+                }
+                MetersTriggerMode::ImmediateCustom | MetersTriggerMode::ExternalCustom => {
+                    unreachable!("custom modes are matched above")
                 }
             }
         } else {
