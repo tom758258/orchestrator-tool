@@ -1,4 +1,4 @@
-import { chartRequiredOutputs, type ChartPanel } from './chartPanels.ts'
+import { chartRawOutputs, chartRequiredOutputs, comboSeriesSettings, type ChartPanel } from './chartPanels.ts'
 
 type NumericBuffer = { values: Float64Array; length: number }
 
@@ -80,7 +80,7 @@ export function pruneChartData(
       names = new Set()
       consumers.set(panel.page, names)
     }
-    for (const name of chartRequiredOutputs(panel)) names.add(name)
+    for (const name of chartRawOutputs(panel)) names.add(name)
   }
   for (const [page, data] of [...chartData.entries()]) {
     if (page === preservePage) continue
@@ -183,9 +183,10 @@ export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixel
   const first = Math.max(0, Math.ceil(range.min) - 1)
   const last = Math.min(count, Math.floor(range.max))
   const scatterX = panel.scatterXOutput === null ? iteration : data.getSeries(panel.scatterXOutput)
-  return panel.outputs.map(name => {
+  return panel.outputs.map((name, seriesIndex) => {
     const values = data.getSeries(name).subarray(0, count)
-    if (panel.type === 'line' || panel.type === 'area') {
+    if (panel.type === 'line' || panel.type === 'area' ||
+      (panel.type === 'combo' && comboSeriesSettings(panel, name, seriesIndex).kind === 'line')) {
       return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range) }
     }
     const pairs: [number, number][] = []

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
-  chartRequiredOutputs } from '../src/chartPanels.ts'
+  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, comboSeriesSettings } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
@@ -82,10 +82,28 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },
     yAxis: { title: '', min: null, max: null, interval: null,
-      showLabels: true, showTicks: true, showMajorGrid: true } }])
+      showLabels: true, showTicks: true, showMajorGrid: true },
+    combo: { series: {}, rightAxis: { title: '', min: null, max: null, interval: null,
+      showLabels: true, showTicks: true, showMajorGrid: false } },
+    histogram: { mode: 'auto', value: null }, boxPlot: { showOutliers: true } }])
   assert.equal(reconcileRunChartPanels(panels, pages, metadata), panels)
   const onlySecond = addChartPanel([], 'B', ['I'])
   assert.equal(reconcileRunChartPanels(onlySecond, pages, metadata), onlySecond)
+})
+
+test('advanced chart dependencies and defaults preserve the raw loading boundary', () => {
+  const base = addChartPanel([], 'A', ['V'])[0]
+  const combo = { ...base, type: 'combo', outputs: ['V', 'I'] }
+  assert.deepEqual(comboSeriesSettings(combo, 'V', 0), { kind: 'column', axis: 'left' })
+  assert.deepEqual(comboSeriesSettings(combo, 'I', 1), { kind: 'line', axis: 'right' })
+  assert.equal(chartSupportsZoom('combo'), true)
+  assert.equal(chartSupportsZoom('histogram'), false)
+  assert.equal(chartSupportsZoom('boxplot'), false)
+  assert.deepEqual(chartRawOutputs(combo), ['V', 'I'])
+  assert.deepEqual(chartRequiredOutputs({ ...base, type: 'histogram', outputs: ['V'] }), ['V'])
+  assert.deepEqual(chartRequiredOutputs({ ...base, type: 'boxplot', outputs: ['V', 'I'] }), ['V', 'I'])
+  assert.deepEqual([ { ...base, type: 'histogram' }, { ...base, type: 'boxplot' } ]
+    .flatMap(chartRawOutputs), [])
 })
 
 test('Scatter X is a separate numeric dependency and reconciliation only resets an invalid source', () => {

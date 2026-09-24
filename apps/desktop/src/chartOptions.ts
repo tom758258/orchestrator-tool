@@ -1,9 +1,26 @@
-import { chartSupportsZoom, type AxisSettings, type ChartPanel } from './chartPanels.ts'
+import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPanel } from './chartPanels.ts'
 
 type ChartColors = { ink: string; axis: string; grid: string }
 export const CHART_GRID = { left: 80, right: 24, bottom: 64 }
 export const chartGridBottom = (panel: ChartPanel): number =>
   chartSupportsZoom(panel.type) && panel.zoom.enabled && panel.zoom.showSlider ? 112 : CHART_GRID.bottom
+
+export const comboHasRightAxis = (panel: ChartPanel): boolean => panel.type === 'combo' &&
+  panel.outputs.some((name, index) => comboSeriesSettings(panel, name, index).axis === 'right')
+export const chartGridRight = (panel: ChartPanel): number =>
+  comboHasRightAxis(panel) ? 96 : CHART_GRID.right
+
+export function comboRendererSeries(panel: ChartPanel,
+  display: { name: string; data: [number, number][] }[], colors: string[]) {
+  return display.map((series, index) => {
+    const settings = comboSeriesSettings(panel, series.name, index)
+    const common = { ...series, yAxisIndex: settings.axis === 'right' ? 1 : 0,
+      silent: true, itemStyle: { color: colors[index] } }
+    return settings.kind === 'line'
+      ? { ...common, type: 'line' as const, showSymbol: false, emphasis: { disabled: true } }
+      : { ...common, type: 'bar' as const, large: true, largeThreshold: 2000 }
+  })
+}
 
 export function chartVisualOptions(colors: ChartColors) {
   const axis = {
@@ -40,9 +57,9 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
 }
 
 export function chartPresentationOptions(panel: ChartPanel, seriesCount: number, colors: ChartColors,
-  fullDomain?: { min: number; max: number }, iterations?: Float64Array) {
+  fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[]) {
   const hasTitle = panel.title.length > 0
-  const hasLegend = panel.showLegend && seriesCount > 1
+  const hasLegend = panel.type !== 'histogram' && panel.type !== 'boxplot' && panel.showLegend && seriesCount > 1
   const visual = chartVisualOptions(colors)
   const xAxis = panel.type === 'bar' ? panel.yAxis : panel.xAxis
   const yAxis = panel.type === 'bar' ? panel.xAxis : panel.yAxis
@@ -51,10 +68,16 @@ export function chartPresentationOptions(panel: ChartPanel, seriesCount: number,
       textStyle: { ...visual.title.textStyle, fontSize: 16 } },
     legend: { show: hasLegend, top: hasTitle ? 40 : 8, type: 'plain' as const,
       selectedMode: false, textStyle: visual.legend.textStyle },
-    grid: { ...CHART_GRID, bottom: chartGridBottom(panel), top: chartGridTop(panel, seriesCount) },
-    xAxis: { ...axisOption(xAxis, 36, visual.xAxis),
+    grid: { ...CHART_GRID, right: chartGridRight(panel),
+      bottom: chartGridBottom(panel), top: chartGridTop(panel, seriesCount) },
+    xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,
+      36, visual.xAxis),
+      ...(categories ? { type: 'category' as const, data: categories } : {}),
       ...(fullDomain && chartSupportsZoom(panel.type) && panel.zoom.enabled ? fullDomain : {}) },
-    yAxis: panel.type === 'bar'
+    yAxis: panel.type === 'combo' && comboHasRightAxis(panel)
+      ? [axisOption(panel.yAxis, 56, visual.yAxis),
+        { ...axisOption(panel.combo.rightAxis, 64, visual.yAxis), position: 'right' as const }]
+      : panel.type === 'bar'
       ? { ...axisOption(yAxis, 56, visual.yAxis), type: 'category' as const,
         data: iterations ? Array.from(iterations, String) : [],
         ...(yAxis.min === null ? {} : { min: yAxis.min - 1 }),
@@ -69,5 +92,5 @@ export function chartPresentationOptions(panel: ChartPanel, seriesCount: number,
 
 export function chartGridTop(panel: ChartPanel, seriesCount: number): number {
   if (panel.title.length === 0) return 48
-  return panel.showLegend && seriesCount > 1 ? 88 : 64
+  return panel.showLegend && panel.type !== 'histogram' && panel.type !== 'boxplot' && seriesCount > 1 ? 88 : 64
 }

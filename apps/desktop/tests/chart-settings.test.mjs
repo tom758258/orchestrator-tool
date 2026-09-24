@@ -102,3 +102,40 @@ test('Bar settings map stored axes to physical X and Y without changing their va
   assert.equal(custom.yAxis.axisLabel.interval(0, '6'), false)
   assert.equal(createChartSettingsDraft(bar).type, 'bar')
 })
+
+test('Combo and Box settings round-trip and histogram modes validate', () => {
+  const combo = { ...panel, type: 'combo', combo: { ...panel.combo,
+    series: { V: { kind: 'line', axis: 'right' } },
+    rightAxis: { ...panel.combo.rightAxis, title: 'Current', max: 10 } } }
+  assert.deepEqual(validateChartSettingsDraft(createChartSettingsDraft(combo)).settings.combo, combo.combo)
+  const box = { ...panel, type: 'boxplot', boxPlot: { showOutliers: false } }
+  assert.deepEqual(validateChartSettingsDraft(createChartSettingsDraft(box)).settings.boxPlot, box.boxPlot)
+  const draft = createChartSettingsDraft({ ...panel, type: 'histogram' })
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'auto', value: null })
+  draft.histogram = { mode: 'count', value: '20' }
+  assert.equal(validateChartSettingsDraft(draft).settings.histogram.value, 20)
+  for (const value of ['0', '2.5', '201']) {
+    draft.histogram.value = value
+    assert.match(validateChartSettingsDraft(draft).error, /bin count/)
+  }
+  draft.histogram = { mode: 'width', value: '0.5' }
+  assert.equal(validateChartSettingsDraft(draft).settings.histogram.value, 0.5)
+  draft.histogram.value = '0'
+  assert.match(validateChartSettingsDraft(draft).error, /bin width/)
+})
+
+test('Combo uses two Y axes and category charts ignore numeric X bounds', () => {
+  const combo = { ...panel, type: 'combo', outputs: ['V', 'I'],
+    combo: { ...panel.combo, rightAxis: { ...panel.combo.rightAxis, title: 'Current', max: 5 } } }
+  const options = chartPresentationOptions(combo, 2, colors)
+  assert.equal(options.yAxis.length, 2)
+  assert.equal(options.yAxis[1].name, 'Current')
+  assert.equal(options.yAxis[1].max, 5)
+  assert.ok(options.grid.right > chartPresentationOptions(panel, 1, colors).grid.right)
+  const histogram = { ...panel, type: 'histogram', xAxis: { ...panel.xAxis, min: 1, max: 10, interval: 2 } }
+  const categories = chartPresentationOptions(histogram, 1, colors, undefined, undefined, ['1–2'])
+  assert.equal(categories.xAxis.type, 'category')
+  assert.equal(Object.hasOwn(categories.xAxis, 'min'), false)
+  assert.equal(Object.hasOwn(categories.xAxis, 'interval'), false)
+  assert.equal(categories.legend.show, false)
+})

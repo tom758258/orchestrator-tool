@@ -325,11 +325,18 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 panels。
 
 Execution 執行中只能使用 **Line**。停止後，只要有 committed numeric rows，
-即使 execution 失敗或取消，也可在 **Settings → General → Chart type** 選擇
-**Line**、**XY Scatter**、**Column**、**Area** 或 **Bar**。Line 顯示 Iteration
+即使 run 失敗，只要仍有 committed numeric rows，也可在 **Settings → General → Chart type** 選擇
+**Line**、**XY Scatter**、**Column**、**Area**、**Bar**、**Combo**、**Histogram**
+或 **Box & Whisker**。Line 顯示 Iteration
 趨勢；Area 在折線下填色；Column 顯示垂直分組長條；Bar 顯示水平分組長條；
 XY Scatter 用來比較數值 X 與 Y 的關係。Scatter 的 **X source** 可選
 Iteration 或任一 numeric Output，外層勾選的 Outputs 是 Y series。
+Combo 至少選兩個 Outputs；每個 Output 可在 Settings 選擇 Line 或 Column，並指定
+Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援與 Line 相同的 X 軸縮放。
+Histogram 一次只選一個 numeric Output，Bins 可選 Auto、Count（1–200）或
+Width（正數）；Width 若會產生超過 200 個 bins，會顯示錯誤。
+Box & Whisker 對每個選取的 Output 顯示一個 box，並可切換 outlier points。
+這兩種統計圖在 Rust 端從 committed rows 計算，不會把完整 raw samples 載入圖表快取。
 
 Line 與 Area 在大型資料集只對可見 Iteration 範圍做繪圖 decimation；Column
 在可見範圍保留每筆長條，Scatter 與 Bar 也保留 raw pairs。這些顯示方式不會
@@ -346,7 +353,7 @@ Scatter 的 X Output 不必同時勾選為 Y Output。點選右上角
 點擊背景或按 Esc 不會關閉 Settings，草稿會保留。
 單一 series 不顯示 legend，即使 **Show legend** 已開啟。
 
-Line、Area 與 Column 可在 **Settings → Zoom** 勾選 **Enable zoom**，
+Line、Area、Column 與 Combo 可在 **Settings → Zoom** 勾選 **Enable zoom**，
 以滑鼠滾輪縮放 X 軸，並在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
 滾輪與拖曳仍可使用，也不會清除目前範圍。手動縮放後按 **Reset Zoom** 可回到
 完整 X 範圍。Live run 尚未手動縮放時會跟進新資料；手動縮放或平移後，
@@ -355,7 +362,8 @@ Line、Area 與 Column 可在 **Settings → Zoom** 勾選 **Enable zoom**，
 Line 與 Area 只會對目前可見範圍進行繪圖 decimation；Column 則保留可見範圍
 的每筆 raw row。hover 在資料範圍外
 不會顯示虛假的首筆或末筆數值。Scatter 與 Bar 沒有 Zoom 控制；
-從可縮放圖型切換到這兩種圖型時，手動縮放範圍會重設。
+Histogram、Box & Whisker、Scatter 與 Bar 沒有 Zoom 控制；
+從可縮放圖型切換到這些圖型時，手動縮放範圍會重設。
 
 每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
 **Settings → Save image → Background** 可選 Light 或 Dark，與 Application theme

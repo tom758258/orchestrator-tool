@@ -128,6 +128,41 @@ pub struct ChartSeriesDto {
     pub series: BTreeMap<String, Vec<f64>>,
 }
 
+#[derive(Serialize)]
+pub struct HistogramBinDto {
+    pub start: f64,
+    pub end: f64,
+    pub count: usize,
+}
+
+#[derive(Serialize)]
+pub struct HistogramDto {
+    pub run_id: u64,
+    pub page: String,
+    pub output: String,
+    pub sample_count: usize,
+    pub bins: Vec<HistogramBinDto>,
+}
+
+#[derive(Serialize)]
+pub struct BoxPlotItemDto {
+    pub output: String,
+    pub count: usize,
+    pub lower_whisker: f64,
+    pub q1: f64,
+    pub median: f64,
+    pub q3: f64,
+    pub upper_whisker: f64,
+    pub outliers: Vec<f64>,
+}
+
+#[derive(Serialize)]
+pub struct BoxPlotDto {
+    pub run_id: u64,
+    pub page: String,
+    pub items: Vec<BoxPlotItemDto>,
+}
+
 #[derive(Clone, Default)]
 pub struct StoredRuns {
     next_run_id: Arc<AtomicU64>,
@@ -458,6 +493,120 @@ impl StoredRun {
         })
     }
 
+    pub fn histogram(
+        &self,
+        page: &str,
+        output: &str,
+        mode: &str,
+        value: Option<f64>,
+    ) -> Result<HistogramDto, String> {
+        let page_data = self
+            .pages
+            .get(page)
+            .ok_or_else(|| format!("Unknown Output Page {page:?}"))?;
+        let values = page_data.numeric_values(output)?;
+        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        if !(max - min).is_finite() {
+            return Err("Histogram data range is too large".to_owned());
+        }
+        let count = match mode {
+            "auto" if value.is_none() => {
+                ((values.len() as f64).log2() + 1.0).ceil().min(200.0) as usize
+            }
+            "count"
+                if value.is_some_and(|v| {
+                    v.is_finite() && v.fract() == 0.0 && (1.0..=200.0).contains(&v)
+                }) =>
+            {
+                value.unwrap() as usize
+            }
+            "width" if value.is_some_and(|v| v.is_finite() && v > 0.0) => {
+                let bins = ((max - min) / value.unwrap()).ceil().max(1.0);
+                if !bins.is_finite() || bins > 200.0 {
+                    return Err("Histogram width would produce more than 200 bins".to_owned());
+                }
+                bins as usize
+            }
+            _ => return Err("Invalid histogram bin setting".to_owned()),
+        };
+        let count = if min == max { 1 } else { count };
+        let width = if mode == "width" {
+            value.unwrap_or(0.0)
+        } else {
+            (max - min) / count as f64
+        };
+        let mut bins = (0..count)
+            .map(|index| HistogramBinDto {
+                start: min + index as f64 * width,
+                end: if index + 1 == count {
+                    max
+                } else {
+                    min + (index + 1) as f64 * width
+                },
+                count: 0,
+            })
+            .collect::<Vec<_>>();
+        for sample in &values {
+            let index = if min == max {
+                0
+            } else {
+                (((sample - min) / width).floor() as usize).min(count - 1)
+            };
+            bins[index].count += 1;
+        }
+        Ok(HistogramDto {
+            run_id: self.run_id,
+            page: page.to_owned(),
+            output: output.to_owned(),
+            sample_count: values.len(),
+            bins,
+        })
+    }
+
+    pub fn box_plot(&self, page: &str, outputs: &[String]) -> Result<BoxPlotDto, String> {
+        let page_data = self
+            .pages
+            .get(page)
+            .ok_or_else(|| format!("Unknown Output Page {page:?}"))?;
+        let mut items = Vec::with_capacity(outputs.len());
+        for output in outputs {
+            let mut values = page_data.numeric_values(output)?;
+            values.sort_by(f64::total_cmp);
+            let q1 = percentile(&values, 0.25);
+            let median = percentile(&values, 0.5);
+            let q3 = percentile(&values, 0.75);
+            let iqr = q3 - q1;
+            let lower_fence = q1 - 1.5 * iqr;
+            let upper_fence = q3 + 1.5 * iqr;
+            let inliers = values
+                .iter()
+                .copied()
+                .filter(|v| *v >= lower_fence && *v <= upper_fence)
+                .collect::<Vec<_>>();
+            let outliers = values
+                .iter()
+                .copied()
+                .filter(|v| *v < lower_fence || *v > upper_fence)
+                .collect();
+            items.push(BoxPlotItemDto {
+                output: output.clone(),
+                count: values.len(),
+                lower_whisker: *inliers.first().unwrap(),
+                q1,
+                median,
+                q3,
+                upper_whisker: *inliers.last().unwrap(),
+                outliers,
+            });
+        }
+        Ok(BoxPlotDto {
+            run_id: self.run_id,
+            page: page.to_owned(),
+            items,
+        })
+    }
+
     pub fn page(
         &self,
         name: &str,
@@ -487,6 +636,24 @@ impl StoredRun {
 }
 
 impl StoredPage {
+    fn numeric_values(&self, name: &str) -> Result<Vec<f64>, String> {
+        if self.rows.is_empty() || self.numeric_eligible.get(name) != Some(&true) {
+            return Err(format!(
+                "Output {name:?} is not numeric for every committed row"
+            ));
+        }
+        Ok(self
+            .rows
+            .iter()
+            .map(|row| {
+                row.outputs()
+                    .iter()
+                    .find(|output| output.name() == name)
+                    .and_then(|output| output.value().as_f64())
+                    .expect("numeric eligibility maintained while appending")
+            })
+            .collect())
+    }
     fn new(output_names: Vec<String>) -> Self {
         let numeric_eligible = output_names
             .iter()
@@ -551,6 +718,13 @@ impl StoredPage {
                 .collect(),
         }
     }
+}
+
+fn percentile(sorted: &[f64], p: f64) -> f64 {
+    let position = (sorted.len() - 1) as f64 * p;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower as f64)
 }
 
 impl NumericAccumulator {
@@ -916,6 +1090,104 @@ mod tests {
         assert!(runs.get(first_id).is_err());
         runs.clear(second_id).unwrap();
         assert!(runs.get(second_id).is_err());
+    }
+
+    #[test]
+    fn histogram_counts_committed_rows_and_rejects_invalid_bins() {
+        let mut run = StoredRun::new(1, template());
+        for value in [1, 2, 3, 4] {
+            run.append_event(
+                &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(
+                    Value::from(value),
+                )),
+            );
+        }
+        run.fail("later failure");
+        let result = run
+            .histogram("Results", "Voltage", "count", Some(2.0))
+            .unwrap();
+        assert_eq!(result.bins.len(), 2);
+        assert_eq!(result.bins.iter().map(|bin| bin.count).sum::<usize>(), 4);
+        assert_eq!(result.bins[1].count, 2);
+        assert!(
+            run.histogram("Results", "Voltage", "count", Some(0.0))
+                .is_err()
+        );
+        assert!(
+            run.histogram("Results", "Voltage", "width", Some(0.001))
+                .is_err()
+        );
+        assert!(run.histogram("Missing", "Voltage", "auto", None).is_err());
+        assert!(run.histogram("Results", "Missing", "auto", None).is_err());
+
+        let mut constant = StoredRun::new(2, template());
+        for _ in 0..3 {
+            constant.append_event(
+                &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(
+                    Value::from(7),
+                )),
+            );
+        }
+        let bins = constant
+            .histogram("Results", "Voltage", "count", Some(20.0))
+            .unwrap()
+            .bins;
+        assert_eq!(bins.len(), 1);
+        assert_eq!(bins[0].count, 3);
+    }
+
+    #[test]
+    fn box_plot_uses_linear_percentiles_and_tukey_whiskers() {
+        let mut run = StoredRun::new(1, template());
+        for value in [1, 2, 3, 4, 5, 100] {
+            run.append_event(
+                &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(
+                    Value::from(value),
+                )),
+            );
+        }
+        let result = run.box_plot("Results", &["Voltage".to_owned()]).unwrap();
+        let item = &result.items[0];
+        assert_eq!(
+            (
+                item.lower_whisker,
+                item.q1,
+                item.median,
+                item.q3,
+                item.upper_whisker
+            ),
+            (1.0, 2.25, 3.5, 4.75, 5.0)
+        );
+        assert_eq!(item.outliers, vec![100.0]);
+
+        let mut multi = StoredRun::new(2, template());
+        multi.pages.insert(
+            "Results".to_owned(),
+            StoredPage::new(vec!["Voltage".to_owned(), "Current".to_owned()]),
+        );
+        multi.append_event(
+            &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![
+                        WorkflowOutput::new("Voltage".to_owned(), Value::from(1)),
+                        WorkflowOutput::new("Current".to_owned(), Value::from(2)),
+                    ],
+                    None,
+                )
+                .with_page("Results"),
+            ),
+        );
+        let items = multi
+            .box_plot("Results", &["Current".to_owned(), "Voltage".to_owned()])
+            .unwrap()
+            .items;
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.output.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Current", "Voltage"]
+        );
     }
 
     #[test]

@@ -70,3 +70,26 @@ test('PNG export restores presentation when capture fails', async () => {
     delete globalThis.document
   }
 })
+
+test('Combo PNG recolors and restores both Y axes for light and dark export', async () => {
+  const original = globalThis.getComputedStyle
+  globalThis.getComputedStyle = () => ({ getPropertyValue: name => ({
+    '--chart-surface': '#123456', '--ink': '#eeeeee',
+    '--chart-axis': '#aaaaaa', '--chart-grid': '#555555',
+  })[name] })
+  globalThis.document = { documentElement: {} }
+  try {
+    for (const background of ['light', 'dark']) {
+      const { chart, calls } = fakeChart()
+      await chartPng(chart, { ...panel, type: 'combo', outputs: ['V', 'I'], imageBackground: background })
+      assert.equal(calls[0][1].yAxis.length, 2)
+      assert.equal(calls[0][1].yAxis[0].axisLabel.color, calls[0][1].yAxis[1].axisLabel.color)
+      assert.equal(calls[2][1].yAxis.length, 2)
+      assert.equal(calls[2][1].yAxis[0].axisLabel.color, '#aaaaaa')
+      assert.equal(calls[2][1].yAxis[1].axisLabel.color, '#aaaaaa')
+    }
+  } finally {
+    globalThis.getComputedStyle = original
+    delete globalThis.document
+  }
+})

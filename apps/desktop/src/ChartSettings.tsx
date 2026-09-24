@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { chartSupportsZoom, type AxisSettings, type ChartPanel, type ChartType } from './chartPanels'
+import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPanel, type ChartType } from './chartPanels'
 import { createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
 
-type AxisKey = 'xAxis' | 'yAxis'
+type AxisKey = 'xAxis' | 'yAxis' | 'rightAxis'
 type NumericKey = 'min' | 'max' | 'interval'
 
 export default function ChartSettings({ panel, numericNames, running, hasRows, onApply, onClose }: {
@@ -10,7 +10,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   numericNames: string[]
   running: boolean
   hasRows: boolean
-  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -23,9 +23,12 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
     return () => element.close()
   }, [])
 
-  function updateAxis<K extends keyof ChartSettingsDraft[AxisKey]>(axis: AxisKey, key: K,
-    value: ChartSettingsDraft[AxisKey][K]) {
-    setDraft(current => ({ ...current, [axis]: { ...current[axis], [key]: value } }))
+  function updateAxis<K extends keyof ChartSettingsDraft['xAxis']>(axis: AxisKey, key: K,
+    value: ChartSettingsDraft['xAxis'][K]) {
+    setDraft(current => axis === 'rightAxis'
+      ? { ...current, combo: { ...current.combo,
+        rightAxis: { ...current.combo.rightAxis, [key]: value } } }
+      : { ...current, [axis]: { ...current[axis], [key]: value } })
     setError(null)
   }
 
@@ -46,19 +49,19 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   }
 
   function axisFields(axis: AxisKey, label: string) {
-    const values = draft[axis]
+    const values = axis === 'rightAxis' ? draft.combo.rightAxis : draft[axis]
     return <fieldset className="chart-settings-axis">
       <legend>{label}</legend>
       <label className="chart-settings-field">Title
         <input type="text" value={values.title} onChange={event => updateAxis(axis, 'title', event.target.value)} />
       </label>
-      <div className="chart-settings-numbers">
+      {(axis !== 'xAxis' || (draft.type !== 'histogram' && draft.type !== 'boxplot')) && <div className="chart-settings-numbers">
         {([['min', 'Minimum'], ['max', 'Maximum'], ['interval', 'Major unit']] as [NumericKey, string][])
           .map(([key, text]) => <label className="chart-settings-field" key={key}>{text}
             <input type="text" inputMode="decimal" placeholder="Auto" value={values[key]}
               onChange={event => updateAxis(axis, key, event.target.value)} />
           </label>)}
-      </div>
+      </div>}
       <div className="chart-settings-toggles">
         {([['showLabels', 'Show labels'], ['showTicks', 'Show tick marks'],
           ['showMajorGrid', 'Show major gridlines']] as [keyof Pick<AxisSettings,
@@ -77,7 +80,15 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
         <legend>General</legend>
         <label className="chart-settings-field">Chart type
           <select value={draft.type} disabled={running || !hasRows} onChange={event => {
-            setDraft(current => ({ ...current, type: event.target.value as ChartType }))
+            const type = event.target.value as ChartType
+            setDraft(current => ({ ...current, type,
+              xAxis: { ...current.xAxis,
+                title: current.xAxis.title === 'Iteration'
+                  ? type === 'histogram' ? panel.outputs[0] ?? ''
+                    : type === 'boxplot' ? '' : 'Iteration'
+                  : current.xAxis.title },
+              yAxis: { ...current.yAxis,
+                title: type === 'histogram' && current.yAxis.title === '' ? 'Count' : current.yAxis.title } }))
             setError(null)
           }}>
             <option value="line">Line</option>
@@ -85,14 +96,17 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
             <option value="column">Column</option>
             <option value="area">Area</option>
             <option value="bar">Bar</option>
+            <option value="combo">Combo</option>
+            <option value="histogram">Histogram</option>
+            <option value="boxplot">Box &amp; Whisker</option>
           </select>
         </label>
         <label className="chart-settings-field">Chart title
           <input type="text" autoFocus value={draft.title}
             onChange={event => { setDraft(current => ({ ...current, title: event.target.value })); setError(null) }} />
         </label>
-        <label><input type="checkbox" checked={draft.showLegend}
-          onChange={event => setDraft(current => ({ ...current, showLegend: event.target.checked }))} />Show legend</label>
+        {draft.type !== 'histogram' && draft.type !== 'boxplot' && <label><input type="checkbox" checked={draft.showLegend}
+          onChange={event => setDraft(current => ({ ...current, showLegend: event.target.checked }))} />Show legend</label>}
       </fieldset>
       {draft.type === 'scatter' && <fieldset className="chart-settings-general">
         <legend>Scatter</legend>
@@ -105,7 +119,46 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
         </label>
       </fieldset>}
       {axisFields(draft.type === 'bar' ? 'yAxis' : 'xAxis', 'X Axis')}
-      {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', 'Y Axis')}
+      {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', draft.type === 'combo' ? 'Left Y Axis' : 'Y Axis')}
+      {draft.type === 'combo' && <>
+        {axisFields('rightAxis', 'Right Y Axis')}
+        <fieldset className="chart-settings-general"><legend>Combo</legend>
+          {panel.outputs.filter(name => numericNames.includes(name)).map((name, index) => {
+            const series = draft.combo.series[name] ?? comboSeriesSettings(panel, name, index)
+            const update = (key: 'kind' | 'axis', value: string) => setDraft(current => ({
+              ...current, combo: { ...current.combo, series: { ...current.combo.series,
+                [name]: { ...series, [key]: value } } },
+            }))
+            return <div key={name}><strong>{name}</strong>
+              <label className="chart-settings-field">Type<select value={series.kind}
+                onChange={event => update('kind', event.target.value)}>
+                <option value="column">Column</option><option value="line">Line</option></select></label>
+              <label className="chart-settings-field">Axis<select value={series.axis}
+                onChange={event => update('axis', event.target.value)}>
+                <option value="left">Left Y</option><option value="right">Right Y</option></select></label>
+            </div>
+          })}
+        </fieldset>
+      </>}
+      {draft.type === 'histogram' && <fieldset className="chart-settings-general"><legend>Histogram</legend>
+        <div>Bins</div>
+        {(['auto', 'count', 'width'] as const).map(mode => <label key={mode}>
+          <input type="radio" name="histogram-mode" checked={draft.histogram.mode === mode}
+            onChange={() => setDraft(current => ({ ...current, histogram: {
+              mode, value: mode === 'auto' ? '' : mode === 'count' ? '20' : '0.5',
+            } }))} />{mode === 'auto' ? 'Auto' : mode === 'count' ? 'Count' : 'Width'}
+          {mode !== 'auto' && <input type="text" inputMode="decimal"
+            aria-label={`${mode} bins`} disabled={draft.histogram.mode !== mode}
+            value={draft.histogram.mode === mode ? draft.histogram.value : ''}
+            onChange={event => setDraft(current => ({ ...current,
+              histogram: { mode, value: event.target.value } }))} />}
+        </label>)}
+      </fieldset>}
+      {draft.type === 'boxplot' && <fieldset className="chart-settings-general"><legend>Box &amp; Whisker</legend>
+        <label><input type="checkbox" checked={draft.boxPlot.showOutliers}
+          onChange={event => setDraft(current => ({ ...current,
+            boxPlot: { showOutliers: event.target.checked } }))} />Show outliers</label>
+      </fieldset>}
       {chartSupportsZoom(draft.type) && <fieldset className="chart-settings-general">
         <legend>Zoom</legend>
         <label><input type="checkbox" checked={draft.zoom.enabled}

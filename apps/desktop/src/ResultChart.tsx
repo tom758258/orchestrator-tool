@@ -5,12 +5,15 @@ import ChartSettings from './ChartSettings'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { addChartPanel, canRemoveChartPanel, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
+import { addChartPanel, canRemoveChartPanel, chartRawOutputs, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
+import { statisticalRequestKey, type BoxPlotDto, type HistogramDto, type StatisticalDto } from './chartStatistics'
 
 type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
 
 const CHART_SERIES_CHUNK_ROWS = 25_000
+const EMPTY_DATA = createPageChartData()
+type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
 export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running }: {
   runId: number
@@ -30,9 +33,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
   const [settingsId, setSettingsId] = useState<number | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
+  const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const data = useMemo(() => {
-    if (!localPanels.some(panel => chartRequiredOutputs(panel).some(name => numericNames.includes(name)))) return null
+    if (!localPanels.some(panel => chartRawOutputs(panel).some(name => numericNames.includes(name)))) return null
     let local = chartData.get(page)
     if (!local) {
       local = createPageChartData()
@@ -40,13 +44,40 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
     }
     return local
   }, [chartData, page, localPanels, numericNames, dataVersion])
-  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(chartRequiredOutputs))]
+  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(chartRawOutputs))]
     .filter(name => numericNames.includes(name)), [localPanels, numericNames])
   const requestedKey = useMemo(() => JSON.stringify([...requestedNames].sort()), [requestedNames])
   const latestRowCountRef = useRef(rowCount)
   latestRowCountRef.current = rowCount
   const [loadGeneration, setLoadGeneration] = useState(0)
   const loaderActiveRef = useRef<object | null>(null)
+  const statisticalRequests = useMemo(() => localPanels.filter(panel =>
+    !running && panel.outputs.every(name => numericNames.includes(name)))
+    .map(panel => ({ panel, key: statisticalRequestKey(runId, panel) }))
+    .filter((item): item is { panel: ChartPanel; key: string } => item.key !== null),
+  [localPanels, numericNames, runId, running])
+  const statisticalKey = JSON.stringify(statisticalRequests.map(({ panel, key }) => [panel.id, key]))
+
+  useEffect(() => {
+    let cancelled = false
+    const requests = statisticalRequests
+    for (const { panel, key } of requests) {
+      setStatistical(current => ({ ...current, [panel.id]: { key } }))
+      const command = panel.type === 'histogram' ? 'get_last_run_histogram' : 'get_last_run_box_plot'
+      const args = panel.type === 'histogram'
+        ? { runId, page, output: panel.outputs[0], mode: panel.histogram.mode, value: panel.histogram.value }
+        : { runId, page, outputs: panel.outputs }
+      void invoke<HistogramDto | BoxPlotDto>(command, args).then(response => {
+        if (!cancelled && response.run_id === runId && response.page === page) {
+          setStatistical(current => ({ ...current, [panel.id]: { key, response } }))
+        }
+      }).catch(error => {
+        if (!cancelled) setStatistical(current => ({ ...current,
+          [panel.id]: { key, error: String(error) } }))
+      })
+    }
+    return () => { cancelled = true }
+  }, [statisticalKey, runId, page])
 
   useEffect(() => {
     const outputs = JSON.parse(requestedKey) as string[]
@@ -168,13 +199,18 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
       {localPanels.map((panel, index) => {
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
-        const analysisReady = panel.type === 'line' ||
+        const statisticKey = statisticalRequestKey(runId, visiblePanel)
+        const statisticState = statistical[panel.id]
+        const statisticReady = statisticKey !== null && statisticState?.key === statisticKey && !!statisticState.response
+        const isStatistical = panel.type === 'histogram' || panel.type === 'boxplot'
+        const analysisReady = isStatistical ? statisticReady : panel.type === 'line' ||
           (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount)
+        const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
             <div className="result-chart-panel-actions">
-              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0 || !analysisReady}
+              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
               <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => setSettingsId(panel.id)}>Settings</button>
@@ -191,23 +227,32 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           <fieldset className="result-chart-outputs" disabled={savingId !== null}>
             <legend>Outputs</legend>
             {numericNames.map(name => <label key={name}>
-              <input type="checkbox" checked={panel.outputs.includes(name)} onChange={event => {
-                const outputs = event.target.checked
+              <input type={panel.type === 'histogram' ? 'radio' : 'checkbox'}
+                name={panel.type === 'histogram' ? `histogram-output-${panel.id}` : undefined}
+                checked={panel.outputs.includes(name)} onChange={event => {
+                const outputs = panel.type === 'histogram' ? [name] : event.target.checked
                   ? [...panel.outputs, name] : panel.outputs.filter(output => output !== name)
-                onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, outputs } : item))
+                onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, outputs,
+                  xAxis: panel.type === 'histogram' && item.xAxis.title === item.outputs[0]
+                    ? { ...item.xAxis, title: name } : item.xAxis } : item))
               }} />
               {name}
             </label>)}
           </fieldset>
-          {selectedOutputs.length === 0 || !data ? <p>Select at least one Output to display this chart.</p>
-            : !analysisReady ? <p role="status">Preparing chart data...</p> : (
+          {selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
+            : !enoughOutputs ? <p>Select at least two Outputs for Combo.</p>
+              : isStatistical && statisticState?.key === statisticKey && statisticState.error
+                ? <p role="alert">Could not prepare chart: {statisticState.error}</p>
+                : !analysisReady ? <p role="status">Preparing chart data...</p> : (
             <ChartPlot panel={visiblePanel}
-              data={data} numericNames={numericNames} charts={plots.current} />
+              data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
+              statistical={isStatistical ? statisticState?.response : undefined} />
           )}
           {settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
-              onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings } : item))
+              onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings,
+                outputs: settings.type === 'histogram' ? item.outputs.slice(0, 1) : item.outputs } : item))
               setSettingsId(null)
             }} />}
         </section>

@@ -6,7 +6,8 @@ mod stream_csv;
 mod webview2;
 
 use stored_run::{
-    ChartSeriesDto, ExecutionRowsDto, PageRowsDto, RunMetadataDto, StoredRun, StoredRuns,
+    BoxPlotDto, ChartSeriesDto, ExecutionRowsDto, HistogramDto, PageRowsDto, RunMetadataDto,
+    StoredRun, StoredRuns,
 };
 use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_streaming_with_stream};
 
@@ -729,6 +730,28 @@ fn get_last_run_chart_series(
 }
 
 #[tauri::command]
+fn get_last_run_histogram(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    page: String,
+    output: String,
+    mode: String,
+    value: Option<f64>,
+) -> Result<HistogramDto, String> {
+    state.with_current(run_id, |run| run.histogram(&page, &output, &mode, value))?
+}
+
+#[tauri::command]
+fn get_last_run_box_plot(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    page: String,
+    outputs: Vec<String>,
+) -> Result<BoxPlotDto, String> {
+    state.with_current(run_id, |run| run.box_plot(&page, &outputs))?
+}
+
+#[tauri::command]
 fn clear_last_run(state: tauri::State<'_, StoredRuns>, run_id: u64) -> Result<(), String> {
     state.clear(run_id)
 }
@@ -905,6 +928,8 @@ fn main() {
             get_last_run_page_rows,
             get_last_run_executions,
             get_last_run_chart_series,
+            get_last_run_histogram,
+            get_last_run_box_plot,
             clear_last_run,
             export_last_run_pages,
             save_chart_png

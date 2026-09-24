@@ -136,7 +136,8 @@ The current Desktop presentation architecture has these properties:
   run snapshot. Chart panel configuration survives Page/tab changes only
   within that Last Run; starting a new run resets the configuration, and the
   first Page receives one default panel when it has numeric Outputs. Each
-  panel keeps its type, Scatter X source, selected Outputs, title, legend
+  panel keeps its type, Scatter X source, selected Outputs, Combo series and
+  right-axis settings, Histogram bins, Box outlier visibility, title, legend
   visibility, axis scale and display settings, X-axis zoom settings, and image
   background in Last Run session state. The
   current zoom viewport is transient presentation state and resets when the
@@ -144,12 +145,24 @@ The current Desktop presentation architecture has these properties:
   data. Single-chart PNG export uses a light or dark palette independently of
   the application theme, captures the current viewport and ECharts-rendered
   title, and excludes interactive DataZoom controls.
-- Live visualization remains Line. After execution stops, Line, XY Scatter,
-  Column, Area, and Bar are available for committed numeric rows, including
-  failed and cancelled runs. Selecting multiple Outputs compares their series
+- Live visualization remains Line. After execution stops, committed numeric
+  rows can use Line, XY Scatter, Column, Area, Bar, Combo, Histogram, and Box &
+  Whisker; failed runs with committed rows remain available for inspection.
+  Selecting multiple Outputs compares their series
   on the same chart. Scatter uses Iteration or a numeric Output as X; an Output
   used only as Scatter X remains a chart data dependency. Analysis charts wait
-  until all required series are loaded before rendering.
+  until all required series are loaded before rendering. Combo uses one
+  Iteration X axis and per-Output Line or Column rendering on the left or right
+  Y axis. Its Line series use viewport min/max decimation while Column series
+  keep every raw row in the viewport. Combo uses the existing raw-series loader
+  and X-axis zoom.
+- Histogram and Box & Whisker are post-run projections computed from committed
+  StoredRun rows. They do not load their full raw samples into the frontend
+  chart cache. Histogram accepts one numeric Output and uses Auto (Sturges),
+  Count (1–200), or positive Width bins, with at most 200 bins. Box & Whisker
+  uses sorted samples and linearly interpolated percentiles at positions
+  `(n - 1) * p`; whiskers are the outermost observed values within 1.5 IQR
+  fences, and values outside the fences are outliers.
 - Line and Area decimate only the visible raw iteration range according to plot
   pixel width, including when custom X-axis bounds narrow the view. Column
   renders raw rows in its visible iteration viewport. Scatter preserves raw XY
@@ -157,7 +170,7 @@ The current Desktop presentation architecture has these properties:
   Scatter, and Bar use ECharts large rendering without sampling. Omitted
   display points remain in the committed ResultRows, and hover inspection
   resolves exact raw iteration and values only within the raw data domain.
-  X-axis zoom for Line, Area, and Column supports an automatic full-range view that follows new rows and a
+  X-axis zoom for Line, Area, Column, and Combo supports an automatic full-range view that follows new rows and a
   manual absolute iteration range that stays fixed as rows arrive. The horizontal
   coordinate is the 1-based page row sequence; charts and CSV remain
   chronological while the Data view may show newest rows first.

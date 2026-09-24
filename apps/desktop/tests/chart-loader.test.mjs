@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData } from '../src/chartData.ts'
+import { addChartPanel, chartRawOutputs } from '../src/chartPanels.ts'
+import { statisticalRequestKey } from '../src/chartStatistics.ts'
 
 const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
 
@@ -35,4 +37,22 @@ test('loader identity remains reversible and content-stable', () => {
   assert.match(source, /JSON\.stringify\(\[\.\.\.requestedNames\]\.sort\(\)\)/)
   assert.match(source, /JSON\.parse\(requestedKey\) as string\[\]/)
   assert.doesNotMatch(source, /join\('\\0'\)|split\('\\0'\)/)
+})
+
+test('statistical-only panels request no raw series while Combo still does', () => {
+  const base = addChartPanel([], 'A', ['V'])[0]
+  const panels = [{ ...base, type: 'histogram' },
+    { ...base, id: 1, type: 'boxplot', outputs: ['V', 'I'] }]
+  assert.deepEqual([...new Set(panels.flatMap(chartRawOutputs))], [])
+  assert.deepEqual(chartLoadGroups(createPageChartData(), panels.flatMap(chartRawOutputs), 500_000, 25_000), [])
+  assert.deepEqual(chartRawOutputs({ ...base, type: 'combo', outputs: ['V', 'I'] }), ['V', 'I'])
+  assert.deepEqual(chartRawOutputs({ ...base, type: 'scatter', scatterXOutput: 'I' }), ['I', 'V'])
+  assert.match(source, /localPanels\.flatMap\(chartRawOutputs\)/)
+})
+
+test('statistical keys change with run and query parameters', () => {
+  const base = { ...addChartPanel([], 'A', ['V'])[0], type: 'histogram' }
+  assert.notEqual(statisticalRequestKey(1, base), statisticalRequestKey(2, base))
+  assert.notEqual(statisticalRequestKey(1, base), statisticalRequestKey(1,
+    { ...base, histogram: { mode: 'count', value: 20 } }))
 })

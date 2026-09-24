@@ -135,8 +135,8 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
 
 test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount\]/)
-  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max\]/)
+  assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount, isStatistical\]/)
+  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical\]/)
 })
 
 test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {

@@ -16,7 +16,9 @@ export type ZoomSettings = {
 }
 
 export type ChartImageBackground = 'light' | 'dark'
-export type ChartType = 'line' | 'scatter' | 'column' | 'area' | 'bar'
+export type ChartType = 'line' | 'scatter' | 'column' | 'area' | 'bar' | 'combo' | 'histogram' | 'boxplot'
+export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'right' }
+export type HistogramSettings = { mode: 'auto' | 'count' | 'width'; value: number | null }
 
 export type ChartPanel = {
   page: string
@@ -30,16 +32,29 @@ export type ChartPanel = {
   zoom: ZoomSettings
   xAxis: AxisSettings
   yAxis: AxisSettings
+  combo: { series: Record<string, ComboSeriesSettings>; rightAxis: AxisSettings }
+  histogram: HistogramSettings
+  boxPlot: { showOutliers: boolean }
+}
+
+export function comboSeriesSettings(panel: ChartPanel, name: string, index: number): ComboSeriesSettings {
+  return panel.combo.series[name] ?? (index === 0
+    ? { kind: 'column', axis: 'left' } : { kind: 'line', axis: 'right' })
 }
 
 export function chartRequiredOutputs(panel: Pick<ChartPanel, 'type' | 'scatterXOutput' | 'outputs'>): string[] {
+  if (panel.type === 'histogram') return panel.outputs.slice(0, 1)
   return panel.type === 'scatter' && panel.scatterXOutput !== null
     ? [...new Set([panel.scatterXOutput, ...panel.outputs])]
     : panel.outputs
 }
 
+export function chartRawOutputs(panel: Pick<ChartPanel, 'type' | 'scatterXOutput' | 'outputs'>): string[] {
+  return panel.type === 'histogram' || panel.type === 'boxplot' ? [] : chartRequiredOutputs(panel)
+}
+
 export function chartSupportsZoom(type: ChartType): boolean {
-  return type === 'line' || type === 'area' || type === 'column'
+  return type === 'line' || type === 'area' || type === 'column' || type === 'combo'
 }
 
 export function nextChartPanelId(panels: ChartPanel[]): number {
@@ -88,6 +103,10 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
       showLabels: true, showTicks: true, showMajorGrid: false },
     yAxis: { title: '', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: true },
+    combo: { series: {}, rightAxis: { title: '', min: null, max: null, interval: null,
+      showLabels: true, showTicks: true, showMajorGrid: false } },
+    histogram: { mode: 'auto', value: null },
+    boxPlot: { showOutliers: true },
   }]
 }
 

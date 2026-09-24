@@ -1,21 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
-import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
+import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, prepareChartSeries, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, type ChartPanel } from './chartPanels'
-import { CHART_GRID, chartGridBottom, chartGridTop, chartPresentationOptions } from './chartOptions'
+import { CHART_GRID, chartGridBottom, chartGridRight, chartGridTop, chartPresentationOptions, comboRendererSeries } from './chartOptions'
+import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 
-use([LineChart, BarChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
+use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 type ZoomRange = { min: number; max: number } | null
 
-export default function ChartPlot({ panel, data, numericNames, charts }: {
+export default function ChartPlot({ panel, data, numericNames, charts, statistical }: {
   panel: ChartPanel
   data: PageChartData
   numericNames: string[]
   charts: Map<number, EChartsType>
+  statistical?: StatisticalDto
 }) {
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -27,14 +29,15 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const [themeRevision, setThemeRevision] = useState(0)
   const [zoomRange, setZoomRange] = useState<ZoomRange>(null)
   const supportsZoom = chartSupportsZoom(panel.type)
-  const rawRowCount = useMemo(() => data.commonLength(chartRequiredOutputs(panel)),
-    [data, data.version, panel])
+  const isStatistical = panel.type === 'histogram' || panel.type === 'boxplot'
+  const rawRowCount = useMemo(() => isStatistical ? 0 : data.commonLength(chartRequiredOutputs(panel)),
+    [data, data.version, panel, isStatistical])
   const rawIteration = useMemo(() => data.iteration.subarray(0, rawRowCount),
     [data, data.version, rawRowCount])
-  const rawSeries = useMemo(() => panel.outputs.map(name => ({
+  const rawSeries = useMemo(() => isStatistical ? [] : panel.outputs.map(name => ({
     name,
     values: data.getSeries(name).subarray(0, rawRowCount),
-  })), [data, data.version, panel.outputs, rawRowCount])
+  })), [data, data.version, panel.outputs, rawRowCount, isStatistical])
   const rawMin = rawRowCount > 0 ? rawIteration[0] : 0
   const rawMax = rawRowCount > 0 ? rawIteration[rawRowCount - 1] : 1
   const fullDomain = useMemo(() => {
@@ -49,11 +52,19 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const visibleRange = supportsZoom && panel.zoom.enabled
     ? zoomRange ?? fullDomain
     : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
-  const display = useMemo(() => prepareChartSeries(panel, data,
-    Math.max(1, width - CHART_GRID.left - CHART_GRID.right), visibleRange),
-  [panel, data, data.version, width, visibleRange.min, visibleRange.max])
+  const display = useMemo(() => isStatistical ? [] : prepareChartSeries(panel, data,
+    Math.max(1, width - CHART_GRID.left - chartGridRight(panel)), visibleRange),
+  [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical])
+  const statistic = useMemo(() => statistical
+    ? statisticalChartSeries(panel, statistical,
+      getComputedStyle(document.documentElement).getPropertyValue('--chart-series-1').trim()) : null,
+  [panel, statistical, themeRevision])
   const rendererSeries = useMemo(() => {
+    if (statistic) return statistic.series
     const style = getComputedStyle(document.documentElement)
+    if (panel.type === 'combo') return comboRendererSeries(panel, display,
+      display.map(series => style.getPropertyValue(
+        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()))
     return display.map(series => {
       const color = style.getPropertyValue(
         `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()
@@ -75,7 +86,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
             itemStyle: { color } }
       }
     })
-  }, [display, numericNames, panel.type, themeRevision])
+  }, [display, numericNames, panel, themeRevision, statistic])
 
   useEffect(() => {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
@@ -149,7 +160,8 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     const style = getComputedStyle(document.documentElement)
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
-      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') }, fullDomain, rawIteration)
+      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') },
+      fullDomain, rawIteration, statistic?.categories)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
@@ -185,7 +197,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   }, [panel.xAxis.min, panel.xAxis.max, panel.zoom.enabled, supportsZoom])
 
   useEffect(() => {
-    if (panel.type === 'scatter' || panel.type === 'bar') {
+    if (panel.type === 'scatter' || panel.type === 'bar' || panel.type === 'histogram' || panel.type === 'boxplot') {
       tooltip.current!.hidden = true
       pointer.current!.hidden = true
       return
@@ -221,7 +233,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
-      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${rawRowCount} raw rows per series`} />
+      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${statistical ? 'statistical projection' : `${rawRowCount} raw rows per series`}`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
       top: chartGridTop(panel, display.length),
       bottom: chartGridBottom(panel),
