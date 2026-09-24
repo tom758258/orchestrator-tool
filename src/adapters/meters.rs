@@ -17,6 +17,7 @@ use crate::{
     inspection::inspect_tool,
     meters_setup::{
         AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode,
+        VmCompSlope,
     },
     process::{CaptureError, run_output_with_timeout},
     tool::ToolId,
@@ -238,6 +239,15 @@ pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
                 ]);
             }
         }
+    }
+    if let Some(slope) = setup.vm_comp_slope {
+        arguments.extend([
+            OsString::from("--vm-comp-slope"),
+            OsString::from(match slope {
+                VmCompSlope::Pos => "pos",
+                VmCompSlope::Neg => "neg",
+            }),
+        ]);
     }
     arguments
 }
@@ -932,6 +942,7 @@ mod tests {
 
     use crate::meters_setup::{
         AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode,
+        VmCompSlope,
     };
 
     use super::{
@@ -974,6 +985,16 @@ mod tests {
 
         setup.dcv_input_impedance = None;
         assert_eq!(super::setup_arguments(&setup), expected[..10]);
+
+        setup.vm_comp_slope = Some(VmCompSlope::Pos);
+        assert_eq!(
+            super::setup_arguments(&setup),
+            expected[..10]
+                .iter()
+                .cloned()
+                .chain([OsString::from("--vm-comp-slope"), OsString::from("pos")])
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1012,6 +1033,16 @@ mod tests {
 
         setup.current_terminal = None;
         assert_eq!(super::setup_arguments(&setup), expected[..8]);
+
+        setup.vm_comp_slope = Some(VmCompSlope::Neg);
+        assert_eq!(
+            super::setup_arguments(&setup),
+            expected[..8]
+                .iter()
+                .cloned()
+                .chain([OsString::from("--vm-comp-slope"), OsString::from("neg")])
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

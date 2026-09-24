@@ -54,6 +54,11 @@ mode, manual range, NPLC, and Auto Zero. DC Voltage additionally supports
 Input Impedance; DC Current additionally supports Current Terminal. These
 fields are mutually constrained by the selected measurement type.
 
+Both DC Voltage and DC Current may specify `vm_comp_slope` as `pos` or `neg`.
+When omitted, Orchestrator does not pass `--vm-comp-slope`, leaving the
+instrument's VM Comp setting unchanged. Existing schema v1 Templates without
+this field load with no VM Comp slope specified.
+
 Manual range mode requires a manual range. Auto mode ignores any stored manual
 range and does not emit a range startup argument. Meters trigger mode defaults
 to `software`, presented by Desktop as **Single**, and may also be

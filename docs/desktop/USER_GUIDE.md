@@ -106,8 +106,11 @@ For a Meters Tool Instance, the current Setup controls:
   **10 MΩ**, or **Auto**.
 - For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
   **10 A terminal**.
+- VM Comp Slope for DC Voltage and DC Current: **Not specified**,
+  **Positive**, or **Negative**. Not specified leaves the instrument's
+  existing VM Comp setting unchanged.
 
-Only fields applicable to the selected measurement are shown. The external
+Measurement fields stay visible; inapplicable fields are disabled. The external
 meters-tool remains authoritative for the actual model capability and numeric
 limits. Desktop does not replace its capability database.
 

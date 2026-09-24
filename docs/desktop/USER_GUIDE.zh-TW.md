@@ -93,8 +93,10 @@ Live Resources 不屬於 Template。
   **10 MΩ** 或 **Auto**。
 - DC Current 的 Current Terminal：**Not specified**、**3 A terminal** 或
   **10 A terminal**。
+- DC Voltage 與 DC Current 的 VM Comp Slope：**Not specified**、**Positive**
+  或 **Negative**。Not specified 會保留 instrument 現有的 VM Comp 設定。
 
-UI 只會顯示符合目前 measurement 的欄位。實際 model capability 與 numeric
+Measurement 欄位會固定顯示；不適用的欄位會 disabled。實際 model capability 與 numeric
 limits 仍由 external meters-tool 最終驗證；Desktop 不會重新建立它的
 capability database。
 

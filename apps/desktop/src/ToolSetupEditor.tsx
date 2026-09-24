@@ -12,6 +12,7 @@ export type MetersSetup = {
   auto_zero: 'on' | 'off' | 'once'
   dcv_input_impedance: 'default' | 'ten-megohm' | 'auto' | null
   current_terminal: number | null
+  vm_comp_slope?: 'pos' | 'neg' | null
   trigger_mode?: 'software' | 'software-custom' | 'immediate-custom' | 'external-custom'
   sample_count?: number
   buffer_drain_size?: number | null
@@ -315,31 +316,37 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
             <option value="once">Once</option>
           </select>
         </label>
-        {meters.measurement === 'voltage-dc' && (
-          <label className="step-property-field">
-            <span className="step-property-label">Input Impedance</span>
-            <select value={meters.dcv_input_impedance ?? ''} onChange={(event) => onChange({
-              ...value, meters: { ...meters, dcv_input_impedance: (event.target.value || null) as MetersSetup['dcv_input_impedance'] },
-            })}>
-              <option value="">Not specified</option>
-              <option value="default">Default</option>
-              <option value="ten-megohm">10 MΩ</option>
-              <option value="auto">Auto</option>
-            </select>
-          </label>
-        )}
-        {meters.measurement === 'current-dc' && (
-          <label className="step-property-field">
-            <span className="step-property-label">Current Terminal (optional)</span>
-            <select value={meters.current_terminal ?? ''} onChange={(event) => onChange({
-              ...value, meters: { ...meters, current_terminal: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) },
-            })}>
-              <option value="">Not specified</option>
-              <option value="3">3 A terminal</option>
-              <option value="10">10 A terminal</option>
-            </select>
-          </label>
-        )}
+        <label className="step-property-field">
+          <span className="step-property-label">Input Impedance</span>
+          <select disabled={meters.measurement !== 'voltage-dc'} value={meters.dcv_input_impedance ?? ''} onChange={(event) => onChange({
+            ...value, meters: { ...meters, dcv_input_impedance: (event.target.value || null) as MetersSetup['dcv_input_impedance'] },
+          })}>
+            <option value="">Not specified</option>
+            <option value="default">Default</option>
+            <option value="ten-megohm">10 MΩ</option>
+            <option value="auto">Auto</option>
+          </select>
+        </label>
+        <label className="step-property-field">
+          <span className="step-property-label">Current Terminal (optional)</span>
+          <select disabled={meters.measurement !== 'current-dc'} value={meters.current_terminal ?? ''} onChange={(event) => onChange({
+            ...value, meters: { ...meters, current_terminal: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) },
+          })}>
+            <option value="">Not specified</option>
+            <option value="3">3 A terminal</option>
+            <option value="10">10 A terminal</option>
+          </select>
+        </label>
+        <label className="step-property-field">
+          <span className="step-property-label">VM Comp Slope</span>
+          <select value={meters.vm_comp_slope ?? ''} onChange={(event) => onChange({
+            ...value, meters: { ...meters, vm_comp_slope: (event.target.value || null) as MetersSetup['vm_comp_slope'] },
+          })}>
+            <option value="">Not specified</option>
+            <option value="pos">Positive</option>
+            <option value="neg">Negative</option>
+          </select>
+        </label>
       </div>
     </>
   )
@@ -386,6 +393,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
         const instance: ToolInstance = tool === 'meters'
           ? { id, tool, setup: { measurement: 'voltage-dc', range_mode: 'auto', manual_range: null,
               nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null,
+              vm_comp_slope: null,
               trigger_mode: 'software', sample_count: 1, buffer_drain_size: null,
               allow_buffer_overflow_risk: false } }
           : { id, tool, setup: {} }

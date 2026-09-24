@@ -959,7 +959,7 @@ mod tests {
     use crate::{
         meters_setup::{
             AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError,
-            RangeMode,
+            RangeMode, VmCompSlope,
         },
         tool::ToolId,
         tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
@@ -1033,6 +1033,7 @@ mod tests {
                     auto_zero: AutoZero::Once,
                     dcv_input_impedance: Some(DcvInputImpedance::TenMegohm),
                     current_terminal: None,
+                    vm_comp_slope: Some(VmCompSlope::Pos),
                     ..MetersSetup::default()
                 }),
             },
@@ -1062,7 +1063,8 @@ mod tests {
                 "nplc": 1.0,
                 "auto_zero": "once",
                 "dcv_input_impedance": "ten-megohm",
-                "current_terminal": null
+                "current_terminal": null,
+                "vm_comp_slope": "pos"
             })
         );
         assert_eq!(value["workflow"]["steps"][0]["type"], "tool-action");

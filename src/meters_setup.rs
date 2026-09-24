@@ -16,6 +16,8 @@ pub struct MetersSetup {
     pub auto_zero: AutoZero,
     pub dcv_input_impedance: Option<DcvInputImpedance>,
     pub current_terminal: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vm_comp_slope: Option<VmCompSlope>,
     #[serde(default, skip_serializing_if = "MetersTriggerMode::is_software")]
     pub trigger_mode: MetersTriggerMode,
     #[serde(
@@ -39,6 +41,7 @@ impl Default for MetersSetup {
             auto_zero: AutoZero::On,
             dcv_input_impedance: None,
             current_terminal: None,
+            vm_comp_slope: None,
             trigger_mode: MetersTriggerMode::Software,
             sample_count: 1,
             buffer_drain_size: None,
@@ -185,6 +188,14 @@ pub enum DcvInputImpedance {
     Auto,
 }
 
+/// VM Comp slope selection for DC voltage and DC current measurements.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VmCompSlope {
+    Pos,
+    Neg,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -218,6 +229,13 @@ mod tests {
         assert_eq!(setup.sample_count, 1);
         assert_eq!(setup.buffer_drain_size, None);
         assert!(!setup.allow_buffer_overflow_risk);
+        assert_eq!(setup.vm_comp_slope, None);
+        assert!(
+            serde_json::to_value(&setup)
+                .unwrap()
+                .get("vm_comp_slope")
+                .is_none()
+        );
     }
 
     #[test]
