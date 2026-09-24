@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, minMaxDecimate, type PageChartData } from './chartData'
 import type { ChartPanel } from './chartPanels'
+import { CHART_GRID, chartGridTop, chartPresentationOptions } from './chartOptions'
 
-use([LineChart, GridComponent, LegendComponent, CanvasRenderer])
-
-const GRID = { left: 80, right: 24, top: 48, bottom: 64 }
+use([LineChart, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 export default function ChartPlot({ panel, data, numericNames, charts }: {
   panel: ChartPanel
@@ -34,7 +33,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   })), [data, data.version, panel.outputs, rawRowCount])
   const display = useMemo(() => rawSeries.map(series => ({
     name: series.name,
-    data: minMaxDecimate(rawIteration, series.values, Math.max(1, width - GRID.left - GRID.right)),
+    data: minMaxDecimate(rawIteration, series.values, Math.max(1, width - CHART_GRID.left - CHART_GRID.right)),
   })), [rawIteration, rawSeries, width])
 
   useEffect(() => {
@@ -82,26 +81,18 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   useEffect(() => {
     const style = getComputedStyle(document.documentElement)
     const color = (token: string) => style.getPropertyValue(token).trim()
+    const presentation = chartPresentationOptions(panel, display.length,
+      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') })
     instance.current!.setOption({
       animation: false,
       backgroundColor: color('--chart-surface'),
       textStyle: { color: color('--ink') },
-      grid: GRID,
-      legend: { show: display.length > 1, top: 8, type: 'plain', selectedMode: false,
-        textStyle: { color: color('--ink') } },
-      xAxis: { type: 'value', min: 1, max: Math.max(2, rawRowCount), minInterval: 1,
-        name: panel.xAxisTitle, nameLocation: 'middle', nameGap: 36,
-        axisLine: { lineStyle: { color: color('--chart-axis') } },
-        axisLabel: { color: color('--chart-axis') }, splitLine: { show: false } },
-      yAxis: { type: 'value', name: panel.yAxisTitle, nameLocation: 'middle', nameGap: 56,
-        axisLabel: { color: color('--chart-axis') },
-        nameTextStyle: { color: color('--chart-axis') },
-        splitLine: { lineStyle: { color: color('--chart-grid'), type: 'dashed' } } },
+      ...presentation,
       series: display.map(series => ({ ...series, type: 'line', showSymbol: false,
         silent: true, emphasis: { disabled: true },
         itemStyle: { color: color(`--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`) } })),
     }, { notMerge: true })
-  }, [display, rawRowCount, numericNames, panel.xAxisTitle, panel.yAxisTitle, themeRevision])
+  }, [display, numericNames, panel, themeRevision])
 
   useEffect(() => {
     const chart = instance.current!
@@ -135,7 +126,10 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   return <div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
       aria-label={`Line chart: ${panel.outputs.join(', ')} versus Iteration, ${rawRowCount} raw rows per series`} />
-    <div ref={pointer} className="result-chart-pointer" hidden style={{ top: GRID.top, bottom: GRID.bottom }} />
+    <div ref={pointer} className="result-chart-pointer" hidden style={{
+      top: chartGridTop(panel, display.length),
+      bottom: CHART_GRID.bottom,
+    }} />
     <div ref={tooltip} className="result-chart-tooltip" hidden />
   </div>
 }

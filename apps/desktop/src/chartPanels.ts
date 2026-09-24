@@ -1,11 +1,23 @@
 import type { RunPageMetadata } from './workflow'
 
+export type AxisSettings = {
+  title: string
+  min: number | null
+  max: number | null
+  interval: number | null
+  showLabels: boolean
+  showTicks: boolean
+  showMajorGrid: boolean
+}
+
 export type ChartPanel = {
   page: string
   id: number
+  title: string
   outputs: string[]
-  xAxisTitle: string
-  yAxisTitle: string
+  showLegend: boolean
+  xAxis: AxisSettings
+  yAxis: AxisSettings
 }
 
 export function nextChartPanelId(panels: ChartPanel[]): number {
@@ -43,7 +55,13 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
   if (panels.length >= MAX_CHARTS || numericNames.length === 0) return panels
   const name = numericNames.find(name => !panels.some(panel => panel.page === page && panel.outputs.includes(name)))
     ?? numericNames[0]
-  return [...panels, { id: nextChartPanelId(panels), page, outputs: [name], xAxisTitle: 'Iteration', yAxisTitle: '' }]
+  return [...panels, {
+    id: nextChartPanelId(panels), page, title: '', outputs: [name], showLegend: true,
+    xAxis: { title: 'Iteration', min: null, max: null, interval: null,
+      showLabels: true, showTicks: true, showMajorGrid: false },
+    yAxis: { title: '', min: null, max: null, interval: null,
+      showLabels: true, showTicks: true, showMajorGrid: true },
+  }]
 }
 
 export function reconcileRunChartPanels(

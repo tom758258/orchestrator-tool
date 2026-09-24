@@ -135,9 +135,10 @@ The current Desktop presentation architecture has these properties:
   removed. Last Run Page tabs keep Charts, Summary, and Data views on the same
   run snapshot. Chart panel configuration survives Page/tab changes only
   within that Last Run; starting a new run resets the configuration, and the
-  first Page receives one default panel when it has numeric Outputs. Axis
-  titles and single-chart PNG export remain presentation features, and chart
-  settings are session state rather than Template data.
+  first Page receives one default panel when it has numeric Outputs. Each
+  panel keeps its title, legend visibility, and axis scale and display settings
+  in Last Run session state. These settings are not Template data. Single-chart
+  PNG export captures the ECharts-rendered title and plot.
 - Large datasets use pixel-aware display decimation. Omitted display points
   remain in the committed ResultRows, and hover inspection resolves the exact
   raw iteration and values. The horizontal coordinate is the 1-based page row

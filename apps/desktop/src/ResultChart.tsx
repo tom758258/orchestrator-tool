@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
+import ChartSettings from './ChartSettings'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -26,6 +27,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const saving = useRef(false)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
+  const [settingsId, setSettingsId] = useState<number | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const data = useMemo(() => {
@@ -169,6 +171,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             <div className="result-chart-panel-actions">
               <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
+              <button className="action-button" type="button" disabled={savingId !== null}
+                onClick={() => setSettingsId(panel.id)}>Settings</button>
               <button className="action-button action-button-danger" type="button"
                 aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null || !canRemoveChartPanel(panels)}
                 onClick={() => {
@@ -190,25 +194,15 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
               {name}
             </label>)}
           </fieldset>
-          <fieldset className="result-chart-axis-titles" disabled={savingId !== null}>
-            <legend>Axis titles</legend>
-            <label>
-              X-axis title
-              <input type="text" value={panel.xAxisTitle} onChange={event =>
-                onPanelsChange(panels.map(item => item.id === panel.id
-                  ? { ...item, xAxisTitle: event.target.value } : item))} />
-            </label>
-            <label>
-              Y-axis title
-              <input type="text" value={panel.yAxisTitle} onChange={event =>
-                onPanelsChange(panels.map(item => item.id === panel.id
-                  ? { ...item, yAxisTitle: event.target.value } : item))} />
-            </label>
-          </fieldset>
           {selectedOutputs.length === 0 || !data ? <p>Select at least one Output to display this chart.</p> : (
             <ChartPlot panel={selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }}
               data={data} numericNames={numericNames} charts={plots.current} />
           )}
+          {settingsId === panel.id && <ChartSettings panel={panel} onClose={() => setSettingsId(null)}
+            onApply={settings => {
+              onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings } : item))
+              setSettingsId(null)
+            }} />}
         </section>
       })}
     </div>

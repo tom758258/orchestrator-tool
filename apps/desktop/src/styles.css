@@ -1107,27 +1107,6 @@ textarea:disabled {
   margin-left: auto;
 }
 
-.result-chart-axis-titles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  min-width: 0;
-  margin: 0 0 16px;
-  border: 0;
-  padding: 0;
-}
-
-.result-chart-axis-titles legend {
-  margin-bottom: 8px;
-}
-
-.result-chart-axis-titles label {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 180px;
-}
-
 .result-chart-outputs {
   display: flex;
   flex-wrap: wrap;
@@ -1147,6 +1126,88 @@ textarea:disabled {
   align-items: baseline;
   gap: 6px;
   overflow-wrap: anywhere;
+}
+
+.chart-settings-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+}
+
+.chart-settings-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.chart-settings-content {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.chart-settings-content h3 {
+  margin: 0;
+}
+
+.chart-settings-content fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.chart-settings-content legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.chart-settings-field {
+  display: grid;
+  gap: 6px;
+}
+
+.chart-settings-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chart-settings-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.chart-settings-toggles label,
+.chart-settings-general > label:not(.chart-settings-field) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-settings-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.chart-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 520px) {
+  .chart-settings-numbers {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 900px) {

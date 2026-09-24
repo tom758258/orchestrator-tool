@@ -329,8 +329,16 @@ ResultRows；hover 仍使用 exact raw iteration 與 value。Chart X coordinate 
 Page row sequence。Chart 與 CSV 按 chronological 順序，**Output Data** 則以
 latest first 顯示。
 
-每個 chart 都有個別的 **Save image** 操作，可匯出 PNG。Chart panel settings
-屬於目前的 Desktop session，不屬於 Template。
+在 chart panel 勾選 **Outputs**，可顯示一個或多個 numeric series。點選右上角
+**Settings** 可設定圖表標題、legend，以及 X/Y axis 的標題、最小值、最大值、
+主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
+若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。
+**Apply** 會套用有效設定，**Cancel** 或關閉視窗會捨棄尚未套用的修改。
+單一 series 不顯示 legend，即使 **Show legend** 已開啟。
+
+每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
+Chart settings 只屬於目前 Last Run session；切換 Page 後仍保留，開始新的 run、
+Open Template 或 Clear Last Run 時會清除，且不屬於 Template。
 
 ### 10.3 Data 與 Summary
 
