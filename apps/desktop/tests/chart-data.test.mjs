@@ -8,6 +8,7 @@ import {
   minMaxDecimateRange,
   pruneChartData,
 } from '../src/chartData.ts'
+import { addChartPanel } from '../src/chartPanels.ts'
 
 const sequence = count => Float64Array.from({ length: count }, (_, index) => index + 1)
 
@@ -114,7 +115,7 @@ test('global Chart cleanup removes off-Page caches with no consumer', () => {
   a.append('V', 0, [1, 2, 3])
   b.append('V', 0, [4, 5])
   const cache = new Map([['A', a], ['B', b]])
-  pruneChartData(cache, [{ page: 'B', outputs: ['V'] }])
+  pruneChartData(cache, [addChartPanel([], 'B', ['V'])[0]])
   assert.equal(cache.has('A'), false)
   assert.equal(cache.get('B'), b)
 })
@@ -125,7 +126,7 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
   page.append('I', 0, Array.from({ length: 1000 }, (_, index) => index))
   const oldBytes = page.iteration.buffer.byteLength
   const cache = new Map([['A', page]])
-  pruneChartData(cache, [{ page: 'A', outputs: ['V'] }])
+  pruneChartData(cache, [addChartPanel([], 'A', ['V'])[0]])
   assert.deepEqual([...page.getSeries('V')], [1, 2])
   assert.equal(page.getSeries('I').length, 0)
   assert.deepEqual([...page.iteration], [1, 2])
@@ -134,12 +135,25 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
 
 test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /\[data, data\.version, panel\.outputs\]/)
+  assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount\]/)
+  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max\]/)
 })
 
 test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /data\.commonLength\(panel\.outputs\)/)
+  assert.match(source, /data\.commonLength\(chartRequiredOutputs\(panel\)\)/)
   assert.match(source, /data\.iteration\.subarray\(0, rawRowCount\)/)
   assert.match(source, /exactHoverIndex\(x, rawRowCount\)/)
+})
+
+test('Scatter X remains cached when it is not selected as a Y Output', () => {
+  const data = createPageChartData()
+  data.append('V', 0, [1, 2, 3])
+  data.append('I', 0, [4, 5, 6])
+  data.append('unused', 0, [7, 8, 9])
+  const panel = { ...addChartPanel([], 'A', ['I'])[0], type: 'scatter', scatterXOutput: 'V' }
+  pruneChartData(new Map([['A', data]]), [panel])
+  assert.deepEqual([...data.getSeries('V')], [1, 2, 3])
+  assert.deepEqual([...data.getSeries('I')], [4, 5, 6])
+  assert.equal(data.getSeries('unused').length, 0)
 })

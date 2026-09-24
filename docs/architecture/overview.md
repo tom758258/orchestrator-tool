@@ -136,18 +136,28 @@ The current Desktop presentation architecture has these properties:
   run snapshot. Chart panel configuration survives Page/tab changes only
   within that Last Run; starting a new run resets the configuration, and the
   first Page receives one default panel when it has numeric Outputs. Each
-  panel keeps its title, legend visibility, axis scale and display settings,
-  X-axis zoom settings, and image background in Last Run session state. The
+  panel keeps its type, Scatter X source, selected Outputs, title, legend
+  visibility, axis scale and display settings, X-axis zoom settings, and image
+  background in Last Run session state. The
   current zoom viewport is transient presentation state and resets when the
   configured X-axis minimum or maximum changes. These settings are not Template
   data. Single-chart PNG export uses a light or dark palette independently of
   the application theme, captures the current viewport and ECharts-rendered
   title, and excludes interactive DataZoom controls.
-- Line charts decimate only the visible raw iteration range according to plot
-  pixel width, including when custom X-axis bounds narrow the view. Omitted
+- Live visualization remains Line. After execution stops, Line, XY Scatter,
+  Column, Area, and Bar are available for committed numeric rows, including
+  failed and cancelled runs. Selecting multiple Outputs compares their series
+  on the same chart. Scatter uses Iteration or a numeric Output as X; an Output
+  used only as Scatter X remains a chart data dependency. Analysis charts wait
+  until all required series are loaded before rendering.
+- Line and Area decimate only the visible raw iteration range according to plot
+  pixel width, including when custom X-axis bounds narrow the view. Column
+  renders raw rows in its visible iteration viewport. Scatter preserves raw XY
+  pairs; horizontal Bar preserves raw value and iteration pairs. Column,
+  Scatter, and Bar use ECharts large rendering without sampling. Omitted
   display points remain in the committed ResultRows, and hover inspection
   resolves exact raw iteration and values only within the raw data domain.
-  X-axis zoom supports an automatic full-range view that follows new rows and a
+  X-axis zoom for Line, Area, and Column supports an automatic full-range view that follows new rows and a
   manual absolute iteration range that stays fixed as rows arrive. The horizontal
   coordinate is the 1-based page row sequence; charts and CSV remain
   chronological while the Data view may show newest rows first.
@@ -156,9 +166,10 @@ The current Desktop presentation architecture has these properties:
   onto a bounded physical scroll space so million-row Pages do not require a
   tens-of-millions-of-pixels DOM layout. Scrolling away from the newest rows
   keeps the viewed history anchored while new committed rows arrive.
-- Charts request only the selected numeric Output series. The frontend keeps
+- Charts request the selected numeric Output series and any separate Scatter X
+  Output. The frontend keeps
   shared raw Float64 series needed for exact hover and appends bounded tails;
-  renderer input remains pixel-decimated. These numeric projections do not
+  Line and Area renderer input remains pixel-decimated. These numeric projections do not
   replace the authoritative ResultRows.
 - Page numeric eligibility and Count, Min, Max, and Avg summaries are
   maintained incrementally in Rust rather than rescanning all rows in the

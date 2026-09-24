@@ -5,14 +5,14 @@ import ChartSettings from './ChartSettings'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { addChartPanel, canRemoveChartPanel, MAX_CHARTS, type ChartPanel } from './chartPanels'
+import { addChartPanel, canRemoveChartPanel, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
 
 type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
 
 const CHART_SERIES_CHUNK_ROWS = 25_000
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running }: {
   runId: number
   revision: number
   rowCount: number
@@ -22,6 +22,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   panels: ChartPanel[]
   onPanelsChange: (panels: ChartPanel[]) => void
   numericNames: string[]
+  running: boolean
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
@@ -31,7 +32,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [dataVersion, setDataVersion] = useState(0)
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const data = useMemo(() => {
-    if (!localPanels.some(panel => panel.outputs.some(name => numericNames.includes(name)))) return null
+    if (!localPanels.some(panel => chartRequiredOutputs(panel).some(name => numericNames.includes(name)))) return null
     let local = chartData.get(page)
     if (!local) {
       local = createPageChartData()
@@ -39,7 +40,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
     }
     return local
   }, [chartData, page, localPanels, numericNames, dataVersion])
-  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(panel => panel.outputs))]
+  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(chartRequiredOutputs))]
     .filter(name => numericNames.includes(name)), [localPanels, numericNames])
   const requestedKey = useMemo(() => JSON.stringify([...requestedNames].sort()), [requestedNames])
   const latestRowCountRef = useRef(rowCount)
@@ -166,11 +167,14 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
     <div className="result-charts-grid">
       {localPanels.map((panel, index) => {
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
+        const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
+        const analysisReady = panel.type === 'line' ||
+          (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount)
         return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
             <div className="result-chart-panel-actions">
-              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0}
+              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0 || !analysisReady}
                 onClick={() => void saveImage(panel.id, index)}>Save image</button>
               <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => setSettingsId(panel.id)}>Settings</button>
@@ -195,11 +199,13 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
               {name}
             </label>)}
           </fieldset>
-          {selectedOutputs.length === 0 || !data ? <p>Select at least one Output to display this chart.</p> : (
-            <ChartPlot panel={selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }}
+          {selectedOutputs.length === 0 || !data ? <p>Select at least one Output to display this chart.</p>
+            : !analysisReady ? <p role="status">Preparing chart data...</p> : (
+            <ChartPlot panel={visiblePanel}
               data={data} numericNames={numericNames} charts={plots.current} />
           )}
-          {settingsId === panel.id && <ChartSettings panel={panel} onClose={() => setSettingsId(null)}
+          {settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
+            running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
               onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings } : item))
               setSettingsId(null)

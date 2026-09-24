@@ -324,26 +324,38 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
-大型 dataset 可能為了 chart presentation 而 decimate。Decimation 不會丟棄 raw
-ResultRows；hover 仍使用 exact raw iteration 與 value。Chart X coordinate 是
-Page row sequence。Chart 與 CSV 按 chronological 順序，**Output Data** 則以
-latest first 顯示。
+Execution 執行中只能使用 **Line**。停止後，只要有 committed numeric rows，
+即使 execution 失敗或取消，也可在 **Settings → General → Chart type** 選擇
+**Line**、**XY Scatter**、**Column**、**Area** 或 **Bar**。Line 顯示 Iteration
+趨勢；Area 在折線下填色；Column 顯示垂直分組長條；Bar 顯示水平分組長條；
+XY Scatter 用來比較數值 X 與 Y 的關係。Scatter 的 **X source** 可選
+Iteration 或任一 numeric Output，外層勾選的 Outputs 是 Y series。
 
-在 chart panel 勾選 **Outputs**，可顯示一個或多個 numeric series。點選右上角
+Line 與 Area 在大型資料集只對可見 Iteration 範圍做繪圖 decimation；Column
+在可見範圍保留每筆長條，Scatter 與 Bar 也保留 raw pairs。這些顯示方式不會
+丟棄 raw ResultRows。Line、Area 與 Column 的 hover 使用 exact raw iteration
+與 value。Iteration 是 Page 的 row sequence；Chart 與 CSV 按 chronological
+順序，**Output Data** 則以 latest first 顯示。
+
+在 chart panel 勾選多個 **Outputs**，即可在同一張圖比較多個 numeric series。
+Scatter 的 X Output 不必同時勾選為 Y Output。點選右上角
 **Settings** 可設定圖表標題、legend，以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
 若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。
-**Apply** 會套用有效設定，**Cancel** 或關閉視窗會捨棄尚未套用的修改。
+**Apply** 會套用有效設定並關閉視窗，**Cancel** 會捨棄草稿並關閉視窗。
+點擊背景或按 Esc 不會關閉 Settings，草稿會保留。
 單一 series 不顯示 legend，即使 **Show legend** 已開啟。
 
-在 **Settings → Zoom** 勾選 **Enable zoom** 後，可用滑鼠滾輪縮放 X 軸，
-在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
+Line、Area 與 Column 可在 **Settings → Zoom** 勾選 **Enable zoom**，
+以滑鼠滾輪縮放 X 軸，並在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
 滾輪與拖曳仍可使用，也不會清除目前範圍。手動縮放後按 **Reset Zoom** 可回到
 完整 X 範圍。Live run 尚未手動縮放時會跟進新資料；手動縮放或平移後，
 新資料不會移動目前視窗，直到按 Reset Zoom。修改 X Axis 的 Minimum 或 Maximum
 並套用後，也會回到新的完整 X 範圍。關閉 Enable zoom 也會回到完整範圍。
-大型資料只會依目前可見範圍取 raw rows 進行繪圖 decimation；hover 在資料範圍外
-不會顯示虛假的首筆或末筆數值。
+Line 與 Area 只會對目前可見範圍進行繪圖 decimation；Column 則保留可見範圍
+的每筆 raw row。hover 在資料範圍外
+不會顯示虛假的首筆或末筆數值。Scatter 與 Bar 沒有 Zoom 控制；
+從可縮放圖型切換到這兩種圖型時，手動縮放範圍會重設。
 
 每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
 **Settings → Save image → Background** 可選 Light 或 Dark，與 Application theme

@@ -2061,7 +2061,7 @@ function App() {
                 {displayedRun && runPageMetadata && <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels}
                   runId={displayedRun.run_id} revision={runPageMetadata.revision} rowCount={runPageMetadata.row_count}
                   numericNames={runPageMetadata.numeric_outputs} page={runPage?.name ?? 'Results'}
-                  chartData={chartData} onSavingChange={setChartSaving} />}
+                  chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { exactHoverIndex, minMaxDecimateRange, type PageChartData } from './chartData'
-import type { ChartPanel } from './chartPanels'
+import { exactHoverIndex, prepareChartSeries, type PageChartData } from './chartData'
+import { chartRequiredOutputs, chartSupportsZoom, type ChartPanel } from './chartPanels'
 import { CHART_GRID, chartGridBottom, chartGridTop, chartPresentationOptions } from './chartOptions'
 
-use([LineChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
+use([LineChart, BarChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 type ZoomRange = { min: number; max: number } | null
 
@@ -26,8 +26,9 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const [width, setWidth] = useState(0)
   const [themeRevision, setThemeRevision] = useState(0)
   const [zoomRange, setZoomRange] = useState<ZoomRange>(null)
-  const rawRowCount = useMemo(() => data.commonLength(panel.outputs),
-    [data, data.version, panel.outputs])
+  const supportsZoom = chartSupportsZoom(panel.type)
+  const rawRowCount = useMemo(() => data.commonLength(chartRequiredOutputs(panel)),
+    [data, data.version, panel])
   const rawIteration = useMemo(() => data.iteration.subarray(0, rawRowCount),
     [data, data.version, rawRowCount])
   const rawSeries = useMemo(() => panel.outputs.map(name => ({
@@ -45,21 +46,36 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     }
     return { min, max }
   }, [panel.xAxis.min, panel.xAxis.max, rawMin, rawMax])
-  const visibleRange = panel.zoom.enabled
+  const visibleRange = supportsZoom && panel.zoom.enabled
     ? zoomRange ?? fullDomain
     : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
-  const display = useMemo(() => rawSeries.map(series => ({
-    name: series.name,
-    data: minMaxDecimateRange(rawIteration, series.values,
-      Math.max(1, width - CHART_GRID.left - CHART_GRID.right), visibleRange),
-  })), [rawIteration, rawSeries, width, visibleRange.min, visibleRange.max])
+  const display = useMemo(() => prepareChartSeries(panel, data,
+    Math.max(1, width - CHART_GRID.left - CHART_GRID.right), visibleRange),
+  [panel, data, data.version, width, visibleRange.min, visibleRange.max])
   const rendererSeries = useMemo(() => {
     const style = getComputedStyle(document.documentElement)
-    return display.map(series => ({ ...series, type: 'line', showSymbol: false,
-      silent: true, emphasis: { disabled: true },
-      itemStyle: { color: style.getPropertyValue(
-        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim() } }))
-  }, [display, numericNames, themeRevision])
+    return display.map(series => {
+      const color = style.getPropertyValue(
+        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()
+      switch (panel.type) {
+        case 'line':
+        case 'area':
+          return { ...series, type: 'line' as const, showSymbol: false,
+            silent: true, emphasis: { disabled: true }, itemStyle: { color },
+            ...(panel.type === 'area' ? { areaStyle: { opacity: 0.18 } } : {}) }
+        case 'column':
+        case 'bar':
+          return { ...series,
+            data: panel.type === 'bar'
+              ? series.data.map(([value, iteration]) => [value, String(iteration)]) : series.data,
+            type: 'bar' as const, large: true, largeThreshold: 2000,
+            silent: panel.type === 'column', itemStyle: { color } }
+        case 'scatter':
+          return { ...series, type: 'scatter' as const, large: true, largeThreshold: 2000,
+            itemStyle: { color } }
+      }
+    })
+  }, [display, numericNames, panel.type, themeRevision])
 
   useEffect(() => {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
@@ -104,11 +120,11 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   }, [charts, panel.id])
 
   useEffect(() => {
-    if (!panel.zoom.enabled) setZoomRange(null)
-  }, [panel.zoom.enabled])
+    if (!supportsZoom || !panel.zoom.enabled) setZoomRange(null)
+  }, [supportsZoom, panel.zoom.enabled])
 
   useEffect(() => {
-    if (!panel.zoom.enabled) return
+    if (!supportsZoom || !panel.zoom.enabled) return
     const chart = instance.current!
     const onZoom = (payload: unknown) => {
       const event = payload as { start?: number; end?: number;
@@ -127,13 +143,13 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     }
     chart.on('datazoom', onZoom)
     return () => { chart.off('datazoom', onZoom) }
-  }, [panel.zoom.enabled, fullDomain])
+  }, [supportsZoom, panel.zoom.enabled, fullDomain])
 
   useEffect(() => {
     const style = getComputedStyle(document.documentElement)
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
-      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') }, fullDomain)
+      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') }, fullDomain, rawIteration)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
@@ -141,7 +157,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       backgroundColor: color('--chart-surface'),
       textStyle: { color: color('--ink') },
       ...presentation,
-      dataZoom: panel.zoom.enabled ? [
+      dataZoom: supportsZoom && panel.zoom.enabled ? [
         { type: 'inside', xAxisIndex: 0, filterMode: 'none', throttle: 80,
           zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false, ...range },
         ...(panel.zoom.showSlider ? [{ type: 'slider', xAxisIndex: 0, filterMode: 'none',
@@ -153,7 +169,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       ] : [],
       series: rendererSeries,
     }, { notMerge: true })
-  }, [panel, themeRevision, fullDomain])
+  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration])
 
   useEffect(() => {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
@@ -165,10 +181,15 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     if (previous.min === panel.xAxis.min && previous.max === panel.xAxis.max) return
     previousXBounds.current = { min: panel.xAxis.min, max: panel.xAxis.max }
     setZoomRange(null)
-    if (panel.zoom.enabled) instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
-  }, [panel.xAxis.min, panel.xAxis.max, panel.zoom.enabled])
+    if (supportsZoom && panel.zoom.enabled) instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
+  }, [panel.xAxis.min, panel.xAxis.max, panel.zoom.enabled, supportsZoom])
 
   useEffect(() => {
+    if (panel.type === 'scatter' || panel.type === 'bar') {
+      tooltip.current!.hidden = true
+      pointer.current!.hidden = true
+      return
+    }
     const chart = instance.current!
     const zr = chart.getZr()
     const tip = tooltip.current!
@@ -196,18 +217,18 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       zr.off('mousemove', move)
       zr.off('globalout', hide)
     }
-  }, [rawIteration, rawRowCount, rawSeries])
+  }, [panel.type, rawIteration, rawRowCount, rawSeries])
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
-      aria-label={`Line chart: ${panel.outputs.join(', ')} versus Iteration, ${rawRowCount} raw rows per series`} />
+      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${rawRowCount} raw rows per series`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
       top: chartGridTop(panel, display.length),
       bottom: chartGridBottom(panel),
     }} />
     <div ref={tooltip} className="result-chart-tooltip" hidden />
   </div>
-    {panel.zoom.enabled && zoomRange !== null && <div className="result-chart-zoom-controls">
+    {supportsZoom && panel.zoom.enabled && zoomRange !== null && <div className="result-chart-zoom-controls">
       <button className="action-button" type="button" onClick={() => {
         instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
         setZoomRange(null)

@@ -1,3 +1,5 @@
+import { chartRequiredOutputs, type ChartPanel } from './chartPanels.ts'
+
 type NumericBuffer = { values: Float64Array; length: number }
 
 function appendBuffer(buffer: NumericBuffer | undefined, tail: readonly number[]): NumericBuffer {
@@ -68,7 +70,7 @@ export type PageChartData = ReturnType<typeof createPageChartData>
 
 export function pruneChartData(
   chartData: Map<string, PageChartData>,
-  panels: readonly { page: string; outputs: readonly string[] }[],
+  panels: readonly ChartPanel[],
   preservePage?: string,
 ): void {
   const consumers = new Map<string, Set<string>>()
@@ -78,7 +80,7 @@ export function pruneChartData(
       names = new Set()
       consumers.set(panel.page, names)
     }
-    for (const name of panel.outputs) names.add(name)
+    for (const name of chartRequiredOutputs(panel)) names.add(name)
   }
   for (const [page, data] of [...chartData.entries()]) {
     if (page === preservePage) continue
@@ -172,4 +174,28 @@ export function minMaxDecimate(
   }
   if (points.at(-1)![0] !== iteration[count - 1]) append(count - 1)
   return points
+}
+
+export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixelWidth: number,
+  range: { min: number; max: number }): { name: string; data: [number, number][] }[] {
+  const count = data.commonLength(chartRequiredOutputs(panel))
+  const iteration = data.iteration.subarray(0, count)
+  const first = Math.max(0, Math.ceil(range.min) - 1)
+  const last = Math.min(count, Math.floor(range.max))
+  const scatterX = panel.scatterXOutput === null ? iteration : data.getSeries(panel.scatterXOutput)
+  return panel.outputs.map(name => {
+    const values = data.getSeries(name).subarray(0, count)
+    if (panel.type === 'line' || panel.type === 'area') {
+      return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range) }
+    }
+    const pairs: [number, number][] = []
+    const start = panel.type === 'scatter' || panel.type === 'bar' ? 0 : first
+    const end = panel.type === 'scatter' || panel.type === 'bar' ? count : last
+    for (let index = start; index < end; index++) {
+      pairs.push(panel.type === 'scatter' ? [scatterX[index], values[index]]
+        : panel.type === 'bar' ? [values[index], iteration[index]]
+          : [iteration[index], values[index]])
+    }
+    return { name, data: pairs }
+  })
 }

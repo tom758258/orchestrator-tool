@@ -1,4 +1,4 @@
-import type { AxisSettings, ChartPanel } from './chartPanels'
+import type { AxisSettings, ChartPanel } from './chartPanels.ts'
 
 type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
   min: string
@@ -8,6 +8,8 @@ type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
 
 export type ChartSettingsDraft = {
   title: string
+  type: ChartPanel['type']
+  scatterXOutput: string | null
   showLegend: boolean
   imageBackground: ChartPanel['imageBackground']
   zoom: ChartPanel['zoom']
@@ -25,7 +27,8 @@ function axisDraft(axis: AxisSettings): AxisDraft {
 }
 
 export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft {
-  return { title: panel.title, showLegend: panel.showLegend, imageBackground: panel.imageBackground,
+  return { title: panel.title, type: panel.type, scatterXOutput: panel.scatterXOutput,
+    showLegend: panel.showLegend, imageBackground: panel.imageBackground,
     zoom: { ...panel.zoom },
     xAxis: axisDraft(panel.xAxis), yAxis: axisDraft(panel.yAxis) }
 }
@@ -50,12 +53,13 @@ function parseAxis(axis: AxisDraft, label: string): AxisSettings | string {
 }
 
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>; error?: never } |
   { settings?: never; error: string } {
-  const xAxis = parseAxis(draft.xAxis, 'X Axis')
+  const xAxis = parseAxis(draft.xAxis, draft.type === 'bar' ? 'Y Axis' : 'X Axis')
   if (typeof xAxis === 'string') return { error: xAxis }
-  const yAxis = parseAxis(draft.yAxis, 'Y Axis')
+  const yAxis = parseAxis(draft.yAxis, draft.type === 'bar' ? 'X Axis' : 'Y Axis')
   if (typeof yAxis === 'string') return { error: yAxis }
-  return { settings: { title: draft.title, showLegend: draft.showLegend,
+  return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,
+    showLegend: draft.showLegend,
     imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis } }
 }

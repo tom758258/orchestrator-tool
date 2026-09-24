@@ -16,17 +16,30 @@ export type ZoomSettings = {
 }
 
 export type ChartImageBackground = 'light' | 'dark'
+export type ChartType = 'line' | 'scatter' | 'column' | 'area' | 'bar'
 
 export type ChartPanel = {
   page: string
   id: number
   title: string
   outputs: string[]
+  type: ChartType
+  scatterXOutput: string | null
   showLegend: boolean
   imageBackground: ChartImageBackground
   zoom: ZoomSettings
   xAxis: AxisSettings
   yAxis: AxisSettings
+}
+
+export function chartRequiredOutputs(panel: Pick<ChartPanel, 'type' | 'scatterXOutput' | 'outputs'>): string[] {
+  return panel.type === 'scatter' && panel.scatterXOutput !== null
+    ? [...new Set([panel.scatterXOutput, ...panel.outputs])]
+    : panel.outputs
+}
+
+export function chartSupportsZoom(type: ChartType): boolean {
+  return type === 'line' || type === 'area' || type === 'column'
 }
 
 export function nextChartPanelId(panels: ChartPanel[]): number {
@@ -48,12 +61,14 @@ export function reconcileChartPanels(
     }
     const names = panel.page === currentPage && numericNames !== null
       ? numericNames : page.outputs.map(output => output.name)
-    if (panel.outputs.every(name => names.includes(name))) {
+    const scatterXOutput = panel.type === 'scatter' && panel.scatterXOutput !== null && !names.includes(panel.scatterXOutput)
+      ? null : panel.scatterXOutput
+    if (chartRequiredOutputs(panel).every(name => names.includes(name))) {
       reconciled?.push(panel)
       return
     }
     reconciled ??= panels.slice(0, index)
-    reconciled.push({ ...panel, outputs: panel.outputs.filter(name => names.includes(name)) })
+    reconciled.push({ ...panel, outputs: panel.outputs.filter(name => names.includes(name)), scatterXOutput })
   })
   return reconciled ?? panels
 }
@@ -65,7 +80,8 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
   const name = numericNames.find(name => !panels.some(panel => panel.page === page && panel.outputs.includes(name)))
     ?? numericNames[0]
   return [...panels, {
-    id: nextChartPanelId(panels), page, title: '', outputs: [name], showLegend: true,
+    id: nextChartPanelId(panels), page, title: '', outputs: [name], type: 'line', scatterXOutput: null,
+    showLegend: true,
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,

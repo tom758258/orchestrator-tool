@@ -16,6 +16,8 @@ test('Auto axes leave min, max and interval to ECharts', () => {
   }
   assert.equal(options.title.text, '')
   assert.equal(options.legend.show, false)
+  assert.equal(options.xAxis.axisLabel.hideOverlap, true)
+  assert.equal(options.yAxis.axisLabel.hideOverlap, true)
 })
 
 test('explicit axes, grid, labels, ticks, title and legend map to ECharts', () => {
@@ -53,6 +55,8 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   draft.zoom.enabled = true
   draft.zoom.showSlider = false
   draft.imageBackground = 'dark'
+  draft.type = 'scatter'
+  draft.scatterXOutput = 'V'
   draft.xAxis.min = '  '
   draft.yAxis.min = '-2.5'
   draft.yAxis.max = '5'
@@ -63,6 +67,8 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
     valid.settings.yAxis.max, valid.settings.yAxis.interval], [null, -2.5, 5, 0.5])
   assert.deepEqual(valid.settings.zoom, { enabled: true, showSlider: false })
   assert.equal(valid.settings.imageBackground, 'dark')
+  assert.equal(valid.settings.type, 'scatter')
+  assert.equal(valid.settings.scatterXOutput, 'V')
   assert.equal(panel.imageBackground, 'light')
   assert.deepEqual(panel.zoom, { enabled: false, showSlider: true })
   assert.equal(panel.title, '')
@@ -79,4 +85,20 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   draft.yAxis.interval = '1'
   draft.xAxis.max = 'oops'
   assert.match(validateChartSettingsDraft(draft).error, /finite number/)
+})
+
+test('Bar settings map stored axes to physical X and Y without changing their values', () => {
+  const bar = { ...panel, type: 'bar', xAxis: { ...panel.xAxis, title: 'Iteration' },
+    yAxis: { ...panel.yAxis, title: 'Value' } }
+  const options = chartPresentationOptions(bar, 2, colors, undefined, Float64Array.of(1, 2, 3))
+  assert.equal(options.xAxis.name, 'Value')
+  assert.equal(options.yAxis.name, 'Iteration')
+  assert.equal(options.xAxis.type, 'value')
+  assert.equal(options.yAxis.type, 'category')
+  assert.deepEqual(options.yAxis.data, ['1', '2', '3'])
+  const custom = chartPresentationOptions({ ...bar,
+    xAxis: { ...bar.xAxis, interval: 2.5 } }, 2, colors, undefined, Float64Array.of(1, 5, 6))
+  assert.equal(custom.yAxis.axisLabel.interval(0, '5'), true)
+  assert.equal(custom.yAxis.axisLabel.interval(0, '6'), false)
+  assert.equal(createChartSettingsDraft(bar).type, 'bar')
 })

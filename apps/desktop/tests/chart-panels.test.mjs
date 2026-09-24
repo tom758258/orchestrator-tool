@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels } from '../src/chartPanels.ts'
+import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
+  chartRequiredOutputs } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
@@ -29,6 +30,8 @@ test('Page reconciliation removes stale selections without clearing other Pages'
   assert.deepEqual(reconciled[1].xAxis, panels[1].xAxis)
   assert.deepEqual(reconciled[1].yAxis, panels[1].yAxis)
   assert.deepEqual(reconciled[1].zoom, panels[1].zoom)
+  assert.equal(reconciled[1].type, 'line')
+  assert.equal(reconciled[1].scatterXOutput, null)
   assert.deepEqual(reconcileChartPanels(reconciled, pages, 'Inner', [] )[1].outputs, [])
   assert.deepEqual(reconcileChartPanels(reconciled, pages, 'Outer', null), reconciled)
 })
@@ -72,7 +75,8 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
 
 test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
-  assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], showLegend: true,
+  assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], type: 'line',
+    scatterXOutput: null, showLegend: true,
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
@@ -82,6 +86,25 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
   assert.equal(reconcileRunChartPanels(panels, pages, metadata), panels)
   const onlySecond = addChartPanel([], 'B', ['I'])
   assert.equal(reconcileRunChartPanels(onlySecond, pages, metadata), onlySecond)
+})
+
+test('Scatter X is a separate numeric dependency and reconciliation only resets an invalid source', () => {
+  const scatter = { ...panel(0, 'A', ['I']), type: 'scatter', scatterXOutput: 'V',
+    title: 'Comparison', imageBackground: 'dark', zoom: { enabled: true, showSlider: false },
+    xAxis: { ...panel(0, 'A', ['I']).xAxis, title: 'V', min: 0 } }
+  assert.deepEqual(chartRequiredOutputs(panel(1, 'A', ['I'])), ['I'])
+  assert.deepEqual(chartRequiredOutputs({ ...scatter, scatterXOutput: null }), ['I'])
+  assert.deepEqual(chartRequiredOutputs(scatter), ['V', 'I'])
+  assert.deepEqual(chartRequiredOutputs({ ...scatter, outputs: ['V', 'I'] }), ['V', 'I'])
+  assert.equal(reconcileChartPanels([scatter], pages, 'A', ['V', 'I'])[0], scatter)
+  const changed = reconcileChartPanels([scatter], pages, 'A', ['I'])[0]
+  assert.equal(changed.type, 'scatter')
+  assert.equal(changed.scatterXOutput, null)
+  assert.deepEqual(changed.outputs, ['I'])
+  assert.equal(changed.title, scatter.title)
+  assert.deepEqual(changed.zoom, scatter.zoom)
+  assert.deepEqual(changed.xAxis, scatter.xAxis)
+  assert.equal(changed.imageBackground, scatter.imageBackground)
 })
 
 test('first Page without numeric data never falls through to the second Page', () => {

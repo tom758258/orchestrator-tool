@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AxisSettings, ChartPanel } from './chartPanels'
+import { chartSupportsZoom, type AxisSettings, type ChartPanel, type ChartType } from './chartPanels'
 import { createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
 
 type AxisKey = 'xAxis' | 'yAxis'
 type NumericKey = 'min' | 'max' | 'interval'
 
-export default function ChartSettings({ panel, onApply, onClose }: {
+export default function ChartSettings({ panel, numericNames, running, hasRows, onApply, onClose }: {
   panel: ChartPanel
-  onApply: (settings: Pick<ChartPanel, 'title' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>) => void
+  numericNames: string[]
+  running: boolean
+  hasRows: boolean
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -35,6 +38,13 @@ export default function ChartSettings({ panel, onApply, onClose }: {
     onApply(result.settings)
   }
 
+  function changeScatterXOutput(value: string | null) {
+    setDraft(current => ({ ...current, scatterXOutput: value,
+      xAxis: { ...current.xAxis,
+        title: current.xAxis.title === (current.scatterXOutput ?? 'Iteration')
+          ? value ?? 'Iteration' : current.xAxis.title } }))
+  }
+
   function axisFields(axis: AxisKey, label: string) {
     const values = draft[axis]
     return <fieldset className="chart-settings-axis">
@@ -60,12 +70,23 @@ export default function ChartSettings({ panel, onApply, onClose }: {
   }
 
   return <dialog ref={dialog} className="chart-settings-dialog" aria-label="Chart Settings"
-    onCancel={event => { event.preventDefault(); onClose() }}
-    onClick={event => { if (event.target === dialog.current) onClose() }}>
+    onCancel={event => event.preventDefault()}>
     <div className="chart-settings-content">
       <h3>Chart Settings</h3>
       <fieldset className="chart-settings-general">
         <legend>General</legend>
+        <label className="chart-settings-field">Chart type
+          <select value={draft.type} disabled={running || !hasRows} onChange={event => {
+            setDraft(current => ({ ...current, type: event.target.value as ChartType }))
+            setError(null)
+          }}>
+            <option value="line">Line</option>
+            <option value="scatter">XY Scatter</option>
+            <option value="column">Column</option>
+            <option value="area">Area</option>
+            <option value="bar">Bar</option>
+          </select>
+        </label>
         <label className="chart-settings-field">Chart title
           <input type="text" autoFocus value={draft.title}
             onChange={event => { setDraft(current => ({ ...current, title: event.target.value })); setError(null) }} />
@@ -73,9 +94,19 @@ export default function ChartSettings({ panel, onApply, onClose }: {
         <label><input type="checkbox" checked={draft.showLegend}
           onChange={event => setDraft(current => ({ ...current, showLegend: event.target.checked }))} />Show legend</label>
       </fieldset>
-      {axisFields('xAxis', 'X Axis')}
-      {axisFields('yAxis', 'Y Axis')}
-      <fieldset className="chart-settings-general">
+      {draft.type === 'scatter' && <fieldset className="chart-settings-general">
+        <legend>Scatter</legend>
+        <label className="chart-settings-field">X source
+          <select value={draft.scatterXOutput ?? ''} onChange={event =>
+            changeScatterXOutput(event.target.value || null)}>
+            <option value="">Iteration</option>
+            {numericNames.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+      </fieldset>}
+      {axisFields(draft.type === 'bar' ? 'yAxis' : 'xAxis', 'X Axis')}
+      {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', 'Y Axis')}
+      {chartSupportsZoom(draft.type) && <fieldset className="chart-settings-general">
         <legend>Zoom</legend>
         <label><input type="checkbox" checked={draft.zoom.enabled}
           onChange={event => setDraft(current => ({ ...current,
@@ -83,7 +114,7 @@ export default function ChartSettings({ panel, onApply, onClose }: {
         <label><input type="checkbox" checked={draft.zoom.showSlider} disabled={!draft.zoom.enabled}
           onChange={event => setDraft(current => ({ ...current,
             zoom: { ...current.zoom, showSlider: event.target.checked } }))} />Show zoom slider</label>
-      </fieldset>
+      </fieldset>}
       <fieldset className="chart-settings-general">
         <legend>Save image</legend>
         <label className="chart-settings-field">Background
