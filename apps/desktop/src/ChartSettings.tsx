@@ -7,7 +7,7 @@ type NumericKey = 'min' | 'max' | 'interval'
 
 export default function ChartSettings({ panel, onApply, onClose }: {
   panel: ChartPanel
-  onApply: (settings: Pick<ChartPanel, 'title' | 'showLegend' | 'xAxis' | 'yAxis'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'showLegend' | 'zoom' | 'xAxis' | 'yAxis'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -75,6 +75,15 @@ export default function ChartSettings({ panel, onApply, onClose }: {
       </fieldset>
       {axisFields('xAxis', 'X Axis')}
       {axisFields('yAxis', 'Y Axis')}
+      <fieldset className="chart-settings-general">
+        <legend>Zoom</legend>
+        <label><input type="checkbox" checked={draft.zoom.enabled}
+          onChange={event => setDraft(current => ({ ...current,
+            zoom: { ...current.zoom, enabled: event.target.checked } }))} />Enable zoom</label>
+        <label><input type="checkbox" checked={draft.zoom.showSlider} disabled={!draft.zoom.enabled}
+          onChange={event => setDraft(current => ({ ...current,
+            zoom: { ...current.zoom, showSlider: event.target.checked } }))} />Show zoom slider</label>
+      </fieldset>
       {error && <p className="chart-settings-error" role="alert">{error}</p>}
       <div className="chart-settings-actions">
         <button className="action-button" type="button" onClick={onClose}>Cancel</button>

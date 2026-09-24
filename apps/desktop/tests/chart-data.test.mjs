@@ -5,6 +5,7 @@ import {
   createPageChartData,
   exactHoverIndex,
   minMaxDecimate,
+  minMaxDecimateRange,
   pruneChartData,
 } from '../src/chartData.ts'
 
@@ -51,11 +52,48 @@ test('spikes, dips and first/last values survive even with extrema in reverse or
   assert.ok(points.every(([value], index) => index === 0 || value > points[index - 1][0]))
 })
 
-test('hover rounds and clamps the full raw sequence, independent of display points', () => {
-  for (const [x, expected] of [[1, 0], [250_000, 249_999], [234_520.7, 234_520], [-5, 0], [600_000, 499_999]]) {
+test('hover resolves exact raw indices only inside the raw iteration domain', () => {
+  for (const [x, expected] of [[1, 0], [250_000, 249_999], [234_520.7, 234_520],
+    [0, null], [-5, null], [500_001, null], [600_000, null], [NaN, null], [Infinity, null]]) {
     assert.equal(exactHoverIndex(x, 500_000), expected)
   }
-  assert.equal(exactHoverIndex(9, 1), 0)
+  assert.equal(exactHoverIndex(1, 1), 0)
+  assert.equal(exactHoverIndex(9, 1), null)
+  assert.equal(exactHoverIndex(1, 0), null)
+})
+
+test('viewport decimation reads only its raw slice and retains line-clipping neighbors', () => {
+  const x = sequence(1000)
+  const points = minMaxDecimateRange(x, x, 100, { min: 400, max: 410 })
+  assert.deepEqual(points.map(([iteration]) => iteration),
+    Array.from({ length: 13 }, (_, index) => index + 399))
+  assert.deepEqual(minMaxDecimateRange(x, x, 100, { min: 1001, max: 2000 }), [])
+  assert.deepEqual(minMaxDecimateRange(x, x, 100, { min: -100, max: 0 }), [])
+})
+
+test('large viewport remains pixel-bounded while retaining its spike and dip', () => {
+  const x = sequence(500_000)
+  const y = new Float64Array(x.length)
+  y[202_344] = 100
+  y[202_345] = -100
+  const points = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 })
+  assert.ok(points.length <= 642)
+  assert.deepEqual(points[0], [199_999, 0])
+  assert.deepEqual(points.at(-1), [205_001, 0])
+  assert.ok(points.some(([iteration, value]) => iteration === 202_345 && value === 100))
+  assert.ok(points.some(([iteration, value]) => iteration === 202_346 && value === -100))
+  assert.ok(points.every(([iteration]) => iteration >= 199_999 && iteration <= 205_001))
+})
+
+test('deep zoom exposes more raw detail than full-range decimation', () => {
+  const x = sequence(100_000)
+  const y = Float64Array.from(x, (_, index) => index % 2)
+  const full = minMaxDecimateRange(x, y, 100, { min: 1, max: 100_000 })
+  const local = minMaxDecimateRange(x, y, 100, { min: 20_000, max: 20_100 })
+  assert.ok(full.length <= 202)
+  assert.ok(local.length >= 101)
+  assert.ok(local.filter(([iteration]) => iteration >= 20_000 && iteration <= 20_100).length >
+    full.filter(([iteration]) => iteration >= 20_000 && iteration <= 20_100).length)
 })
 
 test('Page adapter appends compact tails and shares each raw series once', () => {

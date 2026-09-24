@@ -136,14 +136,18 @@ The current Desktop presentation architecture has these properties:
   run snapshot. Chart panel configuration survives Page/tab changes only
   within that Last Run; starting a new run resets the configuration, and the
   first Page receives one default panel when it has numeric Outputs. Each
-  panel keeps its title, legend visibility, and axis scale and display settings
-  in Last Run session state. These settings are not Template data. Single-chart
+  panel keeps its title, legend visibility, axis scale and display settings, and
+  X-axis zoom settings in Last Run session state. The current zoom viewport is
+  transient presentation state. These settings are not Template data. Single-chart
   PNG export captures the ECharts-rendered title and plot.
-- Large datasets use pixel-aware display decimation. Omitted display points
-  remain in the committed ResultRows, and hover inspection resolves the exact
-  raw iteration and values. The horizontal coordinate is the 1-based page row
-  sequence; charts and CSV remain chronological while the Data view may show
-  newest rows first.
+- Line charts decimate only the visible raw iteration range according to plot
+  pixel width, including when custom X-axis bounds narrow the view. Omitted
+  display points remain in the committed ResultRows, and hover inspection
+  resolves exact raw iteration and values only within the raw data domain.
+  X-axis zoom supports an automatic full-range view that follows new rows and a
+  manual absolute iteration range that stays fixed as rows arrive. The horizontal
+  coordinate is the 1-based page row sequence; charts and CSV remain
+  chronological while the Data view may show newest rows first.
 - Output tables query newest-first row windows from the Rust StoredRun and
   virtualize only the visible window in the frontend. Logical row indices map
   onto a bounded physical scroll space so million-row Pages do not require a

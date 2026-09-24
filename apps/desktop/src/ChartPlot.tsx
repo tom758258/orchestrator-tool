@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { exactHoverIndex, minMaxDecimate, type PageChartData } from './chartData'
+import { exactHoverIndex, minMaxDecimateRange, type PageChartData } from './chartData'
 import type { ChartPanel } from './chartPanels'
-import { CHART_GRID, chartGridTop, chartPresentationOptions } from './chartOptions'
+import { CHART_GRID, chartGridBottom, chartGridTop, chartPresentationOptions } from './chartOptions'
 
-use([LineChart, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
+use([LineChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
+
+type ZoomRange = { min: number; max: number } | null
 
 export default function ChartPlot({ panel, data, numericNames, charts }: {
   panel: ChartPanel
@@ -23,6 +25,7 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   const resizeFrameRef = useRef<number | null>(null)
   const [width, setWidth] = useState(0)
   const [themeRevision, setThemeRevision] = useState(0)
+  const [zoomRange, setZoomRange] = useState<ZoomRange>(null)
   const rawRowCount = useMemo(() => data.commonLength(panel.outputs),
     [data, data.version, panel.outputs])
   const rawIteration = useMemo(() => data.iteration.subarray(0, rawRowCount),
@@ -31,10 +34,32 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     name,
     values: data.getSeries(name).subarray(0, rawRowCount),
   })), [data, data.version, panel.outputs, rawRowCount])
+  const rawMin = rawRowCount > 0 ? rawIteration[0] : 0
+  const rawMax = rawRowCount > 0 ? rawIteration[rawRowCount - 1] : 1
+  const fullDomain = useMemo(() => {
+    let min = panel.xAxis.min ?? rawMin
+    let max = panel.xAxis.max ?? rawMax
+    if (max <= min) {
+      if (panel.xAxis.max === null) max = min + 1
+      else min = max - 1
+    }
+    return { min, max }
+  }, [panel.xAxis.min, panel.xAxis.max, rawMin, rawMax])
+  const visibleRange = panel.zoom.enabled
+    ? zoomRange ?? fullDomain
+    : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
   const display = useMemo(() => rawSeries.map(series => ({
     name: series.name,
-    data: minMaxDecimate(rawIteration, series.values, Math.max(1, width - CHART_GRID.left - CHART_GRID.right)),
-  })), [rawIteration, rawSeries, width])
+    data: minMaxDecimateRange(rawIteration, series.values,
+      Math.max(1, width - CHART_GRID.left - CHART_GRID.right), visibleRange),
+  })), [rawIteration, rawSeries, width, visibleRange.min, visibleRange.max])
+  const rendererSeries = useMemo(() => {
+    const style = getComputedStyle(document.documentElement)
+    return display.map(series => ({ ...series, type: 'line', showSymbol: false,
+      silent: true, emphasis: { disabled: true },
+      itemStyle: { color: style.getPropertyValue(
+        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim() } }))
+  }, [display, numericNames, themeRevision])
 
   useEffect(() => {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
@@ -79,20 +104,60 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
   }, [charts, panel.id])
 
   useEffect(() => {
+    if (!panel.zoom.enabled) setZoomRange(null)
+  }, [panel.zoom.enabled])
+
+  useEffect(() => {
+    if (!panel.zoom.enabled) return
+    const chart = instance.current!
+    const onZoom = (payload: unknown) => {
+      const event = payload as { start?: number; end?: number;
+        batch?: { start: number; end: number }[] }
+      const range = event.batch?.[0] ?? event
+      if (!Number.isFinite(range.start) || !Number.isFinite(range.end)) return
+      const start = range.start!
+      const end = range.end!
+      if (end <= start) return
+      const next = start <= 0.000001 && end >= 99.999999 ? null : {
+        min: fullDomain.min + (fullDomain.max - fullDomain.min) * start / 100,
+        max: fullDomain.min + (fullDomain.max - fullDomain.min) * end / 100,
+      }
+      setZoomRange(previous => previous?.min === next?.min && previous?.max === next?.max
+        ? previous : next)
+    }
+    chart.on('datazoom', onZoom)
+    return () => { chart.off('datazoom', onZoom) }
+  }, [panel.zoom.enabled, fullDomain])
+
+  useEffect(() => {
     const style = getComputedStyle(document.documentElement)
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
-      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') })
+      { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') }, fullDomain)
+    const range = zoomRange === null ? { start: 0, end: 100 }
+      : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
       animation: false,
       backgroundColor: color('--chart-surface'),
       textStyle: { color: color('--ink') },
       ...presentation,
-      series: display.map(series => ({ ...series, type: 'line', showSymbol: false,
-        silent: true, emphasis: { disabled: true },
-        itemStyle: { color: color(`--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`) } })),
+      dataZoom: panel.zoom.enabled ? [
+        { type: 'inside', xAxisIndex: 0, filterMode: 'none', throttle: 80,
+          zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false, ...range },
+        ...(panel.zoom.showSlider ? [{ type: 'slider', xAxisIndex: 0, filterMode: 'none',
+          throttle: 80, showDataShadow: false, showDetail: false, bottom: 12, height: 22,
+          backgroundColor: color('--chart-surface'), borderColor: color('--chart-axis'),
+          fillerColor: color('--surface-selected'),
+          handleStyle: { color: color('--accent'), borderColor: color('--chart-axis') },
+          ...range }] : []),
+      ] : [],
+      series: rendererSeries,
     }, { notMerge: true })
-  }, [display, numericNames, panel, themeRevision])
+  }, [panel, themeRevision, fullDomain])
+
+  useEffect(() => {
+    instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
+  }, [rendererSeries])
 
   useEffect(() => {
     const chart = instance.current!
@@ -105,12 +170,13 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
       if (rawRowCount === 0 || !chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
       const x = chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX)
       const index = exactHoverIndex(x, rawRowCount)
+      if (index === null) { hide(); return }
       // Never use renderer points: each selected series reads the coherent raw prefix.
       tip.textContent = [`Iteration ${rawIteration[index]}`,
         ...rawSeries.map(series => `${series.name} ${series.values[index]}`)].join('\n')
       tip.hidden = false
       line.hidden = false
-      line.style.left = `${chart.convertToPixel({ xAxisIndex: 0 }, index + 1)}px`
+      line.style.left = `${chart.convertToPixel({ xAxisIndex: 0 }, rawIteration[index])}px`
       tip.style.left = `${Math.max(0, Math.min(event.offsetX + 12, chart.getWidth() - tip.offsetWidth))}px`
       tip.style.top = `${Math.max(0, Math.min(event.offsetY + 12, chart.getHeight() - tip.offsetHeight))}px`
     }
@@ -123,13 +189,20 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     }
   }, [rawIteration, rawRowCount, rawSeries])
 
-  return <div className="result-chart-view">
+  return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
       aria-label={`Line chart: ${panel.outputs.join(', ')} versus Iteration, ${rawRowCount} raw rows per series`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
       top: chartGridTop(panel, display.length),
-      bottom: CHART_GRID.bottom,
+      bottom: chartGridBottom(panel),
     }} />
     <div ref={tooltip} className="result-chart-tooltip" hidden />
   </div>
+    {panel.zoom.enabled && zoomRange !== null && <div className="result-chart-zoom-controls">
+      <button className="action-button" type="button" onClick={() => {
+        instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
+        setZoomRange(null)
+      }}>Reset Zoom</button>
+    </div>}
+  </>
 }

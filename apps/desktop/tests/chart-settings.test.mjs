@@ -37,9 +37,21 @@ test('explicit axes, grid, labels, ticks, title and legend map to ECharts', () =
     [true, true, false])
 })
 
+test('zoom uses the full X domain and reserves slider space only when shown', () => {
+  const zoomed = { ...panel, zoom: { enabled: true, showSlider: true } }
+  const domain = { min: 0, max: 200_000 }
+  const options = chartPresentationOptions(zoomed, 1, colors, domain)
+  assert.deepEqual([options.xAxis.min, options.xAxis.max], [0, 200_000])
+  assert.ok(options.grid.bottom > chartPresentationOptions(panel, 1, colors).grid.bottom)
+  assert.equal(chartPresentationOptions({ ...zoomed, zoom: { ...zoomed.zoom, showSlider: false } },
+    1, colors, domain).grid.bottom, chartPresentationOptions(panel, 1, colors).grid.bottom)
+})
+
 test('draft validation accepts blank Auto and rejects invalid axes without changing the panel', () => {
   const draft = createChartSettingsDraft(panel)
   draft.title = 'Edited'
+  draft.zoom.enabled = true
+  draft.zoom.showSlider = false
   draft.xAxis.min = '  '
   draft.yAxis.min = '-2.5'
   draft.yAxis.max = '5'
@@ -48,6 +60,8 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   assert.equal(valid.error, undefined)
   assert.deepEqual([valid.settings.xAxis.min, valid.settings.yAxis.min,
     valid.settings.yAxis.max, valid.settings.yAxis.interval], [null, -2.5, 5, 0.5])
+  assert.deepEqual(valid.settings.zoom, { enabled: true, showSlider: false })
+  assert.deepEqual(panel.zoom, { enabled: false, showSlider: true })
   assert.equal(panel.title, '')
   assert.equal(panel.yAxis.min, null)
   draft.yAxis.min = '5'

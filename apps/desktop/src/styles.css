@@ -1391,6 +1391,12 @@ input[type="radio"] {
   position: relative;
 }
 
+.result-chart-zoom-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .result-chart-pointer {
   position: absolute;
   border-left: 1px solid var(--chart-axis);

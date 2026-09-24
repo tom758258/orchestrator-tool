@@ -26,6 +26,7 @@ test('Page reconciliation removes stale selections without clearing other Pages'
   assert.equal(reconciled[1].showLegend, false)
   assert.deepEqual(reconciled[1].xAxis, panels[1].xAxis)
   assert.deepEqual(reconciled[1].yAxis, panels[1].yAxis)
+  assert.deepEqual(reconciled[1].zoom, panels[1].zoom)
   assert.deepEqual(reconcileChartPanels(reconciled, pages, 'Inner', [] )[1].outputs, [])
   assert.deepEqual(reconcileChartPanels(reconciled, pages, 'Outer', null), reconciled)
 })
@@ -70,6 +71,7 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
 test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], showLegend: true,
+    zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },
     yAxis: { title: '', min: null, max: null, interval: null,

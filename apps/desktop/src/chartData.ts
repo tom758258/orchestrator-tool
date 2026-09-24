@@ -118,8 +118,31 @@ export function chartLoadGroups(
   })).filter(group => group.limit > 0)
 }
 
-export function exactHoverIndex(x: number, rowCount: number): number {
+export function exactHoverIndex(x: number, rowCount: number): number | null {
+  if (!Number.isFinite(x) || rowCount === 0 || x < 1 || x > rowCount) return null
   return Math.max(0, Math.min(rowCount - 1, Math.round(x) - 1))
+}
+
+export function minMaxDecimateRange(
+  iteration: Float64Array, values: Float64Array, pixelWidth: number,
+  range: { min: number; max: number },
+): [number, number][] {
+  const count = Math.min(iteration.length, values.length)
+  if (count === 0 || range.max < iteration[0] || range.min > iteration[count - 1]) return []
+
+  const lowerBound = (value: number, inclusive: boolean) => {
+    let low = 0
+    let high = count
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (iteration[middle] < value || (!inclusive && iteration[middle] === value)) low = middle + 1
+      else high = middle
+    }
+    return low
+  }
+  const start = Math.max(0, lowerBound(range.min, true) - 1)
+  const end = Math.min(count, lowerBound(range.max, false) + 1)
+  return minMaxDecimate(iteration.subarray(start, end), values.subarray(start, end), pixelWidth)
 }
 
 export function minMaxDecimate(

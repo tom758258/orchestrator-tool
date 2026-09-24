@@ -10,12 +10,18 @@ export type AxisSettings = {
   showMajorGrid: boolean
 }
 
+export type ZoomSettings = {
+  enabled: boolean
+  showSlider: boolean
+}
+
 export type ChartPanel = {
   page: string
   id: number
   title: string
   outputs: string[]
   showLegend: boolean
+  zoom: ZoomSettings
   xAxis: AxisSettings
   yAxis: AxisSettings
 }
@@ -57,6 +63,7 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
     ?? numericNames[0]
   return [...panels, {
     id: nextChartPanelId(panels), page, title: '', outputs: [name], showLegend: true,
+    zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },
     yAxis: { title: '', min: null, max: null, interval: null,

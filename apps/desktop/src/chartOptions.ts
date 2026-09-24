@@ -2,6 +2,8 @@ import type { AxisSettings, ChartPanel } from './chartPanels'
 
 type ChartColors = { ink: string; axis: string; grid: string }
 export const CHART_GRID = { left: 80, right: 24, bottom: 64 }
+export const chartGridBottom = (panel: ChartPanel): number =>
+  panel.zoom.enabled && panel.zoom.showSlider ? 112 : CHART_GRID.bottom
 
 function axisOption(axis: AxisSettings, nameGap: number, colors: ChartColors) {
   return {
@@ -20,7 +22,8 @@ function axisOption(axis: AxisSettings, nameGap: number, colors: ChartColors) {
   }
 }
 
-export function chartPresentationOptions(panel: ChartPanel, seriesCount: number, colors: ChartColors) {
+export function chartPresentationOptions(panel: ChartPanel, seriesCount: number, colors: ChartColors,
+  fullDomain?: { min: number; max: number }) {
   const hasTitle = panel.title.length > 0
   const hasLegend = panel.showLegend && seriesCount > 1
   return {
@@ -28,8 +31,9 @@ export function chartPresentationOptions(panel: ChartPanel, seriesCount: number,
       textStyle: { color: colors.ink, fontSize: 16 } },
     legend: { show: hasLegend, top: hasTitle ? 40 : 8, type: 'plain' as const,
       selectedMode: false, textStyle: { color: colors.ink } },
-    grid: { ...CHART_GRID, top: chartGridTop(panel, seriesCount) },
-    xAxis: axisOption(panel.xAxis, 36, colors),
+    grid: { ...CHART_GRID, bottom: chartGridBottom(panel), top: chartGridTop(panel, seriesCount) },
+    xAxis: { ...axisOption(panel.xAxis, 36, colors),
+      ...(fullDomain && panel.zoom.enabled ? fullDomain : {}) },
     yAxis: axisOption(panel.yAxis, 56, colors),
   }
 }

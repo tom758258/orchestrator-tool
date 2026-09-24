@@ -336,6 +336,14 @@ latest first 顯示。
 **Apply** 會套用有效設定，**Cancel** 或關閉視窗會捨棄尚未套用的修改。
 單一 series 不顯示 legend，即使 **Show legend** 已開啟。
 
+在 **Settings → Zoom** 勾選 **Enable zoom** 後，可用滑鼠滾輪縮放 X 軸，
+在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
+滾輪與拖曳仍可使用，也不會清除目前範圍。手動縮放後按 **Reset Zoom** 可回到
+完整 X 範圍。Live run 尚未手動縮放時會跟進新資料；手動縮放或平移後，
+新資料不會移動目前視窗，直到按 Reset Zoom。關閉 Enable zoom 也會回到完整範圍。
+大型資料只會依目前可見範圍取 raw rows 進行繪圖 decimation；hover 在資料範圍外
+不會顯示虛假的首筆或末筆數值。
+
 每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
 Chart settings 只屬於目前 Last Run session；切換 Page 後仍保留，開始新的 run、
 Open Template 或 Clear Last Run 時會清除，且不屬於 Template。
