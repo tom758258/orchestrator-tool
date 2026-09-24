@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
 import { chartPresentationOptions } from '../src/chartOptions.ts'
-import { createChartSettingsDraft, validateChartSettingsDraft } from '../src/chartSettingsModel.ts'
+import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft } from '../src/chartSettingsModel.ts'
 
 const panel = addChartPanel([], 'A', ['V'])[0]
 const colors = { ink: 'ink', axis: 'axis', grid: 'grid' }
@@ -138,4 +138,14 @@ test('Combo uses two Y axes and category charts ignore numeric X bounds', () => 
   assert.equal(Object.hasOwn(categories.xAxis, 'min'), false)
   assert.equal(Object.hasOwn(categories.xAxis, 'interval'), false)
   assert.equal(categories.legend.show, false)
+})
+
+test('statistical type transitions update only recognized automatic axis titles', () => {
+  const line = createChartSettingsDraft(panel)
+  assert.deepEqual(chartTypeAxisTitles(line, 'histogram', 'V'), { x: 'V', y: 'Count' })
+  const histogram = { ...line, type: 'histogram', xAxis: { ...line.xAxis, title: 'V' },
+    yAxis: { ...line.yAxis, title: 'Count' } }
+  assert.deepEqual(chartTypeAxisTitles(histogram, 'boxplot', 'V'), { x: '', y: '' })
+  assert.deepEqual(chartTypeAxisTitles({ ...line, xAxis: { ...line.xAxis, title: 'Voltage' } },
+    'boxplot', 'V'), { x: 'Voltage', y: '' })
 })

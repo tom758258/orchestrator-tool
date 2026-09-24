@@ -39,6 +39,20 @@ export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft 
     boxPlot: { ...panel.boxPlot } }
 }
 
+export function chartTypeAxisTitles(draft: ChartSettingsDraft, nextType: ChartPanel['type'],
+  histogramOutput: string): { x: string; y: string } {
+  const histogramTitle = draft.type === 'histogram' && draft.xAxis.title === histogramOutput
+  const x = nextType === 'histogram' &&
+    (draft.xAxis.title === '' || draft.xAxis.title === 'Iteration' || histogramTitle)
+    ? histogramOutput
+    : nextType === 'boxplot' && (draft.xAxis.title === 'Iteration' || histogramTitle)
+      ? '' : draft.xAxis.title
+  const y = nextType === 'histogram' && draft.yAxis.title === '' ? 'Count'
+    : draft.type === 'histogram' && nextType !== 'histogram' && draft.yAxis.title === 'Count'
+      ? '' : draft.yAxis.title
+  return { x, y }
+}
+
 function parseAxis(axis: AxisDraft, label: string): AxisSettings | string {
   const numbers: Pick<AxisSettings, 'min' | 'max' | 'interval'> = {
     min: null, max: null, interval: null,

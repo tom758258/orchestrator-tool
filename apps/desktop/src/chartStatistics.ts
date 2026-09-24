@@ -26,10 +26,14 @@ export function statisticalRequestKey(runId: number, panel: ChartPanel): string 
   return null
 }
 
+export function formatBinBoundary(value: number): string {
+  return String(Number(value.toPrecision(6)))
+}
+
 export function statisticalChartSeries(panel: ChartPanel, response: StatisticalDto, color: string) {
   if (panel.type === 'histogram') {
     const bins = (response as HistogramDto).bins
-    return { categories: bins.map(bin => `${bin.start}–${bin.end}`),
+    return { categories: bins.map(bin => `${formatBinBoundary(bin.start)}–${formatBinBoundary(bin.end)}`),
       series: [{ name: (response as HistogramDto).output, type: 'bar' as const,
         data: bins.map(bin => bin.count), itemStyle: { color } }] }
   }

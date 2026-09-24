@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPanel, type ChartType } from './chartPanels'
-import { createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
+import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
 
 type AxisKey = 'xAxis' | 'yAxis' | 'rightAxis'
 type NumericKey = 'min' | 'max' | 'interval'
@@ -73,7 +73,16 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   }
 
   return <dialog ref={dialog} className="chart-settings-dialog" aria-label="Chart Settings"
-    onCancel={event => event.preventDefault()}>
+    onKeyDown={event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }}
+    onCancel={event => event.preventDefault()}
+    onClose={event => {
+      if (!event.currentTarget.open && event.currentTarget.isConnected) onClose()
+    }}>
     <div className="chart-settings-content">
       <h3>Chart Settings</h3>
       <fieldset className="chart-settings-general">
@@ -81,14 +90,12 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
         <label className="chart-settings-field">Chart type
           <select value={draft.type} disabled={running || !hasRows} onChange={event => {
             const type = event.target.value as ChartType
-            setDraft(current => ({ ...current, type,
-              xAxis: { ...current.xAxis,
-                title: current.xAxis.title === 'Iteration'
-                  ? type === 'histogram' ? panel.outputs[0] ?? ''
-                    : type === 'boxplot' ? '' : 'Iteration'
-                  : current.xAxis.title },
-              yAxis: { ...current.yAxis,
-                title: type === 'histogram' && current.yAxis.title === '' ? 'Count' : current.yAxis.title } }))
+            setDraft(current => {
+              const titles = chartTypeAxisTitles(current, type, panel.outputs[0] ?? '')
+              return { ...current, type,
+                xAxis: { ...current.xAxis, title: titles.x },
+                yAxis: { ...current.yAxis, title: titles.y } }
+            })
             setError(null)
           }}>
             <option value="line">Line</option>

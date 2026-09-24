@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
 import { createPageChartData, minMaxDecimateRange, prepareChartSeries } from '../src/chartData.ts'
 import { comboRendererSeries } from '../src/chartOptions.ts'
-import { statisticalChartSeries } from '../src/chartStatistics.ts'
+import { formatBinBoundary, statisticalChartSeries } from '../src/chartStatistics.ts'
 
 const data = createPageChartData()
 data.append('V', 0, [10, 20, 30, 40, 50, 60, 70, 80])
@@ -71,4 +71,14 @@ test('statistical responses map bins and box statistics directly to ECharts seri
   assert.deepEqual(box.series[1].data, [[0, 100]])
   assert.equal(statisticalChartSeries({ ...base, type: 'boxplot',
     boxPlot: { showOutliers: false } }, response, 'blue').series.length, 1)
+})
+
+test('Histogram formats category boundaries without changing statistical values', () => {
+  assert.deepEqual([formatBinBoundary(1), formatBinBoundary(231.69230769230768),
+    formatBinBoundary(1.2e-7)], ['1', '231.692', '1.2e-7'])
+  const response = { run_id: 1, page: 'A', output: 'I', sample_count: 1,
+    bins: [{ start: 1, end: 231.69230769230768, count: 1 }] }
+  assert.deepEqual(statisticalChartSeries({ ...base, type: 'histogram' }, response, 'red').categories,
+    ['1–231.692'])
+  assert.equal(response.bins[0].end, 231.69230769230768)
 })
