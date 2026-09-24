@@ -7,7 +7,7 @@ type NumericKey = 'min' | 'max' | 'interval'
 
 export default function ChartSettings({ panel, onApply, onClose }: {
   panel: ChartPanel
-  onApply: (settings: Pick<ChartPanel, 'title' | 'showLegend' | 'zoom' | 'xAxis' | 'yAxis'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -83,6 +83,17 @@ export default function ChartSettings({ panel, onApply, onClose }: {
         <label><input type="checkbox" checked={draft.zoom.showSlider} disabled={!draft.zoom.enabled}
           onChange={event => setDraft(current => ({ ...current,
             zoom: { ...current.zoom, showSlider: event.target.checked } }))} />Show zoom slider</label>
+      </fieldset>
+      <fieldset className="chart-settings-general">
+        <legend>Save image</legend>
+        <label className="chart-settings-field">Background
+          <select value={draft.imageBackground} onChange={event => setDraft(current => ({
+            ...current, imageBackground: event.target.value as ChartPanel['imageBackground'],
+          }))}>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
       </fieldset>
       {error && <p className="chart-settings-error" role="alert">{error}</p>}
       <div className="chart-settings-actions">

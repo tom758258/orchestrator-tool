@@ -135,7 +135,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         filters: [{ name: 'PNG', extensions: ['png'] }],
       })
       if (!destinationPath) return
-      const pngBytes = await chartPng(plots.current.get(id))
+      const panel = panels.find(panel => panel.id === id)!
+      const pngBytes = await chartPng(plots.current.get(id), panel)
       await invoke('save_chart_png', { destinationPath, pngBytes: Array.from(pngBytes) })
       setFeedback({ id, message: 'Chart image saved successfully.' })
     } catch (error) {

@@ -15,6 +15,7 @@ test('persisted panels allocate a fresh ID after remount and removal', () => {
 test('Page reconciliation removes stale selections without clearing other Pages', () => {
   const panels = ['Outer', 'Inner', 'Deleted'].map((page, id) => ({
     ...panel(id, page, ['a', 'b', 'old']), title: 'Run result', showLegend: false,
+    imageBackground: 'dark',
     xAxis: { ...panel(id, page, ['a']).xAxis, min: 1, showLabels: false },
     yAxis: { ...panel(id, page, ['a']).yAxis, title: 'Value', max: 10, interval: 2 },
   }))
@@ -24,6 +25,7 @@ test('Page reconciliation removes stale selections without clearing other Pages'
   assert.deepEqual(reconciled.map(panel => [panel.page, panel.outputs]), [['Outer', ['a']], ['Inner', ['b']]])
   assert.equal(reconciled[1].title, 'Run result')
   assert.equal(reconciled[1].showLegend, false)
+  assert.equal(reconciled[1].imageBackground, 'dark')
   assert.deepEqual(reconciled[1].xAxis, panels[1].xAxis)
   assert.deepEqual(reconciled[1].yAxis, panels[1].yAxis)
   assert.deepEqual(reconciled[1].zoom, panels[1].zoom)
@@ -71,6 +73,7 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
 test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], showLegend: true,
+    imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },
@@ -96,6 +99,7 @@ test('a Page without committed cells retains compatible selections until numeric
 test('new Last Run reconciles every owned Page and preserves unaffected panel identity', () => {
   const panels = [...addChartPanel([], 'A', ['V']),
     { ...panel(1, 'B', ['V', 'I']), title: 'Custom', showLegend: false,
+      imageBackground: 'dark',
       xAxis: { ...panel(1, 'B', ['V']).xAxis, title: 'Custom' },
       yAxis: { ...panel(1, 'B', ['V']).yAxis, title: 'Value' } },
     panel(2, 'Deleted', ['V'])]
@@ -108,6 +112,7 @@ test('new Last Run reconciles every owned Page and preserves unaffected panel id
   assert.deepEqual(result[1].outputs, ['I'])
   assert.equal(result[1].title, 'Custom')
   assert.equal(result[1].showLegend, false)
+  assert.equal(result[1].imageBackground, 'dark')
   assert.equal(result[1].xAxis.title, 'Custom')
   assert.equal(reconcileRunChartPanels(result, pages, changed), result)
   const stale = [panels[2]]

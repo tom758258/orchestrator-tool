@@ -159,6 +159,15 @@ export default function ChartPlot({ panel, data, numericNames, charts }: {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
   }, [rendererSeries])
 
+  const previousXBounds = useRef({ min: panel.xAxis.min, max: panel.xAxis.max })
+  useEffect(() => {
+    const previous = previousXBounds.current
+    if (previous.min === panel.xAxis.min && previous.max === panel.xAxis.max) return
+    previousXBounds.current = { min: panel.xAxis.min, max: panel.xAxis.max }
+    setZoomRange(null)
+    if (panel.zoom.enabled) instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
+  }, [panel.xAxis.min, panel.xAxis.max, panel.zoom.enabled])
+
   useEffect(() => {
     const chart = instance.current!
     const zr = chart.getZr()

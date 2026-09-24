@@ -136,10 +136,13 @@ The current Desktop presentation architecture has these properties:
   run snapshot. Chart panel configuration survives Page/tab changes only
   within that Last Run; starting a new run resets the configuration, and the
   first Page receives one default panel when it has numeric Outputs. Each
-  panel keeps its title, legend visibility, axis scale and display settings, and
-  X-axis zoom settings in Last Run session state. The current zoom viewport is
-  transient presentation state. These settings are not Template data. Single-chart
-  PNG export captures the ECharts-rendered title and plot.
+  panel keeps its title, legend visibility, axis scale and display settings,
+  X-axis zoom settings, and image background in Last Run session state. The
+  current zoom viewport is transient presentation state and resets when the
+  configured X-axis minimum or maximum changes. These settings are not Template
+  data. Single-chart PNG export uses a light or dark palette independently of
+  the application theme, captures the current viewport and ECharts-rendered
+  title, and excludes interactive DataZoom controls.
 - Line charts decimate only the visible raw iteration range according to plot
   pixel width, including when custom X-axis bounds narrow the view. Omitted
   display points remain in the committed ResultRows, and hover inspection

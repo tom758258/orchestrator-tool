@@ -340,11 +340,14 @@ latest first 顯示。
 在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
 滾輪與拖曳仍可使用，也不會清除目前範圍。手動縮放後按 **Reset Zoom** 可回到
 完整 X 範圍。Live run 尚未手動縮放時會跟進新資料；手動縮放或平移後，
-新資料不會移動目前視窗，直到按 Reset Zoom。關閉 Enable zoom 也會回到完整範圍。
+新資料不會移動目前視窗，直到按 Reset Zoom。修改 X Axis 的 Minimum 或 Maximum
+並套用後，也會回到新的完整 X 範圍。關閉 Enable zoom 也會回到完整範圍。
 大型資料只會依目前可見範圍取 raw rows 進行繪圖 decimation；hover 在資料範圍外
 不會顯示虛假的首筆或末筆數值。
 
 每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
+**Settings → Save image → Background** 可選 Light 或 Dark，與 Application theme
+分開設定。PNG 保留目前縮放後的 X 範圍，但不包含 zoom slider 或 Reset Zoom 按鈕。
 Chart settings 只屬於目前 Last Run session；切換 Page 後仍保留，開始新的 run、
 Open Template 或 Clear Last Run 時會清除，且不屬於 Template。
 

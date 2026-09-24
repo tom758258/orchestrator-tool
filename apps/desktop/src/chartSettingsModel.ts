@@ -9,6 +9,7 @@ type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
 export type ChartSettingsDraft = {
   title: string
   showLegend: boolean
+  imageBackground: ChartPanel['imageBackground']
   zoom: ChartPanel['zoom']
   xAxis: AxisDraft
   yAxis: AxisDraft
@@ -24,7 +25,7 @@ function axisDraft(axis: AxisSettings): AxisDraft {
 }
 
 export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft {
-  return { title: panel.title, showLegend: panel.showLegend,
+  return { title: panel.title, showLegend: panel.showLegend, imageBackground: panel.imageBackground,
     zoom: { ...panel.zoom },
     xAxis: axisDraft(panel.xAxis), yAxis: axisDraft(panel.yAxis) }
 }
@@ -49,11 +50,12 @@ function parseAxis(axis: AxisDraft, label: string): AxisSettings | string {
 }
 
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'showLegend' | 'zoom' | 'xAxis' | 'yAxis'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = parseAxis(draft.xAxis, 'X Axis')
   if (typeof xAxis === 'string') return { error: xAxis }
   const yAxis = parseAxis(draft.yAxis, 'Y Axis')
   if (typeof yAxis === 'string') return { error: yAxis }
-  return { settings: { title: draft.title, showLegend: draft.showLegend, zoom: { ...draft.zoom }, xAxis, yAxis } }
+  return { settings: { title: draft.title, showLegend: draft.showLegend,
+    imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis } }
 }

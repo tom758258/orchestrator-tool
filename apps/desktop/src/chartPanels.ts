@@ -15,12 +15,15 @@ export type ZoomSettings = {
   showSlider: boolean
 }
 
+export type ChartImageBackground = 'light' | 'dark'
+
 export type ChartPanel = {
   page: string
   id: number
   title: string
   outputs: string[]
   showLegend: boolean
+  imageBackground: ChartImageBackground
   zoom: ZoomSettings
   xAxis: AxisSettings
   yAxis: AxisSettings
@@ -63,6 +66,7 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
     ?? numericNames[0]
   return [...panels, {
     id: nextChartPanelId(panels), page, title: '', outputs: [name], showLegend: true,
+    imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },

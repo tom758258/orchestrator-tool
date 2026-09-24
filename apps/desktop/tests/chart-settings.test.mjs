@@ -52,6 +52,7 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   draft.title = 'Edited'
   draft.zoom.enabled = true
   draft.zoom.showSlider = false
+  draft.imageBackground = 'dark'
   draft.xAxis.min = '  '
   draft.yAxis.min = '-2.5'
   draft.yAxis.max = '5'
@@ -61,6 +62,8 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   assert.deepEqual([valid.settings.xAxis.min, valid.settings.yAxis.min,
     valid.settings.yAxis.max, valid.settings.yAxis.interval], [null, -2.5, 5, 0.5])
   assert.deepEqual(valid.settings.zoom, { enabled: true, showSlider: false })
+  assert.equal(valid.settings.imageBackground, 'dark')
+  assert.equal(panel.imageBackground, 'light')
   assert.deepEqual(panel.zoom, { enabled: false, showSlider: true })
   assert.equal(panel.title, '')
   assert.equal(panel.yAxis.min, null)
