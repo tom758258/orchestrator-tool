@@ -370,14 +370,68 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
-Large datasets may be decimated for chart presentation. Decimation does not
-discard raw ResultRows: hover values still use the exact raw iteration and
-value. The chart X coordinate is the Page row sequence. Charts and CSV output
-are chronological, while **Output Data** is displayed latest first.
+While execution is running, Charts use **Line**. After execution stops, any run
+with committed numeric rows, including a failed run, can select **Line**,
+**XY Scatter**, **Column**, **Area**, **Bar**, **Combo**, **Histogram**, or
+**Box & Whisker** from **Settings → General → Chart type**. Line shows the
+Iteration trend; Area fills below the line; Column uses vertical grouped bars;
+Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
+values.
 
-Each chart has an individual **Save image** action that exports a PNG.
-Chart panel settings belong to the current Desktop session rather than the
-Template.
+A chart panel can select multiple **Outputs** to compare numeric series.
+Scatter **X source** can be Iteration or any numeric Output, and an Output used
+only as Scatter X does not need to be selected as a Y series. Combo requires
+at least two selected Outputs; each Output can use Line or Column rendering and
+the Left Y or Right Y axis. The two Y axes are configured independently, and
+Combo supports Iteration X-axis zoom.
+
+Histogram uses exactly one numeric Output. **Bins** can use Auto, Count from
+1 to 200, or a positive Width; a Width that would create more than 200 bins
+reports an error. Box & Whisker draws one box for each selected Output and can
+show or hide outlier points. These statistical charts are computed from
+committed StoredRun rows and do not load their full raw samples into the
+frontend chart cache.
+
+For large datasets, Line and Area decimate only the visible Iteration range,
+and Combo applies the same viewport decimation to its Line series. Column and
+Combo Column series keep every raw row in the visible range; Scatter and Bar
+preserve raw pairs. These display optimizations do not remove committed
+ResultRows. Hover inspection resolves exact raw iteration and values inside
+the raw data domain. Iteration is the Page row sequence; Charts and CSV are
+chronological, while **Output Data** is displayed latest first.
+
+**Settings** can configure the chart title, legend, X/Y axis titles, minimum,
+maximum, major interval, labels, tick marks, and major gridlines. Blank numeric
+fields mean Auto; when both minimum and maximum are set, minimum must be less
+than maximum; a major interval must be greater than zero. Combo also has an
+independent Right Y Axis. When switching to or from Histogram or Box & Whisker,
+recognized automatic axis titles are adjusted for the selected type while
+other custom titles are retained.
+
+**Apply** applies valid settings and closes the dialog. **Cancel** discards the
+draft and closes it. Clicking the backdrop or pressing Esc does not close
+Settings, so the draft remains available. A single-series chart does not show
+a legend even when **Show legend** is enabled.
+
+Line, Area, Column, and Combo can enable **Settings → Zoom → Enable zoom**.
+Use the mouse wheel to zoom the X axis and drag inside the chart to pan.
+**Show zoom slider** controls the bottom slider without clearing the current
+range; wheel zoom and drag pan remain available when the slider is hidden.
+**Reset Zoom** returns to the full X range. An active Line chart follows new
+rows until the user manually zooms or pans; after that, new rows do not move
+the current viewport until Reset Zoom. Applying a changed X Axis Minimum or
+Maximum, disabling zoom, or switching to a chart type without zoom resets the
+manual viewport. Scatter, Bar, Histogram, and Box & Whisker do not expose
+Zoom controls.
+
+Each chart has an individual **Save image** action that exports a PNG including
+the chart title. **Settings → Save image → Background** can use Light or Dark
+independently of the Application theme. The PNG keeps the current zoomed X
+range but excludes the zoom slider and Reset Zoom control.
+
+Chart settings belong only to the current Last Run session. They survive
+Page/tab changes within that Last Run, but starting a new run, **Open Template**,
+or **Clear Last Run** resets them. Chart settings are not Template data.
 
 ### 10.3 Data and Summary
 
