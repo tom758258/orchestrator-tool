@@ -109,12 +109,16 @@ durable details to focused documentation:
 - [Template Schema v1](contracts/template-schema-v1.md)
 
 Keep English engineering documents as the canonical focused source unless a
-translation is explicitly requested. Keep tracked documentation durable:
-omit temporary review notes, run-specific evidence, local paths, private
-hardware identifiers, and transient validation output. Generated Help must
-come from maintained canonical sources. Do not edit the generated runtime
-bundle by hand; regenerate it after changing Help content, template, or CSS,
-and keep the tracked bundle synchronized with those sources.
+translation is explicitly requested. The Desktop User Guide is an
+operator-facing bilingual document: update `desktop/USER_GUIDE.md` and
+`desktop/USER_GUIDE.zh-TW.md` together whenever documented operator behavior
+changes, and keep their user-facing semantics aligned. Keep tracked
+documentation durable: omit temporary review notes, run-specific evidence,
+local paths, private hardware identifiers, and transient validation output.
+Generated Help must come from maintained canonical sources. Do not edit the
+generated runtime bundle by hand; regenerate it after changing either User
+Guide, another Help content source, the template, or CSS, and keep the tracked
+bundle synchronized with those sources.
 
 Update the relevant README or focused document when a public architecture or
 contract changes. Do not create placeholder documents, empty documentation
@@ -132,6 +136,8 @@ categories, or a documentation framework for a single change.
       contract document.
 - [ ] README links and terminology remain consistent in English and
       Traditional Chinese entry points.
+- [ ] Desktop User Guide changes are semantically synchronized between English
+      and Traditional Chinese, and the tracked Help bundle is regenerated.
 - [ ] The diff contains no transient validation evidence, private resource
       identifiers, hand-edited generated Help output, or unrelated refactor.
 - [ ] The PR summary states what was tested and what was not run.

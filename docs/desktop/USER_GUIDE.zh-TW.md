@@ -324,52 +324,60 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
-Execution 執行中只能使用 **Line**。停止後，只要有 committed numeric rows，
-即使 run 失敗，只要仍有 committed numeric rows，也可在 **Settings → General → Chart type** 選擇
+Execution 執行中 Charts 只能使用 **Line**。Execution 停止後，只要有 committed
+numeric rows，即使 run 失敗，也可在 **Settings → General → Chart type** 選擇
 **Line**、**XY Scatter**、**Column**、**Area**、**Bar**、**Combo**、**Histogram**
-或 **Box & Whisker**。Line 顯示 Iteration
-趨勢；Area 在折線下填色；Column 顯示垂直分組長條；Bar 顯示水平分組長條；
-XY Scatter 用來比較數值 X 與 Y 的關係。Scatter 的 **X source** 可選
-Iteration 或任一 numeric Output，外層勾選的 Outputs 是 Y series。
-Combo 至少選兩個 Outputs；每個 Output 可在 Settings 選擇 Line 或 Column，並指定
-Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援與 Line 相同的 X 軸縮放。
-Histogram 一次只選一個 numeric Output，Bins 可選 Auto、Count（1–200）或
-Width（正數）；Width 若會產生超過 200 個 bins，會顯示錯誤。
-Box & Whisker 對每個選取的 Output 顯示一個 box，並可切換 outlier points。
-這兩種統計圖在 Rust 端從 committed rows 計算，不會把完整 raw samples 載入圖表快取。
+或 **Box & Whisker**。Line 顯示 Iteration 趨勢；Area 在折線下填色；Column
+使用垂直分組長條；Bar 使用水平分組長條；XY Scatter 用來比較數值 X 與 Y
+的關係。
 
-Line 與 Area 在大型資料集只對可見 Iteration 範圍做繪圖 decimation；Column
-在可見範圍保留每筆長條，Scatter 與 Bar 也保留 raw pairs。這些顯示方式不會
-丟棄 raw ResultRows。Line、Area 與 Column 的 hover 使用 exact raw iteration
-與 value。Iteration 是 Page 的 row sequence；Chart 與 CSV 按 chronological
-順序，**Output Data** 則以 latest first 顯示。
+在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
+**X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
+不必同時勾選為 Y series。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
+或 Column，並指定 Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援
+Iteration X 軸縮放。
 
-在 chart panel 勾選多個 **Outputs**，即可在同一張圖比較多個 numeric series。
-Scatter 的 X Output 不必同時勾選為 Y Output。點選右上角
+Histogram 一次只使用一個 numeric Output。**Bins** 可選 Auto、Count（1–200）
+或 Width（正數）；Width 若會產生超過 200 個 bins，會顯示錯誤。Box & Whisker
+會對每個選取的 Output 顯示一個 box，並可顯示或隱藏 outlier points。這兩種
+統計圖會從 committed StoredRun rows 計算，不會把完整 raw samples 載入前端
+chart cache。
+
+大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
+decimation，Combo 的 Line series 也使用相同的 viewport decimation。Column 與
+Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
+raw pairs。這些顯示最佳化不會刪除 committed ResultRows。hover 只會在 raw
+data domain 內解析 exact raw iteration 與 value。Iteration 是 Page 的 row
+sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest
+first 顯示。
+
 **Settings** 可設定圖表標題、legend，以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
-若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。
-**Apply** 會套用有效設定並關閉視窗，**Cancel** 會捨棄草稿並關閉視窗。
-點擊背景或按 Esc 不會關閉 Settings，草稿會保留。
-單一 series 不顯示 legend，即使 **Show legend** 已開啟。
+若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。Combo
+另有可獨立設定的 Right Y Axis。切換到或離開 Histogram、Box & Whisker 時，
+系統會調整可辨識的自動 axis title，其他自訂 title 會保留。
 
-Line、Area、Column 與 Combo 可在 **Settings → Zoom** 勾選 **Enable zoom**，
-以滑鼠滾輪縮放 X 軸，並在圖內拖曳平移。**Show zoom slider** 可顯示或隱藏底部的縮放控制列；隱藏後
-滾輪與拖曳仍可使用，也不會清除目前範圍。手動縮放後按 **Reset Zoom** 可回到
-完整 X 範圍。Live run 尚未手動縮放時會跟進新資料；手動縮放或平移後，
-新資料不會移動目前視窗，直到按 Reset Zoom。修改 X Axis 的 Minimum 或 Maximum
-並套用後，也會回到新的完整 X 範圍。關閉 Enable zoom 也會回到完整範圍。
-Line 與 Area 只會對目前可見範圍進行繪圖 decimation；Column 則保留可見範圍
-的每筆 raw row。hover 在資料範圍外
-不會顯示虛假的首筆或末筆數值。Scatter 與 Bar 沒有 Zoom 控制；
-Histogram、Box & Whisker、Scatter 與 Bar 沒有 Zoom 控制；
-從可縮放圖型切換到這些圖型時，手動縮放範圍會重設。
+**Apply** 會套用有效設定並關閉視窗；**Cancel** 會捨棄草稿並關閉視窗。點擊
+背景或按 Esc 不會關閉 Settings，因此草稿會保留。單一 series 不顯示 legend，
+即使 **Show legend** 已開啟。
+
+Line、Area、Column 與 Combo 可在 **Settings → Zoom → Enable zoom** 開啟縮放。
+使用滑鼠滾輪可縮放 X 軸，並可在圖內拖曳平移。**Show zoom slider** 可控制底部
+縮放列是否顯示；隱藏後不會清除目前範圍，滾輪與拖曳仍可使用。按
+**Reset Zoom** 可回到完整 X 範圍。執行中的 Line chart 在尚未手動縮放或平移
+時會跟進新資料；手動操作後，新資料不會移動目前 viewport，直到按 Reset Zoom。
+修改 X Axis 的 Minimum 或 Maximum 並套用、關閉 zoom，或切換到不支援 zoom
+的圖型時，都會重設 manual viewport。Scatter、Bar、Histogram 與
+Box & Whisker 不提供 Zoom 控制。
 
 每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
-**Settings → Save image → Background** 可選 Light 或 Dark，與 Application theme
-分開設定。PNG 保留目前縮放後的 X 範圍，但不包含 zoom slider 或 Reset Zoom 按鈕。
-Chart settings 只屬於目前 Last Run session；切換 Page 後仍保留，開始新的 run、
-Open Template 或 Clear Last Run 時會清除，且不屬於 Template。
+**Settings → Save image → Background** 可選 Light 或 Dark，並與 Application
+theme 分開設定。PNG 會保留目前縮放後的 X 範圍，但不包含 zoom slider 或
+Reset Zoom 控制。
+
+Chart settings 只屬於目前 Last Run session；在同一個 Last Run 內切換 Page/tab
+仍會保留，但開始新的 run、**Open Template** 或 **Clear Last Run** 時會清除。
+Chart settings 不屬於 Template data。
 
 ### 10.3 Data 與 Summary
 

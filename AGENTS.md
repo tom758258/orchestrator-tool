@@ -58,5 +58,6 @@ These instructions define long-term, repository-specific boundaries for agents w
 
 - Keep the root README as the project overview and entry point, not a complete specification dump.
 - Keep USER_GUIDE content operator-facing. Put build, validation, maintainer, architecture, and contract details in the README or focused documentation.
+- Maintain the Desktop User Guide in both English and Traditional Chinese. When operator-facing behavior documented in either guide changes, update `docs/desktop/USER_GUIDE.md` and `docs/desktop/USER_GUIDE.zh-TW.md` in the same change and keep their user-facing semantics aligned.
 - Keep tracked documentation durable; do not add transient review notes, temporary validation results, or run-specific evidence.
-- Generated Help runtime files must not be edited by hand. Canonical Help content and presentation sources live under `docs/`; use `scripts/generate_help.py` after changing them and keep the tracked generated bundle synchronized. Do not expand the Help architecture or scope without a concrete requirement.
+- Generated Help runtime files must not be edited by hand. Canonical Help content and presentation sources live under `docs/`; use `scripts/generate_help.py` after changing either User Guide or another Help source and keep the tracked generated bundle synchronized. Do not expand the Help architecture or scope without a concrete requirement.
