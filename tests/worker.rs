@@ -2325,7 +2325,7 @@ fn test_template(workflow: &Workflow) -> Template {
             ToolInstance {
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: orchestrator_tool::tool::ToolId::powers(),
-                setup: Default::default(),
+                setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
             },
             ToolInstance {
                 id: ToolInstanceId::new("meters-1").unwrap(),
@@ -2374,7 +2374,7 @@ fn multiple_powers_cleanup_attempts_every_session() {
         .map(|id| ToolInstance {
             id: ToolInstanceId::new(id).unwrap(),
             tool: orchestrator_tool::tool::ToolId::powers(),
-            setup: Default::default(),
+            setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
         })
         .collect();
     let template = Template::new("Two Powers".to_owned(), instances, workflow).unwrap();

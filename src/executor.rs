@@ -1558,7 +1558,9 @@ mod tests {
             vec![crate::tool_instance::ToolInstance {
                 id: crate::tool_instance::ToolInstanceId::new("powers-1").unwrap(),
                 tool: crate::tool::ToolId::powers(),
-                setup: Default::default(),
+                setup: crate::tool_instance::ToolSetup::Powers(
+                    crate::powers_setup::PowersSetup::default(),
+                ),
             }],
             workflow.clone(),
         )

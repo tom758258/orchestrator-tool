@@ -47,6 +47,12 @@ Each Tool Instance has:
 - tool: the external Tool Type ID; and
 - setup: tool-specific setup data.
 
+The Tool Type selects the setup schema; setup fields do not determine the Tool
+Type. Meters uses MetersSetup. Powers uses its own PowersSetup, whose canonical
+schema v1 representation is currently `{}`. Existing Powers instances with
+`"setup": {}` remain valid and serialize the same way. Scopes and Wavegen
+continue to use empty setup objects. The schema_version remains 1.
+
 Workflow Tool Actions use target to reference an existing Tool Instance. A
 Template can declare multiple instances of one Tool Type. Meters setup uses
 the existing DC Voltage and DC Current fields, including Auto/Manual range
@@ -77,8 +83,8 @@ limit; meters-tool remains authoritative for per-field limits, model trigger
 support, reading-memory capacity, and overflow-risk validation. Meter
 measurement remains a runtime action; it does not configure the session.
 
-Other current Tool Types may use an empty setup object. Declaring a Scopes or
-Wavegen instance does not imply that its runtime actions are supported.
+Declaring a Scopes or Wavegen instance does not imply that its runtime actions
+are supported.
 
 ## Workflow steps
 

@@ -124,7 +124,7 @@ fn workflow_template_step_result_integration() {
             ToolInstance {
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: ToolId::powers(),
-                setup: Default::default(),
+                setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
             },
             ToolInstance {
                 id: ToolInstanceId::new("meters-1").unwrap(),

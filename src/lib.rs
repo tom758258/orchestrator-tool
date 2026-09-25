@@ -13,6 +13,7 @@ pub mod live_resources;
 pub mod manifest;
 pub mod manifest_probe;
 pub mod meters_setup;
+pub mod powers_setup;
 pub mod process;
 pub mod run;
 pub mod run_preparation;
