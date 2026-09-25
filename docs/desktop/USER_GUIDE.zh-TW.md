@@ -362,8 +362,10 @@ first 顯示。
 Left、Right），以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
 若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。Combo
-另有可獨立設定的 Right Y Axis。切換到或離開 Histogram、Box & Whisker 時，
-系統會調整可辨識的自動 axis title，其他自訂 title 會保留。
+另有可獨立設定的 Right Y Axis。可辨識的自動 axis title 會隨所選 chart type 與
+Scatter X source 更新，自訂 title 則會保留。因目前 chart type 未使用而隱藏的
+numeric 設定不會阻擋 Apply；合法的 inactive 值會保留，非法值會回到 Auto 或
+該控制項的預設值。
 
 **Apply** 會套用有效設定並關閉視窗；**Cancel** 會捨棄草稿並關閉視窗。點擊
 背景或按 Esc 不會關閉 Settings，因此草稿會保留。**Show legend** 開啟時即使只有
