@@ -170,6 +170,59 @@ test('Scatter validates active sizes and repairs only invalid inactive values', 
     { display: 'markers', markerSize: 7, lineWidth: 3 })
 })
 
+test('inactive axis numerics do not block Apply and preserve valid hidden values', () => {
+  const draft = createChartSettingsDraft(panel)
+  draft.combo.rightAxis = { ...draft.combo.rightAxis, title: 'Current',
+    min: 'bad', max: '10', interval: '0' }
+  let result = validateChartSettingsDraft(draft)
+  assert.equal(result.error, undefined)
+  assert.equal(result.settings.combo.rightAxis.title, 'Current')
+  assert.deepEqual([result.settings.combo.rightAxis.min, result.settings.combo.rightAxis.max,
+    result.settings.combo.rightAxis.interval], [null, 10, null])
+
+  draft.combo.rightAxis = { ...draft.combo.rightAxis, min: '10', max: '5', interval: '2' }
+  result = validateChartSettingsDraft(draft)
+  assert.deepEqual([result.settings.combo.rightAxis.min, result.settings.combo.rightAxis.max,
+    result.settings.combo.rightAxis.interval], [null, null, 2])
+
+  draft.combo.rightAxis = { ...draft.combo.rightAxis, min: '0', max: '5', interval: '1' }
+  result = validateChartSettingsDraft(draft)
+  assert.deepEqual([result.settings.combo.rightAxis.min, result.settings.combo.rightAxis.max,
+    result.settings.combo.rightAxis.interval], [0, 5, 1])
+
+  draft.type = 'combo'
+  draft.combo.rightAxis.min = 'bad'
+  assert.match(validateChartSettingsDraft(draft).error, /Right Y Axis min/)
+})
+
+test('statistical charts normalize hidden X numerics while active X stays strict', () => {
+  const draft = createChartSettingsDraft(panel)
+  draft.xAxis.min = 'bad'
+  assert.match(validateChartSettingsDraft(draft).error, /X Axis min/)
+  for (const type of ['histogram', 'boxplot']) {
+    draft.type = type
+    draft.xAxis = { ...draft.xAxis, min: 'bad', max: '10', interval: '0' }
+    const settings = validateChartSettingsDraft(draft).settings
+    assert.deepEqual([settings.xAxis.min, settings.xAxis.max, settings.xAxis.interval],
+      [null, 10, null])
+  }
+  draft.type = 'histogram'
+  draft.xAxis = { ...draft.xAxis, min: '0', max: '10', interval: '2' }
+  const settings = validateChartSettingsDraft(draft).settings
+  assert.deepEqual([settings.xAxis.min, settings.xAxis.max, settings.xAxis.interval], [0, 10, 2])
+})
+
+test('inactive Histogram bin values repair to safe defaults without weakening active validation', () => {
+  const draft = createChartSettingsDraft(panel)
+  draft.histogram = { mode: 'count', value: 'bad' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'count', value: 20 })
+  draft.histogram = { mode: 'width', value: '0' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'width', value: 0.5 })
+  draft.type = 'histogram'
+  draft.histogram = { mode: 'count', value: 'bad' }
+  assert.match(validateChartSettingsDraft(draft).error, /bin count/)
+})
+
 test('Bar settings map stored axes to physical X and Y without changing their values', () => {
   const bar = { ...panel, type: 'bar', xAxis: { ...panel.xAxis, title: 'Iteration' },
     yAxis: { ...panel.yAxis, title: 'Value' } }
@@ -223,12 +276,26 @@ test('Combo uses two Y axes and category charts ignore numeric X bounds', () => 
   assert.equal(categories.legend.show, false)
 })
 
-test('statistical type transitions update only recognized automatic axis titles', () => {
-  const line = createChartSettingsDraft(panel)
+test('automatic axis titles follow chart semantics while custom titles remain unchanged', () => {
+  const line = createChartSettingsDraft({ ...panel, scatterXOutput: 'Voltage' })
   assert.deepEqual(chartTypeAxisTitles(line, 'histogram', 'V'), { x: 'V', y: 'Count' })
+  assert.deepEqual(chartTypeAxisTitles(line, 'scatter', 'V'), { x: 'Voltage', y: '' })
+
+  const scatter = { ...line, type: 'scatter', xAxis: { ...line.xAxis, title: 'Voltage' } }
+  assert.deepEqual(chartTypeAxisTitles(scatter, 'line', 'V'), { x: 'Iteration', y: '' })
+  assert.deepEqual(chartTypeAxisTitles(scatter, 'histogram', 'V'), { x: 'V', y: 'Count' })
+  assert.deepEqual(chartTypeAxisTitles(scatter, 'boxplot', 'V'), { x: '', y: '' })
+
   const histogram = { ...line, type: 'histogram', xAxis: { ...line.xAxis, title: 'V' },
     yAxis: { ...line.yAxis, title: 'Count' } }
+  assert.deepEqual(chartTypeAxisTitles(histogram, 'line', 'V'), { x: 'Iteration', y: '' })
   assert.deepEqual(chartTypeAxisTitles(histogram, 'boxplot', 'V'), { x: '', y: '' })
-  assert.deepEqual(chartTypeAxisTitles({ ...line, xAxis: { ...line.xAxis, title: 'Voltage' } },
-    'boxplot', 'V'), { x: 'Voltage', y: '' })
+
+  const box = { ...line, type: 'boxplot', xAxis: { ...line.xAxis, title: '' } }
+  assert.deepEqual(chartTypeAxisTitles(box, 'line', 'V'), { x: 'Iteration', y: '' })
+
+  const custom = { ...scatter, xAxis: { ...scatter.xAxis, title: 'Input Voltage (V)' },
+    yAxis: { ...scatter.yAxis, title: 'Output' } }
+  assert.deepEqual(chartTypeAxisTitles(custom, 'line', 'V'),
+    { x: 'Input Voltage (V)', y: 'Output' })
 })
