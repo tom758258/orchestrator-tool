@@ -48,6 +48,9 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
       return `${step.duration_ms} ms`
     case 'tool-action': {
       if (instances.find(instance => instance.id === step.target)?.tool === 'powers') {
+        if (step.action === 'protection-status') {
+          return step.arguments.channel === 'all' ? 'All channels' : `CH${step.arguments.channel ?? '?'}`
+        }
         const channel = step.bindings?.channel
           ? 'Bound channel'
           : `CH${step.arguments.channel ?? '?'}`

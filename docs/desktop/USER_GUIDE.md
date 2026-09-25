@@ -194,6 +194,19 @@ output; add **Power Output ON** when the procedure should turn it on.
 Existing Templates containing **Power Set Voltage** remain editable and keep
 that action when saved. New steps use **Power Set Output**.
 
+#### Power Protection Status
+
+Add **Power Protection Status** to read protection trip state without changing
+instrument settings. Select **All** channels or a specific positive integer
+channel. The result offers **Protection Tripped**, **Over Voltage Tripped**, and
+**Over Current Tripped**. Protection Tripped is true when either voltage or
+current protection has tripped. Powers Tool validates actual model support.
+
+To fail the Workflow after a trip, add an **Assert** after Power Protection
+Status. Select **Previous step result → Protection Tripped** on the left,
+`==` as the operator, and **Boolean → False** on the right. Status alone does
+not stop the Workflow, clear protection, or modify the power supply.
+
 ### 6.2 For
 
 Configure a For step with **Start**, **Stop**, **Step**, a loop variable, and a

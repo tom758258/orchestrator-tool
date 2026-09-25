@@ -24,6 +24,8 @@ use crate::{
 const WORKER_SCHEMA_VERSION: u32 = 2;
 const SERVICE_NAME: &str = "powers-tool";
 const READ_STATUS_COMMAND: &str = "read-status";
+const SIMULATION_MODEL_ID: &str = "keysight-e36312a";
+const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Builds the Powers Worker launch specification used for simulate diagnostics.
@@ -34,6 +36,8 @@ pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunch
             OsString::from("worker"),
             OsString::from("--mode"),
             OsString::from("simulate"),
+            OsString::from("--resource"),
+            OsString::from(SIMULATION_RESOURCE),
             OsString::from("--control-port"),
             OsString::from("0"),
             OsString::from("--artifact-mode"),
@@ -168,7 +172,7 @@ fn read_status_request() -> Value {
         },
         "context": {
             "mode": "simulate",
-            "planning_model_id": "keysight-e36312a"
+            "planning_model_id": SIMULATION_MODEL_ID
         }
     })
 }
@@ -389,7 +393,7 @@ impl Error for PowersSmokeError {
 
 /// Runs a single runtime Powers action on an already-started Worker session.
 ///
-/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`.
+/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`, `protection-status`.
 /// Execution context and output confirmation are runtime-only.
 pub fn run_action(
     session: &WorkerSession,
@@ -402,13 +406,52 @@ pub fn run_action(
         "set-output" | "set-voltage" => "set",
         "output-on" => "output-on",
         "output-off" => "output-off",
+        "protection-status" => "protection-status",
         _ => {
             return Err(PowersActionError::UnsupportedAction(action.clone()));
         }
     };
 
     let arguments = validate_arguments(action.as_str(), arguments)?;
-    run_command(session, worker_command, arguments, execution_mode, timeout)
+    let result = run_command(session, worker_command, arguments, execution_mode, timeout)?;
+    if action.as_str() == "protection-status" {
+        augment_protection_status_result(result)
+    } else {
+        Ok(result)
+    }
+}
+
+fn augment_protection_status_result(mut result: Value) -> Result<Value, PowersActionError> {
+    let protection = result
+        .get("data")
+        .and_then(Value::as_object)
+        .and_then(|data| data.get("protection"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            PowersActionError::InvalidResponse("missing data.protection object".to_owned())
+        })?;
+    let flag = |name: &str| {
+        protection
+            .get(name)
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(format!(
+                    "data.protection.{name} must be a boolean"
+                ))
+            })
+    };
+    let over_voltage = flag("over_voltage_tripped")?;
+    let over_current = flag("over_current_tripped")?;
+    let object = result
+        .as_object_mut()
+        .expect("data object implies result object");
+    object.insert(
+        "protection_tripped".to_owned(),
+        json!(over_voltage || over_current),
+    );
+    object.insert("over_voltage_tripped".to_owned(), json!(over_voltage));
+    object.insert("over_current_tripped".to_owned(), json!(over_current));
+    Ok(result)
 }
 
 /// Requests bounded live safe-off for every Powers channel before shutdown.
@@ -437,7 +480,7 @@ fn run_command(
     let context = match execution_mode {
         ExecutionMode::Simulate => json!({
             "mode": "simulate",
-            "planning_model_id": "keysight-e36312a"
+            "planning_model_id": SIMULATION_MODEL_ID
         }),
         ExecutionMode::Live => {
             arguments["confirm_output"] = json!(true);
@@ -578,7 +621,7 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
     let (required_fields, allowed_fields): (&[&str], &[&str]) = match action {
         "set-voltage" => (&["channel", "voltage"], &["channel", "voltage"]),
         "set-output" => (&["channel"], &["channel", "voltage", "current"]),
-        "output-on" | "output-off" => (&["channel"], &["channel"]),
+        "output-on" | "output-off" | "protection-status" => (&["channel"], &["channel"]),
         _ => {
             return Err(PowersActionError::InvalidArguments(format!(
                 "unsupported action {action:?}"
@@ -603,6 +646,9 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
         ));
     }
 
+    if action == "protection-status" && object.get("channel") == Some(&json!("all")) {
+        return Ok(json!({ "channel": "all" }));
+    }
     let channel = object
         .get("channel")
         .and_then(Value::as_u64)
@@ -702,8 +748,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        PowersActionError, PowersSmokeError, StatusResponse, read_status_request,
-        simulate_worker_launch_spec, validate_arguments, validate_worker_health,
+        PowersActionError, PowersSmokeError, StatusResponse, augment_protection_status_result,
+        read_status_request, simulate_worker_launch_spec, validate_arguments,
+        validate_worker_health,
     };
 
     #[test]
@@ -738,6 +785,8 @@ mod tests {
                 OsString::from("worker"),
                 OsString::from("--mode"),
                 OsString::from("simulate"),
+                OsString::from("--resource"),
+                OsString::from("USB0::SIM::E36312A::INSTR"),
                 OsString::from("--control-port"),
                 OsString::from("0"),
                 OsString::from("--artifact-mode"),
@@ -840,5 +889,69 @@ mod tests {
             ),
             Err(PowersActionError::InvalidArguments(_))
         ));
+    }
+
+    #[test]
+    fn protection_status_arguments_are_exact() {
+        for channel in [json!("all"), json!(1), json!(2)] {
+            let arguments = json!({ "channel": channel });
+            assert_eq!(
+                validate_arguments("protection-status", &arguments).unwrap(),
+                arguments
+            );
+        }
+        for arguments in [
+            json!({}),
+            json!({ "channel": 0 }),
+            json!({ "channel": -1 }),
+            json!({ "channel": 1.5 }),
+            json!({ "channel": true }),
+            json!({ "channel": "1" }),
+            json!({ "channel": "ALL" }),
+            json!({ "channel": null }),
+            json!({ "channel": 1, "extra": true }),
+        ] {
+            assert!(
+                matches!(
+                    validate_arguments("protection-status", &arguments),
+                    Err(PowersActionError::InvalidArguments(_))
+                ),
+                "{arguments}"
+            );
+        }
+    }
+
+    #[test]
+    fn protection_status_derives_flags_and_preserves_envelope() {
+        for (over_voltage, over_current) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let original = json!({
+                "request": { "command": "protection-status" },
+                "data": { "protection": { "over_voltage_tripped": over_voltage, "over_current_tripped": over_current } },
+                "metadata": { "source": "worker" }
+            });
+            let result = augment_protection_status_result(original.clone()).unwrap();
+            assert_eq!(result["protection_tripped"], over_voltage || over_current);
+            assert_eq!(result["over_voltage_tripped"], over_voltage);
+            assert_eq!(result["over_current_tripped"], over_current);
+            for key in ["request", "data", "metadata"] {
+                assert_eq!(result[key], original[key]);
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_protection_status_fails_closed() {
+        for result in [
+            json!({ "data": {} }),
+            json!({ "data": { "protection": { "over_voltage_tripped": false } } }),
+            json!({ "data": { "protection": { "over_voltage_tripped": "false", "over_current_tripped": false } } }),
+        ] {
+            assert!(matches!(
+                augment_protection_status_result(result),
+                Err(PowersActionError::InvalidResponse(_))
+            ));
+        }
     }
 }

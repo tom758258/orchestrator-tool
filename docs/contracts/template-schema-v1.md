@@ -119,6 +119,25 @@ separate action. Existing `set-voltage` steps remain valid: they require
 `channel` and `voltage`, reject `current`, and retain their action name when
 loaded and saved. Schema version remains 1; no action migration occurs.
 
+Powers `protection-status` is a read-only Tool Action. Its required `channel`
+argument is an exact positive JSON integer or the exact string `"all"`; no
+other argument fields are accepted. For example:
+
+    {
+      "type": "tool-action",
+      "id": "power-protection-1",
+      "target": "powers-1",
+      "action": "protection-status",
+      "arguments": { "channel": "all" }
+    }
+
+The action maps to the Powers Worker `protection-status` command. Its Step
+Output preserves the full Worker result envelope and adds top-level booleans
+`protection_tripped`, `over_voltage_tripped`, and `over_current_tripped`.
+`protection_tripped` is the OR of the two trip flags in `data.protection`.
+An Assert can compare `/protection_tripped` with the Boolean literal `false`
+to fail the Workflow when protection has tripped.
+
 Every step has an explicit stable id. Step IDs are unique across the whole
 workflow, including nested bodies. Output names are unique across the whole
 workflow, case-sensitive and without normalization. Step-output references

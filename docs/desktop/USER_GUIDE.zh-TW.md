@@ -170,6 +170,19 @@ Set Output 不會啟用通道輸出；需要啟用時，另加 **Power Output ON
 含有 **Power Set Voltage** 的既有 Template 仍可編輯，儲存後也會保留原 action。
 新建步驟使用 **Power Set Output**。
 
+#### Power Protection Status
+
+加入 **Power Protection Status** 可讀取 protection trip 狀態，不會改變儀器設定。
+Channel 可選 **All** 或指定正整數通道。結果提供 **Protection Tripped**、
+**Over Voltage Tripped** 與 **Over Current Tripped**。只要過電壓或過電流
+protection 任一觸發，Protection Tripped 即為 true。實際型號支援由 Powers Tool
+驗證。
+
+若 trip 時需要讓 Workflow 失敗，請在 Power Protection Status 後加入 **Assert**：
+左側選 **Previous step result → Protection Tripped**，運算子選 `==`，右側選
+**Boolean → False**。Status 本身不會停止 Workflow、清除 protection 或修改電源
+供應器。
+
 ### 6.2 For
 
 For step 具有 **Start**、**Stop**、**Step**、loop variable 與 body。

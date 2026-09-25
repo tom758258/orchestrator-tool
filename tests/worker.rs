@@ -40,10 +40,12 @@ use orchestrator_tool::{
 use serde_json::json;
 
 const FIXTURE_ARGUMENT: &str = "--worker-fixture";
-const POWERS_WORKER_ARGUMENTS: [&str; 7] = [
+const POWERS_WORKER_ARGUMENTS: [&str; 9] = [
     "worker",
     "--mode",
     "simulate",
+    "--resource",
+    "USB0::SIM::E36312A::INSTR",
     "--control-port",
     "0",
     "--artifact-mode",
@@ -127,6 +129,7 @@ fn main() {
     powers_runtime_action_succeeds();
     powers_set_voltage_step_outputs_reach_result_row();
     powers_set_output_binding_reaches_worker();
+    powers_protection_status_asserts_untripped_result();
     meters_runtime_measure_returns_sample();
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
@@ -457,6 +460,9 @@ fn run_fixture(scenario: &OsStr) {
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
         "powers-workflow-set-output" => run_powers_workflow_fixture("simulate-set-output"),
+        "powers-workflow-protection-status" => {
+            run_powers_workflow_fixture("simulate-protection-status")
+        }
         "live-success"
         | "live-assert-failure"
         | "live-step-failure"
@@ -676,7 +682,10 @@ fn run_powers_runtime_fixture() {
 }
 
 fn run_powers_workflow_fixture(scenario: &str) {
-    let live = !matches!(scenario, "simulate" | "simulate-set-output");
+    let live = !matches!(
+        scenario,
+        "simulate" | "simulate-set-output" | "simulate-protection-status"
+    );
     let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
     let cleanup_failed = matches!(
         scenario,
@@ -708,6 +717,13 @@ fn run_powers_workflow_fixture(scenario: &str) {
     ];
     if scenario == "simulate-set-output" {
         commands[0].1 = json!({ "channel": 1, "voltage": 5.0, "current": 0.2 });
+    }
+    if scenario == "simulate-protection-status" {
+        commands = vec![(
+            "protection-status",
+            json!({ "channel": "all" }),
+            "job-protection",
+        )];
     }
     if step_failed || scenario == "live-assert-failure" {
         commands.truncate(2);
@@ -776,7 +792,13 @@ fn run_powers_workflow_fixture(scenario: &str) {
                     "worker_job_id": worker_job_id,
                     "status": if (step_failed && command == "output-on") || (cleanup_failed && command == "safe-off") { "failed" } else { "succeeded" },
                     "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
-                    "result": { "ok": true }
+                    "result": if command == "protection-status" {
+                        json!({
+                            "request": { "command": "protection-status" },
+                            "data": { "protection": { "over_voltage_tripped": false, "over_current_tripped": false } },
+                            "metadata": { "source": "fixture" }
+                        })
+                    } else { json!({ "ok": true }) }
                 }
             })
             .to_string(),
@@ -1426,6 +1448,48 @@ fn powers_set_output_binding_reaches_worker() {
             .iter()
             .all(|execution| matches!(execution.result().outcome(), StepOutcome::Succeeded { .. }))
     );
+}
+
+fn powers_protection_status_asserts_untripped_result() {
+    let template = Template::from_json_str(&json!({
+        "schema_version": 1,
+        "name": "Power Protection Status",
+        "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
+        "workflow": { "steps": [
+            { "type": "tool-action", "id": "protection-1", "target": "powers-1",
+              "action": "protection-status", "arguments": { "channel": "all" } },
+            { "type": "assert", "id": "assert-1",
+              "left": { "source": "step-output", "step_id": "protection-1", "pointer": "/protection_tripped" },
+              "operator": "equal", "right": { "source": "literal", "value": false },
+              "message": "Power protection tripped" },
+            { "type": "wait", "id": "later-1", "duration_ms": 0 }
+        ] }
+    }).to_string()).unwrap();
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("powers-workflow-protection-status"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let executions = run.step_executions();
+    assert_eq!(executions.len(), 3);
+    for execution in executions {
+        assert!(matches!(
+            execution.result().outcome(),
+            StepOutcome::Succeeded { .. }
+        ));
+    }
+    let StepOutcome::Succeeded { output } = executions[0].result().outcome() else {
+        unreachable!()
+    };
+    assert_eq!(output["protection_tripped"], false);
+    assert_eq!(output["request"]["command"], "protection-status");
+    assert_eq!(output["metadata"]["source"], "fixture");
 }
 
 fn meters_runtime_measure_returns_sample() {

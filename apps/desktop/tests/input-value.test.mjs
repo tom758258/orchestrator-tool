@@ -33,6 +33,9 @@ const powerSetVoltage = {
 const powerSetOutput = {
   type: 'tool-action', id: 'set-output-1', target: 'power-1', action: 'set-output', arguments: { channel: 1, current: 0.2 },
 }
+const powerProtectionStatus = {
+  type: 'tool-action', id: 'protection-1', target: 'power-1', action: 'protection-status', arguments: { channel: 'all' },
+}
 const powerOutputOn = {
   type: 'tool-action', id: 'output-on-1', target: 'power-1', action: 'output-on', arguments: {},
 }
@@ -70,6 +73,17 @@ test('Powers Set Output defaults to its required Channel result', () => {
   ])
   assert.deepEqual(stepOutputReference(powerSetOutput, instances), {
     source: 'step-output', step_id: 'set-output-1', pointer: '/request/arguments/channel',
+  })
+})
+
+test('Power Protection Status defaults to Protection Tripped', () => {
+  assert.deepEqual(curatedResultFields(powerProtectionStatus, instances), [
+    { label: 'Protection Tripped', pointer: '/protection_tripped' },
+    { label: 'Over Voltage Tripped', pointer: '/over_voltage_tripped' },
+    { label: 'Over Current Tripped', pointer: '/over_current_tripped' },
+  ])
+  assert.deepEqual(stepOutputReference(powerProtectionStatus, instances), {
+    source: 'step-output', step_id: 'protection-1', pointer: '/protection_tripped',
   })
 })
 

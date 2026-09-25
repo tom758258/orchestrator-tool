@@ -100,6 +100,7 @@ type StepPreset =
   | 'set-variable'
   | 'output'
   | 'power-set-output'
+  | 'power-protection-status'
   | 'power-output-on'
   | 'wait'
   | 'meter-measure'
@@ -119,6 +120,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
   { value: 'power-set-output', label: 'Power Set Output', prefix: 'power-set', category: 'Powers', tool: 'powers' },
+  { value: 'power-protection-status', label: 'Power Protection Status', prefix: 'power-protection', category: 'Powers', tool: 'powers' },
   { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
   { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
   { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
@@ -128,6 +130,7 @@ const STEP_PRESETS: StepPresetOption[] = [
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
   'powers/set-output': 'Power Set Output',
+  'powers/protection-status': 'Power Protection Status',
   'powers/set-voltage': 'Power Set Voltage',
   'powers/output-on': 'Power Output ON',
   'meters/measure': 'Meter Measure',
@@ -142,6 +145,7 @@ const STEP_HELP: Record<string, string> = {
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
   'powers/set-output': 'Set Voltage, Current Limit, or both for a Power channel. Current Limit is the power supply output current-limit setpoint. Specify at least one. This does not enable output; use Power Output ON separately.',
+  'powers/protection-status': 'Power Protection Status reads the selected Power channel protection state without changing instrument settings. Use Protection Tripped with Assert when the Workflow should fail after detecting a protection trip.',
   'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
   'powers/output-off': 'Disable the selected Power channel.',
@@ -212,6 +216,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
         action: 'set-output',
         arguments: { channel: 1, voltage: 5.0 },
       }
+    case 'power-protection-status':
+      return { type: 'tool-action', id, target, action: 'protection-status', arguments: { channel: 'all' } }
     case 'power-output-on':
       return {
         type: 'tool-action',
@@ -654,7 +660,7 @@ function App() {
   )
 
   const updateToolArgument = useCallback(
-    (stepId: string, name: string, value: number) => {
+    (stepId: string, name: string, value: number | 'all') => {
       updateStep(stepId, (step) => {
         if (step.type !== 'tool-action') {
           return step
@@ -1841,6 +1847,35 @@ function App() {
                         </label>
                       )}
 
+                      {selectedToolAction && selectedAction === 'powers/protection-status' && (
+                        <>
+                          <label className="step-property-field">
+                            <span className="step-property-label">Channel selection</span>
+                            <select
+                              value={selectedToolAction.arguments.channel === 'all' ? 'all' : 'specific'}
+                              disabled={workflowBusy}
+                              onChange={(event) => updateToolArgument(selectedToolAction.id, 'channel', event.target.value === 'all' ? 'all' : 1)}
+                            >
+                              <option value="all">All</option>
+                              <option value="specific">Specific channel</option>
+                            </select>
+                          </label>
+                          {selectedToolAction.arguments.channel !== 'all' && (
+                            <label className="step-property-field">
+                              <span className="step-property-label">Channel</span>
+                              <input type="number" min="1" step="1"
+                                value={numericArgument(selectedToolAction, 'channel')}
+                                disabled={workflowBusy}
+                                onChange={(event) => {
+                                  const channel = event.currentTarget.valueAsNumber
+                                  if (isPositiveInteger(channel)) updateToolArgument(selectedToolAction.id, 'channel', channel)
+                                }}
+                              />
+                            </label>
+                          )}
+                        </>
+                      )}
+
                       {selectedToolAction &&
                         (selectedAction === 'powers/set-output' || selectedAction === 'powers/set-voltage') &&
                         (selectedAction === 'powers/set-voltage' ? ['voltage'] as const : ['voltage', 'current'] as const)
@@ -1882,6 +1917,7 @@ function App() {
 
                       {selectedToolAction &&
                         !selectedPowersAction &&
+                        selectedAction !== 'powers/protection-status' &&
                         selectedAction !== 'meters/measure' && (
                           <p className="step-properties-empty">
                             No editable properties are available for this step.

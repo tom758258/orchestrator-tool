@@ -174,6 +174,16 @@ Voltage 與 Current Limit 解析後必須是數值，否則 Powers action valida
 Set Output 不會啟用通道輸出；需要啟用時，另加 <strong>Power Output ON</strong>。</p>
 <p>含有 <strong>Power Set Voltage</strong> 的既有 Template 仍可編輯，儲存後也會保留原 action。
 新建步驟使用 <strong>Power Set Output</strong>。</p>
+<h4 id="power-protection-status">Power Protection Status</h4>
+<p>加入 <strong>Power Protection Status</strong> 可讀取 protection trip 狀態，不會改變儀器設定。
+Channel 可選 <strong>All</strong> 或指定正整數通道。結果提供 <strong>Protection Tripped</strong>、
+<strong>Over Voltage Tripped</strong> 與 <strong>Over Current Tripped</strong>。只要過電壓或過電流
+protection 任一觸發，Protection Tripped 即為 true。實際型號支援由 Powers Tool
+驗證。</p>
+<p>若 trip 時需要讓 Workflow 失敗，請在 Power Protection Status 後加入 <strong>Assert</strong>：
+左側選 <strong>Previous step result → Protection Tripped</strong>，運算子選 <code>==</code>，右側選
+<strong>Boolean → False</strong>。Status 本身不會停止 Workflow、清除 protection 或修改電源
+供應器。</p>
 <h3 id="62-for">6.2 For</h3>
 <p>For step 具有 <strong>Start</strong>、<strong>Stop</strong>、<strong>Step</strong>、loop variable 與 body。</p>
 <ul>

@@ -63,6 +63,11 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
     { label: 'Voltage', pointer: '/request/arguments/voltage' },
     { label: 'Current Limit', pointer: '/request/arguments/current' },
   ],
+  'powers/protection-status': [
+    { label: 'Protection Tripped', pointer: '/protection_tripped' },
+    { label: 'Over Voltage Tripped', pointer: '/over_voltage_tripped' },
+    { label: 'Over Current Tripped', pointer: '/over_current_tripped' },
+  ],
 }
 
 export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {

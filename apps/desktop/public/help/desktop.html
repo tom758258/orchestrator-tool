@@ -198,6 +198,16 @@ current-limit setpoint, expressed in A. Set Output does not enable the channel
 output; add <strong>Power Output ON</strong> when the procedure should turn it on.</p>
 <p>Existing Templates containing <strong>Power Set Voltage</strong> remain editable and keep
 that action when saved. New steps use <strong>Power Set Output</strong>.</p>
+<h4 id="power-protection-status">Power Protection Status</h4>
+<p>Add <strong>Power Protection Status</strong> to read protection trip state without changing
+instrument settings. Select <strong>All</strong> channels or a specific positive integer
+channel. The result offers <strong>Protection Tripped</strong>, <strong>Over Voltage Tripped</strong>, and
+<strong>Over Current Tripped</strong>. Protection Tripped is true when either voltage or
+current protection has tripped. Powers Tool validates actual model support.</p>
+<p>To fail the Workflow after a trip, add an <strong>Assert</strong> after Power Protection
+Status. Select <strong>Previous step result → Protection Tripped</strong> on the left,
+<code>==</code> as the operator, and <strong>Boolean → False</strong> on the right. Status alone does
+not stop the Workflow, clear protection, or modify the power supply.</p>
 <h3 id="62-for">6.2 For</h3>
 <p>Configure a For step with <strong>Start</strong>, <strong>Stop</strong>, <strong>Step</strong>, a loop variable, and a
 body.</p>
