@@ -384,7 +384,9 @@ only as Scatter X does not need to be selected as a Y series. **Display** can
 show Markers, Lines, or Lines + markers. **Marker size** and **Line width** accept
 positive finite numbers and apply to the modes that show them. Scatter keeps
 raw X/Y pairs in original row order, including nonmonotonic X values; Lines
-connect those pairs in that order. Combo requires
+connect those pairs in that order. Scatter hover uses screen-space proximity;
+line displays may be selected through a visible segment but always report an
+actual raw row rather than an interpolated measurement. Combo requires
 at least two selected Outputs; each Output can use Line or Column rendering and
 the Left Y or Right Y axis. The two Y axes are configured independently, and
 Combo supports Iteration X-axis zoom.
@@ -399,10 +401,13 @@ frontend chart cache.
 For large datasets, Line and Area decimate only the visible Iteration range,
 and Combo applies the same viewport decimation to its Line series. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
-preserve raw pairs. Scatter does not sample or decimate its raw pairs. These
-display optimizations do not remove committed
-ResultRows. Hover inspection resolves exact raw iteration and values inside
-the raw data domain. Iteration is the Page row sequence; Charts and CSV are
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. Markers
+use ECharts large scatter rendering, while Lines and Lines + markers use line
+rendering. These display optimizations do not remove committed ResultRows.
+Line, Area, Column, and Combo hover inspection resolves exact raw iteration and
+values; Scatter hover reports the nearest actual raw XY row. Bar, Histogram,
+and Box & Whisker do not provide hover inspection. Iteration is the Page row
+sequence; Charts and CSV are
 chronological, while **Output Data** is displayed latest first.
 
 **Settings** can configure the chart title, **Show legend**, **Legend position**

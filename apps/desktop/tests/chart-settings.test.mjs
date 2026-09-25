@@ -140,16 +140,34 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   assert.match(validateChartSettingsDraft(draft).error, /finite number/)
 })
 
-test('scatter sizes must be positive finite numbers', () => {
+test('Scatter validates active sizes and repairs only invalid inactive values', () => {
   const draft = createChartSettingsDraft({ ...panel, type: 'scatter' })
-  for (const [field, label] of [['markerSize', /Marker size/], ['lineWidth', /Line width/]]) {
-    for (const value of ['0', '-1', '', 'Infinity', 'NaN', '1e309']) {
-      draft.scatter[field] = value
-      assert.match(validateChartSettingsDraft(draft).error, label)
-    }
-    draft.scatter[field] = field === 'markerSize' ? '4' : '2'
+  for (const value of ['0', '-1', '', 'Infinity', 'NaN', '1e309']) {
+    draft.scatter = { display: 'markers', markerSize: value, lineWidth: '2' }
+    assert.match(validateChartSettingsDraft(draft).error, /Marker size/)
+    draft.scatter = { display: 'lines', markerSize: '4', lineWidth: value }
+    assert.match(validateChartSettingsDraft(draft).error, /Line width/)
   }
-  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter, panel.scatter)
+
+  draft.scatter = { display: 'lines', markerSize: '', lineWidth: '3' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter,
+    { display: 'lines', markerSize: 4, lineWidth: 3 })
+  draft.scatter = { display: 'markers', markerSize: '5', lineWidth: 'bad' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter,
+    { display: 'markers', markerSize: 5, lineWidth: 2 })
+
+  draft.scatter = { display: 'lines-markers', markerSize: '', lineWidth: '2' }
+  assert.match(validateChartSettingsDraft(draft).error, /Marker size/)
+  draft.scatter = { display: 'lines-markers', markerSize: '4', lineWidth: '0' }
+  assert.match(validateChartSettingsDraft(draft).error, /Line width/)
+
+  draft.type = 'line'
+  draft.scatter = { display: 'lines-markers', markerSize: 'bad', lineWidth: 'bad' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter,
+    { display: 'lines-markers', markerSize: 4, lineWidth: 2 })
+  draft.scatter = { display: 'markers', markerSize: '7', lineWidth: '3' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter,
+    { display: 'markers', markerSize: 7, lineWidth: 3 })
 })
 
 test('Bar settings map stored axes to physical X and Y without changing their values', () => {

@@ -125,6 +125,70 @@ export function exactHoverIndex(x: number, rowCount: number): number | null {
   return Math.max(0, Math.min(rowCount - 1, Math.round(x) - 1))
 }
 
+export type ScatterHoverHit = { rowIndex: number; seriesIndex: number }
+
+export function nearestScatterHover(
+  xValues: Float64Array,
+  ySeries: readonly Float64Array[],
+  mouseX: number,
+  mouseY: number,
+  xUnitsPerPixel: number,
+  yUnitsPerPixel: number,
+  radiusPixels: number,
+  connectLines: boolean,
+): ScatterHoverHit | null {
+  if (!Number.isFinite(mouseX) || !Number.isFinite(mouseY) ||
+    !Number.isFinite(xUnitsPerPixel) || xUnitsPerPixel <= 0 ||
+    !Number.isFinite(yUnitsPerPixel) || yUnitsPerPixel <= 0 ||
+    !Number.isFinite(radiusPixels) || radiusPixels <= 0 || ySeries.length === 0) return null
+  const count = Math.min(xValues.length, ...ySeries.map(values => values.length))
+  if (count === 0) return null
+  const radiusSquared = radiusPixels * radiusPixels
+  let best: ScatterHoverHit | null = null
+  let bestDistance = radiusSquared
+  const consider = (distance: number, rowIndex: number, seriesIndex: number) => {
+    if (distance > radiusSquared || (best !== null && distance >= bestDistance)) return
+    best = { rowIndex, seriesIndex }
+    bestDistance = distance
+  }
+
+  for (let seriesIndex = 0; seriesIndex < ySeries.length; seriesIndex++) {
+    const values = ySeries[seriesIndex]
+    let previousX = 0
+    let previousY = 0
+    let previousIndex = -1
+    for (let index = 0; index < count; index++) {
+      const rawX = xValues[index]
+      const rawY = values[index]
+      if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+        previousIndex = -1
+        continue
+      }
+      const x = (rawX - mouseX) / xUnitsPerPixel
+      const y = (rawY - mouseY) / yUnitsPerPixel
+      const pointDistance = x * x + y * y
+      consider(pointDistance, index, seriesIndex)
+
+      if (connectLines && previousIndex >= 0) {
+        const vx = x - previousX
+        const vy = y - previousY
+        const lengthSquared = vx * vx + vy * vy
+        const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1,
+          -(previousX * vx + previousY * vy) / lengthSquared))
+        const nearestX = previousX + t * vx
+        const nearestY = previousY + t * vy
+        const segmentDistance = nearestX * nearestX + nearestY * nearestY
+        const previousDistance = previousX * previousX + previousY * previousY
+        consider(segmentDistance, previousDistance <= pointDistance ? previousIndex : index, seriesIndex)
+      }
+      previousX = x
+      previousY = y
+      previousIndex = index
+    }
+  }
+  return best
+}
+
 export function minMaxDecimateRange(
   iteration: Float64Array, values: Float64Array, pixelWidth: number,
   range: { min: number; max: number },

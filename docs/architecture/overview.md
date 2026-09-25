@@ -166,10 +166,15 @@ The current Desktop presentation architecture has these properties:
 - Line and Area decimate only the visible raw iteration range according to plot
   pixel width, including when custom X-axis bounds narrow the view. Column
   renders raw rows in its visible iteration viewport. Scatter preserves raw XY
-  pairs; horizontal Bar preserves raw value and iteration pairs. Column,
-  Scatter, and Bar use ECharts large rendering without sampling. Omitted
-  display points remain in the committed ResultRows, and hover inspection
-  resolves exact raw iteration and values only within the raw data domain.
+  pairs in original row order: Markers use ECharts large scatter rendering,
+  while Lines and Lines + markers use the line renderer without sorting,
+  sampling, or decimation. Horizontal Bar preserves raw value and iteration
+  pairs; Column and Bar use ECharts large rendering. Omitted display points
+  remain in the committed ResultRows. Line, Area, Column, and Combo hover
+  inspection resolves exact raw iteration and values. Scatter hover uses
+  screen-space proximity to raw points and, for line displays, raw segments,
+  then reports a real endpoint row rather than an interpolated value. Bar,
+  Histogram, and Box & Whisker do not provide hover inspection.
   X-axis zoom for Line, Area, Column, and Combo supports an automatic full-range view that follows new rows and a
   manual absolute iteration range that stays fixed as rows arrive. The horizontal
   coordinate is the 1-based page row sequence; charts and CSV remain
@@ -181,7 +186,7 @@ The current Desktop presentation architecture has these properties:
   keeps the viewed history anchored while new committed rows arrive.
 - Charts request the selected numeric Output series and any separate Scatter X
   Output. The frontend keeps
-  shared raw Float64 series needed for exact hover and appends bounded tails;
+  shared raw Float64 series needed for exact iteration and Scatter hover and appends bounded tails;
   Line and Area renderer input remains pixel-decimated. These numeric projections do not
   replace the authoritative ResultRows.
 - Page numeric eligibility and Count, Min, Max, and Avg summaries are

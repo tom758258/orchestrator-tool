@@ -132,8 +132,11 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           </select>
         </label>
         <label className="chart-settings-field">Display
-          <select value={draft.scatter.display} onChange={event => setDraft(current => ({ ...current,
-            scatter: { ...current.scatter, display: event.target.value as ChartPanel['scatter']['display'] } }))}>
+          <select value={draft.scatter.display} onChange={event => {
+            setDraft(current => ({ ...current,
+              scatter: { ...current.scatter, display: event.target.value as ChartPanel['scatter']['display'] } }))
+            setError(null)
+          }}>
             <option value="markers">Markers</option><option value="lines">Lines</option>
             <option value="lines-markers">Lines + markers</option>
           </select>

@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   createPageChartData,
   exactHoverIndex,
+  nearestScatterHover,
   minMaxDecimate,
   minMaxDecimateRange,
   pruneChartData,
@@ -61,6 +62,39 @@ test('hover resolves exact raw indices only inside the raw iteration domain', ()
   assert.equal(exactHoverIndex(1, 1), 0)
   assert.equal(exactHoverIndex(9, 1), null)
   assert.equal(exactHoverIndex(1, 0), null)
+})
+
+test('Scatter hover selects the nearest real raw point in screen space', () => {
+  const x = Float64Array.of(0, 1, 2, 3, 2, 1, 0)
+  const y = Float64Array.of(0, 2, 4, 6, 8, 10, 12)
+  const y2 = Float64Array.of(20, 21, 22, 23, 24, 25, 26)
+  assert.deepEqual(nearestScatterHover(x, [y], 2, 7.8, 1, 1, 1, false),
+    { rowIndex: 4, seriesIndex: 0 })
+  assert.deepEqual(nearestScatterHover(x, [y], 2, 4.2, 1, 1, 1, false),
+    { rowIndex: 2, seriesIndex: 0 })
+  assert.deepEqual(nearestScatterHover(x, [y, y2], 3, 23.1, 1, 1, 1, false),
+    { rowIndex: 3, seriesIndex: 1 })
+  assert.equal(nearestScatterHover(Float64Array.of(0), [Float64Array.of(0)],
+    3, 0, 1, 1, 2, false), null)
+})
+
+test('Scatter line hover uses line proximity but reports a real endpoint row', () => {
+  const x = Float64Array.of(0, 10)
+  const y = Float64Array.of(0, 0)
+  assert.equal(nearestScatterHover(x, [y], 5, 0, 1, 1, 1, false), null)
+  assert.deepEqual(nearestScatterHover(x, [y], 4, 0, 1, 1, 1, true),
+    { rowIndex: 0, seriesIndex: 0 })
+  assert.deepEqual(nearestScatterHover(x, [y], 6, 0, 1, 1, 1, true),
+    { rowIndex: 1, seriesIndex: 0 })
+  assert.equal(nearestScatterHover(x, [y], 5, 0, 0, 1, 1, true), null)
+})
+
+test('Scatter hover handles 100,000 raw rows without sampling or indexing assumptions', () => {
+  const count = 100_000
+  const x = Float64Array.from({ length: count }, (_, index) => index)
+  const y = Float64Array.from({ length: count }, (_, index) => index * 2)
+  assert.deepEqual(nearestScatterHover(x, [y], 54_321, 108_642, 1, 2, 2, true),
+    { rowIndex: 54_321, seriesIndex: 0 })
 })
 
 test('viewport decimation reads only its raw slice and retains line-clipping neighbors', () => {
@@ -144,6 +178,7 @@ test('ChartPlot uses the common selected-series prefix for axis, decimation, and
   assert.match(source, /data\.commonLength\(chartRequiredOutputs\(panel\)\)/)
   assert.match(source, /data\.iteration\.subarray\(0, rawRowCount\)/)
   assert.match(source, /exactHoverIndex\(x, rawRowCount\)/)
+  assert.match(source, /nearestScatterHover\(scatterXValues, yValues/)
 })
 
 test('Scatter X remains cached when it is not selected as a Y Output', () => {
