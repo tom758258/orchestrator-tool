@@ -214,6 +214,8 @@ pub enum ExpressionOperator {
     Subtract,
     Multiply,
     Divide,
+    Equal,
+    NotEqual,
     GreaterThan,
     GreaterThanOrEqual,
     LessThan,
@@ -224,7 +226,12 @@ impl ExpressionOperator {
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
-            Self::GreaterThan | Self::GreaterThanOrEqual | Self::LessThan | Self::LessThanOrEqual
+            Self::Equal
+                | Self::NotEqual
+                | Self::GreaterThan
+                | Self::GreaterThanOrEqual
+                | Self::LessThan
+                | Self::LessThanOrEqual
         )
     }
 }
@@ -1226,6 +1233,35 @@ mod tests {
             "assert step assert-1 requires a comparison operator"
         );
         assert!(matches!(error, WorkflowError::InvalidAssertOperator(_)));
+    }
+
+    #[test]
+    fn equality_operators_are_valid_assert_and_while_conditions() {
+        for operator in [ExpressionOperator::Equal, ExpressionOperator::NotEqual] {
+            assert!(operator.is_comparison());
+            let condition = Expression::new(
+                ExpressionOperand::Literal(json!(false)),
+                operator,
+                ExpressionOperand::Literal(json!(false)),
+            );
+            let assertion = Step::new(
+                StepId::new("assert-1").unwrap(),
+                StepKind::Assert {
+                    condition: condition.clone(),
+                    message: String::new(),
+                },
+            );
+            let loop_step = Step::new(
+                StepId::new("while-1").unwrap(),
+                StepKind::While {
+                    condition,
+                    max_iterations: Some(1),
+                    body: vec![],
+                },
+            );
+            assert!(Workflow::new(vec![assertion, loop_step]).is_ok());
+        }
+        assert!(!ExpressionOperator::Add.is_comparison());
     }
 
     #[test]

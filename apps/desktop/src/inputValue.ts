@@ -5,10 +5,12 @@ export type ExpressionOperandWire =
   | { source: 'step-output'; step_id: string; pointer: string }
 
 export const COMPARISON_OPERATORS = {
+  equal: '==',
+  'not-equal': '!=',
   'greater-than': '>',
-  'greater-than-or-equal': '≥',
+  'greater-than-or-equal': '>=',
   'less-than': '<',
-  'less-than-or-equal': '≤',
+  'less-than-or-equal': '<=',
 } as const
 
 export type ComparisonOperator = keyof typeof COMPARISON_OPERATORS

@@ -1330,6 +1330,37 @@ mod tests {
         template.save_to_file(&path).unwrap();
         assert_eq!(Template::load_from_file(&path).unwrap(), template);
 
+        for (operator, expected) in [
+            ("equal", ExpressionOperator::Equal),
+            ("not-equal", ExpressionOperator::NotEqual),
+        ] {
+            wire["workflow"]["steps"][3]["operator"] = json!(operator);
+            let template = Template::from_json_str(&wire.to_string()).unwrap();
+            let serialized: Value =
+                serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+            assert_eq!(serialized["schema_version"], 1);
+            assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
+            assert!(
+                matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, .. }
+                if condition.operator() == expected)
+            );
+
+            let mut while_wire = wire.clone();
+            while_wire["workflow"]["steps"][3] = json!({
+                "type": "while", "id": "while-1",
+                "left": { "source": "literal", "value": false },
+                "operator": operator,
+                "right": { "source": "literal", "value": false },
+                "max_iterations": 1,
+                "steps": []
+            });
+            let while_template = Template::from_json_str(&while_wire.to_string()).unwrap();
+            let serialized: Value =
+                serde_json::from_str(&while_template.to_json_string().unwrap()).unwrap();
+            assert_eq!(serialized["schema_version"], 1);
+            assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
+        }
+
         wire["workflow"]["steps"][3]["operator"] = json!("add");
         assert!(matches!(
             Template::from_json_str(&wire.to_string()),

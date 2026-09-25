@@ -32,6 +32,7 @@ type OperandEditorProps = ReferenceOptions & {
   value: ExpressionOperandWire
   onChange: (value: ExpressionOperandWire) => void
   literalLabel?: string
+  allowBooleanLiteral?: boolean
 }
 
 function ResultPathEditor({ value, onChange, fields, disabled }: {
@@ -70,22 +71,40 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   )
 }
 
-function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel = 'Value' }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel = 'Value', allowBooleanLiteral = false }: OperandEditorProps) {
   switch (value.source) {
     case 'literal':
-      return typeof value.value === 'number' ? (
-        <label className="step-property-field">
-          <span className="step-property-label">{literalLabel}</span>
-          <input type="number" step="any" value={value.value} disabled={disabled}
-            onChange={(event) => {
-              const number = event.currentTarget.valueAsNumber
-              if (Number.isFinite(number)) onChange({ source: 'literal', value: number })
-            }} />
-        </label>
+      return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') ? (
+        <>
+          {allowBooleanLiteral && <label className="step-property-field">
+            <span className="step-property-label">Value type</span>
+            <select value={typeof value.value === 'boolean' ? 'boolean' : 'number'} disabled={disabled}
+              onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'boolean' ? false : 0 })}>
+              <option value="number">Number</option>
+              <option value="boolean">Boolean</option>
+            </select>
+          </label>}
+          <label className="step-property-field">
+            <span className="step-property-label">{literalLabel}</span>
+            {typeof value.value === 'boolean' ? (
+              <select value={String(value.value)} disabled={disabled}
+                onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'true' })}>
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
+            ) : (
+              <input type="number" step="any" value={value.value} disabled={disabled}
+                onChange={(event) => {
+                  const number = event.currentTarget.valueAsNumber
+                  if (Number.isFinite(number)) onChange({ source: 'literal', value: number })
+                }} />
+            )}
+          </label>
+        </>
       ) : (
         <>
           <p className="step-properties-empty">
-            Value preserved (only numeric fixed values are editable): {JSON.stringify(value.value)}
+            Value preserved (fixed value type is not editable here): {JSON.stringify(value.value)}
           </p>
           <button className="action-button" type="button" disabled={disabled}
             onClick={() => onChange({ source: 'literal', value: 0 })}>
@@ -158,7 +177,7 @@ function defaultOperand(source: string, references: ReferenceOptions, literal = 
   }
 }
 
-export function ExpressionOperandEditor({ value, onChange, side, ...references }: OperandEditorProps & { side: 'Left' | 'Right' }) {
+export function ExpressionOperandEditor({ value, onChange, side, allowBooleanLiteral = false, ...references }: OperandEditorProps & { side: 'Left' | 'Right' }) {
   return (
     <div className="step-properties-fields" role="group" aria-label={`${side} operand`}>
       <label className="step-property-field">
@@ -169,7 +188,7 @@ export function ExpressionOperandEditor({ value, onChange, side, ...references }
         </select>
       </label>
       <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
-      <OperandEditor {...references} value={value} onChange={onChange} />
+      <OperandEditor {...references} value={value} onChange={onChange} allowBooleanLiteral={allowBooleanLiteral} />
     </div>
   )
 }

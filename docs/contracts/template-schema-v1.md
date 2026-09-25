@@ -125,8 +125,8 @@ workflow, case-sensitive and without normalization. Step-output references
 must refer to an earlier step that is visible from the current lexical scope.
 
 For and While bodies are ordered step lists. Loop nesting is limited to five
-levels. There is no break, continue, equality operator, boolean expression
-tree, or timeout semantics in schema v1.
+levels. There is no break, continue, boolean expression tree, or timeout
+semantics in schema v1.
 
 ## InputValue and Expression
 
@@ -141,8 +141,12 @@ An InputValue can use these sources:
 
 An expression has a left operand, operator, and right operand. Expression
 operands can be literal, variable, or step-output. Nested expressions are not
-supported. Operators are add, subtract, multiply, divide, greater-than,
-greater-than-or-equal, less-than, and less-than-or-equal.
+supported. Arithmetic operators are add, subtract, multiply, and divide.
+Ordering comparison operators are greater-than, greater-than-or-equal,
+less-than, and less-than-or-equal. Equality comparison operators are equal
+and not-equal. Arithmetic and ordering comparisons require JSON numbers;
+equality compares JSON values directly without type coercion. Schema version
+remains 1.
 
 For example, x multiplied by 2 is represented as:
 
@@ -169,9 +173,9 @@ resolved when the InputValue is used in a Set Variable, Output, or Tool Action
 binding. Only explicit Outputs become ResultRow/CSV columns. Expression
 operands do not support the two time sources.
 
-Assert reuses the same operand representation but accepts only the four
-comparison operators. A true comparison succeeds with boolean true as its
-step result. A false comparison uses the configured message, or
+Assert and While reuse the same operand representation and accept the six
+comparison operators. A true Assert comparison succeeds with boolean true as
+its step result. A false Assert comparison uses the configured message, or
 Assertion failed. when the message is blank. Invalid references and expression
 resolution errors retain their existing validation/diagnostic behavior.
 

@@ -19,7 +19,7 @@ import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
-import { hasPowerSetpoint, togglePowerSetpoint } from './powerSetpoint'
+import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
 export type { WorkflowStep } from './workflow'
 
@@ -137,7 +137,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 const STEP_HELP: Record<string, string> = {
   while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
   for: 'Repeat these body steps over an exact decimal range. Loops can nest up to 5 levels.',
-  assert: 'Fail the Workflow when this numeric comparison is false.',
+  assert: 'Fail the Workflow when this comparison is false.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
@@ -1735,6 +1735,7 @@ function App() {
                       {(selectedStep.type === 'assert' || selectedStep.type === 'while') && (
                         <div key={selectedStep.id} className="step-properties-fields">
                           <ExpressionOperandEditor
+                            allowBooleanLiteral
                             side="Left" value={selectedStep.left}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
@@ -1754,6 +1755,7 @@ function App() {
                             </select>
                           </label>
                           <ExpressionOperandEditor
+                            allowBooleanLiteral
                             side="Right" value={selectedStep.right}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
@@ -1862,7 +1864,7 @@ function App() {
                                   value={selectedToolAction.bindings?.[name] ?? { source: 'literal', value: numericArgument(selectedToolAction, name) }}
                                   sourceLabel={`${label} Source`}
                                   literalLabel={label}
-                                  literalDefault={numericArgument(selectedToolAction, name) || (name === 'voltage' ? 5.0 : 1.0)}
+                                  literalDefault={powerSetpointLiteralDefault(selectedToolAction, name)}
                                   earlierSteps={earlierSteps}
                                   instances={workflowDraft.tool_instances}
                                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}

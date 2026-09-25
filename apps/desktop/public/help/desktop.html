@@ -180,10 +180,11 @@ not a separate run prerequisite.</p>
 </ul>
 <p>Set Variable steps create or update variables. A Previous step result can
 refer only to a step that is earlier and visible in the current lexical scope.
-Calculations use the currently supported arithmetic and comparison operators,
-including addition, subtraction, multiplication, division, and the displayed
-greater-than/less-than comparisons. A Calculation is not an arbitrary nested
-expression tree.</p>
+Calculations use arithmetic and comparison operators. Assert and While offer
+<code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, and <code>&lt;=</code>. Their Fixed value operands can be Number
+or Boolean. Equality can compare booleans (for example, <code>true == false</code>) and
+other JSON values without type coercion; arithmetic and ordering comparisons
+require numbers. A Calculation is not an arbitrary nested expression tree.</p>
 <p>An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.</p>
 <h4 id="power-set-output">Power Set Output</h4>
@@ -191,9 +192,10 @@ not become result columns merely because they were referenced.</p>
 Channel is required; at least one of the two setpoints must be selected. Use
 the checkboxes to include or remove each setpoint. Each selected setpoint can
 use a fixed value, variable, previous step result, calculation, elapsed time,
-or timestamp. <strong>Current Limit</strong> is the power supply output current-limit
-setpoint, expressed in A. Set Output does not enable the channel output; add
-<strong>Power Output ON</strong> when the procedure should turn it on.</p>
+or timestamp. The resolved Voltage and Current Limit must be numeric, or Powers
+action validation fails. <strong>Current Limit</strong> is the power supply output
+current-limit setpoint, expressed in A. Set Output does not enable the channel
+output; add <strong>Power Output ON</strong> when the procedure should turn it on.</p>
 <p>Existing Templates containing <strong>Power Set Voltage</strong> remain editable and keep
 that action when saved. New steps use <strong>Power Set Output</strong>.</p>
 <h3 id="62-for">6.2 For</h3>

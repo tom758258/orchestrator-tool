@@ -158,15 +158,18 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 <li><strong>Timestamp</strong> — runtime timestamp value。</li>
 </ul>
 <p>Set Variable 會建立或更新 variables。Previous step result 只能引用目前 lexical
-scope 中較早且可見的 step。Calculation 使用目前支援的 arithmetic 與
-comparison operators，包括加、減、乘、除，以及 UI 顯示的 greater-than / less-
-than comparisons。Calculation 不是任意 nested expression tree。</p>
+scope 中較早且可見的 step。Calculation 使用 arithmetic 與 comparison
+operators。Assert 與 While 提供 <code>==</code>、<code>!=</code>、<code>&gt;</code>、<code>&gt;=</code>、<code>&lt;</code>、<code>&lt;=</code>；其 Fixed value
+operand 可選 Number 或 Boolean。Equality 可比較 boolean（例如 <code>true == false</code>）
+及其他 JSON 值，且不進行型別轉換；arithmetic 與大小比較僅接受數值。
+Calculation 不是任意 nested expression tree。</p>
 <p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。</p>
 <h4 id="power-set-output">Power Set Output</h4>
 <p>加入 <strong>Power Set Output</strong> 可設定通道的 Voltage、Current Limit，或同時設定兩者。
 Channel 為必填；兩個設定值至少須選取一項。使用核取方塊加入或移除設定值。
 已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
+Voltage 與 Current Limit 解析後必須是數值，否則 Powers action validation 會失敗。
 <strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A。
 Set Output 不會啟用通道輸出；需要啟用時，另加 <strong>Power Output ON</strong>。</p>
 <p>含有 <strong>Power Set Voltage</strong> 的既有 Template 仍可編輯，儲存後也會保留原 action。

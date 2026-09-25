@@ -149,9 +149,11 @@ Editor 目前的 InputValue 選項是：
 - **Timestamp** — runtime timestamp value。
 
 Set Variable 會建立或更新 variables。Previous step result 只能引用目前 lexical
-scope 中較早且可見的 step。Calculation 使用目前支援的 arithmetic 與
-comparison operators，包括加、減、乘、除，以及 UI 顯示的 greater-than / less-
-than comparisons。Calculation 不是任意 nested expression tree。
+scope 中較早且可見的 step。Calculation 使用 arithmetic 與 comparison
+operators。Assert 與 While 提供 `==`、`!=`、`>`、`>=`、`<`、`<=`；其 Fixed value
+operand 可選 Number 或 Boolean。Equality 可比較 boolean（例如 `true == false`）
+及其他 JSON 值，且不進行型別轉換；arithmetic 與大小比較僅接受數值。
+Calculation 不是任意 nested expression tree。
 
 只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。
@@ -161,6 +163,7 @@ result column。
 加入 **Power Set Output** 可設定通道的 Voltage、Current Limit，或同時設定兩者。
 Channel 為必填；兩個設定值至少須選取一項。使用核取方塊加入或移除設定值。
 已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
+Voltage 與 Current Limit 解析後必須是數值，否則 Powers action validation 會失敗。
 **Current Limit** 是電源供應器的輸出電流限制設定值，單位為 A。
 Set Output 不會啟用通道輸出；需要啟用時，另加 **Power Output ON**。
 

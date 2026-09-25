@@ -1430,6 +1430,53 @@ mod tests {
     }
 
     #[test]
+    fn boolean_equality_assert_controls_workflow_outcome() {
+        for (left, expected) in [
+            (
+                false,
+                StepOutcome::Succeeded {
+                    output: json!(true),
+                },
+            ),
+            (
+                true,
+                StepOutcome::Failed {
+                    message: "Boolean condition failed.".to_owned(),
+                },
+            ),
+        ] {
+            let workflow = Workflow::new(vec![
+                Step::new(
+                    StepId::new("assert-1").unwrap(),
+                    StepKind::Assert {
+                        condition: Expression::new(
+                            ExpressionOperand::Literal(json!(left)),
+                            ExpressionOperator::Equal,
+                            ExpressionOperand::Literal(json!(false)),
+                        ),
+                        message: "Boolean condition failed.".to_owned(),
+                    },
+                ),
+                Step::new(
+                    StepId::new("later").unwrap(),
+                    StepKind::Wait { duration_ms: 0 },
+                ),
+            ])
+            .unwrap();
+            let run = execute_workflow(
+                &test_template(&workflow),
+                &HashMap::new(),
+                ExecutionMode::Simulate,
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            let results = run.step_executions();
+            assert_eq!(results[0].outcome(), &expected);
+            assert_eq!(results.len(), if left { 1 } else { 2 });
+        }
+    }
+
+    #[test]
     fn assert_resolution_errors_fail_without_running_later_steps() {
         for (left, expected) in [
             (

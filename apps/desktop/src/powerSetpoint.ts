@@ -6,6 +6,11 @@ export function hasPowerSetpoint(step: ToolActionStep, name: PowerSetpoint): boo
   return Object.hasOwn(step.arguments, name) || Object.hasOwn(step.bindings ?? {}, name)
 }
 
+export function powerSetpointLiteralDefault(step: ToolActionStep, name: PowerSetpoint): number {
+  const value = step.arguments[name]
+  return typeof value === 'number' && Number.isFinite(value) ? value : name === 'voltage' ? 5.0 : 1.0
+}
+
 export function togglePowerSetpoint(step: ToolActionStep, name: PowerSetpoint, enabled: boolean): ToolActionStep {
   if (!enabled && !hasPowerSetpoint(step, name === 'voltage' ? 'current' : 'voltage')) return step
 

@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  COMPARISON_OPERATORS,
   CUSTOM_RESULT,
   curatedResultFields,
   resultSelection,
   stepOutputCandidates,
   stepOutputReference,
 } from '../src/inputValue.ts'
+
+test('comparison operators include equality and ordering symbols', () => {
+  assert.deepEqual(COMPARISON_OPERATORS, {
+    equal: '==',
+    'not-equal': '!=',
+    'greater-than': '>',
+    'greater-than-or-equal': '>=',
+    'less-than': '<',
+    'less-than-or-equal': '<=',
+  })
+})
 
 const instances = [
   { id: 'meter-1', tool: 'meters' },

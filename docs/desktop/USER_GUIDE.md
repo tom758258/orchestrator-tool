@@ -171,10 +171,11 @@ The current InputValue choices in the editor are:
 
 Set Variable steps create or update variables. A Previous step result can
 refer only to a step that is earlier and visible in the current lexical scope.
-Calculations use the currently supported arithmetic and comparison operators,
-including addition, subtraction, multiplication, division, and the displayed
-greater-than/less-than comparisons. A Calculation is not an arbitrary nested
-expression tree.
+Calculations use arithmetic and comparison operators. Assert and While offer
+`==`, `!=`, `>`, `>=`, `<`, and `<=`. Their Fixed value operands can be Number
+or Boolean. Equality can compare booleans (for example, `true == false`) and
+other JSON values without type coercion; arithmetic and ordering comparisons
+require numbers. A Calculation is not an arbitrary nested expression tree.
 
 An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.
@@ -185,9 +186,10 @@ Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
 the checkboxes to include or remove each setpoint. Each selected setpoint can
 use a fixed value, variable, previous step result, calculation, elapsed time,
-or timestamp. **Current Limit** is the power supply output current-limit
-setpoint, expressed in A. Set Output does not enable the channel output; add
-**Power Output ON** when the procedure should turn it on.
+or timestamp. The resolved Voltage and Current Limit must be numeric, or Powers
+action validation fails. **Current Limit** is the power supply output
+current-limit setpoint, expressed in A. Set Output does not enable the channel
+output; add **Power Output ON** when the procedure should turn it on.
 
 Existing Templates containing **Power Set Voltage** remain editable and keep
 that action when saved. New steps use **Power Set Output**.

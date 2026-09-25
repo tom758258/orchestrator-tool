@@ -74,7 +74,7 @@ impl DataContext {
 
     /// Resolves an input to an owned value without changing the input or context.
     /// An empty JSON Pointer selects the complete step output.
-    /// Expressions require JSON numbers and use f64 arithmetic and comparisons.
+    /// Arithmetic and ordering expressions require JSON numbers and use f64 operations.
     pub fn resolve(&self, input: &InputValue) -> Result<Value, ResolveError> {
         self.resolve_with(input, &|_| false, 0)
     }
@@ -100,8 +100,26 @@ impl DataContext {
             InputValue::Expression(expression) => {
                 let left =
                     self.resolve_expression_operand(expression.left(), is_batch_step, index)?;
-                let right =
-                    self.resolve_expression_operand(expression.right(), is_batch_step, index)?;
+                match expression.operator() {
+                    ExpressionOperator::Equal | ExpressionOperator::NotEqual => {
+                        let right = self.resolve_expression_operand(
+                            expression.right(),
+                            is_batch_step,
+                            index,
+                        )?;
+                        return Ok(Value::Bool(match expression.operator() {
+                            ExpressionOperator::Equal => left == right,
+                            ExpressionOperator::NotEqual => left != right,
+                            _ => unreachable!(),
+                        }));
+                    }
+                    _ => {}
+                }
+                let left = left.as_f64().ok_or(ResolveError::InvalidNumericOperand)?;
+                let right = self
+                    .resolve_expression_operand(expression.right(), is_batch_step, index)?
+                    .as_f64()
+                    .ok_or(ResolveError::InvalidNumericOperand)?;
                 let result = match expression.operator() {
                     ExpressionOperator::Add => left + right,
                     ExpressionOperator::Subtract => left - right,
@@ -118,6 +136,7 @@ impl DataContext {
                     }
                     ExpressionOperator::LessThan => return Ok(Value::Bool(left < right)),
                     ExpressionOperator::LessThanOrEqual => return Ok(Value::Bool(left <= right)),
+                    ExpressionOperator::Equal | ExpressionOperator::NotEqual => unreachable!(),
                 };
                 Number::from_f64(result)
                     .map(Value::Number)
@@ -161,15 +180,13 @@ impl DataContext {
         operand: &ExpressionOperand,
         is_batch_step: &dyn Fn(&StepId) -> bool,
         index: usize,
-    ) -> Result<f64, ResolveError> {
+    ) -> Result<Value, ResolveError> {
         let input = match operand {
             ExpressionOperand::Literal(value) => InputValue::Literal(value.clone()),
             ExpressionOperand::Variable(variable_id) => InputValue::Variable(variable_id.clone()),
             ExpressionOperand::StepOutput(reference) => InputValue::StepOutput(reference.clone()),
         };
-        self.resolve_with(&input, is_batch_step, index)?
-            .as_f64()
-            .ok_or(ResolveError::InvalidNumericOperand)
+        self.resolve_with(&input, is_batch_step, index)
     }
 }
 
@@ -347,6 +364,41 @@ mod tests {
     }
 
     #[test]
+    fn equality_expressions_compare_json_values_without_coercion() {
+        for (operator, left, right, expected) in [
+            (ExpressionOperator::Equal, json!(true), json!(true), true),
+            (ExpressionOperator::Equal, json!(true), json!(false), false),
+            (
+                ExpressionOperator::NotEqual,
+                json!(true),
+                json!(false),
+                true,
+            ),
+            (ExpressionOperator::Equal, json!(1), json!("1"), false),
+            (ExpressionOperator::Equal, json!(null), json!(null), true),
+            (ExpressionOperator::Equal, json!("abc"), json!("abc"), true),
+            (ExpressionOperator::Equal, json!("abc"), json!("ABC"), false),
+        ] {
+            let input = InputValue::Expression(Expression::new(
+                ExpressionOperand::Literal(left),
+                operator,
+                ExpressionOperand::Literal(right),
+            ));
+            assert_eq!(DataContext::new().resolve(&input).unwrap(), json!(expected));
+        }
+
+        let mut context = DataContext::new();
+        let step_id = StepId::new("status-1").unwrap();
+        context.set_step_output(step_id.clone(), json!({ "ready": false }));
+        let input = InputValue::Expression(Expression::new(
+            ExpressionOperand::StepOutput(StepOutputReference::new(step_id, "/ready")),
+            ExpressionOperator::Equal,
+            ExpressionOperand::Literal(json!(false)),
+        ));
+        assert_eq!(context.resolve(&input).unwrap(), json!(true));
+    }
+
+    #[test]
     fn expression_operands_use_runtime_data() {
         let mut context = DataContext::new();
         let variable = VariableId::new("threshold").unwrap();
@@ -372,8 +424,14 @@ mod tests {
         for invalid in [json!("5"), json!(true), json!(null), json!([]), json!({})] {
             for (left, right) in [(invalid.clone(), json!(2)), (json!(2), invalid)] {
                 for operator in [
+                    ExpressionOperator::Add,
+                    ExpressionOperator::Subtract,
                     ExpressionOperator::Multiply,
+                    ExpressionOperator::Divide,
                     ExpressionOperator::GreaterThan,
+                    ExpressionOperator::GreaterThanOrEqual,
+                    ExpressionOperator::LessThan,
+                    ExpressionOperator::LessThanOrEqual,
                 ] {
                     let input = InputValue::Expression(Expression::new(
                         ExpressionOperand::Literal(left.clone()),
