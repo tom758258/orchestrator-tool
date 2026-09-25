@@ -415,9 +415,11 @@ chronological, while **Output Data** is displayed latest first.
 maximum, major interval, labels, tick marks, and major gridlines. Blank numeric
 fields mean Auto; when both minimum and maximum are set, minimum must be less
 than maximum; a major interval must be greater than zero. Combo also has an
-independent Right Y Axis. When switching to or from Histogram or Box & Whisker,
-recognized automatic axis titles are adjusted for the selected type while
-other custom titles are retained.
+independent Right Y Axis. Recognized automatic axis titles follow the selected
+chart type and Scatter X source, while custom titles are retained. Numeric
+settings hidden because they are inactive for the selected chart type do not
+block Apply: valid inactive values are retained, while invalid values return to
+Auto or the control's default.
 
 **Apply** applies valid settings and closes the dialog. **Cancel** discards the
 draft and closes it. Clicking the backdrop or pressing Esc does not close
