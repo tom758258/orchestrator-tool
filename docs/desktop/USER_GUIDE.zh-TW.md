@@ -333,7 +333,10 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 
 在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
 **X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
-不必同時勾選為 Y series。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
+不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
+**Marker size** 與 **Line width** 接受有限且大於 0 的數值，並用於顯示對應元素的
+模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；Lines 依該順序
+連線。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
 或 Column，並指定 Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援
 Iteration X 軸縮放。
 
@@ -346,20 +349,22 @@ chart cache。
 大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
 decimation，Combo 的 Line series 也使用相同的 viewport decimation。Column 與
 Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
-raw pairs。這些顯示最佳化不會刪除 committed ResultRows。hover 只會在 raw
+raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。這些顯示最佳化不會
+刪除 committed ResultRows。hover 只會在 raw
 data domain 內解析 exact raw iteration 與 value。Iteration 是 Page 的 row
 sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest
 first 顯示。
 
-**Settings** 可設定圖表標題、legend，以及 X/Y axis 的標題、最小值、最大值、
+**Settings** 可設定圖表標題、**Show legend**、**Legend position**（Top、Bottom、
+Left、Right），以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
 若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。Combo
 另有可獨立設定的 Right Y Axis。切換到或離開 Histogram、Box & Whisker 時，
 系統會調整可辨識的自動 axis title，其他自訂 title 會保留。
 
 **Apply** 會套用有效設定並關閉視窗；**Cancel** 會捨棄草稿並關閉視窗。點擊
-背景或按 Esc 不會關閉 Settings，因此草稿會保留。單一 series 不顯示 legend，
-即使 **Show legend** 已開啟。
+背景或按 Esc 不會關閉 Settings，因此草稿會保留。**Show legend** 開啟時即使只有
+一個 series 也會顯示 legend；關閉後無論位置為何都不顯示。
 
 Line、Area、Column 與 Combo 可在 **Settings → Zoom → Enable zoom** 開啟縮放。
 使用滑鼠滾輪可縮放 X 軸，並可在圖內拖曳平移。**Show zoom slider** 可控制底部

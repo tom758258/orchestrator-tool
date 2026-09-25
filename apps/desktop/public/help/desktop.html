@@ -352,7 +352,11 @@ Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
 values.</p>
 <p>A chart panel can select multiple <strong>Outputs</strong> to compare numeric series.
 Scatter <strong>X source</strong> can be Iteration or any numeric Output, and an Output used
-only as Scatter X does not need to be selected as a Y series. Combo requires
+only as Scatter X does not need to be selected as a Y series. <strong>Display</strong> can
+show Markers, Lines, or Lines + markers. <strong>Marker size</strong> and <strong>Line width</strong> accept
+positive finite numbers and apply to the modes that show them. Scatter keeps
+raw X/Y pairs in original row order, including nonmonotonic X values; Lines
+connect those pairs in that order. Combo requires
 at least two selected Outputs; each Output can use Line or Column rendering and
 the Left Y or Right Y axis. The two Y axes are configured independently, and
 Combo supports Iteration X-axis zoom.</p>
@@ -365,11 +369,13 @@ frontend chart cache.</p>
 <p>For large datasets, Line and Area decimate only the visible Iteration range,
 and Combo applies the same viewport decimation to its Line series. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
-preserve raw pairs. These display optimizations do not remove committed
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. These
+display optimizations do not remove committed
 ResultRows. Hover inspection resolves exact raw iteration and values inside
 the raw data domain. Iteration is the Page row sequence; Charts and CSV are
 chronological, while <strong>Output Data</strong> is displayed latest first.</p>
-<p><strong>Settings</strong> can configure the chart title, legend, X/Y axis titles, minimum,
+<p><strong>Settings</strong> can configure the chart title, <strong>Show legend</strong>, <strong>Legend position</strong>
+(Top, Bottom, Left, or Right), X/Y axis titles, minimum,
 maximum, major interval, labels, tick marks, and major gridlines. Blank numeric
 fields mean Auto; when both minimum and maximum are set, minimum must be less
 than maximum; a major interval must be greater than zero. Combo also has an
@@ -378,8 +384,8 @@ recognized automatic axis titles are adjusted for the selected type while
 other custom titles are retained.</p>
 <p><strong>Apply</strong> applies valid settings and closes the dialog. <strong>Cancel</strong> discards the
 draft and closes it. Clicking the backdrop or pressing Esc does not close
-Settings, so the draft remains available. A single-series chart does not show
-a legend even when <strong>Show legend</strong> is enabled.</p>
+Settings, so the draft remains available. <strong>Show legend</strong> displays a legend even
+for a single series; turning it off hides the legend at every position.</p>
 <p>Line, Area, Column, and Combo can enable <strong>Settings → Zoom → Enable zoom</strong>.
 Use the mouse wheel to zoom the X axis and drag inside the chart to pan.
 <strong>Show zoom slider</strong> controls the bottom slider without clearing the current

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
 import { chartPng } from '../src/chartPng.ts'
+import { chartLayout } from '../src/chartOptions.ts'
 
 const panel = { ...addChartPanel([], 'A', ['V'])[0],
   zoom: { enabled: true, showSlider: true } }
@@ -87,6 +88,33 @@ test('Combo PNG recolors and restores both Y axes for light and dark export', as
       assert.equal(calls[2][1].yAxis.length, 2)
       assert.equal(calls[2][1].yAxis[0].axisLabel.color, '#aaaaaa')
       assert.equal(calls[2][1].yAxis[1].axisLabel.color, '#aaaaaa')
+    }
+  } finally {
+    globalThis.getComputedStyle = original
+    delete globalThis.document
+  }
+})
+
+test('PNG uses shared legend layout for each position and Scatter display', async () => {
+  const original = globalThis.getComputedStyle
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '#123456' })
+  globalThis.document = { documentElement: {} }
+  try {
+    for (const legendPosition of ['top', 'bottom', 'left', 'right']) {
+      for (const display of ['markers', 'lines', 'lines-markers']) {
+        const configured = { ...panel, type: 'scatter', legendPosition,
+          scatter: { display, markerSize: 4, lineWidth: 2 } }
+        const { chart, calls } = fakeChart()
+        await chartPng(chart, configured)
+        assert.deepEqual(calls[0][1].grid, chartLayout(configured, false).grid)
+        assert.deepEqual(calls[2][1].grid, chartLayout(configured).grid)
+        assert.equal(calls[0][1].legend[legendPosition], 8)
+        assert.equal(calls[2][1].legend[legendPosition], 8)
+        if (legendPosition === 'left' || legendPosition === 'right') {
+          assert.equal(calls[0][1].legend.textStyle.overflow, 'truncate')
+          assert.equal(calls[2][1].legend.textStyle.width, calls[0][1].legend.textStyle.width)
+        }
+      }
     }
   } finally {
     globalThis.getComputedStyle = original

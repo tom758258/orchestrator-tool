@@ -2,13 +2,57 @@ import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPa
 
 type ChartColors = { ink: string; axis: string; grid: string }
 export const CHART_GRID = { left: 80, right: 24, bottom: 64 }
-export const chartGridBottom = (panel: ChartPanel): number =>
-  chartSupportsZoom(panel.type) && panel.zoom.enabled && panel.zoom.showSlider ? 112 : CHART_GRID.bottom
+const SIDE_LEGEND_SPACE = 120
+const SIDE_LEGEND_WIDTH = 100
+const BOTTOM_LEGEND_SPACE = 40
+export const chartHasLegend = (panel: ChartPanel): boolean =>
+  panel.type !== 'histogram' && panel.type !== 'boxplot' && panel.showLegend
+export const chartGridBottom = (panel: ChartPanel, includeSlider = true): number =>
+  (includeSlider && chartSupportsZoom(panel.type) && panel.zoom.enabled && panel.zoom.showSlider
+    ? 112 : CHART_GRID.bottom) + (chartHasLegend(panel) && panel.legendPosition === 'bottom'
+    ? BOTTOM_LEGEND_SPACE : 0)
+export const chartGridLeft = (panel: ChartPanel): number =>
+  CHART_GRID.left + (chartHasLegend(panel) && panel.legendPosition === 'left' ? SIDE_LEGEND_SPACE : 0)
 
 export const comboHasRightAxis = (panel: ChartPanel): boolean => panel.type === 'combo' &&
   panel.outputs.some((name, index) => comboSeriesSettings(panel, name, index).axis === 'right')
 export const chartGridRight = (panel: ChartPanel): number =>
-  comboHasRightAxis(panel) ? 96 : CHART_GRID.right
+  (comboHasRightAxis(panel) ? 96 : CHART_GRID.right) +
+  (chartHasLegend(panel) && panel.legendPosition === 'right' ? SIDE_LEGEND_SPACE : 0)
+
+export const chartZoomSliderBottom = (panel: ChartPanel): number =>
+  chartHasLegend(panel) && panel.legendPosition === 'bottom' ? 52 : 12
+
+export const chartLegendTextStyle = (panel: ChartPanel, color: string) => ({
+  color,
+  ...(panel.legendPosition === 'left' || panel.legendPosition === 'right'
+    ? { width: SIDE_LEGEND_WIDTH - 32, overflow: 'truncate' as const } : {}),
+})
+
+export function chartLayout(panel: ChartPanel, includeSlider = true) {
+  const bottom = chartGridBottom(panel, includeSlider)
+  const hasTitle = panel.title.length > 0
+  const position = panel.legendPosition
+  const legend = position === 'top'
+    ? { orient: 'horizontal' as const, left: 'center' as const, top: hasTitle ? 40 : 8 }
+    : position === 'bottom'
+      ? { orient: 'horizontal' as const, left: 'center' as const, bottom: 8 }
+      : { orient: 'vertical' as const, [position]: 8, top: hasTitle ? 40 : 8,
+        bottom, width: SIDE_LEGEND_WIDTH }
+  return { grid: { left: chartGridLeft(panel), right: chartGridRight(panel),
+    bottom, top: chartGridTop(panel) }, legend }
+}
+
+export function scatterRendererSeries(panel: ChartPanel, series: { name: string; data: [number, number][] },
+  color: string) {
+  const common = { ...series, itemStyle: { color } }
+  if (panel.scatter.display === 'markers') {
+    return { ...common, type: 'scatter' as const, large: true, largeThreshold: 2000,
+      symbolSize: panel.scatter.markerSize }
+  }
+  return { ...common, type: 'line' as const, showSymbol: panel.scatter.display === 'lines-markers',
+    symbolSize: panel.scatter.markerSize, lineStyle: { width: panel.scatter.lineWidth } }
+}
 
 export function comboRendererSeries(panel: ChartPanel,
   display: { name: string; data: [number, number][] }[], colors: string[]) {
@@ -56,20 +100,19 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
   }
 }
 
-export function chartPresentationOptions(panel: ChartPanel, seriesCount: number, colors: ChartColors,
+export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
   fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[]) {
-  const hasTitle = panel.title.length > 0
-  const hasLegend = panel.type !== 'histogram' && panel.type !== 'boxplot' && panel.showLegend && seriesCount > 1
+  const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
+  const layout = chartLayout(panel)
   const xAxis = panel.type === 'bar' ? panel.yAxis : panel.xAxis
   const yAxis = panel.type === 'bar' ? panel.xAxis : panel.yAxis
   return {
     title: { text: panel.title, left: 'center' as const, top: 8,
       textStyle: { ...visual.title.textStyle, fontSize: 16 } },
-    legend: { show: hasLegend, top: hasTitle ? 40 : 8, type: 'plain' as const,
-      selectedMode: false, textStyle: visual.legend.textStyle },
-    grid: { ...CHART_GRID, right: chartGridRight(panel),
-      bottom: chartGridBottom(panel), top: chartGridTop(panel, seriesCount) },
+    legend: { show: hasLegend, ...layout.legend, type: 'scroll' as const,
+      selectedMode: false, textStyle: chartLegendTextStyle(panel, colors.ink) },
+    grid: layout.grid,
     xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,
       36, visual.xAxis),
       ...(categories ? { type: 'category' as const, data: categories } : {}),
@@ -90,7 +133,7 @@ export function chartPresentationOptions(panel: ChartPanel, seriesCount: number,
   }
 }
 
-export function chartGridTop(panel: ChartPanel, seriesCount: number): number {
+export function chartGridTop(panel: ChartPanel): number {
   if (panel.title.length === 0) return 48
-  return panel.showLegend && panel.type !== 'histogram' && panel.type !== 'boxplot' && seriesCount > 1 ? 88 : 64
+  return chartHasLegend(panel) && panel.legendPosition === 'top' ? 88 : 64
 }

@@ -1,6 +1,6 @@
 import type { EChartsType } from 'echarts/core'
 import type { ChartPanel } from './chartPanels'
-import { CHART_GRID, chartGridBottom, chartVisualOptions, comboHasRightAxis } from './chartOptions.ts'
+import { chartLayout, chartLegendTextStyle, chartVisualOptions, comboHasRightAxis } from './chartOptions.ts'
 
 const exportPalettes = {
   light: { background: '#ffffff', ink: '#18202a', axis: '#5e6e7e', grid: '#e5e9ef' },
@@ -20,13 +20,17 @@ export async function chartPng(chart: EChartsType | undefined, panel: ChartPanel
   }
   let url: string
   try {
+    const layout = chartLayout(panel, false)
     chart.setOption({ backgroundColor: palette.background,
-      ...visual(palette), grid: { bottom: CHART_GRID.bottom } })
+      ...visual(palette), grid: layout.grid, legend: { ...layout.legend,
+        textStyle: chartLegendTextStyle(panel, palette.ink) } })
     url = chart.getDataURL({ type: 'png', pixelRatio: 2,
       backgroundColor: palette.background, excludeComponents: ['dataZoom'] })
   } finally {
+    const layout = chartLayout(panel)
     chart.setOption({ backgroundColor: screen.background,
-      ...visual(screen), grid: { bottom: chartGridBottom(panel) } })
+      ...visual(screen), grid: layout.grid, legend: { ...layout.legend,
+        textStyle: chartLegendTextStyle(panel, screen.ink) } })
   }
   const base64 = url.slice(url.indexOf(',') + 1)
   return Uint8Array.from(atob(base64), character => character.charCodeAt(0))

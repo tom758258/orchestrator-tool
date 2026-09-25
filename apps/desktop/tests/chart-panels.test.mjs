@@ -76,7 +76,8 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
 test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], type: 'line',
-    scatterXOutput: null, showLegend: true,
+    scatterXOutput: null, scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
+    showLegend: true, legendPosition: 'top',
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,

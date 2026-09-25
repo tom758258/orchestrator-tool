@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
 import { createPageChartData, minMaxDecimateRange, prepareChartSeries } from '../src/chartData.ts'
-import { comboRendererSeries } from '../src/chartOptions.ts'
+import { comboRendererSeries, scatterRendererSeries } from '../src/chartOptions.ts'
 import { formatBinBoundary, statisticalChartSeries } from '../src/chartStatistics.ts'
 
 const data = createPageChartData()
@@ -34,6 +34,48 @@ test('Scatter pairs each raw X source with Y series on the coherent prefix', () 
   assert.deepEqual(output[0].data[0], [10, 8])
   assert.deepEqual(output[0].data.at(-1), [80, 1])
   assert.deepEqual(output[1].data[0], [10, 10])
+})
+
+test('Scatter display modes preserve nonmonotonic raw X order and configured rendering', () => {
+  const raw = createPageChartData()
+  raw.append('X', 0, [0, 1, 2, 3, 2, 1, 0])
+  raw.append('Y', 0, [10, 11, 12, 13, 14, 15, 16])
+  const scatter = { ...base, type: 'scatter', scatterXOutput: 'X', outputs: ['Y'] }
+  const expected = [[0, 10], [1, 11], [2, 12], [3, 13], [2, 14], [1, 15], [0, 16]]
+  for (const display of ['markers', 'lines', 'lines-markers']) {
+    const configured = { ...scatter, scatter: { display, markerSize: 8, lineWidth: 4 } }
+    const prepared = prepareChartSeries(configured, raw, 1, { min: 1, max: 7 })[0]
+    assert.deepEqual(prepared.data, expected)
+    const rendered = scatterRendererSeries(configured, prepared, 'red')
+    assert.equal(rendered.data, prepared.data)
+    assert.equal(rendered.type, display === 'markers' ? 'scatter' : 'line')
+    assert.equal(rendered.symbolSize, 8)
+    if (display === 'markers') {
+      assert.equal(rendered.large, true)
+      assert.equal(rendered.largeThreshold, 2000)
+    } else {
+      assert.equal(rendered.showSymbol, display === 'lines-markers')
+      assert.equal(rendered.lineStyle.width, 4)
+      assert.equal(Object.hasOwn(rendered, 'smooth'), false)
+    }
+  }
+})
+
+test('Scatter retains all raw pairs at 3,000 and 100,000 rows in every display mode', () => {
+  for (const count of [3_000, 100_000]) {
+    const raw = createPageChartData()
+    raw.append('X', 0, Array.from({ length: count }, (_, index) => index % 50))
+    raw.append('Y', 0, Array.from({ length: count }, (_, index) => index))
+    for (const display of ['markers', 'lines', 'lines-markers']) {
+      const configured = { ...base, type: 'scatter', scatterXOutput: 'X', outputs: ['Y'],
+        scatter: { display, markerSize: 4, lineWidth: 2 } }
+      const prepared = prepareChartSeries(configured, raw, 1, { min: 1, max: count })[0]
+      assert.equal(prepared.data.length, count)
+      assert.deepEqual(prepared.data[0], [0, 0])
+      assert.deepEqual(prepared.data.at(-1), [(count - 1) % 50, count - 1])
+      assert.equal(scatterRendererSeries(configured, prepared, 'red').data.length, count)
+    }
+  }
 })
 
 test('Bar retains raw values on physical X and iteration on physical Y', () => {

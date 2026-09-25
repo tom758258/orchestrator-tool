@@ -10,7 +10,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   numericNames: string[]
   running: boolean
   hasRows: boolean
-  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -114,6 +114,13 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
         </label>
         {draft.type !== 'histogram' && draft.type !== 'boxplot' && <label><input type="checkbox" checked={draft.showLegend}
           onChange={event => setDraft(current => ({ ...current, showLegend: event.target.checked }))} />Show legend</label>}
+        {draft.type !== 'histogram' && draft.type !== 'boxplot' && <label className="chart-settings-field">Legend position
+          <select value={draft.legendPosition} disabled={!draft.showLegend} onChange={event =>
+            setDraft(current => ({ ...current, legendPosition: event.target.value as ChartPanel['legendPosition'] }))}>
+            <option value="top">Top</option><option value="bottom">Bottom</option>
+            <option value="left">Left</option><option value="right">Right</option>
+          </select>
+        </label>}
       </fieldset>
       {draft.type === 'scatter' && <fieldset className="chart-settings-general">
         <legend>Scatter</legend>
@@ -124,6 +131,23 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
             {numericNames.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
         </label>
+        <label className="chart-settings-field">Display
+          <select value={draft.scatter.display} onChange={event => setDraft(current => ({ ...current,
+            scatter: { ...current.scatter, display: event.target.value as ChartPanel['scatter']['display'] } }))}>
+            <option value="markers">Markers</option><option value="lines">Lines</option>
+            <option value="lines-markers">Lines + markers</option>
+          </select>
+        </label>
+        {draft.scatter.display !== 'lines' && <label className="chart-settings-field">Marker size
+          <input type="text" inputMode="decimal" value={draft.scatter.markerSize}
+            onChange={event => { setDraft(current => ({ ...current,
+              scatter: { ...current.scatter, markerSize: event.target.value } })); setError(null) }} />
+        </label>}
+        {draft.scatter.display !== 'markers' && <label className="chart-settings-field">Line width
+          <input type="text" inputMode="decimal" value={draft.scatter.lineWidth}
+            onChange={event => { setDraft(current => ({ ...current,
+              scatter: { ...current.scatter, lineWidth: event.target.value } })); setError(null) }} />
+        </label>}
       </fieldset>}
       {axisFields(draft.type === 'bar' ? 'yAxis' : 'xAxis', 'X Axis')}
       {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', draft.type === 'combo' ? 'Left Y Axis' : 'Y Axis')}

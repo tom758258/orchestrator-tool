@@ -5,7 +5,8 @@ import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } fro
 import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, prepareChartSeries, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, type ChartPanel } from './chartPanels'
-import { CHART_GRID, chartGridBottom, chartGridRight, chartGridTop, chartPresentationOptions, comboRendererSeries } from './chartOptions'
+import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
+  chartZoomSliderBottom, comboRendererSeries, scatterRendererSeries } from './chartOptions'
 import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 
 use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
@@ -53,7 +54,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     ? zoomRange ?? fullDomain
     : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
   const display = useMemo(() => isStatistical ? [] : prepareChartSeries(panel, data,
-    Math.max(1, width - CHART_GRID.left - chartGridRight(panel)), visibleRange),
+    Math.max(1, width - chartGridLeft(panel) - chartGridRight(panel)), visibleRange),
   [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical])
   const statistic = useMemo(() => statistical
     ? statisticalChartSeries(panel, statistical,
@@ -82,8 +83,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
             type: 'bar' as const, large: true, largeThreshold: 2000,
             silent: panel.type === 'column', itemStyle: { color } }
         case 'scatter':
-          return { ...series, type: 'scatter' as const, large: true, largeThreshold: 2000,
-            itemStyle: { color } }
+          return scatterRendererSeries(panel, series, color)
       }
     })
   }, [display, numericNames, panel, themeRevision, statistic])
@@ -173,7 +173,8 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
         { type: 'inside', xAxisIndex: 0, filterMode: 'none', throttle: 80,
           zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false, ...range },
         ...(panel.zoom.showSlider ? [{ type: 'slider', xAxisIndex: 0, filterMode: 'none',
-          throttle: 80, showDataShadow: false, showDetail: false, bottom: 12, height: 22,
+          throttle: 80, showDataShadow: false, showDetail: false,
+          bottom: chartZoomSliderBottom(panel), height: 22,
           backgroundColor: color('--chart-surface'), borderColor: color('--chart-axis'),
           fillerColor: color('--surface-selected'),
           handleStyle: { color: color('--accent'), borderColor: color('--chart-axis') },
@@ -235,7 +236,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     <div ref={container} className="result-chart-plot" role="img"
       aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${statistical ? 'statistical projection' : `${rawRowCount} raw rows per series`}`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
-      top: chartGridTop(panel, display.length),
+      top: chartGridTop(panel),
       bottom: chartGridBottom(panel),
     }} />
     <div ref={tooltip} className="result-chart-tooltip" hidden />

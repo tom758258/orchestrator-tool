@@ -16,6 +16,8 @@ export type ZoomSettings = {
 }
 
 export type ChartImageBackground = 'light' | 'dark'
+export type LegendPosition = 'top' | 'bottom' | 'left' | 'right'
+export type ScatterSettings = { display: 'markers' | 'lines' | 'lines-markers'; markerSize: number; lineWidth: number }
 export type ChartType = 'line' | 'scatter' | 'column' | 'area' | 'bar' | 'combo' | 'histogram' | 'boxplot'
 export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'right' }
 export type HistogramSettings = { mode: 'auto' | 'count' | 'width'; value: number | null }
@@ -27,7 +29,9 @@ export type ChartPanel = {
   outputs: string[]
   type: ChartType
   scatterXOutput: string | null
+  scatter: ScatterSettings
   showLegend: boolean
+  legendPosition: LegendPosition
   imageBackground: ChartImageBackground
   zoom: ZoomSettings
   xAxis: AxisSettings
@@ -96,7 +100,8 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
     ?? numericNames[0]
   return [...panels, {
     id: nextChartPanelId(panels), page, title: '', outputs: [name], type: 'line', scatterXOutput: null,
-    showLegend: true,
+    scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
+    showLegend: true, legendPosition: 'top',
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,

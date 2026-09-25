@@ -380,7 +380,11 @@ values.
 
 A chart panel can select multiple **Outputs** to compare numeric series.
 Scatter **X source** can be Iteration or any numeric Output, and an Output used
-only as Scatter X does not need to be selected as a Y series. Combo requires
+only as Scatter X does not need to be selected as a Y series. **Display** can
+show Markers, Lines, or Lines + markers. **Marker size** and **Line width** accept
+positive finite numbers and apply to the modes that show them. Scatter keeps
+raw X/Y pairs in original row order, including nonmonotonic X values; Lines
+connect those pairs in that order. Combo requires
 at least two selected Outputs; each Output can use Line or Column rendering and
 the Left Y or Right Y axis. The two Y axes are configured independently, and
 Combo supports Iteration X-axis zoom.
@@ -395,12 +399,14 @@ frontend chart cache.
 For large datasets, Line and Area decimate only the visible Iteration range,
 and Combo applies the same viewport decimation to its Line series. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
-preserve raw pairs. These display optimizations do not remove committed
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. These
+display optimizations do not remove committed
 ResultRows. Hover inspection resolves exact raw iteration and values inside
 the raw data domain. Iteration is the Page row sequence; Charts and CSV are
 chronological, while **Output Data** is displayed latest first.
 
-**Settings** can configure the chart title, legend, X/Y axis titles, minimum,
+**Settings** can configure the chart title, **Show legend**, **Legend position**
+(Top, Bottom, Left, or Right), X/Y axis titles, minimum,
 maximum, major interval, labels, tick marks, and major gridlines. Blank numeric
 fields mean Auto; when both minimum and maximum are set, minimum must be less
 than maximum; a major interval must be greater than zero. Combo also has an
@@ -410,8 +416,8 @@ other custom titles are retained.
 
 **Apply** applies valid settings and closes the dialog. **Cancel** discards the
 draft and closes it. Clicking the backdrop or pressing Esc does not close
-Settings, so the draft remains available. A single-series chart does not show
-a legend even when **Show legend** is enabled.
+Settings, so the draft remains available. **Show legend** displays a legend even
+for a single series; turning it off hides the legend at every position.
 
 Line, Area, Column, and Combo can enable **Settings → Zoom → Enable zoom**.
 Use the mouse wheel to zoom the X axis and drag inside the chart to pan.

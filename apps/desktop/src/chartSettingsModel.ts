@@ -10,7 +10,9 @@ export type ChartSettingsDraft = {
   title: string
   type: ChartPanel['type']
   scatterXOutput: string | null
+  scatter: { display: ChartPanel['scatter']['display']; markerSize: string; lineWidth: string }
   showLegend: boolean
+  legendPosition: ChartPanel['legendPosition']
   imageBackground: ChartPanel['imageBackground']
   zoom: ChartPanel['zoom']
   xAxis: AxisDraft
@@ -31,7 +33,10 @@ function axisDraft(axis: AxisSettings): AxisDraft {
 
 export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft {
   return { title: panel.title, type: panel.type, scatterXOutput: panel.scatterXOutput,
-    showLegend: panel.showLegend, imageBackground: panel.imageBackground,
+    scatter: { display: panel.scatter.display, markerSize: String(panel.scatter.markerSize),
+      lineWidth: String(panel.scatter.lineWidth) },
+    showLegend: panel.showLegend, legendPosition: panel.legendPosition,
+    imageBackground: panel.imageBackground,
     zoom: { ...panel.zoom },
     xAxis: axisDraft(panel.xAxis), yAxis: axisDraft(panel.yAxis),
     combo: { series: { ...panel.combo.series }, rightAxis: axisDraft(panel.combo.rightAxis) },
@@ -73,7 +78,7 @@ function parseAxis(axis: AxisDraft, label: string): AxisSettings | string {
 }
 
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'showLegend' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = parseAxis(draft.xAxis, draft.type === 'bar' ? 'Y Axis' : 'X Axis')
   if (typeof xAxis === 'string') return { error: xAxis }
@@ -81,6 +86,14 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   if (typeof yAxis === 'string') return { error: yAxis }
   const rightAxis = parseAxis(draft.combo.rightAxis, 'Right Y Axis')
   if (typeof rightAxis === 'string') return { error: rightAxis }
+  const markerSize = Number(draft.scatter.markerSize.trim())
+  if (draft.scatter.markerSize.trim() === '' || !Number.isFinite(markerSize) || markerSize <= 0) {
+    return { error: 'Marker size must be a finite number greater than zero.' }
+  }
+  const lineWidth = Number(draft.scatter.lineWidth.trim())
+  if (draft.scatter.lineWidth.trim() === '' || !Number.isFinite(lineWidth) || lineWidth <= 0) {
+    return { error: 'Line width must be a finite number greater than zero.' }
+  }
   const mode = draft.histogram.mode
   const value = mode === 'auto' ? null : Number(draft.histogram.value.trim())
   if (draft.type === 'histogram' && mode === 'count' &&
@@ -92,7 +105,8 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
     return { error: 'Histogram bin width must be a finite number greater than zero.' }
   }
   return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,
-    showLegend: draft.showLegend,
+    scatter: { display: draft.scatter.display, markerSize, lineWidth },
+    showLegend: draft.showLegend, legendPosition: draft.legendPosition,
     imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis,
     combo: { series: { ...draft.combo.series }, rightAxis },
     histogram: { mode, value }, boxPlot: { ...draft.boxPlot } } }

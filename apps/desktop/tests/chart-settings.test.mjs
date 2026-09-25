@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
-import { chartPresentationOptions } from '../src/chartOptions.ts'
+import { chartGridLeft, chartGridRight, chartLayout, chartPresentationOptions,
+  chartZoomSliderBottom } from '../src/chartOptions.ts'
 import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft } from '../src/chartSettingsModel.ts'
 
 const panel = addChartPanel([], 'A', ['V'])[0]
@@ -15,7 +16,7 @@ test('Auto axes leave min, max and interval to ECharts', () => {
     assert.equal(Object.hasOwn(axis, 'interval'), false)
   }
   assert.equal(options.title.text, '')
-  assert.equal(options.legend.show, false)
+  assert.equal(options.legend.show, true)
   assert.equal(options.xAxis.axisLabel.hideOverlap, true)
   assert.equal(options.yAxis.axisLabel.hideOverlap, true)
 })
@@ -39,6 +40,52 @@ test('explicit axes, grid, labels, ticks, title and legend map to ECharts', () =
     [true, true, false])
 })
 
+test('legend position reserves the matching edge and honors Show legend for one series', () => {
+  const titled = { ...panel, title: 'Voltage' }
+  const top = chartPresentationOptions(titled, 1, colors)
+  assert.equal(top.legend.show, true)
+  assert.equal(top.legend.orient, 'horizontal')
+  assert.equal(top.legend.type, 'scroll')
+  assert.equal(top.legend.top, 40)
+  assert.equal(top.grid.top, 88)
+  const hidden = chartPresentationOptions({ ...titled, showLegend: false }, 1, colors)
+  assert.equal(hidden.legend.show, false)
+  assert.equal(hidden.grid.top, 64)
+  for (const position of ['bottom', 'left', 'right']) {
+    const options = chartPresentationOptions({ ...titled, legendPosition: position }, 1, colors)
+    assert.equal(options.legend.show, true)
+    assert.equal(options.legend.orient, position === 'bottom' ? 'horizontal' : 'vertical')
+    assert.equal(options.grid.top, 64)
+    if (position === 'bottom') {
+      assert.equal(options.legend.bottom, 8)
+      assert.ok(options.grid.bottom > top.grid.bottom)
+    } else {
+      assert.equal(options.legend[position], 8)
+      assert.equal(options.legend.bottom, options.grid.bottom)
+      assert.equal(options.legend.textStyle.overflow, 'truncate')
+      assert.ok(options.legend.textStyle.width < options.legend.width)
+      assert.ok(options.grid[position] > top.grid[position])
+    }
+  }
+  const left = { ...titled, legendPosition: 'left' }
+  assert.equal(chartGridLeft(left), chartLayout(left).grid.left)
+  const right = { ...titled, legendPosition: 'right' }
+  assert.equal(chartGridRight(right), chartLayout(right).grid.right)
+})
+
+test('bottom legend separates the zoom slider and right legend leaves Combo right axis space', () => {
+  const bottom = { ...panel, legendPosition: 'bottom', zoom: { enabled: true, showSlider: true } }
+  const options = chartPresentationOptions(bottom, 1, colors)
+  assert.ok(options.grid.bottom > 112)
+  assert.ok(chartZoomSliderBottom(bottom) > 12)
+  assert.equal(chartLayout(bottom, false).grid.bottom, 104)
+  const combo = { ...panel, type: 'combo', outputs: ['V', 'I'], legendPosition: 'right' }
+  const comboOptions = chartPresentationOptions(combo, 2, colors)
+  assert.equal(comboOptions.yAxis.length, 2)
+  assert.ok(comboOptions.grid.right > chartGridRight({ ...combo, showLegend: false }))
+  assert.equal(comboOptions.legend.right, 8)
+})
+
 test('zoom uses the full X domain and reserves slider space only when shown', () => {
   const zoomed = { ...panel, zoom: { enabled: true, showSlider: true } }
   const domain = { min: 0, max: 200_000 }
@@ -57,6 +104,8 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   draft.imageBackground = 'dark'
   draft.type = 'scatter'
   draft.scatterXOutput = 'V'
+  draft.legendPosition = 'right'
+  draft.scatter = { display: 'lines-markers', markerSize: '8', lineWidth: '4' }
   draft.xAxis.min = '  '
   draft.yAxis.min = '-2.5'
   draft.yAxis.max = '5'
@@ -69,6 +118,10 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   assert.equal(valid.settings.imageBackground, 'dark')
   assert.equal(valid.settings.type, 'scatter')
   assert.equal(valid.settings.scatterXOutput, 'V')
+  assert.equal(valid.settings.legendPosition, 'right')
+  assert.deepEqual(valid.settings.scatter, { display: 'lines-markers', markerSize: 8, lineWidth: 4 })
+  assert.equal(panel.legendPosition, 'top')
+  assert.deepEqual(panel.scatter, { display: 'markers', markerSize: 4, lineWidth: 2 })
   assert.equal(panel.imageBackground, 'light')
   assert.deepEqual(panel.zoom, { enabled: false, showSlider: true })
   assert.equal(panel.title, '')
@@ -85,6 +138,18 @@ test('draft validation accepts blank Auto and rejects invalid axes without chang
   draft.yAxis.interval = '1'
   draft.xAxis.max = 'oops'
   assert.match(validateChartSettingsDraft(draft).error, /finite number/)
+})
+
+test('scatter sizes must be positive finite numbers', () => {
+  const draft = createChartSettingsDraft({ ...panel, type: 'scatter' })
+  for (const [field, label] of [['markerSize', /Marker size/], ['lineWidth', /Line width/]]) {
+    for (const value of ['0', '-1', '', 'Infinity', 'NaN', '1e309']) {
+      draft.scatter[field] = value
+      assert.match(validateChartSettingsDraft(draft).error, label)
+    }
+    draft.scatter[field] = field === 'markerSize' ? '4' : '2'
+  }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.scatter, panel.scatter)
 })
 
 test('Bar settings map stored axes to physical X and Y without changing their values', () => {
