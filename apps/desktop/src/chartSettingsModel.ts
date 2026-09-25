@@ -86,12 +86,18 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   if (typeof yAxis === 'string') return { error: yAxis }
   const rightAxis = parseAxis(draft.combo.rightAxis, 'Right Y Axis')
   if (typeof rightAxis === 'string') return { error: rightAxis }
-  const markerSize = Number(draft.scatter.markerSize.trim())
-  if (draft.scatter.markerSize.trim() === '' || !Number.isFinite(markerSize) || markerSize <= 0) {
+  const markerText = draft.scatter.markerSize.trim()
+  const markerValue = Number(markerText)
+  const markerSize = markerText !== '' && Number.isFinite(markerValue) && markerValue > 0 ? markerValue : null
+  const lineText = draft.scatter.lineWidth.trim()
+  const lineValue = Number(lineText)
+  const lineWidth = lineText !== '' && Number.isFinite(lineValue) && lineValue > 0 ? lineValue : null
+  const markerRequired = draft.type === 'scatter' && draft.scatter.display !== 'lines'
+  const lineRequired = draft.type === 'scatter' && draft.scatter.display !== 'markers'
+  if (markerRequired && markerSize === null) {
     return { error: 'Marker size must be a finite number greater than zero.' }
   }
-  const lineWidth = Number(draft.scatter.lineWidth.trim())
-  if (draft.scatter.lineWidth.trim() === '' || !Number.isFinite(lineWidth) || lineWidth <= 0) {
+  if (lineRequired && lineWidth === null) {
     return { error: 'Line width must be a finite number greater than zero.' }
   }
   const mode = draft.histogram.mode
@@ -105,7 +111,7 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
     return { error: 'Histogram bin width must be a finite number greater than zero.' }
   }
   return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,
-    scatter: { display: draft.scatter.display, markerSize, lineWidth },
+    scatter: { display: draft.scatter.display, markerSize: markerSize ?? 4, lineWidth: lineWidth ?? 2 },
     showLegend: draft.showLegend, legendPosition: draft.legendPosition,
     imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis,
     combo: { series: { ...draft.combo.series }, rightAxis },

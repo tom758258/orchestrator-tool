@@ -336,7 +336,8 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
 **Marker size** 與 **Line width** 接受有限且大於 0 的數值，並用於顯示對應元素的
 模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；Lines 依該順序
-連線。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
+連線。Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，但只會回報
+實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
 或 Column，並指定 Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援
 Iteration X 軸縮放。
 
@@ -349,10 +350,12 @@ chart cache。
 大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
 decimation，Combo 的 Line series 也使用相同的 viewport decimation。Column 與
 Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
-raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。這些顯示最佳化不會
-刪除 committed ResultRows。hover 只會在 raw
-data domain 內解析 exact raw iteration 與 value。Iteration 是 Page 的 row
-sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest
+raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。Markers 使用
+ECharts large scatter rendering；Lines 與 Lines + markers 使用 line rendering。
+這些顯示最佳化不會刪除 committed ResultRows。Line、Area、Column 與 Combo
+的 hover 會解析 exact raw iteration 與 value；Scatter hover 回報最近的實際 raw
+XY row。Bar、Histogram 與 Box & Whisker 不提供 hover inspection。Iteration 是
+Page 的 row sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest
 first 顯示。
 
 **Settings** 可設定圖表標題、**Show legend**、**Legend position**（Top、Bottom、

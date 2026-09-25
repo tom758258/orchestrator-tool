@@ -3,7 +3,7 @@ import { init, use, type EChartsType } from 'echarts/core'
 import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { exactHoverIndex, prepareChartSeries, type PageChartData } from './chartData'
+import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
   chartZoomSliderBottom, comboRendererSeries, scatterRendererSeries } from './chartOptions'
@@ -12,6 +12,7 @@ import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 type ZoomRange = { min: number; max: number } | null
+const SCATTER_HOVER_RADIUS = 12
 
 export default function ChartPlot({ panel, data, numericNames, charts, statistical }: {
   panel: ChartPanel
@@ -39,6 +40,9 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     name,
     values: data.getSeries(name).subarray(0, rawRowCount),
   })), [data, data.version, panel.outputs, rawRowCount, isStatistical])
+  const scatterXValues = useMemo(() => panel.type !== 'scatter' || panel.scatterXOutput === null
+    ? rawIteration : data.getSeries(panel.scatterXOutput).subarray(0, rawRowCount),
+  [data, data.version, panel.type, panel.scatterXOutput, rawIteration, rawRowCount])
   const rawMin = rawRowCount > 0 ? rawIteration[0] : 0
   const rawMax = rawRowCount > 0 ? rawIteration[rawRowCount - 1] : 1
   const fullDomain = useMemo(() => {
@@ -198,16 +202,70 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   }, [panel.xAxis.min, panel.xAxis.max, panel.zoom.enabled, supportsZoom])
 
   useEffect(() => {
-    if (panel.type === 'scatter' || panel.type === 'bar' || panel.type === 'histogram' || panel.type === 'boxplot') {
-      tooltip.current!.hidden = true
-      pointer.current!.hidden = true
+    const tip = tooltip.current!
+    const line = pointer.current!
+    const hide = () => { tip.hidden = true; line.hidden = true }
+    if (panel.type === 'bar' || panel.type === 'histogram' || panel.type === 'boxplot') {
+      hide()
       return
     }
     const chart = instance.current!
     const zr = chart.getZr()
-    const tip = tooltip.current!
-    const line = pointer.current!
-    const hide = () => { tip.hidden = true; line.hidden = true }
+    const positionTip = (offsetX: number, offsetY: number) => {
+      tip.hidden = false
+      tip.style.left = `${Math.max(0, Math.min(offsetX + 12, chart.getWidth() - tip.offsetWidth))}px`
+      tip.style.top = `${Math.max(0, Math.min(offsetY + 12, chart.getHeight() - tip.offsetHeight))}px`
+    }
+
+    if (panel.type === 'scatter') {
+      const yValues = rawSeries.map(series => series.values)
+      let frame: number | null = null
+      let pending: { offsetX: number; offsetY: number } | null = null
+      const inspect = () => {
+        frame = null
+        const event = pending
+        pending = null
+        if (event === null) return
+        const point = [event.offsetX, event.offsetY]
+        if (rawRowCount === 0 || !chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
+        const value = chart.convertFromPixel({ gridIndex: 0 }, point) as number[]
+        const xStep = chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX + 1, event.offsetY]) as number[]
+        const yStep = chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY + 1]) as number[]
+        const x = Number(value[0])
+        const y = Number(value[1])
+        const xUnitsPerPixel = Math.abs(Number(xStep[0]) - x)
+        const yUnitsPerPixel = Math.abs(Number(yStep[1]) - y)
+        const hit = nearestScatterHover(scatterXValues, yValues, x, y,
+          xUnitsPerPixel, yUnitsPerPixel, SCATTER_HOVER_RADIUS, panel.scatter.display !== 'markers')
+        if (hit === null) { hide(); return }
+        // Scatter hover always reports an actual raw row; line displays never interpolate a synthetic value.
+        tip.textContent = [`Iteration ${rawIteration[hit.rowIndex]}`,
+          ...(panel.scatterXOutput === null ? []
+            : [`X ${panel.scatterXOutput} ${scatterXValues[hit.rowIndex]}`]),
+          ...rawSeries.map(series => `Y ${series.name} ${series.values[hit.rowIndex]}`)].join('\n')
+        line.hidden = true
+        positionTip(event.offsetX, event.offsetY)
+      }
+      const move = (event: { offsetX: number; offsetY: number }) => {
+        pending = { offsetX: event.offsetX, offsetY: event.offsetY }
+        if (frame === null) frame = requestAnimationFrame(inspect)
+      }
+      const leave = () => {
+        pending = null
+        if (frame !== null) cancelAnimationFrame(frame)
+        frame = null
+        hide()
+      }
+      zr.on('mousemove', move)
+      zr.on('globalout', leave)
+      hide()
+      return () => {
+        zr.off('mousemove', move)
+        zr.off('globalout', leave)
+        if (frame !== null) cancelAnimationFrame(frame)
+      }
+    }
+
     const move = (event: { offsetX: number; offsetY: number }) => {
       const point = [event.offsetX, event.offsetY]
       if (rawRowCount === 0 || !chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
@@ -217,11 +275,9 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       // Never use renderer points: each selected series reads the coherent raw prefix.
       tip.textContent = [`Iteration ${rawIteration[index]}`,
         ...rawSeries.map(series => `${series.name} ${series.values[index]}`)].join('\n')
-      tip.hidden = false
       line.hidden = false
       line.style.left = `${chart.convertToPixel({ xAxisIndex: 0 }, rawIteration[index])}px`
-      tip.style.left = `${Math.max(0, Math.min(event.offsetX + 12, chart.getWidth() - tip.offsetWidth))}px`
-      tip.style.top = `${Math.max(0, Math.min(event.offsetY + 12, chart.getHeight() - tip.offsetHeight))}px`
+      positionTip(event.offsetX, event.offsetY)
     }
     zr.on('mousemove', move)
     zr.on('globalout', hide)
@@ -230,7 +286,8 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       zr.off('mousemove', move)
       zr.off('globalout', hide)
     }
-  }, [panel.type, rawIteration, rawRowCount, rawSeries])
+  }, [panel.type, panel.scatter.display, panel.scatterXOutput, rawIteration, rawRowCount,
+    rawSeries, scatterXValues])
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
