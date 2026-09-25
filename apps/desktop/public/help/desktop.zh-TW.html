@@ -163,6 +163,14 @@ comparison operators，包括加、減、乘、除，以及 UI 顯示的 greater
 than comparisons。Calculation 不是任意 nested expression tree。</p>
 <p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。</p>
+<h4 id="power-set-output">Power Set Output</h4>
+<p>加入 <strong>Power Set Output</strong> 可設定通道的 Voltage、Current Limit，或同時設定兩者。
+Channel 為必填；兩個設定值至少須選取一項。使用核取方塊加入或移除設定值。
+已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
+<strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A。
+Set Output 不會啟用通道輸出；需要啟用時，另加 <strong>Power Output ON</strong>。</p>
+<p>含有 <strong>Power Set Voltage</strong> 的既有 Template 仍可編輯，儲存後也會保留原 action。
+新建步驟使用 <strong>Power Set Output</strong>。</p>
 <h3 id="62-for">6.2 For</h3>
 <p>For step 具有 <strong>Start</strong>、<strong>Stop</strong>、<strong>Step</strong>、loop variable 與 body。</p>
 <ul>

@@ -126,6 +126,7 @@ fn main() {
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
     powers_set_voltage_step_outputs_reach_result_row();
+    powers_set_output_binding_reaches_worker();
     meters_runtime_measure_returns_sample();
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
@@ -455,6 +456,7 @@ fn run_fixture(scenario: &OsStr) {
         }
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
+        "powers-workflow-set-output" => run_powers_workflow_fixture("simulate-set-output"),
         "live-success"
         | "live-assert-failure"
         | "live-step-failure"
@@ -674,7 +676,7 @@ fn run_powers_runtime_fixture() {
 }
 
 fn run_powers_workflow_fixture(scenario: &str) {
-    let live = scenario != "simulate";
+    let live = !matches!(scenario, "simulate" | "simulate-set-output");
     let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
     let cleanup_failed = matches!(
         scenario,
@@ -704,6 +706,9 @@ fn run_powers_workflow_fixture(scenario: &str) {
         ("output-on", json!({ "channel": 1 }), "job-workflow-002"),
         ("output-off", json!({ "channel": 1 }), "job-workflow-003"),
     ];
+    if scenario == "simulate-set-output" {
+        commands[0].1 = json!({ "channel": 1, "voltage": 5.0, "current": 0.2 });
+    }
     if step_failed || scenario == "live-assert-failure" {
         commands.truncate(2);
     }
@@ -1379,6 +1384,47 @@ fn powers_set_voltage_step_outputs_reach_result_row() {
             .map(|output| (output.name(), output.value()))
             .collect::<Vec<_>>(),
         [("voltage", &json!(5.0)), ("channel", &json!(1))]
+    );
+}
+
+fn powers_set_output_binding_reaches_worker() {
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version": 1,
+            "name": "Power set output",
+            "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "set-limit", "variable": "limit",
+                  "value": { "source": "literal", "value": 0.2 } },
+                { "type": "tool-action", "id": "power-set", "target": "powers-1",
+                  "action": "set-output", "arguments": { "channel": 1, "voltage": 5.0 },
+                  "bindings": { "current": { "source": "variable", "variable": "limit" } } },
+                { "type": "tool-action", "id": "power-on", "target": "powers-1",
+                  "action": "output-on", "arguments": { "channel": 1 } },
+                { "type": "tool-action", "id": "power-off", "target": "powers-1",
+                  "action": "output-off", "arguments": { "channel": 1 } }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let saved = template.to_json_string().unwrap();
+    assert_eq!(Template::from_json_str(&saved).unwrap(), template);
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("powers-workflow-set-output"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|execution| matches!(execution.result().outcome(), StepOutcome::Succeeded { .. }))
     );
 }
 

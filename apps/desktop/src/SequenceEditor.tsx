@@ -51,6 +51,20 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
         const channel = step.bindings?.channel
           ? 'Bound channel'
           : `CH${step.arguments.channel ?? '?'}`
+        if (step.action === 'set-output') {
+          const setpoints = (['voltage', 'current'] as const).flatMap(name => {
+            const binding = step.bindings?.[name]
+            if (!binding && !Object.hasOwn(step.arguments, name)) return []
+            const label = name === 'voltage' ? '' : 'Current Limit '
+            const boundLabel = name === 'voltage' ? 'Voltage' : 'Current Limit'
+            if (!binding) return [`${label}${step.arguments[name]} ${name === 'voltage' ? 'V' : 'A'}`]
+            if (binding.source === 'literal') return [`${label}${valueSummary(binding)} ${name === 'voltage' ? 'V' : 'A'}`]
+            if (binding.source === 'variable') return [`${boundLabel} = ${binding.variable}`]
+            if (binding.source === 'expression') return [`${boundLabel} = ${expressionSummary(binding)}`]
+            return [`${boundLabel} = ${valueSummary(binding)}`]
+          })
+          return [channel, ...setpoints].join(' · ')
+        }
         if (step.action === 'set-voltage') {
           const voltage = step.bindings?.voltage
           return `${channel} · ${voltage
@@ -191,12 +205,12 @@ function SequenceEditor({
             </li>
             <li>
               <strong>Power and Measure</strong>
-              <p>Power Set Voltage → Power Output ON → Wait → Meter Measure → Output → Power Output OFF</p>
+              <p>Power Set Output → Power Output ON → Wait → Meter Measure → Output → Power Output OFF</p>
               <p>Power a DUT, wait for settling, measure it, then turn power off.</p>
             </li>
             <li>
               <strong>Reuse a Variable</strong>
-              <p>Set Variable → Power Set Voltage</p>
+              <p>Set Variable → Power Set Output</p>
               <p>Define a value once and reuse it in a later step.</p>
             </li>
           </ul>

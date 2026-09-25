@@ -99,6 +99,26 @@ Schema v1 supports these step kinds:
 - For: bind a loop variable over an exact numeric range and execute a body.
 - While: evaluate a comparison and execute a body repeatedly.
 
+Powers `set-output` sets one or both power supply setpoints without enabling
+output. Its required `channel` is a positive integer. Optional `voltage` and
+`current` are JSON numbers when present, and at least one must be supplied,
+either in `arguments` or through an InputValue binding with the same key. The
+Desktop calls `current` **Current Limit**. For example:
+
+    {
+      "type": "tool-action",
+      "id": "power-set-1",
+      "target": "powers-1",
+      "action": "set-output",
+      "arguments": { "channel": 1, "voltage": 5.0, "current": 0.2 }
+    }
+
+The Powers adapter sends `set-output` as the external Worker's `set` command,
+with only the setpoints present after bindings resolve. `Power Output ON` is a
+separate action. Existing `set-voltage` steps remain valid: they require
+`channel` and `voltage`, reject `current`, and retain their action name when
+loaded and saved. Schema version remains 1; no action migration occurs.
+
 Every step has an explicit stable id. Step IDs are unique across the whole
 workflow, including nested bodies. Output names are unique across the whole
 workflow, case-sensitive and without normalization. Step-output references

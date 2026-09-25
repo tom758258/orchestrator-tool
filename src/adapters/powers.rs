@@ -389,7 +389,7 @@ impl Error for PowersSmokeError {
 
 /// Runs a single runtime Powers action on an already-started Worker session.
 ///
-/// Supported actions: `set-voltage`, `output-on`, `output-off`.
+/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`.
 /// Execution context and output confirmation are runtime-only.
 pub fn run_action(
     session: &WorkerSession,
@@ -399,7 +399,7 @@ pub fn run_action(
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
     let worker_command = match action.as_str() {
-        "set-voltage" => "set",
+        "set-output" | "set-voltage" => "set",
         "output-on" => "output-on",
         "output-off" => "output-off",
         _ => {
@@ -575,9 +575,10 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
         PowersActionError::InvalidArguments("arguments must be a JSON object".to_owned())
     })?;
 
-    let expected_fields: &[&str] = match action {
-        "set-voltage" => &["channel", "voltage"],
-        "output-on" | "output-off" => &["channel"],
+    let (required_fields, allowed_fields): (&[&str], &[&str]) = match action {
+        "set-voltage" => (&["channel", "voltage"], &["channel", "voltage"]),
+        "set-output" => (&["channel"], &["channel", "voltage", "current"]),
+        "output-on" | "output-off" => (&["channel"], &["channel"]),
         _ => {
             return Err(PowersActionError::InvalidArguments(format!(
                 "unsupported action {action:?}"
@@ -585,7 +586,7 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
         }
     };
 
-    for &field in expected_fields {
+    for &field in required_fields {
         if !object.contains_key(field) {
             return Err(PowersActionError::InvalidArguments(format!(
                 "missing required field {field:?}"
@@ -595,7 +596,7 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
 
     if object
         .keys()
-        .any(|key| !expected_fields.contains(&key.as_str()))
+        .any(|key| !allowed_fields.contains(&key.as_str()))
     {
         return Err(PowersActionError::InvalidArguments(
             "unexpected argument field".to_owned(),
@@ -614,23 +615,29 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
         ));
     }
 
-    if action == "set-voltage" && !object["voltage"].is_number() {
+    if action == "set-output" && !object.contains_key("voltage") && !object.contains_key("current")
+    {
         return Err(PowersActionError::InvalidArguments(
-            "voltage must be a number".to_owned(),
+            "set-output requires voltage or current".to_owned(),
         ));
     }
-
-    if action == "set-voltage" {
-        let voltage = object.get("voltage").cloned().expect("voltage validated");
-        Ok(json!({
-            "channel": channel,
-            "voltage": voltage
-        }))
-    } else {
-        Ok(json!({
-            "channel": channel
-        }))
+    for field in ["voltage", "current"] {
+        if let Some(value) = object.get(field)
+            && !value.is_number()
+        {
+            return Err(PowersActionError::InvalidArguments(format!(
+                "{field} must be a number"
+            )));
+        }
     }
+
+    let mut normalized = json!({ "channel": channel });
+    for field in ["voltage", "current"] {
+        if let Some(value) = object.get(field) {
+            normalized[field] = value.clone();
+        }
+    }
+    Ok(normalized)
 }
 
 /// Errors from Powers runtime action execution.
@@ -773,6 +780,16 @@ mod tests {
         let set_voltage =
             validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": 5.0 })).unwrap();
         assert_eq!(set_voltage, json!({ "channel": 1, "voltage": 5.0 }));
+        for arguments in [
+            json!({ "channel": 1, "voltage": 5.0 }),
+            json!({ "channel": 1, "current": 0.2 }),
+            json!({ "channel": 1, "voltage": 5.0, "current": 0.2 }),
+        ] {
+            assert_eq!(
+                validate_arguments("set-output", &arguments).unwrap(),
+                arguments
+            );
+        }
 
         let output_on = validate_arguments("output-on", &json!({ "channel": 2 })).unwrap();
         assert_eq!(output_on, json!({ "channel": 2 }));
@@ -803,5 +820,25 @@ mod tests {
 
         let error = validate_arguments("set-voltage", &json!("not-an-object")).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
+
+        for arguments in [
+            json!({ "channel": 1 }),
+            json!({ "channel": 0, "current": 0.2 }),
+            json!({ "channel": 1, "voltage": "high" }),
+            json!({ "channel": 1, "current": null }),
+            json!({ "channel": 1, "current": 0.2, "extra": true }),
+        ] {
+            assert!(matches!(
+                validate_arguments("set-output", &arguments),
+                Err(PowersActionError::InvalidArguments(_))
+            ));
+        }
+        assert!(matches!(
+            validate_arguments(
+                "set-voltage",
+                &json!({ "channel": 1, "voltage": 5.0, "current": 0.2 })
+            ),
+            Err(PowersActionError::InvalidArguments(_))
+        ));
     }
 }

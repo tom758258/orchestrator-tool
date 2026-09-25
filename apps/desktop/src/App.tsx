@@ -19,6 +19,8 @@ import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
+import { hasPowerSetpoint, togglePowerSetpoint } from './powerSetpoint'
+import type { PowerSetpoint } from './powerSetpoint'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -97,7 +99,7 @@ type StepPreset =
   | 'assert'
   | 'set-variable'
   | 'output'
-  | 'power-set-voltage'
+  | 'power-set-output'
   | 'power-output-on'
   | 'wait'
   | 'meter-measure'
@@ -116,7 +118,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
-  { value: 'power-set-voltage', label: 'Power Set Voltage', prefix: 'power-set', category: 'Powers', tool: 'powers' },
+  { value: 'power-set-output', label: 'Power Set Output', prefix: 'power-set', category: 'Powers', tool: 'powers' },
   { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
   { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
   { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
@@ -125,6 +127,7 @@ const STEP_PRESETS: StepPresetOption[] = [
 ]
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
+  'powers/set-output': 'Power Set Output',
   'powers/set-voltage': 'Power Set Voltage',
   'powers/output-on': 'Power Output ON',
   'meters/measure': 'Meter Measure',
@@ -138,6 +141,7 @@ const STEP_HELP: Record<string, string> = {
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
+  'powers/set-output': 'Set Voltage, Current Limit, or both for a Power channel. Current Limit is the power supply output current-limit setpoint. Specify at least one. This does not enable output; use Power Output ON separately.',
   'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
   'powers/output-off': 'Disable the selected Power channel.',
@@ -200,12 +204,12 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
       return { type: 'set-variable', id, variable: 'x', value: { source: 'literal', value: 5.0 } }
     case 'output':
       return { type: 'output', id, name: id, page: 'Results', value: { source: 'literal', value: null } }
-    case 'power-set-voltage':
+    case 'power-set-output':
       return {
         type: 'tool-action',
         id,
         target,
-        action: 'set-voltage',
+        action: 'set-output',
         arguments: { channel: 1, voltage: 5.0 },
       }
     case 'power-output-on':
@@ -668,19 +672,21 @@ function App() {
     [updateStep],
   )
 
-  const updateVoltageBinding = useCallback(
-    (stepId: string, binding?: InputValueWire) => {
+  const updateSetpointValue = useCallback(
+    (stepId: string, name: PowerSetpoint, value: InputValueWire) => {
       updateStep(stepId, (step) => {
         if (step.type !== 'tool-action') {
           return step
         }
         const bindings = { ...step.bindings }
-        if (binding) {
-          bindings.voltage = binding
+        const arguments_ = { ...step.arguments }
+        if (value.source === 'literal' && typeof value.value === 'number') {
+          arguments_[name] = value.value
+          delete bindings[name]
         } else {
-          delete bindings.voltage
+          bindings[name] = value
         }
-        const updated: ToolActionStep = { ...step, bindings }
+        const updated: ToolActionStep = { ...step, arguments: arguments_, bindings }
         if (Object.keys(bindings).length === 0) {
           delete updated.bindings
         }
@@ -1164,11 +1170,11 @@ function App() {
   const selectedCompatiblePages = selectedStep?.type === 'output'
     ? compatibleOutputPages(workflowDraft?.workflow.steps ?? [], selectedStep.id) : []
   const selectedToolAction = selectedStep?.type === 'tool-action' ? selectedStep : null
-  const voltageBinding = selectedToolAction?.bindings?.voltage
   const selectedAction = selectedToolAction
     ? `${workflowDraft?.tool_instances.find(instance => instance.id === selectedToolAction.target)?.tool}/${selectedToolAction.action}`
     : null
   const selectedPowersAction =
+    selectedAction === 'powers/set-output' ||
     selectedAction === 'powers/set-voltage' ||
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
@@ -1833,30 +1839,40 @@ function App() {
                         </label>
                       )}
 
-                      {selectedToolAction && selectedAction === 'powers/set-voltage' && (
-                        <InputValueEditor
-                          key={selectedStep.id}
-                          value={voltageBinding ?? { source: 'literal', value: numericArgument(selectedToolAction, 'voltage') }}
-                          sourceLabel="Voltage Source"
-                          literalLabel="Voltage"
-                          literalDefault={numericArgument(selectedToolAction, 'voltage') || 0}
-                          earlierSteps={earlierSteps}
-                          instances={workflowDraft.tool_instances}
-                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
-                          earlierVariables={earlierVariables}
-                          disabled={workflowBusy}
-                          onChange={(value) => {
-                            if (value.source === 'literal' && voltageBinding?.source !== 'literal') {
-                              updateVoltageBinding(selectedToolAction.id)
-                              if (typeof value.value === 'number') {
-                                updateToolArgument(selectedToolAction.id, 'voltage', value.value)
-                              }
-                            } else {
-                              updateVoltageBinding(selectedToolAction.id, value)
-                            }
-                          }}
-                        />
-                      )}
+                      {selectedToolAction &&
+                        (selectedAction === 'powers/set-output' || selectedAction === 'powers/set-voltage') &&
+                        (selectedAction === 'powers/set-voltage' ? ['voltage'] as const : ['voltage', 'current'] as const)
+                          .map((name) => {
+                            const active = hasPowerSetpoint(selectedToolAction, name)
+                            const label = name === 'voltage' ? 'Voltage' : 'Current Limit'
+                            return <div className="step-properties-fields" key={`${selectedStep.id}-${name}`}>
+                              {selectedAction === 'powers/set-output' && (
+                                <label className="step-property-field">
+                                  <span className="step-property-label">Set {label}</span>
+                                  <input type="checkbox" checked={active}
+                                    disabled={workflowBusy || (active && !hasPowerSetpoint(selectedToolAction, name === 'voltage' ? 'current' : 'voltage'))}
+                                    onChange={(event) => updateStep(selectedToolAction.id, step =>
+                                      step.type === 'tool-action'
+                                        ? togglePowerSetpoint(step, name, event.target.checked)
+                                        : step)} />
+                                </label>
+                              )}
+                              {(active || selectedAction === 'powers/set-voltage') && (
+                                <InputValueEditor
+                                  value={selectedToolAction.bindings?.[name] ?? { source: 'literal', value: numericArgument(selectedToolAction, name) }}
+                                  sourceLabel={`${label} Source`}
+                                  literalLabel={label}
+                                  literalDefault={numericArgument(selectedToolAction, name) || (name === 'voltage' ? 5.0 : 1.0)}
+                                  earlierSteps={earlierSteps}
+                                  instances={workflowDraft.tool_instances}
+                                  stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                                  earlierVariables={earlierVariables}
+                                  disabled={workflowBusy}
+                                  onChange={(value) => updateSetpointValue(selectedToolAction.id, name, value)}
+                                />
+                              )}
+                            </div>
+                          })}
 
                       {selectedAction === 'meters/measure' && (
                         <p className="step-properties-empty">No editable parameters.</p>

@@ -179,6 +179,19 @@ expression tree.
 An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.
 
+#### Power Set Output
+
+Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
+Channel is required; at least one of the two setpoints must be selected. Use
+the checkboxes to include or remove each setpoint. Each selected setpoint can
+use a fixed value, variable, previous step result, calculation, elapsed time,
+or timestamp. **Current Limit** is the power supply output current-limit
+setpoint, expressed in A. Set Output does not enable the channel output; add
+**Power Output ON** when the procedure should turn it on.
+
+Existing Templates containing **Power Set Voltage** remain editable and keep
+that action when saved. New steps use **Power Set Output**.
+
 ### 6.2 For
 
 Configure a For step with **Start**, **Stop**, **Step**, a loop variable, and a

@@ -1291,6 +1291,7 @@ mod tests {
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["tool_instances"][0]["setup"], json!({}));
+        assert_eq!(value["workflow"]["steps"][0]["action"], "set-voltage");
         let binding = &value["workflow"]["steps"][0]["bindings"]["voltage"];
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");

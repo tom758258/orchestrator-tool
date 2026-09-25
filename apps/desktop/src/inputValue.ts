@@ -56,6 +56,11 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
     { label: 'Voltage', pointer: '/request/arguments/voltage' },
     { label: 'Channel', pointer: '/request/arguments/channel' },
   ],
+  'powers/set-output': [
+    { label: 'Channel', pointer: '/request/arguments/channel' },
+    { label: 'Voltage', pointer: '/request/arguments/voltage' },
+    { label: 'Current Limit', pointer: '/request/arguments/current' },
+  ],
 }
 
 export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {

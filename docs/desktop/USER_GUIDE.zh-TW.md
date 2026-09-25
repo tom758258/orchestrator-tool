@@ -156,6 +156,17 @@ than comparisons。Calculation 不是任意 nested expression tree。
 只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。
 
+#### Power Set Output
+
+加入 **Power Set Output** 可設定通道的 Voltage、Current Limit，或同時設定兩者。
+Channel 為必填；兩個設定值至少須選取一項。使用核取方塊加入或移除設定值。
+已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
+**Current Limit** 是電源供應器的輸出電流限制設定值，單位為 A。
+Set Output 不會啟用通道輸出；需要啟用時，另加 **Power Output ON**。
+
+含有 **Power Set Voltage** 的既有 Template 仍可編輯，儲存後也會保留原 action。
+新建步驟使用 **Power Set Output**。
+
 ### 6.2 For
 
 For step 具有 **Start**、**Stop**、**Step**、loop variable 與 body。

@@ -18,6 +18,9 @@ const meterMeasure = {
 const powerSetVoltage = {
   type: 'tool-action', id: 'set-voltage-1', target: 'power-1', action: 'set-voltage', arguments: {},
 }
+const powerSetOutput = {
+  type: 'tool-action', id: 'set-output-1', target: 'power-1', action: 'set-output', arguments: { channel: 1, current: 0.2 },
+}
 const powerOutputOn = {
   type: 'tool-action', id: 'output-on-1', target: 'power-1', action: 'output-on', arguments: {},
 }
@@ -44,6 +47,17 @@ test('curated results map Powers Set Voltage pointers', () => {
   ])
   assert.deepEqual(stepOutputReference(powerSetVoltage, instances), {
     source: 'step-output', step_id: 'set-voltage-1', pointer: '/request/arguments/voltage',
+  })
+})
+
+test('Powers Set Output defaults to its required Channel result', () => {
+  assert.deepEqual(curatedResultFields(powerSetOutput, instances), [
+    { label: 'Channel', pointer: '/request/arguments/channel' },
+    { label: 'Voltage', pointer: '/request/arguments/voltage' },
+    { label: 'Current Limit', pointer: '/request/arguments/current' },
+  ])
+  assert.deepEqual(stepOutputReference(powerSetOutput, instances), {
+    source: 'step-output', step_id: 'set-output-1', pointer: '/request/arguments/channel',
   })
 })
 

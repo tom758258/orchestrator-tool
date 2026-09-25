@@ -186,6 +186,16 @@ greater-than/less-than comparisons. A Calculation is not an arbitrary nested
 expression tree.</p>
 <p>An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.</p>
+<h4 id="power-set-output">Power Set Output</h4>
+<p>Add <strong>Power Set Output</strong> to set a channel's Voltage, Current Limit, or both.
+Channel is required; at least one of the two setpoints must be selected. Use
+the checkboxes to include or remove each setpoint. Each selected setpoint can
+use a fixed value, variable, previous step result, calculation, elapsed time,
+or timestamp. <strong>Current Limit</strong> is the power supply output current-limit
+setpoint, expressed in A. Set Output does not enable the channel output; add
+<strong>Power Output ON</strong> when the procedure should turn it on.</p>
+<p>Existing Templates containing <strong>Power Set Voltage</strong> remain editable and keep
+that action when saved. New steps use <strong>Power Set Output</strong>.</p>
 <h3 id="62-for">6.2 For</h3>
 <p>Configure a For step with <strong>Start</strong>, <strong>Stop</strong>, <strong>Step</strong>, a loop variable, and a
 body.</p>
