@@ -86,10 +86,13 @@ pub fn get_capabilities(
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    parse_capabilities(&output.stdout)
+    parse_capabilities(&output.stdout, model_id)
 }
 
-fn parse_capabilities(stdout: &[u8]) -> Result<PowersCapabilities, String> {
+fn parse_capabilities(
+    stdout: &[u8],
+    requested_model_id: &str,
+) -> Result<PowersCapabilities, String> {
     #[derive(Deserialize)]
     struct Command {
         name: String,
@@ -108,7 +111,7 @@ fn parse_capabilities(stdout: &[u8]) -> Result<PowersCapabilities, String> {
         || !response.ok
         || response.status != "ok"
         || response.command.name != "capabilities"
-        || response.data.model_id.trim().is_empty()
+        || response.data.model_id != requested_model_id
         || response.data.model_name.trim().is_empty()
         || response.data.channels.contains(&0)
     {
@@ -557,6 +560,203 @@ pub fn safe_off_all(
     )
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PowersLiveProtectionChannelStatus {
+    pub channel: u32,
+    pub output_enabled: bool,
+    pub over_voltage_tripped: bool,
+    pub over_current_tripped: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PowersLiveProtectionStatus {
+    pub protection_tripped: bool,
+    pub over_voltage_tripped: bool,
+    pub over_current_tripped: bool,
+    pub channels: Vec<PowersLiveProtectionChannelStatus>,
+}
+
+pub fn live_protection_status_all(
+    session: &WorkerSession,
+    timeout: Duration,
+) -> Result<PowersLiveProtectionStatus, PowersActionError> {
+    let result = run_command(
+        session,
+        "protection-status",
+        json!({"channel": "all"}),
+        ExecutionMode::Live,
+        timeout,
+    )?;
+    parse_live_protection_status(&result)
+}
+
+pub fn clear_protection(
+    session: &WorkerSession,
+    channel: u32,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    if channel == 0 {
+        return Err(PowersActionError::InvalidArguments(
+            "clear-protection channel must be a positive integer".to_owned(),
+        ));
+    }
+    run_command(
+        session,
+        "clear-protection",
+        json!({"channel": channel}),
+        ExecutionMode::Live,
+        timeout,
+    )
+}
+
+fn parse_live_protection_status(
+    result: &Value,
+) -> Result<PowersLiveProtectionStatus, PowersActionError> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let data = result
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| PowersActionError::InvalidResponse("missing data object".to_owned()))?;
+    let protection = data
+        .get("protection")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            PowersActionError::InvalidResponse("missing data.protection object".to_owned())
+        })?;
+    let aggregate_flag = |name: &str| {
+        protection
+            .get(name)
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(format!(
+                    "data.protection.{name} must be a boolean"
+                ))
+            })
+    };
+    let over_voltage_tripped = aggregate_flag("over_voltage_tripped")?;
+    let over_current_tripped = aggregate_flag("over_current_tripped")?;
+
+    let protection_by_channel = data
+        .get("protection_by_channel")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            PowersActionError::InvalidResponse(
+                "data.protection_by_channel must be an array".to_owned(),
+            )
+        })?;
+    let mut channel_protection = BTreeMap::new();
+    for item in protection_by_channel {
+        let object = item.as_object().ok_or_else(|| {
+            PowersActionError::InvalidResponse(
+                "data.protection_by_channel entries must be objects".to_owned(),
+            )
+        })?;
+        let channel = object
+            .get("channel")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(
+                    "protection channel must be a positive integer".to_owned(),
+                )
+            })?;
+        let channel_flags = object
+            .get("protection")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(format!(
+                    "CH{channel} protection object is missing"
+                ))
+            })?;
+        let flag = |name: &str| {
+            channel_flags
+                .get(name)
+                .and_then(Value::as_bool)
+                .ok_or_else(|| {
+                    PowersActionError::InvalidResponse(format!(
+                        "CH{channel} protection.{name} must be a boolean"
+                    ))
+                })
+        };
+        let flags = (flag("over_voltage_tripped")?, flag("over_current_tripped")?);
+        if channel_protection.insert(channel, flags).is_some() {
+            return Err(PowersActionError::InvalidResponse(format!(
+                "duplicate protection channel {channel}"
+            )));
+        }
+    }
+
+    let outputs = data
+        .get("outputs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            PowersActionError::InvalidResponse("data.outputs must be an array".to_owned())
+        })?;
+    let mut channel_outputs = BTreeMap::new();
+    for item in outputs {
+        let object = item.as_object().ok_or_else(|| {
+            PowersActionError::InvalidResponse("data.outputs entries must be objects".to_owned())
+        })?;
+        let channel = object
+            .get("channel")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(
+                    "output channel must be a positive integer".to_owned(),
+                )
+            })?;
+        let enabled = object
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                PowersActionError::InvalidResponse(format!(
+                    "CH{channel} output enabled must be a boolean"
+                ))
+            })?;
+        if channel_outputs.insert(channel, enabled).is_some() {
+            return Err(PowersActionError::InvalidResponse(format!(
+                "duplicate output channel {channel}"
+            )));
+        }
+    }
+
+    let protection_channels = channel_protection.keys().copied().collect::<BTreeSet<_>>();
+    let output_channels = channel_outputs.keys().copied().collect::<BTreeSet<_>>();
+    if protection_channels != output_channels {
+        return Err(PowersActionError::InvalidResponse(
+            "protection and output channel sets do not match".to_owned(),
+        ));
+    }
+    let channel_ovp = channel_protection.values().any(|flags| flags.0);
+    let channel_ocp = channel_protection.values().any(|flags| flags.1);
+    if over_voltage_tripped != channel_ovp || over_current_tripped != channel_ocp {
+        return Err(PowersActionError::InvalidResponse(
+            "aggregate protection state disagrees with per-channel state".to_owned(),
+        ));
+    }
+
+    let channels = channel_protection
+        .into_iter()
+        .map(|(channel, flags)| PowersLiveProtectionChannelStatus {
+            channel,
+            output_enabled: channel_outputs[&channel],
+            over_voltage_tripped: flags.0,
+            over_current_tripped: flags.1,
+        })
+        .collect();
+
+    Ok(PowersLiveProtectionStatus {
+        protection_tripped: over_voltage_tripped || over_current_tripped,
+        over_voltage_tripped,
+        over_current_tripped,
+        channels,
+    })
+}
+
 pub fn protection_status_all(
     session: &WorkerSession,
     timeout: Duration,
@@ -603,17 +803,68 @@ mod protection_setup_tests {
                 "channels":[1,2],"protection_features":{"ovp_voltage":true,"ocp":true,
                     "ocp_delay":true,"ocp_delay_triggers":["setting-change","cc-transition"]}}});
         payload["future"] = json!(42);
-        let full = parse_capabilities(payload.to_string().as_bytes()).unwrap();
+        let full = parse_capabilities(payload.to_string().as_bytes(), "test-model").unwrap();
         assert_eq!(full.channels, vec![1, 2]);
         assert!(full.protection_features.ocp_delay);
         assert_eq!(full.protection_features.ocp_delay_triggers.len(), 2);
         payload["data"]["protection_features"]["ocp_delay"] = json!(false);
         payload["data"]["protection_features"]["ocp_delay_triggers"] = json!([]);
-        let limited = parse_capabilities(payload.to_string().as_bytes()).unwrap();
+        let limited = parse_capabilities(payload.to_string().as_bytes(), "test-model").unwrap();
         assert!(limited.protection_features.ovp_voltage && limited.protection_features.ocp);
         assert!(!limited.protection_features.ocp_delay);
         payload["data"]["protection_features"]["ocp"] = json!("yes");
-        assert!(parse_capabilities(payload.to_string().as_bytes()).is_err());
+        assert!(parse_capabilities(payload.to_string().as_bytes(), "test-model").is_err());
+    }
+
+    #[test]
+    fn offline_capabilities_require_exact_requested_model_id() {
+        let payload = json!({"schema_version":2,"ok":true,"status":"ok",
+            "command":{"name":"capabilities"},"data":{"model_id":"keysight-e36312a","model_name":"Test",
+                "channels":[1],"protection_features":{"ovp_voltage":false,"ocp":false,
+                    "ocp_delay":false,"ocp_delay_triggers":[]}}});
+        assert!(parse_capabilities(payload.to_string().as_bytes(), "keysight-e36312a").is_ok());
+        assert!(parse_capabilities(payload.to_string().as_bytes(), "gw-instek-psm-2010").is_err());
+    }
+
+    #[test]
+    fn live_protection_status_is_strict_and_normalized() {
+        let valid = json!({"data":{
+            "protection":{"over_voltage_tripped":true,"over_current_tripped":false},
+            "protection_by_channel":[
+                {"channel":1,"protection":{"over_voltage_tripped":false,"over_current_tripped":false}},
+                {"channel":2,"protection":{"over_voltage_tripped":true,"over_current_tripped":false}}],
+            "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
+        }});
+        let status = parse_live_protection_status(&valid).unwrap();
+        assert!(status.protection_tripped);
+        assert_eq!(status.channels.len(), 2);
+        assert!(status.channels[1].over_voltage_tripped);
+        assert!(!status.channels[1].output_enabled);
+
+        let mut cases = Vec::new();
+        let mut missing_aggregate = valid.clone();
+        missing_aggregate["data"]["protection"]
+            .as_object_mut()
+            .unwrap()
+            .remove("over_voltage_tripped");
+        cases.push(missing_aggregate);
+        let mut non_boolean = valid.clone();
+        non_boolean["data"]["protection_by_channel"][1]["protection"]["over_voltage_tripped"] =
+            json!("yes");
+        cases.push(non_boolean);
+        let mut duplicate = valid.clone();
+        duplicate["data"]["protection_by_channel"][1]["channel"] = json!(1);
+        cases.push(duplicate);
+        let mut mismatch = valid.clone();
+        mismatch["data"]["outputs"][1]["channel"] = json!(3);
+        cases.push(mismatch);
+        let mut aggregate_mismatch = valid.clone();
+        aggregate_mismatch["data"]["protection"]["over_voltage_tripped"] = json!(false);
+        cases.push(aggregate_mismatch);
+
+        for malformed in cases {
+            assert!(parse_live_protection_status(&malformed).is_err());
+        }
     }
 
     #[test]

@@ -395,7 +395,12 @@ function PowersSetupFields({ value, onChange, modelId, powersExecutableKey }: {
   const capabilities = loaded?.key === key ? loaded.value : null
   const channels = value.protection?.channels ?? []
   const features = capabilities?.protection_features
-  const available = capabilities?.channels.filter(channel => !channels.some(record => record.channel === channel)) ?? []
+  const hasConfigurableProtection = Boolean(features && (
+    features.ovp_voltage || features.ocp || features.ocp_delay || features.ocp_delay_triggers.length > 0
+  ))
+  const available = hasConfigurableProtection
+    ? capabilities?.channels.filter(channel => !channels.some(record => record.channel === channel)) ?? []
+    : []
   const selected = available.some(channel => String(channel) === addChannel) ? addChannel : String(available[0] ?? '')
   const setChannels = (next: PowersProtectionChannel[]) => onChange(next.length ? { protection: { channels: next } } : {})
   const update = (channel: number, patch: Partial<PowersProtectionChannel>) => {
@@ -415,6 +420,7 @@ function PowersSetupFields({ value, onChange, modelId, powersExecutableKey }: {
     {!modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
     {modelId && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
     {modelId && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool and refresh the Live Resource.</p>}
+    {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">Protection configuration is unavailable for the current model.</p>}
     {channels.length === 0 && <p>No protection settings configured.</p>}
     {channels.map(record => {
       const supported = (field: 'ovp_voltage' | 'ocp' | 'ocp_delay') =>
