@@ -144,6 +144,25 @@ confirmation 後 resource 改變，run 會被拒絕，必須重新確認。
 若 DC Current 使用 **10 A terminal**，Live confirmation 也會要求確認實體
 導線確實接在 10 A terminal。
 
+### 5.4 Live Device Status
+
+Powers Tool Instance 的 **Live Device Status** 只屬於 runtime，不會保存到
+Template。開啟 Setup 不會連線儀器，也沒有 background polling。只有選擇
+**Refresh Status** 時，Desktop 才會使用已保存的 Live Resource 建立 temporary
+Live Powers connection，讀取 aggregate Protection，以及每個 channel 的 Output、
+OVP 與 OCP 狀態。若 Live Resource draft 尚未保存，必須先 Save Resource，才能
+使用 Refresh Status 或 Clear Protection。
+
+只有目前 status 顯示已 trip 的 channel 才會提供 **Clear Protection...**，而且
+一定需要明確確認。Orchestrator 會先 Safe-Off All，只清除選取 channel 的
+protection latch，之後重新讀取完整 status。Clear Protection 不會修正造成 trip
+的原因，也絕不會重新開啟 output。若 latch 仍為 tripped，UI 會顯示尚未解除；
+若 reread 回報 output 仍為 ON，Desktop 會照實顯示並警告，不會隱藏或自動改變。
+
+Workflow 或另一個 manual Live operation 執行期間，Refresh Status 與 Clear
+Protection 都不可使用。若該型號不支援 remote clear，請從儀器 front panel
+清除 protection latch，再使用 **Refresh Status**。
+
 ## 6. Workflow Editor
 
 Workflow editor 用來建立有順序的 steps。目前的 step types 是：

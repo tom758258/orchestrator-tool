@@ -17,8 +17,9 @@ use orchestrator_tool::{
             run_worker_smoke as run_meters_worker_smoke,
         },
         powers::{
-            PowersSmokeError, run_action as run_powers_action,
-            run_worker_smoke as run_powers_worker_smoke,
+            PowersSmokeError, clear_protection, live_protection_status_all,
+            run_action as run_powers_action, run_worker_smoke as run_powers_worker_smoke,
+            safe_off_all,
         },
     },
     meters_setup::{AutoZero, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode},
@@ -130,6 +131,10 @@ fn main() {
     powers_set_voltage_step_outputs_reach_result_row();
     powers_set_output_binding_reaches_worker();
     powers_protection_status_asserts_untripped_result();
+    manual_powers_status_reads_and_shuts_down();
+    manual_powers_clear_safe_offs_clears_rereads_and_shuts_down();
+    manual_powers_clear_stops_after_safe_off_failure();
+    manual_powers_clear_returns_unresolved_trip_without_retry();
     meters_runtime_measure_returns_sample();
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
@@ -279,6 +284,115 @@ fn run_powers_worker_fixture() {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
+fn run_manual_powers_live_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "manual-powers-live";
+    print_json_line(
+        &json!({
+            "event": "ready",
+            "schema_version": 2,
+            "run_id": run_id,
+            "status_url": format!("{base_url}/status"),
+            "command_url": format!("{base_url}/command"),
+            "stop_url": format!("{base_url}/stop"),
+        })
+        .to_string(),
+    );
+
+    let unresolved = scenario == "manual-clear-unresolved";
+    let commands: Vec<(&str, serde_json::Value)> = match scenario {
+        "manual-status" => vec![(
+            "protection-status",
+            json!({"channel":"all","confirm_output":true}),
+        )],
+        "manual-clear" | "manual-clear-unresolved" => vec![
+            ("safe-off", json!({"channel":"all","confirm_output":true})),
+            (
+                "clear-protection",
+                json!({"channel":2,"confirm_output":true}),
+            ),
+            (
+                "protection-status",
+                json!({"channel":"all","confirm_output":true}),
+            ),
+        ],
+        "manual-safe-off-failure" => {
+            vec![("safe-off", json!({"channel":"all","confirm_output":true}))]
+        }
+        _ => panic!("unknown manual Powers fixture scenario"),
+    };
+
+    for (index, (command, arguments)) in commands.into_iter().enumerate() {
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("POST", "/command")
+        );
+        let body = serde_json::from_slice::<serde_json::Value>(&request.body).unwrap();
+        assert_eq!(body["schema_version"], 2);
+        assert_eq!(body["command"], command);
+        assert_eq!(body["arguments"], arguments);
+        assert_eq!(body["context"], json!({"mode":"live"}));
+        let job_id = format!("manual-job-{index}");
+        write_response(
+            request.stream,
+            202,
+            &json!({
+                "schema_version":2,
+                "status":"accepted",
+                "command":command,
+                "worker_job_id":job_id
+            })
+            .to_string(),
+        );
+
+        let request = accept_request(&listener);
+        assert_eq!(
+            (request.method.as_str(), request.path.as_str()),
+            ("GET", "/status")
+        );
+        let failed = scenario == "manual-safe-off-failure";
+        let result = if command == "protection-status" {
+            json!({"data":{
+                "protection":{"over_voltage_tripped":unresolved,"over_current_tripped":false},
+                "protection_by_channel":[
+                    {"channel":1,"protection":{"over_voltage_tripped":false,"over_current_tripped":false}},
+                    {"channel":2,"protection":{"over_voltage_tripped":unresolved,"over_current_tripped":false}}
+                ],
+                "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
+            }})
+        } else {
+            json!({"ok":true})
+        };
+        write_response(
+            request.stream,
+            200,
+            &json!({
+                "schema_version":2,
+                "service":"powers-tool",
+                "run_id":run_id,
+                "status":"ready",
+                "fatal_error":null,
+                "last_job": if failed {
+                    json!({"worker_job_id":job_id,"status":"failed",
+                        "error":{"code":"safe_off_failed","message":"simulated Safe-Off failure"}})
+                } else {
+                    json!({"worker_job_id":job_id,"status":"succeeded","result":result})
+                }
+            })
+            .to_string(),
+        );
+    }
+
+    let request = accept_request(&listener);
+    assert_eq!(
+        (request.method.as_str(), request.path.as_str()),
+        ("POST", "/stop")
+    );
+    write_response(request.stream, 200, r#"{"ok":true}"#);
+}
+
 fn run_meters_worker_fixture() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
@@ -414,6 +528,10 @@ fn run_fixture(scenario: &OsStr) {
             assert_eq!(request.path, "/stop");
             write_response(request.stream, 200, r#"{"ok":true}"#);
         }
+        "manual-status"
+        | "manual-clear"
+        | "manual-safe-off-failure"
+        | "manual-clear-unresolved" => run_manual_powers_live_fixture(scenario.to_str().unwrap()),
         "ready-no-events" => {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base_url = format!("http://{}", listener.local_addr().unwrap());
@@ -1480,6 +1598,59 @@ fn powers_set_output_binding_reaches_worker() {
             .iter()
             .all(|execution| matches!(execution.result().outcome(), StepOutcome::Succeeded { .. }))
     );
+}
+
+fn manual_powers_status_reads_and_shuts_down() {
+    let session = start_worker(&fixture_spec("manual-status"), Duration::from_secs(2)).unwrap();
+    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    assert!(!status.protection_tripped);
+    assert_eq!(status.channels.len(), 2);
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+}
+
+fn manual_powers_clear_safe_offs_clears_rereads_and_shuts_down() {
+    let session = start_worker(&fixture_spec("manual-clear"), Duration::from_secs(2)).unwrap();
+    safe_off_all(&session, Duration::from_secs(2)).unwrap();
+    clear_protection(&session, 2, Duration::from_secs(2)).unwrap();
+    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    assert!(!status.protection_tripped);
+    assert!(
+        status
+            .channels
+            .iter()
+            .all(|channel| !channel.output_enabled)
+    );
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+}
+
+fn manual_powers_clear_stops_after_safe_off_failure() {
+    let session = start_worker(
+        &fixture_spec("manual-safe-off-failure"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let error = safe_off_all(&session, Duration::from_secs(2)).unwrap_err();
+    assert!(error.to_string().contains("simulated Safe-Off failure"));
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+}
+
+fn manual_powers_clear_returns_unresolved_trip_without_retry() {
+    let session = start_worker(
+        &fixture_spec("manual-clear-unresolved"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    safe_off_all(&session, Duration::from_secs(2)).unwrap();
+    clear_protection(&session, 2, Duration::from_secs(2)).unwrap();
+    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    let channel = status
+        .channels
+        .iter()
+        .find(|channel| channel.channel == 2)
+        .unwrap();
+    assert!(channel.over_voltage_tripped);
+    assert!(status.protection_tripped);
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
 }
 
 fn powers_protection_status_asserts_untripped_result() {

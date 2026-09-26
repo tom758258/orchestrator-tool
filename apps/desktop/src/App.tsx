@@ -44,6 +44,24 @@ type ResourceIdentity = {
 
 type LiveResourceCandidate = ResourceIdentity & { resource: string }
 
+type PowersLiveProtectionStatus = {
+  protection_tripped: boolean
+  over_voltage_tripped: boolean
+  over_current_tripped: boolean
+  channels: {
+    channel: number
+    output_enabled: boolean
+    over_voltage_tripped: boolean
+    over_current_tripped: boolean
+  }[]
+}
+
+type PowersLiveStatusState = {
+  status: PowersLiveProtectionStatus | null
+  error: string | null
+  operation: 'refresh' | 'clear' | null
+}
+
 function deviceName(identity: ResourceIdentity | null | undefined): string {
   return [identity?.manufacturer?.trim(), identity?.model?.trim()].filter(Boolean).join(' ')
     || identity?.identity?.trim() || ''
@@ -389,6 +407,9 @@ function App() {
   const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
+  const [savedResources, setSavedResources] = useState<Record<string, string>>({})
+  const [powersLiveStatuses, setPowersLiveStatuses] = useState<Record<string, PowersLiveStatusState>>({})
+  const [powersLiveOperationBusy, setPowersLiveOperationBusy] = useState<string | null>(null)
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
@@ -517,6 +538,7 @@ function App() {
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
       ])
       setResourceDrafts(resources)
+      setSavedResources(resources)
       setResourceIdentities(identities)
       setResourceIdentityDrafts(identities)
       setError(null)
@@ -593,6 +615,9 @@ function App() {
   )
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
+    setPowersLiveStatuses(current => Object.fromEntries(
+      Object.entries(current).filter(([id]) => tool_instances.some(instance => instance.id === id)),
+    ))
     setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
     setWorkflowChangedSinceRun(true)
     setValidationStatus('idle')
@@ -886,6 +911,11 @@ function App() {
     }
     setToolConfigBusy(toolId)
     setToolConfigError(null)
+    setPowersLiveStatuses(current => {
+      const next = { ...current }
+      delete next[toolId]
+      return next
+    })
     try {
       await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
         instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentityDrafts[toolId] ?? null }),
@@ -897,6 +927,62 @@ function App() {
       setToolConfigBusy(null)
     }
   }, [refresh, resourceDrafts, resourceIdentityDrafts, toolConfigBusy])
+
+  const refreshPowersLiveStatus = useCallback(async (instanceId: string) => {
+    if (powersLiveOperationBusy !== null) return
+    setPowersLiveOperationBusy(instanceId)
+    setPowersLiveStatuses(current => ({
+      ...current,
+      [instanceId]: { status: null, error: null, operation: 'refresh' },
+    }))
+    try {
+      const status = await invoke<PowersLiveProtectionStatus>('refresh_powers_live_status', { instanceId })
+      setPowersLiveStatuses(current => ({
+        ...current,
+        [instanceId]: { status, error: null, operation: null },
+      }))
+    } catch (message) {
+      setPowersLiveStatuses(current => ({
+        ...current,
+        [instanceId]: { status: null, error: String(message), operation: null },
+      }))
+    } finally {
+      setPowersLiveOperationBusy(null)
+    }
+  }, [powersLiveOperationBusy])
+
+  const clearPowersProtection = useCallback(async (
+    instanceId: string,
+    channel: PowersLiveProtectionStatus['channels'][number],
+  ) => {
+    if (powersLiveOperationBusy !== null) return
+    const approved = await confirm(
+      `Clear protection for ${instanceId} CH${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
+      { title: 'Clear Protection', kind: 'warning', okLabel: 'Clear Protection', cancelLabel: 'Cancel' },
+    )
+    if (!approved) return
+    setPowersLiveOperationBusy(instanceId)
+    setPowersLiveStatuses(current => ({
+      ...current,
+      [instanceId]: { status: null, error: null, operation: 'clear' },
+    }))
+    try {
+      const status = await invoke<PowersLiveProtectionStatus>('clear_powers_protection', {
+        instanceId, channel: channel.channel,
+      })
+      setPowersLiveStatuses(current => ({
+        ...current,
+        [instanceId]: { status, error: null, operation: null },
+      }))
+    } catch (message) {
+      setPowersLiveStatuses(current => ({
+        ...current,
+        [instanceId]: { status: null, error: String(message), operation: null },
+      }))
+    } finally {
+      setPowersLiveOperationBusy(null)
+    }
+  }, [powersLiveOperationBusy])
 
   const handleListResources = useCallback(async (toolId: string) => {
     if (toolConfigBusy !== null) {
@@ -1075,7 +1161,7 @@ function App() {
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const workflowBusy =
-    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || exporting
+    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersLiveOperationBusy !== null || exporting
 
   const handleClearLastRun = useCallback(async () => {
     if (!runWorkflowSnapshot || workflowBusy) return
@@ -1442,6 +1528,11 @@ function App() {
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onChange={(event) => {
                               setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
+                              setPowersLiveStatuses(current => {
+                                const next = { ...current }
+                                delete next[instance.id]
+                                return next
+                              })
                               setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: null }))
                             }}
                           />
@@ -1491,6 +1582,11 @@ function App() {
                                 if (resource) {
                                   const candidate = discoveredResources[instance.tool]?.find(item => item.resource === resource)
                                   setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
+                                  setPowersLiveStatuses(current => {
+                                    const next = { ...current }
+                                    delete next[instance.id]
+                                    return next
+                                  })
                                   setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: candidate ? {
                                     manufacturer: candidate.manufacturer, model: candidate.model,
                                     model_id: candidate.model_id,
@@ -1508,6 +1604,52 @@ function App() {
                         )}
                       </div>
                     )}
+                    {instance.tool === 'powers' && (() => {
+                      const live = powersLiveStatuses[instance.id]
+                      const savedResource = savedResources[instance.id]
+                      const draftResource = resourceDrafts[instance.id]
+                      const resourceReady = Boolean(savedResource?.trim()) && draftResource === savedResource
+                      const operationBusy = powersLiveOperationBusy !== null
+                      const unresolved = live?.status?.channels.some(channel =>
+                        (channel.over_voltage_tripped || channel.over_current_tripped))
+                      const outputOn = live?.status?.channels.some(channel => channel.output_enabled)
+                      return <div className="live-resource">
+                        <h4>Live Device Status</h4>
+                        <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
+                        {!resourceReady && <p className="tool-setup-hint">Save the Live Resource before using Live Device Status.</p>}
+                        <button className="action-button" type="button"
+                          disabled={!resourceReady || workflowBusy || operationBusy}
+                          onClick={() => void refreshPowersLiveStatus(instance.id)}>
+                          {live?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
+                        </button>
+                        {live?.operation === 'clear' && <p role="status">Clearing protection...</p>}
+                        {live?.error && <p className="error" role="alert">{live.error}</p>}
+                        {live?.status && <>
+                          <dl className="tool-details">
+                            <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{live.status.protection_tripped ? 'TRIPPED' : 'CLEAR'}</dd></div>
+                            <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{live.status.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                            <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{live.status.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                          </dl>
+                          {live.status.channels.map(channel => <div key={channel.channel} className="meters-setup-fields">
+                            <strong>CH{channel.channel}</strong>
+                            <dl className="tool-details">
+                              <div className="detail-row"><dt className="detail-label">Output</dt><dd className="detail-value">{channel.output_enabled ? 'ON' : 'OFF'}</dd></div>
+                              <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                              <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{channel.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                            </dl>
+                            {(channel.over_voltage_tripped || channel.over_current_tripped) && <button
+                              className="action-button action-button-danger" type="button"
+                              disabled={!resourceReady || workflowBusy || operationBusy}
+                              onClick={() => void clearPowersProtection(instance.id, channel)}>
+                              Clear Protection...
+                            </button>}
+                          </div>)}
+                          {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
+                          {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}
+                        </>}
+                        <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>
+                      </div>
+                    })()}
                   </>
                 )}
                 onChange={updateToolInstances}

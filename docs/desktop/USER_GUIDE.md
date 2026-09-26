@@ -165,6 +165,28 @@ For a DC Current measurement using the **10 A terminal**, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
 terminal.
 
+### 5.4 Live Device Status
+
+For a Powers Tool Instance, **Live Device Status** is runtime-only and is not
+saved in the Template. Opening Setup does not connect to the instrument and
+there is no background polling. Select **Refresh Status** to create a temporary
+Live Powers connection using the saved Live Resource and read aggregate
+Protection plus per-channel Output, OVP, and OCP state. Unsaved Live Resource
+changes must be saved before Refresh Status or Clear Protection can be used.
+
+**Clear Protection...** is offered only for a channel currently reported as
+tripped and always requires explicit confirmation. Orchestrator first performs
+Safe-Off All, clears only the selected channel protection latch, then rereads
+the full status. Clear Protection does not fix the cause of a trip and never
+turns an output back on. If the latch remains tripped, the status remains
+visible as unresolved; if the reread reports an output still ON, Desktop shows
+that state and a warning rather than hiding it or automatically changing it.
+
+Refresh Status and Clear Protection are unavailable while a Workflow or another
+manual Live operation is active. If remote clear is unsupported for the model,
+clear the protection latch from the instrument front panel and then use
+**Refresh Status**.
+
 ## 6. Workflow Editor
 
 The Workflow editor builds an ordered sequence of steps. The current step

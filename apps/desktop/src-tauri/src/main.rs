@@ -42,18 +42,32 @@ const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
+enum ActiveOperation {
+    Workflow(Arc<Mutex<Option<String>>>),
+    ManualPowersLive,
+}
+
 #[derive(Default)]
-struct ActiveRun(Mutex<Option<Arc<Mutex<Option<String>>>>>);
+struct ActiveRun(Mutex<Option<ActiveOperation>>);
 
 impl ActiveRun {
     fn register(&self) -> Result<Arc<Mutex<Option<String>>>, String> {
         let mut active = self.0.lock().unwrap();
         if active.is_some() {
-            return Err("A workflow run is already active".to_owned());
+            return Err("Another live operation is already active".to_owned());
         }
         let control = Arc::new(Mutex::new(None));
-        *active = Some(control.clone());
+        *active = Some(ActiveOperation::Workflow(control.clone()));
         Ok(control)
+    }
+
+    fn register_manual(&self) -> Result<(), String> {
+        let mut active = self.0.lock().unwrap();
+        if active.is_some() {
+            return Err("Another live operation is already active".to_owned());
+        }
+        *active = Some(ActiveOperation::ManualPowersLive);
+        Ok(())
     }
 
     fn clear(&self) {
@@ -62,7 +76,7 @@ impl ActiveRun {
 
     fn request(&self, loop_step_id: String) -> bool {
         let active = self.0.lock().unwrap();
-        let Some(control) = active.as_ref() else {
+        let Some(ActiveOperation::Workflow(control)) = active.as_ref() else {
             return false;
         };
         *control.lock().unwrap() = Some(loop_step_id);
@@ -98,6 +112,116 @@ async fn list_live_resources(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn powers_live_worker_spec(app: &AppHandle, instance_id: &str) -> Result<WorkerLaunchSpec, String> {
+    let instance_id = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
+    let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+    let config = load_desktop_config(app)?;
+    let resource = config
+        .live_resources()
+        .get(instance_id.as_str())
+        .filter(|resource| !resource.trim().is_empty())
+        .ok_or_else(|| format!("{instance_id} saved Live Resource is not configured"))?;
+    let definition = built_in_tool_definitions()
+        .into_iter()
+        .find(|definition| definition.id() == &ToolId::powers())
+        .expect("powers is built in");
+    let inspection =
+        orchestrator_tool::inspection::inspect_tool(&application_dir, &config, &definition)
+            .map_err(|error| format!("powers executable inspection failed: {error}"))?;
+    if inspection.status() != ExecutableStatus::Available {
+        return Err("powers executable is unavailable".to_owned());
+    }
+    let executable = inspection
+        .resolved()
+        .path()
+        .expect("available executable has a path");
+    Ok(orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource))
+}
+
+fn finish_manual_powers_operation<T>(
+    operation: Result<T, String>,
+    shutdown: Result<std::process::ExitStatus, orchestrator_tool::worker::WorkerShutdownError>,
+) -> Result<T, String> {
+    match (operation, shutdown) {
+        (Ok(value), Ok(status)) if status.success() => Ok(value),
+        (Ok(_), Ok(status)) => Err(format!("Powers Worker exited with {status}")),
+        (Ok(_), Err(error)) => Err(format!("Powers Worker shutdown failed: {error}")),
+        (Err(error), Ok(_)) => Err(error),
+        (Err(error), Err(shutdown)) => Err(format!(
+            "{error}; Powers Worker shutdown also failed: {shutdown}"
+        )),
+    }
+}
+
+#[tauri::command]
+async fn refresh_powers_live_status(
+    app: AppHandle,
+    state: tauri::State<'_, ActiveRun>,
+    instance_id: String,
+) -> Result<orchestrator_tool::adapters::powers::PowersLiveProtectionStatus, String> {
+    state.register_manual()?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let spec = powers_live_worker_spec(&app, &instance_id)?;
+        let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
+            .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
+        let operation = orchestrator_tool::adapters::powers::live_protection_status_all(
+            &session,
+            RUN_ACTION_TIMEOUT,
+        )
+        .map_err(|error| error.to_string());
+        let shutdown = session.shutdown(RUN_SHUTDOWN_TIMEOUT);
+        finish_manual_powers_operation(operation, shutdown)
+    })
+    .await
+    .map_err(|error| error.to_string());
+    state.clear();
+    result?
+}
+
+#[tauri::command]
+async fn clear_powers_protection(
+    app: AppHandle,
+    state: tauri::State<'_, ActiveRun>,
+    instance_id: String,
+    channel: u32,
+) -> Result<orchestrator_tool::adapters::powers::PowersLiveProtectionStatus, String> {
+    if channel == 0 {
+        return Err("Clear Protection channel must be a positive integer".to_owned());
+    }
+    state.register_manual()?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut spec = powers_live_worker_spec(&app, &instance_id)?;
+        let dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| error.to_string())?;
+        let _authorization = PowersWriteAuthorization::prepare(&dir, &mut spec)?;
+        let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
+            .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
+        let operation = (|| {
+            orchestrator_tool::adapters::powers::safe_off_all(&session, RUN_ACTION_TIMEOUT)
+                .map_err(|error| format!("Safe-Off All failed: {error}"))?;
+            orchestrator_tool::adapters::powers::clear_protection(
+                &session,
+                channel,
+                RUN_ACTION_TIMEOUT,
+            )
+            .map_err(|error| error.to_string())?;
+            orchestrator_tool::adapters::powers::live_protection_status_all(
+                &session,
+                RUN_ACTION_TIMEOUT,
+            )
+            .map_err(|error| error.to_string())
+        })();
+        let shutdown = session.shutdown(RUN_SHUTDOWN_TIMEOUT);
+        finish_manual_powers_operation(operation, shutdown)
+    })
+    .await
+    .map_err(|error| error.to_string());
+    state.clear();
+    result?
 }
 
 #[tauri::command]
@@ -926,6 +1050,8 @@ fn main() {
             list_live_resources,
             get_meters_capabilities,
             get_powers_capabilities,
+            refresh_powers_live_status,
+            clear_powers_protection,
             get_meters_range_options,
             run_workflow_simulation,
             run_workflow_live,
@@ -1137,12 +1263,19 @@ mod regression_tests {
         assert!(!state.request(a.to_string()));
         let control = state.register().unwrap();
         assert!(state.register().is_err());
+        assert!(state.register_manual().is_err());
         assert!(state.request(a.to_string()));
         assert!(!super::consume_loop_stop(&control, &b));
         assert!(super::consume_loop_stop(&control, &a));
         assert!(!super::consume_loop_stop(&control, &a));
         state.clear();
         assert!(!state.request(b.to_string()));
+        state.register_manual().unwrap();
+        assert!(state.register().is_err());
+        assert!(state.register_manual().is_err());
+        assert!(!state.request(b.to_string()));
+        state.clear();
+        assert!(state.register().is_ok());
     }
 
     #[test]
