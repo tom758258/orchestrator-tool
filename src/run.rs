@@ -1,5 +1,7 @@
 use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Duration};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     adapters::powers::{
         PowersActionError, apply_protection_setup, protection_status_all, safe_off_all,
@@ -21,7 +23,8 @@ use crate::{
 ///
 /// The mode is chosen by the caller at run time. It is never persisted in a
 /// workflow, template, or configuration file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
     Simulate,
     Live,
@@ -206,8 +209,8 @@ fn run_workflow_internal(
         .iter()
         .map(|(instance, session)| (instance.clone(), session))
         .collect();
-    if execution_mode == ExecutionMode::Live {
-        let setup_result = (|| -> Result<(), WorkflowRunError> {
+    let setup_result =
+        (|| -> Result<(), WorkflowRunError> {
             for (id, session) in &sessions {
                 let Some(protection) = template
                     .tool_instances()
@@ -218,18 +221,17 @@ fn run_workflow_internal(
                 else {
                     continue;
                 };
-                safe_off_all(session, action_timeout).map_err(|source| {
+                safe_off_all(session, execution_mode, action_timeout).map_err(|source| {
                     WorkflowRunError::ProtectionSetup {
                         instance: id.clone(),
                         detail: format!("pre-run Safe-Off failed: {source}"),
                     }
                 })?;
-                let tripped = protection_status_all(session, action_timeout).map_err(|source| {
-                    WorkflowRunError::ProtectionSetup {
+                let tripped = protection_status_all(session, execution_mode, action_timeout)
+                    .map_err(|source| WorkflowRunError::ProtectionSetup {
                         instance: id.clone(),
                         detail: format!("Protection Status failed: {source}"),
-                    }
-                })?;
+                    })?;
                 if tripped {
                     return Err(WorkflowRunError::ProtectionSetup {
                         instance: id.clone(),
@@ -238,32 +240,30 @@ fn run_workflow_internal(
                     });
                 }
                 for record in &protection.channels {
-                    apply_protection_setup(session, record, action_timeout).map_err(|source| {
-                        WorkflowRunError::ProtectionSetup {
+                    apply_protection_setup(session, record, execution_mode, action_timeout)
+                        .map_err(|source| WorkflowRunError::ProtectionSetup {
                             instance: id.clone(),
                             detail: format!(
                                 "Protection Set failed for channel {}: {source}",
                                 record.channel
                             ),
-                        }
-                    })?;
+                        })?;
                 }
             }
             Ok(())
         })();
-        if let Err(error) = setup_result {
-            drop(session_refs);
-            let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
-            let _ = shutdown_workers(sessions, shutdown_timeout);
-            return Err(match cleanup {
-                Some((instance, source)) => WorkflowRunError::SafetyCleanup {
-                    instance,
-                    prior_failure: Some(error.to_string()),
-                    source,
-                },
-                None => error,
-            });
-        }
+    if let Err(error) = setup_result {
+        drop(session_refs);
+        let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
+        let _ = shutdown_workers(sessions, shutdown_timeout);
+        return Err(match cleanup {
+            Some((instance, source)) => WorkflowRunError::SafetyCleanup {
+                instance,
+                prior_failure: Some(error.to_string()),
+                source,
+            },
+            None => error,
+        });
     }
     let execution = if retain_results {
         execute_workflow_with_loop_stop(
@@ -356,16 +356,13 @@ fn cleanup_powers(
     execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Option<(ToolInstanceId, PowersActionError)> {
-    if execution_mode != ExecutionMode::Live {
-        return None;
-    }
     let mut first_error = None;
     for (id, session) in sessions {
         if template
             .tool_instances()
             .iter()
             .any(|instance| &instance.id == id && instance.tool == ToolId::powers())
-            && let Err(error) = safe_off_all(session, timeout)
+            && let Err(error) = safe_off_all(session, execution_mode, timeout)
             && first_error.is_none()
         {
             first_error = Some((id.clone(), error));
@@ -488,6 +485,21 @@ mod tests {
         tool_instance::ToolInstanceId,
         workflow::{ActionId, Step, StepId, StepKind, StepOutcome, Workflow},
     };
+
+    #[test]
+    fn execution_mode_wire_values_are_strict_and_lowercase() {
+        assert_eq!(
+            serde_json::from_str::<ExecutionMode>(r#""simulate""#).unwrap(),
+            ExecutionMode::Simulate
+        );
+        assert_eq!(
+            serde_json::from_str::<ExecutionMode>(r#""live""#).unwrap(),
+            ExecutionMode::Live
+        );
+        for invalid in [r#""Simulation""#, r#""LIVE""#, r#""unknown""#] {
+            assert!(serde_json::from_str::<ExecutionMode>(invalid).is_err());
+        }
+    }
 
     #[test]
     fn simulate_mode_runs_workerless_workflow() {

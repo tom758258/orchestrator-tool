@@ -73,7 +73,9 @@ presentation metadata keyed by Tool Instance ID.
 Before a Live run, preparation requires a non-empty resource for each
 referenced instance, rejects duplicate resource bindings, and confirms the
 current instance ID, Tool Type, and resource. Simulation does not require Live
-Resources. The selected execution mode is run state, not Template data.
+Resources and never substitutes a fake resource in local configuration. The
+selected Execution Mode is Desktop session and run state, not Template or
+configuration data. Saving a Live Resource does not change that mode.
 
 When a Meters DC Current setup selects the 10 A Current Terminal, the Live
 confirmation also asks the operator to confirm the physical connection.
@@ -118,7 +120,7 @@ Additional adapters, serial-tool handling, manifest-driven UI, plugin systems,
 and setup registries are outside this boundary until a concrete requirement
 exists.
 
-## Powers live cleanup
+## Powers execution lifecycle
 
 Powers output safety remains a shared responsibility with an explicit
 boundary. The external Powers tool performs its own instrument-specific
@@ -130,7 +132,8 @@ behavior; the orchestrator guarantees the run-level cleanup sequence:
    arguments.confirm_output=true for output-affecting requests.
 2. Every started Powers instance receives a bounded safe-off request before
    its Worker is shut down, including after workflow failure or a later Worker
-   startup failure.
+   startup failure. Live sends the real-hardware request; Simulation sends the
+   same operation through the external tool's simulate contract.
 3. An explicit Powers `output-off` Tool Action does not replace the run-level
    cleanup.
 4. Cleanup is best-effort and its failure makes the run fail while preserving
@@ -139,9 +142,14 @@ behavior; the orchestrator guarantees the run-level cleanup sequence:
 5. The temporary authorization support file is removed best-effort after the
    run.
 
-Simulation does not perform this additional Live safe-off sequence. This
-boundary does not move Powers safety logic into Core; it defines when Core
-requests the external tool's cleanup operation.
+Simulation and Live therefore follow the same Orchestrator sequencing where
+the external contract supports it. A Powers Protection Setup performs
+Safe-Off, Protection Status, the existing trip gate, Protection Set, Workflow,
+and final Safe-Off in both modes. In Simulation, those tool operations are
+simulated or planned by powers-tool and do not validate or touch real hardware.
+Live alone requires real resources, operator confirmation, and temporary write
+authorization. This boundary does not move Powers safety logic into Core; it
+defines when Core requests operations from the external tool.
 
 Meters capacity is calculated independently for each Tool Instance. Standard
 Software mode uses the existing finite measurement bound and reserves one

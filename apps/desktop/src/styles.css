@@ -636,6 +636,97 @@ textarea:disabled {
   margin-top: 16px;
 }
 
+.execution-mode-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.execution-mode-options {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.execution-mode-button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.execution-mode-button:disabled {
+  cursor: not-allowed;
+}
+
+.execution-mode-button.execution-mode-selected.execution-mode-simulate {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.execution-mode-button.execution-mode-selected.execution-mode-live {
+  background: var(--danger);
+  color: #fff;
+}
+
+.execution-mode-banner {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+}
+
+.execution-mode-simulate {
+  color: var(--accent);
+}
+
+.execution-mode-live {
+  color: var(--danger);
+}
+
+.execution-mode-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  vertical-align: middle;
+}
+
+.simulation-plan-result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.simulation-plan-result p {
+  margin: 4px 0;
+}
+
+.simulation-plan-result pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .workflow-actions > .action-button {
   flex: 0 0 auto;
   white-space: nowrap;

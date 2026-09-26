@@ -69,8 +69,17 @@ distribution，不包含在 orchestrator-tool 內。</p>
   Summary、Output Data，並進行 manual export。</li>
 </ul>
 <p>Application 另有 <strong>Appearance</strong> 控制項可切換 Desktop theme，toolbar 提供
-<strong>Open Template</strong>、<strong>Save Template</strong> 與 <strong>Help</strong>。Help 會在獨立的 application
+<strong>New Template</strong>、<strong>Open Template</strong>、<strong>Save Template</strong> 與 <strong>Help</strong>。Help 會在獨立的 application
 window 開啟 bundled offline Desktop User Guide。</p>
+<p>全域 <strong>Execution Mode</strong> selector 控制整次 Desktop execution，不是各 Tool Instance
+各自選擇。Desktop 啟動時預設為 <strong>Simulation</strong>，New Template 或 Open Template
+後也會回到 Simulation。醒目的 <strong>SIMULATION · NO HARDWARE I/O</strong> 或
+<strong>LIVE · REAL HARDWARE</strong> 標示，以及每個 Tool Instance 上相同的 badge，會顯示
+目前 target。Workflow 或 manual external operation 執行期間 selector 會鎖定。
+Execution Mode 只屬於 session state，不會保存到 Template 或 local configuration。</p>
+<p>Meters、Powers、Scopes 與 Wavegen instances 都會顯示此 badge。Badge 不代表新增
+runtime 支援；即使 external project 本身提供 simulator，Orchestrator 目前仍不支援
+Scopes 與 Wavegen Workflow actions。</p>
 <h2 id="4-設定-external-tools">4. 設定 external Tools</h2>
 <p>Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。</p>
@@ -119,7 +128,8 @@ Live Resources 不屬於 Template。</p>
 </ul>
 <p>Measurement 欄位會固定顯示；不適用的欄位會 disabled。實際 model capability 與 numeric
 limits 仍由 external meters-tool 最終驗證；Desktop 不會重新建立它的
-capability database。</p>
+capability database。Simulation 會使用 meter simulator profile 的 capability，
+不會受已保存的 Live meter identity 影響；Live 才使用已保存的 identity。</p>
 <h3 id="52-live-resources">5.2 Live Resources</h3>
 <p>Live Resource 綁定到 Tool Instance，並保存於 machine-local Desktop
 configuration，不會隨 Template 攜帶。可選的 last-known identity information
@@ -128,11 +138,17 @@ connection state 已被即時確認。</p>
 <p>目前 Desktop 支援 <strong>Meters</strong> 與 <strong>Powers</strong> 的 resource discovery。不要把
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
 列出可用 resources、選擇 resource、<strong>Save Resource</strong> 或 <strong>Clear Resource</strong>。</p>
+<p>Live Resource 永遠代表 machine-local real hardware。Simulation 不要求也不使用
+Live Resource，但仍可為未來的 Live run 執行 List、編輯與 Save Resource，且不會
+因此切換 Execution Mode。Desktop 不會在 local configuration 建立假的 simulator
+resource。</p>
 <p>Powers discovery 可能提供 canonical model ID。Desktop 將它保存在本機的
 last-known resource identity，並以離線的 <code>powers-tool capabilities --model</code>
 查詢可用的保護功能與通道。Setup 畫面不會為此連線儀器。若沒有 model ID 或
-capability，請選擇並保存受支援的 Live Resource，才能新增保護設定；Template
-中既有設定仍會顯示。</p>
+capability，Live 模式下請選擇並保存受支援的 Live Resource，才能新增保護設定。
+Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capability，
+因此不需 discovery 或 saved resource 即可設定 Protection Setup。當目前 model
+不支援時，Template 中既有設定仍會顯示。</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>展開 Setup 中的 Powers Tool Instance，即可逐通道設定 Protection Setup。
 從 powers-tool 回報的通道新增 channel，並設定受支援的 OVP Voltage、OCP、
@@ -142,31 +158,41 @@ OCP Delay 或 OCP Delay Trigger。空白欄位或 <strong>Unchanged</strong> 表
 <p>控制項依 powers-tool 提供的型號 capability 顯示。若變更 resource 後既有
 設定不受支援，Desktop 會顯示提示並保留原值，直到你自行移除。實際型號的
 支援能力與限制仍由 external tool 在套用時驗證。</p>
-<p>Live 模式下，有 Protection Setup 且被 Workflow 引用的 Powers instance
-會先執行 Safe-Off、讀取既有 protection trip，再逐通道套用設定，之後才
-開始 Workflow。已鎖存的 trip 會阻止執行；Orchestrator 絕不自動清除。
-原有的 final Safe-Off 仍會執行。Simulation 會驗證 Template 並執行
-Workflow，但不執行這段 Live 初始化。若執行期間偵測 trip 時也應讓
-Workflow 失敗，請加入 <strong>Power Protection Status</strong> 與 <strong>Assert</strong>。</p>
+<p>兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
+先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
+之後才開始 Workflow。回報的 trip 會阻止執行；Orchestrator 絕不自動清除。
+Final Safe-Off 仍會執行。Simulation 透過 powers-tool simulate/planning contract
+執行這些操作，用來驗證 sequencing，不會進行真實 hardware I/O。若執行期間
+偵測 trip 時也應讓 Workflow 失敗，請加入 <strong>Power Protection Status</strong> 與
+<strong>Assert</strong>。</p>
 <p>執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
 非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
 resource。Live confirmation 會顯示 referenced instances 與 resources；若
 confirmation 後 resource 改變，run 會被拒絕，必須重新確認。</p>
 <p>若 DC Current 使用 <strong>10 A terminal</strong>，Live confirmation 也會要求確認實體
 導線確實接在 10 A terminal。</p>
-<h3 id="54-live-device-status">5.4 Live Device Status</h3>
-<p>Powers Tool Instance 的 <strong>Live Device Status</strong> 只屬於 runtime，不會保存到
-Template。開啟 Setup 不會連線儀器，也沒有 background polling。只有選擇
-<strong>Refresh Status</strong> 時，Desktop 才會使用已保存的 Live Resource 建立 temporary
-Live Powers connection，讀取 aggregate Protection，以及每個 channel 的 Output、
-OVP 與 OCP 狀態。若 Live Resource draft 尚未保存，必須先 Save Resource，才能
-使用 Refresh Status 或 Clear Protection。</p>
+<h3 id="54-device-status">5.4 Device Status</h3>
+<p>Powers Tool Instance 的 <strong>Device Status</strong> 只屬於 runtime，不會保存到 Template。
+開啟 Setup 不會連線 Worker，也沒有 background polling。只有選擇
+<strong>Refresh Status</strong> 時，Desktop 才會讀取 aggregate Protection、OVP 與 OCP，
+以及每個 channel 的 Output、OVP 與 OCP 狀態。切換 Execution Mode 會清除畫面
+上的 status，避免混用不同 target 的結果。</p>
+<p>Simulation 的 Refresh Status 會啟動 configured powers-tool simulate Worker，
+不需要 saved Live Resource。每個 simulator 支援的 channel 都提供
+<strong>Generate Clear Plan...</strong>，不要求 channel 已 trip。確認後，Orchestrator 會送出
+simulated Safe-Off All 與選定 channel 的 <code>clear-protection</code>，接著直接 shutdown，
+不會 reread status。結果會顯示 <strong>PLAN GENERATED · SIMULATION</strong>、
+<strong>NO HARDWARE I/O</strong>，並可在 <strong>Show Plan</strong> 查看 powers-tool raw result；沒有真實
+protection latch 被改變。</p>
+<p>Live 的 Refresh Status 會使用 saved Live Resource 建立 temporary Powers
+connection。Live Resource draft 尚未保存時，必須先 Save Resource，才能使用
+Refresh Status 或 Clear Protection。</p>
 <p>只有目前 status 顯示已 trip 的 channel 才會提供 <strong>Clear Protection...</strong>，而且
 一定需要明確確認。Orchestrator 會先 Safe-Off All，只清除選取 channel 的
 protection latch，之後重新讀取完整 status。Clear Protection 不會修正造成 trip
 的原因，也絕不會重新開啟 output。若 latch 仍為 tripped，UI 會顯示尚未解除；
 若 reread 回報 output 仍為 ON，Desktop 會照實顯示並警告，不會隱藏或自動改變。</p>
-<p>Workflow 或另一個 manual Live operation 執行期間，Refresh Status 與 Clear
+<p>Workflow 或另一個 manual external operation 執行期間，Refresh Status 與 Clear
 Protection 都不可使用。若該型號不支援 remote clear，請從儀器 front panel
 清除 protection latch，再使用 <strong>Refresh Status</strong>。</p>
 <h2 id="6-workflow-editor">6. Workflow Editor</h2>
@@ -285,11 +311,14 @@ rows，不會再做第二次 expansion。</p>
 <p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
 使用 Validate；run 啟動時也會驗證 Template。</p>
-<p>Simulation 不需要 Live Resources，會使用 external Workers 的 simulate mode，
-不應操作實體 hardware。前述 Unlimited While 加上 Meters Measure 的限制仍然
-適用。</p>
+<p>在 Execution Mode 選擇 <strong>Simulation</strong>，並使用唯一的 <strong>Run Simulation</strong> button。
+Simulation 不需要 Live Resources，會使用 external Workers 的 simulate contract，
+不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
+powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
+Live hardware validation。前述 Unlimited While 加上 Meters Measure 的限制仍然適用。</p>
 <h2 id="8-run-live">8. Run Live</h2>
-<p>開始 Live 前，Desktop 會：</p>
+<p>在 Execution Mode 選擇 <strong>Live</strong> 後，同一個 Run control 會變成 <strong>Run Live</strong>。
+開始 Live 前，Desktop 會：</p>
 <ul>
 <li>確認 referenced Tool Instances；</li>
 <li>取得已保存的 Live Resources；</li>
@@ -310,8 +339,9 @@ Powers write authorization 只存在於該次 Live run 的 runtime。</p>
 會在 Worker shutdown 前對每個已啟動的 Powers instance 要求 <code>safe-off</code>。Cleanup
 failure 會使 run failure；若原本已有 Workflow failure，仍保留原始 failure。Temporary
 runtime authorization file 只用於該次 run，並會 best-effort remove。</p>
-<p>明確的 Powers <code>output-off</code> Tool Action 不會取代 run-level cleanup。Simulation 不會
-執行這個額外的 Live safe-off sequence。</p>
+<p>明確的 Powers <code>output-off</code> Tool Action 不會取代 run-level cleanup。Simulation
+會在相同 cleanup 位置透過 powers-tool 送出 simulated Safe-Off，但不宣稱真實
+outputs 已被改變。</p>
 <h2 id="9-streaming-csv">9. Streaming CSV</h2>
 <p>Streaming CSV 在 Workflow 區域的 <strong>Streaming</strong> panel 設定，和 run 完成後再做的
 manual export 不同。</p>
@@ -351,6 +381,9 @@ storage。</p>
 <p>Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
 不會重新解讀 Last Run。Open Template 會清除 Last Run；<strong>Clear Last Run</strong>
 會移除目前 memory 中的 result 與 snapshot。</p>
+<p>Last Run 也會保存該次 run 開始時的 Execution Mode。之後切換目前 selector，
+Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated success 不會
+被呈現為 real-hardware success。</p>
 <p>若 run 沒有成功完成，committed rows 仍可供檢查，但不能 manual export。</p>
 <h3 id="102-charts">10.2 Charts</h3>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，

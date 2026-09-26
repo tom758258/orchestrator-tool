@@ -89,6 +89,21 @@ pub fn get_capabilities(
     parse_capabilities(&output.stdout, model_id)
 }
 
+pub fn get_capabilities_for_mode(
+    application_dir: &Path,
+    config: &Config,
+    execution_mode: ExecutionMode,
+    live_model_id: Option<&str>,
+) -> Result<PowersCapabilities, String> {
+    let model_id = match execution_mode {
+        ExecutionMode::Simulate => SIMULATION_MODEL_ID,
+        ExecutionMode::Live => live_model_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| "Powers canonical model ID is missing".to_owned())?,
+    };
+    get_capabilities(application_dir, config, model_id)
+}
+
 fn parse_capabilities(
     stdout: &[u8],
     requested_model_id: &str,
@@ -546,22 +561,23 @@ fn augment_protection_status_result(mut result: Value) -> Result<Value, PowersAc
     Ok(result)
 }
 
-/// Requests bounded live safe-off for every Powers channel before shutdown.
+/// Requests bounded safe-off for every Powers channel.
 pub fn safe_off_all(
     session: &WorkerSession,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
     run_command(
         session,
         "safe-off",
         json!({ "channel": "all" }),
-        ExecutionMode::Live,
+        execution_mode,
         timeout,
     )
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct PowersLiveProtectionChannelStatus {
+pub struct PowersProtectionChannelStatus {
     pub channel: u32,
     pub output_enabled: bool,
     pub over_voltage_tripped: bool,
@@ -569,30 +585,32 @@ pub struct PowersLiveProtectionChannelStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct PowersLiveProtectionStatus {
+pub struct PowersProtectionStatus {
     pub protection_tripped: bool,
     pub over_voltage_tripped: bool,
     pub over_current_tripped: bool,
-    pub channels: Vec<PowersLiveProtectionChannelStatus>,
+    pub channels: Vec<PowersProtectionChannelStatus>,
 }
 
-pub fn live_protection_status_all(
+pub fn normalized_protection_status_all(
     session: &WorkerSession,
+    execution_mode: ExecutionMode,
     timeout: Duration,
-) -> Result<PowersLiveProtectionStatus, PowersActionError> {
+) -> Result<PowersProtectionStatus, PowersActionError> {
     let result = run_command(
         session,
         "protection-status",
         json!({"channel": "all"}),
-        ExecutionMode::Live,
+        execution_mode,
         timeout,
     )?;
-    parse_live_protection_status(&result)
+    parse_protection_status(&result)
 }
 
 pub fn clear_protection(
     session: &WorkerSession,
     channel: u32,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
     if channel == 0 {
@@ -604,14 +622,12 @@ pub fn clear_protection(
         session,
         "clear-protection",
         json!({"channel": channel}),
-        ExecutionMode::Live,
+        execution_mode,
         timeout,
     )
 }
 
-fn parse_live_protection_status(
-    result: &Value,
-) -> Result<PowersLiveProtectionStatus, PowersActionError> {
+fn parse_protection_status(result: &Value) -> Result<PowersProtectionStatus, PowersActionError> {
     use std::collections::{BTreeMap, BTreeSet};
 
     let data = result
@@ -741,7 +757,7 @@ fn parse_live_protection_status(
 
     let channels = channel_protection
         .into_iter()
-        .map(|(channel, flags)| PowersLiveProtectionChannelStatus {
+        .map(|(channel, flags)| PowersProtectionChannelStatus {
             channel,
             output_enabled: channel_outputs[&channel],
             over_voltage_tripped: flags.0,
@@ -749,7 +765,7 @@ fn parse_live_protection_status(
         })
         .collect();
 
-    Ok(PowersLiveProtectionStatus {
+    Ok(PowersProtectionStatus {
         protection_tripped: over_voltage_tripped || over_current_tripped,
         over_voltage_tripped,
         over_current_tripped,
@@ -759,13 +775,14 @@ fn parse_live_protection_status(
 
 pub fn protection_status_all(
     session: &WorkerSession,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<bool, PowersActionError> {
     let result = run_command(
         session,
         "protection-status",
         json!({"channel": "all"}),
-        ExecutionMode::Live,
+        execution_mode,
         timeout,
     )?;
     let result = augment_protection_status_result(result)?;
@@ -835,7 +852,7 @@ mod protection_setup_tests {
                 {"channel":2,"protection":{"over_voltage_tripped":true,"over_current_tripped":false}}],
             "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
         }});
-        let status = parse_live_protection_status(&valid).unwrap();
+        let status = parse_protection_status(&valid).unwrap();
         assert!(status.protection_tripped);
         assert_eq!(status.channels.len(), 2);
         assert!(status.channels[1].over_voltage_tripped);
@@ -863,7 +880,7 @@ mod protection_setup_tests {
         cases.push(aggregate_mismatch);
 
         for malformed in cases {
-            assert!(parse_live_protection_status(&malformed).is_err());
+            assert!(parse_protection_status(&malformed).is_err());
         }
     }
 
@@ -895,13 +912,14 @@ mod protection_setup_tests {
 pub fn apply_protection_setup(
     session: &WorkerSession,
     record: &PowersProtectionChannelSetup,
+    execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
     run_command(
         session,
         "protection-set",
         protection_set_arguments(record),
-        ExecutionMode::Live,
+        execution_mode,
         timeout,
     )
 }

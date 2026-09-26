@@ -8,7 +8,7 @@ const simulation = source.slice(source.indexOf('const runSimulation'), source.in
 test('Run Simulation is guarded immediately before React busy state can render', () => {
   assert.match(simulation, /if \(!workflowDraft \|\| !claimRunGate\(runInFlightRef\)\)/)
   assert.match(simulation, /finally \{[\s\S]*releaseRunGate\(runInFlightRef\)/)
-  const onClick = source.indexOf('onClick={() => void runSimulation()}')
+  const onClick = source.indexOf('onClick={() => void runSelectedMode()}')
   const button = source.slice(source.lastIndexOf('<button', onClick), source.indexOf('</button>', onClick))
   assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading\}/)
 })

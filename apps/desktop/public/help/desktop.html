@@ -76,8 +76,19 @@ external tools.</p>
   Summary, Output Data, and manual exports.</li>
 </ul>
 <p>The application also has an <strong>Appearance</strong> control for the Desktop theme and
-toolbar actions for <strong>Open Template</strong>, <strong>Save Template</strong>, and <strong>Help</strong>. Help
+toolbar actions for <strong>New Template</strong>, <strong>Open Template</strong>, <strong>Save Template</strong>, and <strong>Help</strong>. Help
 opens the bundled offline Desktop User Guide in a separate application window.</p>
+<p>The global <strong>Execution Mode</strong> selector controls the whole Desktop execution,
+not individual Tool Instances. Desktop starts in <strong>Simulation</strong>, and New
+Template or Open Template resets it to Simulation. The prominent
+<strong>SIMULATION · NO HARDWARE I/O</strong> or <strong>LIVE · REAL HARDWARE</strong> label and the same
+badge on every Tool Instance show the current target. The selector is locked
+while a Workflow or manual external operation is active. Execution Mode is
+session state; it is not saved in a Template or local configuration.</p>
+<p>Meters, Powers, Scopes, and Wavegen instances all show this badge. The badge
+does not add runtime support: Scopes and Wavegen Workflow actions remain
+unsupported by Orchestrator even when their external projects provide a
+simulator.</p>
 <h2 id="4-configure-external-tools">4. Configure external Tools</h2>
 <p>Executable paths belong to a Tool Type. They are shared by all Tool Instances
 of that type; an individual Tool Instance does not store its own executable
@@ -133,7 +144,9 @@ machine-specific executable paths and Live Resources are not.</p>
 </ul>
 <p>Measurement fields stay visible; inapplicable fields are disabled. The external
 meters-tool remains authoritative for the actual model capability and numeric
-limits. Desktop does not replace its capability database.</p>
+limits. Desktop does not replace its capability database. In Simulation,
+capability choices come from the meter simulator profile rather than a saved
+Live meter identity. Live uses the saved identity when available.</p>
 <h3 id="52-live-resources">5.2 Live Resources</h3>
 <p>A Live Resource is bound to a Tool Instance and is stored in the machine-local
 Desktop configuration. It is not carried in a Template. Optional last-known
@@ -143,12 +156,19 @@ is not a current connection check.</p>
 Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, <strong>Save Resource</strong>, or
 <strong>Clear Resource</strong>.</p>
+<p>Live Resources always represent machine-local real hardware. Simulation does
+not require or use them, but you may list, edit, and save one for a future Live
+run without switching Execution Mode. Desktop does not create a fake simulator
+resource in local configuration.</p>
 <p>Powers discovery may provide a canonical model ID. Desktop saves it with the
 last-known local resource identity and queries <code>powers-tool capabilities
 --model</code> offline to show available protection controls and channels. The Setup
 page does not connect to an instrument for this query. If the model ID or
-capabilities are unavailable, select and save a supported Live Resource to
-enable new protection settings. Existing Template settings remain visible.</p>
+capabilities are unavailable in Live, select and save a supported Live
+Resource to enable new protection settings. In Simulation, Desktop queries
+powers-tool for the existing Powers simulator model, so Protection Setup does
+not require discovery or a saved resource. Existing Template settings remain
+visible when the current model does not support them.</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Expand a Powers Tool Instance in Setup to configure Protection Setup for each
 channel. Add a channel from the channels reported by powers-tool, then set any
@@ -160,13 +180,14 @@ instances start with no protection settings.</p>
 unsupported after a resource change, Desktop displays a warning and retains
 the value until you remove it. The external tool validates actual model
 support and limits when applying the setup.</p>
-<p>In Live mode, a referenced Powers instance with Protection Setup requests
-Safe-Off, reads the existing protection trip state, then applies settings one
-channel at a time before Workflow steps start. A latched trip blocks the run;
-Orchestrator never clears it automatically. The normal final Safe-Off still
-runs. Simulation validates the Template and runs the Workflow without this
-Live setup sequence. To fail a Workflow on a trip detected during execution,
-add a <strong>Power Protection Status</strong> step followed by <strong>Assert</strong>.</p>
+<p>In both modes, a referenced Powers instance with Protection Setup requests
+Safe-Off, reads Protection Status, applies settings one channel at a time only
+when status is clear, then starts Workflow steps. A reported trip blocks the
+run; Orchestrator never clears it automatically. The final Safe-Off still runs.
+In Simulation these operations use powers-tool's simulate/planning contract,
+so they validate sequencing without real hardware I/O. To fail a Workflow on
+a trip detected during execution, add a <strong>Power Protection Status</strong> step
+followed by <strong>Assert</strong>.</p>
 <p>Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
 run. Live confirmation displays the referenced instances and resources. If a
@@ -175,13 +196,24 @@ confirmed again.</p>
 <p>For a DC Current measurement using the <strong>10 A terminal</strong>, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
 terminal.</p>
-<h3 id="54-live-device-status">5.4 Live Device Status</h3>
-<p>For a Powers Tool Instance, <strong>Live Device Status</strong> is runtime-only and is not
-saved in the Template. Opening Setup does not connect to the instrument and
-there is no background polling. Select <strong>Refresh Status</strong> to create a temporary
-Live Powers connection using the saved Live Resource and read aggregate
-Protection plus per-channel Output, OVP, and OCP state. Unsaved Live Resource
-changes must be saved before Refresh Status or Clear Protection can be used.</p>
+<h3 id="54-device-status">5.4 Device Status</h3>
+<p>For a Powers Tool Instance, <strong>Device Status</strong> is runtime-only and is not saved
+in the Template. Opening Setup does not connect to a Worker and there is no
+background polling. Select <strong>Refresh Status</strong> to read aggregate Protection,
+OVP, and OCP plus per-channel Output, OVP, and OCP state. Switching Execution
+Mode clears the displayed status so results from different targets are not
+mixed.</p>
+<p>In Simulation, Refresh Status starts the configured powers-tool simulate
+Worker and does not require a saved Live Resource. <strong>Generate Clear Plan...</strong>
+is available for every simulator-supported channel, even when status is not
+tripped. After confirmation, Orchestrator sends simulated Safe-Off All and
+<code>clear-protection</code> for the selected channel, then shuts down without rereading
+status. The result is shown as <strong>PLAN GENERATED · SIMULATION</strong> and <strong>NO HARDWARE
+I/O</strong>, with the raw powers-tool result available under <strong>Show Plan</strong>. No real
+protection latch was changed.</p>
+<p>In Live, Refresh Status uses a temporary Powers connection and the saved Live
+Resource. Unsaved Live Resource changes must be saved before Refresh Status or
+Clear Protection can be used.</p>
 <p><strong>Clear Protection...</strong> is offered only for a channel currently reported as
 tripped and always requires explicit confirmation. Orchestrator first performs
 Safe-Off All, clears only the selected channel protection latch, then rereads
@@ -190,7 +222,7 @@ turns an output back on. If the latch remains tripped, the status remains
 visible as unresolved; if the reread reports an output still ON, Desktop shows
 that state and a warning rather than hiding it or automatically changing it.</p>
 <p>Refresh Status and Clear Protection are unavailable while a Workflow or another
-manual Live operation is active. If remote clear is unsupported for the model,
+manual external operation is active. If remote clear is unsupported for the model,
 clear the protection latch from the instrument front panel and then use
 <strong>Refresh Status</strong>.</p>
 <h2 id="6-workflow-editor">6. Workflow Editor</h2>
@@ -328,12 +360,16 @@ resulting committed rows without another expansion pass.</p>
 its manifest and Worker compatibility checks can succeed. You can use
 Validate first for an explicit Template check; the run also validates the
 Template when it starts.</p>
-<p>Simulation does not require Live Resources. It uses the external Workers'
-simulate mode and is not intended to operate physical hardware. The
-Unlimited While plus Meters Measure restriction described above still
-applies.</p>
+<p>Select <strong>Simulation</strong> in Execution Mode and use the single <strong>Run Simulation</strong>
+button. Simulation does not require Live Resources. It uses the external
+Workers' simulate contracts and is not intended to operate physical hardware.
+For Powers, Protection Setup and final Safe-Off are still sent to powers-tool
+for simulation or planning; this is orchestration validation, not Live hardware
+validation. The Unlimited While plus Meters Measure restriction described
+above still applies.</p>
 <h2 id="8-run-live">8. Run Live</h2>
-<p>Before starting Live, Desktop:</p>
+<p>Select <strong>Live</strong> in Execution Mode; the same Run control becomes <strong>Run Live</strong>.
+Before starting Live, Desktop:</p>
 <ul>
 <li>checks the referenced Tool Instances;</li>
 <li>loads their persisted Live Resources;</li>
@@ -360,7 +396,8 @@ while preserving the original workflow failure when one already exists. The
 temporary runtime authorization file is used only for the run and removed on
 a best-effort basis.</p>
 <p>An explicit Powers <code>output-off</code> Tool Action does not replace the run-level
-cleanup. Simulation does not perform this additional Live safe-off sequence.</p>
+cleanup. Simulation follows the same cleanup position by sending simulated
+Safe-Off through powers-tool; it does not claim that real outputs were changed.</p>
 <h2 id="9-streaming-csv">9. Streaming CSV</h2>
 <p>Streaming CSV is configured in the Workflow area's <strong>Streaming</strong> panel. It
 is different from exporting a completed run later.</p>
@@ -404,6 +441,9 @@ database, or SQL storage.</p>
 current Workflow afterward does not reinterpret the Last Run. Opening a
 Template clears the Last Run, and <strong>Clear Last Run</strong> removes the current
 in-memory result and snapshot.</p>
+<p>Last Run also keeps the Execution Mode captured when that run started. Its
+Simulation or Live badge does not change when the current selector changes, so
+a simulated success is never presented as a real-hardware success.</p>
 <p>If a run did not complete successfully, committed rows remain available for
 inspection, but manual export is unavailable.</p>
 <h3 id="102-charts">10.2 Charts</h3>

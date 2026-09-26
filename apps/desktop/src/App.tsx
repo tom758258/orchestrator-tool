@@ -21,6 +21,8 @@ import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageCo
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
+import { DEFAULT_EXECUTION_MODE, executionModeLabel, manualOperationRequiresSavedResource, workflowRunCommand } from './executionMode'
+import type { ExecutionMode } from './executionMode'
 export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
@@ -44,7 +46,7 @@ type ResourceIdentity = {
 
 type LiveResourceCandidate = ResourceIdentity & { resource: string }
 
-type PowersLiveProtectionStatus = {
+type PowersProtectionStatus = {
   protection_tripped: boolean
   over_voltage_tripped: boolean
   over_current_tripped: boolean
@@ -56,11 +58,17 @@ type PowersLiveProtectionStatus = {
   }[]
 }
 
-type PowersLiveStatusState = {
-  status: PowersLiveProtectionStatus | null
+type PowersStatusState = {
+  status: PowersProtectionStatus | null
   error: string | null
   operation: 'refresh' | 'clear' | null
+  clearPlan: unknown | null
+  clearCompleted: boolean
 }
+
+type PowersClearResult =
+  | { mode: 'simulate'; outcome: 'planned'; plan: unknown }
+  | { mode: 'live'; outcome: 'completed'; status: PowersProtectionStatus }
 
 function deviceName(identity: ResourceIdentity | null | undefined): string {
   return [identity?.manufacturer?.trim(), identity?.model?.trim()].filter(Boolean).join(' ')
@@ -399,6 +407,8 @@ function App() {
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
+  const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
   const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
@@ -408,8 +418,9 @@ function App() {
   const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [savedResources, setSavedResources] = useState<Record<string, string>>({})
-  const [powersLiveStatuses, setPowersLiveStatuses] = useState<Record<string, PowersLiveStatusState>>({})
-  const [powersLiveOperationBusy, setPowersLiveOperationBusy] = useState<string | null>(null)
+  const [powersStatuses, setPowersStatuses] = useState<Record<string, PowersStatusState>>({})
+  const [powersOperationBusy, setPowersOperationBusy] = useState<string | null>(null)
+  const [powersSimulationChannels, setPowersSimulationChannels] = useState<number[]>([])
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
@@ -443,6 +454,18 @@ function App() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
+  useEffect(() => {
+    if (executionMode !== 'simulate') {
+      setPowersSimulationChannels([])
+      return
+    }
+    let cancelled = false
+    void invoke<{ channels: number[] }>('get_powers_capabilities', { executionMode: 'simulate' }).then(
+      capabilities => { if (!cancelled) setPowersSimulationChannels(capabilities.channels) },
+      () => { if (!cancelled) setPowersSimulationChannels([]) },
+    )
+    return () => { cancelled = true }
+  }, [executionMode, powersExecutableKey])
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const pages = outputPages(workflowDraft?.workflow.steps ?? [])
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
@@ -560,9 +583,12 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(draft)
+      setExecutionMode(DEFAULT_EXECUTION_MODE)
+      setPowersStatuses({})
       setSelectedStepId(null)
       setDraftCreationError(null)
       setRunMetadata(null)
+      setLastRunExecutionMode(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
       setChartPanels([])
@@ -615,7 +641,7 @@ function App() {
   )
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
-    setPowersLiveStatuses(current => Object.fromEntries(
+    setPowersStatuses(current => Object.fromEntries(
       Object.entries(current).filter(([id]) => tool_instances.some(instance => instance.id === id)),
     ))
     setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
@@ -797,10 +823,13 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(loadedDraft)
+      setExecutionMode(DEFAULT_EXECUTION_MODE)
+      setPowersStatuses({})
       setSelectedStepId(null)
       setValidationStatus('valid')
       setValidationError(null)
       setRunMetadata(null)
+      setLastRunExecutionMode(null)
       setExecutionPage(null)
       setRunWorkflowSnapshot(null)
       setChartPanels([])
@@ -911,7 +940,7 @@ function App() {
     }
     setToolConfigBusy(toolId)
     setToolConfigError(null)
-    setPowersLiveStatuses(current => {
+    setPowersStatuses(current => {
       const next = { ...current }
       delete next[toolId]
       return next
@@ -928,61 +957,68 @@ function App() {
     }
   }, [refresh, resourceDrafts, resourceIdentityDrafts, toolConfigBusy])
 
-  const refreshPowersLiveStatus = useCallback(async (instanceId: string) => {
-    if (powersLiveOperationBusy !== null) return
-    setPowersLiveOperationBusy(instanceId)
-    setPowersLiveStatuses(current => ({
+  const refreshPowersStatus = useCallback(async (instanceId: string) => {
+    if (powersOperationBusy !== null) return
+    setPowersOperationBusy(instanceId)
+    setPowersStatuses(current => ({
       ...current,
-      [instanceId]: { status: null, error: null, operation: 'refresh' },
+      [instanceId]: { status: null, error: null, operation: 'refresh', clearPlan: null, clearCompleted: false },
     }))
     try {
-      const status = await invoke<PowersLiveProtectionStatus>('refresh_powers_live_status', { instanceId })
-      setPowersLiveStatuses(current => ({
+      const status = await invoke<PowersProtectionStatus>('refresh_powers_status', { instanceId, executionMode })
+      setPowersStatuses(current => ({
         ...current,
-        [instanceId]: { status, error: null, operation: null },
+        [instanceId]: { status, error: null, operation: null, clearPlan: null, clearCompleted: false },
       }))
     } catch (message) {
-      setPowersLiveStatuses(current => ({
+      setPowersStatuses(current => ({
         ...current,
-        [instanceId]: { status: null, error: String(message), operation: null },
+        [instanceId]: { status: null, error: String(message), operation: null, clearPlan: null, clearCompleted: false },
       }))
     } finally {
-      setPowersLiveOperationBusy(null)
+      setPowersOperationBusy(null)
     }
-  }, [powersLiveOperationBusy])
+  }, [executionMode, powersOperationBusy])
 
   const clearPowersProtection = useCallback(async (
     instanceId: string,
-    channel: PowersLiveProtectionStatus['channels'][number],
+    channel: PowersProtectionStatus['channels'][number],
   ) => {
-    if (powersLiveOperationBusy !== null) return
-    const approved = await confirm(
-      `Clear protection for ${instanceId} CH${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
-      { title: 'Clear Protection', kind: 'warning', okLabel: 'Clear Protection', cancelLabel: 'Cancel' },
-    )
+    if (powersOperationBusy !== null) return
+    const approved = executionMode === 'simulate'
+      ? await confirm(
+          `SIMULATION\n\nGenerate a Clear Protection plan for ${instanceId} CH${channel.channel}?\n\nNo hardware command will be executed.\nNo real protection latch will be changed.`,
+          { title: 'Generate Clear Plan', kind: 'info', okLabel: 'Generate Plan', cancelLabel: 'Cancel' },
+        )
+      : await confirm(
+          `Clear protection for ${instanceId} CH${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
+          { title: 'Clear Protection', kind: 'warning', okLabel: 'Clear Protection', cancelLabel: 'Cancel' },
+        )
     if (!approved) return
-    setPowersLiveOperationBusy(instanceId)
-    setPowersLiveStatuses(current => ({
+    setPowersOperationBusy(instanceId)
+    setPowersStatuses(current => ({
       ...current,
-      [instanceId]: { status: null, error: null, operation: 'clear' },
+      [instanceId]: { status: current[instanceId]?.status ?? null, error: null, operation: 'clear', clearPlan: null, clearCompleted: false },
     }))
     try {
-      const status = await invoke<PowersLiveProtectionStatus>('clear_powers_protection', {
-        instanceId, channel: channel.channel,
+      const result = await invoke<PowersClearResult>('clear_powers_protection', {
+        instanceId, channel: channel.channel, executionMode,
       })
-      setPowersLiveStatuses(current => ({
+      setPowersStatuses(current => ({
         ...current,
-        [instanceId]: { status, error: null, operation: null },
+        [instanceId]: result.mode === 'simulate'
+          ? { status: current[instanceId]?.status ?? null, error: null, operation: null, clearPlan: result.plan, clearCompleted: false }
+          : { status: result.status, error: null, operation: null, clearPlan: null, clearCompleted: true },
       }))
     } catch (message) {
-      setPowersLiveStatuses(current => ({
+      setPowersStatuses(current => ({
         ...current,
-        [instanceId]: { status: null, error: String(message), operation: null },
+        [instanceId]: { status: current[instanceId]?.status ?? null, error: String(message), operation: null, clearPlan: null, clearCompleted: false },
       }))
     } finally {
-      setPowersLiveOperationBusy(null)
+      setPowersOperationBusy(null)
     }
-  }, [powersLiveOperationBusy])
+  }, [executionMode, powersOperationBusy])
 
   const handleListResources = useCallback(async (toolId: string) => {
     if (toolConfigBusy !== null) {
@@ -1069,6 +1105,7 @@ function App() {
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setLastRunExecutionMode('live')
       setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
@@ -1125,6 +1162,7 @@ function App() {
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
+      setLastRunExecutionMode('simulate')
       setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
@@ -1160,8 +1198,13 @@ function App() {
     }
   }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
+  const runSelectedMode = useCallback(() => {
+    const command = workflowRunCommand(executionMode)
+    return command === 'run_workflow_live' ? runLive() : runSimulation()
+  }, [executionMode, runLive, runSimulation])
+
   const workflowBusy =
-    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersLiveOperationBusy !== null || exporting
+    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
 
   const handleClearLastRun = useCallback(async () => {
     if (!runWorkflowSnapshot || workflowBusy) return
@@ -1179,6 +1222,7 @@ function App() {
       setRunWorkflowSnapshot(null)
       setChartPanels([])
       setRunMetadata(null)
+      setLastRunExecutionMode(null)
       setExecutionPage(null)
       setExecutionOffset(0)
       setRunError(null)
@@ -1297,6 +1341,14 @@ function App() {
         <button
           className="action-button"
           type="button"
+          onClick={() => void createDraft()}
+          disabled={workflowBusy}
+        >
+          New Template
+        </button>
+        <button
+          className="action-button"
+          type="button"
           onClick={() => void handleLoadTemplate()}
           disabled={workflowBusy}
         >
@@ -1313,7 +1365,31 @@ function App() {
         <button className="action-button" type="button" onClick={() => void handleOpenHelp()}>
           Help
         </button>
+        <div className="execution-mode-control" aria-label="Desktop Execution Mode">
+          <span>Execution Mode</span>
+          <div className="execution-mode-options" role="group" aria-label="Execution Mode">
+            {(['simulate', 'live'] as const).map(mode => (
+              <button
+                key={mode}
+                className={`execution-mode-button execution-mode-${mode} ${executionMode === mode ? 'execution-mode-selected' : ''}`}
+                type="button"
+                aria-pressed={executionMode === mode}
+                disabled={workflowBusy}
+                onClick={() => {
+                  setExecutionMode(mode)
+                  setPowersStatuses({})
+                }}
+              >
+                {mode === 'simulate' ? 'Simulation' : 'Live'}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      <p className={`execution-mode-banner execution-mode-${executionMode}`} role="status">
+        {executionModeLabel(executionMode)}
+      </p>
 
       {helpError && <p className="error" role="alert">Failed to open Help: {helpError}</p>}
 
@@ -1504,6 +1580,7 @@ function App() {
               {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
               <ToolSetupEditor
                 value={workflowDraft.tool_instances}
+                executionMode={executionMode}
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
                 powersExecutableKey={powersExecutableKey}
@@ -1520,6 +1597,7 @@ function App() {
                           <span className="tool-setup-hint">Last-known identity; not a connection check.</span>
                         </div>
                         <p className="tool-setup-hint">Stored locally; not included in Template. Save Resource to apply changes.</p>
+                        {executionMode === 'simulate' && <p className="tool-setup-hint">Stored for Live mode. Current execution mode is Simulation.</p>}
                         <label className="step-property-field">
                           <span className="step-property-label">Live Resource</span>
                           <input
@@ -1528,7 +1606,7 @@ function App() {
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onChange={(event) => {
                               setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
-                              setPowersLiveStatuses(current => {
+                              setPowersStatuses(current => {
                                 const next = { ...current }
                                 delete next[instance.id]
                                 return next
@@ -1582,7 +1660,7 @@ function App() {
                                 if (resource) {
                                   const candidate = discoveredResources[instance.tool]?.find(item => item.resource === resource)
                                   setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
-                                  setPowersLiveStatuses(current => {
+                                  setPowersStatuses(current => {
                                     const next = { ...current }
                                     delete next[instance.id]
                                     return next
@@ -1605,49 +1683,67 @@ function App() {
                       </div>
                     )}
                     {instance.tool === 'powers' && (() => {
-                      const live = powersLiveStatuses[instance.id]
+                      const deviceStatus = powersStatuses[instance.id]
                       const savedResource = savedResources[instance.id]
                       const draftResource = resourceDrafts[instance.id]
-                      const resourceReady = Boolean(savedResource?.trim()) && draftResource === savedResource
-                      const operationBusy = powersLiveOperationBusy !== null
-                      const unresolved = live?.status?.channels.some(channel =>
+                      const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
+                        (Boolean(savedResource?.trim()) && draftResource === savedResource)
+                      const operationBusy = powersOperationBusy !== null
+                      const unresolved = deviceStatus?.status?.channels.some(channel =>
                         (channel.over_voltage_tripped || channel.over_current_tripped))
-                      const outputOn = live?.status?.channels.some(channel => channel.output_enabled)
+                      const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
+                      const statusChannels = executionMode === 'simulate'
+                        ? powersSimulationChannels.map(channel =>
+                            deviceStatus?.status?.channels.find(status => status.channel === channel) ?? {
+                              channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
+                            })
+                        : deviceStatus?.status?.channels ?? []
                       return <div className="live-resource">
-                        <h4>Live Device Status</h4>
+                        <h4>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h4>
                         <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
-                        {!resourceReady && <p className="tool-setup-hint">Save the Live Resource before using Live Device Status.</p>}
+                        {executionMode === 'simulate'
+                          ? <p className="tool-setup-hint">Uses the simulator model. No saved Live Resource is required and no hardware I/O occurs.</p>
+                          : !resourceReady && <p className="tool-setup-hint">Save the Live Resource before using Device Status in Live mode.</p>}
                         <button className="action-button" type="button"
                           disabled={!resourceReady || workflowBusy || operationBusy}
-                          onClick={() => void refreshPowersLiveStatus(instance.id)}>
-                          {live?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
+                          onClick={() => void refreshPowersStatus(instance.id)}>
+                          {deviceStatus?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
                         </button>
-                        {live?.operation === 'clear' && <p role="status">Clearing protection...</p>}
-                        {live?.error && <p className="error" role="alert">{live.error}</p>}
-                        {live?.status && <>
+                        {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? 'Generating clear plan...' : 'Clearing protection...'}</p>}
+                        {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
+                        {deviceStatus?.clearPlan !== null && <div className="simulation-plan-result" role="status">
+                          <strong>PLAN GENERATED · SIMULATION</strong>
+                          <p>NO HARDWARE I/O</p>
+                          <p>No real protection latch was changed.</p>
+                          <details><summary>Show Plan</summary><pre>{JSON.stringify(deviceStatus.clearPlan, null, 2)}</pre></details>
+                        </div>}
+                        {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
+                        {deviceStatus?.status && <>
                           <dl className="tool-details">
-                            <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{live.status.protection_tripped ? 'TRIPPED' : 'CLEAR'}</dd></div>
-                            <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{live.status.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                            <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{live.status.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                            <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{deviceStatus.status.protection_tripped ? 'TRIPPED' : 'CLEAR'}</dd></div>
+                            <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{deviceStatus.status.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
+                            <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{deviceStatus.status.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
                           </dl>
-                          {live.status.channels.map(channel => <div key={channel.channel} className="meters-setup-fields">
+                        </>}
+                        {statusChannels.map(channel => <div key={channel.channel} className="meters-setup-fields">
                             <strong>CH{channel.channel}</strong>
-                            <dl className="tool-details">
+                            {deviceStatus?.status && <dl className="tool-details">
                               <div className="detail-row"><dt className="detail-label">Output</dt><dd className="detail-value">{channel.output_enabled ? 'ON' : 'OFF'}</dd></div>
                               <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
                               <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{channel.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                            </dl>
-                            {(channel.over_voltage_tripped || channel.over_current_tripped) && <button
-                              className="action-button action-button-danger" type="button"
+                            </dl>}
+                            {(executionMode === 'simulate' || channel.over_voltage_tripped || channel.over_current_tripped) && <button
+                              className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
                               disabled={!resourceReady || workflowBusy || operationBusy}
                               onClick={() => void clearPowersProtection(instance.id, channel)}>
-                              Clear Protection...
+                              {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
                             </button>}
                           </div>)}
+                        {deviceStatus?.status && <>
                           {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
                           {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}
                         </>}
-                        <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>
+                        {executionMode === 'live' && <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>}
                       </div>
                     })()}
                   </>
@@ -2087,18 +2183,10 @@ function App() {
                 <button
                   className="action-button action-button-primary"
                   type="button"
-                  onClick={() => void runSimulation()}
+                  onClick={() => void runSelectedMode()}
                   disabled={workflowBusy || toolConfigBusy !== null || loading}
                 >
-                  Run Simulation
-                </button>
-                <button
-                  className="action-button action-button-primary"
-                  type="button"
-                  onClick={() => void runLive()}
-                  disabled={workflowBusy || toolConfigBusy !== null || loading}
-                >
-                  Run Live
+                  Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
                 </button>
                 {stopControls}
               </div>
@@ -2130,7 +2218,7 @@ function App() {
 
               {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
-                  <h3 id="run-results-title">Last Run Execution Results</h3>
+                  <h3 id="run-results-title">Last Run Execution Results {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}</h3>
                   <p className="run-result-count">
                     {executions.total.toLocaleString('en-US')} {executions.total === 1 ? 'execution' : 'executions'} · latest first
                   </p>
@@ -2231,7 +2319,7 @@ function App() {
           ) : (
             <section aria-labelledby="last-run-title">
               <div className="section-header">
-                <h3 id="last-run-title">Last Run</h3>
+                <h3 id="last-run-title">Last Run {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}</h3>
                 {runWorkflowSnapshot && <button className="action-button action-button-danger" type="button"
                   disabled={workflowBusy} onClick={() => void handleClearLastRun()}>Clear Last Run</button>}
               </div>

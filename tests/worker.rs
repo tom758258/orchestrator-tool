@@ -17,7 +17,7 @@ use orchestrator_tool::{
             run_worker_smoke as run_meters_worker_smoke,
         },
         powers::{
-            PowersSmokeError, clear_protection, live_protection_status_all,
+            PowersSmokeError, clear_protection, normalized_protection_status_all,
             run_action as run_powers_action, run_worker_smoke as run_powers_worker_smoke,
             safe_off_all,
         },
@@ -135,6 +135,8 @@ fn main() {
     manual_powers_clear_safe_offs_clears_rereads_and_shuts_down();
     manual_powers_clear_stops_after_safe_off_failure();
     manual_powers_clear_returns_unresolved_trip_without_retry();
+    simulated_manual_powers_status_uses_simulation_context();
+    simulated_manual_powers_clear_returns_plan_without_reread();
     meters_runtime_measure_returns_sample();
     meters_runtime_custom_measure_drains_the_complete_batch();
     meters_runtime_custom_measure_uses_sample_inactivity_timeout();
@@ -284,10 +286,10 @@ fn run_powers_worker_fixture() {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
-fn run_manual_powers_live_fixture(scenario: &str) {
+fn run_manual_powers_fixture(scenario: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let run_id = "manual-powers-live";
+    let run_id = "manual-powers";
     print_json_line(
         &json!({
             "event": "ready",
@@ -301,6 +303,7 @@ fn run_manual_powers_live_fixture(scenario: &str) {
     );
 
     let unresolved = scenario == "manual-clear-unresolved";
+    let simulated = scenario.starts_with("manual-sim-");
     let commands: Vec<(&str, serde_json::Value)> = match scenario {
         "manual-status" => vec![(
             "protection-status",
@@ -320,6 +323,11 @@ fn run_manual_powers_live_fixture(scenario: &str) {
         "manual-safe-off-failure" => {
             vec![("safe-off", json!({"channel":"all","confirm_output":true}))]
         }
+        "manual-sim-status" => vec![("protection-status", json!({"channel":"all"}))],
+        "manual-sim-clear" => vec![
+            ("safe-off", json!({"channel":"all"})),
+            ("clear-protection", json!({"channel":2})),
+        ],
         _ => panic!("unknown manual Powers fixture scenario"),
     };
 
@@ -333,7 +341,14 @@ fn run_manual_powers_live_fixture(scenario: &str) {
         assert_eq!(body["schema_version"], 2);
         assert_eq!(body["command"], command);
         assert_eq!(body["arguments"], arguments);
-        assert_eq!(body["context"], json!({"mode":"live"}));
+        assert_eq!(
+            body["context"],
+            if simulated {
+                json!({"mode":"simulate","planning_model_id":"keysight-e36312a"})
+            } else {
+                json!({"mode":"live"})
+            }
+        );
         let job_id = format!("manual-job-{index}");
         write_response(
             request.stream,
@@ -362,6 +377,12 @@ fn run_manual_powers_live_fixture(scenario: &str) {
                 ],
                 "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
             }})
+        } else if simulated && command == "clear-protection" {
+            json!({
+                "request":{"command":"clear-protection","arguments":{"channel":2}},
+                "execution":{"hardware_touched":false},
+                "data":{"plan":{"steps":["safe-off","clear-protection"],"channel":2}}
+            })
         } else {
             json!({"ok":true})
         };
@@ -531,7 +552,9 @@ fn run_fixture(scenario: &OsStr) {
         "manual-status"
         | "manual-clear"
         | "manual-safe-off-failure"
-        | "manual-clear-unresolved" => run_manual_powers_live_fixture(scenario.to_str().unwrap()),
+        | "manual-clear-unresolved"
+        | "manual-sim-status"
+        | "manual-sim-clear" => run_manual_powers_fixture(scenario.to_str().unwrap()),
         "ready-no-events" => {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base_url = format!("http://{}", listener.local_addr().unwrap());
@@ -567,6 +590,32 @@ fn run_fixture(scenario: &OsStr) {
             let request = accept_request(&listener);
             assert_eq!(
                 (request.method.as_str(), request.path.as_str()),
+                ("POST", "/command")
+            );
+            let body = serde_json::from_slice::<serde_json::Value>(&request.body).unwrap();
+            assert_eq!(body["command"], "safe-off");
+            assert_eq!(
+                body["context"],
+                json!({"mode":"simulate","planning_model_id":"keysight-e36312a"})
+            );
+            write_response(
+                request.stream,
+                202,
+                r#"{"schema_version":2,"status":"accepted","command":"safe-off","worker_job_id":"partial-cleanup"}"#,
+            );
+            let request = accept_request(&listener);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("GET", "/status")
+            );
+            write_response(
+                request.stream,
+                200,
+                r#"{"schema_version":2,"service":"powers-tool","run_id":"partial-startup-cleanup-run","status":"ready","fatal_error":null,"last_job":{"worker_job_id":"partial-cleanup","status":"succeeded","result":{"ok":true}}}"#,
+            );
+            let request = accept_request(&listener);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
                 ("POST", "/stop")
             );
             let marker = env::var_os(CLEANUP_MARKER_ENV).expect("cleanup marker path is required");
@@ -582,7 +631,11 @@ fn run_fixture(scenario: &OsStr) {
         "powers-workflow-protection-status" => {
             run_powers_workflow_fixture("simulate-protection-status")
         }
-        "live-success"
+        "simulate-step-failure"
+        | "simulate-protection-success"
+        | "simulate-protection-trip"
+        | "simulate-protection-set-failure"
+        | "live-success"
         | "live-assert-failure"
         | "live-step-failure"
         | "live-cleanup-failure"
@@ -798,18 +851,57 @@ fn run_powers_runtime_fixture() {
         .to_string(),
     );
 
-    let request = accept_request(&listener);
+    let mut request = accept_request(&listener);
+    if request.path == "/command" {
+        assert_eq!(request.method, "POST");
+        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["command"], "safe-off");
+        assert_eq!(body["arguments"], json!({"channel":"all"}));
+        assert_eq!(
+            body["context"],
+            json!({"mode":"simulate","planning_model_id":"keysight-e36312a"})
+        );
+        write_response(
+            request.stream,
+            202,
+            r#"{"schema_version":2,"status":"accepted","command":"safe-off","worker_job_id":"job-cleanup"}"#,
+        );
+        request = accept_request(&listener);
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.path, "/status");
+        write_response(
+            request.stream,
+            200,
+            &json!({
+                "schema_version":2,"service":"powers-tool","run_id":run_id,
+                "status":"ready","fatal_error":null,
+                "last_job":{"worker_job_id":"job-cleanup","status":"succeeded","result":{"ok":true}}
+            })
+            .to_string(),
+        );
+        request = accept_request(&listener);
+    }
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, "/stop");
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
 fn run_powers_workflow_fixture(scenario: &str) {
-    let live = !matches!(
+    let live = !scenario.starts_with("simulate");
+    let protection_scenario = matches!(
         scenario,
-        "simulate" | "simulate-set-output" | "simulate-protection-status"
+        "simulate-protection-success"
+            | "simulate-protection-trip"
+            | "simulate-protection-set-failure"
+            | "live-protection-success"
+            | "live-protection-trip"
+            | "live-protection-set-failure"
+            | "live-protection-set-and-cleanup-failure"
     );
-    let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
+    let step_failed = matches!(
+        scenario,
+        "simulate-step-failure" | "live-step-failure" | "live-both-failed"
+    );
     let cleanup_failed = matches!(
         scenario,
         "live-cleanup-failure"
@@ -860,8 +952,8 @@ fn run_powers_workflow_fixture(scenario: &str) {
     ) {
         commands.clear();
     }
-    if scenario.starts_with("live-protection-") {
-        let failed_before_workflow = scenario != "live-protection-success";
+    if protection_scenario {
+        let failed_before_workflow = !scenario.ends_with("protection-success");
         if failed_before_workflow {
             commands.clear();
         }
@@ -873,7 +965,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
                 "job-pre-status",
             ),
         ];
-        if scenario != "live-protection-trip" {
+        if !scenario.ends_with("protection-trip") {
             setup_commands.push((
                 "protection-set",
                 json!({"channel":1,"ovp_voltage":5.5,"ocp":"on"}),
@@ -883,9 +975,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
         setup_commands.extend(commands);
         commands = setup_commands;
     }
-    if live {
-        commands.push(("safe-off", json!({ "channel": "all" }), "job-cleanup"));
-    }
+    commands.push(("safe-off", json!({ "channel": "all" }), "job-cleanup"));
     for (command, mut arguments, worker_job_id) in commands {
         let context = if live {
             arguments["confirm_output"] = json!(true);
@@ -907,9 +997,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
                 "context": context
             })
         );
-        if live {
-            record_live_event(command);
-        }
+        record_event_if_requested(command);
         write_response(
             request.stream,
             202,
@@ -940,12 +1028,13 @@ fn run_powers_workflow_fixture(scenario: &str) {
                 "last_job": {
                     "worker_job_id": worker_job_id,
                     "status": if (step_failed && command == "output-on") || (cleanup_failed && worker_job_id == "job-cleanup")
-                        || (scenario.starts_with("live-protection-set-") && command == "protection-set") { "failed" } else { "succeeded" },
+                        || (matches!(scenario, "simulate-protection-set-failure" | "live-protection-set-failure" | "live-protection-set-and-cleanup-failure")
+                            && command == "protection-set") { "failed" } else { "succeeded" },
                     "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
                     "result": if command == "protection-status" {
                         json!({
                             "request": { "command": "protection-status" },
-                            "data": { "protection": { "over_voltage_tripped": scenario == "live-protection-trip", "over_current_tripped": false } },
+                            "data": { "protection": { "over_voltage_tripped": scenario.ends_with("protection-trip"), "over_current_tripped": false } },
                             "metadata": { "source": "fixture" }
                         })
                     } else { json!({ "ok": true }) }
@@ -960,9 +1049,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
         (request.method.as_str(), request.path.as_str()),
         ("POST", "/stop")
     );
-    if live {
-        record_live_event("stop");
-    }
+    record_event_if_requested("stop");
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
@@ -1602,7 +1689,9 @@ fn powers_set_output_binding_reaches_worker() {
 
 fn manual_powers_status_reads_and_shuts_down() {
     let session = start_worker(&fixture_spec("manual-status"), Duration::from_secs(2)).unwrap();
-    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    let status =
+        normalized_protection_status_all(&session, ExecutionMode::Live, Duration::from_secs(2))
+            .unwrap();
     assert!(!status.protection_tripped);
     assert_eq!(status.channels.len(), 2);
     assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
@@ -1610,9 +1699,11 @@ fn manual_powers_status_reads_and_shuts_down() {
 
 fn manual_powers_clear_safe_offs_clears_rereads_and_shuts_down() {
     let session = start_worker(&fixture_spec("manual-clear"), Duration::from_secs(2)).unwrap();
-    safe_off_all(&session, Duration::from_secs(2)).unwrap();
-    clear_protection(&session, 2, Duration::from_secs(2)).unwrap();
-    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    safe_off_all(&session, ExecutionMode::Live, Duration::from_secs(2)).unwrap();
+    clear_protection(&session, 2, ExecutionMode::Live, Duration::from_secs(2)).unwrap();
+    let status =
+        normalized_protection_status_all(&session, ExecutionMode::Live, Duration::from_secs(2))
+            .unwrap();
     assert!(!status.protection_tripped);
     assert!(
         status
@@ -1629,7 +1720,7 @@ fn manual_powers_clear_stops_after_safe_off_failure() {
         Duration::from_secs(2),
     )
     .unwrap();
-    let error = safe_off_all(&session, Duration::from_secs(2)).unwrap_err();
+    let error = safe_off_all(&session, ExecutionMode::Live, Duration::from_secs(2)).unwrap_err();
     assert!(error.to_string().contains("simulated Safe-Off failure"));
     assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
 }
@@ -1640,9 +1731,11 @@ fn manual_powers_clear_returns_unresolved_trip_without_retry() {
         Duration::from_secs(2),
     )
     .unwrap();
-    safe_off_all(&session, Duration::from_secs(2)).unwrap();
-    clear_protection(&session, 2, Duration::from_secs(2)).unwrap();
-    let status = live_protection_status_all(&session, Duration::from_secs(2)).unwrap();
+    safe_off_all(&session, ExecutionMode::Live, Duration::from_secs(2)).unwrap();
+    clear_protection(&session, 2, ExecutionMode::Live, Duration::from_secs(2)).unwrap();
+    let status =
+        normalized_protection_status_all(&session, ExecutionMode::Live, Duration::from_secs(2))
+            .unwrap();
     let channel = status
         .channels
         .iter()
@@ -1650,6 +1743,26 @@ fn manual_powers_clear_returns_unresolved_trip_without_retry() {
         .unwrap();
     assert!(channel.over_voltage_tripped);
     assert!(status.protection_tripped);
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+}
+
+fn simulated_manual_powers_status_uses_simulation_context() {
+    let session = start_worker(&fixture_spec("manual-sim-status"), Duration::from_secs(2)).unwrap();
+    let status =
+        normalized_protection_status_all(&session, ExecutionMode::Simulate, Duration::from_secs(2))
+            .unwrap();
+    assert!(!status.protection_tripped);
+    assert_eq!(status.channels.len(), 2);
+    assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+}
+
+fn simulated_manual_powers_clear_returns_plan_without_reread() {
+    let session = start_worker(&fixture_spec("manual-sim-clear"), Duration::from_secs(2)).unwrap();
+    safe_off_all(&session, ExecutionMode::Simulate, Duration::from_secs(2)).unwrap();
+    let result =
+        clear_protection(&session, 2, ExecutionMode::Simulate, Duration::from_secs(2)).unwrap();
+    assert_eq!(result["execution"]["hardware_touched"], false);
+    assert_eq!(result["data"]["plan"]["channel"], 2);
     assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
 }
 
@@ -2404,8 +2517,10 @@ fn run_powers_fixture_scenario(scenario: &str) -> Result<(), PowersSmokeError> {
     result
 }
 
-fn record_live_event(event: &str) {
-    let marker = env::var_os(CLEANUP_MARKER_ENV).expect("cleanup marker required");
+fn record_event_if_requested(event: &str) {
+    let Some(marker) = env::var_os(CLEANUP_MARKER_ENV) else {
+        return;
+    };
     let mut file = fs::OpenOptions::new()
         .append(true)
         .create(true)
@@ -2453,7 +2568,21 @@ fn powers_protection_setup_lifecycle() {
             ExecutionMode::Live,
             "safe-off\nprotection-status\nprotection-set\nsafe-off\nstop\n",
         ),
-        ("powers-workflow-runtime", ExecutionMode::Simulate, ""),
+        (
+            "simulate-protection-success",
+            ExecutionMode::Simulate,
+            "safe-off\nprotection-status\nprotection-set\nset\noutput-on\noutput-off\nsafe-off\nstop\n",
+        ),
+        (
+            "simulate-protection-trip",
+            ExecutionMode::Simulate,
+            "safe-off\nprotection-status\nsafe-off\nstop\n",
+        ),
+        (
+            "simulate-protection-set-failure",
+            ExecutionMode::Simulate,
+            "safe-off\nprotection-status\nprotection-set\nsafe-off\nstop\n",
+        ),
     ] {
         let marker = env::temp_dir().join(format!(
             "orchestrator-protection-{}-{scenario}",
@@ -2475,21 +2604,19 @@ fn powers_protection_setup_lifecycle() {
             Duration::from_secs(5),
         );
         unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
-        if mode == ExecutionMode::Live {
-            assert_eq!(fs::read_to_string(&marker).unwrap(), expected);
-            fs::remove_file(&marker).unwrap();
-        }
+        assert_eq!(fs::read_to_string(&marker).unwrap(), expected);
+        fs::remove_file(&marker).unwrap();
         match scenario {
-            "live-protection-success" | "powers-workflow-runtime" => {
+            "live-protection-success" | "simulate-protection-success" => {
                 assert_eq!(result.unwrap().step_executions().len(), 3);
             }
-            "live-protection-trip" => assert!(
+            "live-protection-trip" | "simulate-protection-trip" => assert!(
                 result
                     .unwrap_err()
                     .to_string()
                     .contains("Protection is already tripped and must be cleared before running.")
             ),
-            "live-protection-set-failure" => assert!(
+            "live-protection-set-failure" | "simulate-protection-set-failure" => assert!(
                 result
                     .unwrap_err()
                     .to_string()
@@ -2509,6 +2636,7 @@ fn powers_protection_setup_lifecycle() {
 
 fn live_workflow_cleanup_lifecycle() {
     for scenario in [
+        "simulate-step-failure",
         "live-success",
         "live-assert-failure",
         "live-for-failure",
@@ -2632,7 +2760,11 @@ fn live_workflow_cleanup_lifecycle() {
         let workflow = Workflow::new(steps).unwrap();
         let result = run_workflow(
             &test_template(&workflow),
-            ExecutionMode::Live,
+            if scenario.starts_with("simulate") {
+                ExecutionMode::Simulate
+            } else {
+                ExecutionMode::Live
+            },
             &specs,
             Duration::from_secs(5),
             Duration::from_secs(5),
@@ -2687,7 +2819,7 @@ fn live_workflow_cleanup_lifecycle() {
                 );
                 assert_eq!(events, "set\noutput-on\nsafe-off\nstop\n");
             }
-            "live-step-failure" => {
+            "simulate-step-failure" | "live-step-failure" => {
                 let run = result.unwrap();
                 let results = run.step_executions();
                 assert_eq!(results.len(), 2);

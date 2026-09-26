@@ -44,7 +44,7 @@ const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
 enum ActiveOperation {
     Workflow(Arc<Mutex<Option<String>>>),
-    ManualPowersLive,
+    ManualOperation,
 }
 
 #[derive(Default)]
@@ -54,7 +54,7 @@ impl ActiveRun {
     fn register(&self) -> Result<Arc<Mutex<Option<String>>>, String> {
         let mut active = self.0.lock().unwrap();
         if active.is_some() {
-            return Err("Another live operation is already active".to_owned());
+            return Err("Another external operation is already active".to_owned());
         }
         let control = Arc::new(Mutex::new(None));
         *active = Some(ActiveOperation::Workflow(control.clone()));
@@ -64,9 +64,9 @@ impl ActiveRun {
     fn register_manual(&self) -> Result<(), String> {
         let mut active = self.0.lock().unwrap();
         if active.is_some() {
-            return Err("Another live operation is already active".to_owned());
+            return Err("Another external operation is already active".to_owned());
         }
-        *active = Some(ActiveOperation::ManualPowersLive);
+        *active = Some(ActiveOperation::ManualOperation);
         Ok(())
     }
 
@@ -114,15 +114,14 @@ async fn list_live_resources(
     .map_err(|error| error.to_string())?
 }
 
-fn powers_live_worker_spec(app: &AppHandle, instance_id: &str) -> Result<WorkerLaunchSpec, String> {
+fn powers_worker_spec(
+    app: &AppHandle,
+    instance_id: &str,
+    execution_mode: ExecutionMode,
+) -> Result<WorkerLaunchSpec, String> {
     let instance_id = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
     let application_dir = current_application_dir().map_err(|error| error.to_string())?;
     let config = load_desktop_config(app)?;
-    let resource = config
-        .live_resources()
-        .get(instance_id.as_str())
-        .filter(|resource| !resource.trim().is_empty())
-        .ok_or_else(|| format!("{instance_id} saved Live Resource is not configured"))?;
     let definition = built_in_tool_definitions()
         .into_iter()
         .find(|definition| definition.id() == &ToolId::powers())
@@ -137,7 +136,19 @@ fn powers_live_worker_spec(app: &AppHandle, instance_id: &str) -> Result<WorkerL
         .resolved()
         .path()
         .expect("available executable has a path");
-    Ok(orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource))
+    match execution_mode {
+        ExecutionMode::Simulate => {
+            Ok(orchestrator_tool::adapters::powers::simulate_worker_launch_spec(executable))
+        }
+        ExecutionMode::Live => {
+            let resource = config
+                .live_resources()
+                .get(instance_id.as_str())
+                .filter(|resource| !resource.trim().is_empty())
+                .ok_or_else(|| format!("{instance_id} saved Live Resource is not configured"))?;
+            Ok(orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource))
+        }
+    }
 }
 
 fn finish_manual_powers_operation<T>(
@@ -156,18 +167,20 @@ fn finish_manual_powers_operation<T>(
 }
 
 #[tauri::command]
-async fn refresh_powers_live_status(
+async fn refresh_powers_status(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
     instance_id: String,
-) -> Result<orchestrator_tool::adapters::powers::PowersLiveProtectionStatus, String> {
+    execution_mode: ExecutionMode,
+) -> Result<orchestrator_tool::adapters::powers::PowersProtectionStatus, String> {
     state.register_manual()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let spec = powers_live_worker_spec(&app, &instance_id)?;
+        let spec = powers_worker_spec(&app, &instance_id, execution_mode)?;
         let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
             .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
-        let operation = orchestrator_tool::adapters::powers::live_protection_status_all(
+        let operation = orchestrator_tool::adapters::powers::normalized_protection_status_all(
             &session,
+            execution_mode,
             RUN_ACTION_TIMEOUT,
         )
         .map_err(|error| error.to_string());
@@ -180,40 +193,76 @@ async fn refresh_powers_live_status(
     result?
 }
 
+#[derive(Serialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+enum PowersClearResult {
+    Simulate {
+        outcome: &'static str,
+        plan: serde_json::Value,
+    },
+    Live {
+        outcome: &'static str,
+        status: orchestrator_tool::adapters::powers::PowersProtectionStatus,
+    },
+}
+
 #[tauri::command]
 async fn clear_powers_protection(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
     instance_id: String,
     channel: u32,
-) -> Result<orchestrator_tool::adapters::powers::PowersLiveProtectionStatus, String> {
+    execution_mode: ExecutionMode,
+) -> Result<PowersClearResult, String> {
     if channel == 0 {
         return Err("Clear Protection channel must be a positive integer".to_owned());
     }
     state.register_manual()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut spec = powers_live_worker_spec(&app, &instance_id)?;
-        let dir = app
-            .path()
-            .app_cache_dir()
-            .map_err(|error| error.to_string())?;
-        let _authorization = PowersWriteAuthorization::prepare(&dir, &mut spec)?;
+        let mut spec = powers_worker_spec(&app, &instance_id, execution_mode)?;
+        let _authorization = if execution_mode == ExecutionMode::Live {
+            let dir = app
+                .path()
+                .app_cache_dir()
+                .map_err(|error| error.to_string())?;
+            Some(PowersWriteAuthorization::prepare(&dir, &mut spec)?)
+        } else {
+            None
+        };
         let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
             .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
         let operation = (|| {
-            orchestrator_tool::adapters::powers::safe_off_all(&session, RUN_ACTION_TIMEOUT)
-                .map_err(|error| format!("Safe-Off All failed: {error}"))?;
-            orchestrator_tool::adapters::powers::clear_protection(
+            orchestrator_tool::adapters::powers::safe_off_all(
+                &session,
+                execution_mode,
+                RUN_ACTION_TIMEOUT,
+            )
+            .map_err(|error| format!("Safe-Off All failed: {error}"))?;
+            let clear_result = orchestrator_tool::adapters::powers::clear_protection(
                 &session,
                 channel,
+                execution_mode,
                 RUN_ACTION_TIMEOUT,
             )
             .map_err(|error| error.to_string())?;
-            orchestrator_tool::adapters::powers::live_protection_status_all(
-                &session,
-                RUN_ACTION_TIMEOUT,
-            )
-            .map_err(|error| error.to_string())
+            match execution_mode {
+                ExecutionMode::Simulate => Ok(PowersClearResult::Simulate {
+                    outcome: "planned",
+                    plan: clear_result,
+                }),
+                ExecutionMode::Live => {
+                    orchestrator_tool::adapters::powers::normalized_protection_status_all(
+                        &session,
+                        execution_mode,
+                        RUN_ACTION_TIMEOUT,
+                    )
+                    .map(|status| PowersClearResult::Live {
+                        outcome: "completed",
+                        status,
+                    })
+                    .map_err(|error| error.to_string())
+                }
+            }
         })();
         let shutdown = session.shutdown(RUN_SHUTDOWN_TIMEOUT);
         finish_manual_powers_operation(operation, shutdown)
@@ -228,6 +277,7 @@ async fn clear_powers_protection(
 async fn get_meters_capabilities(
     app: AppHandle,
     model: Option<String>,
+    execution_mode: ExecutionMode,
 ) -> Result<orchestrator_tool::adapters::meters::MetersCapabilities, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
@@ -235,7 +285,11 @@ async fn get_meters_capabilities(
         orchestrator_tool::adapters::meters::get_capabilities(
             &application_dir,
             &config,
-            model.as_deref(),
+            if execution_mode == ExecutionMode::Live {
+                model.as_deref()
+            } else {
+                None
+            },
         )
     })
     .await
@@ -245,12 +299,18 @@ async fn get_meters_capabilities(
 #[tauri::command]
 async fn get_powers_capabilities(
     app: AppHandle,
-    model_id: String,
+    model_id: Option<String>,
+    execution_mode: ExecutionMode,
 ) -> Result<orchestrator_tool::adapters::powers::PowersCapabilities, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;
-        orchestrator_tool::adapters::powers::get_capabilities(&application_dir, &config, &model_id)
+        orchestrator_tool::adapters::powers::get_capabilities_for_mode(
+            &application_dir,
+            &config,
+            execution_mode,
+            model_id.as_deref(),
+        )
     })
     .await
     .map_err(|error| error.to_string())?
@@ -1075,7 +1135,7 @@ fn main() {
             list_live_resources,
             get_meters_capabilities,
             get_powers_capabilities,
-            refresh_powers_live_status,
+            refresh_powers_status,
             clear_powers_protection,
             get_meters_range_options,
             run_workflow_simulation,
@@ -1310,6 +1370,31 @@ mod regression_tests {
         assert!(!state.request(b.to_string()));
         state.clear();
         assert!(state.register().is_ok());
+    }
+
+    #[test]
+    fn powers_clear_result_distinguishes_planned_simulation_from_completed_live() {
+        let simulated = serde_json::to_value(super::PowersClearResult::Simulate {
+            outcome: "planned",
+            plan: json!({"execution":{"hardware_touched":false},"data":{"plan":[]}}),
+        })
+        .unwrap();
+        assert_eq!(simulated["mode"], "simulate");
+        assert_eq!(simulated["outcome"], "planned");
+        assert_eq!(simulated["plan"]["execution"]["hardware_touched"], false);
+
+        let live = serde_json::to_value(super::PowersClearResult::Live {
+            outcome: "completed",
+            status: orchestrator_tool::adapters::powers::PowersProtectionStatus {
+                protection_tripped: false,
+                over_voltage_tripped: false,
+                over_current_tripped: false,
+                channels: Vec::new(),
+            },
+        })
+        .unwrap();
+        assert_eq!(live["mode"], "live");
+        assert_eq!(live["outcome"], "completed");
     }
 
     #[test]

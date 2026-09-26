@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ReactNode } from 'react'
 import type { WorkflowStep } from './App'
+import { executionModeLabel, type ExecutionMode } from './executionMode'
 
 // Mirrors per-instance setup serialization in Template schema v1.
 export type MetersSetup = {
@@ -132,10 +133,11 @@ function formatRange(value: number, unit: string): string {
   return `${Number((value / 10 ** exponent).toPrecision(12))} ${prefix[exponent]}${unit}`
 }
 
-function MetersSetupFields({ value, onChange, model, metersExecutableKey, plannedTriggerCount }: {
+function MetersSetupFields({ value, onChange, model, executionMode, metersExecutableKey, plannedTriggerCount }: {
   value: { meters: MetersSetup }
   onChange: (value: { meters: MetersSetup }) => void
   model?: string | null
+  executionMode: ExecutionMode
   metersExecutableKey: string
   plannedTriggerCount: bigint | null
 }) {
@@ -149,13 +151,13 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
     setCapabilities(null)
     invoke<MetersCapabilities>(
       'get_meters_capabilities',
-      model == null ? {} : { model },
+      { ...(model == null ? {} : { model }), executionMode },
     ).then(
       value => { if (!cancelled) setCapabilities({ requestedModel: model, metersExecutableKey, value }) },
       () => { if (!cancelled) setCapabilities({ requestedModel: model, metersExecutableKey, value: null }) },
     )
     return () => { cancelled = true }
-  }, [model, metersExecutableKey])
+  }, [model, executionMode, metersExecutableKey])
 
   const meters = value.meters
   const triggerMode = meters.trigger_mode ?? 'software'
@@ -374,24 +376,25 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
   )
 }
 
-function PowersSetupFields({ value, onChange, modelId, powersExecutableKey }: {
+function PowersSetupFields({ value, onChange, modelId, executionMode, powersExecutableKey }: {
   value: PowersSetup
   onChange: (value: PowersSetup) => void
   modelId: string | null | undefined
+  executionMode: ExecutionMode
   powersExecutableKey: string
 }) {
   const [loaded, setLoaded] = useState<{ key: string; value: PowersCapabilities | null } | null>(null)
   const [addChannel, setAddChannel] = useState('')
-  const key = JSON.stringify([modelId, powersExecutableKey])
+  const key = JSON.stringify([executionMode, modelId, powersExecutableKey])
   useEffect(() => {
-    if (!modelId) return
+    if (executionMode === 'live' && !modelId) return
     let cancelled = false
-    invoke<PowersCapabilities>('get_powers_capabilities', { modelId }).then(
+    invoke<PowersCapabilities>('get_powers_capabilities', { modelId, executionMode }).then(
       value => { if (!cancelled) setLoaded({ key, value }) },
       () => { if (!cancelled) setLoaded({ key, value: null }) },
     )
     return () => { cancelled = true }
-  }, [modelId, powersExecutableKey, key])
+  }, [modelId, executionMode, powersExecutableKey, key])
   const capabilities = loaded?.key === key ? loaded.value : null
   const channels = value.protection?.channels ?? []
   const features = capabilities?.protection_features
@@ -417,9 +420,9 @@ function PowersSetupFields({ value, onChange, modelId, powersExecutableKey }: {
   }
   return <div className="meters-setup-fields">
     <h4>Protection Setup</h4>
-    {!modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
-    {modelId && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
-    {modelId && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool and refresh the Live Resource.</p>}
+    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool.</p>}
     {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">Protection configuration is unavailable for the current model.</p>}
     {channels.length === 0 && <p>No protection settings configured.</p>}
     {channels.map(record => {
@@ -493,9 +496,10 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, metersExecutableKey, powersExecutableKey }: {
+export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
+  executionMode: ExecutionMode
   metersExecutableKey: string
   powersExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
@@ -544,19 +548,29 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
             {collapsed ? '+' : '−'}
           </button>
           {instance.id}
+          <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span>
         </legend>
         {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'
-            ? <MetersSetupFields metersExecutableKey={metersExecutableKey} model={resourceIdentities[instance.id]?.model}
+            ? <MetersSetupFields metersExecutableKey={metersExecutableKey}
+                model={executionMode === 'live' ? resourceIdentities[instance.id]?.model : undefined}
+                executionMode={executionMode}
                 plannedTriggerCount={plannedMeterMeasureCount(steps, instance.id)}
                 value={{ meters: instance.setup }}
                 onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
             : instance.tool === 'powers'
-              ? <PowersSetupFields value={instance.setup} modelId={resourceIdentities[instance.id]?.model_id}
+              ? <PowersSetupFields value={instance.setup}
+                  modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
+                  executionMode={executionMode}
                   powersExecutableKey={powersExecutableKey}
                   onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
-              : <p>No additional setup</p>}
+              : <>
+                  <p>No additional setup</p>
+                  <p className="tool-setup-hint">{executionMode === 'simulate'
+                    ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
+                    : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
+                </>}
           {renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
