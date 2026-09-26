@@ -48,10 +48,37 @@ Each Tool Instance has:
 - setup: tool-specific setup data.
 
 The Tool Type selects the setup schema; setup fields do not determine the Tool
-Type. Meters uses MetersSetup. Powers uses its own PowersSetup, whose canonical
-schema v1 representation is currently `{}`. Existing Powers instances with
-`"setup": {}` remain valid and serialize the same way. Scopes and Wavegen
-continue to use empty setup objects. The schema_version remains 1.
+Type. Meters uses MetersSetup. Powers uses an optional per-channel Protection
+Setup. Existing Powers instances with `"setup": {}` remain valid and serialize
+the same way. Scopes and Wavegen continue to use empty setup objects. The
+schema_version remains 1.
+
+For example, a Powers instance may contain:
+
+    "setup": {
+      "protection": {
+        "channels": [
+          { "channel": 1, "ovp_voltage": 5.5, "ocp": "on",
+            "ocp_delay": 0.05, "ocp_delay_trigger": "setting-change" }
+        ]
+      }
+    }
+
+When `protection` is present, `channels` must be non-empty. Each channel is a
+positive integer and may occur only once. Each record must configure at least
+one of `ovp_voltage`, `ocp`, `ocp_delay`, or `ocp_delay_trigger`. OCP accepts
+`on` or `off`; delay trigger accepts `setting-change` or `cc-transition`.
+Omitted fields mean leave the instrument setting unchanged and are not sent as
+null or given implicit defaults. Orchestrator checks nonnegative finite numbers
+and structure; powers-tool remains authoritative for model support and limits.
+
+For a referenced Powers instance with Protection Setup, Live execution starts
+its Worker, requests Safe-Off for all channels, checks the existing protection
+trip state for all channels, then applies each configured channel before the
+Workflow begins. An already latched trip blocks the Workflow. Orchestrator
+never automatically clears a protection latch. The existing final Safe-Off and
+Worker shutdown still run. Simulation validates the setup but does not run
+this Live initialization sequence.
 
 Workflow Tool Actions use target to reference an existing Tool Instance. A
 Template can declare multiple instances of one Tool Type. Meters setup uses

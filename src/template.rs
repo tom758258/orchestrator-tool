@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     meters_setup::{MetersSetup, MetersSetupError},
-    powers_setup::PowersSetup,
+    powers_setup::{PowersSetup, PowersSetupError},
     tool::{InvalidToolId, ToolId},
     tool_instance::{EmptySetup, ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
@@ -56,7 +56,14 @@ impl Template {
                             source,
                         })?
                 }
-                ToolSetup::Powers(_) if instance.tool == ToolId::powers() => {}
+                ToolSetup::Powers(setup) if instance.tool == ToolId::powers() => {
+                    setup
+                        .validate()
+                        .map_err(|source| TemplateError::PowersSetup {
+                            instance: instance.id.clone(),
+                            source,
+                        })?
+                }
                 ToolSetup::Empty(_)
                     if instance.tool != ToolId::meters() && instance.tool != ToolId::powers() => {}
                 _ => {
@@ -388,6 +395,10 @@ pub enum TemplateError {
         instance: ToolInstanceId,
         source: MetersSetupError,
     },
+    PowersSetup {
+        instance: ToolInstanceId,
+        source: PowersSetupError,
+    },
     InvalidVariableId {
         value: String,
         source: InvalidVariableId,
@@ -447,6 +458,9 @@ impl fmt::Display for TemplateError {
             Self::MetersSetup { instance, source } => {
                 write!(formatter, "{instance} Meters setup error: {source}")
             }
+            Self::PowersSetup { instance, source } => {
+                write!(formatter, "{instance} Powers setup error: {source}")
+            }
             Self::Workflow(source) => write!(formatter, "template workflow error: {source}"),
         }
     }
@@ -463,6 +477,7 @@ impl Error for TemplateError {
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
             Self::MetersSetup { source, .. } => Some(source),
+            Self::PowersSetup { source, .. } => Some(source),
             Self::Workflow(source) => Some(source),
         }
     }
@@ -1104,7 +1119,7 @@ mod tests {
         let restored = Template::from_json_str(&json).unwrap();
         assert_eq!(
             restored.tool_instances()[1].powers_setup(),
-            Some(&PowersSetup {})
+            Some(&PowersSetup::default())
         );
         assert!(restored.tool_instances()[1].meters_setup().is_none());
         assert_eq!(restored, original);
@@ -1152,6 +1167,27 @@ mod tests {
             TemplateError::MetersSetup { instance, source: MetersSetupError::MissingManualRange }
                 if instance == ToolInstanceId::new("meters-1").unwrap()
         ));
+    }
+
+    #[test]
+    fn invalid_powers_setup_identifies_the_instance() {
+        let original = sample_template();
+        let mut instances = original.tool_instances().to_vec();
+        instances[1].setup = ToolSetup::Powers(
+            serde_json::from_value(json!({
+                "protection": {"channels": [{"channel": 1, "ocp": "on"},
+                    {"channel": 1, "ocp": "off"}]}
+            }))
+            .unwrap(),
+        );
+        let error = Template::new(
+            original.name().to_owned(),
+            instances,
+            original.workflow().clone(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, TemplateError::PowersSetup { instance, .. }
+            if instance == ToolInstanceId::new("powers-1").unwrap()));
     }
 
     #[test]
@@ -1243,7 +1279,7 @@ mod tests {
         let original = sample_template();
         for (tool, setup) in [
             (ToolId::powers(), original.tool_instances()[0].setup.clone()),
-            (ToolId::meters(), ToolSetup::Powers(PowersSetup {})),
+            (ToolId::meters(), ToolSetup::Powers(PowersSetup::default())),
             (ToolId::powers(), ToolSetup::default()),
         ] {
             let instance = ToolInstance {

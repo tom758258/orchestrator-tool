@@ -1,7 +1,9 @@
 use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Duration};
 
 use crate::{
-    adapters::powers::{PowersActionError, safe_off_all},
+    adapters::powers::{
+        PowersActionError, apply_protection_setup, protection_status_all, safe_off_all,
+    },
     executor::{
         WorkflowExecutionError, execute_workflow_streaming_with_loop_stop,
         execute_workflow_with_loop_stop,
@@ -204,6 +206,65 @@ fn run_workflow_internal(
         .iter()
         .map(|(instance, session)| (instance.clone(), session))
         .collect();
+    if execution_mode == ExecutionMode::Live {
+        let setup_result = (|| -> Result<(), WorkflowRunError> {
+            for (id, session) in &sessions {
+                let Some(protection) = template
+                    .tool_instances()
+                    .iter()
+                    .find(|instance| instance.id == *id && instance.tool == ToolId::powers())
+                    .and_then(|instance| instance.powers_setup())
+                    .and_then(|setup| setup.protection.as_ref())
+                else {
+                    continue;
+                };
+                safe_off_all(session, action_timeout).map_err(|source| {
+                    WorkflowRunError::ProtectionSetup {
+                        instance: id.clone(),
+                        detail: format!("pre-run Safe-Off failed: {source}"),
+                    }
+                })?;
+                let tripped = protection_status_all(session, action_timeout).map_err(|source| {
+                    WorkflowRunError::ProtectionSetup {
+                        instance: id.clone(),
+                        detail: format!("Protection Status failed: {source}"),
+                    }
+                })?;
+                if tripped {
+                    return Err(WorkflowRunError::ProtectionSetup {
+                        instance: id.clone(),
+                        detail: "Protection is already tripped and must be cleared before running."
+                            .into(),
+                    });
+                }
+                for record in &protection.channels {
+                    apply_protection_setup(session, record, action_timeout).map_err(|source| {
+                        WorkflowRunError::ProtectionSetup {
+                            instance: id.clone(),
+                            detail: format!(
+                                "Protection Set failed for channel {}: {source}",
+                                record.channel
+                            ),
+                        }
+                    })?;
+                }
+            }
+            Ok(())
+        })();
+        if let Err(error) = setup_result {
+            drop(session_refs);
+            let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
+            let _ = shutdown_workers(sessions, shutdown_timeout);
+            return Err(match cleanup {
+                Some((instance, source)) => WorkflowRunError::SafetyCleanup {
+                    instance,
+                    prior_failure: Some(error.to_string()),
+                    source,
+                },
+                None => error,
+            });
+        }
+    }
     let execution = if retain_results {
         execute_workflow_with_loop_stop(
             template,
@@ -336,6 +397,10 @@ fn shutdown_workers(
 /// Errors produced while managing a workflow run.
 #[derive(Debug)]
 pub enum WorkflowRunError {
+    ProtectionSetup {
+        instance: ToolInstanceId,
+        detail: String,
+    },
     SafetyCleanup {
         instance: ToolInstanceId,
         prior_failure: Option<String>,
@@ -362,6 +427,10 @@ pub enum WorkflowRunError {
 impl fmt::Display for WorkflowRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ProtectionSetup { instance, detail } => write!(
+                formatter,
+                "{instance} Powers Protection Setup failed: {detail}"
+            ),
             Self::SafetyCleanup {
                 instance,
                 prior_failure,
@@ -400,6 +469,7 @@ impl fmt::Display for WorkflowRunError {
 impl Error for WorkflowRunError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::ProtectionSetup { .. } => None,
             Self::WorkerStartup { source, .. } => Some(source),
             Self::WorkflowExecution(source) => Some(source),
             Self::WorkerShutdown { source, .. } => Some(source),

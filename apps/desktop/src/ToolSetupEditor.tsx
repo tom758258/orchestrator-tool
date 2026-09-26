@@ -21,7 +21,29 @@ export type MetersSetup = {
 
 export type ToolInstance =
   | { id: string; tool: 'meters'; setup: MetersSetup }
-  | { id: string; tool: 'powers' | 'scopes' | 'wavegen'; setup: Record<string, never> }
+  | { id: string; tool: 'powers'; setup: PowersSetup }
+  | { id: string; tool: 'scopes' | 'wavegen'; setup: Record<string, never> }
+
+export type PowersProtectionChannel = {
+  channel: number
+  ovp_voltage?: number
+  ocp?: 'on' | 'off'
+  ocp_delay?: number
+  ocp_delay_trigger?: 'setting-change' | 'cc-transition'
+}
+export type PowersSetup = { protection?: { channels: PowersProtectionChannel[] } }
+
+type PowersCapabilities = {
+  model_id: string
+  model_name: string
+  channels: number[]
+  protection_features: {
+    ovp_voltage: boolean
+    ocp: boolean
+    ocp_delay: boolean
+    ocp_delay_triggers: string[]
+  }
+}
 
 const METERS_NPLC_OPTIONS = [0.02, 0.2, 1, 10, 100] as const
 
@@ -352,8 +374,109 @@ function MetersSetupFields({ value, onChange, model, metersExecutableKey, planne
   )
 }
 
+function PowersSetupFields({ value, onChange, modelId, powersExecutableKey }: {
+  value: PowersSetup
+  onChange: (value: PowersSetup) => void
+  modelId: string | null | undefined
+  powersExecutableKey: string
+}) {
+  const [loaded, setLoaded] = useState<{ key: string; value: PowersCapabilities | null } | null>(null)
+  const [addChannel, setAddChannel] = useState('')
+  const key = JSON.stringify([modelId, powersExecutableKey])
+  useEffect(() => {
+    if (!modelId) return
+    let cancelled = false
+    invoke<PowersCapabilities>('get_powers_capabilities', { modelId }).then(
+      value => { if (!cancelled) setLoaded({ key, value }) },
+      () => { if (!cancelled) setLoaded({ key, value: null }) },
+    )
+    return () => { cancelled = true }
+  }, [modelId, powersExecutableKey, key])
+  const capabilities = loaded?.key === key ? loaded.value : null
+  const channels = value.protection?.channels ?? []
+  const features = capabilities?.protection_features
+  const available = capabilities?.channels.filter(channel => !channels.some(record => record.channel === channel)) ?? []
+  const selected = available.some(channel => String(channel) === addChannel) ? addChannel : String(available[0] ?? '')
+  const setChannels = (next: PowersProtectionChannel[]) => onChange(next.length ? { protection: { channels: next } } : {})
+  const update = (channel: number, patch: Partial<PowersProtectionChannel>) => {
+    setChannels(channels.map(record => record.channel === channel ? { ...record, ...patch } : record))
+  }
+  const omit = (channel: number, field: keyof Omit<PowersProtectionChannel, 'channel'>) => {
+    const next = channels.map(record => {
+      if (record.channel !== channel) return record
+      const copy = { ...record }
+      delete copy[field]
+      return copy
+    }).filter(record => record.channel !== channel || Object.keys(record).length > 1)
+    setChannels(next)
+  }
+  return <div className="meters-setup-fields">
+    <h4>Protection Setup</h4>
+    {!modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
+    {modelId && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
+    {modelId && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool and refresh the Live Resource.</p>}
+    {channels.length === 0 && <p>No protection settings configured.</p>}
+    {channels.map(record => {
+      const supported = (field: 'ovp_voltage' | 'ocp' | 'ocp_delay') =>
+        capabilities?.channels.includes(record.channel) === true && features?.[field] === true
+      const triggers = (['setting-change', 'cc-transition'] as const).filter(trigger =>
+        capabilities?.channels.includes(record.channel) && features?.ocp_delay_triggers.includes(trigger))
+      return <div key={record.channel} className="meters-setup-fields">
+        <strong>CH{record.channel}</strong>
+        {capabilities && !capabilities.channels.includes(record.channel) &&
+          <p className="tool-setup-hint">This channel is unavailable on the current model; existing settings are preserved.</p>}
+        {(['ovp_voltage', 'ocp_delay'] as const).map(field => <label key={field} className="step-property-field">
+          <span className="step-property-label">{field === 'ovp_voltage' ? 'OVP Voltage (V)' : 'OCP Delay (s)'}</span>
+          <input type="number" min={0} step="any" placeholder="Unchanged" value={record[field] ?? ''}
+            disabled={!supported(field)} onChange={event => {
+              if (event.target.value === '') omit(record.channel, field)
+              else if (Number.isFinite(Number(event.target.value))) update(record.channel, { [field]: Number(event.target.value) })
+            }} />
+          {record[field] !== undefined && <button type="button" className="action-button" onClick={() => omit(record.channel, field)}>Remove setting</button>}
+          {record[field] !== undefined && !supported(field) && <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+        </label>)}
+        <label className="step-property-field">
+          <span className="step-property-label">OCP</span>
+          <select value={record.ocp ?? ''} onChange={event => event.target.value === '' ? omit(record.channel, 'ocp')
+            : update(record.channel, { ocp: event.target.value as 'on' | 'off' })}>
+            <option value="">Unchanged</option>
+            <option value="on" disabled={!supported('ocp')}>On</option>
+            <option value="off" disabled={!supported('ocp')}>Off</option>
+          </select>
+          {record.ocp !== undefined && !supported('ocp') && <span className="tool-setup-hint">Unsupported by the current model; choose Unchanged to remove.</span>}
+        </label>
+        <label className="step-property-field">
+          <span className="step-property-label">OCP Delay Trigger</span>
+          <select value={record.ocp_delay_trigger ?? ''} onChange={event => event.target.value === '' ? omit(record.channel, 'ocp_delay_trigger')
+            : update(record.channel, { ocp_delay_trigger: event.target.value as PowersProtectionChannel['ocp_delay_trigger'] })}>
+            <option value="">Unchanged</option>
+            {record.ocp_delay_trigger && !triggers.includes(record.ocp_delay_trigger) &&
+              <option value={record.ocp_delay_trigger} disabled>{record.ocp_delay_trigger} (unsupported)</option>}
+            {triggers.map(trigger => <option key={trigger} value={trigger}>{trigger === 'setting-change' ? 'Setting Change' : 'CC Transition'}</option>)}
+          </select>
+          {record.ocp_delay_trigger !== undefined && !triggers.includes(record.ocp_delay_trigger) &&
+            <span className="tool-setup-hint">Unsupported by the current model; choose Unchanged to remove.</span>}
+        </label>
+        <button type="button" className="action-button action-button-danger" onClick={() => setChannels(channels.filter(item => item.channel !== record.channel))}>Remove Channel</button>
+      </div>
+    })}
+    <label className="step-property-field">
+      <span className="step-property-label">Add Protection Channel</span>
+      <select value={selected} disabled={available.length === 0} onChange={event => setAddChannel(event.target.value)}>
+        {available.length === 0 && <option value="">No available channels</option>}
+        {available.map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
+      </select>
+      <button type="button" className="action-button" disabled={!selected} onClick={() => {
+        const channel = Number(selected)
+        if (!channels.some(record => record.channel === channel)) setChannels([...channels, { channel }])
+      }}>Add Protection Channel</button>
+    </label>
+  </div>
+}
+
 function setupSummary(instance: ToolInstance): string {
   const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
+  if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? 'Protection Setup' : 'No protection settings configured'}`
   if (instance.tool !== 'meters') return `${type} · No additional setup`
   const meters = instance.setup
   const voltage = meters.measurement === 'voltage-dc'
@@ -364,10 +487,11 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, metersExecutableKey }: {
+export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, metersExecutableKey, powersExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
-  resourceIdentities: Record<string, { model: string | null } | null>
+  resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
   metersExecutableKey: string
+  powersExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
@@ -422,12 +546,18 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
                 plannedTriggerCount={plannedMeterMeasureCount(steps, instance.id)}
                 value={{ meters: instance.setup }}
                 onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
-            : <p>No additional setup</p>}
+            : instance.tool === 'powers'
+              ? <PowersSetupFields value={instance.setup} modelId={resourceIdentities[instance.id]?.model_id}
+                  powersExecutableKey={powersExecutableKey}
+                  onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
+              : <p>No additional setup</p>}
           {renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
         </>}
+        {instance.tool === 'powers' && instance.setup.protection &&
+          <p className="tool-setup-hint">Protection settings are configured for this Power instance. Add a Power Protection Status step and Assert if the Workflow should fail when a protection trip is detected.</p>}
       </fieldset>
     })}
   </section>

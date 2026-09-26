@@ -21,6 +21,7 @@ pub struct LiveResourceCandidate {
     pub resource: String,
     pub manufacturer: Option<String>,
     pub model: Option<String>,
+    pub model_id: Option<String>,
     pub serial: Option<String>,
     pub identity: Option<String>,
 }
@@ -143,6 +144,7 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandi
                 resource,
                 manufacturer: None,
                 model: None,
+                model_id: None,
                 serial: None,
                 identity: None,
             };
@@ -151,6 +153,10 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandi
                 parse_meters_identity(&mut candidate);
             } else {
                 let idn = &row["idn"];
+                candidate.model_id = row["model_id"]
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_owned);
                 candidate.manufacturer = idn["manufacturer"].as_str().map(str::to_owned);
                 candidate.model = idn["model"].as_str().map(str::to_owned);
                 candidate.serial = idn["serial"].as_str().map(str::to_owned);
@@ -253,6 +259,7 @@ mod tests {
         assert_eq!(candidate.resource, "USB0::POWER::INSTR");
         assert_eq!(candidate.manufacturer.as_deref(), Some("KEYSIGHT"));
         assert_eq!(candidate.model.as_deref(), Some("E36312A"));
+        assert!(candidate.model_id.is_none());
         assert_eq!(candidate.serial.as_deref(), Some("MY123"));
         assert_eq!(
             candidate.identity.as_deref(),
@@ -264,8 +271,17 @@ mod tests {
         assert_eq!(candidates[0].resource, "USB0::POWER::INSTR");
         assert!(candidates[0].manufacturer.is_none());
         assert!(candidates[0].model.is_none());
+        assert!(candidates[0].model_id.is_none());
         assert!(candidates[0].serial.is_none());
         assert!(candidates[0].identity.is_none());
+    }
+
+    #[test]
+    fn powers_preserves_canonical_model_id_from_discovery() {
+        let mut value = response(&ToolId::powers());
+        value["data"]["resources"][0]["model_id"] = json!("keysight-e36312a");
+        let candidates = parse_resources(&ToolId::powers(), value.to_string().as_bytes()).unwrap();
+        assert_eq!(candidates[0].model_id.as_deref(), Some("keysight-e36312a"));
     }
 
     #[test]

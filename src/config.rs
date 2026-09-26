@@ -25,6 +25,8 @@ pub struct ResourceIdentity {
     pub manufacturer: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
     #[serde(default)]
     pub serial: Option<String>,
     #[serde(default)]
@@ -340,12 +342,14 @@ mod tests {
         let powers_identity = ResourceIdentity {
             manufacturer: Some("Keysight Technologies".to_owned()),
             model: Some("E36312A".to_owned()),
+            model_id: Some("keysight-e36312a".to_owned()),
             serial: Some("MY123456".to_owned()),
             identity: Some("Keysight Technologies,E36312A,MY123456,1.0".to_owned()),
         };
         let meters_identity = ResourceIdentity {
             manufacturer: None,
             model: Some("34461A".to_owned()),
+            model_id: None,
             serial: None,
             identity: Some("34461A".to_owned()),
         };
@@ -396,6 +400,14 @@ mod tests {
         );
 
         let legacy_path = test_dir.path().join("legacy.toml");
+        let old_identity_path = test_dir.path().join("old-identity.toml");
+        fs::write(&old_identity_path,
+            "[live_resources]\npowers-1 = \"USB0::Legacy::INSTR\"\n[live_resource_identities.powers-1]\nmodel = \"E36312A\"\n").unwrap();
+        let old_identity = Config::load(&old_identity_path).unwrap();
+        assert_eq!(
+            old_identity.live_resource_identities()["powers-1"].model_id,
+            None
+        );
         fs::write(
             &legacy_path,
             "[live_resources]\nmeters-1 = \"USB0::Legacy::INSTR\"\n",

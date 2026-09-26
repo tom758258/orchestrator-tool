@@ -37,6 +37,7 @@ type ToolStatus = {
 type ResourceIdentity = {
   manufacturer: string | null
   model: string | null
+  model_id?: string | null
   serial: string | null
   identity: string | null
 }
@@ -383,6 +384,8 @@ function App() {
   const [tools, setTools] = useState<ToolStatus[]>([])
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
   const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
+  const powersTool = tools.find(status => status.tool_id === 'powers')
+  const powersExecutableKey = JSON.stringify([powersTool?.source ?? null, powersTool?.path ?? null])
   const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
@@ -1417,6 +1420,7 @@ function App() {
                 value={workflowDraft.tool_instances}
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
+                powersExecutableKey={powersExecutableKey}
                 steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while'))}
                 renderResource={instance => (
                   <>
@@ -1489,6 +1493,7 @@ function App() {
                                   setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
                                   setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: candidate ? {
                                     manufacturer: candidate.manufacturer, model: candidate.model,
+                                    model_id: candidate.model_id,
                                     serial: candidate.serial, identity: candidate.identity,
                                   } : null }))
                                 }

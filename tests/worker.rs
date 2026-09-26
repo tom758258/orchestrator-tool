@@ -145,6 +145,7 @@ fn main() {
     three_meter_measurements_shutdown_normally();
     partial_startup_failure_shuts_down_started_worker();
     live_workflow_cleanup_lifecycle();
+    powers_protection_setup_lifecycle();
     multiple_powers_cleanup_attempts_every_session();
     two_meters_use_distinct_sessions();
 }
@@ -469,6 +470,10 @@ fn run_fixture(scenario: &OsStr) {
         | "live-cleanup-failure"
         | "live-both-failed"
         | "live-startup-failure"
+        | "live-protection-success"
+        | "live-protection-trip"
+        | "live-protection-set-failure"
+        | "live-protection-set-and-cleanup-failure"
         | "live-multi-cleanup-failure" => run_powers_workflow_fixture(scenario.to_str().unwrap()),
         "meters-runtime-measure" => run_meters_runtime_fixture(1, 2, json!(3.3)),
         "meters-runtime-custom" => run_meters_custom_runtime_fixture(Duration::ZERO, None),
@@ -689,7 +694,10 @@ fn run_powers_workflow_fixture(scenario: &str) {
     let step_failed = matches!(scenario, "live-step-failure" | "live-both-failed");
     let cleanup_failed = matches!(
         scenario,
-        "live-cleanup-failure" | "live-both-failed" | "live-multi-cleanup-failure"
+        "live-cleanup-failure"
+            | "live-both-failed"
+            | "live-multi-cleanup-failure"
+            | "live-protection-set-and-cleanup-failure"
     );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
@@ -733,6 +741,29 @@ fn run_powers_workflow_fixture(scenario: &str) {
         "live-startup-failure" | "live-multi-cleanup-failure"
     ) {
         commands.clear();
+    }
+    if scenario.starts_with("live-protection-") {
+        let failed_before_workflow = scenario != "live-protection-success";
+        if failed_before_workflow {
+            commands.clear();
+        }
+        let mut setup_commands = vec![
+            ("safe-off", json!({"channel":"all"}), "job-pre-safe-off"),
+            (
+                "protection-status",
+                json!({"channel":"all"}),
+                "job-pre-status",
+            ),
+        ];
+        if scenario != "live-protection-trip" {
+            setup_commands.push((
+                "protection-set",
+                json!({"channel":1,"ovp_voltage":5.5,"ocp":"on"}),
+                "job-pre-set",
+            ));
+        }
+        setup_commands.extend(commands);
+        commands = setup_commands;
     }
     if live {
         commands.push(("safe-off", json!({ "channel": "all" }), "job-cleanup"));
@@ -790,12 +821,13 @@ fn run_powers_workflow_fixture(scenario: &str) {
                 "active_job": null,
                 "last_job": {
                     "worker_job_id": worker_job_id,
-                    "status": if (step_failed && command == "output-on") || (cleanup_failed && command == "safe-off") { "failed" } else { "succeeded" },
+                    "status": if (step_failed && command == "output-on") || (cleanup_failed && worker_job_id == "job-cleanup")
+                        || (scenario.starts_with("live-protection-set-") && command == "protection-set") { "failed" } else { "succeeded" },
                     "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
                     "result": if command == "protection-status" {
                         json!({
                             "request": { "command": "protection-status" },
-                            "data": { "protection": { "over_voltage_tripped": false, "over_current_tripped": false } },
+                            "data": { "protection": { "over_voltage_tripped": scenario == "live-protection-trip", "over_current_tripped": false } },
                             "metadata": { "source": "fixture" }
                         })
                     } else { json!({ "ok": true }) }
@@ -2209,6 +2241,99 @@ fn record_live_event(event: &str) {
         .open(marker)
         .unwrap();
     writeln!(file, "{event}").unwrap();
+}
+
+fn powers_protection_setup_lifecycle() {
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version": 1, "name": "Protection setup fixture",
+            "tool_instances": [{"id":"powers-1","tool":"powers","setup":{"protection":{"channels":[
+                {"channel":1,"ovp_voltage":5.5,"ocp":"on"}]}}}],
+            "workflow":{"steps":[
+                {"type":"tool-action","id":"set-1","target":"powers-1","action":"set-voltage",
+                    "arguments":{"channel":1,"voltage":5.0}},
+                {"type":"tool-action","id":"on-1","target":"powers-1","action":"output-on",
+                    "arguments":{"channel":1}},
+                {"type":"tool-action","id":"off-1","target":"powers-1","action":"output-off",
+                    "arguments":{"channel":1}}
+            ]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    for (scenario, mode, expected) in [
+        (
+            "live-protection-success",
+            ExecutionMode::Live,
+            "safe-off\nprotection-status\nprotection-set\nset\noutput-on\noutput-off\nsafe-off\nstop\n",
+        ),
+        (
+            "live-protection-trip",
+            ExecutionMode::Live,
+            "safe-off\nprotection-status\nsafe-off\nstop\n",
+        ),
+        (
+            "live-protection-set-failure",
+            ExecutionMode::Live,
+            "safe-off\nprotection-status\nprotection-set\nsafe-off\nstop\n",
+        ),
+        (
+            "live-protection-set-and-cleanup-failure",
+            ExecutionMode::Live,
+            "safe-off\nprotection-status\nprotection-set\nsafe-off\nstop\n",
+        ),
+        ("powers-workflow-runtime", ExecutionMode::Simulate, ""),
+    ] {
+        let marker = env::temp_dir().join(format!(
+            "orchestrator-protection-{}-{scenario}",
+            process::id()
+        ));
+        let _ = fs::remove_file(&marker);
+        // SAFETY: fixture scenarios run sequentially and their sessions finish before removal.
+        unsafe { env::set_var(CLEANUP_MARKER_ENV, &marker) };
+        let specs = HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec(scenario),
+        )]);
+        let result = run_workflow(
+            &template,
+            mode,
+            &specs,
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+        );
+        unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
+        if mode == ExecutionMode::Live {
+            assert_eq!(fs::read_to_string(&marker).unwrap(), expected);
+            fs::remove_file(&marker).unwrap();
+        }
+        match scenario {
+            "live-protection-success" | "powers-workflow-runtime" => {
+                assert_eq!(result.unwrap().step_executions().len(), 3);
+            }
+            "live-protection-trip" => assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Protection is already tripped and must be cleared before running.")
+            ),
+            "live-protection-set-failure" => assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Protection Set failed")
+            ),
+            "live-protection-set-and-cleanup-failure" => {
+                let message = result.unwrap_err().to_string();
+                assert!(
+                    message.contains("Protection Set failed") && message.contains("cleanup failed"),
+                    "{message}"
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 fn live_workflow_cleanup_lifecycle() {

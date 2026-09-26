@@ -111,6 +111,31 @@ connection state 已被即時確認。
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
 列出可用 resources、選擇 resource、**Save Resource** 或 **Clear Resource**。
 
+Powers discovery 可能提供 canonical model ID。Desktop 將它保存在本機的
+last-known resource identity，並以離線的 `powers-tool capabilities --model`
+查詢可用的保護功能與通道。Setup 畫面不會為此連線儀器。若沒有 model ID 或
+capability，請選擇並保存受支援的 Live Resource，才能新增保護設定；Template
+中既有設定仍會顯示。
+
+### 5.3 Powers Protection Setup
+
+展開 Setup 中的 Powers Tool Instance，即可逐通道設定 Protection Setup。
+從 powers-tool 回報的通道新增 channel，並設定受支援的 OVP Voltage、OCP、
+OCP Delay 或 OCP Delay Trigger。空白欄位或 **Unchanged** 表示保留儀器
+原有設定。每個 channel 至少需有一項設定，Template 才能保存或執行。
+新的 Powers instance 預設沒有保護設定。
+
+控制項依 powers-tool 提供的型號 capability 顯示。若變更 resource 後既有
+設定不受支援，Desktop 會顯示提示並保留原值，直到你自行移除。實際型號的
+支援能力與限制仍由 external tool 在套用時驗證。
+
+Live 模式下，有 Protection Setup 且被 Workflow 引用的 Powers instance
+會先執行 Safe-Off、讀取既有 protection trip，再逐通道套用設定，之後才
+開始 Workflow。已鎖存的 trip 會阻止執行；Orchestrator 絕不自動清除。
+原有的 final Safe-Off 仍會執行。Simulation 會驗證 Template 並執行
+Workflow，但不執行這段 Live 初始化。若執行期間偵測 trip 時也應讓
+Workflow 失敗，請加入 **Power Protection Status** 與 **Assert**。
+
 執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
 非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
 resource。Live confirmation 會顯示 referenced instances 與 resources；若

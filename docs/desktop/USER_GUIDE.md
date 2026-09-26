@@ -126,6 +126,35 @@ Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, **Save Resource**, or
 **Clear Resource**.
 
+Powers discovery may provide a canonical model ID. Desktop saves it with the
+last-known local resource identity and queries `powers-tool capabilities
+--model` offline to show available protection controls and channels. The Setup
+page does not connect to an instrument for this query. If the model ID or
+capabilities are unavailable, select and save a supported Live Resource to
+enable new protection settings. Existing Template settings remain visible.
+
+### 5.3 Powers Protection Setup
+
+Expand a Powers Tool Instance in Setup to configure Protection Setup for each
+channel. Add a channel from the channels reported by powers-tool, then set any
+supported OVP Voltage, OCP, OCP Delay, or OCP Delay Trigger field. An empty
+field or **Unchanged** leaves that instrument setting unchanged. Each channel
+needs at least one setting before the Template can be saved or run. New Powers
+instances start with no protection settings.
+
+Controls follow powers-tool model capabilities. If a saved setting becomes
+unsupported after a resource change, Desktop displays a warning and retains
+the value until you remove it. The external tool validates actual model
+support and limits when applying the setup.
+
+In Live mode, a referenced Powers instance with Protection Setup requests
+Safe-Off, reads the existing protection trip state, then applies settings one
+channel at a time before Workflow steps start. A latched trip blocks the run;
+Orchestrator never clears it automatically. The normal final Safe-Off still
+runs. Simulation validates the Template and runs the Workflow without this
+Live setup sequence. To fail a Workflow on a trip detected during execution,
+add a **Power Protection Status** step followed by **Assert**.
+
 Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
 run. Live confirmation displays the referenced instances and resources. If a

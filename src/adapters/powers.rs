@@ -8,11 +8,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
+    config::Config,
+    discovery::{ExecutableStatus, built_in_tool_definitions},
+    inspection::inspect_tool,
+    powers_setup::PowersProtectionChannelSetup,
+    process::{CaptureError, run_output_with_timeout},
     run::ExecutionMode,
+    tool::ToolId,
     worker::{
         WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError, WorkerStartError,
         start_worker,
@@ -27,6 +33,89 @@ const READ_STATUS_COMMAND: &str = "read-status";
 const SIMULATION_MODEL_ID: &str = "keysight-e36312a";
 const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PowersProtectionFeatures {
+    pub ovp_voltage: bool,
+    pub ocp: bool,
+    pub ocp_delay: bool,
+    pub ocp_delay_triggers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PowersCapabilities {
+    pub model_id: String,
+    pub model_name: String,
+    pub channels: Vec<u32>,
+    pub protection_features: PowersProtectionFeatures,
+}
+
+pub fn get_capabilities(
+    application_dir: &Path,
+    config: &Config,
+    model_id: &str,
+) -> Result<PowersCapabilities, String> {
+    if model_id.trim().is_empty() {
+        return Err("Powers canonical model ID is missing".into());
+    }
+    let definition = built_in_tool_definitions()
+        .into_iter()
+        .find(|definition| definition.id() == &ToolId::powers())
+        .expect("powers is built in");
+    let inspection = inspect_tool(application_dir, config, &definition)
+        .map_err(|error| format!("powers executable inspection failed: {error}"))?;
+    if inspection.status() != ExecutableStatus::Available {
+        return Err("powers executable is unavailable".into());
+    }
+    let output = run_output_with_timeout(
+        inspection
+            .resolved()
+            .path()
+            .expect("available executable has a path"),
+        ["capabilities", "--model", model_id, "--json"],
+        Duration::from_secs(10),
+    )
+    .map_err(|error| match error {
+        CaptureError::Io(error) => format!("powers capabilities query failed: {error}"),
+        CaptureError::Timeout => "powers capabilities query timed out after 10 seconds".into(),
+    })?;
+    if !output.status.success() {
+        return Err(format!(
+            "powers capabilities query failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_capabilities(&output.stdout)
+}
+
+fn parse_capabilities(stdout: &[u8]) -> Result<PowersCapabilities, String> {
+    #[derive(Deserialize)]
+    struct Command {
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct Response {
+        schema_version: u32,
+        ok: bool,
+        status: String,
+        command: Command,
+        data: PowersCapabilities,
+    }
+    let response: Response = serde_json::from_slice(stdout)
+        .map_err(|error| format!("powers capabilities returned invalid JSON or shape: {error}"))?;
+    if response.schema_version != 2
+        || !response.ok
+        || response.status != "ok"
+        || response.command.name != "capabilities"
+        || response.data.model_id.trim().is_empty()
+        || response.data.model_name.trim().is_empty()
+        || response.data.channels.contains(&0)
+    {
+        return Err("powers capabilities returned invalid success data".into());
+    }
+    Ok(response.data)
+}
 
 /// Builds the Powers Worker launch specification used for simulate diagnostics.
 pub fn simulate_worker_launch_spec(executable: impl AsRef<Path>) -> WorkerLaunchSpec {
@@ -463,6 +552,104 @@ pub fn safe_off_all(
         session,
         "safe-off",
         json!({ "channel": "all" }),
+        ExecutionMode::Live,
+        timeout,
+    )
+}
+
+pub fn protection_status_all(
+    session: &WorkerSession,
+    timeout: Duration,
+) -> Result<bool, PowersActionError> {
+    let result = run_command(
+        session,
+        "protection-status",
+        json!({"channel": "all"}),
+        ExecutionMode::Live,
+        timeout,
+    )?;
+    let result = augment_protection_status_result(result)?;
+    result["protection_tripped"].as_bool().ok_or_else(|| {
+        PowersActionError::InvalidResponse("missing protection_tripped boolean".into())
+    })
+}
+
+fn protection_set_arguments(record: &PowersProtectionChannelSetup) -> Value {
+    let mut arguments = json!({"channel": record.channel});
+    if let Some(value) = record.ovp_voltage {
+        arguments["ovp_voltage"] = json!(value);
+    }
+    if let Some(value) = record.ocp {
+        arguments["ocp"] = json!(value);
+    }
+    if let Some(value) = record.ocp_delay {
+        arguments["ocp_delay"] = json!(value);
+    }
+    if let Some(value) = record.ocp_delay_trigger {
+        arguments["ocp_delay_trigger"] = json!(value);
+    }
+    arguments
+}
+
+#[cfg(test)]
+mod protection_setup_tests {
+    use super::*;
+    use crate::powers_setup::{OcpDelayTrigger, OcpState};
+
+    #[test]
+    fn parses_offline_capabilities_and_rejects_malformed_features() {
+        let mut payload = json!({"schema_version":2,"ok":true,"status":"ok",
+            "command":{"name":"capabilities"},"data":{"model_id":"test-model","model_name":"Test",
+                "channels":[1,2],"protection_features":{"ovp_voltage":true,"ocp":true,
+                    "ocp_delay":true,"ocp_delay_triggers":["setting-change","cc-transition"]}}});
+        payload["future"] = json!(42);
+        let full = parse_capabilities(payload.to_string().as_bytes()).unwrap();
+        assert_eq!(full.channels, vec![1, 2]);
+        assert!(full.protection_features.ocp_delay);
+        assert_eq!(full.protection_features.ocp_delay_triggers.len(), 2);
+        payload["data"]["protection_features"]["ocp_delay"] = json!(false);
+        payload["data"]["protection_features"]["ocp_delay_triggers"] = json!([]);
+        let limited = parse_capabilities(payload.to_string().as_bytes()).unwrap();
+        assert!(limited.protection_features.ovp_voltage && limited.protection_features.ocp);
+        assert!(!limited.protection_features.ocp_delay);
+        payload["data"]["protection_features"]["ocp"] = json!("yes");
+        assert!(parse_capabilities(payload.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn maps_only_configured_protection_fields() {
+        let mut record = PowersProtectionChannelSetup {
+            channel: 1,
+            ovp_voltage: Some(5.5),
+            ocp: Some(OcpState::On),
+            ocp_delay: None,
+            ocp_delay_trigger: None,
+        };
+        assert_eq!(
+            protection_set_arguments(&record),
+            json!({"channel":1,"ovp_voltage":5.5,"ocp":"on"})
+        );
+        record.ovp_voltage = None;
+        record.ocp = None;
+        record.ocp_delay = Some(0.05);
+        record.ocp_delay_trigger = Some(OcpDelayTrigger::SettingChange);
+        assert_eq!(
+            protection_set_arguments(&record),
+            json!({"channel":1,"ocp_delay":0.05,
+            "ocp_delay_trigger":"setting-change"})
+        );
+    }
+}
+
+pub fn apply_protection_setup(
+    session: &WorkerSession,
+    record: &PowersProtectionChannelSetup,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    run_command(
+        session,
+        "protection-set",
+        protection_set_arguments(record),
         ExecutionMode::Live,
         timeout,
     )
