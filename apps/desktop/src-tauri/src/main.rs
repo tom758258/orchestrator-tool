@@ -1040,10 +1040,35 @@ fn main() {
         return;
     }
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .manage(ActiveRun::default())
         .manage(StoredRuns::default())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let main_window = app
+                .config()
+                .app
+                .windows
+                .first()
+                .ok_or_else(|| "main window configuration is missing".to_owned())
+                .and_then(|config| {
+                    tauri::WebviewWindowBuilder::from_config(app.handle(), config)
+                        .and_then(|builder| builder.build())
+                        .map_err(|error| error.to_string())
+                });
+
+            if let Err(error) = main_window {
+                #[cfg(windows)]
+                {
+                    webview2::show_startup_error(&error);
+                    app.handle().exit(1);
+                }
+                #[cfg(not(windows))]
+                panic!("Orchestrator Tool desktop startup failed: {error}");
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             open_help,
             get_tool_status,
@@ -1075,8 +1100,17 @@ fn main() {
             export_last_run_pages,
             save_chart_png
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    if let Err(error) = result {
+        #[cfg(windows)]
+        {
+            webview2::show_startup_error(&error.to_string());
+            std::process::exit(1);
+        }
+        #[cfg(not(windows))]
+        panic!("error while running tauri application: {error}");
+    }
 }
 
 #[cfg(test)]
