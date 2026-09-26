@@ -20,10 +20,13 @@ orchestrator-tool.
 ## 2. Requirements
 
 - The application is Windows-first.
-- It uses the system Microsoft Edge WebView2 Runtime. If WebView2 is missing,
-  Desktop shows a native warning before creating the Tauri WebView and does not
-  start the application window. The application does not download or install
-  WebView2 automatically.
+- It uses the system Microsoft Edge WebView2 Runtime. If no usable WebView2
+  Runtime is detected, Desktop shows a native warning before creating the
+  Tauri WebView and can open Microsoft's official download page; the application
+  window is not created. If the availability check passes but the main
+  Tauri/WebView window still cannot initialize, Desktop shows a native startup
+  error with the underlying Tauri detail and exits. The application does not
+  download or install WebView2 automatically.
 - Meters, Powers, Scopes, and Wavegen are independent external tool
   distributions. Install and maintain those tools separately, then configure
   their actual executable paths in Desktop.
@@ -638,8 +641,11 @@ available.
 
 ### WebView2 is missing
 
-Install the system Microsoft Edge WebView2 Runtime, then restart the
-application.
+Use the native warning's Yes action to open Microsoft's official WebView2
+download page, install or repair the system runtime, then restart the
+application. If a Startup failed dialog appears after the availability check,
+keep its Details text for diagnosis and make sure Windows is supported and
+WebView2 is installed and up to date.
 
 ## 15. Safety notes
 

@@ -6,7 +6,7 @@ use windows_sys::{
         UI::{
             Shell::ShellExecuteW,
             WindowsAndMessaging::{
-                IDYES, MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxW, SW_SHOWNORMAL,
+                IDYES, MB_ICONERROR, MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxW, SW_SHOWNORMAL,
             },
         },
     },
@@ -55,4 +55,19 @@ pub fn preflight() -> bool {
         }
     }
     false
+}
+
+pub fn show_startup_error(error: &str) {
+    let message = format!(
+        "Orchestrator Tool could not start.\n\nThe desktop runtime could not be initialized. Make sure Windows is supported and Microsoft Edge WebView2 Runtime is installed and up to date.\n\nDetails:\n{error}"
+    );
+    let wide_message: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        MessageBoxW(
+            null_mut(),
+            wide_message.as_ptr(),
+            w!("Orchestrator Tool - Startup failed"),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }

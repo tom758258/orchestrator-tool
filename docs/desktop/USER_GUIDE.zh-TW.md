@@ -17,9 +17,12 @@ distribution，不包含在 orchestrator-tool 內。
 ## 2. Requirements
 
 - Application 以 Windows 為優先平台。
-- Application 使用系統的 Microsoft Edge WebView2 Runtime。若 WebView2
-  不存在，Desktop 會在建立 Tauri WebView 前顯示 native warning，且不會啟動
-  application window。Application 不會自動下載或安裝 WebView2。
+- Application 使用系統的 Microsoft Edge WebView2 Runtime。若未偵測到可用的
+  WebView2 Runtime，Desktop 會在建立 Tauri WebView 前顯示 native warning，並可
+  開啟 Microsoft 官方下載頁；application window 不會建立。若 availability check
+  已通過但 main Tauri/WebView window 仍無法初始化，Desktop 會顯示包含實際 Tauri
+  error detail 的 native startup error 並結束。Application 不會自動下載或安裝
+  WebView2。
 - Meters、Powers、Scopes 與 Wavegen 是獨立的 external tool distributions。
   請分別安裝與維護，再於 Desktop 設定實際 executable path。
 
@@ -565,7 +568,9 @@ Stream write 或 flush error 會停止 CSV streaming，但不一定停止 Workfl
 
 ### WebView2 is missing
 
-安裝系統的 Microsoft Edge WebView2 Runtime，然後重新啟動 application。
+使用 native warning 的 Yes 開啟 Microsoft 官方 WebView2 下載頁，安裝或修復系統
+Runtime 後重新啟動 application。若 availability check 通過後仍出現 Startup failed
+對話框，請保留 Details 內容供診斷，並確認 Windows 受支援且 WebView2 已安裝並更新。
 
 ## 15. Safety notes
 
