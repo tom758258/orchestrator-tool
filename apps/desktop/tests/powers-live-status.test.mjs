@@ -15,6 +15,10 @@ test('Powers Device Status is explicit, mode-aware, and runtime-only', () => {
   assert.match(app, /PLAN GENERATED · SIMULATION/)
   assert.match(app, /No real protection latch was changed/)
   assert.match(app, /Not saved in Template/)
+  assert.doesNotMatch(app, /deviceStatus\?\.clearPlan !== null/)
+  assert.match(app, /const clearPlan = deviceStatus\?\.clearPlan \?\? null/)
+  assert.match(app, /\{clearPlan !== null && <div className="simulation-plan-result"/)
+  assert.match(app, /JSON\.stringify\(clearPlan, null, 2\)/)
   assert.doesNotMatch(app, /setInterval\([^)]*refreshPowersStatus/)
 })
 

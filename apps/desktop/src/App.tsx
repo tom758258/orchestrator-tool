@@ -1684,6 +1684,7 @@ function App() {
                     )}
                     {instance.tool === 'powers' && (() => {
                       const deviceStatus = powersStatuses[instance.id]
+                      const clearPlan = deviceStatus?.clearPlan ?? null
                       const savedResource = savedResources[instance.id]
                       const draftResource = resourceDrafts[instance.id]
                       const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
@@ -1711,11 +1712,11 @@ function App() {
                         </button>
                         {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? 'Generating clear plan...' : 'Clearing protection...'}</p>}
                         {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
-                        {deviceStatus?.clearPlan !== null && <div className="simulation-plan-result" role="status">
+                        {clearPlan !== null && <div className="simulation-plan-result" role="status">
                           <strong>PLAN GENERATED · SIMULATION</strong>
                           <p>NO HARDWARE I/O</p>
                           <p>No real protection latch was changed.</p>
-                          <details><summary>Show Plan</summary><pre>{JSON.stringify(deviceStatus.clearPlan, null, 2)}</pre></details>
+                          <details><summary>Show Plan</summary><pre>{JSON.stringify(clearPlan, null, 2)}</pre></details>
                         </div>}
                         {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
                         {deviceStatus?.status && <>
