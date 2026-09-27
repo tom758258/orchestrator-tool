@@ -61,14 +61,18 @@ Scopes 與 Wavegen Workflow actions。
 Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。
 
-在 **Tools** 中使用 **Browse...**，選擇 external tool distribution 提供的
-真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
+在 **Tools** 的 **Tool to add** 選擇尚未配置的 Tool Type，按 **Add...**，
+再選擇 external tool distribution 提供的真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
 是否符合預期 Tool Type 的 Worker compatibility。Tool ID 錯誤或 Worker 不相容
-的 path 會被拒絕，且不會取代原本有效的 path。需要移除已保存的 path 時使用
-**Clear Path**。
+的 path 會被拒絕，且不會取代原本有效的 path。取消 picker 不會變更設定。
+在 Tool card 使用 **Change Path...** 替換 path，或使用 **Remove Tool** 只移除
+本機 executable configuration。移除 Tool 不會變更 Template instances 或
+Workflow steps；該 Tool Type 會回到 Add 候選。
 
-狀態區會顯示 **Not configured**、**Available**、**Missing**、**Not a file**
-或 **Error** 等狀態，並在可用時顯示 compatibility 與原因。Desktop 不會搜尋
+Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 **Missing**、
+**Not a file** 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
+Type 會出現在 Add 候選。全部未配置時顯示 **No external tools configured.**；
+全部已配置時停用 Add。Cards 顯示 availability、compatibility，並在可用時顯示原因。Desktop 不會搜尋
 `PATH`、Windows registry 或任意資料夾，也不會靜默 fallback 到其他 executable。
 
 若 external tool 以 PyInstaller `onedir` 形式發行，operator 應選擇該
@@ -81,6 +85,12 @@ Tool Instance 是保存於 Template 中的 logical、具名稱的 instance。一
 Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
 setup values。Tool setup 屬於 Template；machine-specific executable paths 與
 Live Resources 不屬於 Template。
+
+**Add Tool Instance** 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
+狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
+對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。
+
+數值欄位使用直接輸入及原生 ArrowUp / ArrowDown stepping；spinner 按鈕隱藏。
 
 ### 5.1 Meters Setup
 
@@ -155,7 +165,9 @@ Protection Setup 為選用設定。展開 Setup 中的 Powers Tool Instance，�
 清空某通道最後一項設定時，會移除該通道 record；全部清空後會回到空 setup，
 取消勾選 **Use Protection Setup** 並停用欄位。取消勾選也會清除整個 Protection
 Setup，所有欄位回到 Unchanged。通道列仍依 capability 顯示，不提供新增或移除
-channel 的控制項。
+channel 的控制項。Protection Setup 與 Device Status 表格的 **Channel** 欄只顯示
+通道數字；確認訊息與 clear plan 使用 **Channel 1**。Workflow Sequence 的 compact
+summary 保留 **CH1**。
 
 兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
 先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
@@ -585,7 +597,8 @@ preference，不屬於 Template contract。
 
 ### Tool shows Not configured
 
-在 **Tools** 中瀏覽到正確的 external executable，並保存 path。
+在 **Tools** 的 **Tool to add** 選擇 Tool Type，再使用 **Add...** 配置正確的
+external executable。
 
 ### Selected executable is rejected
 
@@ -594,8 +607,8 @@ Tool Type 的 executable。
 
 ### Executable shows Missing or Not a file
 
-已保存的 path 不存在，或不是一個 file。請瀏覽到目前的 executable；Desktop 不會
-靜默搜尋替代檔案。
+已保存的 path 不存在，或不是一個 file。請使用 **Change Path...** 選擇目前的
+executable；Desktop 不會靜默搜尋替代檔案。
 
 ### Live Resource is missing
 

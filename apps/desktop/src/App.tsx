@@ -411,6 +411,12 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const configuredTools = tools.filter(tool => tool.path !== null)
+  const configuredToolTypes = configuredTools.map(tool => tool.tool_id as ToolInstance['tool'])
+  const unconfiguredTools = tools.filter(tool => tool.path === null)
+  const [toolToAdd, setToolToAdd] = useState('')
+  const selectedToolToAdd = unconfiguredTools.some(tool => tool.tool_id === toolToAdd)
+    ? toolToAdd : unconfiguredTools[0]?.tool_id ?? ''
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
   const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
   const powersTool = tools.find(status => status.tool_id === 'powers')
@@ -995,11 +1001,11 @@ function App() {
     if (powersOperationBusy !== null) return
     const approved = executionMode === 'simulate'
       ? await confirm(
-          `SIMULATION\n\nGenerate a Clear Protection plan for ${instanceId} CH${channel.channel}?\n\nNo hardware command will be executed.\nNo real protection latch will be changed.`,
+          `SIMULATION\n\nGenerate a Clear Protection plan for ${instanceId} Channel ${channel.channel}?\n\nNo hardware command will be executed.\nNo real protection latch will be changed.`,
           { title: 'Generate Clear Plan', kind: 'info', okLabel: 'Generate Plan', cancelLabel: 'Cancel' },
         )
       : await confirm(
-          `Clear protection for ${instanceId} CH${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
+          `Clear protection for ${instanceId} Channel ${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
           { title: 'Clear Protection', kind: 'warning', okLabel: 'Clear Protection', cancelLabel: 'Cancel' },
         )
     if (!approved) return
@@ -1479,14 +1485,28 @@ function App() {
         <section id="tools-panel" role="tabpanel" aria-labelledby="tools-tab">
           <div className="section-header">
             <h2>External Tools</h2>
-            <button
-              className="action-button"
-              type="button"
-              onClick={() => void refresh()}
-              disabled={loading || toolConfigBusy !== null}
-            >
-              Refresh
-            </button>
+            <div className="tool-actions">
+              <label htmlFor="tool-to-add">Tool to add:</label>
+              <select id="tool-to-add" value={selectedToolToAdd}
+                onChange={event => setToolToAdd(event.target.value)}
+                disabled={loading || toolConfigBusy !== null || workflowBusy || unconfiguredTools.length === 0}>
+                {unconfiguredTools.length === 0 && <option value="">No tools to add</option>}
+                {unconfiguredTools.map(tool => <option key={tool.tool_id} value={tool.tool_id}>{tool.tool_id}</option>)}
+              </select>
+              <button className="action-button" type="button"
+                disabled={loading || toolConfigBusy !== null || workflowBusy || !selectedToolToAdd}
+                onClick={() => { if (selectedToolToAdd) void handleBrowseToolExecutable(selectedToolToAdd) }}>
+                Add...
+              </button>
+              <button
+                className="action-button"
+                type="button"
+                onClick={() => void refresh()}
+                disabled={loading || toolConfigBusy !== null}
+              >
+                Refresh
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -1503,9 +1523,11 @@ function App() {
 
           {loading && tools.length === 0 && !error && <p>Loading tool status…</p>}
 
-          {!error && tools.length > 0 && (
+          {!error && !loading && configuredTools.length === 0 && <p>No external tools configured.</p>}
+
+          {!error && configuredTools.length > 0 && (
             <ul className="tool-list">
-              {tools.map((tool) => (
+              {configuredTools.map((tool) => (
                 <li key={tool.tool_id} className="tool-card">
                   <div className="tool-title">
                     <span className="tool-id">{tool.tool_id}</span>
@@ -1560,7 +1582,7 @@ function App() {
                       onClick={() => void handleBrowseToolExecutable(tool.tool_id)}
                       disabled={toolConfigBusy !== null || workflowBusy || loading}
                     >
-                      Browse...
+                      Change Path...
                     </button>
                     <button
                       className="action-button"
@@ -1568,7 +1590,7 @@ function App() {
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
                       disabled={toolConfigBusy !== null || workflowBusy || loading || tool.source !== 'configured'}
                     >
-                      Clear Path
+                      Remove Tool
                     </button>
                   </div>
                 </li>
@@ -1588,6 +1610,7 @@ function App() {
               {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
               <ToolSetupEditor
                 value={workflowDraft.tool_instances}
+                configuredToolTypes={configuredToolTypes}
                 executionMode={executionMode}
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
@@ -1632,9 +1655,9 @@ function App() {
                           <details><summary>Show Plan</summary>
                             <strong>CLEAR PROTECTION PLAN · SIMULATION</strong>
                             <dl className="tool-details">
-                              <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · CH{clearPlan.channel}</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · Channel {clearPlan.channel}</dd></div>
                               <div className="detail-row"><dt className="detail-label">Safety</dt><dd className="detail-value">All power outputs will be turned OFF first</dd></div>
-                              <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear CH{clearPlan.channel} protection</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear Channel {clearPlan.channel} protection</dd></div>
                               <div className="detail-row"><dt className="detail-label">Final output</dt><dd className="detail-value">Remains OFF</dd></div>
                               <div className="detail-row"><dt className="detail-label">Hardware I/O</dt><dd className="detail-value">None</dd></div>
                             </dl>
@@ -1666,7 +1689,7 @@ function App() {
                                 ? capabilityChannels.includes(channel)
                                 : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
                               return <tr key={channel}>
-                                <th scope="row">CH{channel}</th>
+                                <th scope="row">{channel}</th>
                                 <td>{status ? status.output_enabled ? 'ON' : 'OFF' : '—'}</td>
                                 <td>{status ? status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
                                 <td>{status ? status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</td>

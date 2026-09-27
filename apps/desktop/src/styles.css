@@ -334,6 +334,11 @@ body {
   margin-top: 12px;
 }
 
+.section-header .tool-actions {
+  align-items: center;
+  margin-top: 0;
+}
+
 .workflow-summary {
   margin-top: 20px;
   padding: 16px;
@@ -617,6 +622,17 @@ textarea {
   background: var(--field);
   color: var(--ink);
   font: inherit;
+}
+
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 input:disabled,

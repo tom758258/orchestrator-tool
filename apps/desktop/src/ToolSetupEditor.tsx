@@ -436,12 +436,12 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
             capabilities?.channels.includes(channel) && features?.ocp_delay_triggers.includes(trigger))
           const unsupportedTrigger = record.ocp_delay_trigger !== undefined && !triggers.includes(record.ocp_delay_trigger)
           return <tr key={channel}>
-            <th scope="row">CH{channel}
+            <th scope="row">{channel}
               {capabilities && !capabilities.channels.includes(channel) &&
                 <span className="tool-setup-hint">Unavailable; existing settings preserved.</span>}
             </th>
             <td>
-              <input aria-label={`CH${channel} OVP Voltage (V)`} type="number" min={0} step="any" placeholder="Unchanged"
+              <input aria-label={`Channel ${channel} OVP Voltage (V)`} type="number" min={0} step="any" placeholder="Unchanged"
                 value={record.ovp_voltage ?? ''} disabled={!protectionEnabled || !supported('ovp_voltage')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
                     changeSetting(updatePowersProtectionSetting(value, channel, 'ovp_voltage',
@@ -452,7 +452,7 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                 <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
             </td>
             <td>
-              <select aria-label={`CH${channel} OCP`} value={record.ocp ?? ''} disabled={!protectionEnabled || !supported('ocp')}
+              <select aria-label={`Channel ${channel} OCP`} value={record.ocp ?? ''} disabled={!protectionEnabled || !supported('ocp')}
                 onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp']))}>
                 <option value="">Unchanged</option><option value="on">On</option><option value="off">Off</option>
@@ -461,7 +461,7 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                 <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
             </td>
             <td>
-              <input aria-label={`CH${channel} OCP Delay (s)`} type="number" min={0} step="any" placeholder="Unchanged"
+              <input aria-label={`Channel ${channel} OCP Delay (s)`} type="number" min={0} step="any" placeholder="Unchanged"
                 value={record.ocp_delay ?? ''} disabled={!protectionEnabled || !supported('ocp_delay')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
                     changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay',
@@ -472,7 +472,7 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                 <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
             </td>
             <td>
-              <select aria-label={`CH${channel} OCP Delay Trigger`} value={record.ocp_delay_trigger ?? ''}
+              <select aria-label={`Channel ${channel} OCP Delay Trigger`} value={record.ocp_delay_trigger ?? ''}
                 disabled={!protectionEnabled || triggers.length === 0 || unsupportedTrigger}
                 onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay_trigger',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp_delay_trigger']))}>
@@ -505,8 +505,9 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey }: {
+export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
+  configuredToolTypes: ToolInstance['tool'][]
   resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
   executionMode: ExecutionMode
   metersExecutableKey: string
@@ -520,16 +521,20 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
       return remaining.length === current.length ? current : remaining
     })
   }, [value])
-  const [tool, setTool] = useState<ToolInstance['tool']>('meters')
+  const [selectedTool, setTool] = useState<ToolInstance['tool'] | ''>('')
+  const tool = configuredToolTypes.includes(selectedTool as ToolInstance['tool'])
+    ? selectedTool : configuredToolTypes[0] ?? ''
   return <section className="tool-setup" aria-labelledby="tool-setup-title">
     <h3 id="tool-setup-title">Tool Setup</h3>
-    <fieldset disabled={disabled}>
+    <fieldset disabled={disabled || !tool}>
       <legend>Add Tool Instance</legend>
       <div className="tool-setup-add-controls">
       <select aria-label="Tool type" value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
-        {['meters', 'powers', 'scopes', 'wavegen'].map(type => <option key={type} value={type}>{type}</option>)}
+        {!tool && <option value="">No configured tools</option>}
+        {configuredToolTypes.map(type => <option key={type} value={type}>{type}</option>)}
       </select>
       <button type="button" className="action-button" onClick={() => {
+        if (!tool) return
         let n = 1
         while (value.some(instance => instance.id === `${tool}-${n}`)) n++
         const id = `${tool}-${n}`
@@ -545,6 +550,7 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
       }}>Add Tool Instance</button>
       </div>
     </fieldset>
+    {!tool && <p className="tool-setup-hint">Configure an external tool in Tools before adding a Tool Instance.</p>}
     {value.map(instance => {
       const collapsed = collapsedIds.includes(instance.id)
       const referenced = steps.some(step => step.type === 'tool-action' && step.target === instance.id)
@@ -559,6 +565,9 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
           {instance.id}
           <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span>
         </legend>
+        {!configuredToolTypes.includes(instance.tool) && <p className="tool-setup-hint" role="status">
+          {instance.tool[0].toUpperCase() + instance.tool.slice(1)} is not configured in Tools.
+        </p>}
         {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'

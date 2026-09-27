@@ -93,15 +93,22 @@ simulator.</p>
 <p>Executable paths belong to a Tool Type. They are shared by all Tool Instances
 of that type; an individual Tool Instance does not store its own executable
 path.</p>
-<p>In <strong>Tools</strong>, choose <strong>Browse...</strong> and select the actual executable supplied by
-the external tool distribution. Desktop validates the executable's manifest
+<p>In <strong>Tools</strong>, select an unconfigured Tool Type under <strong>Tool to add</strong>, choose
+<strong>Add...</strong>, and select the actual executable supplied by the external tool
+distribution. Desktop validates the executable's manifest
 and Worker compatibility for the expected Tool Type before saving the path. A
 path with the wrong Tool ID or incompatible Worker is rejected, and an
-existing valid path is not replaced by the invalid selection. Use <strong>Clear
-Path</strong> when the saved path should be removed.</p>
-<p>The status area reports states such as <strong>Not configured</strong>, <strong>Available</strong>,
-<strong>Missing</strong>, <strong>Not a file</strong>, or <strong>Error</strong>, together with compatibility and an
-explanation when one is available. Desktop does not search <code>PATH</code>, the
+existing valid path is not replaced by the invalid selection. Canceling the
+picker leaves configuration unchanged. Use <strong>Change Path...</strong> on a Tool card
+to replace its path, or <strong>Remove Tool</strong> to remove only its local executable
+configuration. Removing a Tool does not change Template instances or Workflow
+steps; the Tool Type returns to the Add candidates.</p>
+<p>Cards show only Tool Types with configured executable paths, including paths
+that are <strong>Missing</strong>, <strong>Not a file</strong>, or have compatibility or manifest errors.
+Unconfigured Tool Types appear in the Add candidates. If none are configured,
+Tools shows <strong>No external tools configured.</strong>; if all are configured, Add is
+disabled. Cards report availability, compatibility, and an explanation when
+one is available. Desktop does not search <code>PATH</code>, the
 Windows registry, or arbitrary folders, and does not silently fall back to a
 different executable.</p>
 <p>If an external tool is distributed by PyInstaller in <code>onedir</code> form, select
@@ -112,6 +119,12 @@ or copy the executable or its <code>_internal</code> directory.</p>
 Template can contain multiple instances of the same Tool Type, and each
 instance has its own setup values. Tool setup is part of the Template;
 machine-specific executable paths and Live Resources are not.</p>
+<p><strong>Add Tool Instance</strong> offers only Tool Types configured in Tools, including
+those with a Missing or Error status. With no configured Tool Type, adding an
+instance is disabled. Existing instances remain visible when their Tool Type
+is not locally configured, with a warning that disappears after configuration.</p>
+<p>Numeric fields use direct typing and native ArrowUp / ArrowDown stepping;
+spinner buttons are hidden.</p>
 <h3 id="51-meters-setup">5.1 Meters Setup</h3>
 <p>For a Meters Tool Instance, the current Setup controls:</p>
 <ul>
@@ -186,7 +199,9 @@ setting removes that channel's record; clearing all settings returns to an empty
 setup, unchecks <strong>Use Protection Setup</strong>, and disables the fields. Unchecking it
 also clears the entire Protection Setup and returns all fields to Unchanged.
 Channel rows stay visible according to capabilities; there are no Add Channel
-or Remove Channel controls.</p>
+or Remove Channel controls. Protection Setup and Device Status tables show
+plain channel numbers under <strong>Channel</strong>; confirmations and clear plans use
+<strong>Channel 1</strong>. Workflow Sequence compact summaries retain <strong>CH1</strong>.</p>
 <p>In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
 when status is clear, then starts Workflow steps. A reported trip blocks the
@@ -595,13 +610,15 @@ theme choice is a Desktop preference. It is not part of the Template
 contract.</p>
 <h2 id="14-common-problems">14. Common problems</h2>
 <h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
-<p>In <strong>Tools</strong>, browse to the correct external executable and save the path.</p>
+<p>In <strong>Tools</strong>, select the Tool Type under <strong>Tool to add</strong> and use <strong>Add...</strong> to
+configure the correct external executable.</p>
 <h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
 <p>The executable may have the wrong manifest Tool ID or an incompatible Worker.
 Select the executable for the intended Tool Type.</p>
 <h3 id="executable-shows-missing-or-not-a-file">Executable shows Missing or Not a file</h3>
-<p>The saved path no longer exists or does not identify a file. Browse to the
-current executable; Desktop does not silently search for a replacement.</p>
+<p>The saved path no longer exists or does not identify a file. Use <strong>Change
+Path...</strong> to select the current executable; Desktop does not silently search
+for a replacement.</p>
 <h3 id="live-resource-is-missing">Live Resource is missing</h3>
 <p>In <strong>Setup</strong>, select or enter the resource for the referenced Tool Instance
 and save it before running Live.</p>

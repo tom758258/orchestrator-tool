@@ -71,16 +71,23 @@ Executable paths belong to a Tool Type. They are shared by all Tool Instances
 of that type; an individual Tool Instance does not store its own executable
 path.
 
-In **Tools**, choose **Browse...** and select the actual executable supplied by
-the external tool distribution. Desktop validates the executable's manifest
+In **Tools**, select an unconfigured Tool Type under **Tool to add**, choose
+**Add...**, and select the actual executable supplied by the external tool
+distribution. Desktop validates the executable's manifest
 and Worker compatibility for the expected Tool Type before saving the path. A
 path with the wrong Tool ID or incompatible Worker is rejected, and an
-existing valid path is not replaced by the invalid selection. Use **Clear
-Path** when the saved path should be removed.
+existing valid path is not replaced by the invalid selection. Canceling the
+picker leaves configuration unchanged. Use **Change Path...** on a Tool card
+to replace its path, or **Remove Tool** to remove only its local executable
+configuration. Removing a Tool does not change Template instances or Workflow
+steps; the Tool Type returns to the Add candidates.
 
-The status area reports states such as **Not configured**, **Available**,
-**Missing**, **Not a file**, or **Error**, together with compatibility and an
-explanation when one is available. Desktop does not search `PATH`, the
+Cards show only Tool Types with configured executable paths, including paths
+that are **Missing**, **Not a file**, or have compatibility or manifest errors.
+Unconfigured Tool Types appear in the Add candidates. If none are configured,
+Tools shows **No external tools configured.**; if all are configured, Add is
+disabled. Cards report availability, compatibility, and an explanation when
+one is available. Desktop does not search `PATH`, the
 Windows registry, or arbitrary folders, and does not silently fall back to a
 different executable.
 
@@ -94,6 +101,14 @@ A Tool Instance is a logical, named instance stored in the Template. A
 Template can contain multiple instances of the same Tool Type, and each
 instance has its own setup values. Tool setup is part of the Template;
 machine-specific executable paths and Live Resources are not.
+
+**Add Tool Instance** offers only Tool Types configured in Tools, including
+those with a Missing or Error status. With no configured Tool Type, adding an
+instance is disabled. Existing instances remain visible when their Tool Type
+is not locally configured, with a warning that disappears after configuration.
+
+Numeric fields use direct typing and native ArrowUp / ArrowDown stepping;
+spinner buttons are hidden.
 
 ### 5.1 Meters Setup
 
@@ -178,7 +193,9 @@ setting removes that channel's record; clearing all settings returns to an empty
 setup, unchecks **Use Protection Setup**, and disables the fields. Unchecking it
 also clears the entire Protection Setup and returns all fields to Unchanged.
 Channel rows stay visible according to capabilities; there are no Add Channel
-or Remove Channel controls.
+or Remove Channel controls. Protection Setup and Device Status tables show
+plain channel numbers under **Channel**; confirmations and clear plans use
+**Channel 1**. Workflow Sequence compact summaries retain **CH1**.
 
 In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
@@ -665,7 +682,8 @@ contract.
 
 ### Tool shows Not configured
 
-In **Tools**, browse to the correct external executable and save the path.
+In **Tools**, select the Tool Type under **Tool to add** and use **Add...** to
+configure the correct external executable.
 
 ### Selected executable is rejected
 
@@ -674,8 +692,9 @@ Select the executable for the intended Tool Type.
 
 ### Executable shows Missing or Not a file
 
-The saved path no longer exists or does not identify a file. Browse to the
-current executable; Desktop does not silently search for a replacement.
+The saved path no longer exists or does not identify a file. Use **Change
+Path...** to select the current executable; Desktop does not silently search
+for a replacement.
 
 ### Live Resource is missing
 

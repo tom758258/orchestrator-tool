@@ -83,13 +83,17 @@ Scopes 與 Wavegen Workflow actions。</p>
 <h2 id="4-設定-external-tools">4. 設定 external Tools</h2>
 <p>Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。</p>
-<p>在 <strong>Tools</strong> 中使用 <strong>Browse...</strong>，選擇 external tool distribution 提供的
-真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
+<p>在 <strong>Tools</strong> 的 <strong>Tool to add</strong> 選擇尚未配置的 Tool Type，按 <strong>Add...</strong>，
+再選擇 external tool distribution 提供的真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
 是否符合預期 Tool Type 的 Worker compatibility。Tool ID 錯誤或 Worker 不相容
-的 path 會被拒絕，且不會取代原本有效的 path。需要移除已保存的 path 時使用
-<strong>Clear Path</strong>。</p>
-<p>狀態區會顯示 <strong>Not configured</strong>、<strong>Available</strong>、<strong>Missing</strong>、<strong>Not a file</strong>
-或 <strong>Error</strong> 等狀態，並在可用時顯示 compatibility 與原因。Desktop 不會搜尋
+的 path 會被拒絕，且不會取代原本有效的 path。取消 picker 不會變更設定。
+在 Tool card 使用 <strong>Change Path...</strong> 替換 path，或使用 <strong>Remove Tool</strong> 只移除
+本機 executable configuration。移除 Tool 不會變更 Template instances 或
+Workflow steps；該 Tool Type 會回到 Add 候選。</p>
+<p>Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 <strong>Missing</strong>、
+<strong>Not a file</strong> 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
+Type 會出現在 Add 候選。全部未配置時顯示 <strong>No external tools configured.</strong>；
+全部已配置時停用 Add。Cards 顯示 availability、compatibility，並在可用時顯示原因。Desktop 不會搜尋
 <code>PATH</code>、Windows registry 或任意資料夾，也不會靜默 fallback 到其他 executable。</p>
 <p>若 external tool 以 PyInstaller <code>onedir</code> 形式發行，operator 應選擇該
 distribution 裡真正的 executable。Orchestrator Tool 不會搬移或複製 executable
@@ -99,6 +103,10 @@ distribution 裡真正的 executable。Orchestrator Tool 不會搬移或複製 e
 Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
 setup values。Tool setup 屬於 Template；machine-specific executable paths 與
 Live Resources 不屬於 Template。</p>
+<p><strong>Add Tool Instance</strong> 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
+狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
+對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。</p>
+<p>數值欄位使用直接輸入及原生 ArrowUp / ArrowDown stepping；spinner 按鈕隱藏。</p>
 <h3 id="51-meters-setup">5.1 Meters Setup</h3>
 <p>目前 Meters Tool Instance 的 Setup 提供：</p>
 <ul>
@@ -163,7 +171,9 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 清空某通道最後一項設定時，會移除該通道 record；全部清空後會回到空 setup，
 取消勾選 <strong>Use Protection Setup</strong> 並停用欄位。取消勾選也會清除整個 Protection
 Setup，所有欄位回到 Unchanged。通道列仍依 capability 顯示，不提供新增或移除
-channel 的控制項。</p>
+channel 的控制項。Protection Setup 與 Device Status 表格的 <strong>Channel</strong> 欄只顯示
+通道數字；確認訊息與 clear plan 使用 <strong>Channel 1</strong>。Workflow Sequence 的 compact
+summary 保留 <strong>CH1</strong>。</p>
 <p>兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
 先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
 之後才開始 Workflow。回報的 trip 會阻止執行；Orchestrator 絕不自動清除。
@@ -515,13 +525,14 @@ machine/runtime state 保留在 Desktop local configuration。</p>
 preference，不屬於 Template contract。</p>
 <h2 id="14-common-problems">14. Common problems</h2>
 <h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
-<p>在 <strong>Tools</strong> 中瀏覽到正確的 external executable，並保存 path。</p>
+<p>在 <strong>Tools</strong> 的 <strong>Tool to add</strong> 選擇 Tool Type，再使用 <strong>Add...</strong> 配置正確的
+external executable。</p>
 <h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
 <p>Executable 可能有錯誤的 manifest Tool ID，或 Worker 不相容。請選擇符合預期
 Tool Type 的 executable。</p>
 <h3 id="executable-shows-missing-or-not-a-file">Executable shows Missing or Not a file</h3>
-<p>已保存的 path 不存在，或不是一個 file。請瀏覽到目前的 executable；Desktop 不會
-靜默搜尋替代檔案。</p>
+<p>已保存的 path 不存在，或不是一個 file。請使用 <strong>Change Path...</strong> 選擇目前的
+executable；Desktop 不會靜默搜尋替代檔案。</p>
 <h3 id="live-resource-is-missing">Live Resource is missing</h3>
 <p>在 <strong>Setup</strong> 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
 保存。</p>
