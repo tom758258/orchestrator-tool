@@ -162,6 +162,26 @@ test('Histogram normal line uses bin centers, sample count and each actual width
 })
 
 test('shared Output color preserves Auto and colors Scatter line/markers and Combo', () => {
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  const callback = source.match(/setDraft\((current => \{\s+const seriesColors =[\s\S]*?\n\s+\})\)/)
+  assert.ok(callback)
+  for (const name of ['__proto__', 'I']) {
+    const current = { ...base, seriesColors: { V: '#abcdef' } }
+    const update = custom => runInNewContext(`(${callback[1]})`, {
+      custom, name, palette: '#123456',
+    })
+    const customized = update(true)(current)
+    assert.notEqual(customized.seriesColors, current.seriesColors)
+    assert.equal(Object.prototype.hasOwnProperty.call(customized.seriesColors, name), true)
+    assert.equal(seriesColor(customized, name, 'red'), '#123456')
+    assert.equal(Object.prototype.hasOwnProperty.call(current.seriesColors, name), false)
+    const automatic = update(false)(customized)
+    assert.notEqual(automatic.seriesColors, customized.seriesColors)
+    assert.equal(Object.prototype.hasOwnProperty.call(automatic.seriesColors, name), false)
+    assert.equal(seriesColor(automatic, name, 'red'), 'red')
+    assert.equal(seriesColor(automatic, 'V', 'blue'), '#abcdef')
+    assert.equal(seriesColor(customized, name, 'red'), '#123456')
+  }
   const panel = { ...base, seriesColors: { I: '#123456', V: '#abcdef' } }
   assert.equal(seriesColor(base, 'I', 'red'), 'red')
   assert.equal(seriesColor(base, 'toString', 'red'), 'red')

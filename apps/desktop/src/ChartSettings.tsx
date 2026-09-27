@@ -154,9 +154,9 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
                 const palette = getComputedStyle(document.documentElement)
                   .getPropertyValue(`--chart-series-${draft.type === 'histogram' ? 1 : numericNames.indexOf(name) % 6 + 1}`).trim()
                 setDraft(current => {
-                  const seriesColors = { ...current.seriesColors }
-                  if (custom) seriesColors[name] = palette
-                  else delete seriesColors[name]
+                  const seriesColors = custom
+                    ? { ...current.seriesColors, [name]: palette } : { ...current.seriesColors }
+                  if (!custom) delete seriesColors[name]
                   return { ...current, seriesColors }
                 })
               }}><option value="auto">Auto</option><option value="custom">Custom color</option></select>
