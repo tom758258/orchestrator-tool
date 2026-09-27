@@ -289,6 +289,30 @@ check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
 
+In **Sequence**, click a step to select it. **Ctrl+Click** adds or removes an
+individual step; **Shift+Click** selects the range from the selection anchor.
+Multi-selection stays within one sibling list: root steps or the body of one
+For or While. Ctrl/Shift-clicking another list starts a new selection there.
+**Properties** can edit only one step; multiple selected steps show their count.
+
+Drag the handle beside a step to reorder it within its list. The line above or
+below the target shows the insertion position. Dragging a selected step moves
+the whole selection together, including non-adjacent steps, in their original
+relative order. The Sequence scrolls when dragging near its top or bottom edge.
+Steps cannot be dragged between root and loop bodies or between different bodies.
+**Up** / **Down** also move the selection one position; the operation is disabled
+when any selected step reaches that boundary. **Delete** on a selected step
+deletes the selection; Delete on an unselected step deletes only that step.
+Deleting a loop also deletes its body.
+
+With focus in the Workflow editor, **Ctrl+C** copies the selected steps and
+**Ctrl+V** pastes after the last selected step, or at the root end when none is
+selected. The pasted steps become the new selection. Copies remain available
+for this application session; text and form controls keep their normal clipboard
+behavior. While the Workflow is busy, selection and Copy remain available,
+but dragging, Up/Down, Delete and Paste are disabled. Use **Validate** after
+reordering if later steps depend on earlier results.
+
 ### 6.1 Input values and data flow
 
 The current InputValue choices in the editor are:

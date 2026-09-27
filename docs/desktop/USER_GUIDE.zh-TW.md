@@ -246,6 +246,25 @@ Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編�
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
+在 **Sequence** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
+**Shift+Click** 從選取起點選取連續範圍。多選只限同一 sibling list：root
+steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shift 點擊時，
+會改為該處的新選取。**Properties** 只可編輯單一 step；多選時顯示選取數量。
+
+拖曳 step 旁的 handle 可在同一 list 內排序；目標上方或下方的線表示插入位置。
+拖曳已選取的 step 會一起搬動整個 selection，包括不相鄰的 steps，並保持彼此
+原本的相對順序。拖曳接近 Sequence 上下邊界時會自動捲動。不能在 root 與 loop
+body 間，或不同 body 間拖曳。**Up**／**Down** 也會將 selection 移動一個位置；
+任何選取 step 已碰到該方向邊界時會停用。對已選取 step 按 **Delete** 會刪除整個
+selection；對未選取 step 按 Delete 只刪除該 step。刪除 loop 也會刪除其 body。
+
+焦點位於 Workflow editor 時，**Ctrl+C** 複製選取的 steps，**Ctrl+V** 貼到
+最後一個選取 step 後；沒有 selection 時貼到 root 最後。貼上的 steps 會成為
+新 selection。複本在這次 application session 內可重複使用；文字與表單控制項
+保留原生 clipboard 行為。Workflow busy 時仍可選取與 Copy，但 Drag、Up／Down、
+Delete 與 Paste 會停用。若後續 steps 引用先前結果，排序後可使用 **Validate**
+檢查。
+
 ### 6.1 Input values 與 data flow
 
 Editor 目前的 InputValue 選項是：

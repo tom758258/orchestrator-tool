@@ -5,6 +5,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
+import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, reorderSteps, selectStep, singleSelection, stepClipboardShortcut } from './stepEditing'
+import type { StepSelection } from './stepEditing'
 import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
@@ -447,7 +449,16 @@ function App() {
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | null>(null)
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
+  const [stepSelection, setStepSelection] = useState<StepSelection>(() => singleSelection(null))
+  const selection = reconcileSelection(workflowDraft?.workflow.steps ?? [], stepSelection)
+  const { active: selectedStepId, ids: selectedStepIds } = selection
+  const setSelectedStepId = useCallback((id: string | null) => setStepSelection(singleSelection(id)), [])
+  const stepClipboardRef = useRef<WorkflowStep[]>([])
+  const pastedStepIdsRef = useRef(new Set<string>())
+  const stepEditingBusyRef = useRef(false)
+  useEffect(() => {
+    setStepSelection(current => reconcileSelection(workflowDraft?.workflow.steps ?? [], current))
+  }, [workflowDraft])
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
@@ -670,7 +681,7 @@ function App() {
   }, [])
 
   const addStep = useCallback((preset: StepPresetOption) => {
-    if (!workflowDraft) {
+    if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) {
       return
     }
     const parent = insertionLoop(workflowDraft.workflow.steps, selectedStepId)
@@ -700,15 +711,16 @@ function App() {
 
   const deleteStep = useCallback(
     (stepId: string) => {
-      updateSteps((steps) => mapWorkflowSteps(steps, step => step.id === stepId ? null : step))
-      setSelectedStepId(current => current === stepId ||
-        loopPath(workflowDraft?.workflow.steps ?? [], current).some(loop => loop.id === stepId) ? null : current)
+      if (stepEditingBusyRef.current || runInFlightRef.current || !workflowDraft) return
+      const ids = selection.ids.includes(stepId) ? selection.ids : [stepId]
+      updateSteps(steps => deleteSteps(steps, ids))
+      setStepSelection(current => reconcileSelection(deleteSteps(workflowDraft.workflow.steps, ids), current))
     },
-    [updateSteps, workflowDraft],
+    [updateSteps, workflowDraft, selection],
   )
 
   const clearWorkflow = useCallback(async () => {
-    if (!workflowDraft || workflowDraft.workflow.steps.length === 0) {
+    if (!workflowDraft || workflowDraft.workflow.steps.length === 0 || stepEditingBusyRef.current || runInFlightRef.current) {
       return
     }
 
@@ -720,6 +732,7 @@ function App() {
       return
     }
 
+    if (stepEditingBusyRef.current || runInFlightRef.current) return
     updateSteps(() => [])
     setSelectedStepId(null)
   }, [updateSteps, workflowDraft])
@@ -776,23 +789,36 @@ function App() {
 
   const moveStep = useCallback(
     (stepId: string, offset: -1 | 1) => {
-      updateSteps((steps) => {
-        const parent = enclosingLoop(steps, stepId)
-        const siblings = parent?.steps ?? steps
-        const index = siblings.findIndex(step => step.id === stepId)
-        const targetIndex = index + offset
-        if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return steps
-        const reordered = [...siblings]
-        const currentStep = reordered[index]
-        reordered[index] = reordered[targetIndex]
-        reordered[targetIndex] = currentStep
-        return parent
-          ? mapWorkflowSteps(steps, step => step.id === parent.id ? { ...parent, steps: reordered } : step)
-          : reordered
-      })
+      if (stepEditingBusyRef.current || runInFlightRef.current || !workflowDraft) return
+      const ids = selection.ids.includes(stepId) ? selection.ids : [stepId]
+      if (!canMoveSteps(workflowDraft.workflow.steps, ids, offset)) return
+      updateSteps(steps => moveSteps(steps, ids, offset))
     },
-    [updateSteps],
+    [updateSteps, selection, workflowDraft],
   )
+
+  const reorderStep = useCallback((ids: string[], targetId: string, after: boolean) => {
+    if (stepEditingBusyRef.current || runInFlightRef.current || !workflowDraft) return
+    if (reorderSteps(workflowDraft.workflow.steps, ids, targetId, after) === workflowDraft.workflow.steps) return
+    updateSteps(steps => reorderSteps(steps, ids, targetId, after))
+  }, [updateSteps, workflowDraft])
+
+  function handleStepClipboard(event: React.KeyboardEvent<HTMLElement>) {
+    const shortcut = stepClipboardShortcut(event, activeTab === 'workflow', isEditableTarget(event.target))
+    if (!shortcut || event.defaultPrevented || !workflowDraft) return
+    if (shortcut === 'copy') {
+      if (!selection.ids.length) return
+      event.preventDefault()
+      stepClipboardRef.current = copySteps(workflowDraft.workflow.steps, selection)
+    } else {
+      if (stepEditingBusyRef.current || runInFlightRef.current || !stepClipboardRef.current.length) return
+      event.preventDefault()
+      const pasted = pasteSteps(workflowDraft.workflow.steps, stepClipboardRef.current, selection, pastedStepIdsRef.current)
+      for (const step of allWorkflowSteps(pasted.steps)) pastedStepIdsRef.current.add(step.id)
+      updateSteps(() => pasted.steps)
+      setStepSelection(pasted.selection)
+    }
+  }
 
   const validateDraft = useCallback(async () => {
     if (!workflowDraft) {
@@ -807,11 +833,7 @@ function App() {
       })
       const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(canonicalDraft)
-      setSelectedStepId((current) =>
-        current && allWorkflowSteps(canonicalDraft.workflow.steps).some((step) => step.id === current)
-          ? current
-          : null,
-      )
+      setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       setValidationStatus('valid')
     } catch (message) {
       setValidationStatus('idle')
@@ -885,11 +907,7 @@ function App() {
       })
       const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
       setWorkflowDraft(canonicalDraft)
-      setSelectedStepId((current) =>
-        current && allWorkflowSteps(canonicalDraft.workflow.steps).some((step) => step.id === current)
-          ? current
-          : null,
-      )
+      setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       setValidationStatus('valid')
       setValidationError(null)
       setTemplateIoMessage('Template saved.')
@@ -1221,6 +1239,7 @@ function App() {
 
   const workflowBusy =
     choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
+  stepEditingBusyRef.current = workflowBusy
 
   const handleClearLastRun = useCallback(async () => {
     if (!runWorkflowSnapshot || workflowBusy) return
@@ -1819,7 +1838,7 @@ function App() {
         </section>
 
       {activeTab === 'workflow' && (
-        <section id="workflow-panel" role="tabpanel" aria-labelledby="workflow-tab">
+        <section id="workflow-panel" role="tabpanel" aria-labelledby="workflow-tab" tabIndex={0} onKeyDown={handleStepClipboard}>
           <div className="section-header">
             <h2>Workflow</h2>
           </div>
@@ -1891,8 +1910,9 @@ function App() {
 
                 <SequenceEditor
                   steps={workflowDraft.workflow.steps}
-                  selectedStepId={selectedStepId}
-                  onSelectStep={setSelectedStepId}
+                  selectedStepIds={selectedStepIds}
+                  onSelectStep={(id, modifiers) => setStepSelection(current => selectStep(workflowDraft.workflow.steps, current, id, modifiers))}
+                  onReorderSteps={reorderStep}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
                   runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_summaries ?? null : null}
@@ -1906,11 +1926,15 @@ function App() {
                 <section className="step-properties" aria-labelledby="step-properties-title">
                   <h3 id="step-properties-title">Properties</h3>
 
-                  {!selectedStep && (
+                  {selectedStepIds.length > 1 && (
+                    <p className="step-properties-empty">{selectedStepIds.length} steps selected. Select a single step to edit its properties.</p>
+                  )}
+
+                  {selectedStepIds.length <= 1 && !selectedStep && (
                     <p className="step-properties-empty">Select a step to edit its properties.</p>
                   )}
 
-                  {selectedStep && (
+                  {selectedStepIds.length === 1 && selectedStep && (
                     <div className="step-properties-fields">
                       <div>
                         <h4 className="step-properties-step-title">{stepLabel(selectedStep, workflowDraft.tool_instances)}</h4>

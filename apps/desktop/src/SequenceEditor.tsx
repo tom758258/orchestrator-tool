@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+import { canMoveSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, ForStep, WhileStep } from './workflow'
 import { expressionSummary } from './inputValue'
@@ -7,8 +9,9 @@ type SequenceEditorProps = {
   steps: readonly WorkflowStep[]
   runResults: readonly StepSummaryDto[] | null
   formatMeasurement: (output: unknown) => string | null
-  selectedStepId: string | null
-  onSelectStep: (stepId: string) => void
+  selectedStepIds: readonly string[]
+  onSelectStep: (stepId: string, modifiers?: { ctrlKey: boolean; shiftKey: boolean }) => void
+  onReorderSteps: (ids: string[], targetId: string, after: boolean) => void
   stepLabel: (step: WorkflowStep) => string
   workflowBusy: boolean
   onMoveStep: (stepId: string, offset: -1 | 1) => void
@@ -94,14 +97,88 @@ function SequenceEditor({
   instances,
   runResults,
   formatMeasurement,
-  selectedStepId,
+  selectedStepIds,
   onSelectStep,
+  onReorderSteps,
   stepLabel,
   workflowBusy,
   onMoveStep,
   onDeleteStep,
   onClearWorkflow,
 }: SequenceEditorProps) {
+  const editorRef = useRef<HTMLElement>(null)
+  const dragRef = useRef<{
+    ids: string[]; id: string; pointerId: number; handle: HTMLButtonElement;
+    startX: number; startY: number; x: number; y: number; started: boolean
+  } | null>(null)
+  const scrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const suppressClickRef = useRef(false)
+  const dropRef = useRef<{ id: string; after: boolean } | null>(null)
+  const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null)
+  const [draggingIds, setDraggingIds] = useState<string[]>([])
+
+  function finishDrag() {
+    const drag = dragRef.current
+    dragRef.current = null
+    if (scrollTimerRef.current !== null) clearInterval(scrollTimerRef.current)
+    scrollTimerRef.current = null
+    dropRef.current = null
+    setDrop(null)
+    setDraggingIds([])
+    if (drag?.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId)
+  }
+
+  useEffect(() => {
+    if (workflowBusy) finishDrag()
+  }, [workflowBusy])
+  useEffect(() => () => {
+    if (scrollTimerRef.current !== null) clearInterval(scrollTimerRef.current)
+  }, [])
+
+  function updateDrop() {
+    const drag = dragRef.current
+    const editor = editorRef.current
+    if (!drag?.started || !editor) return
+    const target = document.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>('[data-step-drop-id]')
+    const id = target?.dataset.stepDropId
+    const source = stepContainer(steps, drag.id)
+    const container = id ? stepContainer(steps, id) : undefined
+    let next: { id: string; after: boolean } | null = null
+    if (target && id && editor.contains(target) && source && container && source.parentId === container.parentId) {
+      const rect = target.getBoundingClientRect()
+      next = { id, after: drag.y >= rect.top + rect.height / 2 }
+    }
+    dropRef.current = next
+    setDrop(current => current?.id === next?.id && current?.after === next?.after ? current : next)
+  }
+
+  function pointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId || workflowBusy) return
+    drag.x = event.clientX
+    drag.y = event.clientY
+    if (!drag.started && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 5) {
+      drag.started = true
+      suppressClickRef.current = true
+      if (!selectedStepIds.includes(drag.id)) onSelectStep(drag.id)
+      setDraggingIds(drag.ids)
+      scrollTimerRef.current = setInterval(() => {
+        const editor = editorRef.current
+        const current = dragRef.current
+        if (!editor || !current) return
+        const rect = editor.getBoundingClientRect()
+        const top = Math.max(rect.top, 0)
+        const bottom = Math.min(rect.bottom, window.innerHeight)
+        if (current.x >= rect.left && current.x <= rect.right && current.y >= top && current.y <= bottom) {
+          const direction = current.y < top + 40 ? -1 : current.y > bottom - 40 ? 1 : 0
+          if (direction) editor.scrollTop += direction * 12
+        }
+        updateDrop()
+      }, 50)
+    }
+    updateDrop()
+  }
+
   function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep | WhileStep, parentOrder?: string): React.ReactNode {
     return (
       <ol className="sequence-steps">
@@ -128,44 +205,78 @@ function SequenceEditor({
 
           return (
             <li key={step.id} className="sequence-step-row">
-              <button
-                className="sequence-step-card"
-                type="button"
-                aria-label={`Step ${order}: ${stepLabel(step)}, ${step.id}`}
-                aria-describedby={result ? `sequence-result-${step.id}` : undefined}
-                aria-pressed={selectedStepId === step.id}
-                onClick={() => onSelectStep(step.id)}
-              >
-                <span className="sequence-step-order">{order}</span>
-                <span className="sequence-step-identity">
-                  <span className="sequence-step-label">{stepLabel(step)}</span>
-                  <span className="sequence-step-summary" title={stepSummary(step, instances)}>
-                    {stepSummary(step, instances)}
-                  </span>
-                  <code>{step.id}</code>
-                  {result && (
-                    <span id={`sequence-result-${step.id}`} className="sequence-step-result">
-                      <span className={`run-result-status run-result-${result.status}`}>
-                        <span aria-hidden="true">
-                          {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
-                        </span>{' '}
-                        {result.status}
-                      </span>
-                      {outputSummary !== null && (
-                        <span className="sequence-step-output">{outputSummary}</span>
-                      )}
+              <div className={`sequence-step-main${drop?.id === step.id ? drop.after ? ' sequence-drop-after' : ' sequence-drop-before' : ''}${draggingIds.includes(step.id) ? ' sequence-dragging' : ''}`}
+                data-step-drop-id={step.id}>
+                <button className="sequence-drag-handle" type="button" disabled={workflowBusy}
+                  aria-label={`Drag ${step.id} to reorder`} title="Drag to reorder within this list"
+                  onPointerDown={event => {
+                    if (workflowBusy || event.button !== 0 || dragRef.current) return
+                    suppressClickRef.current = false
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    dragRef.current = {
+                      ids: selectedStepIds.includes(step.id) ? [...selectedStepIds] : [step.id],
+                      id: step.id, pointerId: event.pointerId, handle: event.currentTarget,
+                      startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, started: false,
+                    }
+                  }}
+                  onPointerMove={pointerMove}
+                  onPointerUp={event => {
+                    const drag = dragRef.current
+                    if (!drag || drag.pointerId !== event.pointerId) return
+                    drag.x = event.clientX
+                    drag.y = event.clientY
+                    updateDrop()
+                    const target = dropRef.current
+                    if (drag.started && target && !workflowBusy) onReorderSteps(drag.ids, target.id, target.after)
+                    finishDrag()
+                  }}
+                  onPointerCancel={finishDrag}
+                  onLostPointerCapture={finishDrag}
+                  onClick={() => {
+                    if (!suppressClickRef.current) onSelectStep(step.id)
+                    suppressClickRef.current = false
+                  }}>
+                  <span aria-hidden="true">⠿</span>
+                </button>
+                <button
+                  className="sequence-step-card"
+                  type="button"
+                  aria-label={`Step ${order}: ${stepLabel(step)}, ${step.id}`}
+                  aria-describedby={result ? `sequence-result-${step.id}` : undefined}
+                  aria-pressed={selectedStepIds.includes(step.id)}
+                  onClick={event => onSelectStep(step.id, { ctrlKey: event.ctrlKey, shiftKey: event.shiftKey })}
+                >
+                  <span className="sequence-step-order">{order}</span>
+                  <span className="sequence-step-identity">
+                    <span className="sequence-step-label">{stepLabel(step)}</span>
+                    <span className="sequence-step-summary" title={stepSummary(step, instances)}>
+                      {stepSummary(step, instances)}
                     </span>
-                  )}
-                </span>
-              </button>
+                    <code>{step.id}</code>
+                    {result && (
+                      <span id={`sequence-result-${step.id}`} className="sequence-step-result">
+                        <span className={`run-result-status run-result-${result.status}`}>
+                          <span aria-hidden="true">
+                            {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
+                          </span>{' '}
+                          {result.status}
+                        </span>
+                        {outputSummary !== null && (
+                          <span className="sequence-step-output">{outputSummary}</span>
+                        )}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </div>
               <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`}>
                 <button className="action-button" type="button"
-                  disabled={workflowBusy || index === 0}
+                  disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], -1)}
                   onClick={() => onMoveStep(step.id, -1)}>
                   Up
                 </button>
                 <button className="action-button" type="button"
-                  disabled={workflowBusy || index === siblings.length - 1}
+                  disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], 1)}
                   onClick={() => onMoveStep(step.id, 1)}>
                   Down
                 </button>
@@ -186,7 +297,7 @@ function SequenceEditor({
   }
 
   return (
-    <section className="sequence-editor" aria-labelledby="sequence-editor-title">
+    <section ref={editorRef} className="sequence-editor" aria-labelledby="sequence-editor-title">
       <div className="section-header">
         <h3 id="sequence-editor-title">Sequence</h3>
         <button className="action-button action-button-danger" type="button"

@@ -894,6 +894,66 @@ textarea:disabled {
   flex-wrap: wrap;
 }
 
+.sequence-step-main {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sequence-step-main .sequence-step-card {
+  flex: 1;
+  width: auto;
+  user-select: none;
+}
+
+.sequence-drag-handle {
+  flex: 0 0 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 1.3rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.sequence-drag-handle:active {
+  cursor: grabbing;
+}
+
+.sequence-drag-handle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.sequence-dragging {
+  opacity: 0.6;
+}
+
+.sequence-drop-before::before,
+.sequence-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.sequence-drop-before::before {
+  top: -5px;
+}
+
+.sequence-drop-after::after {
+  bottom: -5px;
+}
+
 .sequence-step-actions {
   display: flex;
   flex-shrink: 0;

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import { stripTypeScriptTypes } from 'node:module'
+import { singleSelection } from '../src/stepEditing.ts'
 
 // Exercise the actual component callback without a WebView runtime.
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
@@ -50,9 +51,12 @@ function harness(approved) {
   }
   let draft = structuredClone(original)
   let selectedStepId = 'output-1'
+  let selection = { ids: ['output-1'], active: 'output-1', anchor: 'output-1' }
   const confirmations = []
   const context = {
     workflowDraft: draft,
+    stepEditingBusyRef: { current: false },
+    runInFlightRef: { current: false },
     confirm(message, options) {
       confirmations.push({ message, options })
       return Promise.resolve(approved)
@@ -60,11 +64,11 @@ function harness(approved) {
     updateSteps(update) {
       draft = { ...draft, workflow: { ...draft.workflow, steps: update(draft.workflow.steps) } }
     },
-    setSelectedStepId(value) { selectedStepId = value },
+    setSelectedStepId(value) { selectedStepId = value; selection = singleSelection(value) },
   }
   return {
     clear: runInNewContext(code, context),
-    state: () => ({ draft, selectedStepId, confirmations }),
+    state: () => ({ draft, selectedStepId, selection, confirmations }),
     original,
   }
 }
@@ -88,6 +92,7 @@ test('Confirm clears all steps including set-variable while preserving tool inst
   assert.equal(draft.name, h.original.name)
   assert.equal(draft.schema_version, h.original.schema_version)
   assert.equal(selectedStepId, null)
+  assert.deepEqual(h.state().selection, singleSelection(null))
   assert.equal(confirmations.length, 1)
   assert.equal(confirmations[0].message, 'Clear all workflow steps?\n\nThis action cannot be undone.')
   assert.equal(JSON.stringify(confirmations[0].options), JSON.stringify({
