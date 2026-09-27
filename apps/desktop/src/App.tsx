@@ -531,8 +531,9 @@ function App() {
   </>
   const displayedRun = runWorkflowSnapshot ? runMetadata : null
   const runWorkspace = lastRunWorkspaceState(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata)
-  const chartNumericNames = runPageMetadata?.numeric_outputs ?? (runWorkspace.starting
-    ? [...new Set(chartPanels.filter(panel => panel.page === runPage?.name).flatMap(chartRequiredOutputs))] : [])
+  const chartNumericNames = runStatus === 'running' && (runPageMetadata?.row_count ?? 0) === 0
+    ? [...new Set(chartPanels.filter(panel => panel.page === runPage?.name).flatMap(chartRequiredOutputs))]
+    : runPageMetadata?.numeric_outputs ?? []
   // Numeric arrays survive Page/Output tab switches, but never cross a run ID.
   const chartData = useMemo(() => new Map<string, PageChartData>(), [runMetadata?.run_id])
   useEffect(() => {

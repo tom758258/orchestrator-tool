@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { test } from 'node:test'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData } from '../src/chartData.ts'
-import { addChartPanel, chartRawOutputs, chartSupportsLive } from '../src/chartPanels.ts'
+import { addChartPanel, chartRawOutputs, chartRequiredOutputs, chartSupportsLive, reconcileRunChartPanels } from '../src/chartPanels.ts'
 import { statisticalRequestKey } from '../src/chartStatistics.ts'
 
 const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
@@ -64,7 +64,7 @@ test('statistical keys change with run and query parameters', () => {
 // Execute the component's actual loading hooks without mounting its Canvas UI.
 const loadingSource = stripTypeScriptTypes(source.slice(source.indexOf('export default function ResultChart'),
   source.indexOf('  async function saveImage')).replace('export default ', '') +
-  '\n return { requestedNames, statistical }\n}')
+  '\n return { requestedNames, statistical, waitingForRunData }\n}')
 
 function loadingHarness(invoke) {
   const slots = []
@@ -201,7 +201,11 @@ test('a mixed Page only loads Line dependencies during running', async () => {
   }
 })
 
-test('pre-progress panels make no requests and the first new run ID starts only Line loading', async () => {
+test('preserved panels wait through a new run ID until the first committed row starts Line loading', async () => {
+  const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  const numericNamesFor = new Function('runStatus', 'runPageMetadata', 'chartPanels', 'runPage',
+    'chartRequiredOutputs', appSource.slice(appSource.indexOf('  const chartNumericNames ='),
+      appSource.indexOf('  // Numeric arrays survive')) + '\nreturn chartNumericNames')
   const calls = []
   const harness = loadingHarness(async (command, args) => {
     calls.push({ command, ...args })
@@ -213,20 +217,44 @@ test('pre-progress panels make no requests and the first new run ID starts only 
   oldData.append('V', 0, [1])
   const props = { runId: 1, revision: 1, rowCount: 1, page: 'A', running: false,
     numericNames: ['V', 'I', 'X'], chartData: new Map([['A', oldData]]), panels: [base] }
+  const pages = [{ name: 'A', outputs: ['V', 'I', 'X'].map(name => ({ name })) }]
+  const numericNames = (metadata, running, panels) => numericNamesFor(
+    running ? 'running' : 'succeeded', metadata, panels, pages[0], chartRequiredOutputs)
   try {
     await harness.update(props)
     assert.equal(calls.length, 0)
-    const starting = { ...props, runId: null, running: true, rowCount: 2,
+    const starting = { ...props, runId: null, running: true, rowCount: 0,
       panels: [base, { ...base, id: 1, type: 'scatter', outputs: ['I'], scatterXOutput: 'X' },
         { ...base, id: 2, type: 'histogram', outputs: ['I'] }] }
+    starting.numericNames = numericNames(undefined, true, starting.panels)
     const result = await harness.update(starting)
     assert.deepEqual(calls, [])
     assert.deepEqual(result.requestedNames, [])
-    const progress = { ...starting, runId: 2, chartData: new Map() }
-    await harness.update(progress)
+    assert.equal(result.waitingForRunData, true)
+    const metadata = { name: 'A', row_count: 0, numeric_outputs: [] }
+    const progress = { ...starting, runId: 2, chartData: new Map(),
+      panels: reconcileRunChartPanels(starting.panels, pages, [metadata]),
+      numericNames: numericNames(metadata, true, starting.panels) }
+    assert.deepEqual(progress.numericNames, ['V', 'X', 'I'])
+    assert.equal(progress.panels, starting.panels)
+    const waiting = await harness.update(progress)
+    assert.deepEqual(waiting.requestedNames, ['V'])
+    assert.equal(waiting.waitingForRunData, true)
+    assert.deepEqual(calls, [])
+    metadata.row_count = 1
+    metadata.numeric_outputs = ['V']
+    const committed = { ...progress, revision: 2, rowCount: 1,
+      panels: reconcileRunChartPanels(progress.panels, pages, [metadata]),
+      numericNames: numericNames(metadata, true, progress.panels) }
+    assert.deepEqual(committed.numericNames, ['V'])
+    assert.deepEqual(committed.panels.map(panel => panel.outputs), [['V'], [], []])
+    const live = await harness.update(committed)
+    assert.equal(live.waitingForRunData, false)
     assert.deepEqual(calls.map(call => [call.command, call.runId, call.outputs]),
       [['get_last_run_chart_series', 2, ['V']]])
-    assert.deepEqual([...progress.chartData.get('A').getSeries('V')], [2, 2])
+    assert.deepEqual([...progress.chartData.get('A').getSeries('V')], [2])
+    assert.deepEqual(numericNames({ ...metadata, row_count: 0, numeric_outputs: [] }, false,
+      progress.panels), [])
   } finally {
     harness.dispose()
   }
@@ -280,7 +308,7 @@ test('Waiting precedes plot rendering and locks every panel action without locki
   const plotBranch = source.slice(source.indexOf('{waiting ? <div'), source.indexOf('<ChartPlot'))
   assert.match(plotBranch, /Waiting for run to finish/)
   assert.match(plotBranch, /This chart does not support live updates\. It will update automatically when the run finishes\./)
-  assert.match(plotBranch, /<\/div> : runId === null \? <p role="status">Waiting for run data<\/p>\s*: selectedOutputs/)
+  assert.match(plotBranch, /<\/div> : waitingForRunData \? <p role="status">Waiting for run data<\/p>\s*: selectedOutputs/)
   assert.match(source, /const analysisReady = runId !== null &&/)
   const addAction = source.slice(source.indexOf('<button'), source.indexOf('>+ Add Chart</button>'))
   assert.doesNotMatch(addAction, /waiting|running/)

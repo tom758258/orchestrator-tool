@@ -34,6 +34,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [settingsId, setSettingsId] = useState<number | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
+  const waitingForRunData = runId === null || (running && rowCount === 0)
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const loadingPanels = useMemo(() => localPanels.filter(panel =>
     runId !== null && (!running || chartSupportsLive(panel.type))), [localPanels, running, runId])
@@ -206,7 +207,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         const statisticState = statistical[panel.id]
         const statisticReady = statisticKey !== null && statisticState?.key === statisticKey && !!statisticState.response
         const isStatistical = panel.type === 'histogram' || panel.type === 'boxplot'
-        const analysisReady = runId !== null && (isStatistical ? statisticReady : panel.type === 'line' ||
+        const analysisReady = runId !== null && !waitingForRunData && (isStatistical ? statisticReady : panel.type === 'line' ||
           (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount))
         const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
         return <section className={`result-chart-panel${waiting ? ' result-chart-panel-waiting' : ''}`} key={panel.id} aria-label={`Chart ${index + 1}`}>
@@ -245,7 +246,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           {waiting ? <div className="result-chart-waiting" role="status">
             <p>Waiting for run to finish</p>
             <p>This chart does not support live updates. It will update automatically when the run finishes.</p>
-          </div> : runId === null ? <p role="status">Waiting for run data</p>
+          </div> : waitingForRunData ? <p role="status">Waiting for run data</p>
             : selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
             : !enoughOutputs ? <p>Select at least two Outputs for Combo.</p>
               : isStatistical && statisticState?.key === statisticKey && statisticState.error
