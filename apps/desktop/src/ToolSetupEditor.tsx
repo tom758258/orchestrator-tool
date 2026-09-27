@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type { ReactNode } from 'react'
 import type { WorkflowStep } from './App'
 import { executionModeLabel, type ExecutionMode } from './executionMode'
+import { protectionChannelNumbers, updatePowersProtectionSetting } from './powersProtectionSetup'
 
 // Mirrors per-instance setup serialization in Template schema v1.
 export type MetersSetup = {
@@ -384,7 +385,6 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   powersExecutableKey: string
 }) {
   const [loaded, setLoaded] = useState<{ key: string; value: PowersCapabilities | null } | null>(null)
-  const [addChannel, setAddChannel] = useState('')
   const key = JSON.stringify([executionMode, modelId, powersExecutableKey])
   useEffect(() => {
     if (executionMode === 'live' && !modelId) return
@@ -401,85 +401,81 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   const hasConfigurableProtection = Boolean(features && (
     features.ovp_voltage || features.ocp || features.ocp_delay || features.ocp_delay_triggers.length > 0
   ))
-  const available = hasConfigurableProtection
-    ? capabilities?.channels.filter(channel => !channels.some(record => record.channel === channel)) ?? []
-    : []
-  const selected = available.some(channel => String(channel) === addChannel) ? addChannel : String(available[0] ?? '')
-  const setChannels = (next: PowersProtectionChannel[]) => onChange(next.length ? { protection: { channels: next } } : {})
-  const update = (channel: number, patch: Partial<PowersProtectionChannel>) => {
-    setChannels(channels.map(record => record.channel === channel ? { ...record, ...patch } : record))
-  }
-  const omit = (channel: number, field: keyof Omit<PowersProtectionChannel, 'channel'>) => {
-    const next = channels.map(record => {
-      if (record.channel !== channel) return record
-      const copy = { ...record }
-      delete copy[field]
-      return copy
-    }).filter(record => record.channel !== channel || Object.keys(record).length > 1)
-    setChannels(next)
-  }
-  return <div className="meters-setup-fields">
+  const displayChannels = protectionChannelNumbers(capabilities?.channels ?? [], channels)
+  return <div className="powers-protection-fields">
     <h4>Protection Setup</h4>
     {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool.</p>}
     {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">Protection configuration is unavailable for the current model.</p>}
     {channels.length === 0 && <p>No protection settings configured.</p>}
-    {channels.map(record => {
-      const supported = (field: 'ovp_voltage' | 'ocp' | 'ocp_delay') =>
-        capabilities?.channels.includes(record.channel) === true && features?.[field] === true
-      const triggers = (['setting-change', 'cc-transition'] as const).filter(trigger =>
-        capabilities?.channels.includes(record.channel) && features?.ocp_delay_triggers.includes(trigger))
-      return <div key={record.channel} className="meters-setup-fields">
-        <strong>CH{record.channel}</strong>
-        {capabilities && !capabilities.channels.includes(record.channel) &&
-          <p className="tool-setup-hint">This channel is unavailable on the current model; existing settings are preserved.</p>}
-        {(['ovp_voltage', 'ocp_delay'] as const).map(field => <label key={field} className="step-property-field">
-          <span className="step-property-label">{field === 'ovp_voltage' ? 'OVP Voltage (V)' : 'OCP Delay (s)'}</span>
-          <input type="number" min={0} step="any" placeholder="Unchanged" value={record[field] ?? ''}
-            disabled={!supported(field)} onChange={event => {
-              if (event.target.value === '') omit(record.channel, field)
-              else if (Number.isFinite(Number(event.target.value))) update(record.channel, { [field]: Number(event.target.value) })
-            }} />
-          {record[field] !== undefined && <button type="button" className="action-button" onClick={() => omit(record.channel, field)}>Remove setting</button>}
-          {record[field] !== undefined && !supported(field) && <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
-        </label>)}
-        <label className="step-property-field">
-          <span className="step-property-label">OCP</span>
-          <select value={record.ocp ?? ''} onChange={event => event.target.value === '' ? omit(record.channel, 'ocp')
-            : update(record.channel, { ocp: event.target.value as 'on' | 'off' })}>
-            <option value="">Unchanged</option>
-            <option value="on" disabled={!supported('ocp')}>On</option>
-            <option value="off" disabled={!supported('ocp')}>Off</option>
-          </select>
-          {record.ocp !== undefined && !supported('ocp') && <span className="tool-setup-hint">Unsupported by the current model; choose Unchanged to remove.</span>}
-        </label>
-        <label className="step-property-field">
-          <span className="step-property-label">OCP Delay Trigger</span>
-          <select value={record.ocp_delay_trigger ?? ''} onChange={event => event.target.value === '' ? omit(record.channel, 'ocp_delay_trigger')
-            : update(record.channel, { ocp_delay_trigger: event.target.value as PowersProtectionChannel['ocp_delay_trigger'] })}>
-            <option value="">Unchanged</option>
-            {record.ocp_delay_trigger && !triggers.includes(record.ocp_delay_trigger) &&
-              <option value={record.ocp_delay_trigger} disabled>{record.ocp_delay_trigger} (unsupported)</option>}
-            {triggers.map(trigger => <option key={trigger} value={trigger}>{trigger === 'setting-change' ? 'Setting Change' : 'CC Transition'}</option>)}
-          </select>
-          {record.ocp_delay_trigger !== undefined && !triggers.includes(record.ocp_delay_trigger) &&
-            <span className="tool-setup-hint">Unsupported by the current model; choose Unchanged to remove.</span>}
-        </label>
-        <button type="button" className="action-button action-button-danger" onClick={() => setChannels(channels.filter(item => item.channel !== record.channel))}>Remove Channel</button>
-      </div>
-    })}
-    <label className="step-property-field">
-      <span className="step-property-label">Add Protection Channel</span>
-      <select value={selected} disabled={available.length === 0} onChange={event => setAddChannel(event.target.value)}>
-        {available.length === 0 && <option value="">No available channels</option>}
-        {available.map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
-      </select>
-      <button type="button" className="action-button" disabled={!selected} onClick={() => {
-        const channel = Number(selected)
-        if (!channels.some(record => record.channel === channel)) setChannels([...channels, { channel }])
-      }}>Add Protection Channel</button>
-    </label>
+    <div className="powers-table-scroll">
+      <table className="powers-protection-table">
+        <thead><tr>
+          <th scope="col">Channel</th><th scope="col">OVP Voltage (V)</th><th scope="col">OCP</th>
+          <th scope="col">OCP Delay (s)</th><th scope="col">OCP Delay Trigger</th>
+        </tr></thead>
+        <tbody>{displayChannels.map(channel => {
+          const record = channels.find(item => item.channel === channel) ?? { channel }
+          const supported = (field: 'ovp_voltage' | 'ocp' | 'ocp_delay') =>
+            capabilities?.channels.includes(channel) === true && features?.[field] === true
+          const triggers = (['setting-change', 'cc-transition'] as const).filter(trigger =>
+            capabilities?.channels.includes(channel) && features?.ocp_delay_triggers.includes(trigger))
+          const unsupportedTrigger = record.ocp_delay_trigger !== undefined && !triggers.includes(record.ocp_delay_trigger)
+          return <tr key={channel}>
+            <th scope="row">CH{channel}
+              {capabilities && !capabilities.channels.includes(channel) &&
+                <span className="tool-setup-hint">Unavailable; existing settings preserved.</span>}
+            </th>
+            <td>
+              <input aria-label={`CH${channel} OVP Voltage (V)`} type="number" min={0} step="any" placeholder="Unchanged"
+                value={record.ovp_voltage ?? ''} disabled={!supported('ovp_voltage')} onChange={event => {
+                  if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
+                    onChange(updatePowersProtectionSetting(value, channel, 'ovp_voltage',
+                      event.target.value === '' ? undefined : Number(event.target.value)))
+                  }
+                }} />
+              {record.ovp_voltage !== undefined && !supported('ovp_voltage') &&
+                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+            </td>
+            <td>
+              <select aria-label={`CH${channel} OCP`} value={record.ocp ?? ''} disabled={!supported('ocp')}
+                onChange={event => onChange(updatePowersProtectionSetting(value, channel, 'ocp',
+                  (event.target.value || undefined) as PowersProtectionChannel['ocp']))}>
+                <option value="">Unchanged</option><option value="on">On</option><option value="off">Off</option>
+              </select>
+              {record.ocp !== undefined && !supported('ocp') &&
+                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+            </td>
+            <td>
+              <input aria-label={`CH${channel} OCP Delay (s)`} type="number" min={0} step="any" placeholder="Unchanged"
+                value={record.ocp_delay ?? ''} disabled={!supported('ocp_delay')} onChange={event => {
+                  if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
+                    onChange(updatePowersProtectionSetting(value, channel, 'ocp_delay',
+                      event.target.value === '' ? undefined : Number(event.target.value)))
+                  }
+                }} />
+              {record.ocp_delay !== undefined && !supported('ocp_delay') &&
+                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+            </td>
+            <td>
+              <select aria-label={`CH${channel} OCP Delay Trigger`} value={record.ocp_delay_trigger ?? ''}
+                disabled={triggers.length === 0 || unsupportedTrigger}
+                onChange={event => onChange(updatePowersProtectionSetting(value, channel, 'ocp_delay_trigger',
+                  (event.target.value || undefined) as PowersProtectionChannel['ocp_delay_trigger']))}>
+                <option value="">Unchanged</option>
+                {(['setting-change', 'cc-transition'] as const).map(trigger =>
+                  <option key={trigger} value={trigger} disabled={!triggers.includes(trigger)}>
+                    {trigger === 'setting-change' ? 'Setting Change' : 'CC Transition'}
+                  </option>)}
+              </select>
+              {unsupportedTrigger &&
+                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+            </td>
+          </tr>
+        })}</tbody>
+      </table>
+    </div>
   </div>
 }
 

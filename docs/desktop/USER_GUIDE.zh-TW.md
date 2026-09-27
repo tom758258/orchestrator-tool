@@ -141,15 +141,16 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 
 ### 5.3 Powers Protection Setup
 
-展開 Setup 中的 Powers Tool Instance，即可逐通道設定 Protection Setup。
-從 powers-tool 回報的通道新增 channel，並設定受支援的 OVP Voltage、OCP、
-OCP Delay 或 OCP Delay Trigger。空白欄位或 **Unchanged** 表示保留儀器
-原有設定。每個 channel 至少需有一項設定，Template 才能保存或執行。
-新的 Powers instance 預設沒有保護設定。
+展開 Setup 中的 Powers Tool Instance，即可設定 Protection Setup。powers-tool
+回報的所有通道，以及 Template 已設定的通道，都會以對齊的固定列顯示。
+每列提供 OVP Voltage、OCP、OCP Delay 與 OCP Delay Trigger。不支援的控制項
+仍會顯示，但會停用。既有的不支援值會顯示提示並保留，保存時不會移除；
+實際型號的支援能力與限制仍由 external tool 驗證。
 
-控制項依 powers-tool 提供的型號 capability 顯示。若變更 resource 後既有
-設定不受支援，Desktop 會顯示提示並保留原值，直到你自行移除。實際型號的
-支援能力與限制仍由 external tool 在套用時驗證。
+數值欄位留白或選擇 **Unchanged** 表示保留儀器原有設定，不會寫入 Template。
+只保存有設定的通道。清空某通道最後一項設定時，會移除該通道 record；全部
+清空後會回到空 setup。新的 Powers instance 即使顯示所有支援通道，setup
+仍為空。不再提供新增或移除 channel 的控制項。
 
 兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
 先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
@@ -170,25 +171,32 @@ confirmation 後 resource 改變，run 會被拒絕，必須重新確認。
 ### 5.4 Device Status
 
 Powers Tool Instance 的 **Device Status** 只屬於 runtime，不會保存到 Template。
-開啟 Setup 不會連線 Worker，也沒有 background polling。只有選擇
-**Refresh Status** 時，Desktop 才會讀取 aggregate Protection、OVP 與 OCP，
-以及每個 channel 的 Output、OVP 與 OCP 狀態。切換 Execution Mode 會清除畫面
-上的 status，避免混用不同 target 的結果。
+開啟 Setup 不會連線 Worker，也沒有 background polling。讀取 status 前，aggregate
+Protection、OVP、OCP 與各通道的值都顯示 **—**。通道列依離線 model capability
+與 Template 既有設定顯示；**Refresh Status** 更新各列的值。Simulation 使用
+simulator 通道，不需要 saved Live Resource。Live 使用已保存的 model identity
+建立通道列，不會為此連線 hardware；capability 不可用時，仍保留已設定通道，
+不會猜測其他通道。切換 Execution Mode 會將舊值清除為 **—**，並顯示所選
+mode 已知的通道。
 
 Simulation 的 Refresh Status 會啟動 configured powers-tool simulate Worker，
 不需要 saved Live Resource。每個 simulator 支援的 channel 都提供
 **Generate Clear Plan...**，不要求 channel 已 trip。確認後，Orchestrator 會送出
 simulated Safe-Off All 與選定 channel 的 `clear-protection`，接著直接 shutdown，
 不會 reread status。結果會顯示 **PLAN GENERATED · SIMULATION**、
-**NO HARDWARE I/O**，並可在 **Show Plan** 查看 powers-tool raw result；沒有真實
-protection latch 被改變。
+**NO HARDWARE I/O**。**Show Plan** 以簡短的操作預覽呈現目標通道、先執行
+Safe-Off、清除 protection、output 保持 OFF 與沒有 hardware I/O。不會顯示 raw JSON
+或儀器指令；沒有真實 protection latch 被改變。
 
 Live 的 Refresh Status 會使用 saved Live Resource 建立 temporary Powers
 connection。Live Resource draft 尚未保存時，必須先 Save Resource，才能使用
 Refresh Status 或 Clear Protection。
 
-只有目前 status 顯示已 trip 的 channel 才會提供 **Clear Protection...**，而且
-一定需要明確確認。Orchestrator 會先 Safe-Off All，只清除選取 channel 的
+每個通道列都有固定的 Action 欄。沒有操作執行中時，simulator 支援的通道可使用
+**Generate Clear Plan...**。Live 的 **Clear Protection...** 一直顯示，但在 Refresh
+Status 前或通道未回報 OVP／OCP trip 時停用。回報 trip 且沒有 Workflow 或 manual
+operation 執行中時才啟用，而且一定需要明確確認。Orchestrator 會先 Safe-Off All，
+只清除選取 channel 的
 protection latch，之後重新讀取完整 status。Clear Protection 不會修正造成 trip
 的原因，也絕不會重新開啟 output。若 latch 仍為 tripped，UI 會顯示尚未解除；
 若 reread 回報 output 仍為 ON，Desktop 會照實顯示並警告，不會隱藏或自動改變。

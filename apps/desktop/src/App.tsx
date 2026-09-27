@@ -14,6 +14,7 @@ import { pruneChartData, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
+import { protectionChannelNumbers } from './powersProtectionSetup'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
@@ -62,7 +63,7 @@ type PowersStatusState = {
   status: PowersProtectionStatus | null
   error: string | null
   operation: 'refresh' | 'clear' | null
-  clearPlan: unknown | null
+  clearPlan: { channel: number } | null
   clearCompleted: boolean
 }
 
@@ -420,7 +421,9 @@ function App() {
   const [savedResources, setSavedResources] = useState<Record<string, string>>({})
   const [powersStatuses, setPowersStatuses] = useState<Record<string, PowersStatusState>>({})
   const [powersOperationBusy, setPowersOperationBusy] = useState<string | null>(null)
-  const [powersSimulationChannels, setPowersSimulationChannels] = useState<number[]>([])
+  const [powersCapabilityChannels, setPowersCapabilityChannels] = useState<{
+    key: string; models: Record<string, number[]>
+  } | null>(null)
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
@@ -428,6 +431,12 @@ function App() {
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
   const [toolConfigError, setToolConfigError] = useState<string | null>(null)
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null)
+  const powersModels = executionMode === 'simulate' ? [null]
+    : [...new Set((workflowDraft?.tool_instances ?? []).flatMap(instance => {
+        const modelId = resourceIdentities[instance.id]?.model_id
+        return instance.tool === 'powers' && modelId ? [modelId] : []
+      }))].sort()
+  const powersCapabilityKey = JSON.stringify([executionMode, powersExecutableKey, powersModels])
   const [draftLoading, setDraftLoading] = useState(true)
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
@@ -455,17 +464,16 @@ function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   useEffect(() => {
-    if (executionMode !== 'simulate') {
-      setPowersSimulationChannels([])
-      return
-    }
     let cancelled = false
-    void invoke<{ channels: number[] }>('get_powers_capabilities', { executionMode: 'simulate' }).then(
-      capabilities => { if (!cancelled) setPowersSimulationChannels(capabilities.channels) },
-      () => { if (!cancelled) setPowersSimulationChannels([]) },
-    )
+    void Promise.all(powersModels.map(async modelId => {
+      const channels = await invoke<{ channels: number[] }>('get_powers_capabilities', { modelId, executionMode })
+        .then(capabilities => capabilities.channels, () => [])
+      return [modelId ?? 'simulator', channels] as const
+    })).then(models => {
+      if (!cancelled) setPowersCapabilityChannels({ key: powersCapabilityKey, models: Object.fromEntries(models) })
+    })
     return () => { cancelled = true }
-  }, [executionMode, powersExecutableKey])
+  }, [executionMode, powersCapabilityKey])
   const outputSteps = outputDefinitions(workflowDraft?.workflow.steps ?? [])
   const pages = outputPages(workflowDraft?.workflow.steps ?? [])
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
@@ -1007,7 +1015,7 @@ function App() {
       setPowersStatuses(current => ({
         ...current,
         [instanceId]: result.mode === 'simulate'
-          ? { status: current[instanceId]?.status ?? null, error: null, operation: null, clearPlan: result.plan, clearCompleted: false }
+          ? { status: current[instanceId]?.status ?? null, error: null, operation: null, clearPlan: { channel: channel.channel }, clearCompleted: false }
           : { status: result.status, error: null, operation: null, clearPlan: null, clearCompleted: true },
       }))
     } catch (message) {
@@ -1693,12 +1701,10 @@ function App() {
                       const unresolved = deviceStatus?.status?.channels.some(channel =>
                         (channel.over_voltage_tripped || channel.over_current_tripped))
                       const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
-                      const statusChannels = executionMode === 'simulate'
-                        ? powersSimulationChannels.map(channel =>
-                            deviceStatus?.status?.channels.find(status => status.channel === channel) ?? {
-                              channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
-                            })
-                        : deviceStatus?.status?.channels ?? []
+                      const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
+                      const capabilityChannels = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
+                        ? powersCapabilityChannels.models[capabilityModel] ?? [] : []
+                      const statusChannels = protectionChannelNumbers(capabilityChannels, instance.setup.protection?.channels ?? [])
                       return <div className="live-resource">
                         <h4>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h4>
                         <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
@@ -1716,30 +1722,47 @@ function App() {
                           <strong>PLAN GENERATED · SIMULATION</strong>
                           <p>NO HARDWARE I/O</p>
                           <p>No real protection latch was changed.</p>
-                          <details><summary>Show Plan</summary><pre>{JSON.stringify(clearPlan, null, 2)}</pre></details>
+                          <details><summary>Show Plan</summary>
+                            <strong>CLEAR PROTECTION PLAN · SIMULATION</strong>
+                            <dl className="tool-details">
+                              <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · CH{clearPlan.channel}</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Safety</dt><dd className="detail-value">All power outputs will be turned OFF first</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear CH{clearPlan.channel} protection</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Final output</dt><dd className="detail-value">Remains OFF</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Hardware I/O</dt><dd className="detail-value">None</dd></div>
+                            </dl>
+                          </details>
                         </div>}
                         {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
-                        {deviceStatus?.status && <>
-                          <dl className="tool-details">
-                            <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{deviceStatus.status.protection_tripped ? 'TRIPPED' : 'CLEAR'}</dd></div>
-                            <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{deviceStatus.status.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                            <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{deviceStatus.status.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                          </dl>
-                        </>}
-                        {statusChannels.map(channel => <div key={channel.channel} className="meters-setup-fields">
-                            <strong>CH{channel.channel}</strong>
-                            {deviceStatus?.status && <dl className="tool-details">
-                              <div className="detail-row"><dt className="detail-label">Output</dt><dd className="detail-value">{channel.output_enabled ? 'ON' : 'OFF'}</dd></div>
-                              <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                              <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{channel.over_current_tripped ? 'TRIPPED' : 'OK'}</dd></div>
-                            </dl>}
-                            {(executionMode === 'simulate' || channel.over_voltage_tripped || channel.over_current_tripped) && <button
-                              className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
-                              disabled={!resourceReady || workflowBusy || operationBusy}
-                              onClick={() => void clearPowersProtection(instance.id, channel)}>
-                              {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
-                            </button>}
-                          </div>)}
+                        <dl className="tool-details">
+                          <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.protection_tripped ? 'TRIPPED' : 'CLEAR' : '—'}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</dd></div>
+                        </dl>
+                        <div className="powers-table-scroll">
+                          <table className="powers-status-table">
+                            <thead><tr><th scope="col">Channel</th><th scope="col">Output</th><th scope="col">OVP</th><th scope="col">OCP</th><th scope="col">Action</th></tr></thead>
+                            <tbody>{statusChannels.map(channel => {
+                              const status = deviceStatus?.status?.channels.find(record => record.channel === channel)
+                              const canClear = executionMode === 'simulate'
+                                ? capabilityChannels.includes(channel)
+                                : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
+                              return <tr key={channel}>
+                                <th scope="row">CH{channel}</th>
+                                <td>{status ? status.output_enabled ? 'ON' : 'OFF' : '—'}</td>
+                                <td>{status ? status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
+                                <td>{status ? status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
+                                <td><button className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
+                                  disabled={!resourceReady || workflowBusy || operationBusy || toolConfigBusy !== null || !canClear}
+                                  onClick={() => void clearPowersProtection(instance.id, status ?? {
+                                    channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
+                                  })}>
+                                  {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
+                                </button></td>
+                              </tr>
+                            })}</tbody>
+                          </table>
+                        </div>
                         {deviceStatus?.status && <>
                           {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
                           {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}

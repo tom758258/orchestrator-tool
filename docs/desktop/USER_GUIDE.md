@@ -161,17 +161,18 @@ visible when the current model does not support them.
 
 ### 5.3 Powers Protection Setup
 
-Expand a Powers Tool Instance in Setup to configure Protection Setup for each
-channel. Add a channel from the channels reported by powers-tool, then set any
-supported OVP Voltage, OCP, OCP Delay, or OCP Delay Trigger field. An empty
-field or **Unchanged** leaves that instrument setting unchanged. Each channel
-needs at least one setting before the Template can be saved or run. New Powers
-instances start with no protection settings.
+Expand a Powers Tool Instance in Setup to configure Protection Setup. All
+channels reported by powers-tool are shown in aligned rows, together with any
+channels already configured in the Template. Each row shows OVP Voltage, OCP,
+OCP Delay, and OCP Delay Trigger. Unsupported controls remain visible but are
+disabled. Existing unsupported values are displayed with a warning and preserved
+when saving; the external tool still validates actual model support and limits.
 
-Controls follow powers-tool model capabilities. If a saved setting becomes
-unsupported after a resource change, Desktop displays a warning and retains
-the value until you remove it. The external tool validates actual model
-support and limits when applying the setup.
+An empty numeric field or **Unchanged** leaves that instrument setting unchanged
+and is not stored in the Template. Only channels with settings are saved. Clearing
+the last setting removes that channel's record; clearing all settings returns to
+an empty setup. New Powers instances have an empty setup even while all supported
+channel rows are visible. There are no Add Channel or Remove Channel controls.
 
 In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
@@ -196,10 +197,14 @@ terminal.
 
 For a Powers Tool Instance, **Device Status** is runtime-only and is not saved
 in the Template. Opening Setup does not connect to a Worker and there is no
-background polling. Select **Refresh Status** to read aggregate Protection,
-OVP, and OCP plus per-channel Output, OVP, and OCP state. Switching Execution
-Mode clears the displayed status so results from different targets are not
-mixed.
+background polling. Aggregate Protection, OVP, and OCP and per-channel values
+show **—** until status is read. Channel rows are shown from offline model
+capabilities and existing Template settings; Refresh Status updates their values.
+Simulation uses the simulator channels without a saved Live Resource. Live uses
+the saved model identity without connecting to hardware to build the rows; if
+capabilities are unavailable, configured channels remain visible and no other
+channels are guessed. Switching Execution Mode clears stale values back to **—**
+and shows the channels known for the selected mode.
 
 In Simulation, Refresh Status starts the configured powers-tool simulate
 Worker and does not require a saved Live Resource. **Generate Clear Plan...**
@@ -207,15 +212,20 @@ is available for every simulator-supported channel, even when status is not
 tripped. After confirmation, Orchestrator sends simulated Safe-Off All and
 `clear-protection` for the selected channel, then shuts down without rereading
 status. The result is shown as **PLAN GENERATED · SIMULATION** and **NO HARDWARE
-I/O**, with the raw powers-tool result available under **Show Plan**. No real
-protection latch was changed.
+I/O**. **Show Plan** presents the target channel, Safe-Off first, protection clear,
+outputs remaining OFF, and no hardware I/O as a short operator preview. It does
+not display raw JSON or instrument commands. No real protection latch was changed.
 
 In Live, Refresh Status uses a temporary Powers connection and the saved Live
 Resource. Unsaved Live Resource changes must be saved before Refresh Status or
 Clear Protection can be used.
 
-**Clear Protection...** is offered only for a channel currently reported as
-tripped and always requires explicit confirmation. Orchestrator first performs
+Each channel row has a fixed Action column. **Generate Clear Plan...** is enabled
+for simulator-supported channels when no operation is busy. In Live,
+**Clear Protection...** remains visible but disabled before Refresh Status and
+when the channel has no reported OVP or OCP trip. It becomes enabled for a reported
+trip when no Workflow or manual operation is busy, and always requires explicit
+confirmation. Orchestrator first performs
 Safe-Off All, clears only the selected channel protection latch, then rereads
 the full status. Clear Protection does not fix the cause of a trip and never
 turns an output back on. If the latch remains tripped, the status remains
