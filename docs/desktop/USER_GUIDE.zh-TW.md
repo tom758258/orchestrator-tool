@@ -175,8 +175,9 @@ confirmation 後 resource 改變，run 會被拒絕，必須重新確認。
 
 ### 5.4 Device Status
 
-Protection Setup 下方的 **Device** 區域依序包含 **Live Device**、Live Resource
-控制項與 **Device Status**。Device Status 只屬於 runtime，不會保存到 Template。
+Protection Setup 下方的 **Device** 區域先顯示 **Device Status**，再顯示
+**Live Device** / Live Resource 控制項；Simulation 與 Live 模式的順序相同。
+Device Status 只屬於 runtime，不會保存到 Template。
 開啟 Setup 不會連線 Worker，也沒有 background polling。單一 **Protection Summary**
 panel 集中顯示 aggregate Protection、OVP 與 OCP；讀取 status 前，這些值與各通道
 的值都顯示 **—**，讀取後依回報顯示 CLEAR / OK 或 TRIPPED。通道列包含離線
@@ -200,7 +201,8 @@ Safe-Off、清除 protection、output 保持 OFF 與沒有 hardware I/O。不會
 
 Live 的 Refresh Status 會使用 saved Live Resource 建立 temporary Powers
 connection。Live Resource draft 尚未保存時，必須先 Save Resource，才能使用
-Refresh Status 或 Clear Protection。
+Refresh Status 或 Clear Protection。尚未保存 resource 或有未保存的 draft changes 時，
+Device Status 會提示使用者在下方的 Live Resource 區域保存。
 
 每個通道列都有固定的 Action 欄。沒有操作執行中時，simulator 支援的通道可使用
 **Generate Clear Plan...**。Live 的 **Clear Protection...** 一直顯示，但在 Refresh

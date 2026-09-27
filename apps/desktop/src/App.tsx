@@ -1595,6 +1595,99 @@ function App() {
                 steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while'))}
                 renderResource={instance => (
                   <>
+                    {instance.tool === 'powers' && (() => {
+                      const deviceStatus = powersStatuses[instance.id]
+                      const clearPlan = deviceStatus?.clearPlan ?? null
+                      const savedResource = savedResources[instance.id]
+                      const draftResource = resourceDrafts[instance.id]
+                      const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
+                        (Boolean(savedResource?.trim()) && draftResource === savedResource)
+                      const operationBusy = powersOperationBusy !== null
+                      const unresolved = deviceStatus?.status?.channels.some(channel =>
+                        (channel.over_voltage_tripped || channel.over_current_tripped))
+                      const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
+                      const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
+                      const capabilityChannels = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
+                        ? powersCapabilityChannels.models[capabilityModel] ?? [] : []
+                      const statusChannels = protectionChannelNumbers(
+                        capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
+                      )
+                      return <div className="live-resource powers-device-status">
+                        <h5>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h5>
+                        <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
+                        {executionMode === 'simulate'
+                          ? <p className="tool-setup-hint">Uses the simulator model. No saved Live Resource is required and no hardware I/O occurs.</p>
+                          : !resourceReady && <p className="tool-setup-hint">Save the Live Resource below before using Device Status in Live mode.</p>}
+                        <button className="action-button" type="button"
+                          disabled={!resourceReady || workflowBusy || operationBusy}
+                          onClick={() => void refreshPowersStatus(instance.id)}>
+                          {deviceStatus?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
+                        </button>
+                        {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? 'Generating clear plan...' : 'Clearing protection...'}</p>}
+                        {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
+                        {clearPlan !== null && <div className="simulation-plan-result" role="status">
+                          <strong>PLAN GENERATED · SIMULATION</strong>
+                          <p>NO HARDWARE I/O</p>
+                          <p>No real protection latch was changed.</p>
+                          <details><summary>Show Plan</summary>
+                            <strong>CLEAR PROTECTION PLAN · SIMULATION</strong>
+                            <dl className="tool-details">
+                              <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · CH{clearPlan.channel}</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Safety</dt><dd className="detail-value">All power outputs will be turned OFF first</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear CH{clearPlan.channel} protection</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Final output</dt><dd className="detail-value">Remains OFF</dd></div>
+                              <div className="detail-row"><dt className="detail-label">Hardware I/O</dt><dd className="detail-value">None</dd></div>
+                            </dl>
+                          </details>
+                        </div>}
+                        {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
+                        <section className="powers-protection-summary" aria-label="Protection Summary">
+                          <h6>Protection Summary</h6>
+                          <dl>
+                            {([
+                              ['Protection', deviceStatus?.status?.protection_tripped, 'CLEAR'],
+                              ['OVP', deviceStatus?.status?.over_voltage_tripped, 'OK'],
+                              ['OCP', deviceStatus?.status?.over_current_tripped, 'OK'],
+                            ] as const).map(([label, tripped, clearLabel]) => <div key={label}>
+                              <dt>{label}</dt>
+                              <dd className={tripped === undefined ? 'powers-status-unknown'
+                                : tripped ? 'powers-status-tripped' : 'powers-status-clear'}>
+                                {tripped === undefined ? '—' : tripped ? 'TRIPPED' : clearLabel}
+                              </dd>
+                            </div>)}
+                          </dl>
+                        </section>
+                        <div className="powers-table-scroll">
+                          <table className="powers-status-table">
+                            <thead><tr><th scope="col">Channel</th><th scope="col">Output</th><th scope="col">OVP</th><th scope="col">OCP</th><th scope="col">Action</th></tr></thead>
+                            <tbody>{statusChannels.map(channel => {
+                              const status = deviceStatus?.status?.channels.find(record => record.channel === channel)
+                              const canClear = executionMode === 'simulate'
+                                ? capabilityChannels.includes(channel)
+                                : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
+                              return <tr key={channel}>
+                                <th scope="row">CH{channel}</th>
+                                <td>{status ? status.output_enabled ? 'ON' : 'OFF' : '—'}</td>
+                                <td>{status ? status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
+                                <td>{status ? status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
+                                <td><button className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
+                                  disabled={!resourceReady || workflowBusy || operationBusy || toolConfigBusy !== null || !canClear}
+                                  onClick={() => void clearPowersProtection(instance.id, status ?? {
+                                    channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
+                                  })}>
+                                  {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
+                                </button></td>
+                              </tr>
+                            })}</tbody>
+                          </table>
+                        </div>
+                        {deviceStatus?.status && <>
+                          {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
+                          {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}
+                        </>}
+                        {executionMode === 'live' && <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>}
+                      </div>
+                    })()}
                     {(instance.tool === 'powers' || instance.tool === 'meters') && (
                       <div className="live-resource">
                         <div className="live-device">
@@ -1690,99 +1783,6 @@ function App() {
                         )}
                       </div>
                     )}
-                    {instance.tool === 'powers' && (() => {
-                      const deviceStatus = powersStatuses[instance.id]
-                      const clearPlan = deviceStatus?.clearPlan ?? null
-                      const savedResource = savedResources[instance.id]
-                      const draftResource = resourceDrafts[instance.id]
-                      const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
-                        (Boolean(savedResource?.trim()) && draftResource === savedResource)
-                      const operationBusy = powersOperationBusy !== null
-                      const unresolved = deviceStatus?.status?.channels.some(channel =>
-                        (channel.over_voltage_tripped || channel.over_current_tripped))
-                      const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
-                      const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
-                      const capabilityChannels = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
-                        ? powersCapabilityChannels.models[capabilityModel] ?? [] : []
-                      const statusChannels = protectionChannelNumbers(
-                        capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
-                      )
-                      return <div className="live-resource powers-device-status">
-                        <h5>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h5>
-                        <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
-                        {executionMode === 'simulate'
-                          ? <p className="tool-setup-hint">Uses the simulator model. No saved Live Resource is required and no hardware I/O occurs.</p>
-                          : !resourceReady && <p className="tool-setup-hint">Save the Live Resource before using Device Status in Live mode.</p>}
-                        <button className="action-button" type="button"
-                          disabled={!resourceReady || workflowBusy || operationBusy}
-                          onClick={() => void refreshPowersStatus(instance.id)}>
-                          {deviceStatus?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
-                        </button>
-                        {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? 'Generating clear plan...' : 'Clearing protection...'}</p>}
-                        {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
-                        {clearPlan !== null && <div className="simulation-plan-result" role="status">
-                          <strong>PLAN GENERATED · SIMULATION</strong>
-                          <p>NO HARDWARE I/O</p>
-                          <p>No real protection latch was changed.</p>
-                          <details><summary>Show Plan</summary>
-                            <strong>CLEAR PROTECTION PLAN · SIMULATION</strong>
-                            <dl className="tool-details">
-                              <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · CH{clearPlan.channel}</dd></div>
-                              <div className="detail-row"><dt className="detail-label">Safety</dt><dd className="detail-value">All power outputs will be turned OFF first</dd></div>
-                              <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear CH{clearPlan.channel} protection</dd></div>
-                              <div className="detail-row"><dt className="detail-label">Final output</dt><dd className="detail-value">Remains OFF</dd></div>
-                              <div className="detail-row"><dt className="detail-label">Hardware I/O</dt><dd className="detail-value">None</dd></div>
-                            </dl>
-                          </details>
-                        </div>}
-                        {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
-                        <section className="powers-protection-summary" aria-label="Protection Summary">
-                          <h6>Protection Summary</h6>
-                          <dl>
-                            {([
-                              ['Protection', deviceStatus?.status?.protection_tripped, 'CLEAR'],
-                              ['OVP', deviceStatus?.status?.over_voltage_tripped, 'OK'],
-                              ['OCP', deviceStatus?.status?.over_current_tripped, 'OK'],
-                            ] as const).map(([label, tripped, clearLabel]) => <div key={label}>
-                              <dt>{label}</dt>
-                              <dd className={tripped === undefined ? 'powers-status-unknown'
-                                : tripped ? 'powers-status-tripped' : 'powers-status-clear'}>
-                                {tripped === undefined ? '—' : tripped ? 'TRIPPED' : clearLabel}
-                              </dd>
-                            </div>)}
-                          </dl>
-                        </section>
-                        <div className="powers-table-scroll">
-                          <table className="powers-status-table">
-                            <thead><tr><th scope="col">Channel</th><th scope="col">Output</th><th scope="col">OVP</th><th scope="col">OCP</th><th scope="col">Action</th></tr></thead>
-                            <tbody>{statusChannels.map(channel => {
-                              const status = deviceStatus?.status?.channels.find(record => record.channel === channel)
-                              const canClear = executionMode === 'simulate'
-                                ? capabilityChannels.includes(channel)
-                                : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
-                              return <tr key={channel}>
-                                <th scope="row">CH{channel}</th>
-                                <td>{status ? status.output_enabled ? 'ON' : 'OFF' : '—'}</td>
-                                <td>{status ? status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
-                                <td>{status ? status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
-                                <td><button className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
-                                  disabled={!resourceReady || workflowBusy || operationBusy || toolConfigBusy !== null || !canClear}
-                                  onClick={() => void clearPowersProtection(instance.id, status ?? {
-                                    channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
-                                  })}>
-                                  {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
-                                </button></td>
-                              </tr>
-                            })}</tbody>
-                          </table>
-                        </div>
-                        {deviceStatus?.status && <>
-                          {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
-                          {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}
-                        </>}
-                        {executionMode === 'live' && <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>}
-                      </div>
-                    })()}
                   </>
                 )}
                 onChange={updateToolInstances}

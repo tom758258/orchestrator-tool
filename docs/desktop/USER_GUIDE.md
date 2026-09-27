@@ -201,8 +201,9 @@ terminal.
 
 ### 5.4 Device Status
 
-Below Protection Setup, the **Device** area groups **Live Device**, Live Resource
-controls, and then **Device Status**. Device Status is runtime-only and is not
+Below Protection Setup, the **Device** area first shows **Device Status**, followed
+by **Live Device** / Live Resource controls in both Simulation and Live modes.
+Device Status is runtime-only and is not
 saved in the Template. Opening Setup does not connect to a Worker and there is no
 background polling. A single **Protection Summary** panel groups aggregate
 Protection, OVP, and OCP. These and per-channel values show **—** until status is
@@ -230,7 +231,8 @@ not display raw JSON or instrument commands. No real protection latch was change
 
 In Live, Refresh Status uses a temporary Powers connection and the saved Live
 Resource. Unsaved Live Resource changes must be saved before Refresh Status or
-Clear Protection can be used.
+Clear Protection can be used. Device Status prompts you to save the Live Resource
+in the controls below when no resource is saved or draft changes are unsaved.
 
 Each channel row has a fixed Action column. **Generate Clear Plan...** is enabled
 for simulator-supported channels when no operation is busy. In Live,

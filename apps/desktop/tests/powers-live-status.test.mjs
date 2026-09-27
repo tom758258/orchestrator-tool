@@ -30,6 +30,16 @@ test('Powers Device Status is explicit, mode-aware, and runtime-only', () => {
   assert.doesNotMatch(app, /setInterval\([^)]*refreshPowersStatus/)
 })
 
+test('Powers Device presentation shows Device Status before Live Device in both modes', () => {
+  const presentation = app.slice(app.indexOf('renderResource={instance => ('),
+    app.indexOf('onChange={updateToolInstances}'))
+  const statusStart = presentation.indexOf("{instance.tool === 'powers' && (() => {")
+  const liveStart = presentation.indexOf("{(instance.tool === 'powers' || instance.tool === 'meters') && (")
+  assert.ok(statusStart >= 0 && liveStart > statusStart)
+  assert.ok(presentation.indexOf('<h5>Device Status') < presentation.indexOf('<strong>Live Device</strong>'))
+  assert.match(presentation, /Save the Live Resource below before using Device Status in Live mode\./)
+})
+
 test('Protection Setup renders capability and configured channels with fixed, disabled controls', () => {
   assert.match(setup, /hasConfigurableProtection/)
   assert.match(setup, /Protection configuration is unavailable for the current model/)
