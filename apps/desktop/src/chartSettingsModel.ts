@@ -11,6 +11,7 @@ export type ChartSettingsDraft = {
   type: ChartPanel['type']
   scatterXOutput: string | null
   scatter: { display: ChartPanel['scatter']['display']; markerSize: string; lineWidth: string }
+  seriesColors: ChartPanel['seriesColors']
   showLegend: boolean
   legendPosition: ChartPanel['legendPosition']
   imageBackground: ChartPanel['imageBackground']
@@ -18,7 +19,8 @@ export type ChartSettingsDraft = {
   xAxis: AxisDraft
   yAxis: AxisDraft
   combo: { series: ChartPanel['combo']['series']; rightAxis: AxisDraft }
-  histogram: { mode: ChartPanel['histogram']['mode']; value: string }
+  histogram: { mode: ChartPanel['histogram']['mode']; value: string;
+    showNormalCurve: boolean; mean: string; stdDev: string }
   boxPlot: ChartPanel['boxPlot']
 }
 
@@ -35,12 +37,15 @@ export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft 
   return { title: panel.title, type: panel.type, scatterXOutput: panel.scatterXOutput,
     scatter: { display: panel.scatter.display, markerSize: String(panel.scatter.markerSize),
       lineWidth: String(panel.scatter.lineWidth) },
+    seriesColors: { ...panel.seriesColors },
     showLegend: panel.showLegend, legendPosition: panel.legendPosition,
     imageBackground: panel.imageBackground,
     zoom: { ...panel.zoom },
     xAxis: axisDraft(panel.xAxis), yAxis: axisDraft(panel.yAxis),
     combo: { series: { ...panel.combo.series }, rightAxis: axisDraft(panel.combo.rightAxis) },
-    histogram: { mode: panel.histogram.mode, value: panel.histogram.value?.toString() ?? '' },
+    histogram: { mode: panel.histogram.mode, value: panel.histogram.value?.toString() ?? '',
+      showNormalCurve: panel.histogram.showNormalCurve, mean: panel.histogram.mean?.toString() ?? '',
+      stdDev: panel.histogram.stdDev?.toString() ?? '' },
     boxPlot: { ...panel.boxPlot } }
 }
 
@@ -109,7 +114,7 @@ function inactiveHistogramValue(mode: ChartSettingsDraft['histogram']['mode'], r
 }
 
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = draft.type === 'histogram' || draft.type === 'boxplot'
     ? normalizeInactiveAxis(draft.xAxis)
@@ -148,10 +153,25 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   }
   const histogramValue = draft.type === 'histogram'
     ? parsedHistogramValue : inactiveHistogramValue(mode, draft.histogram.value)
+  const meanText = draft.histogram.mean.trim()
+  const stdDevText = draft.histogram.stdDev.trim()
+  const mean = meanText === '' ? null : Number(meanText)
+  const stdDev = stdDevText === '' ? null : Number(stdDevText)
+  if (draft.type === 'histogram') {
+    if (mean !== null && !Number.isFinite(mean)) {
+      return { error: 'Normal curve mean must be a finite number.' }
+    }
+    if (stdDev !== null && (!Number.isFinite(stdDev) || stdDev <= 0)) {
+      return { error: 'Normal curve standard deviation must be a finite number greater than zero.' }
+    }
+  }
   return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,
     scatter: { display: draft.scatter.display, markerSize: markerSize ?? 4, lineWidth: lineWidth ?? 2 },
+    seriesColors: { ...draft.seriesColors },
     showLegend: draft.showLegend, legendPosition: draft.legendPosition,
     imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis,
     combo: { series: { ...draft.combo.series }, rightAxis },
-    histogram: { mode, value: histogramValue }, boxPlot: { ...draft.boxPlot } } }
+    histogram: { mode, value: histogramValue, showNormalCurve: draft.histogram.showNormalCurve,
+      mean: mean !== null && Number.isFinite(mean) ? mean : null,
+      stdDev: stdDev !== null && Number.isFinite(stdDev) && stdDev > 0 ? stdDev : null }, boxPlot: { ...draft.boxPlot } } }
 }

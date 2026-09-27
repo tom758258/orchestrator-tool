@@ -1,4 +1,4 @@
-import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPanel } from './chartPanels.ts'
+import { chartSupportsZoom, comboSeriesSettings, seriesColor, type AxisSettings, type ChartPanel } from './chartPanels.ts'
 
 type ChartColors = { ink: string; axis: string; grid: string }
 export const CHART_GRID = { left: 80, right: 24, bottom: 64 }
@@ -45,13 +45,14 @@ export function chartLayout(panel: ChartPanel, includeSlider = true) {
 
 export function scatterRendererSeries(panel: ChartPanel, series: { name: string; data: [number, number][] },
   color: string) {
+  color = seriesColor(panel, series.name, color)
   const common = { ...series, itemStyle: { color } }
   if (panel.scatter.display === 'markers') {
     return { ...common, type: 'scatter' as const, large: true, largeThreshold: 2000,
       symbolSize: panel.scatter.markerSize }
   }
   return { ...common, type: 'line' as const, showSymbol: panel.scatter.display === 'lines-markers',
-    symbolSize: panel.scatter.markerSize, lineStyle: { width: panel.scatter.lineWidth } }
+    symbolSize: panel.scatter.markerSize, lineStyle: { color, width: panel.scatter.lineWidth } }
 }
 
 export function comboRendererSeries(panel: ChartPanel,
@@ -59,7 +60,7 @@ export function comboRendererSeries(panel: ChartPanel,
   return display.map((series, index) => {
     const settings = comboSeriesSettings(panel, series.name, index)
     const common = { ...series, yAxisIndex: settings.axis === 'right' ? 1 : 0,
-      silent: true, itemStyle: { color: colors[index] } }
+      silent: true, itemStyle: { color: seriesColor(panel, series.name, colors[index]) } }
     return settings.kind === 'line'
       ? { ...common, type: 'line' as const, showSymbol: false, emphasis: { disabled: true } }
       : { ...common, type: 'bar' as const, large: true, largeThreshold: 2000 }

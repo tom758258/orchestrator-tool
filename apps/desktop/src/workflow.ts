@@ -75,7 +75,7 @@ export type ResultRowDto = {
   for_iteration: ForIterationDto | null
   while_iteration: WhileIterationDto | null
 }
-export type NumericSummary = { name: string; count: number; min: number; max: number; avg: number }
+export type NumericSummary = { name: string; count: number; min: number; max: number; avg: number; std_dev: number | null }
 export type RunPageMetadata = {
   name: string
   output_names: string[]

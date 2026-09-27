@@ -54,5 +54,8 @@ test('statistical keys change with run and query parameters', () => {
   const base = { ...addChartPanel([], 'A', ['V'])[0], type: 'histogram' }
   assert.notEqual(statisticalRequestKey(1, base), statisticalRequestKey(2, base))
   assert.notEqual(statisticalRequestKey(1, base), statisticalRequestKey(1,
-    { ...base, histogram: { mode: 'count', value: 20 } }))
+    { ...base, histogram: { ...base.histogram, mode: 'count', value: 20 } }))
+  assert.equal(statisticalRequestKey(1, base), statisticalRequestKey(1, { ...base,
+    seriesColors: { V: '#123456' },
+    histogram: { ...base.histogram, showNormalCurve: true, mean: 1, stdDev: 2 } }))
 })

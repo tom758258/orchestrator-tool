@@ -476,6 +476,12 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 使用垂直分組長條；Bar 使用水平分組長條；XY Scatter 用來比較數值 X 與 Y
 的關係。
 
+Chart Settings 有五個 tabs：**General**、**Series**、**Axes**、**Analysis**
+與 **Export**。Series 包含各 Output 的 **Auto**／**Custom color**、Scatter 設定，
+以及 Combo 的 Type／Axis。每個 Output 的自訂顏色會套用至該 Output 的所有繪圖
+元素，包括 Scatter 的線與 markers；切回 Auto 會恢復 theme palette。
+Box & Whisker 維持自動配色。
+
 在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
 **X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
 不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
@@ -487,10 +493,15 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 Iteration X 軸縮放。
 
 Histogram 一次只使用一個 numeric Output。**Bins** 可選 Auto、Count（1–200）
-或 Width（正數）；Width 若會產生超過 200 個 bins，會顯示錯誤。Box & Whisker
-會對每個選取的 Output 顯示一個 box，並可顯示或隱藏 outlier points。這兩種
+或 Width（正數）；Auto 使用 Sturges rule。Width 若會產生超過 200 個 bins，
+會顯示錯誤。Box & Whisker 會對每個選取的 Output 顯示一個 box，並可顯示或隱藏 outlier points。這兩種
 統計圖會從 committed StoredRun rows 計算，不會把完整 raw samples 載入前端
-chart cache。
+chart cache。**Analysis → Show normal curve** 可在 Histogram 上疊加折線。
+**Mean** 與 **Std Dev** 留白時使用與 Summary 相同的平均值及樣本標準差；
+自訂 Mean 必須為有限數值，自訂 Std Dev 必須為有限且大於 0 的數值。
+每個 bin 中心的 normal PDF 會乘上 sample count 與該 bin 的實際 width，
+以對齊 Count 軸。使用自動 Std Dev 時，少於兩筆 samples 或零變異資料
+會省略曲線，Histogram 仍可使用。
 
 大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
 decimation，Combo 的 Line series 也使用相同的 viewport decimation。Column 與
@@ -516,7 +527,7 @@ numeric 設定不會阻擋 Apply；合法的 inactive 值會保留，非法值�
 背景或按 Esc 不會關閉 Settings，因此草稿會保留。**Show legend** 開啟時即使只有
 一個 series 也會顯示 legend；關閉後無論位置為何都不顯示。
 
-Line、Area、Column 與 Combo 可在 **Settings → Zoom → Enable zoom** 開啟縮放。
+Line、Area、Column 與 Combo 可在 **Settings → Axes → Zoom → Enable zoom** 開啟縮放。
 使用滑鼠滾輪可縮放 X 軸，並可在圖內拖曳平移。**Show zoom slider** 可控制底部
 縮放列是否顯示；隱藏後不會清除目前範圍，滾輪與拖曳仍可使用。按
 **Reset Zoom** 可回到完整 X 範圍。執行中的 Line chart 在尚未手動縮放或平移
@@ -525,10 +536,11 @@ Line、Area、Column 與 Combo 可在 **Settings → Zoom → Enable zoom** 開�
 的圖型時，都會重設 manual viewport。Scatter、Bar、Histogram 與
 Box & Whisker 不提供 Zoom 控制。
 
-每個 chart 都有個別的 **Save image** 操作，可匯出包含圖表標題的 PNG。
-**Settings → Save image → Background** 可選 Light 或 Dark，並與 Application
-theme 分開設定。PNG 會保留目前縮放後的 X 範圍，但不包含 zoom slider 或
-Reset Zoom 控制。
+每個 chart 都有個別的 **Export PNG** 操作。低調的圖表邊界標示匯出的 chart
+surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不包含 Output
+選取控制項、chart action buttons、zoom slider 與 Reset Zoom。
+**Settings → Export → Background** 可選 Light 或 Dark，並與 Application theme
+分開設定。兩種背景都會保留自訂 series 顏色與 Normal curve。
 
 Chart settings 只屬於目前 Last Run session；在同一個 Last Run 內切換 Page/tab
 仍會保留，但開始新的 run、**Open Template** 或 **Clear Last Run** 時會清除。
@@ -539,8 +551,12 @@ Chart settings 不屬於 Template data。
 **Output Data** 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。
 
-**Summary** 對適用的 numeric Outputs 提供 Count、Min、Max 與 Avg。若 Page 沒有
-numeric Outputs，則不會顯示 numeric summary。
+**Summary** 預設顯示 Count、Min、Max 與 Avg。**Columns ▾** 可分別控制這些欄位，
+以及 Range（Max − Min）、Std Dev（σ）、2σ 與 3σ。Std Dev 為樣本標準差，
+計算式為 `sqrt(M2 / (n - 1))`；2σ 與 3σ 為其倍數。只有一筆 sample 時，
+三個 σ 欄位均顯示 `—`，Range 仍可顯示；至少兩筆且全部相同的資料其 Std Dev = 0。
+欄位選擇僅為暫時的 presentation 設定。若 Page 沒有 numeric Outputs，則不會
+顯示 numeric summary。
 
 ## 11. Manual export
 

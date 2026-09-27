@@ -1372,6 +1372,34 @@ textarea:disabled {
   font-weight: 600;
 }
 
+.chart-settings-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.chart-settings-tabs button {
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chart-settings-tabs button[aria-selected='true'] {
+  border-color: var(--line);
+  background: var(--surface-selected);
+  color: var(--ink);
+}
+
+.chart-settings-content [role='tabpanel']:not([hidden]) {
+  display: grid;
+  gap: 16px;
+}
+
 .chart-settings-field {
   display: grid;
   gap: 6px;
@@ -1556,6 +1584,42 @@ input[type="radio"] {
   font-weight: 600;
 }
 
+.summary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-columns {
+  position: relative;
+}
+
+.summary-columns summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.summary-columns > div {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  width: max-content;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+}
+
+.summary-columns label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .page-result-summary {
   margin-top: 20px;
 }
@@ -1592,6 +1656,8 @@ input[type="radio"] {
 
 .result-chart-view {
   position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }
 
 .result-chart-zoom-controls {

@@ -211,7 +211,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             <h4>Chart {index + 1}</h4>
             <div className="result-chart-panel-actions">
               <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
-                onClick={() => void saveImage(panel.id, index)}>Save image</button>
+                onClick={() => void saveImage(panel.id, index)}>Export PNG</button>
               <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => setSettingsId(panel.id)}>Settings</button>
               <button className="action-button action-button-danger" type="button"

@@ -4,17 +4,19 @@ import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDra
 
 type AxisKey = 'xAxis' | 'yAxis' | 'rightAxis'
 type NumericKey = 'min' | 'max' | 'interval'
+const settingsTabs = ['General', 'Series', 'Axes', 'Analysis', 'Export'] as const
 
 export default function ChartSettings({ panel, numericNames, running, hasRows, onApply, onClose }: {
   panel: ChartPanel
   numericNames: string[]
   running: boolean
   hasRows: boolean
-  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [draft, setDraft] = useState(() => createChartSettingsDraft(panel))
+  const [tab, setTab] = useState<typeof settingsTabs[number]>('General')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -85,6 +87,24 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
     }}>
     <div className="chart-settings-content">
       <h3>Chart Settings</h3>
+      <div className="chart-settings-tabs" role="tablist" aria-label="Chart settings sections">
+        {settingsTabs.map(name => <button key={name}
+          type="button" role="tab" id={`chart-settings-tab-${name}`} aria-selected={tab === name}
+          aria-controls={`chart-settings-panel-${name}`} tabIndex={tab === name ? 0 : -1}
+          onClick={() => setTab(name)} onKeyDown={event => {
+            const names = settingsTabs
+            const index = names.indexOf(name)
+            const next = event.key === 'ArrowRight' ? names[(index + 1) % names.length]
+              : event.key === 'ArrowLeft' ? names[(index + names.length - 1) % names.length]
+              : event.key === 'Home' ? names[0] : event.key === 'End' ? names[names.length - 1] : null
+            if (next) {
+              event.preventDefault()
+              setTab(next)
+              document.getElementById(`chart-settings-tab-${next}`)?.focus()
+            }
+          }}>{name}</button>)}
+      </div>
+      <div role="tabpanel" id="chart-settings-panel-General" aria-labelledby="chart-settings-tab-General" hidden={tab !== 'General'}>
       <fieldset className="chart-settings-general">
         <legend>General</legend>
         <label className="chart-settings-field">Chart type
@@ -122,6 +142,32 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           </select>
         </label>}
       </fieldset>
+      </div>
+      <div role="tabpanel" id="chart-settings-panel-Series" aria-labelledby="chart-settings-tab-Series" hidden={tab !== 'Series'}>
+      {draft.type !== 'boxplot' && <fieldset className="chart-settings-general"><legend>Series colors</legend>
+        {(draft.type === 'histogram' ? panel.outputs.slice(0, 1) : panel.outputs)
+          .filter(name => numericNames.includes(name)).map(name => <div key={name}>
+            <strong>{name}</strong>
+            <label className="chart-settings-field">Color
+              <select value={Object.prototype.hasOwnProperty.call(draft.seriesColors, name) ? 'custom' : 'auto'} onChange={event => {
+                const custom = event.target.value === 'custom'
+                const palette = getComputedStyle(document.documentElement)
+                  .getPropertyValue(`--chart-series-${draft.type === 'histogram' ? 1 : numericNames.indexOf(name) % 6 + 1}`).trim()
+                setDraft(current => {
+                  const seriesColors = { ...current.seriesColors }
+                  if (custom) seriesColors[name] = palette
+                  else delete seriesColors[name]
+                  return { ...current, seriesColors }
+                })
+              }}><option value="auto">Auto</option><option value="custom">Custom color</option></select>
+            </label>
+            {Object.prototype.hasOwnProperty.call(draft.seriesColors, name) && <label className="chart-settings-field">Custom color
+              <input type="color" value={draft.seriesColors[name]} onChange={event =>
+                setDraft(current => ({ ...current, seriesColors: { ...current.seriesColors, [name]: event.target.value } }))} />
+            </label>}
+          </div>)}
+      </fieldset>}
+      {draft.type === 'boxplot' && <p>No series options for this chart type.</p>}
       {draft.type === 'scatter' && <fieldset className="chart-settings-general">
         <legend>Scatter</legend>
         <label className="chart-settings-field">X source
@@ -152,10 +198,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
               scatter: { ...current.scatter, lineWidth: event.target.value } })); setError(null) }} />
         </label>}
       </fieldset>}
-      {axisFields(draft.type === 'bar' ? 'yAxis' : 'xAxis', 'X Axis')}
-      {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', draft.type === 'combo' ? 'Left Y Axis' : 'Y Axis')}
       {draft.type === 'combo' && <>
-        {axisFields('rightAxis', 'Right Y Axis')}
         <fieldset className="chart-settings-general"><legend>Combo</legend>
           {panel.outputs.filter(name => numericNames.includes(name)).map((name, index) => {
             const series = draft.combo.series[name] ?? comboSeriesSettings(panel, name, index)
@@ -174,25 +217,11 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           })}
         </fieldset>
       </>}
-      {draft.type === 'histogram' && <fieldset className="chart-settings-general"><legend>Histogram</legend>
-        <div>Bins</div>
-        {(['auto', 'count', 'width'] as const).map(mode => <label key={mode}>
-          <input type="radio" name="histogram-mode" checked={draft.histogram.mode === mode}
-            onChange={() => setDraft(current => ({ ...current, histogram: {
-              mode, value: mode === 'auto' ? '' : mode === 'count' ? '20' : '0.5',
-            } }))} />{mode === 'auto' ? 'Auto' : mode === 'count' ? 'Count' : 'Width'}
-          {mode !== 'auto' && <input type="text" inputMode="decimal"
-            aria-label={`${mode} bins`} disabled={draft.histogram.mode !== mode}
-            value={draft.histogram.mode === mode ? draft.histogram.value : ''}
-            onChange={event => setDraft(current => ({ ...current,
-              histogram: { mode, value: event.target.value } }))} />}
-        </label>)}
-      </fieldset>}
-      {draft.type === 'boxplot' && <fieldset className="chart-settings-general"><legend>Box &amp; Whisker</legend>
-        <label><input type="checkbox" checked={draft.boxPlot.showOutliers}
-          onChange={event => setDraft(current => ({ ...current,
-            boxPlot: { showOutliers: event.target.checked } }))} />Show outliers</label>
-      </fieldset>}
+      </div>
+      <div role="tabpanel" id="chart-settings-panel-Axes" aria-labelledby="chart-settings-tab-Axes" hidden={tab !== 'Axes'}>
+      {axisFields(draft.type === 'bar' ? 'yAxis' : 'xAxis', 'X Axis')}
+      {axisFields(draft.type === 'bar' ? 'xAxis' : 'yAxis', draft.type === 'combo' ? 'Left Y Axis' : 'Y Axis')}
+      {draft.type === 'combo' && axisFields('rightAxis', 'Right Y Axis')}
       {chartSupportsZoom(draft.type) && <fieldset className="chart-settings-general">
         <legend>Zoom</legend>
         <label><input type="checkbox" checked={draft.zoom.enabled}
@@ -202,8 +231,42 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           onChange={event => setDraft(current => ({ ...current,
             zoom: { ...current.zoom, showSlider: event.target.checked } }))} />Show zoom slider</label>
       </fieldset>}
+      </div>
+      <div role="tabpanel" id="chart-settings-panel-Analysis" aria-labelledby="chart-settings-tab-Analysis" hidden={tab !== 'Analysis'}>
+      {draft.type === 'histogram' && <fieldset className="chart-settings-general"><legend>Histogram</legend>
+        <div>Bins</div>
+        {(['auto', 'count', 'width'] as const).map(mode => <label key={mode}>
+          <input type="radio" name="histogram-mode" checked={draft.histogram.mode === mode}
+            onChange={() => setDraft(current => ({ ...current, histogram: {
+              ...current.histogram, mode, value: mode === 'auto' ? '' : mode === 'count' ? '20' : '0.5',
+            } }))} />{mode === 'auto' ? 'Auto' : mode === 'count' ? 'Count' : 'Width'}
+          {mode !== 'auto' && <input type="text" inputMode="decimal"
+            aria-label={`${mode} bins`} disabled={draft.histogram.mode !== mode}
+            value={draft.histogram.mode === mode ? draft.histogram.value : ''}
+            onChange={event => setDraft(current => ({ ...current,
+              histogram: { ...current.histogram, mode, value: event.target.value } }))} />}
+        </label>)}
+      </fieldset>}
+      {draft.type === 'histogram' && <fieldset className="chart-settings-general"><legend>Normal curve</legend>
+        <label><input type="checkbox" checked={draft.histogram.showNormalCurve} onChange={event =>
+          setDraft(current => ({ ...current, histogram: { ...current.histogram, showNormalCurve: event.target.checked } }))} />Show normal curve</label>
+        {([['mean', 'Mean'], ['stdDev', 'Std Dev']] as const).map(([key, label]) =>
+          <label className="chart-settings-field" key={key}>{label}
+            <input type="text" inputMode="decimal" placeholder="Auto" value={draft.histogram[key]}
+              onChange={event => { setDraft(current => ({ ...current,
+                histogram: { ...current.histogram, [key]: event.target.value } })); setError(null) }} />
+          </label>)}
+      </fieldset>}
+      {draft.type === 'boxplot' && <fieldset className="chart-settings-general"><legend>Box &amp; Whisker</legend>
+        <label><input type="checkbox" checked={draft.boxPlot.showOutliers}
+          onChange={event => setDraft(current => ({ ...current,
+            boxPlot: { showOutliers: event.target.checked } }))} />Show outliers</label>
+      </fieldset>}
+      {draft.type !== 'histogram' && draft.type !== 'boxplot' && <p>No analysis options for this chart type.</p>}
+      </div>
+      <div role="tabpanel" id="chart-settings-panel-Export" aria-labelledby="chart-settings-tab-Export" hidden={tab !== 'Export'}>
       <fieldset className="chart-settings-general">
-        <legend>Save image</legend>
+        <legend>Export PNG</legend>
         <label className="chart-settings-field">Background
           <select value={draft.imageBackground} onChange={event => setDraft(current => ({
             ...current, imageBackground: event.target.value as ChartPanel['imageBackground'],
@@ -213,6 +276,9 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           </select>
         </label>
       </fieldset>
+      <p>PNG includes the chart title, legend, axes, plot, and current zoom range.
+        Output selection controls, chart action buttons, the zoom slider, and Reset Zoom are excluded.</p>
+      </div>
       {error && <p className="chart-settings-error" role="alert">{error}</p>}
       <div className="chart-settings-actions">
         <button className="action-button" type="button" onClick={onClose}>Cancel</button>

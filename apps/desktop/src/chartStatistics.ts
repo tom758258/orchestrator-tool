@@ -1,10 +1,12 @@
-import type { ChartPanel } from './chartPanels.ts'
+import { seriesColor, type ChartPanel } from './chartPanels.ts'
 
 export type HistogramDto = {
   run_id: number
   page: string
   output: string
   sample_count: number
+  mean: number
+  std_dev: number | null
   bins: { start: number; end: number; count: number }[]
 }
 
@@ -32,10 +34,26 @@ export function formatBinBoundary(value: number): string {
 
 export function statisticalChartSeries(panel: ChartPanel, response: StatisticalDto, color: string) {
   if (panel.type === 'histogram') {
-    const bins = (response as HistogramDto).bins
+    const histogram = response as HistogramDto
+    const bins = histogram.bins
+    const barColor = seriesColor(panel, histogram.output, color)
+    const mean = panel.histogram.mean ?? histogram.mean
+    const stdDev = panel.histogram.stdDev ?? histogram.std_dev
+    const normal = panel.histogram.showNormalCurve && Number.isFinite(mean) &&
+      stdDev !== null && Number.isFinite(stdDev) && stdDev > 0 &&
+      (panel.histogram.stdDev !== null || histogram.sample_count >= 2)
+      ? bins.map(bin => {
+        const center = bin.start + (bin.end - bin.start) / 2
+        const z = (center - mean) / stdDev
+        return histogram.sample_count * Math.exp(-0.5 * z * z) /
+          (stdDev * Math.sqrt(2 * Math.PI)) * (bin.end - bin.start)
+      }) : null
     return { categories: bins.map(bin => `${formatBinBoundary(bin.start)}–${formatBinBoundary(bin.end)}`),
-      series: [{ name: (response as HistogramDto).output, type: 'bar' as const,
-        data: bins.map(bin => bin.count), itemStyle: { color } }] }
+      series: [{ name: histogram.output, type: 'bar' as const,
+        data: bins.map(bin => bin.count), itemStyle: { color: barColor } },
+      ...(normal && normal.every(Number.isFinite) ? [{ name: 'Normal', type: 'line' as const,
+        data: normal, showSymbol: false, silent: true, emphasis: { disabled: true },
+        lineStyle: { color: barColor }, itemStyle: { color: barColor } }] : [])] }
   }
   const items = (response as BoxPlotDto).items
   return { categories: items.map(item => item.output), series: [

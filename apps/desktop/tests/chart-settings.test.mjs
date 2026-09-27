@@ -214,12 +214,12 @@ test('statistical charts normalize hidden X numerics while active X stays strict
 
 test('inactive Histogram bin values repair to safe defaults without weakening active validation', () => {
   const draft = createChartSettingsDraft(panel)
-  draft.histogram = { mode: 'count', value: 'bad' }
-  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'count', value: 20 })
-  draft.histogram = { mode: 'width', value: '0' }
-  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'width', value: 0.5 })
+  draft.histogram = { ...draft.histogram, mode: 'count', value: 'bad' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { ...panel.histogram, mode: 'count', value: 20 })
+  draft.histogram = { ...draft.histogram, mode: 'width', value: '0' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { ...panel.histogram, mode: 'width', value: 0.5 })
   draft.type = 'histogram'
-  draft.histogram = { mode: 'count', value: 'bad' }
+  draft.histogram = { ...draft.histogram, mode: 'count', value: 'bad' }
   assert.match(validateChartSettingsDraft(draft).error, /bin count/)
 })
 
@@ -247,14 +247,14 @@ test('Combo and Box settings round-trip and histogram modes validate', () => {
   const box = { ...panel, type: 'boxplot', boxPlot: { showOutliers: false } }
   assert.deepEqual(validateChartSettingsDraft(createChartSettingsDraft(box)).settings.boxPlot, box.boxPlot)
   const draft = createChartSettingsDraft({ ...panel, type: 'histogram' })
-  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, { mode: 'auto', value: null })
-  draft.histogram = { mode: 'count', value: '20' }
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram, panel.histogram)
+  draft.histogram = { ...draft.histogram, mode: 'count', value: '20' }
   assert.equal(validateChartSettingsDraft(draft).settings.histogram.value, 20)
   for (const value of ['0', '2.5', '201']) {
     draft.histogram.value = value
     assert.match(validateChartSettingsDraft(draft).error, /bin count/)
   }
-  draft.histogram = { mode: 'width', value: '0.5' }
+  draft.histogram = { ...draft.histogram, mode: 'width', value: '0.5' }
   assert.equal(validateChartSettingsDraft(draft).settings.histogram.value, 0.5)
   draft.histogram.value = '0'
   assert.match(validateChartSettingsDraft(draft).error, /bin width/)
@@ -298,4 +298,48 @@ test('automatic axis titles follow chart semantics while custom titles remain un
     yAxis: { ...scatter.yAxis, title: 'Output' } }
   assert.deepEqual(chartTypeAxisTitles(custom, 'line', 'V'),
     { x: 'Input Voltage (V)', y: 'Output' })
+})
+
+test('Normal overrides and custom colors round-trip without mutating the panel', () => {
+  const draft = createChartSettingsDraft({ ...panel, type: 'histogram' })
+  draft.histogram.showNormalCurve = true
+  draft.histogram.mean = ' -2.5 '
+  draft.histogram.stdDev = '1.5'
+  draft.seriesColors.V = '#123456'
+  const result = validateChartSettingsDraft(draft)
+  assert.equal(result.error, undefined)
+  assert.deepEqual(result.settings.histogram, { ...panel.histogram,
+    showNormalCurve: true, mean: -2.5, stdDev: 1.5 })
+  assert.deepEqual(result.settings.seriesColors, { V: '#123456' })
+  const roundTrip = createChartSettingsDraft({ ...panel, ...result.settings })
+  assert.deepEqual(validateChartSettingsDraft(roundTrip).settings, result.settings)
+  assert.deepEqual(panel.seriesColors, {})
+  assert.equal(panel.histogram.showNormalCurve, false)
+  roundTrip.histogram.mean = ' '
+  roundTrip.histogram.stdDev = ''
+  delete roundTrip.seriesColors.V
+  const automatic = validateChartSettingsDraft(roundTrip).settings
+  assert.equal(automatic.histogram.mean, null)
+  assert.equal(automatic.histogram.stdDev, null)
+  assert.deepEqual(automatic.seriesColors, {})
+})
+
+test('Normal mean must be finite and standard deviation must be finite and positive', () => {
+  const draft = createChartSettingsDraft({ ...panel, type: 'histogram' })
+  for (const invalid of ['NaN', 'Infinity', '-Infinity', '1e309', 'oops']) {
+    draft.histogram.mean = invalid
+    assert.match(validateChartSettingsDraft(draft).error, /mean.*finite/)
+  }
+  draft.histogram.mean = '0'
+  for (const invalid of ['0', '-1', 'NaN', 'Infinity', '-Infinity', '1e309', 'oops']) {
+    draft.histogram.stdDev = invalid
+    assert.match(validateChartSettingsDraft(draft).error, /standard deviation/)
+  }
+  draft.histogram.stdDev = '2'
+  assert.equal(validateChartSettingsDraft(draft).error, undefined)
+  draft.type = 'line'
+  draft.histogram.mean = 'bad'
+  draft.histogram.stdDev = '0'
+  assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram,
+    { ...panel.histogram, mean: null, stdDev: null })
 })

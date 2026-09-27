@@ -547,6 +547,12 @@ Iteration trend; Area fills below the line; Column uses vertical grouped bars;
 Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
 values.
 
+Chart Settings has five tabs: **General**, **Series**, **Axes**, **Analysis**,
+and **Export**. Series contains per-Output **Auto** or **Custom color**, Scatter
+settings, and Combo Type/Axis settings. One custom color applies to all rendering
+of that Output, including Scatter lines and markers; Auto restores the theme
+palette. Box & Whisker retains its automatic colors.
+
 A chart panel can select multiple **Outputs** to compare numeric series.
 Scatter **X source** can be Iteration or any numeric Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. **Display** can
@@ -561,11 +567,17 @@ the Left Y or Right Y axis. The two Y axes are configured independently, and
 Combo supports Iteration X-axis zoom.
 
 Histogram uses exactly one numeric Output. **Bins** can use Auto, Count from
-1 to 200, or a positive Width; a Width that would create more than 200 bins
-reports an error. Box & Whisker draws one box for each selected Output and can
+1 to 200, or a positive Width. Auto uses the Sturges rule; a Width that would
+create more than 200 bins reports an error. Box & Whisker draws one box for each selected Output and can
 show or hide outlier points. These statistical charts are computed from
 committed StoredRun rows and do not load their full raw samples into the
-frontend chart cache.
+frontend chart cache. **Analysis → Show normal curve** overlays a line on
+Histogram. Blank **Mean** and **Std Dev** use the same mean and sample standard
+deviation as Summary; custom Mean must be finite and custom Std Dev must be
+finite and greater than zero. Each bin-center normal PDF is scaled by sample
+count and that bin's actual width to match the Count axis. With automatic Std
+Dev, fewer than two samples or zero variance omits the curve while keeping the
+Histogram usable.
 
 For large datasets, Line and Area decimate only the visible Iteration range,
 and Combo applies the same viewport decimation to its Line series. Column and
@@ -595,7 +607,7 @@ draft and closes it. Clicking the backdrop or pressing Esc does not close
 Settings, so the draft remains available. **Show legend** displays a legend even
 for a single series; turning it off hides the legend at every position.
 
-Line, Area, Column, and Combo can enable **Settings → Zoom → Enable zoom**.
+Line, Area, Column, and Combo can enable **Settings → Axes → Zoom → Enable zoom**.
 Use the mouse wheel to zoom the X axis and drag inside the chart to pan.
 **Show zoom slider** controls the bottom slider without clearing the current
 range; wheel zoom and drag pan remain available when the slider is hidden.
@@ -606,10 +618,12 @@ Maximum, disabling zoom, or switching to a chart type without zoom resets the
 manual viewport. Scatter, Bar, Histogram, and Box & Whisker do not expose
 Zoom controls.
 
-Each chart has an individual **Save image** action that exports a PNG including
-the chart title. **Settings → Save image → Background** can use Light or Dark
-independently of the Application theme. The PNG keeps the current zoomed X
-range but excludes the zoom slider and Reset Zoom control.
+Each chart has an individual **Export PNG** action. The subtle chart boundary
+marks the exported chart surface: title, legend, axes, plot, and current zoom
+range are included; Output selection controls, chart action buttons, zoom slider,
+and Reset Zoom are excluded. **Settings → Export → Background** can use Light
+or Dark independently of the Application theme. Custom series colors and the
+Normal curve are included in either background.
 
 Chart settings belong only to the current Last Run session. They survive
 Page/tab changes within that Last Run, but starting a new run, **Open Template**,
@@ -621,8 +635,13 @@ or **Clear Last Run** resets them. Chart settings are not Template data.
 virtualization for display, but the rows remain available for charts and
 export.
 
-**Summary** reports Count, Min, Max, and Avg for applicable numeric Outputs.
-If a Page has no numeric Outputs, there is no numeric summary to show.
+**Summary** shows Count, Min, Max, and Avg by default. **Columns ▾** independently
+controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std Dev
+is the sample standard deviation, calculated as `sqrt(M2 / (n - 1))`; 2σ and 3σ
+are its multiples. One sample displays `—` for all three σ columns, while Range
+remains available; constant data with at least two samples has Std Dev = 0.
+Column choices are temporary presentation settings. If a Page has no numeric
+Outputs, there is no numeric summary to show.
 
 ## 11. Manual export
 

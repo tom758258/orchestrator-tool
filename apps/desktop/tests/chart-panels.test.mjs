@@ -77,6 +77,7 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], type: 'line',
     scatterXOutput: null, scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
+    seriesColors: {},
     showLegend: true, legendPosition: 'top',
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
@@ -86,7 +87,7 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
       showLabels: true, showTicks: true, showMajorGrid: true },
     combo: { series: {}, rightAxis: { title: '', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false } },
-    histogram: { mode: 'auto', value: null }, boxPlot: { showOutliers: true } }])
+    histogram: { mode: 'auto', value: null, showNormalCurve: false, mean: null, stdDev: null }, boxPlot: { showOutliers: true } }])
   assert.equal(reconcileRunChartPanels(panels, pages, metadata), panels)
   const onlySecond = addChartPanel([], 'B', ['I'])
   assert.equal(reconcileRunChartPanels(onlySecond, pages, metadata), onlySecond)

@@ -137,8 +137,8 @@ The current Desktop presentation architecture has these properties:
   within that Last Run; starting a new run resets the configuration, and the
   first Page receives one default panel when it has numeric Outputs. Each
   panel keeps its type, Scatter X source, selected Outputs, Combo series and
-  right-axis settings, Histogram bins, Box outlier visibility, title, legend
-  visibility, axis scale and display settings, X-axis zoom settings, and image
+  right-axis settings, per-Output colors, Histogram bins and Normal overrides,
+  Box outlier visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
   background in Last Run session state. The
   current zoom viewport is transient presentation state and resets when the
   configured X-axis minimum or maximum changes. These settings are not Template
@@ -159,8 +159,12 @@ The current Desktop presentation architecture has these properties:
 - Histogram and Box & Whisker are post-run projections computed from committed
   StoredRun rows. They do not load their full raw samples into the frontend
   chart cache. Histogram accepts one numeric Output and uses Auto (Sturges),
-  Count (1–200), or positive Width bins, with at most 200 bins. Box & Whisker
-  uses sorted samples and linearly interpolated percentiles at positions
+  Count (1–200), or positive Width bins, with at most 200 bins. Its optional
+  Normal overlay uses mean and sample standard deviation from the same Rust
+  online Welford accumulator as Summary, or presentation-only custom values;
+  bin-center PDF values scale by sample count and each bin's actual width.
+  Summary optional Range and sigma multiples derive only from Rust metadata.
+  Box & Whisker uses sorted samples and linearly interpolated percentiles at positions
   `(n - 1) * p`; whiskers are the outermost observed values within 1.5 IQR
   fences, and values outside the fences are outliers.
 - Line and Area decimate only the visible raw iteration range according to plot

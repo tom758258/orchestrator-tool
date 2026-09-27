@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { addChartPanel } from '../src/chartPanels.ts'
+import { readFileSync } from 'node:fs'
+import { stripTypeScriptTypes } from 'node:module'
+import { runInNewContext } from 'node:vm'
+import { addChartPanel, seriesColor } from '../src/chartPanels.ts'
 import { createPageChartData, minMaxDecimateRange, prepareChartSeries } from '../src/chartData.ts'
 import { comboRendererSeries, scatterRendererSeries } from '../src/chartOptions.ts'
 import { formatBinBoundary, statisticalChartSeries } from '../src/chartStatistics.ts'
@@ -123,4 +126,68 @@ test('Histogram formats category boundaries without changing statistical values'
   assert.deepEqual(statisticalChartSeries({ ...base, type: 'histogram' }, response, 'red').categories,
     ['1–231.692'])
   assert.equal(response.bins[0].end, 231.69230769230768)
+})
+
+test('Histogram normal line uses bin centers, sample count and each actual width', () => {
+  const response = { run_id: 1, page: 'A', output: 'I', sample_count: 4,
+    mean: 2.5, std_dev: 1.2909944487358056,
+    bins: [{ start: 1, end: 3, count: 2 }, { start: 3, end: 4, count: 2 }] }
+  const panel = { ...base, type: 'histogram', seriesColors: { I: '#123456' } }
+  const off = statisticalChartSeries(panel, response, 'red')
+  assert.equal(off.series.length, 1)
+  assert.equal(off.series[0].itemStyle.color, '#123456')
+  const enabled = { ...panel, histogram: { ...panel.histogram, showNormalCurve: true } }
+  const on = statisticalChartSeries(enabled, response, 'red')
+  assert.deepEqual(on.series[0], off.series[0])
+  const line = on.series[1]
+  assert.equal(line.type, 'line')
+  assert.equal(line.showSymbol, false)
+  assert.equal(line.silent, true)
+  assert.ok(line.data.every(Number.isFinite))
+  response.bins.forEach((bin, index) => {
+    const center = (bin.start + bin.end) / 2
+    const expected = 4 * Math.exp(-0.5 * ((center - 2.5) / response.std_dev) ** 2) /
+      (response.std_dev * Math.sqrt(2 * Math.PI)) * (bin.end - bin.start)
+    assert.ok(Math.abs(line.data[index] - expected) < 1e-12)
+  })
+  for (const std_dev of [0, null]) {
+    const omitted = statisticalChartSeries(enabled, { ...response, std_dev }, 'red')
+    assert.deepEqual(omitted.series, off.series)
+  }
+  assert.equal(statisticalChartSeries(enabled, { ...response, sample_count: 1 }, 'red').series.length, 1)
+  const custom = { ...enabled, histogram: { ...enabled.histogram, mean: 2, stdDev: 1 } }
+  const override = statisticalChartSeries(custom, { ...response, std_dev: null }, 'red').series[1]
+  assert.ok(Math.abs(override.data[0] - 8 / Math.sqrt(2 * Math.PI)) < 1e-12)
+  assert.notDeepEqual(override.data, line.data)
+})
+
+test('shared Output color preserves Auto and colors Scatter line/markers and Combo', () => {
+  const panel = { ...base, seriesColors: { I: '#123456', V: '#abcdef' } }
+  assert.equal(seriesColor(base, 'I', 'red'), 'red')
+  assert.equal(seriesColor(base, 'toString', 'red'), 'red')
+  assert.equal(seriesColor({ ...base, seriesColors: Object.fromEntries([['toString', '#fedcba']]) }, 'toString', 'red'), '#fedcba')
+  assert.equal(seriesColor(panel, 'I', 'red'), '#123456')
+  const scatter = scatterRendererSeries({ ...panel, type: 'scatter',
+    scatter: { ...panel.scatter, display: 'lines-markers' } }, { name: 'I', data: [[1, 2]] }, 'red')
+  assert.equal(scatter.itemStyle.color, '#123456')
+  assert.equal(scatter.lineStyle.color, '#123456')
+  const combo = comboRendererSeries({ ...panel, type: 'combo', outputs: ['I', 'V'] },
+    [{ name: 'I', data: [[1, 2]] }, { name: 'V', data: [[1, 3]] }], ['red', 'blue'])
+  assert.deepEqual(combo.map(series => series.itemStyle.color), ['#123456', '#abcdef'])
+  const automatic = comboRendererSeries({ ...base, type: 'combo', outputs: ['I', 'V'] },
+    [{ name: 'I', data: [] }, { name: 'V', data: [] }], ['red', 'blue'])
+  assert.deepEqual(automatic.map(series => series.itemStyle.color), ['red', 'blue'])
+})
+
+test('ChartPlot Line renderer resolves custom color and returns to its supplied palette', () => {
+  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
+  const start = source.indexOf('    return display.map(series => {')
+  const end = source.indexOf('  }, [display, numericNames', start)
+  assert.ok(start >= 0 && end > start)
+  const render = panel => runInNewContext(stripTypeScriptTypes('(() => {' + source.slice(start, end) + '})'), {
+    panel, display: [{ name: 'I', data: [[1, 2]] }], numericNames: ['I'], seriesColor,
+    style: { getPropertyValue: () => 'red' },
+  })()
+  assert.equal(render({ ...base, seriesColors: { I: '#123456' } })[0].itemStyle.color, '#123456')
+  assert.equal(render(base)[0].itemStyle.color, 'red')
 })

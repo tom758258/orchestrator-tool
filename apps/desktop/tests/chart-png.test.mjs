@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addChartPanel } from '../src/chartPanels.ts'
 import { chartPng } from '../src/chartPng.ts'
+import { init } from 'echarts'
+import { statisticalChartSeries } from '../src/chartStatistics.ts'
 import { chartLayout } from '../src/chartOptions.ts'
 
 const panel = { ...addChartPanel([], 'A', ['V'])[0],
@@ -114,6 +116,42 @@ test('PNG uses shared legend layout for each position and Scatter display', asyn
           assert.equal(calls[0][1].legend.textStyle.overflow, 'truncate')
           assert.equal(calls[2][1].legend.textStyle.width, calls[0][1].legend.textStyle.width)
         }
+      }
+    }
+  } finally {
+    globalThis.getComputedStyle = original
+    delete globalThis.document
+  }
+})
+
+test('PNG palette changes retain custom Histogram bars and Normal series in ECharts', async () => {
+  const original = globalThis.getComputedStyle
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '#123456' })
+  globalThis.document = { documentElement: {}, createElement: () => ({ getContext: () => null }) }
+  try {
+    for (const imageBackground of ['light', 'dark']) {
+      const configured = { ...panel, type: 'histogram', imageBackground,
+        seriesColors: { V: '#abcdef' },
+        histogram: { ...panel.histogram, showNormalCurve: true } }
+      const rendered = statisticalChartSeries(configured, {
+        run_id: 1, page: 'A', output: 'V', sample_count: 4, mean: 2.5, std_dev: 1.29,
+        bins: [{ start: 1, end: 2.5, count: 2 }, { start: 2.5, end: 4, count: 2 }],
+      }, 'red')
+      const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 640, height: 400 })
+      try {
+        chart.setOption({ animation: false, xAxis: { type: 'category', data: rendered.categories },
+          yAxis: { type: 'value' }, series: rendered.series })
+        const before = chart.getOption().series
+        chart.getDataURL = () => {
+          assert.deepEqual(chart.getOption().series, before)
+          return 'data:image/png;base64,YQ=='
+        }
+        await chartPng(chart, configured)
+        assert.deepEqual(chart.getOption().series, before)
+        assert.deepEqual(before.map(series => series.itemStyle.color), ['#abcdef', '#abcdef'])
+        assert.deepEqual(before.map(series => series.type), ['bar', 'line'])
+      } finally {
+        chart.dispose()
       }
     }
   } finally {

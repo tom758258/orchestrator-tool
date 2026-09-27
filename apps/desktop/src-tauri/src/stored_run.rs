@@ -75,6 +75,7 @@ pub struct NumericSummaryDto {
     pub min: f64,
     pub max: f64,
     pub avg: f64,
+    pub std_dev: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -141,6 +142,8 @@ pub struct HistogramDto {
     pub page: String,
     pub output: String,
     pub sample_count: usize,
+    pub mean: f64,
+    pub std_dev: Option<f64>,
     pub bins: Vec<HistogramBinDto>,
 }
 
@@ -274,6 +277,7 @@ struct NumericAccumulator {
     min: f64,
     max: f64,
     avg: f64,
+    m2: f64,
 }
 
 impl StoredRun {
@@ -555,11 +559,14 @@ impl StoredRun {
             };
             bins[index].count += 1;
         }
+        let summary = &page_data.summaries[output];
         Ok(HistogramDto {
             run_id: self.run_id,
             page: page.to_owned(),
             output: output.to_owned(),
             sample_count: values.len(),
+            mean: summary.avg,
+            std_dev: summary.std_dev(),
             bins,
         })
     }
@@ -734,13 +741,19 @@ impl NumericAccumulator {
             min: value,
             max: value,
             avg: value,
+            m2: 0.0,
         }
     }
     fn append(&mut self, value: f64) {
         self.count += 1;
         self.min = self.min.min(value);
         self.max = self.max.max(value);
-        self.avg += (value - self.avg) / self.count as f64;
+        let delta = value - self.avg;
+        self.avg += delta / self.count as f64;
+        self.m2 += delta * (value - self.avg);
+    }
+    fn std_dev(&self) -> Option<f64> {
+        (self.count >= 2).then(|| (self.m2 / (self.count - 1) as f64).sqrt())
     }
     fn dto(&self, name: &str) -> NumericSummaryDto {
         NumericSummaryDto {
@@ -749,6 +762,7 @@ impl NumericAccumulator {
             min: self.min,
             max: self.max,
             avg: self.avg,
+            std_dev: self.std_dev(),
         }
     }
 }
@@ -1106,6 +1120,26 @@ mod tests {
         let result = run
             .histogram("Results", "Voltage", "count", Some(2.0))
             .unwrap();
+        let metadata = run.metadata();
+        let summary = &metadata.pages[0].summaries[0];
+        assert_eq!(summary.count, 4);
+        assert_eq!((summary.min, summary.max, summary.avg), (1.0, 4.0, 2.5));
+        assert!((summary.std_dev.unwrap() - 1.2909944487358056).abs() < 1e-12);
+        assert_eq!(result.mean, summary.avg);
+        assert_eq!(result.std_dev, summary.std_dev);
+        assert_eq!(result.sample_count, summary.count);
+        assert_eq!(
+            run.histogram("Results", "Voltage", "auto", None)
+                .unwrap()
+                .bins
+                .len(),
+            3
+        );
+        let width = run
+            .histogram("Results", "Voltage", "width", Some(2.0))
+            .unwrap();
+        assert_eq!((width.bins[1].start, width.bins[1].end), (3.0, 4.0));
+        assert_eq!(width.bins.iter().map(|bin| bin.count).sum::<usize>(), 4);
         assert_eq!(result.bins.len(), 2);
         assert_eq!(result.bins.iter().map(|bin| bin.count).sum::<usize>(), 4);
         assert_eq!(result.bins[1].count, 2);
@@ -1121,13 +1155,32 @@ mod tests {
         assert!(run.histogram("Results", "Missing", "auto", None).is_err());
 
         let mut constant = StoredRun::new(2, template());
-        for _ in 0..3 {
+        constant.append_event(
+            &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(Value::from(7))),
+        );
+        assert_eq!(constant.metadata().pages[0].summaries[0].std_dev, None);
+        assert_eq!(
+            constant
+                .histogram("Results", "Voltage", "auto", None)
+                .unwrap()
+                .std_dev,
+            None
+        );
+        for _ in 0..2 {
             constant.append_event(
                 &orchestrator_tool::workflow::WorkflowRunEvent::ResultRowCommitted(row(
                     Value::from(7),
                 )),
             );
         }
+        assert_eq!(constant.metadata().pages[0].summaries[0].std_dev, Some(0.0));
+        assert_eq!(
+            constant
+                .histogram("Results", "Voltage", "auto", None)
+                .unwrap()
+                .std_dev,
+            Some(0.0)
+        );
         let bins = constant
             .histogram("Results", "Voltage", "count", Some(20.0))
             .unwrap()

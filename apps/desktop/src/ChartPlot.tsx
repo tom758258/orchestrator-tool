@@ -4,7 +4,7 @@ import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type PageChartData } from './chartData'
-import { chartRequiredOutputs, chartSupportsZoom, type ChartPanel } from './chartPanels'
+import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
   chartZoomSliderBottom, comboRendererSeries, scatterRendererSeries } from './chartOptions'
 import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
@@ -71,8 +71,8 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       display.map(series => style.getPropertyValue(
         `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()))
     return display.map(series => {
-      const color = style.getPropertyValue(
-        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()
+      const color = seriesColor(panel, series.name, style.getPropertyValue(
+        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim())
       switch (panel.type) {
         case 'line':
         case 'area':
