@@ -242,6 +242,10 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **For** — 依 exact decimal range 重複執行 body。
 - **While** — 在 condition 為 true 時重複執行 body。
 
+在 **Steps** panel 點擊 **Workflow**、**Powers** 或 **Meters** 標題，可獨立展開
+或收合該分類。展開時顯示 **−**；收合時顯示 **+** 並隱藏該分類的 step buttons。
+App 開啟時三區預設全部展開；此狀態不會保存於 Template。
+
 Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。

@@ -418,6 +418,20 @@ body {
   margin-top: 12px;
 }
 
+.step-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .step-palette-button {
   width: 100%;
   padding: 7px 10px;

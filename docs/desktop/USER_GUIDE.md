@@ -283,6 +283,11 @@ types are:
 - **For** — repeat a body over an exact decimal range.
 - **While** — repeat a body while a condition remains true.
 
+In the **Steps** panel, click the **Workflow**, **Powers**, or **Meters** header
+to expand or collapse that category independently. Expanded categories show
+**−**; collapsed categories show **+** and hide their step buttons. All three
+start expanded when the app opens. This state is not saved in Templates.
+
 Steps can be placed in the root workflow or inside loop bodies. Use the step
 properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate

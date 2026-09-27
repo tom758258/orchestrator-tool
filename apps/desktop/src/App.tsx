@@ -409,6 +409,9 @@ function App() {
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
+  const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
+    Workflow: true, Powers: true, Meters: true,
+  })
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
@@ -1866,8 +1869,17 @@ function App() {
                     <div className="step-palette-items">
                       {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
                         <section key={category}>
-                          <h4>{category}</h4>
-                          <div className="step-palette-items">
+                          <h4>
+                            <button type="button" className="step-category-header"
+                              aria-expanded={expandedStepCategories[category]}
+                              onClick={() => setExpandedStepCategories(current => ({
+                                ...current, [category]: !current[category],
+                              }))}>
+                              {category}
+                              <span aria-hidden="true">{expandedStepCategories[category] ? '−' : '+'}</span>
+                            </button>
+                          </h4>
+                          {expandedStepCategories[category] && <div className="step-palette-items">
                             {STEP_PRESETS.filter(preset => preset.category === category).map((preset) => (
                               <button
                                 key={preset.value}
@@ -1879,7 +1891,7 @@ function App() {
                                 {preset.label}
                               </button>
                             ))}
-                          </div>
+                          </div>}
                         </section>
                       ))}
                     </div>
