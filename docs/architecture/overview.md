@@ -133,9 +133,11 @@ The current Desktop presentation architecture has these properties:
 - Charts use Apache ECharts Canvas rendering. There are at most eight chart
   panels across the run pages, and the final remaining panel cannot be
   removed. Last Run Page tabs keep Charts, Summary, and Data views on the same
-  run snapshot. Chart panel configuration survives Page/tab changes only
-  within that Last Run; starting a new run resets the configuration, and the
-  first Page receives one default panel when it has numeric Outputs. Each
+  run snapshot. Chart panel configuration survives Page/tab changes and new
+  Simulation/Live runs through the existing Page/Output reconciliation. When
+  no panels remain, the first Page receives one default panel if it has numeric
+  Outputs. Template/workflow replacement and Clear Last Run still reset chart
+  session state. Each
   panel keeps its type, Scatter X source, selected Outputs, Combo series and
   right-axis settings, per-Output colors, Histogram bins and Normal overrides,
   Box outlier visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
@@ -145,7 +147,14 @@ The current Desktop presentation architecture has these properties:
   data. Single-chart PNG export uses a light or dark palette independently of
   the application theme, captures the current viewport and ECharts-rendered
   title, and excludes interactive DataZoom controls.
-- Live visualization remains Line. After execution stops, committed numeric
+- Live visualization remains Line only, defined by `chartSupportsLive`. While
+  running, preserved non-Line panels display a locked Waiting state without a
+  plot; Output selection, Settings, Export PNG, and Remove are disabled. Only
+  Line panels contribute raw-series loader requests, and statistical requests
+  remain post-run only. When running becomes false, the existing loaders and
+  statistical effects automatically load the new run's committed rows. Raw
+  caches remain isolated by run ID, and statistical keys include the run ID.
+  After execution stops, committed numeric
   rows can use Line, XY Scatter, Column, Area, Bar, Combo, Histogram, and Box &
   Whisker; failed runs with committed rows remain available for inspection.
   Selecting multiple Outputs compares their series

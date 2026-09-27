@@ -1120,7 +1120,6 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('live')
-      setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1177,7 +1176,6 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('simulate')
-      setChartPanels([])
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true

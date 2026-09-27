@@ -539,7 +539,7 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
-While execution is running, Charts use **Line**. After execution stops, any run
+Only **Line** supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select **Line**,
 **XY Scatter**, **Column**, **Area**, **Bar**, **Combo**, **Histogram**, or
 **Box & Whisker** from **Settings → General → Chart type**. Line shows the
@@ -625,9 +625,15 @@ and Reset Zoom are excluded. **Settings → Export → Background** can use Ligh
 or Dark independently of the Application theme. Custom series colors and the
 Normal curve are included in either background.
 
-Chart settings belong only to the current Last Run session. They survive
-Page/tab changes within that Last Run, but starting a new run, **Open Template**,
-or **Clear Last Run** resets them. Chart settings are not Template data.
+Chart configuration survives Page/tab changes and subsequent Simulation or
+Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
+original Page and order while running, display **Waiting for run to finish**,
+and hide the plot. Their Output selection, Settings, Export PNG, and Remove
+actions are disabled. They do not load live chart data and automatically update
+from the new run's committed rows when execution stops; no refresh is needed.
+Line continues to update live, and **+ Add Chart** still creates a Line chart.
+**Open Template**, workflow replacement, and **Clear Last Run** reset chart
+session state. Chart settings are not Template data.
 
 ### 10.3 Data and Summary
 

@@ -5,7 +5,7 @@ import ChartSettings from './ChartSettings'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
-import { addChartPanel, canRemoveChartPanel, chartRawOutputs, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
+import { addChartPanel, canRemoveChartPanel, chartSupportsLive, chartRawOutputs, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { chartPng } from './chartPng'
 import { statisticalRequestKey, type BoxPlotDto, type HistogramDto, type StatisticalDto } from './chartStatistics'
 
@@ -35,17 +35,19 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [dataVersion, setDataVersion] = useState(0)
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
+  const loadingPanels = useMemo(() => localPanels.filter(panel =>
+    !running || chartSupportsLive(panel.type)), [localPanels, running])
   const data = useMemo(() => {
-    if (!localPanels.some(panel => chartRawOutputs(panel).some(name => numericNames.includes(name)))) return null
+    if (!loadingPanels.some(panel => chartRawOutputs(panel).some(name => numericNames.includes(name)))) return null
     let local = chartData.get(page)
     if (!local) {
       local = createPageChartData()
       chartData.set(page, local)
     }
     return local
-  }, [chartData, page, localPanels, numericNames, dataVersion])
-  const requestedNames = useMemo(() => [...new Set(localPanels.flatMap(chartRawOutputs))]
-    .filter(name => numericNames.includes(name)), [localPanels, numericNames])
+  }, [chartData, page, loadingPanels, numericNames, dataVersion])
+  const requestedNames = useMemo(() => [...new Set(loadingPanels.flatMap(chartRawOutputs))]
+    .filter(name => numericNames.includes(name)), [loadingPanels, numericNames])
   const requestedKey = useMemo(() => JSON.stringify([...requestedNames].sort()), [requestedNames])
   const latestRowCountRef = useRef(rowCount)
   latestRowCountRef.current = rowCount
@@ -197,6 +199,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
       : <p>Select multiple numeric Outputs to compare them on the same chart.</p>}
     <div className="result-charts-grid">
       {localPanels.map((panel, index) => {
+        const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
         const statisticKey = statisticalRequestKey(runId, visiblePanel)
@@ -206,16 +209,16 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         const analysisReady = isStatistical ? statisticReady : panel.type === 'line' ||
           (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount)
         const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
-        return <section className="result-chart-panel" key={panel.id} aria-label={`Chart ${index + 1}`}>
+        return <section className={`result-chart-panel${waiting ? ' result-chart-panel-waiting' : ''}`} key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
             <h4>Chart {index + 1}</h4>
             <div className="result-chart-panel-actions">
-              <button className="action-button" type="button" disabled={savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
+              <button className="action-button" type="button" disabled={waiting || savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
                 onClick={() => void saveImage(panel.id, index)}>Export PNG</button>
-              <button className="action-button" type="button" disabled={savingId !== null}
+              <button className="action-button" type="button" disabled={waiting || savingId !== null}
                 onClick={() => setSettingsId(panel.id)}>Settings</button>
               <button className="action-button action-button-danger" type="button"
-                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null || !canRemoveChartPanel(panels)}
+                aria-label={`Remove Chart ${index + 1}`} disabled={waiting || savingId !== null || !canRemoveChartPanel(panels)}
                 onClick={() => {
                   if (saving.current) return
                   if (feedback?.id === panel.id) setFeedback(null)
@@ -224,7 +227,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             </div>
           </div>
           {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
-          <fieldset className="result-chart-outputs" disabled={savingId !== null}>
+          <fieldset className="result-chart-outputs" disabled={waiting || savingId !== null}>
             <legend>Outputs</legend>
             {numericNames.map(name => <label key={name}>
               <input type={panel.type === 'histogram' ? 'radio' : 'checkbox'}
@@ -239,7 +242,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
               {name}
             </label>)}
           </fieldset>
-          {selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
+          {waiting ? <div className="result-chart-waiting" role="status">
+            <p>Waiting for run to finish</p>
+            <p>This chart does not support live updates. It will update automatically when the run finishes.</p>
+          </div> : selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
             : !enoughOutputs ? <p>Select at least two Outputs for Combo.</p>
               : isStatistical && statisticState?.key === statisticKey && statisticState.error
                 ? <p role="alert">Could not prepare chart: {statisticState.error}</p>
@@ -248,7 +254,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined} />
           )}
-          {settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
+          {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
               onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings,

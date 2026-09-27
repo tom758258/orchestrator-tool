@@ -469,7 +469,7 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
-Execution 執行中 Charts 只能使用 **Line**。Execution 停止後，只要有 committed
+Execution 執行中只有 **Line** 支援即時更新。Execution 停止後，只要有 committed
 numeric rows，即使 run 失敗，也可在 **Settings → General → Chart type** 選擇
 **Line**、**XY Scatter**、**Column**、**Area**、**Bar**、**Combo**、**Histogram**
 或 **Box & Whisker**。Line 顯示 Iteration 趨勢；Area 在折線下填色；Column
@@ -542,9 +542,13 @@ surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不�
 **Settings → Export → Background** 可選 Light 或 Dark，並與 Application theme
 分開設定。兩種背景都會保留自訂 series 顏色與 Normal curve。
 
-Chart settings 只屬於目前 Last Run session；在同一個 Last Run 內切換 Page/tab
-仍會保留，但開始新的 run、**Open Template** 或 **Clear Last Run** 時會清除。
-Chart settings 不屬於 Template data。
+Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
+並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
+顯示 **Waiting for run to finish** 並隱藏 plot；Output selection、Settings、
+Export PNG 與 Remove 會停用。它們不會載入即時 chart data，execution 停止後
+自動使用新 run 的 committed rows 更新，不需手動 refresh。Line 持續即時更新，
+**+ Add Chart** 仍建立 Line chart。**Open Template**、替換 workflow 與
+**Clear Last Run** 會清除 chart session state。Chart settings 不屬於 Template data。
 
 ### 10.3 Data 與 Summary
 

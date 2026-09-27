@@ -489,7 +489,7 @@ inspection, but manual export is unavailable.</p>
 <p>Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.</p>
-<p>While execution is running, Charts use <strong>Line</strong>. After execution stops, any run
+<p>Only <strong>Line</strong> supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select <strong>Line</strong>,
 <strong>XY Scatter</strong>, <strong>Column</strong>, <strong>Area</strong>, <strong>Bar</strong>, <strong>Combo</strong>, <strong>Histogram</strong>, or
 <strong>Box &amp; Whisker</strong> from <strong>Settings → General → Chart type</strong>. Line shows the
@@ -566,9 +566,15 @@ range are included; Output selection controls, chart action buttons, zoom slider
 and Reset Zoom are excluded. <strong>Settings → Export → Background</strong> can use Light
 or Dark independently of the Application theme. Custom series colors and the
 Normal curve are included in either background.</p>
-<p>Chart settings belong only to the current Last Run session. They survive
-Page/tab changes within that Last Run, but starting a new run, <strong>Open Template</strong>,
-or <strong>Clear Last Run</strong> resets them. Chart settings are not Template data.</p>
+<p>Chart configuration survives Page/tab changes and subsequent Simulation or
+Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
+original Page and order while running, display <strong>Waiting for run to finish</strong>,
+and hide the plot. Their Output selection, Settings, Export PNG, and Remove
+actions are disabled. They do not load live chart data and automatically update
+from the new run's committed rows when execution stops; no refresh is needed.
+Line continues to update live, and <strong>+ Add Chart</strong> still creates a Line chart.
+<strong>Open Template</strong>, workflow replacement, and <strong>Clear Last Run</strong> reset chart
+session state. Chart settings are not Template data.</p>
 <h3 id="103-data-and-summary">10.3 Data and Summary</h3>
 <p><strong>Output Data</strong> is built from committed ResultRows. Large tables use
 virtualization for display, but the rows remain available for charts and

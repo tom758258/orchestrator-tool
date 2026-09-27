@@ -1303,6 +1303,15 @@ textarea:disabled {
   background: var(--panel);
 }
 
+.result-chart-panel-waiting {
+  opacity: 0.65;
+}
+
+.result-chart-waiting {
+  padding: 24px 0;
+  color: var(--muted);
+}
+
 .result-chart-panel-actions {
   display: flex;
   align-items: center;

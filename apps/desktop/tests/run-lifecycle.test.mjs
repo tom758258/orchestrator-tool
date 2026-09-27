@@ -17,14 +17,14 @@ test('stale generations cannot publish progress or completion state', () => {
   assert.equal(isCurrentRunGeneration(null, 4), false)
 })
 
-test('both run entry points use the shared gate and reset per-run Chart configuration', () => {
+test('both run entry points use the shared gate and preserve Chart configuration', () => {
   const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const live = source.slice(source.indexOf('const runLive'), source.indexOf('const runSimulation'))
   const simulation = source.slice(source.indexOf('const runSimulation'), source.indexOf('const workflowBusy'))
   for (const run of [live, simulation]) {
     assert.match(run, /claimRunGate\(runInFlightRef\)/)
     assert.match(run, /releaseRunGate\(runInFlightRef\)/)
-    assert.match(run, /setChartPanels\(\[\]\)/)
+    assert.doesNotMatch(run, /setChartPanels\(/)
   }
 })
 
@@ -56,4 +56,16 @@ test('failed StoredRun clearing rejects replacement without reaching the caller 
 test('off-tab Chart cleanup does not preserve an unmounted Page cache', () => {
   const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(source, /activeTab === 'output' \? runPage\?\.name : undefined/)
+})
+
+test('workflow replacement and Clear Last Run still clear Chart configuration and run caches stay isolated', () => {
+  const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  for (const name of ['createDraft', 'handleLoadTemplate', 'handleClearLastRun']) {
+    const start = source.indexOf(`const ${name} =`)
+    assert.notEqual(start, -1, name)
+    const next = source.indexOf('\n  const ', start)
+    assert.match(source.slice(start, next), /setChartPanels\(\[\]\)/)
+  }
+  assert.match(source, /const chartData = useMemo\(\(\) => new Map<string, PageChartData>\(\), \[runMetadata\?\.run_id\]\)/)
+  assert.match(source, /setChartPanels\(panels => reconcileRunChartPanels\(/)
 })

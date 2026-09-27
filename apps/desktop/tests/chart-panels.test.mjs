@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
-  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, comboSeriesSettings } from '../src/chartPanels.ts'
+  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, chartSupportsLive, comboSeriesSettings } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
@@ -168,12 +168,33 @@ test('the final Chart panel cannot be removed but either of two panels can be', 
   assert.equal(canRemoveChartPanel([...one, { ...one[0], id: 1, page: 'B' }]), true)
 })
 
-test('a new run starts from an empty panel configuration and receives one default panel', () => {
-  const previous = [
-    { ...panel(7, 'A', ['V', 'I']), title: 'Old' },
-    { ...panel(8, 'B', ['I']), title: 'Old' },
-  ]
-  assert.equal(previous.length, 2)
-  const next = reconcileRunChartPanels([], pages, metadata)
-  assert.deepEqual(next, addChartPanel([], 'A', ['V']))
+test('Line is the only chart type eligible for live updates', () => {
+  assert.equal(chartSupportsLive('line'), true)
+  for (const type of ['scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
+    assert.equal(chartSupportsLive(type), false, type)
+  }
+})
+
+test('repeated runs preserve compatible panel order, IDs, Pages, types and every setting', () => {
+  const previous = ['line', 'scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']
+    .map((type, index) => ({ ...panel(7 + index, index % 2 ? 'B' : 'A', type === 'histogram' ? ['V'] : ['V', 'I']),
+      type, title: `Custom ${type}`, scatterXOutput: type === 'scatter' ? 'I' : null,
+      scatter: { display: 'lines-markers', markerSize: 7, lineWidth: 3 },
+      seriesColors: { V: '#123456', I: '#abcdef' }, showLegend: false, legendPosition: 'right',
+      imageBackground: 'dark', zoom: { enabled: true, showSlider: false },
+      xAxis: { ...panel(0, 'A', ['V']).xAxis, title: 'X', min: 2, max: 20, interval: 2, showLabels: false },
+      yAxis: { ...panel(0, 'A', ['V']).yAxis, title: 'Y', min: -1, max: 10, interval: 1, showTicks: false },
+      combo: { series: { V: { kind: 'line', axis: 'right' }, I: { kind: 'column', axis: 'left' } },
+        rightAxis: { ...panel(0, 'A', ['V']).combo.rightAxis, title: 'Right', max: 50 } },
+      histogram: { mode: 'count', value: 12, showNormalCurve: true, mean: 5, stdDev: 2 },
+      boxPlot: { showOutliers: false },
+    }))
+  const snapshot = structuredClone(previous)
+  let current = previous
+  for (const rowCount of [0, 10, 0, 20]) {
+    current = reconcileRunChartPanels(current, pages, metadata.map(page => ({ ...page, row_count: rowCount })))
+    assert.equal(current, previous)
+    current.forEach((item, index) => assert.equal(item, previous[index]))
+    assert.deepEqual(current, snapshot)
+  }
 })

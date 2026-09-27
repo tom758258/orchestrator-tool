@@ -65,6 +65,10 @@ export function chartRawOutputs(panel: Pick<ChartPanel, 'type' | 'scatterXOutput
   return panel.type === 'histogram' || panel.type === 'boxplot' ? [] : chartRequiredOutputs(panel)
 }
 
+export function chartSupportsLive(type: ChartType): boolean {
+  return type === 'line'
+}
+
 export function chartSupportsZoom(type: ChartType): boolean {
   return type === 'line' || type === 'area' || type === 'column' || type === 'combo'
 }
