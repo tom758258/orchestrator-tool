@@ -61,9 +61,10 @@ const button = (view, label) => view.find(node => node.type === 'button' && text
 const candidates = select => elements(select).filter(node => node.type === 'option').map(node => node.props.value)
 const settle = () => new Promise(resolve => setImmediate(resolve))
 const status = (tool_id, executable_status = 'available', compatibility = 'compatible') => ({
-  tool_id, path: executable_status === 'not-configured' ? null : `${tool_id}.exe`,
-  source: executable_status === 'not-configured' ? 'not-configured' : 'configured',
-  executable_status, compatibility, tool_version: null, worker_schema_versions: [], reason: null,
+  tool_id, path: ['not-configured', 'error'].includes(executable_status) ? null : `${tool_id}.exe`,
+  source: executable_status === 'error' ? null : executable_status === 'not-configured' ? 'not-configured' : 'configured',
+  executable_status, compatibility, tool_version: null, worker_schema_versions: [],
+  reason: executable_status === 'error' ? 'Executable inspection failed: permission denied' : null,
 })
 const template = {
   tool_instances: [{ id: 'powers-1', tool: 'powers', setup: {} }, { id: 'scopes-1', tool: 'scopes', setup: {} }],
@@ -96,7 +97,7 @@ async function toolsView(initial) {
   return { render, calls, pick(value, invalid = false) { picked = value; reject = invalid } }
 }
 
-test('Tools cards and Add candidates use configured paths, including broken executables', async () => {
+test('Tools cards and Add candidates use configuration status, including broken executables', async () => {
   for (const state of ['available', 'missing', 'not-file', 'error']) {
     const app = await toolsView([status('meters'), status('powers', state, 'error'),
       status('scopes', 'not-configured'), status('wavegen', 'not-configured')])
@@ -105,6 +106,51 @@ test('Tools cards and Add candidates use configured paths, including broken exec
     assert.deepEqual(candidates(view.find(node => node.props.id === 'tool-to-add')), ['scopes', 'wavegen'])
     assert.deepEqual(view.find(node => node.type === 'ToolSetupEditor').props.configuredToolTypes, ['meters', 'powers'])
   }
+})
+
+test('Inspection errors keep Setup instances configured and allow Change Path and Remove', async () => {
+  const initial = [status('powers', 'error', 'not-probed'), status('scopes', 'not-configured')]
+  const app = await toolsView(initial)
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const beforeInstances = structuredClone(setup().value)
+  const beforeSteps = structuredClone(setup().steps)
+  const renderSetup = await component('ToolSetupEditor')
+  const view = renderSetup(setup())
+  assert.deepEqual(candidates(view.find(node => node.props['aria-label'] === 'Tool type')), ['powers'])
+  assert.ok(!view.some(node => node.props.role === 'status' && text(node).includes('Powers is not configured in Tools.')))
+  assert.ok(view.some(node => node.type === 'legend' && text(node).includes('powers-1')))
+
+  const card = app.render().find(node => node.props.className === 'tool-card' && node.key === 'powers')
+  assert.ok(card)
+  assert.equal(button(elements(card), 'Change Path...').props.disabled, false)
+  const remove = button(elements(card), 'Remove Tool')
+  assert.equal(remove.props.disabled, false)
+  const callOffset = app.calls.length
+  remove.props.onClick()
+  assert.deepEqual(app.calls.slice(callOffset), [['reset_tool_executable', { toolId: 'powers' }]])
+  assert.deepEqual(app.render().filter(node => node.props.className === 'tool-id').map(text), ['powers'])
+  assert.deepEqual(candidates(app.render().find(node => node.props.id === 'tool-to-add')), ['scopes'])
+  await settle()
+  assert.deepEqual(app.calls.slice(callOffset, callOffset + 2), [
+    ['reset_tool_executable', { toolId: 'powers' }], ['get_tool_status', undefined],
+  ])
+  assert.equal(app.render().filter(node => node.props.className === 'tool-card').length, 0)
+  assert.deepEqual(candidates(app.render().find(node => node.props.id === 'tool-to-add')), ['powers', 'scopes'])
+  assert.deepEqual(setup().configuredToolTypes, [])
+  assert.deepEqual(setup().value, beforeInstances)
+  assert.deepEqual(setup().steps, beforeSteps)
+
+  const repair = await toolsView(initial)
+  repair.pick('replacement-powers.exe')
+  assert.equal(button(repair.render(), 'Change Path...').props.disabled, false)
+  button(repair.render(), 'Change Path...').props.onClick()
+  await settle()
+  assert.ok(repair.calls.some(([command, args]) => command === 'set_tool_executable'
+    && args.toolId === 'powers' && args.path === 'replacement-powers.exe'))
+  assert.deepEqual(repair.render().filter(node => node.props.className === 'tool-id').map(text), ['powers'])
+  const repairedSetup = repair.render().find(node => node.type === 'ToolSetupEditor').props
+  assert.deepEqual(repairedSetup.value, beforeInstances)
+  assert.deepEqual(repairedSetup.steps, beforeSteps)
 })
 
 test('Add, cancel, rejection, and Remove preserve Template instances and workflow', async () => {

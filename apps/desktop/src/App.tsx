@@ -411,9 +411,9 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
-  const configuredTools = tools.filter(tool => tool.path !== null)
+  const configuredTools = tools.filter(tool => tool.executable_status !== 'not-configured')
   const configuredToolTypes = configuredTools.map(tool => tool.tool_id as ToolInstance['tool'])
-  const unconfiguredTools = tools.filter(tool => tool.path === null)
+  const unconfiguredTools = tools.filter(tool => tool.executable_status === 'not-configured')
   const [toolToAdd, setToolToAdd] = useState('')
   const selectedToolToAdd = unconfiguredTools.some(tool => tool.tool_id === toolToAdd)
     ? toolToAdd : unconfiguredTools[0]?.tool_id ?? ''
@@ -1588,7 +1588,7 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
-                      disabled={toolConfigBusy !== null || workflowBusy || loading || tool.source !== 'configured'}
+                      disabled={toolConfigBusy !== null || workflowBusy || loading}
                     >
                       Remove Tool
                     </button>
