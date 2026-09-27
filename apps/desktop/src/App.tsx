@@ -1704,9 +1704,11 @@ function App() {
                       const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
                       const capabilityChannels = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
                         ? powersCapabilityChannels.models[capabilityModel] ?? [] : []
-                      const statusChannels = protectionChannelNumbers(capabilityChannels, instance.setup.protection?.channels ?? [])
-                      return <div className="live-resource">
-                        <h4>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h4>
+                      const statusChannels = protectionChannelNumbers(
+                        capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
+                      )
+                      return <div className="live-resource powers-device-status">
+                        <h5>Device Status <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span></h5>
                         <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
                         {executionMode === 'simulate'
                           ? <p className="tool-setup-hint">Uses the simulator model. No saved Live Resource is required and no hardware I/O occurs.</p>
@@ -1734,11 +1736,22 @@ function App() {
                           </details>
                         </div>}
                         {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
-                        <dl className="tool-details">
-                          <div className="detail-row"><dt className="detail-label">Protection</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.protection_tripped ? 'TRIPPED' : 'CLEAR' : '—'}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">OVP</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">OCP</dt><dd className="detail-value">{deviceStatus?.status ? deviceStatus.status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</dd></div>
-                        </dl>
+                        <section className="powers-protection-summary" aria-label="Protection Summary">
+                          <h6>Protection Summary</h6>
+                          <dl>
+                            {([
+                              ['Protection', deviceStatus?.status?.protection_tripped, 'CLEAR'],
+                              ['OVP', deviceStatus?.status?.over_voltage_tripped, 'OK'],
+                              ['OCP', deviceStatus?.status?.over_current_tripped, 'OK'],
+                            ] as const).map(([label, tripped, clearLabel]) => <div key={label}>
+                              <dt>{label}</dt>
+                              <dd className={tripped === undefined ? 'powers-status-unknown'
+                                : tripped ? 'powers-status-tripped' : 'powers-status-clear'}>
+                                {tripped === undefined ? '—' : tripped ? 'TRIPPED' : clearLabel}
+                              </dd>
+                            </div>)}
+                          </dl>
+                        </section>
                         <div className="powers-table-scroll">
                           <table className="powers-status-table">
                             <thead><tr><th scope="col">Channel</th><th scope="col">Output</th><th scope="col">OVP</th><th scope="col">OCP</th><th scope="col">Action</th></tr></thead>

@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import React from 'react'
+import { transformWithOxc } from 'vite'
 import { protectionChannelNumbers, updatePowersProtectionSetting } from '../src/powersProtectionSetup.ts'
 
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
@@ -34,8 +36,8 @@ test('Protection Setup renders capability and configured channels with fixed, di
   assert.doesNotMatch(setup, /Add Protection Channel|Remove Channel|Remove setting/)
   assert.match(setup, /protectionChannelNumbers\(capabilities\?\.channels \?\? \[\], channels\)/)
   assert.match(setup, /displayChannels\.map/)
-  assert.match(setup, /disabled=\{!supported\('ocp'\)\}/)
-  assert.match(setup, /disabled=\{triggers\.length === 0 \|\| unsupportedTrigger\}/)
+  assert.match(setup, /disabled=\{!protectionEnabled \|\| !supported\('ocp'\)\}/)
+  assert.match(setup, /disabled=\{!protectionEnabled \|\| triggers\.length === 0 \|\| unsupportedTrigger\}/)
   assert.match(setup, /existing value preserved/)
 })
 
@@ -69,14 +71,128 @@ test('editing supported settings leaves other saved unsupported values intact', 
 })
 
 test('Device Status renders placeholders and stable action cells before Refresh', () => {
-  assert.match(app, /protectionChannelNumbers\(capabilityChannels, instance\.setup\.protection\?\.channels \?\? \[\]\)/)
+  assert.match(app, /protectionChannelNumbers\(\s*capabilityChannels, instance\.setup\.protection\?\.channels \?\? \[\], deviceStatus\?\.status\?\.channels \?\? \[\],\s*\)/)
   assert.match(app, /powersCapabilityChannels\?\.key === powersCapabilityKey/)
   assert.match(app, /get_powers_capabilities[^\n]*modelId, executionMode/)
   assert.match(app, /<th[^>]*>Action<\/th>/)
-  assert.match(app, /deviceStatus\?\.status \?[^\n]*: '—'/)
+  assert.match(app, /powers-protection-summary/)
+  assert.match(app, /Protection Summary/)
+  assert.match(app, /tripped === undefined \? '—' : tripped \? 'TRIPPED' : clearLabel/)
   assert.match(app, /status \?[^\n]*: '—'/)
   assert.doesNotMatch(app, /\(executionMode === 'simulate' \|\| channel\.over_voltage_tripped/)
   assert.match(app, /disabled=\{!resourceReady \|\| workflowBusy \|\| operationBusy \|\| toolConfigBusy !== null \|\| !canClear\}/)
   assert.match(app, /status && \(status\.over_voltage_tripped \|\| status\.over_current_tripped\)/)
   assert.match(app, /executionMode === 'simulate'[\s\S]*capabilityChannels\.includes\(channel\)/)
+})
+
+// Exercise the component handlers with local hooks and offline capabilities, without a Worker or DOM.
+const powersFields = setup.slice(setup.indexOf('function PowersSetupFields('), setup.indexOf('function setupSummary('))
+const { code } = await transformWithOxc(powersFields, 'PowersSetupFields.tsx', { jsx: { runtime: 'classic' } })
+const createFields = new Function('React', 'useState', 'useEffect', 'invoke',
+  'protectionChannelNumbers', 'updatePowersProtectionSetting', `${code}; return PowersSetupFields`)
+
+function protectionEditor(initial = {}) {
+  let value = initial
+  let changes = 0
+  let cursor = 0
+  const hooks = [null, {
+    key: JSON.stringify(['simulate', undefined, 'test']),
+    value: { channels: [1, 2, 3], protection_features: {
+      ovp_voltage: true, ocp: true, ocp_delay: false, ocp_delay_triggers: [],
+    } },
+  }]
+  const Fields = createFields(React, initial => {
+    const index = cursor++
+    if (!(index in hooks)) hooks[index] = initial
+    return [hooks[index], next => { hooks[index] = next }]
+  }, () => {}, () => { throw new Error('Unexpected Worker invocation') },
+  protectionChannelNumbers, updatePowersProtectionSetting)
+  return {
+    get value() { return value },
+    get changes() { return changes },
+    replace(next) { value = next },
+    render() {
+      cursor = 0
+      const elements = []
+      function visit(node) {
+        if (Array.isArray(node)) node.forEach(visit)
+        else if (React.isValidElement(node)) {
+          elements.push(node)
+          visit(node.props.children)
+        }
+      }
+      visit(Fields({ value, onChange: next => { value = next; changes++ },
+        executionMode: 'simulate', powersExecutableKey: 'test' }))
+      return {
+        checkboxes: elements.filter(node => node.props.type === 'checkbox'),
+        field: label => elements.find(node => node.props['aria-label'] === label),
+        rows: elements.filter(node => node.type === 'tr').length - 1,
+      }
+    },
+  }
+}
+
+test('one instance toggle enables only supported fields without writing empty protection data', () => {
+  const editor = protectionEditor()
+  let view = editor.render()
+  assert.equal(view.checkboxes.length, 1)
+  assert.equal(view.checkboxes[0].props.checked, false)
+  assert.equal(view.rows, 3)
+  for (const label of ['OVP Voltage (V)', 'OCP', 'OCP Delay (s)', 'OCP Delay Trigger']) {
+    assert.equal(view.field(`CH2 ${label}`).props.disabled, true)
+  }
+  assert.deepEqual(editor.value, {})
+  assert.equal(editor.changes, 0)
+  view.checkboxes[0].props.onChange({ target: { checked: true } })
+  view = editor.render()
+  assert.equal(view.checkboxes[0].props.checked, true)
+  assert.equal(view.field('CH2 OVP Voltage (V)').props.disabled, false)
+  assert.equal(view.field('CH2 OCP').props.disabled, false)
+  assert.equal(view.field('CH2 OCP Delay (s)').props.disabled, true)
+  assert.equal(view.field('CH2 OCP Delay Trigger').props.disabled, true)
+  assert.deepEqual(editor.value, {})
+  assert.equal(editor.changes, 0)
+  view.field('CH2 OCP').props.onChange({ target: { value: 'on' } })
+  assert.deepEqual(editor.value, { protection: { channels: [{ channel: 2, ocp: 'on' }] } })
+  assert.equal(editor.render().checkboxes[0].props.checked, true)
+})
+
+test('existing setup enables the toggle; disabling or pruning resets fields and setup', () => {
+  const existing = { protection: { channels: [{ channel: 2, ocp: 'on' }] } }
+  const editor = protectionEditor(existing)
+  let view = editor.render()
+  assert.equal(view.checkboxes[0].props.checked, true)
+  view.checkboxes[0].props.onChange({ target: { checked: false } })
+  assert.deepEqual(editor.value, {})
+  view = editor.render()
+  assert.equal(view.checkboxes[0].props.checked, false)
+  assert.equal(view.field('CH2 OCP').props.value, '')
+  assert.equal(view.field('CH2 OCP').props.disabled, true)
+  view.checkboxes[0].props.onChange({ target: { checked: true } })
+  editor.render().field('CH2 OCP').props.onChange({ target: { value: 'on' } })
+  editor.render().field('CH2 OCP').props.onChange({ target: { value: '' } })
+  assert.deepEqual(editor.value, {})
+  assert.equal(editor.render().checkboxes[0].props.checked, false)
+  assert.equal(editor.render().field('CH2 OCP').props.disabled, true)
+  editor.render().checkboxes[0].props.onChange({ target: { checked: true } })
+  editor.replace({})
+  assert.equal(editor.render().checkboxes[0].props.checked, false)
+})
+
+test('existing unsupported values stay visible and disabled while supported fields are edited', () => {
+  const editor = protectionEditor({ protection: { channels: [{ channel: 2, ocp_delay: 5 }] } })
+  const view = editor.render()
+  assert.equal(view.checkboxes[0].props.checked, true)
+  assert.equal(view.field('CH2 OCP Delay (s)').props.value, 5)
+  assert.equal(view.field('CH2 OCP Delay (s)').props.disabled, true)
+  view.field('CH2 OCP').props.onChange({ target: { value: 'on' } })
+  assert.deepEqual(editor.value, { protection: { channels: [{ channel: 2, ocp_delay: 5, ocp: 'on' }] } })
+})
+
+test('Device Status includes observed channels without guessing before a successful refresh', () => {
+  const observed = [{ channel: 3 }, { channel: 1 }, { channel: 2 }]
+  assert.deepEqual(protectionChannelNumbers([], []), [])
+  assert.deepEqual(protectionChannelNumbers([], [], observed), [1, 2, 3])
+  assert.deepEqual(protectionChannelNumbers([1, 2, 3], [], observed), [1, 2, 3])
+  assert.deepEqual(protectionChannelNumbers([1], [{ channel: 4, ocp: 'on' }], observed), [1, 2, 3, 4])
 })

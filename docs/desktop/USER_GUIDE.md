@@ -161,18 +161,24 @@ visible when the current model does not support them.
 
 ### 5.3 Powers Protection Setup
 
-Expand a Powers Tool Instance in Setup to configure Protection Setup. All
-channels reported by powers-tool are shown in aligned rows, together with any
-channels already configured in the Template. Each row shows OVP Voltage, OCP,
+Protection Setup is optional. Expand a Powers Tool Instance in Setup and select
+**Use Protection Setup** to edit supported fields. This single checkbox applies
+to the whole instance; new instances start unchecked with all fields disabled.
+Selecting it alone does not store any protection data or checkbox state in the
+Template. All channels reported by powers-tool are shown in aligned rows,
+together with any channels already configured in the Template. Each row shows OVP Voltage, OCP,
 OCP Delay, and OCP Delay Trigger. Unsupported controls remain visible but are
 disabled. Existing unsupported values are displayed with a warning and preserved
 when saving; the external tool still validates actual model support and limits.
 
 An empty numeric field or **Unchanged** leaves that instrument setting unchanged
-and is not stored in the Template. Only channels with settings are saved. Clearing
-the last setting removes that channel's record; clearing all settings returns to
-an empty setup. New Powers instances have an empty setup even while all supported
-channel rows are visible. There are no Add Channel or Remove Channel controls.
+and is not stored in the Template. Only configured channels and fields are saved.
+Existing Protection Setup opens with the checkbox checked. Clearing the last
+setting removes that channel's record; clearing all settings returns to an empty
+setup, unchecks **Use Protection Setup**, and disables the fields. Unchecking it
+also clears the entire Protection Setup and returns all fields to Unchanged.
+Channel rows stay visible according to capabilities; there are no Add Channel
+or Remove Channel controls.
 
 In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
@@ -195,15 +201,21 @@ terminal.
 
 ### 5.4 Device Status
 
-For a Powers Tool Instance, **Device Status** is runtime-only and is not saved
-in the Template. Opening Setup does not connect to a Worker and there is no
-background polling. Aggregate Protection, OVP, and OCP and per-channel values
-show **—** until status is read. Channel rows are shown from offline model
-capabilities and existing Template settings; Refresh Status updates their values.
+Below Protection Setup, the **Device** area groups **Live Device**, Live Resource
+controls, and then **Device Status**. Device Status is runtime-only and is not
+saved in the Template. Opening Setup does not connect to a Worker and there is no
+background polling. A single **Protection Summary** panel groups aggregate
+Protection, OVP, and OCP. These and per-channel values show **—** until status is
+read, then show CLEAR / OK or TRIPPED as reported. Channel rows include offline
+model capabilities, existing Template settings, and channels returned by a
+successful **Refresh Status**, which also updates their values.
 Simulation uses the simulator channels without a saved Live Resource. Live uses
 the saved model identity without connecting to hardware to build the rows; if
 capabilities are unavailable, configured channels remain visible and no other
-channels are guessed. Switching Execution Mode clears stale values back to **—**
+channels are guessed before Refresh. Even without a saved model identity,
+a successful Refresh displays the actual returned channels and makes reported
+trip channels eligible for Clear Protection under the usual rules.
+Switching Execution Mode clears stale values back to **—**
 and shows the channels known for the selected mode.
 
 In Simulation, Refresh Status starts the configured powers-tool simulate

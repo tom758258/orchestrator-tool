@@ -150,15 +150,20 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 因此不需 discovery 或 saved resource 即可設定 Protection Setup。當目前 model
 不支援時，Template 中既有設定仍會顯示。</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
-<p>展開 Setup 中的 Powers Tool Instance，即可設定 Protection Setup。powers-tool
-回報的所有通道，以及 Template 已設定的通道，都會以對齊的固定列顯示。
+<p>Protection Setup 為選用設定。展開 Setup 中的 Powers Tool Instance，勾選
+<strong>Use Protection Setup</strong> 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
+新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
+或核取方塊狀態寫入 Template。powers-tool 回報的所有通道，以及 Template 已設定
+的通道，都會以對齊的固定列顯示。
 每列提供 OVP Voltage、OCP、OCP Delay 與 OCP Delay Trigger。不支援的控制項
 仍會顯示，但會停用。既有的不支援值會顯示提示並保留，保存時不會移除；
 實際型號的支援能力與限制仍由 external tool 驗證。</p>
 <p>數值欄位留白或選擇 <strong>Unchanged</strong> 表示保留儀器原有設定，不會寫入 Template。
-只保存有設定的通道。清空某通道最後一項設定時，會移除該通道 record；全部
-清空後會回到空 setup。新的 Powers instance 即使顯示所有支援通道，setup
-仍為空。不再提供新增或移除 channel 的控制項。</p>
+只保存有設定的通道與欄位。開啟既有 Protection Setup 時，核取方塊會自動勾選。
+清空某通道最後一項設定時，會移除該通道 record；全部清空後會回到空 setup，
+取消勾選 <strong>Use Protection Setup</strong> 並停用欄位。取消勾選也會清除整個 Protection
+Setup，所有欄位回到 Unchanged。通道列仍依 capability 顯示，不提供新增或移除
+channel 的控制項。</p>
 <p>兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
 先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
 之後才開始 Workflow。回報的 trip 會阻止執行；Orchestrator 絕不自動清除。
@@ -173,13 +178,18 @@ confirmation 後 resource 改變，run 會被拒絕，必須重新確認。</p>
 <p>若 DC Current 使用 <strong>10 A terminal</strong>，Live confirmation 也會要求確認實體
 導線確實接在 10 A terminal。</p>
 <h3 id="54-device-status">5.4 Device Status</h3>
-<p>Powers Tool Instance 的 <strong>Device Status</strong> 只屬於 runtime，不會保存到 Template。
-開啟 Setup 不會連線 Worker，也沒有 background polling。讀取 status 前，aggregate
-Protection、OVP、OCP 與各通道的值都顯示 <strong>—</strong>。通道列依離線 model capability
-與 Template 既有設定顯示；<strong>Refresh Status</strong> 更新各列的值。Simulation 使用
+<p>Protection Setup 下方的 <strong>Device</strong> 區域依序包含 <strong>Live Device</strong>、Live Resource
+控制項與 <strong>Device Status</strong>。Device Status 只屬於 runtime，不會保存到 Template。
+開啟 Setup 不會連線 Worker，也沒有 background polling。單一 <strong>Protection Summary</strong>
+panel 集中顯示 aggregate Protection、OVP 與 OCP；讀取 status 前，這些值與各通道
+的值都顯示 <strong>—</strong>，讀取後依回報顯示 CLEAR / OK 或 TRIPPED。通道列包含離線
+model capability、Template 既有設定，以及成功 <strong>Refresh Status</strong> 實際回傳的通道；
+Refresh 也會更新各列的值。Simulation 使用
 simulator 通道，不需要 saved Live Resource。Live 使用已保存的 model identity
 建立通道列，不會為此連線 hardware；capability 不可用時，仍保留已設定通道，
-不會猜測其他通道。切換 Execution Mode 會將舊值清除為 <strong>—</strong>，並顯示所選
+Refresh 前不會猜測其他通道。即使沒有已保存的 model identity，成功 Refresh 後
+仍會顯示實際回傳的通道，回報 trip 的通道依原本規則可使用 Clear Protection。
+切換 Execution Mode 會將舊值清除為 <strong>—</strong>，並顯示所選
 mode 已知的通道。</p>
 <p>Simulation 的 Refresh Status 會啟動 configured powers-tool simulate Worker，
 不需要 saved Live Resource。每個 simulator 支援的 channel 都提供

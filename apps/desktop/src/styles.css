@@ -1031,6 +1031,69 @@ textarea:disabled {
   gap: 12px;
 }
 
+.powers-section-heading {
+  margin: 16px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 1rem;
+}
+
+.powers-protection-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.powers-device {
+  margin-top: 28px;
+}
+
+.powers-device > .live-resource:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.powers-device-status > h5,
+.powers-protection-summary > h6 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+}
+
+.powers-protection-summary {
+  margin: 20px 0;
+}
+
+.powers-protection-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.powers-protection-summary dt,
+.powers-status-unknown {
+  color: var(--muted);
+}
+
+.powers-protection-summary dd {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.powers-status-clear {
+  color: var(--success);
+}
+
+.powers-status-tripped {
+  color: var(--danger);
+}
+
 .powers-table-scroll {
   overflow-x: auto;
 }

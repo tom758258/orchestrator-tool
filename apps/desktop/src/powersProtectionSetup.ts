@@ -3,8 +3,10 @@ import type { PowersProtectionChannel, PowersSetup } from './ToolSetupEditor'
 export function protectionChannelNumbers(
   capabilityChannels: readonly number[],
   configuredChannels: readonly PowersProtectionChannel[],
+  observedChannels: readonly { channel: number }[] = [],
 ): number[] {
-  return [...new Set([...capabilityChannels, ...configuredChannels.map(record => record.channel)])]
+  return [...new Set([...capabilityChannels, ...configuredChannels.map(record => record.channel),
+    ...observedChannels.map(record => record.channel)])]
     .sort((a, b) => a - b)
 }
 

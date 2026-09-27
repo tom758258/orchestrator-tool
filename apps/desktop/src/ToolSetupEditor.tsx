@@ -384,6 +384,12 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   executionMode: ExecutionMode
   powersExecutableKey: string
 }) {
+  const [enabledEmptySetup, setEnabledEmptySetup] = useState<PowersSetup | null>(null)
+  const protectionEnabled = value.protection !== undefined || enabledEmptySetup === value
+  const changeSetting = (setup: PowersSetup) => {
+    setEnabledEmptySetup(null)
+    onChange(setup)
+  }
   const [loaded, setLoaded] = useState<{ key: string; value: PowersCapabilities | null } | null>(null)
   const key = JSON.stringify([executionMode, modelId, powersExecutableKey])
   useEffect(() => {
@@ -403,12 +409,19 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   ))
   const displayChannels = protectionChannelNumbers(capabilities?.channels ?? [], channels)
   return <div className="powers-protection-fields">
-    <h4>Protection Setup</h4>
+    <h4 className="powers-section-heading">Protection Setup</h4>
+    <label className="powers-protection-toggle">
+      <input type="checkbox" checked={protectionEnabled} onChange={event => {
+        setEnabledEmptySetup(event.target.checked ? value : null)
+        if (!event.target.checked) onChange({})
+      }} />
+      <span>Use Protection Setup</span>
+    </label>
+    <p className="tool-setup-hint">Only changed values are stored. Unchanged leaves the instrument setting unchanged.</p>
     {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool.</p>}
     {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">Protection configuration is unavailable for the current model.</p>}
-    {channels.length === 0 && <p>No protection settings configured.</p>}
     <div className="powers-table-scroll">
       <table className="powers-protection-table">
         <thead><tr>
@@ -429,9 +442,9 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
             </th>
             <td>
               <input aria-label={`CH${channel} OVP Voltage (V)`} type="number" min={0} step="any" placeholder="Unchanged"
-                value={record.ovp_voltage ?? ''} disabled={!supported('ovp_voltage')} onChange={event => {
+                value={record.ovp_voltage ?? ''} disabled={!protectionEnabled || !supported('ovp_voltage')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
-                    onChange(updatePowersProtectionSetting(value, channel, 'ovp_voltage',
+                    changeSetting(updatePowersProtectionSetting(value, channel, 'ovp_voltage',
                       event.target.value === '' ? undefined : Number(event.target.value)))
                   }
                 }} />
@@ -439,8 +452,8 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                 <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
             </td>
             <td>
-              <select aria-label={`CH${channel} OCP`} value={record.ocp ?? ''} disabled={!supported('ocp')}
-                onChange={event => onChange(updatePowersProtectionSetting(value, channel, 'ocp',
+              <select aria-label={`CH${channel} OCP`} value={record.ocp ?? ''} disabled={!protectionEnabled || !supported('ocp')}
+                onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp']))}>
                 <option value="">Unchanged</option><option value="on">On</option><option value="off">Off</option>
               </select>
@@ -449,9 +462,9 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
             </td>
             <td>
               <input aria-label={`CH${channel} OCP Delay (s)`} type="number" min={0} step="any" placeholder="Unchanged"
-                value={record.ocp_delay ?? ''} disabled={!supported('ocp_delay')} onChange={event => {
+                value={record.ocp_delay ?? ''} disabled={!protectionEnabled || !supported('ocp_delay')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
-                    onChange(updatePowersProtectionSetting(value, channel, 'ocp_delay',
+                    changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay',
                       event.target.value === '' ? undefined : Number(event.target.value)))
                   }
                 }} />
@@ -460,8 +473,8 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
             </td>
             <td>
               <select aria-label={`CH${channel} OCP Delay Trigger`} value={record.ocp_delay_trigger ?? ''}
-                disabled={triggers.length === 0 || unsupportedTrigger}
-                onChange={event => onChange(updatePowersProtectionSetting(value, channel, 'ocp_delay_trigger',
+                disabled={!protectionEnabled || triggers.length === 0 || unsupportedTrigger}
+                onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay_trigger',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp_delay_trigger']))}>
                 <option value="">Unchanged</option>
                 {(['setting-change', 'cc-transition'] as const).map(trigger =>
@@ -567,7 +580,10 @@ export default function ToolSetupEditor({ value, steps, onChange, disabled, rend
                     ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
-          {renderResource(instance)}
+          {instance.tool === 'powers' ? <div className="powers-device">
+            <h4 className="powers-section-heading">Device</h4>
+            {renderResource(instance)}
+          </div> : renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
