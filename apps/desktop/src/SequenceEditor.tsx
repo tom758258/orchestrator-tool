@@ -144,7 +144,7 @@ function SequenceEditor({
     const source = stepContainer(steps, drag.id)
     const container = id ? stepContainer(steps, id) : undefined
     let next: { id: string; after: boolean } | null = null
-    if (target && id && editor.contains(target) && source && container && source.parentId === container.parentId) {
+    if (target && id && !drag.ids.includes(id) && editor.contains(target) && source && container && source.parentId === container.parentId) {
       const rect = target.getBoundingClientRect()
       next = { id, after: drag.y >= rect.top + rect.height / 2 }
     }

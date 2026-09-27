@@ -68,6 +68,11 @@ test('Drag reorders single and non-contiguous selections before or after a sibli
   assert.deepEqual(reordered[3].value, ref('a'))
   assert.deepEqual(steps, before)
   assert.equal(reorderSteps(steps, ['b'], 'b', true), steps)
+  for (const target of ['b', 'd']) {
+    for (const after of [false, true]) {
+      assert.equal(reorderSteps(steps, ['b', 'd'], target, after), steps)
+    }
+  }
 })
 
 test('Nested For and While reorder stays in the exact sibling container', () => {

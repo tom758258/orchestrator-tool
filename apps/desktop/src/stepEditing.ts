@@ -81,7 +81,7 @@ export function moveSteps(steps: WorkflowStep[], ids: readonly string[], offset:
 
 export function reorderSteps(steps: WorkflowStep[], ids: readonly string[], targetId: string, after: boolean): WorkflowStep[] {
   const container = selectedContainer(steps, ids)
-  if (!container || !container.siblings.some(step => step.id === targetId)) return steps
+  if (!container || ids.includes(targetId) || !container.siblings.some(step => step.id === targetId)) return steps
   const { siblings, parentId } = container
   const boundary = siblings.findIndex(step => step.id === targetId) + (after ? 1 : 0)
   const moving = siblings.filter(step => ids.includes(step.id))
