@@ -16,7 +16,7 @@ const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
 export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running }: {
-  runId: number
+  runId: number | null
   revision: number
   rowCount: number
   page: string
@@ -36,7 +36,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const loadingPanels = useMemo(() => localPanels.filter(panel =>
-    !running || chartSupportsLive(panel.type)), [localPanels, running])
+    runId !== null && (!running || chartSupportsLive(panel.type))), [localPanels, running, runId])
   const data = useMemo(() => {
     if (!loadingPanels.some(panel => chartRawOutputs(panel).some(name => numericNames.includes(name)))) return null
     let local = chartData.get(page)
@@ -53,7 +53,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   latestRowCountRef.current = rowCount
   const [loadGeneration, setLoadGeneration] = useState(0)
   const loaderActiveRef = useRef<object | null>(null)
-  const statisticalRequests = useMemo(() => localPanels.filter(panel =>
+  const statisticalRequests = useMemo(() => runId === null ? [] : localPanels.filter(panel =>
     !running && panel.outputs.every(name => numericNames.includes(name)))
     .map(panel => ({ panel, key: statisticalRequestKey(runId, panel) }))
     .filter((item): item is { panel: ChartPanel; key: string } => item.key !== null),
@@ -202,12 +202,12 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
-        const statisticKey = statisticalRequestKey(runId, visiblePanel)
+        const statisticKey = runId === null ? null : statisticalRequestKey(runId, visiblePanel)
         const statisticState = statistical[panel.id]
         const statisticReady = statisticKey !== null && statisticState?.key === statisticKey && !!statisticState.response
         const isStatistical = panel.type === 'histogram' || panel.type === 'boxplot'
-        const analysisReady = isStatistical ? statisticReady : panel.type === 'line' ||
-          (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount)
+        const analysisReady = runId !== null && (isStatistical ? statisticReady : panel.type === 'line' ||
+          (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount))
         const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
         return <section className={`result-chart-panel${waiting ? ' result-chart-panel-waiting' : ''}`} key={panel.id} aria-label={`Chart ${index + 1}`}>
           <div className="section-header">
@@ -245,7 +245,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
           {waiting ? <div className="result-chart-waiting" role="status">
             <p>Waiting for run to finish</p>
             <p>This chart does not support live updates. It will update automatically when the run finishes.</p>
-          </div> : selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
+          </div> : runId === null ? <p role="status">Waiting for run data</p>
+            : selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
             : !enoughOutputs ? <p>Select at least two Outputs for Combo.</p>
               : isStatistical && statisticState?.key === statisticKey && statisticState.error
                 ? <p role="alert">Could not prepare chart: {statisticState.error}</p>

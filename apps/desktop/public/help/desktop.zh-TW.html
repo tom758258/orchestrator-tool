@@ -487,7 +487,10 @@ surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不�
 並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
 顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection、Settings、
 Export PNG 與 Remove 會停用。它們不會載入即時 chart data，execution 停止後
-自動使用新 run 的 committed rows 更新，不需手動 refresh。Line 持續即時更新，
+自動使用新 run 的 committed rows 更新，不需手動 refresh。Run 開始時 panels
+就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
+新 run 的資料尚未可用時，Line 顯示 <strong>Waiting for run data</strong>，不顯示上一 run
+的 plot，也不載入 chart data；資料可用後才開始即時更新。
 <strong>+ Add Chart</strong> 仍建立 Line chart。<strong>Open Template</strong>、替換 workflow 與
 <strong>Clear Last Run</strong> 會清除 chart session state。Chart settings 不屬於 Template data。</p>
 <h3 id="103-data-與-summary">10.3 Data 與 Summary</h3>

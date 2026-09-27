@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { claimRunGate, isCurrentRunGeneration, prepareLastRunReplacement, releaseRunGate } from '../src/runLifecycle.ts'
+import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from '../src/runLifecycle.ts'
+
+test('a started run keeps the Chart workspace render path before its first metadata', () => {
+  assert.deepEqual(lastRunWorkspaceState(false, false, false), { starting: false, visible: false })
+  assert.deepEqual(lastRunWorkspaceState(true, false, false), { starting: false, visible: false })
+  assert.deepEqual(lastRunWorkspaceState(true, false, true), { starting: false, visible: true })
+  assert.deepEqual(lastRunWorkspaceState(true, true, false), { starting: true, visible: true })
+  assert.deepEqual(lastRunWorkspaceState(true, true, true), { starting: false, visible: true })
+  const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(source, /lastRunWorkspaceState\(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata\)/)
+  assert.match(source, /\{!runWorkspace.visible \? \([\s\S]*?No run results yet\./)
+  assert.match(source, /\(runWorkspace.starting \|\| runPageMetadata\) && <ResultChart/)
+  assert.match(source, /runId=\{displayedRun\?\.run_id \?\? null\}/)
+})
 
 test('Live and Simulation share one immediate run gate before React state can render', () => {
   const gate = { current: false }

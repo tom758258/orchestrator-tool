@@ -9,9 +9,9 @@ import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
-import { reconcileRunChartPanels, type ChartPanel } from './chartPanels'
+import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
 import { pruneChartData, type PageChartData } from './chartData'
-import { claimRunGate, isCurrentRunGeneration, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
+import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
@@ -530,6 +530,9 @@ function App() {
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runMetadata : null
+  const runWorkspace = lastRunWorkspaceState(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata)
+  const chartNumericNames = runPageMetadata?.numeric_outputs ?? (runWorkspace.starting
+    ? [...new Set(chartPanels.filter(panel => panel.page === runPage?.name).flatMap(chartRequiredOutputs))] : [])
   // Numeric arrays survive Page/Output tab switches, but never cross a run ID.
   const chartData = useMemo(() => new Map<string, PageChartData>(), [runMetadata?.run_id])
   useEffect(() => {
@@ -2369,7 +2372,7 @@ function App() {
               <p>Add Output steps to the Workflow to publish final result values.</p>
             </>
           )}
-          {!displayedRun ? (
+          {!runWorkspace.visible ? (
             <>
               <p>No run results yet.</p>
               <p>Run the Workflow to view its outputs.</p>
@@ -2401,13 +2404,13 @@ function App() {
                 aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
                 {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
                 {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
-                {displayedRun.status === 'failed' && displayedRun.error && (
+                {displayedRun?.status === 'failed' && displayedRun.error && (
                   <p className="error" role="alert">{displayedRun.error}</p>
                 )}
                 {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
-                {displayedRun && runPageMetadata && <ResultChart key={runPage?.name} panels={chartPanels} onPanelsChange={setChartPanels}
-                  runId={displayedRun.run_id} revision={runPageMetadata.revision} rowCount={runPageMetadata.row_count}
-                  numericNames={runPageMetadata.numeric_outputs} page={runPage?.name ?? 'Results'}
+                {runPage && (runWorkspace.starting || runPageMetadata) && <ResultChart key={runPage.name} panels={chartPanels} onPanelsChange={setChartPanels}
+                  runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
+                  numericNames={chartNumericNames} page={runPage.name}
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (

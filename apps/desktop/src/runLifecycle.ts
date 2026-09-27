@@ -1,5 +1,12 @@
 export type RunGate = { current: boolean }
 
+export function lastRunWorkspaceState(hasSnapshot: boolean, running: boolean, hasMetadata: boolean) {
+  return {
+    starting: hasSnapshot && running && !hasMetadata,
+    visible: hasSnapshot && (running || hasMetadata),
+  }
+}
+
 export function claimRunGate(gate: RunGate): boolean {
   if (gate.current) return false
   gate.current = true

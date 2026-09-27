@@ -201,6 +201,37 @@ test('a mixed Page only loads Line dependencies during running', async () => {
   }
 })
 
+test('pre-progress panels make no requests and the first new run ID starts only Line loading', async () => {
+  const calls = []
+  const harness = loadingHarness(async (command, args) => {
+    calls.push({ command, ...args })
+    return { run_id: args.runId, page: args.page, start_row: args.startRow,
+      series: Object.fromEntries(args.outputs.map(name => [name, Array(args.limit).fill(args.runId)])) }
+  })
+  const base = addChartPanel([], 'A', ['V'])[0]
+  const oldData = createPageChartData()
+  oldData.append('V', 0, [1])
+  const props = { runId: 1, revision: 1, rowCount: 1, page: 'A', running: false,
+    numericNames: ['V', 'I', 'X'], chartData: new Map([['A', oldData]]), panels: [base] }
+  try {
+    await harness.update(props)
+    assert.equal(calls.length, 0)
+    const starting = { ...props, runId: null, running: true, rowCount: 2,
+      panels: [base, { ...base, id: 1, type: 'scatter', outputs: ['I'], scatterXOutput: 'X' },
+        { ...base, id: 2, type: 'histogram', outputs: ['I'] }] }
+    const result = await harness.update(starting)
+    assert.deepEqual(calls, [])
+    assert.deepEqual(result.requestedNames, [])
+    const progress = { ...starting, runId: 2, chartData: new Map() }
+    await harness.update(progress)
+    assert.deepEqual(calls.map(call => [call.command, call.runId, call.outputs]),
+      [['get_last_run_chart_series', 2, ['V']]])
+    assert.deepEqual([...progress.chartData.get('A').getSeries('V')], [2, 2])
+  } finally {
+    harness.dispose()
+  }
+})
+
 for (const type of ['scatter', 'histogram', 'boxplot']) {
   test(`${type}: an old pending response is cancelled when a new run starts`, async () => {
     let completeOld
@@ -249,7 +280,8 @@ test('Waiting precedes plot rendering and locks every panel action without locki
   const plotBranch = source.slice(source.indexOf('{waiting ? <div'), source.indexOf('<ChartPlot'))
   assert.match(plotBranch, /Waiting for run to finish/)
   assert.match(plotBranch, /This chart does not support live updates\. It will update automatically when the run finishes\./)
-  assert.match(plotBranch, /<\/div> : selectedOutputs/)
+  assert.match(plotBranch, /<\/div> : runId === null \? <p role="status">Waiting for run data<\/p>\s*: selectedOutputs/)
+  assert.match(source, /const analysisReady = runId !== null &&/)
   const addAction = source.slice(source.indexOf('<button'), source.indexOf('>+ Add Chart</button>'))
   assert.doesNotMatch(addAction, /waiting|running/)
 })
