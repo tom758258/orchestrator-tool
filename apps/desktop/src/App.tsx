@@ -503,7 +503,7 @@ function App() {
     outputPageContext(runWorkflowSnapshot?.workflow.steps ?? [], selectedRunPage), [runWorkflowSnapshot, selectedRunPage])
   const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
   const runCompletedSuccessfully = runMetadata?.completed_successfully === true
-  const partialRun = runMetadata !== null && runMetadata.status !== 'running' && !runCompletedSuccessfully
+  const partialRun = runMetadata !== null && runMetadata.status !== 'running' && (runMetadata.status === 'failed' || !runCompletedSuccessfully)
   const runExportable = runMetadata?.manual_exportable === true
   const runPageMetadata = runMetadata?.pages.find(page => page.name === runPage?.name)
   const hasExportableOutputRows = exportAllPages

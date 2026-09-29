@@ -51,9 +51,9 @@ test('bounded execution previews distinguish omitted data from a real null', () 
 })
 
 
-test('terminal incomplete runs are labeled and exported as Partial Results', () => {
+test('failed or terminal incomplete runs are labeled and exported as Partial Results', () => {
   assert.match(source, /runMetadata\?\.completed_successfully === true/)
-  assert.match(source, /runMetadata\.status !== 'running' && !runCompletedSuccessfully/)
+  assert.match(source, /runMetadata\.status !== 'running' && \(runMetadata\.status === 'failed' \|\| !runCompletedSuccessfully\)/)
   assert.match(source, /Committed rows are partial results and can be exported\./)
   assert.match(source, /No committed output rows are available for export\./)
   assert.match(source, /partialRun \? 'Partial results exported successfully\.' : 'Pages exported successfully\.'/)
