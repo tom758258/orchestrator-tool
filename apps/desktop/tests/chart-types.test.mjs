@@ -161,6 +161,12 @@ test('Histogram normal line uses bin centers, sample count and each actual width
   assert.notDeepEqual(override.data, line.data)
 })
 
+test('Chart Settings explains Combo and Histogram Output requirements', () => {
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  assert.match(source, /draft\.type === 'combo'[\s\S]*?Combo requires at least two selected Outputs\./)
+  assert.match(source, /draft\.type === 'histogram'[\s\S]*?Histogram uses exactly one Output\.[\s\S]*?Apply keeps the first selected Output\./)
+})
+
 test('shared Output color preserves Auto and colors Scatter line/markers and Combo', () => {
   const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
   const callback = source.match(/setDraft\((current => \{\s+const seriesColors =[\s\S]*?\n\s+\})\)/)

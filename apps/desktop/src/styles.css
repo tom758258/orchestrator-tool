@@ -1488,6 +1488,13 @@ textarea:disabled {
   gap: 6px;
 }
 
+.chart-settings-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .chart-settings-numbers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

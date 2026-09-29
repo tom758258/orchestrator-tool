@@ -506,6 +506,9 @@ Chart Settings 有五個 tabs：**General**、**Series**、**Axes**、**Analysis
 元素，包括 Scatter 的線與 markers；切回 Auto 會恢復 theme palette。
 Box & Whisker 維持自動配色。
 
+**General → Chart type** 也會在選擇 Combo 或 Histogram 時顯示 Output 數量提示。
+若原本選取多個 Outputs 後切換成 Histogram，**Apply** 會保留第一個已選取的 Output。
+
 在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
 **X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
 不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
