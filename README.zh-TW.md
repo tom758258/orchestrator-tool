@@ -15,7 +15,8 @@ Wavegen 等 external tools 仍是獨立專案與獨立 distribution。
   的 sequential workflow。
 - 以 Simulation 或 Live mode 執行目前支援的 Powers 與 Meters workflow。
 - 在 Desktop 中檢視 committed results、progress、Output Page、chart 與
-  export。
+  export；run 結束後，failed/incomplete run 已 committed 的資料也可作為 partial
+  results 匯出。
 - 透過 CLI 進行 external tool discovery、設定檢查與 bounded Worker
   diagnostics。
 

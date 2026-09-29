@@ -108,10 +108,13 @@ Desktop consumes the event stream through the non-retaining Core execution
 path. Its Rust StoredRun is the authoritative in-memory owner of the current
 Desktop run: committed ResultRows, compact execution records, the Template
 snapshot, status, and incremental Page metadata. Progress IPC carries compact
-metadata rather than full ResultRows or full execution history. A failed run
-keeps rows that were already committed, while manual export still requires a
-successfully completed run. Pause and hard cancel are not part of the current
-execution model; graceful Stop is defined by the template/runtime contract.
+metadata rather than full ResultRows or full execution history. A terminal
+failed or incomplete run keeps rows that were already committed and permits
+manual export of those rows as partial results. Active runs remain
+non-exportable, and staged rows from a failed or stopped owning scope are never
+promoted just to support export. Pause and hard cancel are not part of the
+current execution model; graceful Stop is defined by the template/runtime
+contract.
 
 Core does not provide Run History, a database, or SQL persistence. Desktop
 keeps one current Last Run in Rust memory. Starting another run replaces it;

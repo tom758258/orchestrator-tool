@@ -975,7 +975,7 @@ fn export_stored_run_pages(
 ) -> Result<(), String> {
     use orchestrator_tool::workflow_export::{PageDataset, pages_xlsx, write_page_csv_rows};
     if !run.manual_exportable() {
-        return Err("workflow run did not complete successfully; export is unavailable".to_owned());
+        return Err("workflow run is still active; export is unavailable".to_owned());
     }
     if let Some(name) = page
         && run.page(name).is_none()
@@ -1176,10 +1176,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{export_stored_run_pages, stored_run::StoredRuns};
-    use orchestrator_tool::workflow::{
-        ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput, WorkflowRunEvent,
+    use orchestrator_tool::{
+        run::{ExecutionMode, run_workflow_streaming_with_loop_stop},
+        template::Template,
+        workflow::{
+            ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput,
+            WorkflowRunEvent,
+        },
     };
     use serde_json::json;
+    use std::time::Duration;
 
     pub fn unique_test_dir(label: &str) -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -1247,7 +1253,33 @@ mod tests {
     }
 
     #[test]
-    fn failed_stored_run_cannot_be_manually_exported() {
+    fn active_stored_run_cannot_be_manually_exported() {
+        let runs = StoredRuns::default();
+        let stored = runs.begin(export_template());
+        stored
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
+                    None,
+                )
+                .with_page("Results"),
+            ));
+
+        let dir = unique_test_dir("stored-export-running");
+        let path = dir.join("results.csv");
+        let guard = stored.read().unwrap();
+        let error =
+            export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
+                .unwrap_err();
+        assert!(error.contains("still active"));
+        assert!(!path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_stored_run_with_committed_rows_exports_csv_and_xlsx() {
         let runs = StoredRuns::default();
         let stored = runs.begin(export_template());
         stored
@@ -1263,13 +1295,125 @@ mod tests {
         stored.write().unwrap().fail("workflow failed");
 
         let dir = unique_test_dir("stored-export-failed");
+        let csv = dir.join("results.csv");
+        let xlsx = dir.join("results.xlsx");
+        let guard = stored.read().unwrap();
+        assert!(guard.manual_exportable());
+        export_stored_run_pages(&guard, &csv.display().to_string(), Some("Results"), "csv")
+            .unwrap();
+        export_stored_run_pages(&guard, &xlsx.display().to_string(), Some("Results"), "xlsx")
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&csv).unwrap(), "Voltage\n1\n");
+        assert!(std::fs::metadata(&xlsx).unwrap().len() > 0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_stored_run_without_committed_rows_is_not_exported() {
+        let runs = StoredRuns::default();
+        let stored = runs.begin(export_template());
+        stored.write().unwrap().fail("workflow failed");
+
+        let dir = unique_test_dir("stored-export-empty-failed");
         let path = dir.join("results.csv");
         let guard = stored.read().unwrap();
+        assert!(guard.manual_exportable());
         let error =
             export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
                 .unwrap_err();
-        assert!(error.contains("export is unavailable"));
+        assert!(error.contains("no outputs available for export"));
         assert!(!path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn incomplete_terminal_run_with_committed_rows_can_be_exported() {
+        let runs = StoredRuns::default();
+        let stored = runs.begin(export_template());
+        stored
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
+                    None,
+                )
+                .with_page("Results"),
+            ));
+        stored.write().unwrap().succeed();
+
+        let dir = unique_test_dir("stored-export-incomplete");
+        let path = dir.join("results.csv");
+        let guard = stored.read().unwrap();
+        assert!(!guard.completed_successfully());
+        assert!(guard.manual_exportable());
+        export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "Voltage\n1\n");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn executor_failure_exports_only_rows_committed_before_failure() {
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version": 1,
+                "name": "partial export",
+                "tool_instances": [],
+                "workflow": { "steps": [{
+                    "type": "for",
+                    "id": "sweep",
+                    "variable": "x",
+                    "range": { "start": "1", "stop": "3", "step": "1" },
+                    "steps": [
+                        {
+                            "type": "output",
+                            "id": "out",
+                            "name": "Voltage",
+                            "page": "Results",
+                            "value": { "source": "variable", "variable": "x" }
+                        },
+                        {
+                            "type": "assert",
+                            "id": "check",
+                            "left": { "source": "variable", "variable": "x" },
+                            "operator": "less-than",
+                            "right": { "source": "literal", "value": 3 },
+                            "message": "intentional failure"
+                        }
+                    ]
+                }] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let runs = StoredRuns::default();
+        let stored = runs.begin(template.clone());
+        let summary = run_workflow_streaming_with_loop_stop(
+            &template,
+            ExecutionMode::Simulate,
+            &Default::default(),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            |event| stored.write().unwrap().append_event(&event),
+            |_| false,
+        )
+        .unwrap();
+        assert!(!summary.succeeded());
+        stored
+            .write()
+            .unwrap()
+            .fail(summary.failure().unwrap_or("workflow failed"));
+
+        let dir = unique_test_dir("stored-export-executor-failure");
+        let path = dir.join("results.csv");
+        let guard = stored.read().unwrap();
+        assert_eq!(guard.metadata().pages[0].row_count, 2);
+        assert!(guard.manual_exportable());
+        export_stored_run_pages(&guard, &path.display().to_string(), Some("Results"), "csv")
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "Voltage\n1\n2\n");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

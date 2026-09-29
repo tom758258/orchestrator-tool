@@ -502,7 +502,8 @@ function App() {
   const { pages: runPages, page: runPage, outputs: runOutputs } = useMemo(() =>
     outputPageContext(runWorkflowSnapshot?.workflow.steps ?? [], selectedRunPage), [runWorkflowSnapshot, selectedRunPage])
   const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
-  const runSucceeded = runMetadata?.status === 'succeeded'
+  const runCompletedSuccessfully = runMetadata?.completed_successfully === true
+  const partialRun = runMetadata !== null && runMetadata.status !== 'running' && !runCompletedSuccessfully
   const runExportable = runMetadata?.manual_exportable === true
   const runPageMetadata = runMetadata?.pages.find(page => page.name === runPage?.name)
   const hasExportableOutputRows = exportAllPages
@@ -1320,13 +1321,13 @@ function App() {
         page: exportAllPages ? null : runPage?.name,
         format: exportFormat,
       })
-      setExportMessage('Pages exported successfully.')
+      setExportMessage(partialRun ? 'Partial results exported successfully.' : 'Pages exported successfully.')
     } catch (message) {
       setExportError(String(message))
     } finally {
       setExporting(false)
     }
-  }, [runMetadata, hasRunOutputs, runExportable, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name])
+  }, [runMetadata, hasRunOutputs, runExportable, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name, partialRun])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
@@ -2440,7 +2441,9 @@ function App() {
               <div id="last-run-workspace" role="tabpanel"
                 aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
                 {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
-                {runStatus !== 'running' && !runSucceeded && <p className="error" role="status">Run did not complete successfully. Committed rows are shown for inspection and cannot be exported.</p>}
+                {partialRun && <p className="feedback-warning" role="status">{runMetadata.pages.some(page => page.row_count > 0)
+                  ? 'Run did not fully complete. Committed rows are partial results and can be exported.'
+                  : 'Run did not fully complete. No committed output rows are available for export.'}</p>}
                 {displayedRun?.status === 'failed' && displayedRun.error && (
                   <p className="error" role="alert">{displayedRun.error}</p>
                 )}
@@ -2478,7 +2481,7 @@ function App() {
             onClick={() => void handleExport()}
             disabled={!hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy}
           >
-            {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
+            {exporting ? 'Exporting…' : `Export ${partialRun ? 'Partial ' : ''}${exportFormat.toUpperCase()}`}
           </button>
           {exportMessage && (
             <p className="validation-success" role="status">{exportMessage}</p>

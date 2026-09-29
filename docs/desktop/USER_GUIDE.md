@@ -559,8 +559,8 @@ Last Run also keeps the Execution Mode captured when that run started. Its
 Simulation or Live badge does not change when the current selector changes, so
 a simulated success is never presented as a real-hardware success.
 
-If a run did not complete successfully, committed rows remain available for
-inspection, but manual export is unavailable.
+If a run did not fully complete, committed rows remain available as partial
+results and can be manually exported after execution stops.
 
 ### 10.2 Charts
 
@@ -683,8 +683,10 @@ Outputs, there is no numeric summary to show.
 
 ## 11. Manual export
 
-Manual export is available from the Output area after an authoritative,
-successfully completed run with exportable Output rows.
+Manual export is available from the Output area after the run is no longer
+active and the selected export scope contains committed Output rows. Failed or
+incomplete runs keep their failure/incomplete status and export those committed
+rows as partial results.
 
 Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
 
@@ -698,9 +700,10 @@ Exports use committed ResultRows. XLSX cells are currently written as plain
 text; exports do not add formulas, embedded charts, or native numeric cell
 types. All-Pages CSV export does not overwrite existing Page CSV files.
 
-Graceful Stop is not itself a failure or cancellation. If the workflow later
-completes under the normal success gate, its authoritative committed results
-can be exported. Failed or incomplete runs cannot be manually exported.
+Graceful Stop is not itself a failure or cancellation. After execution stops,
+any rows already committed before a failure or incomplete termination remain
+eligible for manual export. Rows still staged by a failed or stopped owning
+scope are not exported.
 
 ## 12. Templates and local machine settings
 
@@ -775,9 +778,10 @@ appropriate.
 
 ### Manual export is unavailable
 
-Manual export requires an authoritative successfully completed run with
-exportable committed rows. A failed or incomplete run can still be inspected
-but cannot be exported.
+Manual export requires the run to be finished and the selected export scope to
+contain committed rows. While a run is active, export stays disabled. A failed
+or incomplete run can export its already committed rows as partial results;
+zero-row selections remain unavailable.
 
 ### Streaming CSV failed
 

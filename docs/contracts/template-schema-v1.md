@@ -400,10 +400,10 @@ Run Page export can produce CSV or a one-worksheet XLSX. All Run Pages can
 produce multiple CSV files or one workbook with one worksheet per Page.
 XLSX uses rust_xlsxwriter and writes plain text cells without formulas,
 styling, charts, or native numeric cell typing. All-Page export does not
-overwrite existing CSV files. Export is allowed only for an authoritative
-successful run. Failed or incomplete runs remain inspection-only. Graceful
-Stop does not by itself mark a run as failed or cancelled. If the workflow
-completes successfully according to the normal completion gate after the
-selected loop is gracefully unwound, its committed ResultRows remain eligible
-for manual export. Already committed streaming CSV data is preserved after
-workflow failure or graceful Stop.
+overwrite existing CSV files. Manual export is available only after the run is
+no longer active and consumes committed StoredRun rows. A failed or incomplete
+run remains visibly failed or incomplete, but its already committed ResultRows
+remain eligible for manual export as partial results. Rows still staged by a
+failed or stopped owning scope are not exported. Graceful Stop does not by
+itself mark a run as failed or cancelled. Already committed streaming CSV data
+is preserved after workflow failure or graceful Stop.

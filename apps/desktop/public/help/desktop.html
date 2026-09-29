@@ -508,8 +508,8 @@ in-memory result and snapshot.</p>
 <p>Last Run also keeps the Execution Mode captured when that run started. Its
 Simulation or Live badge does not change when the current selector changes, so
 a simulated success is never presented as a real-hardware success.</p>
-<p>If a run did not complete successfully, committed rows remain available for
-inspection, but manual export is unavailable.</p>
+<p>If a run did not fully complete, committed rows remain available as partial
+results and can be manually exported after execution stops.</p>
 <h3 id="102-charts">10.2 Charts</h3>
 <p>Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
@@ -615,8 +615,10 @@ remains available; constant data with at least two samples has Std Dev = 0.
 Column choices are temporary presentation settings. If a Page has no numeric
 Outputs, there is no numeric summary to show.</p>
 <h2 id="11-manual-export">11. Manual export</h2>
-<p>Manual export is available from the Output area after an authoritative,
-successfully completed run with exportable Output rows.</p>
+<p>Manual export is available from the Output area after the run is no longer
+active and the selected export scope contains committed Output rows. Failed or
+incomplete runs keep their failure/incomplete status and export those committed
+rows as partial results.</p>
 <p>Choose <strong>Run Page</strong> or <strong>All Run Pages</strong>, then choose <strong>CSV</strong> or <strong>XLSX</strong>:</p>
 <ul>
 <li><strong>Run Page / CSV</strong> — exports the selected Page as one CSV file.</li>
@@ -628,9 +630,10 @@ successfully completed run with exportable Output rows.</p>
 <p>Exports use committed ResultRows. XLSX cells are currently written as plain
 text; exports do not add formulas, embedded charts, or native numeric cell
 types. All-Pages CSV export does not overwrite existing Page CSV files.</p>
-<p>Graceful Stop is not itself a failure or cancellation. If the workflow later
-completes under the normal success gate, its authoritative committed results
-can be exported. Failed or incomplete runs cannot be manually exported.</p>
+<p>Graceful Stop is not itself a failure or cancellation. After execution stops,
+any rows already committed before a failure or incomplete termination remain
+eligible for manual export. Rows still staged by a failed or stopped owning
+scope are not exported.</p>
 <h2 id="12-templates-and-local-machine-settings">12. Templates and local machine settings</h2>
 <p>When the application starts, it creates a blank <code>Untitled</code> draft. There is no
 separate <code>New</code> button in the current UI.</p>
@@ -684,9 +687,10 @@ Live run. Assign distinct resources.</p>
 <p>Set a finite <code>max_iterations</code>, or use Live mode when that operation is
 appropriate.</p>
 <h3 id="manual-export-is-unavailable">Manual export is unavailable</h3>
-<p>Manual export requires an authoritative successfully completed run with
-exportable committed rows. A failed or incomplete run can still be inspected
-but cannot be exported.</p>
+<p>Manual export requires the run to be finished and the selected export scope to
+contain committed rows. While a run is active, export stays disabled. A failed
+or incomplete run can export its already committed rows as partial results;
+zero-row selections remain unavailable.</p>
 <h3 id="streaming-csv-failed">Streaming CSV failed</h3>
 <p>A stream write or flush error stops CSV streaming but does not necessarily
 stop workflow execution. CSV data already written from committed rows remains
