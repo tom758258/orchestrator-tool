@@ -116,7 +116,8 @@ for the prerequisite.
 Desktop provides the main workflow experience: Tool Setup, an ordered
 workflow editor, Template load/save, Simulation and Live run actions,
 incremental execution results, Output Pages, charts, graceful Stop, and CSV
-or XLSX export for successful runs. It also owns the local configuration UI
+or XLSX export of committed results after a run ends, including partial
+results from failed or incomplete runs. It also owns the local configuration UI
 for external executable paths and Live Resources.
 
 Desktop behavior that is durable architecture or contract knowledge is kept

@@ -94,6 +94,7 @@ pub struct RunMetadataDto {
     pub run_id: u64,
     pub status: String,
     pub error: Option<String>,
+    pub completed_successfully: bool,
     pub manual_exportable: bool,
     pub execution_count: usize,
     pub execution_revision: u64,
@@ -354,10 +355,6 @@ impl StoredRun {
         self.status = RunStatus::Failed(bounded_text(&message));
     }
 
-    pub fn succeeded(&self) -> bool {
-        matches!(self.status, RunStatus::Succeeded)
-    }
-
     pub fn completed_successfully(&self) -> bool {
         self.all_executions_succeeded
             && self
@@ -369,7 +366,7 @@ impl StoredRun {
     }
 
     pub fn manual_exportable(&self) -> bool {
-        self.succeeded() && self.completed_successfully()
+        !matches!(self.status, RunStatus::Running)
     }
 
     pub fn metadata(&self) -> RunMetadataDto {
@@ -382,6 +379,7 @@ impl StoredRun {
             run_id: self.run_id,
             status: status.to_owned(),
             error,
+            completed_successfully: self.completed_successfully(),
             manual_exportable: self.manual_exportable(),
             execution_count: self.executions.len(),
             execution_revision: self.execution_revision,
@@ -1255,6 +1253,41 @@ mod tests {
         });
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("no longer current"));
+    }
+
+    #[test]
+    fn manual_exportability_tracks_terminal_lifecycle_not_success() {
+        let running = StoredRun::new(1, template());
+        assert!(!running.manual_exportable());
+
+        let mut failed = StoredRun::new(2, template());
+        failed.fail("workflow failed");
+        assert!(!failed.completed_successfully());
+        assert!(failed.manual_exportable());
+        assert!(!failed.metadata().completed_successfully);
+
+        let mut incomplete = StoredRun::new(3, template());
+        incomplete.succeed();
+        assert!(!incomplete.completed_successfully());
+        assert!(incomplete.manual_exportable());
+        assert!(!incomplete.metadata().completed_successfully);
+
+        let mut complete = StoredRun::new(4, template());
+        complete.append_event(
+            &orchestrator_tool::workflow::WorkflowRunEvent::StepCompleted(StepExecution::new(
+                StepResult::new(
+                    StepId::new("out").unwrap(),
+                    StepOutcome::Succeeded {
+                        output: Value::from(1),
+                    },
+                ),
+                None,
+            )),
+        );
+        complete.succeed();
+        assert!(complete.completed_successfully());
+        assert!(complete.manual_exportable());
+        assert!(complete.metadata().completed_successfully);
     }
 
     #[test]

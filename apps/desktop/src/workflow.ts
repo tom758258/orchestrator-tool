@@ -95,6 +95,7 @@ export type RunMetadataDto = {
   run_id: number
   status: 'running' | 'succeeded' | 'failed'
   error: string | null
+  completed_successfully: boolean
   manual_exportable: boolean
   execution_count: number
   execution_revision: number

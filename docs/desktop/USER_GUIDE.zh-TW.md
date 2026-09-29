@@ -484,7 +484,8 @@ Last Run 也會保存該次 run 開始時的 Execution Mode。之後切換目前
 Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated success 不會
 被呈現為 real-hardware success。
 
-若 run 沒有成功完成，committed rows 仍可供檢查，但不能 manual export。
+若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
+停止後可以 manual export。
 
 ### 10.2 Charts
 
@@ -590,8 +591,9 @@ Export PNG 與 Remove 會停用。它們不會載入即時 chart data，executio
 
 ## 11. Manual export
 
-Manual export 只在有 authoritative、successfully completed run 且存在可匯出的
-Output rows 時提供。
+Manual export 會在 run 不再 active，且目前 export scope 存在 committed Output
+rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete 狀態，
+但可把已 committed rows 作為 partial results 匯出。
 
 選擇 **Run Page** 或 **All Run Pages**，再選 **CSV** 或 **XLSX**：
 
@@ -604,9 +606,9 @@ Export 使用 committed ResultRows。XLSX cells 目前以 plain text 寫出，�
 formulas、embedded charts 或 native numeric cell types。All-Pages CSV export 不會
 覆寫既有 Page CSV files。
 
-Graceful Stop 本身不是 failure 或 cancellation。若 Workflow 之後依一般 success
-gate 正常完成，其 authoritative committed results 仍可匯出；failed 或 incomplete
-run 不能 manual export。
+Graceful Stop 本身不是 failure 或 cancellation。Execution 停止後，failure 或
+incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged
+狀態、尚未通過 owning scope commit point 的 rows 不會被匯出。
 
 ## 12. Templates 與 local machine settings
 
@@ -676,8 +678,9 @@ executable；Desktop 不會靜默搜尋替代檔案。
 
 ### Manual export is unavailable
 
-Manual export 需要 authoritative successfully completed run 與可匯出的 committed
-rows。Failed 或 incomplete run 仍可檢查，但不能 export。
+Manual export 需要 run 已經結束，且目前 export scope 存在 committed rows。Run
+仍 active 時 export 會維持 disabled。Failed 或 incomplete run 可以把已 committed
+rows 作為 partial results 匯出；若選取範圍為 zero-row，仍不提供 export。
 
 ### Streaming CSV failed
 

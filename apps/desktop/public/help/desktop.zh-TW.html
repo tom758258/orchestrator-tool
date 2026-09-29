@@ -433,7 +433,8 @@ storage。</p>
 <p>Last Run 也會保存該次 run 開始時的 Execution Mode。之後切換目前 selector，
 Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated success 不會
 被呈現為 real-hardware success。</p>
-<p>若 run 沒有成功完成，committed rows 仍可供檢查，但不能 manual export。</p>
+<p>若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
+停止後可以 manual export。</p>
 <h3 id="102-charts">10.2 Charts</h3>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
@@ -522,8 +523,9 @@ Export PNG 與 Remove 會停用。它們不會載入即時 chart data，executio
 欄位選擇僅為暫時的 presentation 設定。若 Page 沒有 numeric Outputs，則不會
 顯示 numeric summary。</p>
 <h2 id="11-manual-export">11. Manual export</h2>
-<p>Manual export 只在有 authoritative、successfully completed run 且存在可匯出的
-Output rows 時提供。</p>
+<p>Manual export 會在 run 不再 active，且目前 export scope 存在 committed Output
+rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete 狀態，
+但可把已 committed rows 作為 partial results 匯出。</p>
 <p>選擇 <strong>Run Page</strong> 或 <strong>All Run Pages</strong>，再選 <strong>CSV</strong> 或 <strong>XLSX</strong>：</p>
 <ul>
 <li><strong>Run Page / CSV</strong> — 將選取的 Page 匯出為一份 CSV。</li>
@@ -534,9 +536,9 @@ Output rows 時提供。</p>
 <p>Export 使用 committed ResultRows。XLSX cells 目前以 plain text 寫出，不會加入
 formulas、embedded charts 或 native numeric cell types。All-Pages CSV export 不會
 覆寫既有 Page CSV files。</p>
-<p>Graceful Stop 本身不是 failure 或 cancellation。若 Workflow 之後依一般 success
-gate 正常完成，其 authoritative committed results 仍可匯出；failed 或 incomplete
-run 不能 manual export。</p>
+<p>Graceful Stop 本身不是 failure 或 cancellation。Execution 停止後，failure 或
+incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged
+狀態、尚未通過 owning scope commit point 的 rows 不會被匯出。</p>
 <h2 id="12-templates-與-local-machine-settings">12. Templates 與 local machine settings</h2>
 <p>Application 啟動時會建立 blank <code>Untitled</code> draft。目前 UI 沒有獨立的 <code>New</code> button。</p>
 <ul>
@@ -585,8 +587,9 @@ executable；Desktop 不會靜默搜尋替代檔案。</p>
 <h3 id="simulation-rejects-unlimited-while-with-meters-measure">Simulation rejects Unlimited While with Meters Measure</h3>
 <p>設定 finite <code>max_iterations</code>，或在適合的情況下改用 Live mode。</p>
 <h3 id="manual-export-is-unavailable">Manual export is unavailable</h3>
-<p>Manual export 需要 authoritative successfully completed run 與可匯出的 committed
-rows。Failed 或 incomplete run 仍可檢查，但不能 export。</p>
+<p>Manual export 需要 run 已經結束，且目前 export scope 存在 committed rows。Run
+仍 active 時 export 會維持 disabled。Failed 或 incomplete run 可以把已 committed
+rows 作為 partial results 匯出；若選取範圍為 zero-row，仍不提供 export。</p>
 <h3 id="streaming-csv-failed">Streaming CSV failed</h3>
 <p>Stream write 或 flush error 會停止 CSV streaming，但不一定停止 Workflow execution。
 已由 committed rows 寫出的 CSV data 會保留。</p>
