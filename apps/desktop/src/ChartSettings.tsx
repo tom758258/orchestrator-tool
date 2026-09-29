@@ -128,6 +128,13 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
             <option value="boxplot">Box &amp; Whisker</option>
           </select>
         </label>
+        {draft.type === 'combo' && <p className="chart-settings-help">
+          Combo requires at least two selected Outputs.
+        </p>}
+        {draft.type === 'histogram' && <p className="chart-settings-help">
+          Histogram uses exactly one Output. If multiple Outputs are currently selected,
+          Apply keeps the first selected Output.
+        </p>}
         <label className="chart-settings-field">Chart title
           <input type="text" autoFocus value={draft.title}
             onChange={event => { setDraft(current => ({ ...current, title: event.target.value })); setError(null) }} />

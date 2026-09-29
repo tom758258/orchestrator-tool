@@ -582,6 +582,10 @@ settings, and Combo Type/Axis settings. One custom color applies to all renderin
 of that Output, including Scatter lines and markers; Auto restores the theme
 palette. Box & Whisker retains its automatic colors.
 
+**General → Chart type** also shows the Output-count helper for Combo and
+Histogram. When switching to Histogram with multiple Outputs selected,
+**Apply** keeps the first selected Output.
+
 A chart panel can select multiple **Outputs** to compare numeric series.
 Scatter **X source** can be Iteration or any numeric Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. **Display** can
