@@ -194,7 +194,7 @@ test('Scatter X remains cached when it is not selected as a Y Output', () => {
   assert.equal(data.getSeries('unused').length, 0)
 })
 
-test('opt-in change preservation reveals non-extreme reversals while default Min/Max remains unchanged', () => {
+test('optional Live sampling reveals non-extreme reversals without changing default Min/Max', () => {
   const x = sequence(50)
   const y = new Float64Array(50).fill(100)
   y[1] = 150; y[2] = 110; y[3] = 135
@@ -210,7 +210,7 @@ test('opt-in change preservation reveals non-extreme reversals while default Min
   assert.ok(enabled.length <= 6)
 })
 
-test('change threshold follows the last retained point, including cumulative changes and zero transitions', () => {
+test('threshold uses last retained value, cumulative change and zero-value convention', () => {
   const x = sequence(60)
   const y = new Float64Array(60).fill(100)
   y[1] = 150; y[2] = 110; y[3] = 111; y[4] = 112; y[5] = 116
@@ -224,7 +224,7 @@ test('change threshold follows the last retained point, including cumulative cha
   assert.equal(minMaxDecimate(sequence(30), zero, 1, 101).some(([iteration]) => iteration === 4), false)
 })
 
-test('enhanced live decimation stays pixel bounded, ordered and viewport-local at 500k rows', () => {
+test('500k enhanced decimation stays pixel bounded, ordered and viewport-local', () => {
   const x = sequence(500_000)
   const y = Float64Array.from(x, (_, index) =>
     index % 4 === 0 ? 100 : index % 4 === 1 ? 150 : index % 4 === 2 ? 110 : 135)
@@ -236,23 +236,37 @@ test('enhanced live decimation stays pixel bounded, ordered and viewport-local a
   const zoomed = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 }, 5)
   assert.ok(zoomed.length <= 1282)
   assert.ok(zoomed[0][0] >= 199_999 && zoomed.at(-1)[0] <= 205_001)
-  assert.equal(y[2], 110)
+  assert.equal(y[2], 110) // raw array has not been mutated
 })
 
-test('Live change sampling applies only to Line and keeps each Output independent', () => {
+test('Live change sampling applies to Line only and independently to each Output', () => {
   const chart = createPageChartData()
   const voltage = new Array(50).fill(100)
   voltage[1] = 150; voltage[2] = 110; voltage[3] = 135
-  const current = voltage.map(value => value / 10)
   chart.append('V', 0, voltage)
-  chart.append('I', 0, current)
+  chart.append('I', 0, voltage.map(value => value / 10))
   const panel = { ...addChartPanel([], 'A', ['V'])[0], outputs: ['V', 'I'] }
   const range = { min: 1, max: 50 }
   const off = prepareChartSeries(panel, chart, 1, range)
   const on = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 5 })
-  assert.deepEqual(off, prepareChartSeries(panel, chart, 1, range, { enabled: false, thresholdPercent: 5 }))
+  assert.deepEqual(off, prepareChartSeries(panel, chart, 1, range,
+    { enabled: false, thresholdPercent: 5 }))
   assert.equal(off[0].data.some(([iteration]) => iteration === 3), false)
   for (const output of on) assert.ok(output.data.some(([iteration]) => iteration === 3))
-  assert.deepEqual(prepareChartSeries({ ...panel, type: 'area' }, chart, 1, range,
-    { enabled: true, thresholdPercent: 5 }), off)
+  const area = { ...panel, type: 'area' }
+  assert.deepEqual(prepareChartSeries(area, chart, 1, range,
+    { enabled: true, thresholdPercent: 5 }), prepareChartSeries(area, chart, 1, range))
+})
+
+test('incremental chart batches preserve changes across the 25k row IPC boundary', () => {
+  const count = 50_002
+  const x = sequence(count)
+  const y = new Float64Array(count).fill(100)
+  y[25_000] = 150; y[25_001] = 110; y[25_002] = 135
+  const chart = createPageChartData()
+  assert.equal(chart.append('V', 0, [...y.subarray(0, 25_000)]), true)
+  assert.equal(chart.append('V', 25_000, [...y.subarray(25_000)]), true)
+  const panel = addChartPanel([], 'A', ['V'])[0]
+  assert.deepEqual(prepareChartSeries(panel, chart, 1, { min: 1, max: count },
+    { enabled: true, thresholdPercent: 5 })[0].data, minMaxDecimate(x, y, 1, 5))
 })
