@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { addChartPanel } from '../src/chartPanels.ts'
+import { addChartPanel, seriesColor } from '../src/chartPanels.ts'
 import { chartGridLeft, chartGridRight, chartLayout, chartPresentationOptions,
-  chartZoomSliderBottom } from '../src/chartOptions.ts'
+  chartZoomSliderBottom, lineRendererSeries } from '../src/chartOptions.ts'
 import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft } from '../src/chartSettingsModel.ts'
+import { init } from 'echarts'
 
 const panel = addChartPanel([], 'A', ['V'])[0]
 const colors = { ink: 'ink', axis: 'axis', grid: 'grid' }
+
+const autoPalette = { V: 'rgb(255,0,0)', I: 'rgb(0,0,255)' }
+// Mirrors ChartPlot: the Auto palette color, overridden by a Custom series color.
+const legendData = (configured) => chartPresentationOptions(configured, configured.outputs.length,
+  colors, undefined, undefined, undefined, Object.fromEntries(configured.outputs.map(name =>
+    [name, seriesColor(configured, name, autoPalette[name])]))).legend.data
+// A marker-free legend line must stay a marker-free line that carries its Output color.
+const plainLine = (name, color) => ({ name, icon: 'line',
+  itemStyle: { color, borderColor: color, borderWidth: 2 } })
 
 test('Auto axes leave min, max and interval to ECharts', () => {
   const options = chartPresentationOptions(panel, 1, colors)
@@ -17,7 +27,7 @@ test('Auto axes leave min, max and interval to ECharts', () => {
   }
   assert.equal(options.title.text, '')
   assert.equal(options.legend.show, true)
-  assert.deepEqual(options.legend.data, [{ name: 'V', icon: 'line' }])
+  assert.deepEqual(legendData(panel), [plainLine('V', 'rgb(255,0,0)')])
   assert.equal(options.xAxis.axisLabel.hideOverlap, true)
   assert.equal(options.yAxis.axisLabel.hideOverlap, true)
 })
@@ -74,26 +84,90 @@ test('legend position reserves the matching edge and honors Show legend for one 
   assert.equal(chartGridRight(right), chartLayout(right).grid.right)
 })
 
-test('legend icons match Line, Area, Scatter and Combo marker state', () => {
-  const lineMarkers = { ...panel, line: { series: { V: { markers: true } } } }
-  assert.deepEqual(chartPresentationOptions(lineMarkers, 1, colors).legend.data, ['V'])
-  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'area' }, 1, colors).legend.data,
-    [{ name: 'V', icon: 'line' }])
-  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter',
-    scatter: { ...panel.scatter, display: 'lines' } }, 1, colors).legend.data,
-    [{ name: 'V', icon: 'line' }])
-  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter',
-    scatter: { ...panel.scatter, display: 'lines-markers' } }, 1, colors).legend.data, ['V'])
-  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter' }, 1, colors).legend.data, ['V'])
+const combo = { ...panel, type: 'combo', outputs: ['V', 'I'], combo: { ...panel.combo,
+  series: { V: { kind: 'column', axis: 'left', markers: false },
+    I: { kind: 'line', axis: 'right', markers: false } } } }
 
-  const combo = { ...panel, type: 'combo', outputs: ['V', 'I'], combo: { ...panel.combo,
-    series: { V: { kind: 'column', axis: 'left', markers: false },
-      I: { kind: 'line', axis: 'right', markers: false } } } }
-  assert.deepEqual(chartPresentationOptions(combo, 2, colors).legend.data,
-    ['V', { name: 'I', icon: 'line' }])
-  const comboMarkers = { ...combo, combo: { ...combo.combo, series: { ...combo.combo.series,
-    I: { ...combo.combo.series.I, markers: true } } } }
-  assert.deepEqual(chartPresentationOptions(comboMarkers, 2, colors).legend.data, ['V', 'I'])
+// Every marker-free line-like chart must keep a marker-free legend line carrying its own color.
+const markerFreeCases = [
+  { label: 'Line', configured: { ...panel, outputs: ['V', 'I'] } },
+  { label: 'Area', configured: { ...panel, type: 'area', outputs: ['V', 'I'] } },
+  { label: 'Scatter lines', configured: { ...panel, type: 'scatter', outputs: ['V', 'I'],
+    scatter: { ...panel.scatter, display: 'lines' } } },
+  { label: 'Combo Line', configured: combo },
+]
+
+test('marker-free legend lines keep their own Output color for Line, Area, Scatter and Combo', () => {
+  for (const { label, configured } of markerFreeCases) {
+    const data = legendData(configured)
+    assert.deepEqual(data, label === 'Combo Line'
+      ? ['V', plainLine('I', 'rgb(0,0,255)')]
+      : [plainLine('V', 'rgb(255,0,0)'), plainLine('I', 'rgb(0,0,255)')], label)
+    for (const item of data) {
+      if (typeof item === 'string') continue
+      assert.equal(item.icon, 'line', label)
+      assert.equal(item.itemStyle.color, item.itemStyle.borderColor, label)
+    }
+  }
+})
+
+test('marker-free legend lines follow Auto and Custom series colors alike', () => {
+  for (const { label, configured } of markerFreeCases) {
+    const data = legendData({ ...configured, seriesColors: { V: '#123456' } })
+    for (const item of data) {
+      if (typeof item === 'string') continue
+      // A Custom color must win for V while every other Output keeps its Auto palette color.
+      const expected = item.name === 'V' ? '#123456' : 'rgb(0,0,255)'
+      assert.deepEqual(item.itemStyle,
+        { color: expected, borderColor: expected, borderWidth: 2 }, label)
+    }
+  }
+})
+
+test('marker-enabled legend entries keep series icons and are never downgraded to plain lines', () => {
+  assert.deepEqual(legendData({ ...panel, line: { series: { V: { markers: true } } } }), ['V'])
+  assert.deepEqual(legendData({ ...panel, type: 'scatter', outputs: ['V', 'I'],
+    scatter: { ...panel.scatter, display: 'lines-markers' } }), ['V', 'I'])
+  assert.deepEqual(legendData({ ...panel, type: 'scatter', outputs: ['V', 'I'],
+    scatter: { ...panel.scatter, display: 'markers' } }), ['V', 'I'])
+  assert.deepEqual(legendData({ ...combo, combo: { ...combo.combo, series: { ...combo.combo.series,
+    I: { ...combo.combo.series.I, markers: true } } } }), ['V', 'I'])
+})
+
+// A plain legend line is a zero-area path, so it only paints through a stroke.
+function legendPaths(configured, series) {
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 640, height: 400 })
+  try {
+    chart.setOption({ animation: false, ...chartPresentationOptions(configured, series.length, colors,
+      undefined, undefined, undefined, Object.fromEntries(series.map(item =>
+        [item.name, item.lineStyle.color]))),
+    xAxis: { type: 'value' }, yAxis: { type: 'value' }, series })
+    return chart.renderToSVGString().replace(/\s+/g, ' ').split('<path ').slice(1)
+      .map(part => part.split('>')[0])
+  } finally {
+    chart.dispose()
+  }
+}
+
+test('ECharts paints each marker-free legend line in its own Output series color', () => {
+  const configured = { ...panel, outputs: ['V', 'I'] }
+  const lines = legendPaths(configured, [
+    lineRendererSeries(configured, { name: 'V', data: [[0, 1], [1, 2]] }, 'rgb(255,0,0)'),
+    lineRendererSeries(configured, { name: 'I', data: [[0, 2], [1, 1]] }, 'rgb(0,0,255)'),
+  ]).filter(part => part.includes('d="M0 7L25 7"'))
+  assert.equal(lines.length, 2)
+  assert.ok(lines[0].includes('stroke="rgb(255,0,0)"'), lines[0])
+  assert.ok(lines[1].includes('stroke="rgb(0,0,255)"'), lines[1])
+})
+
+test('a marker-enabled legend still renders its marker beside the line', () => {
+  const configured = { ...panel, line: { series: { V: { markers: true } } },
+    markerStyles: { V: { shape: 'diamond', size: 8, fillColor: '#ffffff', borderColor: '#000000' } } }
+  const paths = legendPaths(configured,
+    [lineRendererSeries(configured, { name: 'V', data: [[0, 1], [1, 2]] }, 'rgb(255,0,0)')])
+  assert.ok(paths.some(part => part.includes('stroke="rgb(255,0,0)"')), 'line color')
+  assert.ok(paths.some(part => part.includes('fill="#ffffff"') && part.includes('stroke="#000000"')),
+    'marker fill and border')
 })
 
 test('bottom legend separates the zoom slider and right legend leaves Combo right axis space', () => {

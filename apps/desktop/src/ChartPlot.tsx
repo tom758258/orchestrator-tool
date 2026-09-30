@@ -14,6 +14,11 @@ use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridCom
 type ZoomRange = { min: number; max: number } | null
 const SCATTER_HOVER_RADIUS = 12
 
+function autoSeriesColor(name: string, numericNames: string[]): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(
+    `--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
+}
+
 export default function ChartPlot({ panel, data, numericNames, charts, statistical }: {
   panel: ChartPanel
   data: PageChartData
@@ -66,13 +71,10 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   [panel, statistical, themeRevision])
   const rendererSeries = useMemo(() => {
     if (statistic) return statistic.series
-    const style = getComputedStyle(document.documentElement)
     if (panel.type === 'combo') return comboRendererSeries(panel, display,
-      display.map(series => style.getPropertyValue(
-        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim()))
+      display.map(series => autoSeriesColor(series.name, numericNames)))
     return display.map(series => {
-      const color = seriesColor(panel, series.name, style.getPropertyValue(
-        `--chart-series-${numericNames.indexOf(series.name) % 6 + 1}`).trim())
+      const color = seriesColor(panel, series.name, autoSeriesColor(series.name, numericNames))
       switch (panel.type) {
         case 'line':
         case 'area':
@@ -89,6 +91,10 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       }
     })
   }, [display, numericNames, panel, themeRevision, statistic])
+  // Legend must mirror the resolved series color, so both use the same Auto palette lookup.
+  const legendSeriesColors = useMemo(() => Object.fromEntries(panel.outputs.map(name =>
+    [name, seriesColor(panel, name, autoSeriesColor(name, numericNames))])),
+  [panel, numericNames, themeRevision])
 
   useEffect(() => {
     const chart = init(container.current!, undefined, { renderer: 'canvas' })
@@ -163,7 +169,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
       { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') },
-      fullDomain, rawIteration, statistic?.categories)
+      fullDomain, rawIteration, statistic?.categories, legendSeriesColors)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
@@ -184,7 +190,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       ] : [],
       series: rendererSeries,
     }, { notMerge: true })
-  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration])
+  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors])
 
   useEffect(() => {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })

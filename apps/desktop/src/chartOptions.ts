@@ -34,7 +34,11 @@ export function markerSymbol(shape: MarkerShape): 'circle' | 'rect' | 'diamond' 
   return shape === 'square' ? 'rect' : shape
 }
 
-export function chartLegendData(panel: ChartPanel): (string | { name: string; icon: 'line' })[] {
+export type ChartLegendItem = { name: string; icon: 'line'
+  itemStyle: { color: string; borderColor: string; borderWidth: number } }
+
+export function chartLegendData(panel: ChartPanel,
+  seriesColors: Record<string, string> = {}): (string | ChartLegendItem)[] {
   return panel.outputs.map((name, index) => {
     const lineOnly = panel.type === 'area'
       || (panel.type === 'line' && !lineSeriesSettings(panel, name).markers)
@@ -43,7 +47,12 @@ export function chartLegendData(panel: ChartPanel): (string | { name: string; ic
         const settings = comboSeriesSettings(panel, name, index)
         return settings.kind === 'line' && !settings.markers
       })())
-    return lineOnly ? { name, icon: 'line' as const } : name
+    if (!lineOnly) return name
+    // An explicit icon:'line' legend entry bypasses the series legend icon and is drawn by
+    // ECharts as a zero-area path that only honors itemStyle. Stroke it with the resolved
+    // series color so the legend line still matches the plotted line.
+    const color = seriesColors[name]
+    return { name, icon: 'line' as const, itemStyle: { color, borderColor: color, borderWidth: 2 } }
   })
 }
 
@@ -162,7 +171,8 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
 }
 
 export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
-  fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[]) {
+  fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[],
+  seriesColors: Record<string, string> = {}) {
   const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
   const layout = chartLayout(panel)
@@ -172,7 +182,7 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
     title: { text: panel.title, left: 'center' as const, top: 8,
       textStyle: { ...visual.title.textStyle, fontSize: 16 } },
     legend: { show: hasLegend, ...layout.legend, type: 'scroll' as const,
-      selectedMode: false, data: chartLegendData(panel),
+      selectedMode: false, data: chartLegendData(panel, seriesColors),
       textStyle: chartLegendTextStyle(panel, colors.ink) },
     grid: layout.grid,
     xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,

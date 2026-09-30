@@ -139,7 +139,8 @@ test('PNG presentation changes retain Line marker series and legend icon data', 
           markerStyles: { V: { shape: 'diamond', size: 7, fillColor: '#ffffff', borderColor: '#123456' } } }
         const rendered = lineRendererSeries(configured, { name: 'V', data: [[1, 2], [2, 3]] }, '#ff0000')
         const presentation = chartPresentationOptions(configured, 1,
-          { ink: '#eeeeee', axis: '#aaaaaa', grid: '#555555' })
+          { ink: '#eeeeee', axis: '#aaaaaa', grid: '#555555' },
+          undefined, undefined, undefined, { V: '#ff0000' })
         const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 640, height: 400 })
         try {
           chart.setOption({ animation: false, legend: presentation.legend,
@@ -155,7 +156,8 @@ test('PNG presentation changes retain Line marker series and legend icon data', 
           assert.deepEqual(chart.getOption().series, beforeSeries)
           assert.deepEqual(chart.getOption().legend[0].data, beforeLegend[0].data)
           assert.equal(beforeSeries[0].symbol, markers ? 'diamond' : 'none')
-          assert.deepEqual(beforeLegend[0].data, markers ? ['V'] : [{ name: 'V', icon: 'line' }])
+          assert.deepEqual(beforeLegend[0].data, markers ? ['V'] : [{ name: 'V', icon: 'line',
+            itemStyle: { color: '#ff0000', borderColor: '#ff0000', borderWidth: 2 } }])
         } finally {
           chart.dispose()
         }
