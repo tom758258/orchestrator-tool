@@ -563,6 +563,14 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
+按下 Run Live 前，可在 Workflow Run 按鈕附近的 Live Chart Options 設定此功能。
+Preserve Significant Changes 預設關閉；啟用後輸入有限且大於 0 的百分比（預設 5%），
+每個 Live Line Output 的 Min/Max bucket 最多額外保留兩個符合門檻的變化點。
+變化率以上一個實際保留的點為基準；0 變成非 0 視為 100%，0 變成 0 則是 0%。
+密集變化可能會合併，不保證每一次超過門檻的變化都能顯示。設定在 RUN 開始時固定，
+結束後 Last Run 圖表仍沿用該次設定；Simulation、非 Line chart、原始結果與
+CSV/XLSX 匯出不受影響。本設定屬 Desktop session，不寫入 Template。
+
 Execution 執行中只有 **Line** 支援即時更新。Execution 停止後，只要有 committed
 numeric rows，即使 run 失敗，也可在 **Settings → General → Chart type** 選擇
 **Line**、**XY Scatter**、**Column**、**Area**、**Bar**、**Combo**、**Histogram**
