@@ -45,6 +45,7 @@ export type ChartPanel = {
   showLegend: boolean
   legendPosition: LegendPosition
   imageBackground: ChartImageBackground
+  showAllRawData: boolean
   zoom: ZoomSettings
   xAxis: AxisSettings
   yAxis: AxisSettings
@@ -149,6 +150,7 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
     seriesColors: {},
     showLegend: true, legendPosition: 'top',
     imageBackground: 'light',
+    showAllRawData: false,
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },

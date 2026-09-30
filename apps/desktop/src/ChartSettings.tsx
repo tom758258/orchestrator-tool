@@ -13,7 +13,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   numericNames: string[]
   running: boolean
   hasRows: boolean
-  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -194,6 +194,14 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           Histogram uses exactly one Output. If multiple Outputs are currently selected,
           Apply keeps the first selected Output.
         </p>}
+        {draft.type === 'line' && <>
+          <label><input type="checkbox" checked={draft.showAllRawData}
+            onChange={event => setDraft(current => ({ ...current, showAllRawData: event.target.checked }))} />
+            Show All Raw Data</label>
+          <p className="chart-settings-help">Displaying all raw data bypasses downsampling and may
+            cause the Desktop interface to lag, especially during Live execution. Line markers
+            remain separately configurable in Series.</p>
+        </>}
         <label className="chart-settings-field">Chart title
           <input type="text" autoFocus value={draft.title}
             onChange={event => { setDraft(current => ({ ...current, title: event.target.value })); setError(null) }} />

@@ -209,13 +209,10 @@ function isSignificantChange(reference: number, current: number, thresholdPercen
   return Math.abs((current - reference) / reference) * 100 >= thresholdPercent
 }
 
-export function minMaxDecimateRange(
-  iteration: Float64Array, values: Float64Array, pixelWidth: number,
-  range: { min: number; max: number }, changeThresholdPercent: number | null = null,
-): [number, number][] {
-  const count = Math.min(iteration.length, values.length)
-  if (count === 0 || range.max < iteration[0] || range.min > iteration[count - 1]) return []
-
+// Both Line modes use the exact viewport, including one clipping neighbor on either side.
+function visibleSampleBounds(iteration: Float64Array, count: number, range: { min: number; max: number }):
+  { start: number; end: number } | null {
+  if (count === 0 || range.max < iteration[0] || range.min > iteration[count - 1]) return null
   const lowerBound = (value: number, inclusive: boolean) => {
     let low = 0
     let high = count
@@ -226,9 +223,30 @@ export function minMaxDecimateRange(
     }
     return low
   }
-  const start = Math.max(0, lowerBound(range.min, true) - 1)
-  const end = Math.min(count, lowerBound(range.max, false) + 1)
-  return minMaxDecimate(iteration.subarray(start, end), values.subarray(start, end), pixelWidth, changeThresholdPercent)
+  return {
+    start: Math.max(0, lowerBound(range.min, true) - 1),
+    end: Math.min(count, lowerBound(range.max, false) + 1),
+  }
+}
+
+export function rawLinePointsInRange(
+  iteration: Float64Array, values: Float64Array, range: { min: number; max: number },
+): [number, number][] {
+  const bounds = visibleSampleBounds(iteration, Math.min(iteration.length, values.length), range)
+  if (!bounds) return []
+  const points: [number, number][] = []
+  for (let index = bounds.start; index < bounds.end; index++) points.push([iteration[index], values[index]])
+  return points
+}
+
+export function minMaxDecimateRange(
+  iteration: Float64Array, values: Float64Array, pixelWidth: number,
+  range: { min: number; max: number }, changeThresholdPercent: number | null = null,
+): [number, number][] {
+  const bounds = visibleSampleBounds(iteration, Math.min(iteration.length, values.length), range)
+  if (!bounds) return []
+  return minMaxDecimate(iteration.subarray(bounds.start, bounds.end),
+    values.subarray(bounds.start, bounds.end), pixelWidth, changeThresholdPercent)
 }
 
 export function minMaxDecimate(
@@ -246,38 +264,42 @@ export function minMaxDecimate(
     return points
   }
   append(0)
-  let previousRetainedIndex = 0
+  // Keep the reference across quiet buckets so gradual changes can qualify.
+  let reference = values[0]
+  if (!Number.isFinite(reference)) reference = values.find(value => Number.isFinite(value)) ?? Number.NaN
   for (let bucket = 0; bucket < buckets; bucket++) {
     const start = Math.floor(bucket * count / buckets)
     const end = Math.floor((bucket + 1) * count / buckets)
-    let min = start
-    let max = start
-    for (let index = start + 1; index < end; index++) {
-      if (values[index] < values[min]) min = index
-      if (values[index] > values[max]) max = index
-    }
-    const extrema = min === max ? [min] : [Math.min(min, max), Math.max(min, max)]
     if (!preserveChanges) {
-      // Keep the original Min/Max output exactly the same when this option is off.
-      for (const index of extrema) {
+      // Preserve the disabled Min/Max behaviour exactly.
+      let min = start
+      let max = start
+      for (let index = start + 1; index < end; index++) {
+        if (values[index] < values[min]) min = index
+        if (values[index] > values[max]) max = index
+      }
+      for (const index of min === max ? [min] : [Math.min(min, max), Math.max(min, max)]) {
         if (points.at(-1)![0] !== iteration[index]) append(index)
       }
       continue
     }
-    const selected = new Set(extrema)
-    let referenceIndex = previousRetainedIndex
-    let extraCount = 0
+    // Compare all raw points against the same reference for this bucket.
+    // Select only the most extreme qualifying high/low, never extra points.
+    let high = -1
+    let low = -1
     for (let index = start; index < end; index++) {
-      if (selected.has(index)) { referenceIndex = index; continue }
-      if (extraCount < 2 && isSignificantChange(values[referenceIndex], values[index], changeThresholdPercent!)) {
-        selected.add(index)
-        referenceIndex = index
-        extraCount++
-      }
+      const value = values[index]
+      if (!Number.isFinite(value) || !isSignificantChange(reference, value, changeThresholdPercent!)) continue
+      if (value > reference && (high < 0 || value > values[high])) high = index
+      if (value < reference && (low < 0 || value < values[low])) low = index
     }
-    for (const index of [...selected].sort((a, b) => a - b)) {
+    const selected = high < 0 && low < 0
+      ? [end - 1] : high < 0 ? [low] : low < 0 ? [high] : [Math.min(high, low), Math.max(high, low)]
+    // If there were qualifying points, carry the last selected representative
+    // (chronological order) to the next bucket. Quiet buckets leave it untouched.
+    if (high >= 0 || low >= 0) reference = values[selected[selected.length - 1]]
+    for (const index of selected) {
       if (points.at(-1)![0] !== iteration[index]) append(index)
-      previousRetainedIndex = index
     }
   }
   if (points.at(-1)![0] !== iteration[count - 1]) append(count - 1)
@@ -294,6 +316,9 @@ export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixel
   const scatterX = panel.scatterXOutput === null ? iteration : data.getSeries(panel.scatterXOutput)
   return panel.outputs.map((name, seriesIndex) => {
     const values = data.getSeries(name).subarray(0, count)
+    if (panel.type === 'line' && panel.showAllRawData) {
+      return { name, data: rawLinePointsInRange(iteration, values, range) }
+    }
     if (panel.type === 'line' || panel.type === 'area' ||
       (panel.type === 'combo' && comboSeriesSettings(panel, name, seriesIndex).kind === 'line')) {
       return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range,

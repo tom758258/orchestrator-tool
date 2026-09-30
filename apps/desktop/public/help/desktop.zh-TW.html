@@ -524,15 +524,23 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。</p>
-<p>Chart Sampling Options 位於 Workflow Run 按鈕附近，Simulation 與 Live 皆可使用，
-讓你能在沒有實體儀器時先驗證 chart 行為。Preserve Significant Changes 預設關閉；
-啟用後輸入有限且大於 0 的百分比（預設 5%），每個 Line Output 的 Min/Max bucket
-最多額外保留兩個符合門檻的變化點。變化率以上一個實際保留的點為基準；0 變成非 0
-視為 100%，0 變成 0 則是 0%。密集變化可能會合併，不保證每一次超過門檻的變化都能
-顯示。空白、0 或負數門檻會在 Simulation 與 Live 兩種模式下都停用 Run 按鈕。
-設定會在 RUN 開始時建立快照，該次 run 的 Last Run 圖表沿用此快照；之後的修改只影響
-下一次 run。非 Line chart、原始結果與 CSV/XLSX 匯出不受影響。本設定屬 Desktop
-session，不寫入 Template。</p>
+<p>Chart Sampling Options 位於 Workflow Run 按鈕附近，Simulation 與 Live 都能使用。
+Preserve Significant Changes 預設關閉；啟用後輸入有限且大於 0 的百分比（預設 5%），
+Line Chart 的每個 pixel bucket 會用固定比較基準判斷 Raw Data：只有向上達到門檻，
+選達標數據的 Max；只有向下達標，選達標數據的 Min；兩者都有，依照原本的
+Iteration 順序保留 Max 與 Min；都沒有達標，則使用本段最後一筆。
+下一段以上一個達標區段最後選出的代表點作為比較基準，未達標區段不重設基準，
+因此累積的緩慢變化仍可能達標。另保留整體首尾點；當可見資料已少於 bucket 數
+兩倍時，直接顯示所有點、不再縮減。0 變成非 0 視為 100%，0 變成 0 視為 0%。
+啟用時若門檻為空白、0 或負數，SIM 與 LIVE 都會停用 Run 按鈕。
+RUN 開始時建立設定快照，Last Run 沿用該次設定；此設定屬 Desktop session，
+不寫入 Template。關閉 Preserve Significant Changes 即恢復既有 Min/Max。</p>
+<p>對 Line Chart，可在 Chart Settings → General 啟用 <strong>Show All Raw Data</strong>（預設關閉），
+繞過降採樣，顯示目前 X 軸可見範圍內的所有已載入 Raw Data（如有資料，另含兩端
+各一筆裁切銜接點）。每張 Chart 獨立設定，立即生效，不需重新 RUN；是否顯示圓形
+Marker 仍於 Series 獨立設定。顯示全部資料可能降低 Desktop 繪圖效能，
+尤其 LIVE 執行中可能造成畫面卡頓或暫時無回應。
+上述顯示選項不修改原始結果、CSV/XLSX 匯出，也不影響非 Line Chart。</p>
 <p>Execution 執行中只有 <strong>Line</strong> 支援即時更新。Execution 停止後，只要有 committed
 numeric rows，即使 run 失敗，也可在 <strong>Settings → General → Chart type</strong> 選擇
 <strong>Line</strong>、<strong>XY Scatter</strong>、<strong>Column</strong>、<strong>Area</strong>、<strong>Bar</strong>、<strong>Combo</strong>、<strong>Histogram</strong>

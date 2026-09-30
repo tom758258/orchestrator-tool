@@ -2368,8 +2368,9 @@ function App() {
                     disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
                     onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
                 </label>
-                <p className="tool-setup-hint">Applies to Line Charts in both Simulation and Live. Adds up to two qualifying
-                  points per Min/Max bucket; dense changes may still be consolidated. Zero to nonzero counts as 100%.</p>
+                <p className="tool-setup-hint">For Line Charts in Simulation and Live. Each bucket shows a qualifying
+                  high, low, or both (in original order); quiet buckets keep their last point.
+                  Use Chart Settings → General → Show All Raw Data to bypass downsampling (may slow the interface).</p>
                 {chartThresholdInvalid && <p className="error" role="alert">
                   Change Threshold must be a finite number greater than zero.</p>}
               </fieldset>

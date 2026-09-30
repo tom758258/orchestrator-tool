@@ -19,6 +19,7 @@ export type ChartSettingsDraft = {
   showLegend: boolean
   legendPosition: ChartPanel['legendPosition']
   imageBackground: ChartPanel['imageBackground']
+  showAllRawData: boolean
   zoom: ChartPanel['zoom']
   xAxis: AxisDraft
   yAxis: AxisDraft
@@ -47,6 +48,7 @@ export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft 
     seriesColors: { ...panel.seriesColors },
     showLegend: panel.showLegend, legendPosition: panel.legendPosition,
     imageBackground: panel.imageBackground,
+    showAllRawData: panel.showAllRawData === true,
     zoom: { ...panel.zoom },
     xAxis: axisDraft(panel.xAxis), yAxis: axisDraft(panel.yAxis),
     combo: { series: { ...panel.combo.series }, rightAxis: axisDraft(panel.combo.rightAxis) },
@@ -147,7 +149,7 @@ function normalizedMarkerStyles(draft: ChartSettingsDraft):
 }
 
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = draft.type === 'histogram' || draft.type === 'boxplot'
     ? normalizeInactiveAxis(draft.xAxis)
@@ -206,7 +208,8 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
     markerStyles: markerStyles.styles,
     seriesColors: { ...draft.seriesColors },
     showLegend: draft.showLegend, legendPosition: draft.legendPosition,
-    imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis,
+    imageBackground: draft.imageBackground, showAllRawData: draft.showAllRawData,
+    zoom: { ...draft.zoom }, xAxis, yAxis,
     combo: { series: { ...draft.combo.series }, rightAxis },
     histogram: { mode, value: histogramValue, showNormalCurve: draft.histogram.showNormalCurve,
       mean: mean !== null && Number.isFinite(mean) ? mean : null,

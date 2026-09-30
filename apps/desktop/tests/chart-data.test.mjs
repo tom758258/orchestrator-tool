@@ -194,104 +194,101 @@ test('Scatter X remains cached when it is not selected as a Y Output', () => {
   assert.equal(data.getSeries('unused').length, 0)
 })
 
-test('optional Live sampling reveals non-extreme reversals without changing default Min/Max', () => {
-  const x = sequence(50)
-  const y = new Float64Array(50).fill(100)
-  y[1] = 150; y[2] = 110; y[3] = 135
-  const normal = minMaxDecimate(x, y, 1)
-  const enabled = minMaxDecimate(x, y, 1, 5)
-  assert.equal(normal.some(([iteration]) => iteration === 3), false)
-  assert.ok(enabled.some(([iteration, value]) => iteration === 3 && value === 110))
-  assert.ok(enabled.some(([iteration, value]) => iteration === 4 && value === 135))
-  assert.ok(enabled.some(([iteration, value]) => iteration === 2 && value === 150))
+test('threshold buckets select qualifying Max, Min, or both in original order', () => {
+  const x = sequence(4)
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 140, 160, 150), 1, 30),
+    [[1, 100], [3, 160], [4, 150]])
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 65, 40, 60), 1, 30),
+    [[1, 100], [3, 40], [4, 60]])
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 140, 50, 160), 1, 30),
+    [[1, 100], [3, 50], [4, 160]])
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 160, 50, 140), 1, 30),
+    [[1, 100], [2, 160], [3, 50], [4, 140]])
+  // Quiet buckets still carry the line to their final raw sample.
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 110, 120, 115), 1, 30),
+    [[1, 100], [4, 115]])
+})
+
+test('quiet buckets retain the comparison reference for cumulative drift', () => {
+  const values = Float64Array.of(100, 101, 102, 103, 104, 104, 105, 106, 106, 106, 106, 106)
+  assert.deepEqual(minMaxDecimate(sequence(values.length), values, 4, 5),
+    [[1, 100], [3, 102], [6, 104], [8, 106], [12, 106]])
+})
+
+test('zero, invalid raw values and disabled mode do not break threshold sampling', () => {
+  const x = sequence(4)
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(0, -5, 3, 0), 1, 50),
+    [[1, 0], [2, -5], [3, 3], [4, 0]])
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(0, -5, 3, 0), 1, 101),
+    [[1, 0], [4, 0]])
+  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, NaN, 160, 120), 1, 30),
+    [[1, 100], [3, 160], [4, 120]])
+  const values = Float64Array.of(100, 140, 50, 160)
+  const baseline = minMaxDecimate(x, values, 1)
   for (const disabled of [null, 0, -1, NaN, Infinity]) {
-    assert.deepEqual(minMaxDecimate(x, y, 1, disabled), normal)
+    assert.deepEqual(minMaxDecimate(x, values, 1, disabled), baseline)
   }
-  assert.ok(enabled.length <= 6)
+  assert.deepEqual([...values], [100, 140, 50, 160])
 })
 
-test('threshold uses last retained value, cumulative change and zero-value convention', () => {
-  const x = sequence(60)
-  const y = new Float64Array(60).fill(100)
-  y[1] = 150; y[2] = 110; y[3] = 111; y[4] = 112; y[5] = 116
-  const enhanced = minMaxDecimate(x, y, 1, 5)
-  assert.ok(enhanced.some(([iteration, value]) => iteration === 3 && value === 110))
-  assert.ok(enhanced.some(([iteration, value]) => iteration === 6 && value === 116))
-  assert.equal(enhanced.some(([iteration]) => iteration === 4), false)
-  const zero = new Float64Array(30)
-  zero[1] = 10; zero[2] = 0; zero[3] = 1
-  assert.ok(minMaxDecimate(sequence(30), zero, 1, 5).some(([iteration]) => iteration === 4))
-  assert.equal(minMaxDecimate(sequence(30), zero, 1, 101).some(([iteration]) => iteration === 4), false)
-})
-
-test('500k enhanced decimation stays pixel bounded, ordered and viewport-local', () => {
+test('threshold sampler stays bounded, ordered and viewport-local at 500k rows', () => {
   const x = sequence(500_000)
-  const y = Float64Array.from(x, (_, index) =>
-    index % 4 === 0 ? 100 : index % 4 === 1 ? 150 : index % 4 === 2 ? 110 : 135)
-  const points = minMaxDecimate(x, y, 320, 5)
-  assert.ok(points.length <= 1282)
+  const y = Float64Array.from(x, (_, index) => [100, 160, 50, 140][index % 4])
+  const points = minMaxDecimate(x, y, 320, 30)
+  assert.ok(points.length <= 642)
   assert.ok(points.every(([iteration], index) => index === 0 || iteration > points[index - 1][0]))
   assert.deepEqual(points[0], [1, 100])
-  assert.deepEqual(points.at(-1), [500_000, 135])
-  const zoomed = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 }, 5)
-  assert.ok(zoomed.length <= 1282)
+  assert.deepEqual(points.at(-1), [500_000, 140])
+  const zoomed = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 }, 30)
+  assert.ok(zoomed.length <= 642)
   assert.ok(zoomed[0][0] >= 199_999 && zoomed.at(-1)[0] <= 205_001)
-  assert.equal(y[2], 110) // raw array has not been mutated
 })
 
-test('change sampling applies to Line only and independently to each Output, in any run mode', () => {
+test('selected Line Outputs sample independently and non-Line charts ignore the threshold', () => {
   const chart = createPageChartData()
-  const voltage = new Array(50).fill(100)
-  voltage[1] = 150; voltage[2] = 110; voltage[3] = 135
-  chart.append('V', 0, voltage)
-  chart.append('I', 0, voltage.map(value => value / 10))
+  chart.append('V', 0, [100, 140, 50, 160])
+  chart.append('I', 0, [10, 12, 14, 13])
   const panel = { ...addChartPanel([], 'A', ['V'])[0], outputs: ['V', 'I'] }
-  const range = { min: 1, max: 50 }
-  const off = prepareChartSeries(panel, chart, 1, range)
-  const on = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 5 })
-  assert.deepEqual(off, prepareChartSeries(panel, chart, 1, range,
-    { enabled: false, thresholdPercent: 5 }))
-  assert.equal(off[0].data.some(([iteration]) => iteration === 3), false)
-  for (const output of on) assert.ok(output.data.some(([iteration]) => iteration === 3))
+  const range = { min: 1, max: 4 }
+  const enabled = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 30 })
+  assert.deepEqual(enabled[0].data, [[1, 100], [3, 50], [4, 160]])
+  assert.deepEqual(enabled[1].data, [[1, 10], [3, 14], [4, 13]])
   const area = { ...panel, type: 'area' }
-  assert.deepEqual(prepareChartSeries(area, chart, 1, range,
-    { enabled: true, thresholdPercent: 5 }), prepareChartSeries(area, chart, 1, range))
+  assert.deepEqual(prepareChartSeries(area, chart, 1, range, { enabled: true, thresholdPercent: 30 }),
+    prepareChartSeries(area, chart, 1, range))
 })
 
-test('a tool-free For + Output workflow samples Line charts the same way with no Tool Instance', () => {
-  // The Simulation-only scenario: a sweep with no instrument produces chart data,
-  // and the sampling option changes only the Line decimation.
-  const count = 40
+test('Show All Raw Data bypasses Line sampling for the visible viewport and is reversible', () => {
   const chart = createPageChartData()
-  chart.append('I', 0, Array.from({ length: count }, (_, index) => index + 1))
-  const values = new Array(count).fill(100)
-  values[2] = 140; values[3] = 105; values[4] = 130
-  chart.append('Sweep', 0, values)
-  const panel = addChartPanel([], 'A', ['Sweep'])[0]
-  const range = { min: 1, max: count }
-
-  const off = prepareChartSeries(panel, chart, 1, range)
-  const on = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 5 })
-  assert.equal(panel.type, 'line')
-  // Disabled keeps the original Min/Max result; enabled adds the significant change.
-  assert.equal(off[0].data.some(([iteration]) => iteration === 4), false)
-  assert.ok(on[0].data.some(([iteration]) => iteration === 4))
-  assert.ok(on[0].data.length > off[0].data.length)
-  // Non-Line charts are untouched by the option, and Raw Data is never involved here.
-  const scatter = { ...panel, type: 'scatter', scatter: { ...panel.scatter, display: 'lines' } }
-  assert.deepEqual(prepareChartSeries(scatter, chart, 1, range, { enabled: true, thresholdPercent: 5 }),
-    prepareChartSeries(scatter, chart, 1, range))
+  const raw = Array.from({ length: 40 }, (_, index) => index * 3)
+  chart.append('V', 0, raw)
+  const panel = addChartPanel([], 'A', ['V'])[0]
+  const all = { ...panel, showAllRawData: true }
+  const setting = { enabled: true, thresholdPercent: 30 }
+  const fullRange = { min: 1, max: 40 }
+  const reduced = prepareChartSeries(panel, chart, 1, fullRange, setting)[0].data
+  assert.ok(reduced.length <= 4)
+  assert.deepEqual(prepareChartSeries(all, chart, 1, fullRange, setting)[0].data,
+    raw.map((value, index) => [index + 1, value]))
+  // Zoom includes one clipping neighbor each side, as in the existing Min/Max path.
+  assert.deepEqual(prepareChartSeries(all, chart, 1, { min: 10, max: 14 }, setting)[0].data,
+    [[9, 24], [10, 27], [11, 30], [12, 33], [13, 36], [14, 39], [15, 42]])
+  assert.deepEqual(prepareChartSeries({ ...all, showAllRawData: false }, chart, 1, fullRange, setting)[0].data,
+    reduced)
+  assert.deepEqual([...chart.getSeries('V')], raw)
+  const area = { ...all, type: 'area' }
+  assert.deepEqual(prepareChartSeries(area, chart, 1, fullRange, setting),
+    prepareChartSeries({ ...area, showAllRawData: false }, chart, 1, fullRange, setting))
 })
 
-test('incremental chart batches preserve changes across the 25k row IPC boundary', () => {
+test('25k-row incremental chart loading preserves threshold sampling across the boundary', () => {
   const count = 50_002
   const x = sequence(count)
-  const y = new Float64Array(count).fill(100)
-  y[25_000] = 150; y[25_001] = 110; y[25_002] = 135
+  const y = Float64Array.from(x, (_, index) => [100, 160, 50, 140][index % 4])
   const chart = createPageChartData()
   assert.equal(chart.append('V', 0, [...y.subarray(0, 25_000)]), true)
   assert.equal(chart.append('V', 25_000, [...y.subarray(25_000)]), true)
   const panel = addChartPanel([], 'A', ['V'])[0]
   assert.deepEqual(prepareChartSeries(panel, chart, 1, { min: 1, max: count },
-    { enabled: true, thresholdPercent: 5 })[0].data, minMaxDecimate(x, y, 1, 5))
+    { enabled: true, thresholdPercent: 30 })[0].data, minMaxDecimate(x, y, 1, 30))
 })
