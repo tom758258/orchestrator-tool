@@ -664,6 +664,7 @@ function App() {
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
+      setMessagePage(null)
       setRunWorkflowSnapshot(null)
       setChartPanels([])
       setExecutionOffset(0)
@@ -916,6 +917,7 @@ function App() {
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
+      setMessagePage(null)
       setRunWorkflowSnapshot(null)
       setChartPanels([])
       setExecutionOffset(0)
@@ -1197,6 +1199,7 @@ function App() {
       setRunStatus('running')
       setRunMetadata(null)
       setExecutionPage(null)
+      setMessagePage(null)
       setRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
@@ -1252,6 +1255,7 @@ function App() {
       setRunStatus('running')
       setRunMetadata(null)
       setExecutionPage(null)
+      setMessagePage(null)
       setRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
@@ -1304,6 +1308,7 @@ function App() {
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
+      setMessagePage(null)
       setExecutionOffset(0)
       setRunError(null)
       setStopRequest(null)
@@ -2379,7 +2384,7 @@ function App() {
                   </h3>
                   <p className="run-result-count">
                     {messages.total.toLocaleString('en-US')} {messages.total === 1 ? 'message' : 'messages'} · oldest first
-                    {messages.discarded > 0 && ` · showing the most recent ${messages.retained.toLocaleString('en-US')}`}
+                    {messages.discarded > 0 && messages.retained > 0 && ` · showing the most recent ${messages.retained.toLocaleString('en-US')}`}
                   </p>
                   {messagesExpanded && <>
                     <div className="last-run-page-tabs" role="tablist" aria-label="Messages">
@@ -2395,10 +2400,12 @@ function App() {
                     </div>
                     <div id="run-messages-body" role="tabpanel" aria-labelledby={`message-tab-${MESSAGE_TARGETS.indexOf(messageTarget)}`}>
                       {messages.items.length === 0
-                        ? <p className="step-properties-empty">No messages were produced by this run.</p>
+                        ? <p className="step-properties-empty">
+                            {messages.total > 0 ? 'Loading messages…' : 'No messages were produced by this run.'}
+                          </p>
                         : <ol className="run-message-list" aria-label={`${MESSAGE_TARGET_LABELS[messageTarget]} messages`}>
                             {messages.items.map((text, index) => (
-                              <li className="run-message" key={`${messages.revision}:${index}`}>
+                              <li className="run-message" key={`${messageTarget}:${index}`}>
                                 <pre>{text}</pre>
                               </li>
                             ))}

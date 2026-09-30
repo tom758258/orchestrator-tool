@@ -1,4 +1,5 @@
 import type { ComparisonOperator, ExpressionOperandWire, InputValueWire } from './inputValue'
+import { MESSAGE_WINDOW_SIZE } from './executionWindow.ts'
 
 type WaitStep = {
   type: 'wait'
@@ -247,7 +248,8 @@ export function visibleMessageWindow(page: MessageWindowPage | null,
     items,
     total,
     retained: items.length,
-    discarded: Math.max(0, total - items.length),
+    // Count only records evicted by the backend cap, not a window still being fetched.
+    discarded: Math.max(0, total - MESSAGE_WINDOW_SIZE),
     revision: own?.revision ?? 0,
   }
 }

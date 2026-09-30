@@ -134,7 +134,7 @@ pub struct ExecutionRowsDto {
     pub executions: Vec<CompactExecutionDto>,
 }
 
-/// A bounded newest-first window of one Message tab.
+/// A bounded window of one Message tab in production order (oldest retained first).
 #[derive(Serialize)]
 pub struct MessageRowsDto {
     pub run_id: u64,
