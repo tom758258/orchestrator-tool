@@ -12,7 +12,7 @@ import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
-import { pruneChartData, type PageChartData } from './chartData'
+import { pruneChartData, type LiveChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -427,6 +427,8 @@ function App() {
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
+  const [liveChartOptions, setLiveChartOptions] = useState({ enabled: false, threshold: '5' })
+  const [activeLiveChartOptions, setActiveLiveChartOptions] = useState<LiveChartChangeSettings | null>(null)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, Powers: true, Meters: true,
   })
@@ -1145,6 +1147,12 @@ function App() {
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
+      const thresholdText = liveChartOptions.threshold.trim()
+      const thresholdPercent = Number(thresholdText)
+      if (liveChartOptions.enabled &&
+        (thresholdText === '' || !Number.isFinite(thresholdPercent) || thresholdPercent <= 0)) {
+        throw new Error('Live Chart change threshold must be a finite number greater than zero.')
+      }
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
       const [bindings, persistedIdentities] = await Promise.all([
@@ -1189,6 +1197,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('live')
+      setActiveLiveChartOptions(liveChartOptions.enabled ? { enabled: true, thresholdPercent } : null)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1225,7 +1234,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [resourceDrafts, workflowDraft, liveChartOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1246,6 +1255,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('simulate')
+      setActiveLiveChartOptions(null)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1286,6 +1296,10 @@ function App() {
     return command === 'run_workflow_live' ? runLive() : runSimulation()
   }, [executionMode, runLive, runSimulation])
 
+  const liveChartThresholdValue = Number(liveChartOptions.threshold.trim())
+  const liveChartThresholdInvalid = liveChartOptions.enabled &&
+    (liveChartOptions.threshold.trim() === '' || !Number.isFinite(liveChartThresholdValue) || liveChartThresholdValue <= 0)
+
   const workflowBusy =
     choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
   stepEditingBusyRef.current = workflowBusy
@@ -1305,6 +1319,7 @@ function App() {
       runIdRef.current = null
       setRunWorkflowSnapshot(null)
       setChartPanels([])
+      setActiveLiveChartOptions(null)
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
@@ -2327,6 +2342,21 @@ function App() {
                 </section>
               </div>
 
+              {executionMode === 'live' && <fieldset className="live-chart-options" disabled={workflowBusy}>
+                <legend>Live Chart Options</legend>
+                <label><input type="checkbox" checked={liveChartOptions.enabled}
+                  onChange={event => setLiveChartOptions(current => ({ ...current, enabled: event.target.checked }))} />
+                  Preserve Significant Changes</label>
+                <label className="live-chart-threshold">Change Threshold (%)
+                  <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
+                    disabled={!liveChartOptions.enabled} value={liveChartOptions.threshold}
+                    onChange={event => setLiveChartOptions(current => ({ ...current, threshold: event.target.value }))} />
+                </label>
+                <p className="tool-setup-hint">For Live Line Charts only. Adds up to two qualifying points per Min/Max bucket;
+                  dense changes may still be consolidated. Zero to nonzero counts as 100%.</p>
+                {liveChartThresholdInvalid && <p className="error" role="alert">
+                  Change Threshold must be a finite number greater than zero.</p>}
+              </fieldset>}
               <div className="workflow-actions">
                 <button
                   className="action-button"
@@ -2340,7 +2370,7 @@ function App() {
                   className="action-button action-button-primary"
                   type="button"
                   onClick={() => void runSelectedMode()}
-                  disabled={workflowBusy || toolConfigBusy !== null || loading}
+                  disabled={workflowBusy || toolConfigBusy !== null || loading || (executionMode === 'live' && liveChartThresholdInvalid)}
                 >
                   Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
                 </button>
@@ -2560,7 +2590,8 @@ function App() {
                 {runPage && (runWorkspace.starting || runPageMetadata) && <ResultChart key={runPage.name} panels={chartPanels} onPanelsChange={setChartPanels}
                   runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
                   numericNames={chartNumericNames} page={runPage.name}
-                  chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'} />}
+                  chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
+                   liveChangeSettings={lastRunExecutionMode === 'live' ? activeLiveChartOptions : null} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">
