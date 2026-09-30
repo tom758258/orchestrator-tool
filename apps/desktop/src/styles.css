@@ -666,6 +666,28 @@ textarea:disabled {
   margin-top: 16px;
 }
 
+.live-chart-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.live-chart-options > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-chart-options .live-chart-threshold input {
+  width: 104px;
+  max-width: 100%;
+}
+
+.live-chart-options .tool-setup-hint { margin: 0; }
+
 .execution-mode-control {
   display: flex;
   align-items: center;

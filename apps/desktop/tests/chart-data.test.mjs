@@ -7,6 +7,7 @@ import {
   nearestScatterHover,
   minMaxDecimate,
   minMaxDecimateRange,
+  prepareChartSeries,
   pruneChartData,
 } from '../src/chartData.ts'
 import { addChartPanel } from '../src/chartPanels.ts'
@@ -170,7 +171,7 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
 test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
   assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount, isStatistical\]/)
-  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical\]/)
+  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical, liveChangeSettings\]/)
 })
 
 test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
@@ -191,4 +192,81 @@ test('Scatter X remains cached when it is not selected as a Y Output', () => {
   assert.deepEqual([...data.getSeries('V')], [1, 2, 3])
   assert.deepEqual([...data.getSeries('I')], [4, 5, 6])
   assert.equal(data.getSeries('unused').length, 0)
+})
+
+test('optional Live sampling reveals non-extreme reversals without changing default Min/Max', () => {
+  const x = sequence(50)
+  const y = new Float64Array(50).fill(100)
+  y[1] = 150; y[2] = 110; y[3] = 135
+  const normal = minMaxDecimate(x, y, 1)
+  const enabled = minMaxDecimate(x, y, 1, 5)
+  assert.equal(normal.some(([iteration]) => iteration === 3), false)
+  assert.ok(enabled.some(([iteration, value]) => iteration === 3 && value === 110))
+  assert.ok(enabled.some(([iteration, value]) => iteration === 4 && value === 135))
+  assert.ok(enabled.some(([iteration, value]) => iteration === 2 && value === 150))
+  for (const disabled of [null, 0, -1, NaN, Infinity]) {
+    assert.deepEqual(minMaxDecimate(x, y, 1, disabled), normal)
+  }
+  assert.ok(enabled.length <= 6)
+})
+
+test('threshold uses last retained value, cumulative change and zero-value convention', () => {
+  const x = sequence(60)
+  const y = new Float64Array(60).fill(100)
+  y[1] = 150; y[2] = 110; y[3] = 111; y[4] = 112; y[5] = 116
+  const enhanced = minMaxDecimate(x, y, 1, 5)
+  assert.ok(enhanced.some(([iteration, value]) => iteration === 3 && value === 110))
+  assert.ok(enhanced.some(([iteration, value]) => iteration === 6 && value === 116))
+  assert.equal(enhanced.some(([iteration]) => iteration === 4), false)
+  const zero = new Float64Array(30)
+  zero[1] = 10; zero[2] = 0; zero[3] = 1
+  assert.ok(minMaxDecimate(sequence(30), zero, 1, 5).some(([iteration]) => iteration === 4))
+  assert.equal(minMaxDecimate(sequence(30), zero, 1, 101).some(([iteration]) => iteration === 4), false)
+})
+
+test('500k enhanced decimation stays pixel bounded, ordered and viewport-local', () => {
+  const x = sequence(500_000)
+  const y = Float64Array.from(x, (_, index) =>
+    index % 4 === 0 ? 100 : index % 4 === 1 ? 150 : index % 4 === 2 ? 110 : 135)
+  const points = minMaxDecimate(x, y, 320, 5)
+  assert.ok(points.length <= 1282)
+  assert.ok(points.every(([iteration], index) => index === 0 || iteration > points[index - 1][0]))
+  assert.deepEqual(points[0], [1, 100])
+  assert.deepEqual(points.at(-1), [500_000, 135])
+  const zoomed = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 }, 5)
+  assert.ok(zoomed.length <= 1282)
+  assert.ok(zoomed[0][0] >= 199_999 && zoomed.at(-1)[0] <= 205_001)
+  assert.equal(y[2], 110) // raw array has not been mutated
+})
+
+test('Live change sampling applies to Line only and independently to each Output', () => {
+  const chart = createPageChartData()
+  const voltage = new Array(50).fill(100)
+  voltage[1] = 150; voltage[2] = 110; voltage[3] = 135
+  chart.append('V', 0, voltage)
+  chart.append('I', 0, voltage.map(value => value / 10))
+  const panel = { ...addChartPanel([], 'A', ['V'])[0], outputs: ['V', 'I'] }
+  const range = { min: 1, max: 50 }
+  const off = prepareChartSeries(panel, chart, 1, range)
+  const on = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 5 })
+  assert.deepEqual(off, prepareChartSeries(panel, chart, 1, range,
+    { enabled: false, thresholdPercent: 5 }))
+  assert.equal(off[0].data.some(([iteration]) => iteration === 3), false)
+  for (const output of on) assert.ok(output.data.some(([iteration]) => iteration === 3))
+  const area = { ...panel, type: 'area' }
+  assert.deepEqual(prepareChartSeries(area, chart, 1, range,
+    { enabled: true, thresholdPercent: 5 }), prepareChartSeries(area, chart, 1, range))
+})
+
+test('incremental chart batches preserve changes across the 25k row IPC boundary', () => {
+  const count = 50_002
+  const x = sequence(count)
+  const y = new Float64Array(count).fill(100)
+  y[25_000] = 150; y[25_001] = 110; y[25_002] = 135
+  const chart = createPageChartData()
+  assert.equal(chart.append('V', 0, [...y.subarray(0, 25_000)]), true)
+  assert.equal(chart.append('V', 25_000, [...y.subarray(25_000)]), true)
+  const panel = addChartPanel([], 'A', ['V'])[0]
+  assert.deepEqual(prepareChartSeries(panel, chart, 1, { min: 1, max: count },
+    { enabled: true, thresholdPercent: 5 })[0].data, minMaxDecimate(x, y, 1, 5))
 })

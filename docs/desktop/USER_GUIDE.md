@@ -652,6 +652,16 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
+Before selecting Run Live, use Live Chart Options by the Workflow Run button.
+Preserve Significant Changes is off by default; enabling it with a positive finite
+percentage (default 5%) adds at most two qualifying change points per Min/Max
+bucket for each Live Line Output. Changes compare against the last retained point.
+Zero to nonzero is treated as 100%; zero to zero is 0%. Dense events may be
+consolidated, so not every threshold crossing is guaranteed visible. The setting
+is frozen when the run starts and remains applied to its Last Run view; Simulation,
+non-Line charts, raw results, and CSV/XLSX exports are unchanged. This is Desktop
+session state, not Template data.
+
 Only **Line** supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select **Line**,
 **XY Scatter**, **Column**, **Area**, **Bar**, **Combo**, **Histogram**, or

@@ -10,7 +10,8 @@ test('Run Simulation is guarded immediately before React busy state can render',
   assert.match(simulation, /finally \{[\s\S]*releaseRunGate\(runInFlightRef\)/)
   const onClick = source.indexOf('onClick={() => void runSelectedMode()}')
   const button = source.slice(source.lastIndexOf('<button', onClick), source.indexOf('</button>', onClick))
-  assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading\}/)
+  assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading/)
+  assert.match(button, /executionMode === 'live' && liveChartThresholdInvalid/)
 })
 
 test('Simulation validates streaming options before replacing Last Run state', () => {

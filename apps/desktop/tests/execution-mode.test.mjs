@@ -41,3 +41,15 @@ test('Live Resource remains stored for Live mode and saving it does not switch m
   const handler = app.slice(app.indexOf('const handleResource'), app.indexOf('const refreshPowersStatus'))
   assert.doesNotMatch(handler, /setExecutionMode/)
 })
+
+test('optional Live Chart sampling is configured pre-run and frozen outside Template data', () => {
+  assert.match(app, /liveChartOptions.*enabled: false, threshold: '5'/)
+  assert.match(app, /Preserve Significant Changes/)
+  assert.match(app, /liveChartThresholdInvalid/)
+  assert.match(app, /setActiveLiveChartOptions\(liveChartOptions\.enabled \? \{ enabled: true, thresholdPercent \} : null\)/)
+  assert.match(app, /setActiveLiveChartOptions\(null\)/)
+  assert.match(app, /liveChangeSettings=\{lastRunExecutionMode === 'live' \? activeLiveChartOptions : null\}/)
+  const saveTemplate = app.slice(app.indexOf('const handleSaveTemplate'), app.indexOf('const handleSaveTemplate') + 1150)
+  assert.doesNotMatch(saveTemplate, /liveChartOptions|activeLiveChartOptions/)
+  assert.match(app, /fieldset className="live-chart-options" disabled=\{workflowBusy\}/)
+})
