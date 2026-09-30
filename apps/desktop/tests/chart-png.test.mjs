@@ -4,7 +4,7 @@ import { addChartPanel } from '../src/chartPanels.ts'
 import { chartPng } from '../src/chartPng.ts'
 import { init } from 'echarts'
 import { statisticalChartSeries } from '../src/chartStatistics.ts'
-import { chartLayout } from '../src/chartOptions.ts'
+import { chartLayout, chartPresentationOptions, lineRendererSeries } from '../src/chartOptions.ts'
 
 const panel = { ...addChartPanel([], 'A', ['V'])[0],
   zoom: { enabled: true, showSlider: true } }
@@ -115,6 +115,49 @@ test('PNG uses shared legend layout for each position and Scatter display', asyn
         if (legendPosition === 'left' || legendPosition === 'right') {
           assert.equal(calls[0][1].legend.textStyle.overflow, 'truncate')
           assert.equal(calls[2][1].legend.textStyle.width, calls[0][1].legend.textStyle.width)
+        }
+      }
+    }
+  } finally {
+    globalThis.getComputedStyle = original
+    delete globalThis.document
+  }
+})
+
+test('PNG presentation changes retain Line marker series and legend icon data', async () => {
+  const original = globalThis.getComputedStyle
+  globalThis.getComputedStyle = () => ({ getPropertyValue: name => ({
+    '--chart-surface': '#123456', '--ink': '#eeeeee',
+    '--chart-axis': '#aaaaaa', '--chart-grid': '#555555',
+  })[name] ?? '#123456' })
+  globalThis.document = { documentElement: {}, createElement: () => ({ getContext: () => null }) }
+  try {
+    for (const imageBackground of ['light', 'dark']) {
+      for (const markers of [false, true]) {
+        const configured = { ...panel, imageBackground, zoom: { enabled: false, showSlider: true },
+          line: { series: { V: { markers } } },
+          markerStyles: { V: { shape: 'diamond', size: 7, fillColor: '#ffffff', borderColor: '#123456' } } }
+        const rendered = lineRendererSeries(configured, { name: 'V', data: [[1, 2], [2, 3]] }, '#ff0000')
+        const presentation = chartPresentationOptions(configured, 1,
+          { ink: '#eeeeee', axis: '#aaaaaa', grid: '#555555' })
+        const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 640, height: 400 })
+        try {
+          chart.setOption({ animation: false, legend: presentation.legend,
+            xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [rendered] })
+          const beforeSeries = chart.getOption().series
+          const beforeLegend = chart.getOption().legend
+          chart.getDataURL = () => {
+            assert.deepEqual(chart.getOption().series, beforeSeries)
+            assert.deepEqual(chart.getOption().legend[0].data, beforeLegend[0].data)
+            return 'data:image/png;base64,YQ=='
+          }
+          await chartPng(chart, configured)
+          assert.deepEqual(chart.getOption().series, beforeSeries)
+          assert.deepEqual(chart.getOption().legend[0].data, beforeLegend[0].data)
+          assert.equal(beforeSeries[0].symbol, markers ? 'diamond' : 'none')
+          assert.deepEqual(beforeLegend[0].data, markers ? ['V'] : [{ name: 'V', icon: 'line' }])
+        } finally {
+          chart.dispose()
         }
       }
     }

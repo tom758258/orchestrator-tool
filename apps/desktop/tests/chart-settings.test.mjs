@@ -17,6 +17,7 @@ test('Auto axes leave min, max and interval to ECharts', () => {
   }
   assert.equal(options.title.text, '')
   assert.equal(options.legend.show, true)
+  assert.deepEqual(options.legend.data, [{ name: 'V', icon: 'line' }])
   assert.equal(options.xAxis.axisLabel.hideOverlap, true)
   assert.equal(options.yAxis.axisLabel.hideOverlap, true)
 })
@@ -71,6 +72,28 @@ test('legend position reserves the matching edge and honors Show legend for one 
   assert.equal(chartGridLeft(left), chartLayout(left).grid.left)
   const right = { ...titled, legendPosition: 'right' }
   assert.equal(chartGridRight(right), chartLayout(right).grid.right)
+})
+
+test('legend icons match Line, Area, Scatter and Combo marker state', () => {
+  const lineMarkers = { ...panel, line: { series: { V: { markers: true } } } }
+  assert.deepEqual(chartPresentationOptions(lineMarkers, 1, colors).legend.data, ['V'])
+  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'area' }, 1, colors).legend.data,
+    [{ name: 'V', icon: 'line' }])
+  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter',
+    scatter: { ...panel.scatter, display: 'lines' } }, 1, colors).legend.data,
+    [{ name: 'V', icon: 'line' }])
+  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter',
+    scatter: { ...panel.scatter, display: 'lines-markers' } }, 1, colors).legend.data, ['V'])
+  assert.deepEqual(chartPresentationOptions({ ...panel, type: 'scatter' }, 1, colors).legend.data, ['V'])
+
+  const combo = { ...panel, type: 'combo', outputs: ['V', 'I'], combo: { ...panel.combo,
+    series: { V: { kind: 'column', axis: 'left', markers: false },
+      I: { kind: 'line', axis: 'right', markers: false } } } }
+  assert.deepEqual(chartPresentationOptions(combo, 2, colors).legend.data,
+    ['V', { name: 'I', icon: 'line' }])
+  const comboMarkers = { ...combo, combo: { ...combo.combo, series: { ...combo.combo.series,
+    I: { ...combo.combo.series.I, markers: true } } } }
+  assert.deepEqual(chartPresentationOptions(comboMarkers, 2, colors).legend.data, ['V', 'I'])
 })
 
 test('bottom legend separates the zoom slider and right legend leaves Combo right axis space', () => {
@@ -170,6 +193,46 @@ test('Scatter validates active sizes and repairs only invalid inactive values', 
     { display: 'markers', markerSize: 7, lineWidth: 3 })
 })
 
+test('chart settings default new marker state for prior in-memory panels', () => {
+  const { line: _line, markerStyles: _markerStyles, ...legacy } = panel
+  const draft = createChartSettingsDraft(legacy)
+  assert.deepEqual(draft.line, { series: {} })
+  assert.deepEqual(draft.markerStyles, {})
+})
+
+test('Line and Combo marker styles round-trip and validate active per-Output sizes', () => {
+  const configured = { ...panel,
+    line: { series: { V: { markers: true } } },
+    markerStyles: { V: { shape: 'diamond', size: 7, fillColor: '#ffffff', borderColor: '#123456' } } }
+  const draft = createChartSettingsDraft(configured)
+  assert.deepEqual(draft.line, configured.line)
+  assert.deepEqual(draft.markerStyles.V,
+    { shape: 'diamond', size: '7', fillColor: '#ffffff', borderColor: '#123456' })
+  let result = validateChartSettingsDraft(draft)
+  assert.equal(result.error, undefined)
+  assert.deepEqual(result.settings.line, configured.line)
+  assert.deepEqual(result.settings.markerStyles, configured.markerStyles)
+
+  draft.markerStyles.V.size = '0'
+  assert.match(validateChartSettingsDraft(draft).error, /V marker size/)
+  draft.line.series.V.markers = false
+  result = validateChartSettingsDraft(draft)
+  assert.equal(result.error, undefined)
+  assert.equal(result.settings.markerStyles.V.size, 4)
+
+  const comboDraft = createChartSettingsDraft({ ...configured, type: 'combo',
+    combo: { ...panel.combo, series: { V: { kind: 'line', axis: 'right', markers: true } } } })
+  comboDraft.markerStyles.V.size = 'bad'
+  assert.match(validateChartSettingsDraft(comboDraft).error, /V marker size/)
+  comboDraft.combo.series.V.markers = false
+  assert.equal(validateChartSettingsDraft(comboDraft).settings.markerStyles.V.size, 4)
+
+  const scatterDraft = createChartSettingsDraft({ ...configured, type: 'scatter' })
+  scatterDraft.markerStyles.V.size = 'bad'
+  assert.equal(validateChartSettingsDraft(scatterDraft).error, undefined)
+  assert.equal(validateChartSettingsDraft(scatterDraft).settings.markerStyles.V.size, 4)
+})
+
 test('inactive axis numerics do not block Apply and preserve valid hidden values', () => {
   const draft = createChartSettingsDraft(panel)
   draft.combo.rightAxis = { ...draft.combo.rightAxis, title: 'Current',
@@ -241,7 +304,7 @@ test('Bar settings map stored axes to physical X and Y without changing their va
 
 test('Combo and Box settings round-trip and histogram modes validate', () => {
   const combo = { ...panel, type: 'combo', combo: { ...panel.combo,
-    series: { V: { kind: 'line', axis: 'right' } },
+    series: { V: { kind: 'line', axis: 'right', markers: true } },
     rightAxis: { ...panel.combo.rightAxis, title: 'Current', max: 10 } } }
   assert.deepEqual(validateChartSettingsDraft(createChartSettingsDraft(combo)).settings.combo, combo.combo)
   const box = { ...panel, type: 'boxplot', boxPlot: { showOutliers: false } }

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { chartSupportsZoom, comboSeriesSettings, type AxisSettings, type ChartPanel, type ChartType } from './chartPanels'
+import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings,
+  type AxisSettings, type ChartPanel, type ChartType, type MarkerShape } from './chartPanels'
 import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
 
 type AxisKey = 'xAxis' | 'yAxis' | 'rightAxis'
 type NumericKey = 'min' | 'max' | 'interval'
+type MarkerDraft = ChartSettingsDraft['markerStyles'][string]
 const settingsTabs = ['General', 'Series', 'Axes', 'Analysis', 'Export'] as const
 
 export default function ChartSettings({ panel, numericNames, running, hasRows, onApply, onClose }: {
@@ -11,7 +13,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
   numericNames: string[]
   running: boolean
   hasRows: boolean
-  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
+  onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -48,6 +50,63 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
       xAxis: { ...current.xAxis,
         title: current.xAxis.title === (current.scatterXOutput ?? 'Iteration')
           ? value ?? 'Iteration' : current.xAxis.title } }))
+  }
+
+  function defaultMarkerDraft(name: string): MarkerDraft {
+    const marker = markerStyleSettings(panel, name)
+    return { ...marker, size: String(marker.size) }
+  }
+
+  function markerDraft(name: string): MarkerDraft {
+    return Object.prototype.hasOwnProperty.call(draft.markerStyles, name)
+      ? draft.markerStyles[name] : defaultMarkerDraft(name)
+  }
+
+  function updateMarker<K extends keyof MarkerDraft>(name: string, key: K, value: MarkerDraft[K]) {
+    setDraft(current => {
+      const marker = Object.prototype.hasOwnProperty.call(current.markerStyles, name)
+        ? current.markerStyles[name] : defaultMarkerDraft(name)
+      return { ...current, markerStyles: {
+        ...current.markerStyles, [name]: { ...marker, [key]: value },
+      } }
+    })
+    setError(null)
+  }
+
+  function automaticSeriesColor(name: string): string {
+    if (Object.prototype.hasOwnProperty.call(draft.seriesColors, name)) return draft.seriesColors[name]
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(`--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
+  }
+
+  function markerFields(name: string, includeSize: boolean) {
+    const marker = markerDraft(name)
+    const colorField = (key: 'fillColor' | 'borderColor', label: string) => <>
+      <label className="chart-settings-field">{label}
+        <select value={marker[key] === null ? 'auto' : 'custom'} onChange={event =>
+          updateMarker(name, key, event.target.value === 'custom' ? automaticSeriesColor(name) : null)}>
+          <option value="auto">Auto</option><option value="custom">Custom color</option>
+        </select>
+      </label>
+      {marker[key] !== null && <label className="chart-settings-field">Custom {label.toLowerCase()}
+        <input type="color" value={marker[key] ?? ''} onChange={event => updateMarker(name, key, event.target.value)} />
+      </label>}
+    </>
+    return <>
+      {includeSize && <label className="chart-settings-field">Marker size
+        <input type="text" inputMode="decimal" value={marker.size}
+          onChange={event => updateMarker(name, 'size', event.target.value)} />
+      </label>}
+      <label className="chart-settings-field">Marker shape
+        <select value={marker.shape} onChange={event =>
+          updateMarker(name, 'shape', event.target.value as MarkerShape)}>
+          <option value="circle">Circle</option><option value="square">Square</option>
+          <option value="diamond">Diamond</option><option value="triangle">Triangle</option>
+        </select>
+      </label>
+      {colorField('fillColor', 'Marker fill')}
+      {colorField('borderColor', 'Marker border')}
+    </>
   }
 
   function axisFields(axis: AxisKey, label: string) {
@@ -174,6 +233,23 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
             </label>}
           </div>)}
       </fieldset>}
+      {draft.type === 'line' && <fieldset className="chart-settings-general"><legend>Line</legend>
+        {panel.outputs.filter(name => numericNames.includes(name)).map(name => {
+          const series = Object.prototype.hasOwnProperty.call(draft.line.series, name)
+            ? draft.line.series[name] : lineSeriesSettings(panel, name)
+          return <div key={name}><strong>{name}</strong>
+            <label className="chart-settings-field">Style
+              <select value={series.markers ? 'line-markers' : 'line'} onChange={event =>
+                setDraft(current => ({ ...current, line: { series: { ...current.line.series,
+                  [name]: { markers: event.target.value === 'line-markers' },
+                } } }))}>
+                <option value="line">Line</option><option value="line-markers">Line + markers</option>
+              </select>
+            </label>
+            {series.markers && markerFields(name, true)}
+          </div>
+        })}
+      </fieldset>}
       {draft.type === 'boxplot' && <p>No series options for this chart type.</p>}
       {draft.type === 'scatter' && <fieldset className="chart-settings-general">
         <legend>Scatter</legend>
@@ -204,22 +280,40 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
             onChange={event => { setDraft(current => ({ ...current,
               scatter: { ...current.scatter, lineWidth: event.target.value } })); setError(null) }} />
         </label>}
+        {draft.scatter.display !== 'lines' && panel.outputs.filter(name => numericNames.includes(name))
+          .map(name => <div key={name}><strong>{name}</strong>{markerFields(name, false)}</div>)}
       </fieldset>}
       {draft.type === 'combo' && <>
         <fieldset className="chart-settings-general"><legend>Combo</legend>
           {panel.outputs.filter(name => numericNames.includes(name)).map((name, index) => {
-            const series = draft.combo.series[name] ?? comboSeriesSettings(panel, name, index)
-            const update = (key: 'kind' | 'axis', value: string) => setDraft(current => ({
+            const series = Object.prototype.hasOwnProperty.call(draft.combo.series, name)
+              ? draft.combo.series[name] : comboSeriesSettings(panel, name, index)
+            const type = series.kind === 'column' ? 'column' : series.markers ? 'line-markers' : 'line'
+            const updateAxis = (axis: 'left' | 'right') => setDraft(current => ({
               ...current, combo: { ...current.combo, series: { ...current.combo.series,
-                [name]: { ...series, [key]: value } } },
+                [name]: { ...series, axis } } },
+            }))
+            const updateType = (value: string) => setDraft(current => ({
+              ...current,
+              combo: {
+                ...current.combo,
+                series: {
+                  ...current.combo.series,
+                  [name]: value === 'column'
+                    ? { ...series, kind: 'column', markers: false }
+                    : { ...series, kind: 'line', markers: value === 'line-markers' },
+                },
+              },
             }))
             return <div key={name}><strong>{name}</strong>
-              <label className="chart-settings-field">Type<select value={series.kind}
-                onChange={event => update('kind', event.target.value)}>
-                <option value="column">Column</option><option value="line">Line</option></select></label>
+              <label className="chart-settings-field">Type<select value={type}
+                onChange={event => updateType(event.target.value)}>
+                <option value="column">Column</option><option value="line">Line</option>
+                <option value="line-markers">Line + markers</option></select></label>
               <label className="chart-settings-field">Axis<select value={series.axis}
-                onChange={event => update('axis', event.target.value)}>
+                onChange={event => updateAxis(event.target.value as 'left' | 'right')}>
                 <option value="left">Left Y</option><option value="right">Right Y</option></select></label>
+              {series.kind === 'line' && series.markers && markerFields(name, true)}
             </div>
           })}
         </fieldset>

@@ -6,7 +6,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
-  chartZoomSliderBottom, comboRendererSeries, scatterRendererSeries } from './chartOptions'
+  chartZoomSliderBottom, comboRendererSeries, lineRendererSeries, scatterRendererSeries } from './chartOptions'
 import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 
 use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
@@ -76,9 +76,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       switch (panel.type) {
         case 'line':
         case 'area':
-          return { ...series, type: 'line' as const, showSymbol: false,
-            silent: true, emphasis: { disabled: true }, itemStyle: { color },
-            ...(panel.type === 'area' ? { areaStyle: { opacity: 0.18 } } : {}) }
+          return lineRendererSeries(panel, series, color)
         case 'column':
         case 'bar':
           return { ...series,
