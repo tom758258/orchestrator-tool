@@ -666,7 +666,7 @@ textarea:disabled {
   margin-top: 16px;
 }
 
-.live-chart-options {
+.chart-sampling-options {
   display: grid;
   gap: 8px;
   margin-top: 16px;
@@ -675,18 +675,18 @@ textarea:disabled {
   border-radius: var(--radius);
 }
 
-.live-chart-options > label {
+.chart-sampling-options > label {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.live-chart-options .live-chart-threshold input {
+.chart-sampling-options .chart-sampling-threshold input {
   width: 104px;
   max-width: 100%;
 }
 
-.live-chart-options .tool-setup-hint { margin: 0; }
+.chart-sampling-options .tool-setup-hint { margin: 0; }
 
 .execution-mode-control {
   display: flex;

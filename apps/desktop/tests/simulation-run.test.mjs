@@ -11,7 +11,22 @@ test('Run Simulation is guarded immediately before React busy state can render',
   const onClick = source.indexOf('onClick={() => void runSelectedMode()}')
   const button = source.slice(source.lastIndexOf('<button', onClick), source.indexOf('</button>', onClick))
   assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading/)
-  assert.match(button, /executionMode === 'live' && liveChartThresholdInvalid/)
+  // Chart Sampling is mode-independent, so an invalid threshold blocks Simulation too.
+  assert.match(button, /\|\| chartThresholdInvalid\}/)
+  assert.doesNotMatch(button, /executionMode === 'live' &&/)
+})
+
+test('Simulation snapshots Chart Sampling Options the same way Live does', () => {
+  assert.match(simulation, /const chartSampling = chartSamplingOptions\.enabled\s*\n\s*\? chartSamplingSnapshot\(chartSamplingOptions\) : null/)
+  assert.match(simulation, /setRunChartSampling\(chartSampling\)/)
+  // Simulation no longer discards the option unconditionally.
+  assert.doesNotMatch(simulation, /setRunChartSampling\(null\)/)
+  // The threshold is validated before the Last Run is replaced, so a bad value
+  // cannot destroy the previous run.
+  assert.ok(simulation.indexOf('chartSamplingSnapshot(') < simulation.indexOf('setRunWorkflowSnapshot(workflowDraft)'))
+  assert.ok(simulation.indexOf('chartSamplingSnapshot(') < simulation.indexOf('runIdRef.current = null'))
+  // Changing the option for the next run does not alter the current Last Run chart.
+  assert.match(simulation, /\}, \[workflowDraft, chartSamplingOptions, receiveRunProgress,/)
 })
 
 test('Simulation validates streaming options before replacing Last Run state', () => {

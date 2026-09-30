@@ -12,7 +12,7 @@ import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
-import { pruneChartData, type LiveChartChangeSettings, type PageChartData } from './chartData'
+import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -358,6 +358,19 @@ type MessageRowsResponse = {
 
 const EMPTY_MESSAGE_COUNTS: readonly MessageWindow[] = []
 
+/**
+ * Both run paths snapshot the Chart Sampling Options through this one rule, so
+ * Simulation and Live cannot disagree about an invalid threshold. Called only when the
+ * option is enabled; throws before a run starts if the threshold is unusable.
+ */
+function chartSamplingSnapshot(options: { enabled: boolean; threshold: string }): ChartChangeSettings {
+  const thresholdPercent = parseChartThresholdPercent(options.threshold)
+  if (Number.isNaN(thresholdPercent)) {
+    throw new Error('Chart Sampling change threshold must be a finite number greater than zero.')
+  }
+  return { enabled: true, thresholdPercent }
+}
+
 function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {  if (!enabled) return null
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
     .slice(0, 19).replace(/[T:]/g, '-')
@@ -427,8 +440,9 @@ function App() {
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
-  const [liveChartOptions, setLiveChartOptions] = useState({ enabled: false, threshold: '5' })
-  const [activeLiveChartOptions, setActiveLiveChartOptions] = useState<LiveChartChangeSettings | null>(null)
+  const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5' })
+  // Snapshot of the Chart Sampling Options captured when the current run started.
+  const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, Powers: true, Meters: true,
   })
@@ -1147,12 +1161,10 @@ function App() {
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
-      const thresholdText = liveChartOptions.threshold.trim()
-      const thresholdPercent = Number(thresholdText)
-      if (liveChartOptions.enabled &&
-        (thresholdText === '' || !Number.isFinite(thresholdPercent) || thresholdPercent <= 0)) {
-        throw new Error('Live Chart change threshold must be a finite number greater than zero.')
-      }
+      // Validate before any Last Run state is replaced, so an invalid threshold cannot
+      // discard the previous run.
+      const chartSampling = chartSamplingOptions.enabled
+        ? chartSamplingSnapshot(chartSamplingOptions) : null
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
       const [bindings, persistedIdentities] = await Promise.all([
@@ -1197,7 +1209,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('live')
-      setActiveLiveChartOptions(liveChartOptions.enabled ? { enabled: true, thresholdPercent } : null)
+      setRunChartSampling(chartSampling)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1234,7 +1246,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, liveChartOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [resourceDrafts, workflowDraft, chartSamplingOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1245,6 +1257,9 @@ function App() {
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
+      // Validate before any Last Run state is replaced, matching the Live path.
+      const chartSampling = chartSamplingOptions.enabled
+        ? chartSamplingSnapshot(chartSamplingOptions) : null
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages,
       )
@@ -1255,7 +1270,7 @@ function App() {
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('simulate')
-      setActiveLiveChartOptions(null)
+      setRunChartSampling(chartSampling)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1289,16 +1304,17 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [workflowDraft, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [workflowDraft, chartSamplingOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
     return command === 'run_workflow_live' ? runLive() : runSimulation()
   }, [executionMode, runLive, runSimulation])
 
-  const liveChartThresholdValue = Number(liveChartOptions.threshold.trim())
-  const liveChartThresholdInvalid = liveChartOptions.enabled &&
-    (liveChartOptions.threshold.trim() === '' || !Number.isFinite(liveChartThresholdValue) || liveChartThresholdValue <= 0)
+  // Uses the same parser as both run paths, so the button gate and the run-time
+  // rejection can never disagree.
+  const chartThresholdInvalid = chartSamplingOptions.enabled &&
+    Number.isNaN(parseChartThresholdPercent(chartSamplingOptions.threshold))
 
   const workflowBusy =
     choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
@@ -1319,7 +1335,7 @@ function App() {
       runIdRef.current = null
       setRunWorkflowSnapshot(null)
       setChartPanels([])
-      setActiveLiveChartOptions(null)
+      setRunChartSampling(null)
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
@@ -2342,21 +2358,21 @@ function App() {
                 </section>
               </div>
 
-              {executionMode === 'live' && <fieldset className="live-chart-options" disabled={workflowBusy}>
-                <legend>Live Chart Options</legend>
-                <label><input type="checkbox" checked={liveChartOptions.enabled}
-                  onChange={event => setLiveChartOptions(current => ({ ...current, enabled: event.target.checked }))} />
+              <fieldset className="chart-sampling-options" disabled={workflowBusy}>
+                <legend>Chart Sampling Options</legend>
+                <label><input type="checkbox" checked={chartSamplingOptions.enabled}
+                  onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
                   Preserve Significant Changes</label>
-                <label className="live-chart-threshold">Change Threshold (%)
+                <label className="chart-sampling-threshold">Change Threshold (%)
                   <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
-                    disabled={!liveChartOptions.enabled} value={liveChartOptions.threshold}
-                    onChange={event => setLiveChartOptions(current => ({ ...current, threshold: event.target.value }))} />
+                    disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
+                    onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
                 </label>
-                <p className="tool-setup-hint">For Live Line Charts only. Adds up to two qualifying points per Min/Max bucket;
-                  dense changes may still be consolidated. Zero to nonzero counts as 100%.</p>
-                {liveChartThresholdInvalid && <p className="error" role="alert">
+                <p className="tool-setup-hint">Applies to Line Charts in both Simulation and Live. Adds up to two qualifying
+                  points per Min/Max bucket; dense changes may still be consolidated. Zero to nonzero counts as 100%.</p>
+                {chartThresholdInvalid && <p className="error" role="alert">
                   Change Threshold must be a finite number greater than zero.</p>}
-              </fieldset>}
+              </fieldset>
               <div className="workflow-actions">
                 <button
                   className="action-button"
@@ -2370,7 +2386,7 @@ function App() {
                   className="action-button action-button-primary"
                   type="button"
                   onClick={() => void runSelectedMode()}
-                  disabled={workflowBusy || toolConfigBusy !== null || loading || (executionMode === 'live' && liveChartThresholdInvalid)}
+                  disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid}
                 >
                   Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
                 </button>
@@ -2591,7 +2607,7 @@ function App() {
                   runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
                   numericNames={chartNumericNames} page={runPage.name}
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
-                   liveChangeSettings={lastRunExecutionMode === 'live' ? activeLiveChartOptions : null} />}
+                   changeSettings={runChartSampling} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">

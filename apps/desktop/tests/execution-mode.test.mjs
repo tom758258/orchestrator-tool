@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { parseChartThresholdPercent } from '../src/chartData.ts'
 
 const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const setup = readFileSync(new URL('../src/ToolSetupEditor.tsx', import.meta.url), 'utf8')
@@ -42,14 +43,52 @@ test('Live Resource remains stored for Live mode and saving it does not switch m
   assert.doesNotMatch(handler, /setExecutionMode/)
 })
 
-test('optional Live Chart sampling is configured pre-run and frozen outside Template data', () => {
-  assert.match(app, /liveChartOptions.*enabled: false, threshold: '5'/)
+test('Chart Sampling is shared by Simulation and Live, configured pre-run and frozen outside Template data', () => {
+  // Available in both modes, and named as a general chart setting rather than a Live one.
+  assert.match(app, /chartSamplingOptions.*enabled: false, threshold: '5'/)
+  assert.match(app, /<legend>Chart Sampling Options<\/legend>/)
   assert.match(app, /Preserve Significant Changes/)
-  assert.match(app, /liveChartThresholdInvalid/)
-  assert.match(app, /setActiveLiveChartOptions\(liveChartOptions\.enabled \? \{ enabled: true, thresholdPercent \} : null\)/)
-  assert.match(app, /setActiveLiveChartOptions\(null\)/)
-  assert.match(app, /liveChangeSettings=\{lastRunExecutionMode === 'live' \? activeLiveChartOptions : null\}/)
+  assert.doesNotMatch(app, /Live Chart Options|liveChartOptions|activeLiveChartOptions/)
+
+  // One shared rule snapshots the setting and rejects an invalid threshold.
+  assert.match(app, /function chartSamplingSnapshot\(options: \{ enabled: boolean; threshold: string \}\)/)
+  assert.match(app, /Chart Sampling change threshold must be a finite number greater than zero\./)
+  // Both run paths validate first and store the same snapshot.
+  const simulation = app.slice(app.indexOf('const runSimulation'), app.indexOf('const runSelectedMode'))
+  const live = app.slice(app.indexOf('const runLive'), app.indexOf('const runSimulation'))
+  for (const [label, run] of [['Simulation', simulation], ['Live', live]]) {
+    assert.match(run, /const chartSampling = chartSamplingOptions\.enabled\s*\n\s*\? chartSamplingSnapshot\(chartSamplingOptions\) : null/, label)
+    // Validation must precede any Last Run state being replaced.
+    assert.ok(run.indexOf('chartSamplingSnapshot(') < run.indexOf('setRunWorkflowSnapshot(workflowDraft)'), label)
+    assert.ok(run.indexOf('chartSamplingSnapshot(') < run.indexOf('runIdRef.current = null'), label)
+    assert.match(run, /setRunChartSampling\(chartSampling\)/, label)
+  }
+  // The snapshot is stored, not the live form value, and is cleared with the Last Run.
+  assert.doesNotMatch(app, /setRunChartSampling\(chartSamplingOptions\)/)
+  assert.match(app, /setRunChartSampling\(null\)/)
+
+  // The Last Run chart always uses the snapshot, with no mode condition.
+  assert.match(app, /changeSettings=\{runChartSampling\} \/>/)
+  assert.doesNotMatch(app, /lastRunExecutionMode === 'live' \?/)
+
+  // An invalid threshold blocks the single mode-aware Run button in both modes.
+  const onClick = app.indexOf('onClick={() => void runSelectedMode()}')
+  const button = app.slice(app.lastIndexOf('<button', onClick), app.indexOf('</button>', onClick))
+  assert.match(button, /\|\| chartThresholdInvalid\}/)
+  assert.doesNotMatch(button, /executionMode === 'live' &&/)
+
   const saveTemplate = app.slice(app.indexOf('const handleSaveTemplate'), app.indexOf('const handleSaveTemplate') + 1150)
-  assert.doesNotMatch(saveTemplate, /liveChartOptions|activeLiveChartOptions/)
-  assert.match(app, /fieldset className="live-chart-options" disabled=\{workflowBusy\}/)
+  assert.doesNotMatch(saveTemplate, /chartSamplingOptions|runChartSampling/)
+})
+
+test('both run paths reject the same invalid thresholds through one shared parser', () => {
+  for (const valid of ['5', ' 5 ', '0.5', '100', '1e2']) {
+    assert.equal(parseChartThresholdPercent(valid), Number(valid.trim()), valid)
+  }
+  for (const invalid of ['', '   ', '0', '0.0', '-5', '-0.1', 'abc', '5abc', 'NaN',
+    'Infinity', '-Infinity', '1/0']) {
+    assert.ok(Number.isNaN(parseChartThresholdPercent(invalid)), `expected ${invalid} to be invalid`)
+  }
+  // Disabled sampling never inspects the threshold, so an empty field is harmless.
+  assert.match(app, /const chartThresholdInvalid = chartSamplingOptions\.enabled &&/)
 })

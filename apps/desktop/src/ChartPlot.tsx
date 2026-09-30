@@ -3,7 +3,7 @@ import { init, use, type EChartsType } from 'echarts/core'
 import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type LiveChartChangeSettings, type PageChartData } from './chartData'
+import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type ChartChangeSettings, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
   chartZoomSliderBottom, comboRendererSeries, lineRendererSeries, scatterRendererSeries } from './chartOptions'
@@ -19,13 +19,13 @@ function autoSeriesColor(name: string, numericNames: string[]): string {
     `--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
 }
 
-export default function ChartPlot({ panel, data, numericNames, charts, statistical, liveChangeSettings }: {
+export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings }: {
   panel: ChartPanel
   data: PageChartData
   numericNames: string[]
   charts: Map<number, EChartsType>
   statistical?: StatisticalDto
-  liveChangeSettings?: LiveChartChangeSettings | null
+  changeSettings?: ChartChangeSettings | null
 }) {
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -64,8 +64,8 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     ? zoomRange ?? fullDomain
     : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
   const display = useMemo(() => isStatistical ? [] : prepareChartSeries(panel, data,
-    Math.max(1, width - chartGridLeft(panel) - chartGridRight(panel)), visibleRange, liveChangeSettings),
-  [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical, liveChangeSettings])
+    Math.max(1, width - chartGridLeft(panel) - chartGridRight(panel)), visibleRange, changeSettings),
+  [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical, changeSettings])
   const statistic = useMemo(() => statistical
     ? statisticalChartSeries(panel, statistical,
       getComputedStyle(document.documentElement).getPropertyValue('--chart-series-1').trim()) : null,

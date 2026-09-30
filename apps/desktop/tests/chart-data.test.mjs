@@ -171,7 +171,7 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
 test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
   const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
   assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount, isStatistical\]/)
-  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical, liveChangeSettings\]/)
+  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical, changeSettings\]/)
 })
 
 test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
@@ -239,7 +239,7 @@ test('500k enhanced decimation stays pixel bounded, ordered and viewport-local',
   assert.equal(y[2], 110) // raw array has not been mutated
 })
 
-test('Live change sampling applies to Line only and independently to each Output', () => {
+test('change sampling applies to Line only and independently to each Output, in any run mode', () => {
   const chart = createPageChartData()
   const voltage = new Array(50).fill(100)
   voltage[1] = 150; voltage[2] = 110; voltage[3] = 135
@@ -256,6 +256,31 @@ test('Live change sampling applies to Line only and independently to each Output
   const area = { ...panel, type: 'area' }
   assert.deepEqual(prepareChartSeries(area, chart, 1, range,
     { enabled: true, thresholdPercent: 5 }), prepareChartSeries(area, chart, 1, range))
+})
+
+test('a tool-free For + Output workflow samples Line charts the same way with no Tool Instance', () => {
+  // The Simulation-only scenario: a sweep with no instrument produces chart data,
+  // and the sampling option changes only the Line decimation.
+  const count = 40
+  const chart = createPageChartData()
+  chart.append('I', 0, Array.from({ length: count }, (_, index) => index + 1))
+  const values = new Array(count).fill(100)
+  values[2] = 140; values[3] = 105; values[4] = 130
+  chart.append('Sweep', 0, values)
+  const panel = addChartPanel([], 'A', ['Sweep'])[0]
+  const range = { min: 1, max: count }
+
+  const off = prepareChartSeries(panel, chart, 1, range)
+  const on = prepareChartSeries(panel, chart, 1, range, { enabled: true, thresholdPercent: 5 })
+  assert.equal(panel.type, 'line')
+  // Disabled keeps the original Min/Max result; enabled adds the significant change.
+  assert.equal(off[0].data.some(([iteration]) => iteration === 4), false)
+  assert.ok(on[0].data.some(([iteration]) => iteration === 4))
+  assert.ok(on[0].data.length > off[0].data.length)
+  // Non-Line charts are untouched by the option, and Raw Data is never involved here.
+  const scatter = { ...panel, type: 'scatter', scatter: { ...panel.scatter, display: 'lines' } }
+  assert.deepEqual(prepareChartSeries(scatter, chart, 1, range, { enabled: true, thresholdPercent: 5 }),
+    prepareChartSeries(scatter, chart, 1, range))
 })
 
 test('incremental chart batches preserve changes across the 25k row IPC boundary', () => {

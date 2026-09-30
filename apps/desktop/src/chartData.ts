@@ -189,7 +189,18 @@ export function nearestScatterHover(
   return best
 }
 
-export type LiveChartChangeSettings = { enabled: boolean; thresholdPercent: number }
+export type ChartChangeSettings = { enabled: boolean; thresholdPercent: number }
+
+/**
+ * Parses the Chart Sampling threshold field for both Simulation and Live, so both run
+ * paths reject the same inputs. Returns NaN when the text is blank, not a finite
+ * number, or not greater than zero.
+ */
+export function parseChartThresholdPercent(threshold: string): number {
+  const text = threshold.trim()
+  const value = Number(text)
+  return text === '' || !Number.isFinite(value) || value <= 0 ? Number.NaN : value
+}
 
 // A defined convention avoids divide-by-zero: zero to nonzero is 100%, zero to zero is 0%.
 function isSignificantChange(reference: number, current: number, thresholdPercent: number): boolean {
@@ -274,7 +285,7 @@ export function minMaxDecimate(
 }
 
 export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixelWidth: number,
-  range: { min: number; max: number }, liveChangeSettings: LiveChartChangeSettings | null = null,
+  range: { min: number; max: number }, changeSettings: ChartChangeSettings | null = null,
 ): { name: string; data: [number, number][] }[] {
   const count = data.commonLength(chartRequiredOutputs(panel))
   const iteration = data.iteration.subarray(0, count)
@@ -286,7 +297,7 @@ export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixel
     if (panel.type === 'line' || panel.type === 'area' ||
       (panel.type === 'combo' && comboSeriesSettings(panel, name, seriesIndex).kind === 'line')) {
       return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range,
-        panel.type === 'line' && liveChangeSettings?.enabled ? liveChangeSettings.thresholdPercent : null) }
+        panel.type === 'line' && changeSettings?.enabled ? changeSettings.thresholdPercent : null) }
     }
     const pairs: [number, number][] = []
     const start = panel.type === 'scatter' || panel.type === 'bar' ? 0 : first

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
 import ChartSettings from './ChartSettings'
-import { chartLoadGroups, chartNeedsLoad, createPageChartData, type LiveChartChangeSettings, type PageChartData } from './chartData'
+import { chartLoadGroups, chartNeedsLoad, createPageChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { addChartPanel, canRemoveChartPanel, chartSupportsLive, chartRawOutputs, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
@@ -15,7 +15,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, liveChangeSettings }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -26,7 +26,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   onPanelsChange: (panels: ChartPanel[]) => void
   numericNames: string[]
   running: boolean
-  liveChangeSettings?: LiveChartChangeSettings | null
+  changeSettings?: ChartChangeSettings | null
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
@@ -256,7 +256,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             <ChartPlot panel={visiblePanel}
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined}
-              liveChangeSettings={liveChangeSettings} />
+              changeSettings={changeSettings} />
           )}
           {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
