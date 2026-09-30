@@ -189,9 +189,18 @@ export function nearestScatterHover(
   return best
 }
 
+export type LiveChartChangeSettings = { enabled: boolean; thresholdPercent: number }
+
+// A defined convention avoids divide-by-zero: zero to nonzero is 100%, zero to zero is 0%.
+function isSignificantChange(reference: number, current: number, thresholdPercent: number): boolean {
+  if (!Number.isFinite(reference) || !Number.isFinite(current)) return false
+  if (reference === 0) return current !== 0 && thresholdPercent <= 100
+  return Math.abs((current - reference) / reference) * 100 >= thresholdPercent
+}
+
 export function minMaxDecimateRange(
   iteration: Float64Array, values: Float64Array, pixelWidth: number,
-  range: { min: number; max: number },
+  range: { min: number; max: number }, changeThresholdPercent: number | null = null,
 ): [number, number][] {
   const count = Math.min(iteration.length, values.length)
   if (count === 0 || range.max < iteration[0] || range.min > iteration[count - 1]) return []
@@ -208,21 +217,25 @@ export function minMaxDecimateRange(
   }
   const start = Math.max(0, lowerBound(range.min, true) - 1)
   const end = Math.min(count, lowerBound(range.max, false) + 1)
-  return minMaxDecimate(iteration.subarray(start, end), values.subarray(start, end), pixelWidth)
+  return minMaxDecimate(iteration.subarray(start, end), values.subarray(start, end), pixelWidth, changeThresholdPercent)
 }
 
 export function minMaxDecimate(
   iteration: Float64Array, values: Float64Array, pixelWidth: number,
+  changeThresholdPercent: number | null = null,
 ): [number, number][] {
   const count = values.length
   const buckets = Math.max(1, Math.floor(pixelWidth))
   const points: [number, number][] = []
   const append = (index: number) => points.push([iteration[index], values[index]])
+  const preserveChanges = changeThresholdPercent !== null &&
+    Number.isFinite(changeThresholdPercent) && changeThresholdPercent > 0
   if (count <= buckets * 2) {
     for (let index = 0; index < count; index++) append(index)
     return points
   }
   append(0)
+  let previousRetainedIndex = 0
   for (let bucket = 0; bucket < buckets; bucket++) {
     const start = Math.floor(bucket * count / buckets)
     const end = Math.floor((bucket + 1) * count / buckets)
@@ -232,8 +245,28 @@ export function minMaxDecimate(
       if (values[index] < values[min]) min = index
       if (values[index] > values[max]) max = index
     }
-    for (const index of min === max ? [min] : [Math.min(min, max), Math.max(min, max)]) {
+    const extrema = min === max ? [min] : [Math.min(min, max), Math.max(min, max)]
+    if (!preserveChanges) {
+      // Keep the original Min/Max output exactly the same when this option is off.
+      for (const index of extrema) {
+        if (points.at(-1)![0] !== iteration[index]) append(index)
+      }
+      continue
+    }
+    const selected = new Set(extrema)
+    let referenceIndex = previousRetainedIndex
+    let extraCount = 0
+    for (let index = start; index < end; index++) {
+      if (selected.has(index)) { referenceIndex = index; continue }
+      if (extraCount < 2 && isSignificantChange(values[referenceIndex], values[index], changeThresholdPercent!)) {
+        selected.add(index)
+        referenceIndex = index
+        extraCount++
+      }
+    }
+    for (const index of [...selected].sort((a, b) => a - b)) {
       if (points.at(-1)![0] !== iteration[index]) append(index)
+      previousRetainedIndex = index
     }
   }
   if (points.at(-1)![0] !== iteration[count - 1]) append(count - 1)
@@ -241,7 +274,8 @@ export function minMaxDecimate(
 }
 
 export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixelWidth: number,
-  range: { min: number; max: number }): { name: string; data: [number, number][] }[] {
+  range: { min: number; max: number }, liveChangeSettings: LiveChartChangeSettings | null = null,
+): { name: string; data: [number, number][] }[] {
   const count = data.commonLength(chartRequiredOutputs(panel))
   const iteration = data.iteration.subarray(0, count)
   const first = Math.max(0, Math.ceil(range.min) - 1)
@@ -251,7 +285,8 @@ export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixel
     const values = data.getSeries(name).subarray(0, count)
     if (panel.type === 'line' || panel.type === 'area' ||
       (panel.type === 'combo' && comboSeriesSettings(panel, name, seriesIndex).kind === 'line')) {
-      return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range) }
+      return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range,
+        panel.type === 'line' && liveChangeSettings?.enabled ? liveChangeSettings.thresholdPercent : null) }
     }
     const pairs: [number, number][] = []
     const start = panel.type === 'scatter' || panel.type === 'bar' ? 0 : first
