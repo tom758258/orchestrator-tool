@@ -614,16 +614,29 @@ disk and cannot be exported.</p>
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.</p>
 <p>Chart Sampling Options sits by the Workflow Run button and applies to both
-Simulation and Live, so you can check chart behaviour without hardware first.
-Preserve Significant Changes is off by default; enabling it with a positive finite
-percentage (default 5%) adds at most two qualifying change points per Min/Max
-bucket for each Line Output. Changes compare against the last retained point.
-Zero to nonzero is treated as 100%; zero to zero is 0%. Dense events may be
-consolidated, so not every threshold crossing is guaranteed visible. A blank, zero,
-or negative threshold blocks the Run button in both modes. The setting is
-snapshotted when the run starts and remains applied to that run's Last Run view;
-later edits affect only the next run. Non-Line charts, raw results, and CSV/XLSX
-exports are unchanged. This is Desktop session state, not Template data.</p>
+Simulation and Live. Preserve Significant Changes is off by default; enabling it
+with a positive finite percentage (default 5%) changes how Line Chart data is
+downsampled. Each pixel bucket compares raw values against a fixed reference:
+if only higher values meet the percentage threshold, it selects their Max; if
+only lower values qualify, it selects their Min; if both qualify, it selects
+both in original Iteration order. If neither qualifies, the bucket uses its
+last raw point. The last qualifying representative becomes the next bucket's
+reference; quiet buckets keep the previous reference so cumulative drift is
+not lost. First/last global points are also preserved. When fewer samples
+than twice the bucket count are visible, all points are shown without further
+reduction. Zero to nonzero counts as 100%; zero to zero counts as 0%.
+A blank, zero, or negative threshold blocks Run in both modes when enabled.
+The setting is snapshotted at RUN start, retained by that Last Run, and remains
+Desktop session state (not Template data). Turning it off keeps the original
+Min/Max rendering.</p>
+<p>For a Line Chart, Chart Settings → General → <strong>Show All Raw Data</strong> (off by default)
+bypasses downsampling and draws every loaded raw sample in the visible X range,
+including the two neighboring clipping samples when available. It takes effect
+immediately, even during a run, independently for each Chart; you do not need
+to RUN again. Line markers are configured separately under Series. Displaying
+all raw data can slow the Desktop interface or make it temporarily unresponsive,
+especially during Live. Neither display mode modifies committed Raw Data,
+CSV/XLSX exports or non-Line charts.</p>
 <p>Only <strong>Line</strong> supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select <strong>Line</strong>,
 <strong>XY Scatter</strong>, <strong>Column</strong>, <strong>Area</strong>, <strong>Bar</strong>, <strong>Combo</strong>, <strong>Histogram</strong>, or

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { addChartPanel, seriesColor } from '../src/chartPanels.ts'
 import { chartGridLeft, chartGridRight, chartLayout, chartPresentationOptions,
@@ -479,4 +480,27 @@ test('Normal mean must be finite and standard deviation must be finite and posit
   draft.histogram.stdDev = '0'
   assert.deepEqual(validateChartSettingsDraft(draft).settings.histogram,
     { ...panel.histogram, mean: null, stdDev: null })
+})
+
+test('Show All Raw Data is off by default and round-trips through Chart Settings', () => {
+  assert.equal(panel.showAllRawData, false)
+  const oldPanel = { ...panel }
+  delete oldPanel.showAllRawData
+  assert.equal(createChartSettingsDraft(oldPanel).showAllRawData, false)
+  const draft = createChartSettingsDraft(panel)
+  assert.equal(draft.showAllRawData, false)
+  draft.showAllRawData = true
+  const saved = validateChartSettingsDraft(draft).settings
+  assert.equal(saved.showAllRawData, true)
+  assert.equal(createChartSettingsDraft({ ...panel, ...saved }).showAllRawData, true)
+  draft.showAllRawData = false
+  assert.equal(validateChartSettingsDraft(draft).settings.showAllRawData, false)
+  assert.equal(panel.showAllRawData, false)
+})
+
+test('Show All is a Line-only General setting with an explicit Live rendering warning', () => {
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  assert.match(source, /draft\.type === 'line' && <>[\s\S]*?Show All Raw Data/)
+  assert.match(source, /checked=\{draft\.showAllRawData\}/)
+  assert.match(source, /may[\s\S]*?Desktop interface to lag[\s\S]*?Live execution/)
 })

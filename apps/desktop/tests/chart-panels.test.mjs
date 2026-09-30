@@ -80,7 +80,7 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
     scatterXOutput: null, scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
     line: { series: {} }, markerStyles: {}, seriesColors: {},
     showLegend: true, legendPosition: 'top',
-    imageBackground: 'light',
+    imageBackground: 'light', showAllRawData: false,
     zoom: { enabled: false, showSlider: true },
     xAxis: { title: 'Iteration', min: null, max: null, interval: null,
       showLabels: true, showTicks: true, showMajorGrid: false },
