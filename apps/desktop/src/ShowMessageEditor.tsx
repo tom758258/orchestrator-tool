@@ -93,7 +93,7 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
               </label>}
 
           {index < step.fields.length - 1 && (
-            <label className="step-property-field">
+            <label className="step-property-field show-message-newline">
               <input type="checkbox" checked={field.newline} disabled={disabled}
                 onChange={event => updateField(index, { ...field,
                   newline: event.target.checked })} />

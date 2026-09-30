@@ -847,6 +847,17 @@ textarea:disabled {
   font-size: 0.85rem;
 }
 
+.show-message-newline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.show-message-newline input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 .show-message-preview pre {
   max-height: 140px;
   overflow: auto;
