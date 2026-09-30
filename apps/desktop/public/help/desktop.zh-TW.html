@@ -356,6 +356,68 @@ Measure batches。Assert、Set Variable、While condition 與 Tool Action bindin
 <p>Expansion 只影響所屬 Page，且會維持 staged 狀態直到 owning scope 或 iteration
 成功。CSV streaming、manual CSV/XLSX export 與 Charts 直接使用展開後的 committed
 rows，不會再做第二次 expansion。</p>
+<h3 id="66-show-message">6.6 Show Message</h3>
+<p><strong>Show Message</strong> step 會在 Workflow 執行時將文字寫入 Messages Panel。它唯一的用途
+就是輸出訊息：不是 Popup、不是 Assert，也不是 Output Page，因此不會為你的資料、CSV
+或 Charts 增加欄位。</p>
+<ul>
+<li><strong>Target Message</strong> 可選擇 <strong>Message 1</strong>、<strong>Message 2</strong> 或 <strong>Message 3</strong>，預設為
+  Message 1。</li>
+<li><strong>Content Fields</strong> 構成訊息內容。每個 step 最少 1 個、最多 10 個 field，預設建立
+  1 個空白 String。可使用 <strong>Add Field</strong> 與 <strong>Delete Field</strong> 調整數量，Fields 依畫面
+  順序串接。</li>
+<li><strong>String</strong> field 為自行輸入的文字，最多 256 個字元。</li>
+<li><strong>Output</strong> field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
+  目前 step 之前、在當前 loop scope 內可見的 Outputs。Show Message 的 Output 必須是
+  單一數值，不支援 Custom Meters batch。若參考的值不是單一數字、文字或 Boolean，該
+  step 會明確報錯，不會寫出部分訊息。</li>
+<li><strong>Newline</strong> 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
+  Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。</li>
+</ul>
+<p><strong>Message Preview</strong> 會在編輯時顯示組合結果。Output field 以名稱作為佔位符號，因此不必
+先執行 Workflow 就能確認版面。以下設定：</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Value</th>
+<th>Newline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>String</td>
+<td><code>Iteration:</code></td>
+<td>Off</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Output</td>
+<td><code>Iteration</code></td>
+<td>On</td>
+</tr>
+<tr>
+<td>3</td>
+<td>String</td>
+<td><code>Double:</code></td>
+<td>Off</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Output</td>
+<td><code>Double</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>會產生：</p>
+<pre><code class="language-text">Iteration: 3000
+Double: 6000
+</code></pre>
+<p>因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
+目前的 iteration，不會取用上一輪的值。</p>
 <h2 id="7-run-simulation">7. Run Simulation</h2>
 <p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
@@ -419,6 +481,7 @@ manual export 不同。</p>
 <ul>
 <li><strong>Last Run Execution Results</strong> — execution statuses 與 progress results；大量
   execution results 以 latest first 顯示並可分頁瀏覽。</li>
+<li><strong>Messages</strong> — Show Message step 在執行時寫入的文字。</li>
 <li><strong>Last Run</strong> — 目前 run 的 Output Pages 與 result workspace。</li>
 <li><strong>Charts</strong> — 所選 Page 的 chart panels。</li>
 <li><strong>Summary</strong> — 適用時顯示 numeric Count、Min、Max 與 Avg。</li>
@@ -435,7 +498,22 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 被呈現為 real-hardware success。</p>
 <p>若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
 停止後可以 manual export。</p>
-<h3 id="102-charts">10.2 Charts</h3>
+<h3 id="102-收合結果面板">10.2 收合結果面板</h3>
+<p><strong>Last Run Execution Results</strong> 與 <strong>Messages</strong> 的標題右側各有 <code>+ / −</code> 控制。兩者
+預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
+資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。</p>
+<p><strong>Last Run Execution Results</strong> 收合後仍保留標題、Execution Mode badge 與 execution
+數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。</p>
+<h3 id="103-messages">10.3 Messages</h3>
+<p><strong>Messages</strong> 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：<strong>Message
+1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 以 latest
+first 依序保留自己的訊息，訊息內的換行也會保留。切換 tab 或收合面板都不會遺失訊息。</p>
+<p>由於 loop 可能執行大量次數，每個 tab 僅保留最近 1,000 筆訊息。摘要列仍會顯示該次 run
+產生的訊息總數，因此可以知道是否還有更早的訊息。</p>
+<p>訊息屬於產生它的那一次 run。開始新一輪 run 會清空訊息；run 失敗或 graceful stop 則會
+保留當輪已產生的訊息。<strong>Clear Last Run</strong>、New Template 與 Open Template 都會一併清除
+訊息。訊息不會存檔，也無法 export。</p>
+<h3 id="104-charts">10.4 Charts</h3>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。</p>
@@ -522,7 +600,7 @@ Export PNG 與 Remove 會停用。它們不會載入即時 chart data，executio
 的 plot，也不載入 chart data；資料可用後才開始即時更新。
 <strong>+ Add Chart</strong> 仍建立 Line chart。<strong>Open Template</strong>、替換 workflow 與
 <strong>Clear Last Run</strong> 會清除 chart session state。Chart settings 不屬於 Template data。</p>
-<h3 id="103-data-與-summary">10.3 Data 與 Summary</h3>
+<h3 id="105-data-與-summary">10.5 Data 與 Summary</h3>
 <p><strong>Output Data</strong> 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。</p>
 <p><strong>Summary</strong> 預設顯示 Count、Min、Max 與 Avg。<strong>Columns ▾</strong> 可分別控制這些欄位，

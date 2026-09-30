@@ -16,9 +16,9 @@ use crate::{
     tool_instance::ToolInstanceId,
     worker::WorkerSession,
     workflow::{
-        ForIteration, InputValue, ResultRow, Step, StepExecution, StepId, StepKind, StepOutcome,
-        StepResult, WhileIteration, WorkflowOutput, WorkflowRunEvent, WorkflowRunResult,
-        WorkflowRunSummary,
+        ForIteration, InputValue, MessageFieldKind, MessageRecord, MessageTarget, ResultRow, Step,
+        StepExecution, StepId, StepKind, StepOutcome, StepResult, WhileIteration, WorkflowOutput,
+        WorkflowRunEvent, WorkflowRunResult, WorkflowRunSummary,
     },
 };
 
@@ -216,6 +216,13 @@ impl Execution<'_> {
             };
             if let StepOutcome::Succeeded { output } = &outcome {
                 self.data.set_step_output(step.id().clone(), output.clone());
+                // A Show Message record is emitted only after the step actually succeeded.
+                if let (Some(target), Value::String(text)) = (show_message_target(step), output) {
+                    notify_progress(
+                        self.on_event,
+                        WorkflowRunEvent::MessageEmitted(MessageRecord::new(target, text.clone())),
+                    );
+                }
                 if let StepKind::Output { name, .. } = step.kind() {
                     let index = staged
                         .iter()
@@ -492,9 +499,67 @@ fn execute_non_loop_step(
             ),
             Err(message) => StepOutcome::Failed { message },
         },
+        StepKind::ShowMessage { fields, .. } => match compose_message(fields, data_context) {
+            Ok(text) => StepOutcome::Succeeded {
+                output: Value::String(text),
+            },
+            Err(message) => StepOutcome::Failed { message },
+        },
         StepKind::For { .. } | StepKind::While { .. } => {
             unreachable!("loops execute through run_loop")
         }
+    }
+}
+
+/// Concatenates Show Message fields in order, appending a newline after every
+/// field flagged for one and always terminating the record with a single newline.
+fn compose_message(
+    fields: &[crate::workflow::MessageField],
+    data_context: &DataContext,
+) -> Result<String, String> {
+    let last = fields.len().saturating_sub(1);
+    let mut text = String::new();
+    for (index, field) in fields.iter().enumerate() {
+        match field.kind() {
+            MessageFieldKind::Text(value) => text.push_str(value),
+            MessageFieldKind::Output(reference) => {
+                let value = data_context
+                    .resolve(&InputValue::StepOutput(reference.clone()))
+                    .map_err(|error| error.to_string())?;
+                text.push_str(&scalar_message_text(&value, reference.step_id())?);
+            }
+        }
+        // The last field always ends the record, so its own flag must not add a blank line.
+        if index < last && field.newline() {
+            text.push('\n');
+        }
+    }
+    text.push('\n');
+    Ok(text)
+}
+
+/// Show Message displays a single scalar value; structured values are reported explicitly.
+fn scalar_message_text(value: &Value, step_id: &StepId) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        Value::Number(number) => Ok(number.to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        Value::Null => Ok("null".to_owned()),
+        Value::Array(_) | Value::Object(_) => Err(format!(
+            "show-message Output {step_id} resolved to a {}; only a single scalar value is supported",
+            match value {
+                Value::Array(_) => "batch",
+                _ => "structured value",
+            }
+        )),
+    }
+}
+
+/// Returns the target of a Show Message step, used to route its emitted record.
+fn show_message_target(step: &Step) -> Option<MessageTarget> {
+    match step.kind() {
+        StepKind::ShowMessage { target, .. } => Some(*target),
+        _ => None,
     }
 }
 
@@ -591,6 +656,7 @@ mod tests {
         WorkflowExecutionError, execute_workflow, execute_workflow_streaming_with_loop_stop,
         execute_workflow_with_events,
     };
+    use crate::workflow::{Expression, ExpressionOperator};
 
     #[test]
     fn streaming_execution_emits_full_runtime_values_without_retaining_a_run_result() {
@@ -629,10 +695,15 @@ mod tests {
         run::ExecutionMode,
         tool_instance::ToolInstanceId,
         workflow::{
-            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, Step, StepId,
-            StepKind, StepOutcome, StepOutputReference, VariableId, Workflow, WorkflowRunEvent,
+            ActionId, ExpressionOperand, InputValue, MessageField, MessageTarget, NumericRange,
+            Step, StepId, StepKind, StepOutcome, StepOutputReference, VariableId, Workflow,
+            WorkflowRunEvent,
         },
     };
+
+    fn decimal(value: &str) -> rust_decimal::Decimal {
+        rust_decimal::Decimal::from_str_exact(value).unwrap()
+    }
 
     fn graceful_stop_run(is_while: bool, fail_body: bool) {
         use std::cell::RefCell;
@@ -1597,6 +1668,346 @@ mod tests {
         );
         // wait-2 must not have executed
         assert!(!results.iter().any(|r| r.step_id().as_str() == "wait-2"));
+    }
+
+    // Runs a workflow in Simulation mode and returns the emitted events.
+    fn run_simulation(workflow: &Workflow) -> (super::WorkflowRunSummary, Vec<WorkflowRunEvent>) {
+        let mut events = Vec::new();
+        let summary = execute_workflow_streaming_with_loop_stop(
+            &test_template(workflow),
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+            |event| events.push(event),
+            |_| false,
+        )
+        .unwrap();
+        (summary, events)
+    }
+
+    fn messages_of(events: &[WorkflowRunEvent]) -> Vec<(MessageTarget, String)> {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                WorkflowRunEvent::MessageEmitted(record) => {
+                    Some((record.target(), record.text().to_owned()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn show_message(id: &str, target: MessageTarget, fields: Vec<MessageField>) -> Step {
+        Step::new(
+            StepId::new(id).unwrap(),
+            StepKind::ShowMessage { target, fields },
+        )
+    }
+
+    #[test]
+    fn show_message_concatenates_fields_and_always_ends_with_one_newline() {
+        let output = Step::new(
+            StepId::new("double").unwrap(),
+            StepKind::Output {
+                name: "Double".to_owned(),
+                value: InputValue::Literal(json!({ "Iteration": 3000, "Double": 6000 })),
+            },
+        );
+        // The documented example: Iteration 3000 then Double 6000 on separate lines.
+        let message = show_message(
+            "show-message-1",
+            MessageTarget::Message1,
+            vec![
+                MessageField::text("Iteration: ", false),
+                MessageField::output(
+                    StepOutputReference::new(output.id().clone(), "/Iteration"),
+                    true,
+                ),
+                MessageField::text("Double: ", false),
+                MessageField::output(
+                    StepOutputReference::new(output.id().clone(), "/Double"),
+                    false,
+                ),
+            ],
+        );
+        let (summary, events) = run_simulation(&Workflow::new(vec![output, message]).unwrap());
+
+        assert!(summary.succeeded());
+        assert_eq!(
+            messages_of(&events),
+            vec![(
+                MessageTarget::Message1,
+                "Iteration: 3000\nDouble: 6000\n".to_owned()
+            )]
+        );
+        // Show Message keeps a normal StepExecution record and creates no Output Page.
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WorkflowRunEvent::StepCompleted(execution)
+                if execution.step_id().as_str() == "show-message-1"
+                    && execution.outcome() == &StepOutcome::Succeeded { output: json!("Iteration: 3000\nDouble: 6000\n") }
+        )));
+    }
+
+    #[test]
+    fn show_message_terminating_newline_never_produces_a_blank_line() {
+        for last_newline in [false, true] {
+            let message = show_message(
+                "show-message-1",
+                MessageTarget::Message1,
+                vec![
+                    MessageField::text("a", true),
+                    MessageField::text("b", last_newline),
+                ],
+            );
+            let (_, events) = run_simulation(&Workflow::new(vec![message]).unwrap());
+            assert_eq!(
+                messages_of(&events),
+                vec![(MessageTarget::Message1, "a\nb\n".to_owned())],
+                "last_newline={last_newline}"
+            );
+        }
+    }
+
+    #[test]
+    fn show_message_routes_each_target_independently_in_emission_order() {
+        let workflow = Workflow::new(vec![
+            show_message(
+                "m-1",
+                MessageTarget::Message2,
+                vec![MessageField::text("two-a", false)],
+            ),
+            show_message(
+                "m-2",
+                MessageTarget::Message1,
+                vec![MessageField::text("one-a", false)],
+            ),
+            show_message(
+                "m-3",
+                MessageTarget::Message3,
+                vec![MessageField::text("three-a", false)],
+            ),
+            show_message(
+                "m-4",
+                MessageTarget::Message1,
+                vec![MessageField::text("one-b", false)],
+            ),
+        ])
+        .unwrap();
+        let (_, events) = run_simulation(&workflow);
+
+        assert_eq!(
+            messages_of(&events),
+            vec![
+                (MessageTarget::Message2, "two-a\n".to_owned()),
+                (MessageTarget::Message1, "one-a\n".to_owned()),
+                (MessageTarget::Message3, "three-a\n".to_owned()),
+                (MessageTarget::Message1, "one-b\n".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn show_message_inside_a_loop_resolves_the_current_iteration_output() {
+        // The Output reads the For variable, so a stale value would show the previous iteration.
+        let body = vec![
+            Step::new(
+                StepId::new("iteration").unwrap(),
+                StepKind::Output {
+                    name: "Iteration".to_owned(),
+                    value: InputValue::Variable(VariableId::new("i").unwrap()),
+                },
+            ),
+            show_message(
+                "report",
+                MessageTarget::Message1,
+                vec![
+                    MessageField::text("Iteration: ", false),
+                    MessageField::output(
+                        StepOutputReference::new(StepId::new("iteration").unwrap(), ""),
+                        false,
+                    ),
+                ],
+            ),
+        ];
+        let workflow = Workflow::new(vec![Step::new(
+            StepId::new("sweep").unwrap(),
+            StepKind::For {
+                variable: VariableId::new("i").unwrap(),
+                range: NumericRange::new(decimal("1"), decimal("3"), decimal("1")).unwrap(),
+                body,
+            },
+        )])
+        .unwrap();
+        let (summary, events) = run_simulation(&workflow);
+
+        assert!(summary.succeeded());
+        assert_eq!(
+            messages_of(&events),
+            vec![
+                (MessageTarget::Message1, "Iteration: 1\n".to_owned()),
+                (MessageTarget::Message1, "Iteration: 2\n".to_owned()),
+                (MessageTarget::Message1, "Iteration: 3\n".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn show_message_renders_scalars_and_rejects_structured_values() {
+        for (value, expected) in [
+            (json!("text"), "text"),
+            (json!(12.5), "12.5"),
+            (json!(true), "true"),
+            (json!(null), "null"),
+        ] {
+            let output = Step::new(
+                StepId::new("value").unwrap(),
+                StepKind::Output {
+                    name: "Value".to_owned(),
+                    value: InputValue::Literal(value.clone()),
+                },
+            );
+            let message = show_message(
+                "show-message-1",
+                MessageTarget::Message1,
+                vec![MessageField::output(
+                    StepOutputReference::new(output.id().clone(), ""),
+                    false,
+                )],
+            );
+            let (summary, events) = run_simulation(&Workflow::new(vec![output, message]).unwrap());
+            assert!(summary.succeeded(), "{value}");
+            assert_eq!(
+                messages_of(&events),
+                vec![(MessageTarget::Message1, format!("{expected}\n"))]
+            );
+        }
+
+        for value in [json!([1, 2]), json!({ "value": 1 })] {
+            let output = Step::new(
+                StepId::new("value").unwrap(),
+                StepKind::Output {
+                    name: "Value".to_owned(),
+                    value: InputValue::Literal(value),
+                },
+            );
+            let message = show_message(
+                "show-message-1",
+                MessageTarget::Message1,
+                vec![MessageField::output(
+                    StepOutputReference::new(output.id().clone(), ""),
+                    false,
+                )],
+            );
+            let wait = Step::new(
+                StepId::new("wait-1").unwrap(),
+                StepKind::Wait { duration_ms: 0 },
+            );
+            let (summary, events) =
+                run_simulation(&Workflow::new(vec![output, message, wait]).unwrap());
+
+            // An unusable value fails explicitly and emits no message.
+            assert!(!summary.succeeded());
+            assert!(messages_of(&events).is_empty());
+            assert!(events.iter().any(|event| matches!(
+                event,
+                WorkflowRunEvent::StepCompleted(execution)
+                    if matches!(&execution.outcome(),
+                        StepOutcome::Failed { message }
+                            if message.contains("show-message Output value") && message.contains("scalar"))
+            )));
+        }
+    }
+
+    #[test]
+    fn messages_produced_before_a_failure_are_still_emitted() {
+        let failing = Step::new(
+            StepId::new("assert-1").unwrap(),
+            StepKind::Assert {
+                condition: Expression::new(
+                    ExpressionOperand::Literal(json!(false)),
+                    ExpressionOperator::Equal,
+                    ExpressionOperand::Literal(json!(true)),
+                ),
+                message: String::new(),
+            },
+        );
+        let workflow = Workflow::new(vec![
+            show_message(
+                "before",
+                MessageTarget::Message1,
+                vec![MessageField::text("kept", false)],
+            ),
+            failing,
+            show_message(
+                "after",
+                MessageTarget::Message1,
+                vec![MessageField::text("lost", false)],
+            ),
+        ])
+        .unwrap();
+        let (summary, events) = run_simulation(&workflow);
+
+        assert!(!summary.succeeded());
+        assert_eq!(
+            messages_of(&events),
+            vec![(MessageTarget::Message1, "kept\n".to_owned())]
+        );
+    }
+
+    #[test]
+    fn messages_survive_a_graceful_loop_stop() {
+        // The message is produced before the loop is stopped, so it must already be emitted.
+        let workflow = Workflow::new(vec![
+            show_message(
+                "before",
+                MessageTarget::Message1,
+                vec![MessageField::text("kept", false)],
+            ),
+            Step::new(
+                StepId::new("sweep").unwrap(),
+                StepKind::For {
+                    variable: VariableId::new("x").unwrap(),
+                    range: NumericRange::new(decimal("1"), decimal("5"), decimal("1")).unwrap(),
+                    body: vec![show_message(
+                        "tick",
+                        MessageTarget::Message1,
+                        vec![MessageField::text("tick", false)],
+                    )],
+                },
+            ),
+        ])
+        .unwrap();
+        let mut events = Vec::new();
+        let emitted_ticks = std::cell::Cell::new(0usize);
+        let counter = &emitted_ticks;
+        let summary = execute_workflow_streaming_with_loop_stop(
+            &test_template(&workflow),
+            &HashMap::new(),
+            ExecutionMode::Simulate,
+            Duration::from_secs(5),
+            |event| {
+                if matches!(&event, WorkflowRunEvent::MessageEmitted(record)
+                    if record.text() == "tick\n")
+                {
+                    counter.set(counter.get() + 1);
+                }
+                events.push(event)
+            },
+            // Stop the loop once its first iteration has committed.
+            |step_id| step_id.as_str() == "sweep" && emitted_ticks.get() >= 1,
+        )
+        .unwrap();
+
+        // A graceful stop still completes the run successfully.
+        assert!(summary.succeeded());
+        assert_eq!(
+            messages_of(&events),
+            vec![
+                (MessageTarget::Message1, "kept\n".to_owned()),
+                (MessageTarget::Message1, "tick\n".to_owned()),
+            ]
+        );
     }
 
     fn test_template(workflow: &Workflow) -> crate::template::Template {

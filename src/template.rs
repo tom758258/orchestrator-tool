@@ -15,8 +15,9 @@ use crate::{
     tool_instance::{EmptySetup, ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
         ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, InvalidActionId,
-        InvalidStepId, InvalidVariableId, NumericRange, Step, StepId, StepKind,
-        StepOutputReference, VariableId, Workflow, WorkflowError,
+        InvalidStepId, InvalidVariableId, MessageField, MessageFieldKind, MessageTarget,
+        NumericRange, Step, StepId, StepKind, StepOutputReference, VariableId, Workflow,
+        WorkflowError,
     },
 };
 
@@ -375,6 +376,18 @@ fn validate_batch_sources(
                     }
                 }
                 StepKind::For { body, .. } => validate_steps(body, sources, page_sources)?,
+                StepKind::ShowMessage { fields, .. } => {
+                    // Show Message renders one scalar, so batch-dependent values are rejected.
+                    for field in fields {
+                        if let MessageFieldKind::Output(reference) = field.kind() {
+                            reject_batch(
+                                &InputValue::StepOutput(reference.clone()),
+                                sources,
+                                &format!("step {}", step.id()),
+                            )?;
+                        }
+                    }
+                }
                 StepKind::Wait { .. } => {}
             }
         }
@@ -587,6 +600,44 @@ enum StepWire {
         range: NumericRangeWire,
         steps: Vec<StepWire>,
     },
+    ShowMessage {
+        id: String,
+        target: MessageTarget,
+        fields: Vec<MessageFieldWire>,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum MessageFieldWire {
+    Text {
+        text: String,
+        #[serde(default)]
+        newline: bool,
+    },
+    Output {
+        step_id: String,
+        #[serde(default)]
+        pointer: String,
+        #[serde(default)]
+        newline: bool,
+    },
+}
+
+impl MessageFieldWire {
+    fn from_field(field: &MessageField) -> Self {
+        match field.kind() {
+            MessageFieldKind::Text(text) => Self::Text {
+                text: text.clone(),
+                newline: field.newline(),
+            },
+            MessageFieldKind::Output(reference) => Self::Output {
+                step_id: reference.step_id().as_str().to_owned(),
+                pointer: reference.pointer().to_owned(),
+                newline: field.newline(),
+            },
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -677,6 +728,11 @@ impl StepWire {
                     step: range.step().to_string(),
                 },
                 steps: body.iter().map(StepWire::from_step).collect(),
+            },
+            StepKind::ShowMessage { target, fields } => Self::ShowMessage {
+                id: step.id().as_str().to_owned(),
+                target: *target,
+                fields: fields.iter().map(MessageFieldWire::from_field).collect(),
             },
         }
     }
@@ -980,6 +1036,35 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                 },
             ))
         }
+        StepWire::ShowMessage { id, target, fields } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let fields = fields
+                .into_iter()
+                .map(|field| match field {
+                    MessageFieldWire::Text { text, newline } => {
+                        Ok(MessageField::text(text, newline))
+                    }
+                    MessageFieldWire::Output {
+                        step_id,
+                        pointer,
+                        newline,
+                    } => {
+                        let referenced = StepId::new(&step_id).map_err(|source| {
+                            TemplateError::InvalidStepId {
+                                value: step_id,
+                                source,
+                            }
+                        })?;
+                        Ok(MessageField::output(
+                            StepOutputReference::new(referenced, pointer),
+                            newline,
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>, TemplateError>>()?;
+            Ok(Step::new(step_id, StepKind::ShowMessage { target, fields }))
+        }
     }
 }
 
@@ -1004,8 +1089,9 @@ mod tests {
         tool::ToolId,
         tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
         workflow::{
-            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
-            Step, StepId, StepKind, StepOutputReference, VariableId, Workflow,
+            ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue,
+            MessageFieldKind, MessageTarget, NumericRange, Step, StepId, StepKind,
+            StepOutputReference, VariableId, Workflow, WorkflowError,
         },
     };
 
@@ -1527,6 +1613,58 @@ mod tests {
             assert_eq!(serde_json::from_str::<Value>(&saved).unwrap(), wire);
             assert_eq!(Template::from_json_str(&saved).unwrap(), template);
         }
+    }
+
+    #[test]
+    fn show_message_round_trips_in_schema_one_without_storing_records() {
+        let wire = json!({
+            "schema_version": 1, "name": "Messages", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "output", "id": "iteration", "name": "Iteration", "page": "Results",
+                  "value": { "source": "literal", "value": 3000 } },
+                { "type": "show-message", "id": "show-message-1", "target": "message-2",
+                  "fields": [
+                    { "kind": "text", "text": "Iteration: ", "newline": false },
+                    { "kind": "output", "step_id": "iteration", "pointer": "", "newline": true }
+                ] }
+            ] }
+        });
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+
+        let StepKind::ShowMessage { target, fields } = template.workflow().steps()[1].kind() else {
+            panic!("expected a show-message step")
+        };
+        assert_eq!(*target, MessageTarget::Message2);
+        assert_eq!(fields.len(), 2);
+        assert!(matches!(fields[0].kind(), MessageFieldKind::Text(text) if text == "Iteration: "));
+        assert!(!fields[0].newline());
+        assert!(
+            matches!(fields[1].kind(), MessageFieldKind::Output(reference)
+            if reference.step_id().as_str() == "iteration" && reference.pointer().is_empty())
+        );
+        assert!(fields[1].newline());
+
+        // The canonical save is byte-identical and reloads to an equal template.
+        let saved = template.to_json_string().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&saved).unwrap(), wire);
+        assert_eq!(Template::from_json_str(&saved).unwrap(), template);
+
+        // A reference to a later step is rejected by the shared validation.
+        let invalid = json!({
+            "schema_version": 1, "name": "Messages", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "show-message", "id": "show-message-1", "target": "message-1",
+                  "fields": [ { "kind": "output", "step_id": "later", "pointer": "", "newline": false } ] },
+                { "type": "output", "id": "later", "name": "Later", "page": "Results",
+                  "value": { "source": "literal", "value": 1 } }
+            ] }
+        });
+        assert!(matches!(
+            Template::from_json_str(&invalid.to_string()),
+            Err(TemplateError::Workflow(
+                WorkflowError::InvalidStepOutputReference { .. }
+            ))
+        ));
     }
 
     #[test]

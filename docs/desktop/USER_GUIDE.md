@@ -451,6 +451,49 @@ Expansion is Page-local and remains staged until the owning scope or iteration
 succeeds. CSV streaming, manual CSV/XLSX export, and Charts consume the
 resulting committed rows without another expansion pass.
 
+### 6.6 Show Message
+
+A **Show Message** step writes text to the Messages Panel while the workflow
+runs. Its only purpose is that message: it is not a Popup, not an Assert, and
+not an Output Page, so it never adds columns to your data, CSV, or charts.
+
+- **Target Message** selects **Message 1**, **Message 2**, or **Message 3**.
+  The default is Message 1.
+- **Content Fields** hold the message. A step needs at least 1 and at most 10
+  fields, and the default is one empty String field. Use **Add Field** and
+  **Delete Field** to change the count. Fields are joined in the order shown.
+- A **String** field is text you type, up to 256 characters.
+- An **Output** field shows the value of an Output step. The list shows Output
+  names, and only Outputs that come earlier in the workflow and are visible in
+  the current loop scope are offered. A Show Message Output must be a single
+  value; a Custom Meters batch is not supported. If a referenced value is not a
+  single number, piece of text, or Boolean, the step fails with a clear error
+  instead of writing a partial message.
+- **Newline** adds a line break after that field. Every message ends with a
+  line break on its own, so two Show Message steps never run together on the
+  same line, and the last field does not need a Newline checkbox.
+
+**Message Preview** shows the combined result while you edit. An Output field is
+shown with its name as a placeholder, so you do not need to run the workflow
+to check the layout. This example:
+
+| Field | Type | Value | Newline |
+|---|---|---|---|
+| 1 | String | `Iteration: ` | Off |
+| 2 | Output | `Iteration` | On |
+| 3 | String | `Double: ` | Off |
+| 4 | Output | `Double` | — |
+
+produces:
+
+```text
+Iteration: 3000
+Double: 6000
+```
+
+Because the fields are resolved when the step runs, a Show Message inside a For
+or While loop always reports the current iteration, never a previous one.
+
 ## 7. Run Simulation
 
 Before Simulation, configure every referenced external executable and ensure
@@ -540,6 +583,7 @@ After a run, the Output area can show the following visible sections:
 
 - **Last Run Execution Results** — execution statuses and progress results,
   shown latest first when the result list is paged.
+- **Messages** — text written by Show Message steps during the run.
 - **Last Run** — the current run's Output Pages and result workspace.
 - **Charts** — chart panels for the selected Page.
 - **Summary** — numeric Count, Min, Max, and Avg values when applicable.
@@ -562,7 +606,36 @@ a simulated success is never presented as a real-hardware success.
 If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.
 
-### 10.2 Charts
+### 10.2 Collapsing the result panels
+
+**Last Run Execution Results** and **Messages** each have a `+ / −` control on
+the right of their heading. Both start expanded, and each collapses on its own
+without affecting the other. Collapsing changes what is displayed only: it
+never removes execution data, stops a run, or clears results. Expanding again
+restores the same position in the result list.
+
+When **Last Run Execution Results** is collapsed it keeps its heading, the
+Execution Mode badge, and the execution count summary. The execution list and
+its Newer / Older paging are hidden until it is expanded.
+
+### 10.3 Messages
+
+**Messages** collects the text written by Show Message steps. It has three
+independent tabs, **Message 1**, **Message 2**, and **Message 3**, and a step
+chooses which one it writes to. Each tab keeps its own messages in the order the
+workflow produced them, newest first, and a message keeps its own line breaks.
+Switching tabs or collapsing the panel never discards a message.
+
+Because a loop can run many times, each tab keeps only its most recent 1,000
+messages. The summary line shows the total number of messages the run produced,
+so you can still see that older messages exist.
+
+Messages belong to the run that produced them. Starting a new run clears them,
+while a run that fails or is stopped keeps the messages it already wrote.
+**Clear Last Run**, a new Template, and opening a Template all clear them with
+the rest of the Last Run. Messages are not saved to disk and cannot be exported.
+
+### 10.4 Charts
 
 Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
@@ -679,7 +752,7 @@ or loading chart data. It then updates live, and **+ Add Chart** still creates a
 **Open Template**, workflow replacement, and **Clear Last Run** reset chart
 session state. Chart settings are not Template data.
 
-### 10.3 Data and Summary
+### 10.5 Data and Summary
 
 **Output Data** is built from committed ResultRows. Large tables use
 virtualization for display, but the rows remain available for charts and

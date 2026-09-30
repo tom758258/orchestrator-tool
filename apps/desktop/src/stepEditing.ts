@@ -135,6 +135,8 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
       case 'output': return { ...next, value: input(next.value) }
       case 'assert':
       case 'while': return { ...next, left: operand(next.left), right: operand(next.right) }
+      case 'show-message': return { ...next, fields: next.fields.map(field =>
+        field.kind === 'output' ? { ...field, step_id: idMap.get(field.step_id) ?? field.step_id } : field) }
       case 'tool-action': return next.bindings
         ? { ...next, bindings: Object.fromEntries(Object.entries(next.bindings).map(([key, value]) => [key, input(value)])) }
         : next

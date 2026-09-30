@@ -21,6 +21,8 @@ type OutputStep = {
   value: InputValueWire
 }
 
+export type { OutputStep }
+
 type AssertStep = {
   type: 'assert'
   id: string
@@ -28,6 +30,25 @@ type AssertStep = {
   operator: ComparisonOperator
   right: ExpressionOperandWire
   message: string
+}
+
+export type MessageTargetWire = 'message-1' | 'message-2' | 'message-3'
+export const MESSAGE_TARGETS: MessageTargetWire[] = ['message-1', 'message-2', 'message-3']
+export const MESSAGE_TARGET_LABELS: Record<MessageTargetWire, string> = {
+  'message-1': 'Message 1', 'message-2': 'Message 2', 'message-3': 'Message 3',
+}
+export const MAX_MESSAGE_FIELDS = 10
+export const MAX_MESSAGE_TEXT_CHARS = 256
+
+export type MessageFieldWire =
+  | { kind: 'text'; text: string; newline: boolean }
+  | { kind: 'output'; step_id: string; pointer: string; newline: boolean }
+
+export type ShowMessageStep = {
+  type: 'show-message'
+  id: string
+  target: MessageTargetWire
+  fields: MessageFieldWire[]
 }
 
 export type ToolActionStep = {
@@ -39,7 +60,7 @@ export type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
-export type NonLoopWorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep
+export type NonLoopWorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {
   type: 'for'
   id: string
@@ -102,6 +123,8 @@ export type RunMetadataDto = {
   latest_execution: StepExecutionDto | null
   pages: RunPageMetadata[]
   step_summaries: StepSummaryDto[]
+  message_revision: number
+  messages: { target: MessageTargetWire; total: number }[]
 }
 
 export type WorkflowRunEventDto = {
@@ -193,6 +216,24 @@ export function compatibleOutputPages(steps: readonly WorkflowStep[], outputId: 
 
 export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] {
   return allWorkflowSteps(steps).filter((step): step is OutputStep => step.type === 'output')
+}
+
+/** Output steps that a Show Message field may reference from the current lexical scope. */
+export function showMessageOutputCandidates(steps: readonly WorkflowStep[]): OutputStep[] {
+  return steps.filter((step): step is OutputStep => step.type === 'output')
+}
+
+/**
+ * Concatenates Show Message fields the same way the Core executor does: a newline follows
+ * every field flagged for one, and the record always ends with exactly one newline.
+ */
+export function composeMessageText(fields: readonly MessageFieldWire[],
+  outputName: (stepId: string) => string | undefined): string {
+  const last = Math.max(0, fields.length - 1)
+  return fields.map((field, index) => {
+    const text = field.kind === 'text' ? field.text : `{${outputName(field.step_id) ?? field.step_id}}`
+    return index < last && field.newline ? `${text}\n` : text
+  }).join('') + (fields.length > 0 ? '\n' : '')
 }
 
 

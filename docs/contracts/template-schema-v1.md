@@ -128,6 +128,7 @@ Schema v1 supports these step kinds:
   and optional InputValue bindings.
 - For: bind a loop variable over an exact numeric range and execute a body.
 - While: evaluate a comparison and execute a body repeatedly.
+- Show Message: write one message to a Messages Panel tab while the workflow runs.
 
 Powers `set-output` sets one or both power supply setpoints without enabling
 output. Its required `channel` is a positive integer. Optional `voltage` and
@@ -176,6 +177,48 @@ must refer to an earlier step that is visible from the current lexical scope.
 For and While bodies are ordered step lists. Loop nesting is limited to five
 levels. There is no break, continue, boolean expression tree, or timeout
 semantics in schema v1.
+
+## Show Message semantics
+
+A `show-message` step writes text to one of three independent Messages Panel
+tabs. It produces no Output Page, ResultRow, Popup, or Assert, and it does not
+affect CSV or chart data. It resolves its fields when it executes, so an Output
+reference always reads the value from the current iteration rather than a
+previous loop pass.
+
+`target` is `message-1`, `message-2`, or `message-3`. `fields` is an ordered
+list of 1 to 10 entries; each entry has a `kind` and a `newline` flag that
+defaults to `false`. For example:
+
+    {
+      "type": "show-message",
+      "id": "show-message-1",
+      "target": "message-1",
+      "fields": [
+        { "kind": "text", "text": "Iteration: ", "newline": false },
+        { "kind": "output", "step_id": "iteration", "pointer": "", "newline": true },
+        { "kind": "text", "text": "Double: ", "newline": false },
+        { "kind": "output", "step_id": "double", "pointer": "", "newline": false }
+      ]
+    }
+
+- `text` entries are user-entered content of at most 256 Unicode characters.
+- `output` entries name a step ID and an optional JSON Pointer; `""` selects the
+  complete Step Output. Reference visibility uses the same earlier-step and
+  lexical-scope rules as every other step-output reference.
+- Fields concatenate in order. A newline follows every entry whose `newline` is
+  `true`, except the last entry. Every message record then ends with exactly one
+  newline, so consecutive Show Message steps never merge into one line and a
+  flagged last field never produces a blank line.
+- An `output` entry must resolve to a single scalar. A string, number, boolean,
+  or `null` is displayed as text; an array or object fails the step with an
+  explicit error and emits no message. Custom Meters batches are rejected when
+  the template is validated.
+- One successful Show Message execution produces exactly one message record and
+  keeps its normal Step Execution record. Messages already produced stay
+  visible when a later step fails or the run is stopped gracefully.
+- Message records are runtime data. They are not stored in the template, are not
+  exported, and are discarded when the run ends or the Last Run is cleared.
 
 ## InputValue and Expression
 

@@ -6,8 +6,8 @@ mod stream_csv;
 mod webview2;
 
 use stored_run::{
-    BoxPlotDto, ChartSeriesDto, ExecutionRowsDto, HistogramDto, PageRowsDto, RunMetadataDto,
-    StoredRun, StoredRuns,
+    BoxPlotDto, ChartSeriesDto, ExecutionRowsDto, HistogramDto, MessageRowsDto, PageRowsDto,
+    RunMetadataDto, StoredRun, StoredRuns,
 };
 use stream_csv::{StreamCsvOptions, StreamCsvStatus, run_streaming_with_stream};
 
@@ -914,6 +914,17 @@ fn get_last_run_executions(
 }
 
 #[tauri::command]
+fn get_last_run_messages(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    target: String,
+    offset: usize,
+    limit: usize,
+) -> Result<MessageRowsDto, String> {
+    state.with_current(run_id, |run| run.messages(&target, offset, limit))?
+}
+
+#[tauri::command]
 fn get_last_run_chart_series(
     state: tauri::State<'_, StoredRuns>,
     run_id: u64,
@@ -1153,6 +1164,7 @@ fn main() {
             load_workflow_template,
             get_last_run_page_rows,
             get_last_run_executions,
+            get_last_run_messages,
             get_last_run_chart_series,
             get_last_run_histogram,
             get_last_run_box_plot,
@@ -1431,8 +1443,8 @@ mod regression_tests {
         tool::ToolId,
         tool_instance::ToolInstanceId,
         workflow::{
-            ResultRow, StepExecution, StepId, StepOutcome, StepResult, WorkflowOutput,
-            WorkflowRunEvent,
+            MessageRecord, MessageTarget, ResultRow, StepExecution, StepId, StepOutcome,
+            StepResult, WorkflowOutput, WorkflowRunEvent,
         },
     };
     use serde_json::json;
@@ -1573,6 +1585,10 @@ mod regression_tests {
             )
             .with_page("Results"),
         ));
+        batcher.push(&WorkflowRunEvent::MessageEmitted(MessageRecord::new(
+            MessageTarget::Message1,
+            "hello\n",
+        )));
         batcher.flush();
         let messages = messages.lock().unwrap();
         assert_eq!(messages.len(), 1);
@@ -1581,6 +1597,17 @@ mod regression_tests {
         assert_eq!(wire["run"]["execution_count"], 1);
         assert_eq!(wire["run"]["pages"][0]["row_count"], 1);
         assert_eq!(wire["completed_step_ids"], json!(["out"]));
+        // The batch carries message counts, never the message bodies themselves.
+        assert_eq!(wire["run"]["message_revision"], 1);
+        assert_eq!(
+            wire["run"]["messages"][0],
+            json!({ "target": "message-1", "total": 1 })
+        );
+        assert!(wire["run"].get("messages").is_some_and(|value| {
+            value
+                .as_array()
+                .is_some_and(|list| list.iter().all(|item| item.get("text").is_none()))
+        }));
         assert!(wire.get("result_rows").is_none());
         assert!(wire.get("step_executions").is_none());
     }

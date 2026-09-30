@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     io::{self, Write},
     sync::{
         Arc, Mutex, RwLock,
@@ -9,7 +9,9 @@ use std::{
 
 use orchestrator_tool::{
     template::Template,
-    workflow::{ForIteration, ResultRow, StepExecution, StepOutcome, WhileIteration},
+    workflow::{
+        ForIteration, MessageTarget, ResultRow, StepExecution, StepOutcome, WhileIteration,
+    },
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -17,6 +19,8 @@ use serde_json::{Map, Value};
 const PREVIEW_BYTES: usize = 2_048;
 const PREVIEW_STRING_CHARS: usize = 512;
 const CHART_SERIES_MAX_ROWS: usize = 25_000;
+/// Each Message tab keeps its most recent records; older ones are discarded.
+pub const MESSAGE_MAX_RECORDS: usize = 1_000;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ForIterationDto {
@@ -90,6 +94,12 @@ pub struct PageMetadataDto {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct MessageCountDto {
+    pub target: String,
+    pub total: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct RunMetadataDto {
     pub run_id: u64,
     pub status: String,
@@ -101,6 +111,8 @@ pub struct RunMetadataDto {
     pub latest_execution: Option<CompactExecutionDto>,
     pub pages: Vec<PageMetadataDto>,
     pub step_summaries: Vec<StepSummaryDto>,
+    pub message_revision: u64,
+    pub messages: Vec<MessageCountDto>,
 }
 
 #[derive(Serialize)]
@@ -119,6 +131,17 @@ pub struct ExecutionRowsDto {
     pub total_executions: usize,
     pub offset: usize,
     pub executions: Vec<CompactExecutionDto>,
+}
+
+/// A bounded newest-first window of one Message tab.
+#[derive(Serialize)]
+pub struct MessageRowsDto {
+    pub run_id: u64,
+    pub target: String,
+    pub message_revision: u64,
+    pub total_messages: u64,
+    pub offset: usize,
+    pub messages: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -249,12 +272,64 @@ pub struct StoredRun {
     root_steps_completed: HashSet<String>,
     step_summaries: BTreeMap<String, StepSummary>,
     pages: BTreeMap<String, StoredPage>,
+    messages: [StoredMessages; 3],
+    message_revision: u64,
 }
 
 enum RunStatus {
     Running,
     Succeeded,
     Failed(String),
+}
+
+pub fn message_target_name(target: MessageTarget) -> &'static str {
+    match target {
+        MessageTarget::Message1 => "message-1",
+        MessageTarget::Message2 => "message-2",
+        MessageTarget::Message3 => "message-3",
+    }
+}
+
+pub fn message_target_index(target: &str) -> Option<usize> {
+    MessageTarget::ALL
+        .iter()
+        .position(|candidate| message_target_name(*candidate) == target)
+}
+
+/// A bounded ring of the most recent message texts for one tab.
+struct StoredMessages {
+    records: VecDeque<String>,
+    total: u64,
+}
+
+impl StoredMessages {
+    fn new() -> Self {
+        Self {
+            records: VecDeque::with_capacity(MESSAGE_MAX_RECORDS),
+            total: 0,
+        }
+    }
+
+    fn append(&mut self, text: String) {
+        self.total += 1;
+        if self.records.len() == MESSAGE_MAX_RECORDS {
+            self.records.pop_front();
+        }
+        self.records.push_back(text);
+    }
+
+    /// Returns a newest-first window counted back from the newest record.
+    fn window(&self, offset: usize, limit: usize) -> Vec<String> {
+        let end = (self.records.len() as u64).saturating_sub(offset as u64) as usize;
+        let start = end.saturating_sub(limit);
+        self.records
+            .iter()
+            .skip(start)
+            .take(end - start)
+            .rev()
+            .cloned()
+            .collect()
+    }
 }
 
 struct StepSummary {
@@ -303,6 +378,8 @@ impl StoredRun {
             root_steps_completed: HashSet::new(),
             step_summaries: BTreeMap::new(),
             pages,
+            messages: std::array::from_fn(|_| StoredMessages::new()),
+            message_revision: 0,
         }
     }
 
@@ -315,6 +392,10 @@ impl StoredRun {
                 if let Some(page) = self.pages.get_mut(row.page()) {
                     page.append(row.clone());
                 }
+            }
+            orchestrator_tool::workflow::WorkflowRunEvent::MessageEmitted(record) => {
+                self.messages[record.target().index()].append(record.text().to_owned());
+                self.message_revision += 1;
             }
         }
     }
@@ -394,7 +475,35 @@ impl StoredRun {
                 .iter()
                 .map(|(step_id, summary)| summary.dto(step_id))
                 .collect(),
+            message_revision: self.message_revision,
+            messages: MessageTarget::ALL
+                .iter()
+                .map(|target| MessageCountDto {
+                    target: message_target_name(*target).to_owned(),
+                    total: self.messages[target.index()].total,
+                })
+                .collect(),
         }
+    }
+
+    /// Returns a bounded newest-first window of one Message tab.
+    pub fn messages(
+        &self,
+        target: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<MessageRowsDto, String> {
+        let index = message_target_index(target)
+            .ok_or_else(|| format!("Unknown Message target {target:?}"))?;
+        let stored = &self.messages[index];
+        Ok(MessageRowsDto {
+            run_id: self.run_id,
+            target: target.to_owned(),
+            message_revision: self.message_revision,
+            total_messages: stored.total,
+            offset,
+            messages: stored.window(offset, limit.min(MESSAGE_MAX_RECORDS)),
+        })
     }
 
     pub fn page_rows(
@@ -921,7 +1030,9 @@ fn result_row_dto(row: &ResultRow) -> ResultRowDto {
 mod tests {
     use super::*;
     use orchestrator_tool::run::{ExecutionMode, run_workflow_streaming_with_loop_stop};
-    use orchestrator_tool::workflow::{ResultRow, StepId, StepResult, WorkflowOutput};
+    use orchestrator_tool::workflow::{
+        MessageRecord, ResultRow, StepId, StepResult, WorkflowOutput, WorkflowRunEvent,
+    };
 
     fn template() -> Template {
         Template::from_json_str(
@@ -942,6 +1053,167 @@ mod tests {
     fn row(value: Value) -> ResultRow {
         ResultRow::new(vec![WorkflowOutput::new("Voltage".to_owned(), value)], None)
             .with_page("Results")
+    }
+
+    fn message_template() -> Template {
+        Template::from_json_str(
+            &serde_json::json!({
+                "schema_version": 1,
+                "name": "messages",
+                "tool_instances": [],
+                "workflow": { "steps": [
+                    { "type": "output", "id": "out", "name": "Voltage", "page": "Results",
+                      "value": { "source": "literal", "value": 1 } },
+                    { "type": "show-message", "id": "show-message-1", "target": "message-1",
+                      "fields": [ { "kind": "output", "step_id": "out", "pointer": "", "newline": false } ] }
+                ] }
+            })
+            .to_string(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn messages_are_routed_per_target_and_reported_as_cumulative_totals() {
+        let template = message_template();
+        let stored = StoredRuns::default().begin(template.clone());
+        let summary = run_workflow_streaming_with_loop_stop(
+            &template,
+            ExecutionMode::Simulate,
+            &Default::default(),
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(5),
+            |event| stored.write().unwrap().append_event(&event),
+            |_| false,
+        )
+        .unwrap();
+        assert!(summary.succeeded());
+        stored.write().unwrap().succeed();
+
+        let run = stored.read().unwrap();
+        let metadata = run.metadata();
+        assert_eq!(
+            metadata
+                .messages
+                .iter()
+                .map(|count| (count.target.as_str(), count.total))
+                .collect::<Vec<_>>(),
+            vec![("message-1", 1), ("message-2", 0), ("message-3", 0)]
+        );
+        assert_eq!(metadata.message_revision, 1);
+
+        let window = run.messages("message-1", 0, MESSAGE_MAX_RECORDS).unwrap();
+        assert_eq!(window.total_messages, 1);
+        assert_eq!(window.messages, vec!["1\n".to_owned()]);
+        // Independent tabs stay empty and an unknown target is rejected.
+        assert!(
+            run.messages("message-2", 0, 10)
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+        assert!(run.messages("message-9", 0, 10).is_err());
+    }
+
+    #[test]
+    fn each_message_tab_keeps_the_most_recent_thousand_records() {
+        let template = message_template();
+        let stored = StoredRuns::default().begin(template);
+        let count = MESSAGE_MAX_RECORDS as u64 + 1;
+        {
+            let mut run = stored.write().unwrap();
+            for index in 0..count {
+                run.append_event(&WorkflowRunEvent::MessageEmitted(MessageRecord::new(
+                    MessageTarget::Message1,
+                    format!("{index}\n"),
+                )));
+            }
+        }
+
+        let run = stored.read().unwrap();
+        let metadata = run.metadata();
+        // The cumulative total keeps counting past the retained window.
+        assert_eq!(metadata.messages[0].total, count);
+        assert_eq!(metadata.message_revision, count);
+        let window = run.messages("message-1", 0, MESSAGE_MAX_RECORDS).unwrap();
+        assert_eq!(window.messages.len(), MESSAGE_MAX_RECORDS);
+        // The oldest record is discarded and the newest is served first.
+        assert_eq!(window.messages[0], format!("{}\n", count - 1));
+        assert_eq!(window.messages[1], format!("{}\n", count - 2));
+        assert!(!window.messages.iter().any(|text| text == "0\n"));
+    }
+
+    #[test]
+    fn message_windows_page_backwards_from_the_newest_record() {
+        let stored = StoredRuns::default().begin(message_template());
+        {
+            let mut run = stored.write().unwrap();
+            for index in 0..10 {
+                run.append_event(&WorkflowRunEvent::MessageEmitted(MessageRecord::new(
+                    MessageTarget::Message2,
+                    format!("{index}\n"),
+                )));
+            }
+        }
+        let run = stored.read().unwrap();
+        assert_eq!(
+            run.messages("message-2", 0, 3).unwrap().messages,
+            vec!["9\n".to_owned(), "8\n".to_owned(), "7\n".to_owned()]
+        );
+        assert_eq!(
+            run.messages("message-2", 3, 3).unwrap().messages,
+            vec!["6\n".to_owned(), "5\n".to_owned(), "4\n".to_owned()]
+        );
+        // An offset beyond the retained history is an empty window, not an error.
+        assert!(
+            run.messages("message-2", 99, 3)
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_new_run_replaces_previous_messages() {
+        let runs = StoredRuns::default();
+        let first = runs.begin(message_template());
+        {
+            let mut run = first.write().unwrap();
+            run.append_event(&WorkflowRunEvent::MessageEmitted(MessageRecord::new(
+                MessageTarget::Message1,
+                "old\n",
+            )));
+        }
+        let first_id = first.read().unwrap().run_id;
+        assert_eq!(
+            runs.get(first_id)
+                .unwrap()
+                .read()
+                .unwrap()
+                .metadata()
+                .messages[0]
+                .total,
+            1
+        );
+
+        // A new run clears the previous buffer and the old run is no longer queryable.
+        let second = runs.begin(message_template());
+        let run = second.read().unwrap();
+        assert_eq!(run.metadata().messages[0].total, 0);
+        assert!(
+            run.messages("message-1", 0, 10)
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+        assert!(runs.get(first_id).is_err());
+
+        // Clear Last Run also removes the messages.
+        let second_id = run.run_id;
+        drop(run);
+        runs.clear(second_id).unwrap();
+        assert!(runs.get(second_id).is_err());
     }
 
     #[test]

@@ -416,6 +416,85 @@ pub enum StepKind {
         range: NumericRange,
         body: Vec<Step>,
     },
+    ShowMessage {
+        target: MessageTarget,
+        fields: Vec<MessageField>,
+    },
+}
+
+/// One of the three independent Messages Panel tabs.
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub enum MessageTarget {
+    #[serde(rename = "message-1")]
+    Message1,
+    #[serde(rename = "message-2")]
+    Message2,
+    #[serde(rename = "message-3")]
+    Message3,
+}
+
+impl MessageTarget {
+    /// Returns the zero-based index used to key stored message buffers.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Message1 => 0,
+            Self::Message2 => 1,
+            Self::Message3 => 2,
+        }
+    }
+
+    /// All targets in display order.
+    pub const ALL: [Self; 3] = [Self::Message1, Self::Message2, Self::Message3];
+}
+
+/// A Show Message step allows at least one and at most ten fields.
+pub const MAX_MESSAGE_FIELDS: usize = 10;
+/// A Show Message String field allows at most 256 Unicode characters.
+pub const MAX_MESSAGE_TEXT_CHARS: usize = 256;
+
+/// One concatenated segment of a Show Message step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MessageField {
+    kind: MessageFieldKind,
+    newline: bool,
+}
+
+impl MessageField {
+    /// Creates a literal text field.
+    pub fn text(value: impl Into<String>, newline: bool) -> Self {
+        Self {
+            kind: MessageFieldKind::Text(value.into()),
+            newline,
+        }
+    }
+
+    /// Creates a field that displays one earlier Output step value.
+    pub fn output(reference: StepOutputReference, newline: bool) -> Self {
+        Self {
+            kind: MessageFieldKind::Output(reference),
+            newline,
+        }
+    }
+
+    pub fn kind(&self) -> &MessageFieldKind {
+        &self.kind
+    }
+
+    /// Whether a newline follows this field. Ignored on the last field.
+    pub fn newline(&self) -> bool {
+        self.newline
+    }
+}
+
+/// The value source of one Show Message field.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MessageFieldKind {
+    /// User-entered text.
+    Text(String),
+    /// A single scalar value from an earlier Output step.
+    Output(StepOutputReference),
 }
 
 /// One independent dataset, bound to a complete lexical loop path.
@@ -616,6 +695,27 @@ impl Workflow {
                             validate_input(value)?;
                         }
                     }
+                    StepKind::ShowMessage { fields, .. } => {
+                        if fields.is_empty() || fields.len() > MAX_MESSAGE_FIELDS {
+                            return Err(WorkflowError::InvalidMessageFields(step.id().clone()));
+                        }
+                        for field in fields {
+                            match field.kind() {
+                                MessageFieldKind::Text(text)
+                                    if text.chars().count() > MAX_MESSAGE_TEXT_CHARS =>
+                                {
+                                    return Err(WorkflowError::MessageTextTooLong {
+                                        step_id: step.id().clone(),
+                                        limit: MAX_MESSAGE_TEXT_CHARS,
+                                    });
+                                }
+                                MessageFieldKind::Output(reference) => {
+                                    validate_input(&InputValue::StepOutput(reference.clone()))?;
+                                }
+                                MessageFieldKind::Text(_) => {}
+                            }
+                        }
+                    }
                     StepKind::Wait { .. } => {}
                 }
                 prior.insert(step.id().clone());
@@ -741,6 +841,8 @@ pub enum WorkflowError {
     PageScopeMismatch(String),
     LoopVariableAssignment(StepId),
     InvalidRange(String),
+    InvalidMessageFields(StepId),
+    MessageTextTooLong { step_id: StepId, limit: usize },
 }
 
 impl fmt::Display for WorkflowError {
@@ -797,6 +899,14 @@ impl fmt::Display for WorkflowError {
                 "step {step_id} cannot assign its For loop variable"
             ),
             Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
+            Self::InvalidMessageFields(step_id) => write!(
+                formatter,
+                "show-message step {step_id} requires 1 to {MAX_MESSAGE_FIELDS} fields"
+            ),
+            Self::MessageTextTooLong { step_id, limit } => write!(
+                formatter,
+                "show-message step {step_id} field text exceeds {limit} characters"
+            ),
         }
     }
 }
@@ -808,6 +918,32 @@ impl Error for WorkflowError {}
 pub enum WorkflowRunEvent {
     StepCompleted(StepExecution),
     ResultRowCommitted(ResultRow),
+    MessageEmitted(MessageRecord),
+}
+
+/// One message produced by a completed Show Message step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MessageRecord {
+    target: MessageTarget,
+    text: String,
+}
+
+impl MessageRecord {
+    /// The text always ends with exactly one newline so consecutive records never merge.
+    pub fn new(target: MessageTarget, text: impl Into<String>) -> Self {
+        Self {
+            target,
+            text: text.into(),
+        }
+    }
+
+    pub fn target(&self) -> MessageTarget {
+        self.target
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
 }
 
 /// The completed result of one workflow run.
@@ -1045,7 +1181,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue, NumericRange,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue,
+        MAX_MESSAGE_FIELDS, MAX_MESSAGE_TEXT_CHARS, MessageField, MessageTarget, NumericRange,
         NumericRangeError, Step, StepId, StepKind, StepOutcome, StepOutputReference, StepResult,
         VariableId, Workflow, WorkflowError,
     };
@@ -1657,5 +1794,119 @@ mod tests {
             Err(WorkflowError::LoopVariableAssignment(step_id))
                 if step_id.as_str() == "set-voltage"
         ));
+    }
+
+    #[test]
+    fn show_message_requires_one_to_ten_fields_and_bounded_text() {
+        let message = |id: &str, fields: Vec<MessageField>| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::ShowMessage {
+                    target: MessageTarget::Message1,
+                    fields,
+                },
+            )
+        };
+        let text = |value: &str| MessageField::text(value, false);
+
+        assert!(Workflow::new(vec![message("m", vec![text("a")])]).is_ok());
+        assert!(
+            Workflow::new(vec![message(
+                "m",
+                (0..MAX_MESSAGE_FIELDS).map(|_| text("a")).collect()
+            )])
+            .is_ok()
+        );
+
+        let error = Workflow::new(vec![message("m", vec![])]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "show-message step m requires 1 to 10 fields"
+        );
+        assert!(matches!(error, WorkflowError::InvalidMessageFields(id) if id.as_str() == "m"));
+        assert!(matches!(
+            Workflow::new(vec![message(
+                "m",
+                (0..=MAX_MESSAGE_FIELDS).map(|_| text("a")).collect()
+            )]),
+            Err(WorkflowError::InvalidMessageFields(_))
+        ));
+
+        // 256 Unicode characters are accepted; the limit counts characters, not bytes.
+        let wide = char::from_u32(0x7d2).unwrap();
+        let allowed: String = std::iter::repeat_n(wide, MAX_MESSAGE_TEXT_CHARS).collect();
+        assert_eq!(allowed.chars().count(), MAX_MESSAGE_TEXT_CHARS);
+        assert!(
+            allowed.len() > MAX_MESSAGE_TEXT_CHARS,
+            "must exercise multi-byte text"
+        );
+        assert!(Workflow::new(vec![message("m", vec![text(&allowed)])]).is_ok());
+        let too_long = "a".repeat(MAX_MESSAGE_TEXT_CHARS + 1);
+        let error = Workflow::new(vec![message("m", vec![text(&too_long)])]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "show-message step m field text exceeds 256 characters"
+        );
+        assert!(
+            matches!(error, WorkflowError::MessageTextTooLong { step_id, limit }
+            if step_id.as_str() == "m" && limit == MAX_MESSAGE_TEXT_CHARS)
+        );
+    }
+
+    #[test]
+    fn show_message_output_fields_reuse_earlier_step_reference_validation() {
+        let output = Step::new(
+            StepId::new("iteration").unwrap(),
+            StepKind::Output {
+                name: "Iteration".to_owned(),
+                value: InputValue::Literal(json!(1)),
+            },
+        );
+        let referencing = |id: &str, target: &str| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::ShowMessage {
+                    target: MessageTarget::Message1,
+                    fields: vec![MessageField::output(
+                        StepOutputReference::new(StepId::new(target).unwrap(), ""),
+                        false,
+                    )],
+                },
+            )
+        };
+        let error = Workflow::new(vec![referencing("m", "future"), output.clone()]).unwrap_err();
+        assert!(
+            matches!(error, WorkflowError::InvalidStepOutputReference { step_id, target }
+            if step_id.as_str() == "m" && target.as_str() == "future")
+        );
+        assert!(Workflow::new(vec![output.clone(), referencing("m", "iteration")]).is_ok());
+
+        // A loop body Output is not visible to a step outside that loop scope.
+        let for_step = |body: Vec<Step>| {
+            Step::new(
+                StepId::new("sweep").unwrap(),
+                StepKind::For {
+                    variable: VariableId::new("x").unwrap(),
+                    range: NumericRange::new(decimal("1"), decimal("1"), decimal("1")).unwrap(),
+                    body,
+                },
+            )
+        };
+        assert!(matches!(
+            Workflow::new(vec![
+                for_step(vec![output.clone()]),
+                referencing("m", "iteration")
+            ]),
+            Err(WorkflowError::InvalidStepOutputReference { step_id, target })
+                if step_id.as_str() == "m" && target.as_str() == "iteration"
+        ));
+        // Inside the same loop body the same reference is valid.
+        assert!(
+            Workflow::new(vec![for_step(vec![
+                output.clone(),
+                referencing("m", "iteration"),
+            ])])
+            .is_ok()
+        );
     }
 }

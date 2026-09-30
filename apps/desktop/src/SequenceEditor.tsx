@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { canMoveSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, ForStep, WhileStep } from './workflow'
+import { MESSAGE_TARGET_LABELS } from './workflow'
 import { expressionSummary } from './inputValue'
 
 type SequenceEditorProps = {
@@ -47,6 +48,8 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
       return `${step.variable} = ${valueSummary(step.value)}`
     case 'output':
       return `${step.name} = ${valueSummary(step.value)}`
+    case 'show-message':
+      return `${MESSAGE_TARGET_LABELS[step.target]} · ${step.fields.length} field${step.fields.length === 1 ? '' : 's'}`
     case 'wait':
       return `${step.duration_ms} ms`
     case 'tool-action': {

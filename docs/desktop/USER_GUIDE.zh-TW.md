@@ -388,6 +388,45 @@ Expansion 只影響所屬 Page，且會維持 staged 狀態直到 owning scope �
 成功。CSV streaming、manual CSV/XLSX export 與 Charts 直接使用展開後的 committed
 rows，不會再做第二次 expansion。
 
+### 6.6 Show Message
+
+**Show Message** step 會在 Workflow 執行時將文字寫入 Messages Panel。它唯一的用途
+就是輸出訊息：不是 Popup、不是 Assert，也不是 Output Page，因此不會為你的資料、CSV
+或 Charts 增加欄位。
+
+- **Target Message** 可選擇 **Message 1**、**Message 2** 或 **Message 3**，預設為
+  Message 1。
+- **Content Fields** 構成訊息內容。每個 step 最少 1 個、最多 10 個 field，預設建立
+  1 個空白 String。可使用 **Add Field** 與 **Delete Field** 調整數量，Fields 依畫面
+  順序串接。
+- **String** field 為自行輸入的文字，最多 256 個字元。
+- **Output** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
+  目前 step 之前、在當前 loop scope 內可見的 Outputs。Show Message 的 Output 必須是
+  單一數值，不支援 Custom Meters batch。若參考的值不是單一數字、文字或 Boolean，該
+  step 會明確報錯，不會寫出部分訊息。
+- **Newline** 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
+  Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。
+
+**Message Preview** 會在編輯時顯示組合結果。Output field 以名稱作為佔位符號，因此不必
+先執行 Workflow 就能確認版面。以下設定：
+
+| Field | Type | Value | Newline |
+|---|---|---|---|
+| 1 | String | `Iteration: ` | Off |
+| 2 | Output | `Iteration` | On |
+| 3 | String | `Double: ` | Off |
+| 4 | Output | `Double` | — |
+
+會產生：
+
+```text
+Iteration: 3000
+Double: 6000
+```
+
+因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
+目前的 iteration，不會取用上一輪的值。
+
 ## 7. Run Simulation
 
 執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
@@ -466,6 +505,7 @@ Run 後，Output 區域目前可顯示以下 visible sections：
 
 - **Last Run Execution Results** — execution statuses 與 progress results；大量
   execution results 以 latest first 顯示並可分頁瀏覽。
+- **Messages** — Show Message step 在執行時寫入的文字。
 - **Last Run** — 目前 run 的 Output Pages 與 result workspace。
 - **Charts** — 所選 Page 的 chart panels。
 - **Summary** — 適用時顯示 numeric Count、Min、Max 與 Avg。
@@ -487,7 +527,29 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
 停止後可以 manual export。
 
-### 10.2 Charts
+### 10.2 收合結果面板
+
+**Last Run Execution Results** 與 **Messages** 的標題右側各有 `+ / −` 控制。兩者
+預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
+資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。
+
+**Last Run Execution Results** 收合後仍保留標題、Execution Mode badge 與 execution
+數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。
+
+### 10.3 Messages
+
+**Messages** 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：**Message
+1**、**Message 2** 與 **Message 3**，由 step 選擇要寫入哪一個。每個 tab 以 latest
+first 依序保留自己的訊息，訊息內的換行也會保留。切換 tab 或收合面板都不會遺失訊息。
+
+由於 loop 可能執行大量次數，每個 tab 僅保留最近 1,000 筆訊息。摘要列仍會顯示該次 run
+產生的訊息總數，因此可以知道是否還有更早的訊息。
+
+訊息屬於產生它的那一次 run。開始新一輪 run 會清空訊息；run 失敗或 graceful stop 則會
+保留當輪已產生的訊息。**Clear Last Run**、New Template 與 Open Template 都會一併清除
+訊息。訊息不會存檔，也無法 export。
+
+### 10.4 Charts
 
 Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
@@ -587,7 +649,7 @@ Export PNG 與 Remove 會停用。它們不會載入即時 chart data，executio
 **+ Add Chart** 仍建立 Line chart。**Open Template**、替換 workflow 與
 **Clear Last Run** 會清除 chart session state。Chart settings 不屬於 Template data。
 
-### 10.3 Data 與 Summary
+### 10.5 Data 與 Summary
 
 **Output Data** 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。

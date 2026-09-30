@@ -8,7 +8,7 @@ import SequenceEditor from './SequenceEditor'
 import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, reorderSteps, selectStep, singleSelection, stepClipboardShortcut } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import ResultChart from './ResultChart'
-import { EXECUTION_WINDOW_SIZE } from './executionWindow'
+import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
 import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
@@ -20,8 +20,9 @@ import { protectionChannelNumbers } from './powersProtectionSetup'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages } from './workflow'
-import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire } from './workflow'
+import ShowMessageEditor from './ShowMessageEditor'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
 import { DEFAULT_EXECUTION_MODE, executionModeLabel, manualOperationRequiresSavedResource, workflowRunCommand } from './executionMode'
@@ -135,6 +136,7 @@ type StepPreset =
   | 'wait'
   | 'meter-measure'
   | 'power-output-off'
+  | 'show-message'
 
 type StepPresetOption = {
   value: StepPreset
@@ -154,6 +156,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
   { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
   { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
+  { value: 'show-message', label: 'Show Message', prefix: 'show-message', category: 'Workflow' },
   { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read', category: 'Meters', tool: 'meters' },
   { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off', category: 'Powers', tool: 'powers' },
 ]
@@ -171,6 +174,7 @@ const STEP_HELP: Record<string, string> = {
   while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
   for: 'Repeat these body steps over an exact decimal range. Loops can nest up to 5 levels.',
   assert: 'Fail the Workflow when this comparison is false.',
+  'show-message': 'Write a message to the Messages Panel while the Workflow runs. It does not create an Output Page, a Popup, or an Assert.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
@@ -274,6 +278,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
         action: 'output-off',
         arguments: { channel: 1 },
       }
+    case 'show-message':
+      return { type: 'show-message', id, target: 'message-1', fields: [{ kind: 'text', text: '', newline: false }] }
   }
 }
 
@@ -288,6 +294,9 @@ function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
   }
   if (step.type === 'assert') {
     return 'Assert'
+  }
+  if (step.type === 'show-message') {
+    return 'Show Message'
   }
   if (step.type === 'wait') {
     return 'Wait'
@@ -337,6 +346,14 @@ type ExecutionRowsResponse = {
   total_executions: number
   offset: number
   executions: StepExecutionDto[]
+}
+type MessageRowsResponse = {
+  run_id: number
+  target: MessageTargetWire
+  message_revision: number
+  total_messages: number
+  offset: number
+  messages: string[]
 }
 
 function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {
@@ -412,6 +429,9 @@ function App() {
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, Powers: true, Meters: true,
   })
+  const [executionsExpanded, setExecutionsExpanded] = useState(true)
+  const [messagesExpanded, setMessagesExpanded] = useState(true)
+  const [messageTarget, setMessageTarget] = useState<MessageTargetWire>('message-1')
   const [activeTab, setActiveTab] = useState<ActiveTab>('tools')
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
@@ -475,6 +495,7 @@ function App() {
   const [runMetadata, setRunMetadata] = useState<RunMetadataDto | null>(null)
   const runIdRef = useRef<number | null>(null)
   const [executionPage, setExecutionPage] = useState<ExecutionRowsResponse | null>(null)
+  const [messagePage, setMessagePage] = useState<MessageRowsResponse | null>(null)
   const progressChannelRef = useRef<Channel<DesktopRunEvent> | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
@@ -577,6 +598,25 @@ function App() {
     end: Math.min(executionTotal, executionOffset + (executionPage?.executions.length ?? 0)),
     hasNewer: executionOffset > 0,
     hasOlder: executionOffset + (executionPage?.executions.length ?? 0) < executionTotal,
+  }
+
+  // Only the active Message tab is pulled; totals and the revision arrive with progress batches.
+  useEffect(() => {
+    if (!displayedRun) { setMessagePage(null); return }
+    let cancelled = false
+    void invoke<MessageRowsResponse>('get_last_run_messages', {
+      runId: displayedRun.run_id, target: messageTarget, offset: 0, limit: MESSAGE_WINDOW_SIZE,
+    }).then(response => {
+      if (!cancelled && response.run_id === runIdRef.current) setMessagePage(response)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [displayedRun?.run_id, displayedRun?.message_revision, messageTarget])
+  const messageTotal = runMetadata?.messages.find(item => item.target === messageTarget)?.total ?? 0
+  const messages = {
+    items: messagePage?.messages ?? [],
+    total: messageTotal,
+    retained: messagePage?.messages.length ?? 0,
+    discarded: Math.max(0, messageTotal - (messagePage?.messages.length ?? 0)),
   }
 
   useEffect(() => {
@@ -2170,6 +2210,17 @@ function App() {
                         </label>
                       )}
 
+                      {selectedStep.type === 'show-message' && (
+                        <ShowMessageEditor
+                          key={selectedStep.id}
+                          step={selectedStep}
+                          outputs={showMessageOutputCandidates(earlierSteps)}
+                          disabled={workflowBusy}
+                          onChange={(next) => updateStep(selectedStep.id, (step) =>
+                            step.type === 'show-message' ? next : step)}
+                        />
+                      )}
+
                       {selectedToolAction && selectedPowersAction && (
                         <label className="step-property-field">
                           <span className="step-property-label">Channel</span>
@@ -2316,11 +2367,60 @@ function App() {
               )}
 
               {displayedRun && (
+                <section className="run-messages" aria-labelledby="run-messages-title">
+                  <h3 id="run-messages-title">
+                    <button type="button" className="collapsible-header"
+                      aria-expanded={messagesExpanded}
+                      onClick={() => setMessagesExpanded(current => !current)}>
+                      Messages
+                      <span aria-hidden="true">{messagesExpanded ? '−' : '+'}</span>
+                    </button>
+                  </h3>
+                  <p className="run-result-count">
+                    {messages.total.toLocaleString('en-US')} {messages.total === 1 ? 'message' : 'messages'} · latest first
+                    {messages.discarded > 0 && ` · showing the most recent ${messages.retained.toLocaleString('en-US')}`}
+                  </p>
+                  {messagesExpanded && <>
+                    <div className="last-run-page-tabs" role="tablist" aria-label="Messages">
+                      {MESSAGE_TARGETS.map((target, index) => (
+                        <button key={target} type="button" role="tab"
+                          id={`message-tab-${index}`} aria-controls="run-messages-body"
+                          aria-selected={target === messageTarget}
+                          tabIndex={target === messageTarget ? 0 : -1}
+                          onClick={() => setMessageTarget(target)}>
+                          {MESSAGE_TARGET_LABELS[target]}
+                        </button>
+                      ))}
+                    </div>
+                    <div id="run-messages-body" role="tabpanel" aria-labelledby={`message-tab-${MESSAGE_TARGETS.indexOf(messageTarget)}`}>
+                      {messages.items.length === 0
+                        ? <p className="step-properties-empty">No messages were produced by this run.</p>
+                        : <ol className="run-message-list" aria-label={`${MESSAGE_TARGET_LABELS[messageTarget]} messages`}>
+                            {messages.items.map((text, index) => (
+                              <li className="run-message" key={`${index}:${messages.retained - index}`}>
+                                <pre>{text}</pre>
+                              </li>
+                            ))}
+                          </ol>}
+                    </div>
+                  </>}
+                </section>
+              )}
+
+              {displayedRun && (
                 <section className="run-results" aria-labelledby="run-results-title">
-                  <h3 id="run-results-title">Last Run Execution Results {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}</h3>
+                  <h3 id="run-results-title">
+                    <button type="button" className="collapsible-header"
+                      aria-expanded={executionsExpanded}
+                      onClick={() => setExecutionsExpanded(current => !current)}>
+                      Last Run Execution Results {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}
+                      <span aria-hidden="true">{executionsExpanded ? '−' : '+'}</span>
+                    </button>
+                  </h3>
                   <p className="run-result-count">
                     {executions.total.toLocaleString('en-US')} {executions.total === 1 ? 'execution' : 'executions'} · latest first
                   </p>
+                  {executionsExpanded && <>
                   {executions.total > EXECUTION_WINDOW_SIZE && <div className="section-header">
                     <p aria-live="polite">
                       Showing {executions.start.toLocaleString('en-US')}&ndash;{executions.end.toLocaleString('en-US')} of {executions.total.toLocaleString('en-US')}
@@ -2390,6 +2490,7 @@ function App() {
                       )
                     })}
                   </ol>
+                  </>}
                 </section>
               )}
             </div>
