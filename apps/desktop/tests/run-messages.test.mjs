@@ -59,7 +59,7 @@ test('R02 switching tabs and runs keeps the retained and discarded counts honest
   const first = visibleMessageWindow(page(7, 'message-1', ['m1\n']),
     { runId: 7, target: 'message-1', counts: countsAll })
   assert.equal(first.retained, 1)
-  assert.equal(first.discarded, 1499, 'records beyond the retained window are reported')
+  assert.equal(first.discarded, 500, 'only records evicted by the 1,000-record cap count as discarded')
   // Switching to an unfetched tab shows nothing but still reports that tab's total.
   const other = visibleMessageWindow(page(7, 'message-1', ['m1\n']),
     { runId: 7, target: 'message-2', counts: countsAll })
@@ -68,6 +68,38 @@ test('R02 switching tabs and runs keeps the retained and discarded counts honest
   // The App derives its window from this helper rather than reading a stale state.
   assert.match(source, /visibleMessageWindow\(/)
   assert.doesNotMatch(source, /messagePage\?\.messages \?\? \[\]/)
+})
+
+test('R02 run replacement clears message state and unfetched tabs show Loading', () => {
+  for (const [begin, end] of [
+    ['const createDraft = useCallback', 'let secondFrame: number | null'],
+    ['const handleLoadTemplate = useCallback', 'const handleSaveTemplate = useCallback'],
+    ['const runLive = useCallback', 'const runSimulation = useCallback'],
+    ['const runSimulation = useCallback', 'const runSelectedMode = useCallback'],
+    ['const handleClearLastRun = useCallback', 'const csvStreamFeedback ='],
+  ]) {
+    const start = source.indexOf(begin)
+    const finish = source.indexOf(end, start)
+    assert.ok(start >= 0 && finish > start, begin)
+    assert.match(source.slice(start, finish),
+      /setRunMetadata\(null\)[\s\S]*?setExecutionPage\(null\);?\s*setMessagePage\(null\)/, begin)
+  }
+  const waiting = visibleMessageWindow(page(7, 'message-1', ['old-tab\n']),
+    { runId: 7, target: 'message-2', counts: counts(['message-1', 1, 1], ['message-2', 4, 4]) })
+  assert.deepEqual(waiting.items, [])
+  assert.equal(waiting.total, 4)
+  assert.equal(waiting.discarded, 0, 'unfetched records are not discarded records')
+  const panel = source.slice(source.indexOf('<section className="run-messages"'),
+    source.indexOf('<section className="run-results"'))
+  assert.match(panel, /messages\.total > 0 \? 'Loading messages…' : 'No messages were produced by this run\.'/)
+  assert.match(panel, /messages\.discarded > 0 && messages\.retained > 0 &&/)
+})
+
+test('R06 message items keep their DOM keys across revision updates', () => {
+  const panel = source.slice(source.indexOf('<section className="run-messages"'),
+    source.indexOf('<section className="run-results"'))
+  assert.match(panel, /key=\{\`\$\{messageTarget\}:\$\{index\}\`\}/)
+  assert.doesNotMatch(panel, /key=\{\`\$\{messages\.revision\}/)
 })
 
 test('R06 only the active tab revision drives a refetch, and a collapsed panel pauses it', () => {

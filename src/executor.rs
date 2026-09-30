@@ -535,21 +535,26 @@ fn compose_message(
             text.push('\n');
         }
     }
-    text.push('\n');
     Ok(bound_message(text))
 }
 
 /// One message is bounded so a long scalar Output cannot grow the buffer without limit.
 /// The bound counts Unicode characters, never splits one, and keeps the single trailing newline.
-fn bound_message(text: String) -> String {
+fn bound_message(mut text: String) -> String {
+    // A field may already end with LF or CRLF. Keep its inner line breaks,
+    // but ensure one (and only one) final newline for each independent record.
+    while text.ends_with('\n') || text.ends_with('\r') {
+        text.pop();
+    }
+    text.push('\n');
     if text.chars().count() <= MAX_MESSAGE_CHARS {
         return text;
     }
     // Reserve the marker plus the single trailing newline from the budget.
     let keep = MAX_MESSAGE_CHARS - MESSAGE_TRUNCATION_MARKER.chars().count() - 1;
     let mut bounded: String = text.chars().take(keep).collect();
-    // Do not let the cut point leave stray blank lines before the marker.
-    while bounded.ends_with('\n') {
+    // Do not leave a cut-point line break directly before the marker.
+    while bounded.ends_with('\n') || bounded.ends_with('\r') {
         bounded.pop();
     }
     bounded.push_str(MESSAGE_TRUNCATION_MARKER);
@@ -2028,6 +2033,52 @@ mod tests {
                 (MessageTarget::Message1, "kept\n".to_owned()),
                 (MessageTarget::Message1, "tick\n".to_owned()),
             ]
+        );
+    }
+
+    #[test]
+    fn show_message_output_with_trailing_line_breaks_has_one_terminal_newline() {
+        for (value, expected) in [
+            ("hello", "hello\n"),
+            ("hello\n", "hello\n"),
+            ("hello\n\n", "hello\n"),
+            ("first\nsecond\r\n\r\n", "first\nsecond\n"),
+        ] {
+            let output = Step::new(
+                StepId::new("value").unwrap(),
+                StepKind::Output {
+                    name: "Value".to_owned(),
+                    value: InputValue::Literal(json!(value)),
+                },
+            );
+            let message = show_message(
+                "show-message-1",
+                MessageTarget::Message1,
+                vec![MessageField::output(
+                    StepOutputReference::new(output.id().clone(), ""),
+                    false,
+                )],
+            );
+            let (_, events) = run_simulation(&Workflow::new(vec![output, message]).unwrap());
+            assert_eq!(
+                messages_of(&events),
+                vec![(MessageTarget::Message1, expected.to_owned())],
+                "input {value:?}"
+            );
+        }
+        // A field's intentional internal newline is still preserved.
+        let message = show_message(
+            "show-message-2",
+            MessageTarget::Message1,
+            vec![
+                MessageField::text("first\nsecond", true),
+                MessageField::text("last\n", false),
+            ],
+        );
+        let (_, events) = run_simulation(&Workflow::new(vec![message]).unwrap());
+        assert_eq!(
+            messages_of(&events),
+            vec![(MessageTarget::Message1, "first\nsecond\nlast\n".to_owned())]
         );
     }
 
