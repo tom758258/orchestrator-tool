@@ -7,6 +7,7 @@ import { pasteSteps, singleSelection } from '../src/stepEditing.ts'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const editor = readFileSync(new URL('../src/ShowMessageEditor.tsx', import.meta.url), 'utf8')
+const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 const output = (id, name) => ({ type: 'output', id, name, page: 'Results',
   value: { source: 'literal', value: 1 } })
@@ -33,9 +34,15 @@ test('Show Message Target Message offers exactly three messages defaulting to Me
 })
 
 test('only the last Show Message field omits the Newline checkbox', () => {
-  assert.match(editor, /\{index < step\.fields\.length - 1 && \(\s*<label className="step-property-field">\s*\n\s*<input type="checkbox" checked=\{field\.newline\}/)
+  assert.match(editor, /\{index < step\.fields\.length - 1 && \(\s*<label className="step-property-field show-message-newline">\s*\n\s*<input type="checkbox" checked=\{field\.newline\}/)
   // A single field cannot request a newline, so the record cannot gain a blank line.
   assert.match(editor, /const replacesLast = \(field: MessageFieldWire\): MessageFieldWire =>\s*\n\s*step\.fields\.length === 1 \? \{ \.\.\.field, newline: false \} : field/)
+})
+
+test('Show Message Newline checkbox and label use a horizontal layout', () => {
+  assert.match(styles, /\.show-message-newline\s*\{\s*display: flex;\s*align-items: center;\s*gap: 8px;/)
+  assert.match(styles, /\.show-message-newline input\[type="checkbox"\]\s*\{\s*flex: 0 0 auto;\s*margin: 0;/)
+  assert.match(editor, /<input type="checkbox" checked=\{field\.newline\} disabled=\{disabled\}[\s\S]*?<span className="step-property-label">Newline after this field<\/span>\s*<\/label>/)
 })
 
 test('the Message Preview mirrors the Core composition rules', () => {
