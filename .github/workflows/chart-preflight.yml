@@ -27,11 +27,28 @@ jobs:
           python -B scripts/test_generate_help.py
           python scripts/generate_help.py --check
       - name: Full frontend tests
+        id: tests
+        continue-on-error: true
         working-directory: apps/desktop
         run: node --test tests/*.test.mjs
       - name: Typecheck
+        id: typecheck
+        continue-on-error: true
         working-directory: apps/desktop
         run: npm run typecheck
       - name: Build
+        id: build
+        continue-on-error: true
         working-directory: apps/desktop
         run: npm run build
+      - name: Aggregate
+        if: always()
+        env:
+          TEST_RESULT: ${{ steps.tests.outcome }}
+          TYPECHECK_RESULT: ${{ steps.typecheck.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+        run: |
+          echo "Tests: $TEST_RESULT, Typecheck: $TYPECHECK_RESULT, Build: $BUILD_RESULT"
+          test "$TEST_RESULT" = success
+          test "$TYPECHECK_RESULT" = success
+          test "$BUILD_RESULT" = success
