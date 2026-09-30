@@ -522,25 +522,31 @@ Iteration trend; Area fills below the line; Column uses vertical grouped bars;
 Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
 values.</p>
 <p>Chart Settings has five tabs: <strong>General</strong>, <strong>Series</strong>, <strong>Axes</strong>, <strong>Analysis</strong>,
-and <strong>Export</strong>. Series contains per-Output <strong>Auto</strong> or <strong>Custom color</strong>, Scatter
-settings, and Combo Type/Axis settings. One custom color applies to all rendering
-of that Output, including Scatter lines and markers; Auto restores the theme
-palette. Box &amp; Whisker retains its automatic colors.</p>
+and <strong>Export</strong>. Series contains per-Output <strong>Auto</strong> or <strong>Custom color</strong>, Line
+styles, Scatter settings, and Combo Type/Axis settings. Each Line Output can
+use <strong>Line</strong> or <strong>Line + markers</strong>. Combo Outputs can use <strong>Column</strong>, <strong>Line</strong>,
+or <strong>Line + markers</strong>. Marker-enabled Line and Combo Outputs can set marker
+size, shape (Circle, Square, Diamond, or Triangle), fill, and border. Scatter
+keeps its chart-wide marker size and line width while marker shape, fill, and
+border are per Output. Marker fill and border use the Output series color in
+<strong>Auto</strong> mode or an independent custom color. Legends mirror the rendered
+line/marker style; Area remains marker-free. Box &amp; Whisker retains its
+automatic colors.</p>
 <p><strong>General → Chart type</strong> also shows the Output-count helper for Combo and
 Histogram. When switching to Histogram with multiple Outputs selected,
 <strong>Apply</strong> keeps the first selected Output.</p>
 <p>A chart panel can select multiple <strong>Outputs</strong> to compare numeric series.
 Scatter <strong>X source</strong> can be Iteration or any numeric Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. <strong>Display</strong> can
-show Markers, Lines, or Lines + markers. <strong>Marker size</strong> and <strong>Line width</strong> accept
-positive finite numbers and apply to the modes that show them. Scatter keeps
-raw X/Y pairs in original row order, including nonmonotonic X values; Lines
-connect those pairs in that order. Scatter hover uses screen-space proximity;
-line displays may be selected through a visible segment but always report an
-actual raw row rather than an interpolated measurement. Combo requires
-at least two selected Outputs; each Output can use Line or Column rendering and
-the Left Y or Right Y axis. The two Y axes are configured independently, and
-Combo supports Iteration X-axis zoom.</p>
+show Markers, Lines, or Lines + markers. Scatter <strong>Marker size</strong> and <strong>Line
+width</strong> accept positive finite numbers and apply to the modes that show them.
+Scatter keeps raw X/Y pairs in original row order, including nonmonotonic X
+values; Lines connect those pairs in that order. Scatter hover uses screen-space
+proximity; line displays may be selected through a visible segment but always
+report an actual raw row rather than an interpolated measurement. Combo
+requires at least two selected Outputs; each Output can use Column, Line, or
+Line + markers rendering and the Left Y or Right Y axis. The two Y axes are
+configured independently, and Combo supports Iteration X-axis zoom.</p>
 <p>Histogram uses exactly one numeric Output. <strong>Bins</strong> can use Auto, Count from
 1 to 200, or a positive Width. Auto uses the Sturges rule; a Width that would
 create more than 200 bins reports an error. Box &amp; Whisker draws one box for each selected Output and can
@@ -554,11 +560,13 @@ count and that bin's actual width to match the Count axis. With automatic Std
 Dev, fewer than two samples or zero variance omits the curve while keeping the
 Histogram usable.</p>
 <p>For large datasets, Line and Area decimate only the visible Iteration range,
-and Combo applies the same viewport decimation to its Line series. Column and
+and Combo applies the same viewport decimation to both Line styles. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
-preserve raw pairs. Scatter does not sample or decimate its raw pairs. Markers
-use ECharts large scatter rendering, while Lines and Lines + markers use line
-rendering. These display optimizations do not remove committed ResultRows.
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. Scatter
+Markers use ECharts large rendering for marker sizes of 4 or greater; smaller
+markers use normal scatter rendering so the requested shape is preserved.
+Scatter Lines and Lines + markers use line rendering. These display
+optimizations do not remove committed ResultRows.
 Line, Area, Column, and Combo hover inspection resolves exact raw iteration and
 values; Scatter hover reports the nearest actual raw XY row. Bar, Histogram,
 and Box &amp; Whisker do not provide hover inspection. Iteration is the Page row

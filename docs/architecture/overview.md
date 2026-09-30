@@ -141,9 +141,10 @@ The current Desktop presentation architecture has these properties:
   no panels remain, the first Page receives one default panel if it has numeric
   Outputs. Template/workflow replacement and Clear Last Run still reset chart
   session state. Each
-  panel keeps its type, Scatter X source, selected Outputs, Combo series and
-  right-axis settings, per-Output colors, Histogram bins and Normal overrides,
-  Box outlier visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
+  panel keeps its type, Scatter X source, selected Outputs, per-Output colors
+  and marker styles, per-Output Line marker enablement, Combo series and
+  right-axis settings, Histogram bins and Normal overrides, Box outlier
+  visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
   background in Last Run session state. The
   current zoom viewport is transient presentation state and resets when the
   configured X-axis minimum or maximum changes. These settings are not Template
@@ -163,11 +164,16 @@ The current Desktop presentation architecture has these properties:
   Selecting multiple Outputs compares their series
   on the same chart. Scatter uses Iteration or a numeric Output as X; an Output
   used only as Scatter X remains a chart data dependency. Analysis charts wait
-  until all required series are loaded before rendering. Combo uses one
-  Iteration X axis and per-Output Line or Column rendering on the left or right
-  Y axis. Its Line series use viewport min/max decimation while Column series
-  keep every raw row in the viewport. Combo uses the existing raw-series loader
-  and X-axis zoom.
+  until all required series are loaded before rendering. Line and Combo Line
+  series can enable per-Output markers with configurable size, shape, fill, and
+  border; Scatter keeps chart-wide marker size while sharing the per-Output
+  marker shape/fill/border settings. Auto marker colors resolve from the
+  Output's current series color. Legend icons follow the rendered series style,
+  including marker-free Line, Scatter Lines, Combo Line, and Area. Combo uses
+  one Iteration X axis and per-Output Column, Line, or Line + markers rendering
+  on the left or right Y axis. Both Combo Line styles use viewport min/max
+  decimation while Column series keep every raw row in the viewport. Combo uses
+  the existing raw-series loader and X-axis zoom.
 - Histogram and Box & Whisker are post-run projections computed from committed
   StoredRun rows. They do not load their full raw samples into the frontend
   chart cache. Histogram accepts one numeric Output and uses Auto (Sturges),

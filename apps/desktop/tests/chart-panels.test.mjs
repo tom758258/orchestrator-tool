@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
-  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, chartSupportsLive, comboSeriesSettings } from '../src/chartPanels.ts'
+  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, chartSupportsLive, comboSeriesSettings,
+  lineSeriesSettings, markerStyleSettings } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
@@ -77,7 +78,7 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
   assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], type: 'line',
     scatterXOutput: null, scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
-    seriesColors: {},
+    line: { series: {} }, markerStyles: {}, seriesColors: {},
     showLegend: true, legendPosition: 'top',
     imageBackground: 'light',
     zoom: { enabled: false, showSlider: true },
@@ -96,8 +97,18 @@ test('new Last Run defaults to exactly one Chart on its first Page', () => {
 test('advanced chart dependencies and defaults preserve the raw loading boundary', () => {
   const base = addChartPanel([], 'A', ['V'])[0]
   const combo = { ...base, type: 'combo', outputs: ['V', 'I'] }
-  assert.deepEqual(comboSeriesSettings(combo, 'V', 0), { kind: 'column', axis: 'left' })
-  assert.deepEqual(comboSeriesSettings(combo, 'I', 1), { kind: 'line', axis: 'right' })
+  assert.deepEqual(lineSeriesSettings(base, 'V'), { markers: false })
+  assert.deepEqual(markerStyleSettings(base, 'V'),
+    { shape: 'circle', size: 4, fillColor: null, borderColor: null })
+  assert.deepEqual(lineSeriesSettings(base, '__proto__'), { markers: false })
+  assert.deepEqual(markerStyleSettings(base, '__proto__'),
+    { shape: 'circle', size: 4, fillColor: null, borderColor: null })
+  assert.deepEqual(comboSeriesSettings(combo, 'V', 0), { kind: 'column', axis: 'left', markers: false })
+  assert.deepEqual(comboSeriesSettings(combo, 'I', 1), { kind: 'line', axis: 'right', markers: false })
+  const storedWithoutMarkerFlag = { ...combo, combo: { ...combo.combo,
+    series: { V: { kind: 'line', axis: 'right' } } } }
+  assert.deepEqual(comboSeriesSettings(storedWithoutMarkerFlag, 'V', 0),
+    { kind: 'line', axis: 'right', markers: false })
   assert.equal(chartSupportsZoom('combo'), true)
   assert.equal(chartSupportsZoom('histogram'), false)
   assert.equal(chartSupportsZoom('boxplot'), false)
@@ -180,11 +191,17 @@ test('repeated runs preserve compatible panel order, IDs, Pages, types and every
     .map((type, index) => ({ ...panel(7 + index, index % 2 ? 'B' : 'A', type === 'histogram' ? ['V'] : ['V', 'I']),
       type, title: `Custom ${type}`, scatterXOutput: type === 'scatter' ? 'I' : null,
       scatter: { display: 'lines-markers', markerSize: 7, lineWidth: 3 },
+      line: { series: { V: { markers: true }, I: { markers: false } } },
+      markerStyles: {
+        V: { shape: 'diamond', size: 7, fillColor: '#ffffff', borderColor: null },
+        I: { shape: 'triangle', size: 5, fillColor: null, borderColor: '#000000' },
+      },
       seriesColors: { V: '#123456', I: '#abcdef' }, showLegend: false, legendPosition: 'right',
       imageBackground: 'dark', zoom: { enabled: true, showSlider: false },
       xAxis: { ...panel(0, 'A', ['V']).xAxis, title: 'X', min: 2, max: 20, interval: 2, showLabels: false },
       yAxis: { ...panel(0, 'A', ['V']).yAxis, title: 'Y', min: -1, max: 10, interval: 1, showTicks: false },
-      combo: { series: { V: { kind: 'line', axis: 'right' }, I: { kind: 'column', axis: 'left' } },
+      combo: { series: { V: { kind: 'line', axis: 'right', markers: true },
+        I: { kind: 'column', axis: 'left', markers: false } },
         rightAxis: { ...panel(0, 'A', ['V']).combo.rightAxis, title: 'Right', max: 50 } },
       histogram: { mode: 'count', value: 12, showNormalCurve: true, mean: 5, stdDev: 2 },
       boxPlot: { showOutliers: false },

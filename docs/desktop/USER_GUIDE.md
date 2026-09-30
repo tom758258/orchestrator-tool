@@ -577,10 +577,16 @@ Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
 values.
 
 Chart Settings has five tabs: **General**, **Series**, **Axes**, **Analysis**,
-and **Export**. Series contains per-Output **Auto** or **Custom color**, Scatter
-settings, and Combo Type/Axis settings. One custom color applies to all rendering
-of that Output, including Scatter lines and markers; Auto restores the theme
-palette. Box & Whisker retains its automatic colors.
+and **Export**. Series contains per-Output **Auto** or **Custom color**, Line
+styles, Scatter settings, and Combo Type/Axis settings. Each Line Output can
+use **Line** or **Line + markers**. Combo Outputs can use **Column**, **Line**,
+or **Line + markers**. Marker-enabled Line and Combo Outputs can set marker
+size, shape (Circle, Square, Diamond, or Triangle), fill, and border. Scatter
+keeps its chart-wide marker size and line width while marker shape, fill, and
+border are per Output. Marker fill and border use the Output series color in
+**Auto** mode or an independent custom color. Legends mirror the rendered
+line/marker style; Area remains marker-free. Box & Whisker retains its
+automatic colors.
 
 **General → Chart type** also shows the Output-count helper for Combo and
 Histogram. When switching to Histogram with multiple Outputs selected,
@@ -589,15 +595,15 @@ Histogram. When switching to Histogram with multiple Outputs selected,
 A chart panel can select multiple **Outputs** to compare numeric series.
 Scatter **X source** can be Iteration or any numeric Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. **Display** can
-show Markers, Lines, or Lines + markers. **Marker size** and **Line width** accept
-positive finite numbers and apply to the modes that show them. Scatter keeps
-raw X/Y pairs in original row order, including nonmonotonic X values; Lines
-connect those pairs in that order. Scatter hover uses screen-space proximity;
-line displays may be selected through a visible segment but always report an
-actual raw row rather than an interpolated measurement. Combo requires
-at least two selected Outputs; each Output can use Line or Column rendering and
-the Left Y or Right Y axis. The two Y axes are configured independently, and
-Combo supports Iteration X-axis zoom.
+show Markers, Lines, or Lines + markers. Scatter **Marker size** and **Line
+width** accept positive finite numbers and apply to the modes that show them.
+Scatter keeps raw X/Y pairs in original row order, including nonmonotonic X
+values; Lines connect those pairs in that order. Scatter hover uses screen-space
+proximity; line displays may be selected through a visible segment but always
+report an actual raw row rather than an interpolated measurement. Combo
+requires at least two selected Outputs; each Output can use Column, Line, or
+Line + markers rendering and the Left Y or Right Y axis. The two Y axes are
+configured independently, and Combo supports Iteration X-axis zoom.
 
 Histogram uses exactly one numeric Output. **Bins** can use Auto, Count from
 1 to 200, or a positive Width. Auto uses the Sturges rule; a Width that would
@@ -613,11 +619,13 @@ Dev, fewer than two samples or zero variance omits the curve while keeping the
 Histogram usable.
 
 For large datasets, Line and Area decimate only the visible Iteration range,
-and Combo applies the same viewport decimation to its Line series. Column and
+and Combo applies the same viewport decimation to both Line styles. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
-preserve raw pairs. Scatter does not sample or decimate its raw pairs. Markers
-use ECharts large scatter rendering, while Lines and Lines + markers use line
-rendering. These display optimizations do not remove committed ResultRows.
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. Scatter
+Markers use ECharts large rendering for marker sizes of 4 or greater; smaller
+markers use normal scatter rendering so the requested shape is preserved.
+Scatter Lines and Lines + markers use line rendering. These display
+optimizations do not remove committed ResultRows.
 Line, Area, Column, and Combo hover inspection resolves exact raw iteration and
 values; Scatter hover reports the nearest actual raw XY row. Bar, Histogram,
 and Box & Whisker do not provide hover inspection. Iteration is the Page row

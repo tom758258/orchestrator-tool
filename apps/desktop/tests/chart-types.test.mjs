@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { stripTypeScriptTypes } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import { addChartPanel, seriesColor } from '../src/chartPanels.ts'
 import { createPageChartData, minMaxDecimateRange, prepareChartSeries } from '../src/chartData.ts'
-import { comboRendererSeries, scatterRendererSeries } from '../src/chartOptions.ts'
+import { comboRendererSeries, lineRendererSeries, scatterRendererSeries } from '../src/chartOptions.ts'
 import { formatBinBoundary, statisticalChartSeries } from '../src/chartStatistics.ts'
 
 const data = createPageChartData()
@@ -20,6 +19,42 @@ test('Line and Area use visible iteration min/max decimation', () => {
     assert.deepEqual(prepareChartSeries({ ...base, type }, data, 1, range),
       [{ name: 'I', data: expected }])
   }
+})
+
+test('Line markers are per-Output while Area remains marker-free', () => {
+  const series = { name: 'I', data: [[1, 2], [2, 3]] }
+  const plain = lineRendererSeries(base, series, 'red')
+  assert.equal(plain.type, 'line')
+  assert.equal(plain.showSymbol, false)
+  assert.equal(plain.symbol, 'none')
+  assert.equal(plain.lineStyle.color, 'red')
+  assert.equal(plain.itemStyle.color, 'red')
+
+  const markedPanel = { ...base,
+    line: { series: { I: { markers: true } } },
+    markerStyles: { I: { shape: 'square', size: 8, fillColor: '#ffffff', borderColor: '#000000' } } }
+  const marked = lineRendererSeries(markedPanel, series, 'red')
+  assert.equal(marked.showSymbol, true)
+  assert.equal(marked.symbol, 'rect')
+  assert.equal(marked.symbolSize, 8)
+  assert.equal(marked.lineStyle.color, 'red')
+  assert.deepEqual(marked.itemStyle,
+    { color: '#ffffff', borderColor: '#000000', borderWidth: 1 })
+
+  const automatic = lineRendererSeries({ ...markedPanel, seriesColors: { I: '#123456' },
+    markerStyles: { I: { ...markedPanel.markerStyles.I, fillColor: null, borderColor: null } } }, series, 'red')
+  assert.equal(automatic.lineStyle.color, '#123456')
+  assert.deepEqual(automatic.itemStyle,
+    { color: '#123456', borderColor: '#123456', borderWidth: 1 })
+  const mixed = lineRendererSeries({ ...markedPanel, seriesColors: { I: '#123456' },
+    markerStyles: { I: { ...markedPanel.markerStyles.I, fillColor: '#ffffff', borderColor: null } } }, series, 'red')
+  assert.deepEqual(mixed.itemStyle,
+    { color: '#ffffff', borderColor: '#123456', borderWidth: 1 })
+
+  const area = lineRendererSeries({ ...markedPanel, type: 'area' }, series, 'red')
+  assert.equal(area.showSymbol, false)
+  assert.equal(area.symbol, 'none')
+  assert.deepEqual(area.areaStyle, { opacity: 0.18 })
 })
 
 test('Column keeps every raw row in the visible iteration viewport', () => {
@@ -52,7 +87,14 @@ test('Scatter display modes preserve nonmonotonic raw X order and configured ren
     const rendered = scatterRendererSeries(configured, prepared, 'red')
     assert.equal(rendered.data, prepared.data)
     assert.equal(rendered.type, display === 'markers' ? 'scatter' : 'line')
-    assert.equal(rendered.symbolSize, 8)
+    if (display === 'lines') {
+      assert.equal(rendered.showSymbol, false)
+      assert.equal(rendered.symbol, 'none')
+      assert.equal(Object.hasOwn(rendered, 'symbolSize'), false)
+    } else {
+      assert.equal(rendered.symbol, 'circle')
+      assert.equal(rendered.symbolSize, 8)
+    }
     if (display === 'markers') {
       assert.equal(rendered.large, true)
       assert.equal(rendered.largeThreshold, 2000)
@@ -62,6 +104,35 @@ test('Scatter display modes preserve nonmonotonic raw X order and configured ren
       assert.equal(Object.hasOwn(rendered, 'smooth'), false)
     }
   }
+})
+
+test('Scatter marker shape and colors are per-Output without sacrificing default large rendering', () => {
+  const series = { name: 'I', data: [[1, 2]] }
+  const styled = { ...base, type: 'scatter',
+    scatter: { display: 'markers', markerSize: 8, lineWidth: 2 },
+    markerStyles: { I: { shape: 'diamond', size: 12, fillColor: '#ffffff', borderColor: '#000000' } } }
+  const markers = scatterRendererSeries(styled, series, 'red')
+  assert.equal(markers.symbol, 'diamond')
+  assert.equal(markers.symbolSize, 8)
+  assert.deepEqual(markers.itemStyle,
+    { color: '#ffffff', borderColor: '#000000', borderWidth: 1 })
+  assert.equal(markers.large, true)
+  assert.equal(markers.largeThreshold, 2000)
+
+  const sameColor = scatterRendererSeries({ ...styled,
+    markerStyles: { I: { ...styled.markerStyles.I, fillColor: 'red', borderColor: 'red' } } }, series, 'red')
+  assert.equal(sameColor.large, true)
+  const tooSmallForLargeShape = scatterRendererSeries({ ...styled,
+    scatter: { ...styled.scatter, markerSize: 3 },
+    markerStyles: { I: { ...styled.markerStyles.I, fillColor: 'red', borderColor: 'red' } } }, series, 'red')
+  assert.equal(Object.hasOwn(tooSmallForLargeShape, 'large'), false)
+
+  const linesMarkers = scatterRendererSeries({ ...styled,
+    scatter: { ...styled.scatter, display: 'lines-markers' } }, series, 'red')
+  assert.equal(linesMarkers.type, 'line')
+  assert.equal(linesMarkers.showSymbol, true)
+  assert.equal(linesMarkers.symbol, 'diamond')
+  assert.equal(linesMarkers.lineStyle.color, 'red')
 })
 
 test('Scatter retains all raw pairs at 3,000 and 100,000 rows in every display mode', () => {
@@ -97,7 +168,25 @@ test('Combo decimates Line and retains Column viewport rows with independent Y a
   assert.deepEqual(display[1].data, minMaxDecimateRange(data.iteration, data.getSeries('V'), 1, range))
   const series = comboRendererSeries(panel, display, ['red', 'blue'])
   assert.deepEqual(series.map(item => [item.type, item.yAxisIndex]), [['bar', 0], ['line', 1]])
+  assert.equal(series[1].showSymbol, false)
+  assert.equal(series[1].symbol, 'none')
   assert.equal(series.some(item => Object.hasOwn(item, 'stack')), false)
+
+  const markedPanel = { ...panel, combo: { ...panel.combo, series: {
+    V: { kind: 'line', axis: 'right', markers: true },
+  } }, markerStyles: {
+    V: { shape: 'triangle', size: 6, fillColor: '#ffffff', borderColor: '#000000' },
+  } }
+  const markedDisplay = prepareChartSeries(markedPanel, data, 1, range)
+  assert.deepEqual(markedDisplay[1].data,
+    minMaxDecimateRange(data.iteration, data.getSeries('V'), 1, range))
+  const marked = comboRendererSeries(markedPanel, markedDisplay, ['red', 'blue'])[1]
+  assert.equal(marked.showSymbol, true)
+  assert.equal(marked.symbol, 'triangle')
+  assert.equal(marked.symbolSize, 6)
+  assert.equal(marked.lineStyle.color, 'blue')
+  assert.deepEqual(marked.itemStyle,
+    { color: '#ffffff', borderColor: '#000000', borderWidth: 1 })
 })
 
 test('statistical responses map bins and box statistics directly to ECharts series', () => {
@@ -161,10 +250,16 @@ test('Histogram normal line uses bin centers, sample count and each actual width
   assert.notDeepEqual(override.data, line.data)
 })
 
-test('Chart Settings explains Combo and Histogram Output requirements', () => {
+test('Chart Settings exposes required chart and marker controls', () => {
   const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
   assert.match(source, /draft\.type === 'combo'[\s\S]*?Combo requires at least two selected Outputs\./)
   assert.match(source, /draft\.type === 'histogram'[\s\S]*?Histogram uses exactly one Output\.[\s\S]*?Apply keeps the first selected Output\./)
+  assert.match(source, /draft\.type === 'line'[\s\S]*?<option value="line-markers">Line \+ markers<\/option>/)
+  assert.match(source, /Marker shape[\s\S]*?Circle[\s\S]*?Square[\s\S]*?Diamond[\s\S]*?Triangle/)
+  assert.match(source, /Marker fill[\s\S]*?Marker border/)
+  assert.match(source, /hasOwnProperty\.call\(draft\.markerStyles, name\)/)
+  assert.match(source, /hasOwnProperty\.call\(draft\.line\.series, name\)/)
+  assert.match(source, /hasOwnProperty\.call\(draft\.combo\.series, name\)/)
 })
 
 test('shared Output color preserves Auto and colors Scatter line/markers and Combo', () => {
@@ -205,15 +300,9 @@ test('shared Output color preserves Auto and colors Scatter line/markers and Com
   assert.deepEqual(automatic.map(series => series.itemStyle.color), ['red', 'blue'])
 })
 
-test('ChartPlot Line renderer resolves custom color and returns to its supplied palette', () => {
-  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  const start = source.indexOf('    return display.map(series => {')
-  const end = source.indexOf('  }, [display, numericNames', start)
-  assert.ok(start >= 0 && end > start)
-  const render = panel => runInNewContext(stripTypeScriptTypes('(() => {' + source.slice(start, end) + '})'), {
-    panel, display: [{ name: 'I', data: [[1, 2]] }], numericNames: ['I'], seriesColor,
-    style: { getPropertyValue: () => 'red' },
-  })()
-  assert.equal(render({ ...base, seriesColors: { I: '#123456' } })[0].itemStyle.color, '#123456')
-  assert.equal(render(base)[0].itemStyle.color, 'red')
+test('Line renderer resolves custom series color and returns to its supplied palette', () => {
+  const series = { name: 'I', data: [[1, 2]] }
+  assert.equal(lineRendererSeries({ ...base, seriesColors: { I: '#123456' } }, series, 'red')
+    .lineStyle.color, '#123456')
+  assert.equal(lineRendererSeries(base, series, 'red').lineStyle.color, 'red')
 })
