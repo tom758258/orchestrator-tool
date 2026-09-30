@@ -501,10 +501,15 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 的關係。
 
 Chart Settings 有五個 tabs：**General**、**Series**、**Axes**、**Analysis**
-與 **Export**。Series 包含各 Output 的 **Auto**／**Custom color**、Scatter 設定，
-以及 Combo 的 Type／Axis。每個 Output 的自訂顏色會套用至該 Output 的所有繪圖
-元素，包括 Scatter 的線與 markers；切回 Auto 會恢復 theme palette。
-Box & Whisker 維持自動配色。
+與 **Export**。Series 包含各 Output 的 **Auto**／**Custom color**、Line 樣式、
+Scatter 設定，以及 Combo 的 Type／Axis。每個 Line Output 可選 **Line** 或
+**Line + markers**；Combo Output 可選 **Column**、**Line** 或
+**Line + markers**。啟用 marker 的 Line 與 Combo Output 可分別設定 marker
+size、shape（Circle、Square、Diamond、Triangle）、fill 與 border。Scatter
+維持整張圖共用的 marker size 與 line width，但 marker shape、fill、border
+可依 Output 設定。Marker fill 與 border 使用 **Auto** 時會跟隨該 Output 的
+series color，也可改為獨立的 custom color。Legend 會反映實際的 line／marker
+樣式；Area 仍不顯示 markers。Box & Whisker 維持自動配色。
 
 **General → Chart type** 也會在選擇 Combo 或 Histogram 時顯示 Output 數量提示。
 若原本選取多個 Outputs 後切換成 Histogram，**Apply** 會保留第一個已選取的 Output。
@@ -512,12 +517,12 @@ Box & Whisker 維持自動配色。
 在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
 **X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
 不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
-**Marker size** 與 **Line width** 接受有限且大於 0 的數值，並用於顯示對應元素的
-模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；Lines 依該順序
-連線。Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，但只會回報
-實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個 Outputs；每個 Output 可選 Line
-或 Column，並指定 Left Y 或 Right Y。左右 Y 軸可分別設定，Combo 支援
-Iteration X 軸縮放。
+Scatter 的 **Marker size** 與 **Line width** 接受有限且大於 0 的數值，並用於
+顯示對應元素的模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；
+Lines 依該順序連線。Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
+但只會回報實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個
+Outputs；每個 Output 可選 Column、Line 或 Line + markers，並指定 Left Y 或
+Right Y。左右 Y 軸可分別設定，Combo 支援 Iteration X 軸縮放。
 
 Histogram 一次只使用一個 numeric Output。**Bins** 可選 Auto、Count（1–200）
 或 Width（正數）；Auto 使用 Sturges rule。Width 若會產生超過 200 個 bins，
@@ -531,11 +536,13 @@ chart cache。**Analysis → Show normal curve** 可在 Histogram 上疊加折�
 會省略曲線，Histogram 仍可使用。
 
 大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
-decimation，Combo 的 Line series 也使用相同的 viewport decimation。Column 與
+decimation，Combo 的兩種 Line 樣式也使用相同的 viewport decimation。Column 與
 Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
-raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。Markers 使用
-ECharts large scatter rendering；Lines 與 Lines + markers 使用 line rendering。
-這些顯示最佳化不會刪除 committed ResultRows。Line、Area、Column 與 Combo
+raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。Scatter Markers
+在要求的 shape 與 border 能正確保留時使用 ECharts large rendering；若 marker
+有可見的 custom border，或 marker size 小於 4，則改用一般 scatter rendering。
+Scatter Lines 與 Lines + markers 使用 line rendering。這些顯示最佳化不會刪除
+committed ResultRows。Line、Area、Column 與 Combo
 的 hover 會解析 exact raw iteration 與 value；Scatter hover 回報最近的實際 raw
 XY row。Bar、Histogram 與 Box & Whisker 不提供 hover inspection。Iteration 是
 Page 的 row sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest

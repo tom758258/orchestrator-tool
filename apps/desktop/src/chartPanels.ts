@@ -19,7 +19,15 @@ export type ChartImageBackground = 'light' | 'dark'
 export type LegendPosition = 'top' | 'bottom' | 'left' | 'right'
 export type ScatterSettings = { display: 'markers' | 'lines' | 'lines-markers'; markerSize: number; lineWidth: number }
 export type ChartType = 'line' | 'scatter' | 'column' | 'area' | 'bar' | 'combo' | 'histogram' | 'boxplot'
-export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'right' }
+export type MarkerShape = 'circle' | 'square' | 'diamond' | 'triangle'
+export type MarkerStyleSettings = {
+  shape: MarkerShape
+  size: number
+  fillColor: string | null
+  borderColor: string | null
+}
+export type LineSeriesSettings = { markers: boolean }
+export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'right'; markers: boolean }
 export type HistogramSettings = { mode: 'auto' | 'count' | 'width'; value: number | null;
   showNormalCurve: boolean; mean: number | null; stdDev: number | null }
 
@@ -31,6 +39,8 @@ export type ChartPanel = {
   type: ChartType
   scatterXOutput: string | null
   scatter: ScatterSettings
+  line: { series: Record<string, LineSeriesSettings> }
+  markerStyles: Record<string, MarkerStyleSettings>
   seriesColors: Record<string, string>
   showLegend: boolean
   legendPosition: LegendPosition
@@ -49,9 +59,30 @@ export function seriesColor(panel: ChartPanel, output: string, autoColor: string
     : autoColor
 }
 
+export function lineSeriesSettings(panel: ChartPanel, name: string): LineSeriesSettings {
+  const series = panel.line?.series
+  return series && Object.prototype.hasOwnProperty.call(series, name) ? series[name] : { markers: false }
+}
+
+export function markerStyleSettings(panel: ChartPanel, name: string): MarkerStyleSettings {
+  if (panel.markerStyles && Object.prototype.hasOwnProperty.call(panel.markerStyles, name)) {
+    return panel.markerStyles[name]
+  }
+  return {
+    shape: 'circle',
+    size: 4,
+    fillColor: null,
+    borderColor: null,
+  }
+}
+
 export function comboSeriesSettings(panel: ChartPanel, name: string, index: number): ComboSeriesSettings {
-  return panel.combo.series[name] ?? (index === 0
-    ? { kind: 'column', axis: 'left' } : { kind: 'line', axis: 'right' })
+  const stored = Object.prototype.hasOwnProperty.call(panel.combo.series, name)
+    ? panel.combo.series[name] : undefined
+  if (stored) return { ...stored, markers: stored.markers ?? false }
+  return index === 0
+    ? { kind: 'column', axis: 'left', markers: false }
+    : { kind: 'line', axis: 'right', markers: false }
 }
 
 export function chartRequiredOutputs(panel: Pick<ChartPanel, 'type' | 'scatterXOutput' | 'outputs'>): string[] {
@@ -113,6 +144,8 @@ export function addChartPanel(panels: ChartPanel[], page: string, numericNames: 
   return [...panels, {
     id: nextChartPanelId(panels), page, title: '', outputs: [name], type: 'line', scatterXOutput: null,
     scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
+    line: { series: {} },
+    markerStyles: {},
     seriesColors: {},
     showLegend: true, legendPosition: 'top',
     imageBackground: 'light',

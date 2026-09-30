@@ -1,4 +1,5 @@
-import { chartSupportsZoom, comboSeriesSettings, seriesColor, type AxisSettings, type ChartPanel } from './chartPanels.ts'
+import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings, seriesColor,
+  type AxisSettings, type ChartPanel, type MarkerShape } from './chartPanels.ts'
 
 type ChartColors = { ink: string; axis: string; grid: string }
 export const CHART_GRID = { left: 80, right: 24, bottom: 64 }
@@ -29,6 +30,50 @@ export const chartLegendTextStyle = (panel: ChartPanel, color: string) => ({
     ? { width: SIDE_LEGEND_WIDTH - 32, overflow: 'truncate' as const } : {}),
 })
 
+export function markerSymbol(shape: MarkerShape): 'circle' | 'rect' | 'diamond' | 'triangle' {
+  return shape === 'square' ? 'rect' : shape
+}
+
+export function chartLegendData(panel: ChartPanel): (string | { name: string; icon: 'line' })[] {
+  return panel.outputs.map((name, index) => {
+    const lineOnly = panel.type === 'area'
+      || (panel.type === 'line' && !lineSeriesSettings(panel, name).markers)
+      || (panel.type === 'scatter' && panel.scatter.display === 'lines')
+      || (panel.type === 'combo' && (() => {
+        const settings = comboSeriesSettings(panel, name, index)
+        return settings.kind === 'line' && !settings.markers
+      })())
+    return lineOnly ? { name, icon: 'line' as const } : name
+  })
+}
+
+function markerRendererStyle(panel: ChartPanel, name: string, color: string) {
+  const marker = markerStyleSettings(panel, name)
+  const fill = marker.fillColor ?? color
+  const border = marker.borderColor ?? color
+  return {
+    marker,
+    symbol: markerSymbol(marker.shape),
+    itemStyle: { color: fill, borderColor: border, borderWidth: 1 },
+    hasVisibleBorder: fill !== border,
+  }
+}
+
+export function lineRendererSeries(panel: ChartPanel,
+  series: { name: string; data: [number, number][] }, color: string) {
+  color = seriesColor(panel, series.name, color)
+  const markers = panel.type === 'line' && lineSeriesSettings(panel, series.name).markers
+  const common = { ...series, type: 'line' as const, silent: true, emphasis: { disabled: true },
+    lineStyle: { color } }
+  if (markers) {
+    const marker = markerRendererStyle(panel, series.name, color)
+    return { ...common, showSymbol: true, symbol: marker.symbol, symbolSize: marker.marker.size,
+      itemStyle: marker.itemStyle }
+  }
+  return { ...common, showSymbol: false, symbol: 'none' as const, itemStyle: { color },
+    ...(panel.type === 'area' ? { areaStyle: { opacity: 0.18 } } : {}) }
+}
+
 export function chartLayout(panel: ChartPanel, includeSlider = true) {
   const bottom = chartGridBottom(panel, includeSlider)
   const hasTitle = panel.title.length > 0
@@ -46,24 +91,40 @@ export function chartLayout(panel: ChartPanel, includeSlider = true) {
 export function scatterRendererSeries(panel: ChartPanel, series: { name: string; data: [number, number][] },
   color: string) {
   color = seriesColor(panel, series.name, color)
-  const common = { ...series, itemStyle: { color } }
-  if (panel.scatter.display === 'markers') {
-    return { ...common, type: 'scatter' as const, large: true, largeThreshold: 2000,
-      symbolSize: panel.scatter.markerSize }
+  if (panel.scatter.display === 'lines') {
+    return { ...series, type: 'line' as const, showSymbol: false, symbol: 'none' as const,
+      itemStyle: { color }, lineStyle: { color, width: panel.scatter.lineWidth } }
   }
-  return { ...common, type: 'line' as const, showSymbol: panel.scatter.display === 'lines-markers',
-    symbolSize: panel.scatter.markerSize, lineStyle: { color, width: panel.scatter.lineWidth } }
+  const marker = markerRendererStyle(panel, series.name, color)
+  if (panel.scatter.display === 'markers') {
+    const useLarge = panel.scatter.markerSize >= 4 && !marker.hasVisibleBorder
+    return { ...series, type: 'scatter' as const, symbol: marker.symbol,
+      symbolSize: panel.scatter.markerSize, itemStyle: marker.itemStyle,
+      ...(useLarge ? { large: true, largeThreshold: 2000 } : {}) }
+  }
+  return { ...series, type: 'line' as const, showSymbol: true, symbol: marker.symbol,
+    symbolSize: panel.scatter.markerSize, itemStyle: marker.itemStyle,
+    lineStyle: { color, width: panel.scatter.lineWidth } }
 }
 
 export function comboRendererSeries(panel: ChartPanel,
   display: { name: string; data: [number, number][] }[], colors: string[]) {
   return display.map((series, index) => {
     const settings = comboSeriesSettings(panel, series.name, index)
-    const common = { ...series, yAxisIndex: settings.axis === 'right' ? 1 : 0,
-      silent: true, itemStyle: { color: seriesColor(panel, series.name, colors[index]) } }
-    return settings.kind === 'line'
-      ? { ...common, type: 'line' as const, showSymbol: false, emphasis: { disabled: true } }
-      : { ...common, type: 'bar' as const, large: true, largeThreshold: 2000 }
+    const color = seriesColor(panel, series.name, colors[index])
+    const common = { ...series, yAxisIndex: settings.axis === 'right' ? 1 : 0, silent: true }
+    if (settings.kind === 'line') {
+      if (settings.markers) {
+        const marker = markerRendererStyle(panel, series.name, color)
+        return { ...common, type: 'line' as const, showSymbol: true, symbol: marker.symbol,
+          symbolSize: marker.marker.size, itemStyle: marker.itemStyle,
+          lineStyle: { color }, emphasis: { disabled: true } }
+      }
+      return { ...common, type: 'line' as const, showSymbol: false, symbol: 'none' as const,
+        itemStyle: { color }, lineStyle: { color }, emphasis: { disabled: true } }
+    }
+    return { ...common, type: 'bar' as const, large: true, largeThreshold: 2000,
+      itemStyle: { color } }
   })
 }
 
@@ -112,7 +173,8 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
     title: { text: panel.title, left: 'center' as const, top: 8,
       textStyle: { ...visual.title.textStyle, fontSize: 16 } },
     legend: { show: hasLegend, ...layout.legend, type: 'scroll' as const,
-      selectedMode: false, textStyle: chartLegendTextStyle(panel, colors.ink) },
+      selectedMode: false, data: chartLegendData(panel),
+      textStyle: chartLegendTextStyle(panel, colors.ink) },
     grid: layout.grid,
     xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,
       36, visual.xAxis),

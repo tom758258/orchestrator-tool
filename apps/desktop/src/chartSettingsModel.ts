@@ -1,4 +1,4 @@
-import type { AxisSettings, ChartPanel } from './chartPanels.ts'
+import type { AxisSettings, ChartPanel, MarkerStyleSettings } from './chartPanels.ts'
 
 type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
   min: string
@@ -6,11 +6,15 @@ type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
   interval: string
 }
 
+type MarkerStyleDraft = Omit<MarkerStyleSettings, 'size'> & { size: string }
+
 export type ChartSettingsDraft = {
   title: string
   type: ChartPanel['type']
   scatterXOutput: string | null
   scatter: { display: ChartPanel['scatter']['display']; markerSize: string; lineWidth: string }
+  line: ChartPanel['line']
+  markerStyles: Record<string, MarkerStyleDraft>
   seriesColors: ChartPanel['seriesColors']
   showLegend: boolean
   legendPosition: ChartPanel['legendPosition']
@@ -37,6 +41,9 @@ export function createChartSettingsDraft(panel: ChartPanel): ChartSettingsDraft 
   return { title: panel.title, type: panel.type, scatterXOutput: panel.scatterXOutput,
     scatter: { display: panel.scatter.display, markerSize: String(panel.scatter.markerSize),
       lineWidth: String(panel.scatter.lineWidth) },
+    line: { series: { ...(panel.line?.series ?? {}) } },
+    markerStyles: Object.fromEntries(Object.entries(panel.markerStyles ?? {}).map(([name, style]) =>
+      [name, { ...style, size: String(style.size) }])),
     seriesColors: { ...panel.seriesColors },
     showLegend: panel.showLegend, legendPosition: panel.legendPosition,
     imageBackground: panel.imageBackground,
@@ -113,8 +120,34 @@ function inactiveHistogramValue(mode: ChartSettingsDraft['histogram']['mode'], r
   return raw.trim() !== '' && Number.isFinite(value) && value > 0 ? value : 0.5
 }
 
+function normalizedMarkerStyles(draft: ChartSettingsDraft):
+  { styles: ChartPanel['markerStyles'] } | { error: string } {
+  const active = new Set<string>()
+  if (draft.type === 'line') {
+    Object.entries(draft.line.series).forEach(([name, settings]) => {
+      if (settings.markers) active.add(name)
+    })
+  }
+  if (draft.type === 'combo') {
+    Object.entries(draft.combo.series).forEach(([name, settings]) => {
+      if (settings.kind === 'line' && settings.markers) active.add(name)
+    })
+  }
+  const styles: ChartPanel['markerStyles'] = {}
+  for (const [name, style] of Object.entries(draft.markerStyles)) {
+    const text = style.size.trim()
+    const value = Number(text)
+    const valid = text !== '' && Number.isFinite(value) && value > 0
+    if (active.has(name) && !valid) {
+      return { error: `${name} marker size must be a finite number greater than zero.` }
+    }
+    styles[name] = { ...style, size: valid ? value : 4 }
+  }
+  return { styles }
+}
+
 export function validateChartSettingsDraft(draft: ChartSettingsDraft):
-  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
+  { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = draft.type === 'histogram' || draft.type === 'boxplot'
     ? normalizeInactiveAxis(draft.xAxis)
@@ -126,6 +159,8 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
     ? parseAxis(draft.combo.rightAxis, 'Right Y Axis')
     : normalizeInactiveAxis(draft.combo.rightAxis)
   if (typeof rightAxis === 'string') return { error: rightAxis }
+  const markerStyles = normalizedMarkerStyles(draft)
+  if ('error' in markerStyles) return { error: markerStyles.error }
   const markerText = draft.scatter.markerSize.trim()
   const markerValue = Number(markerText)
   const markerSize = markerText !== '' && Number.isFinite(markerValue) && markerValue > 0 ? markerValue : null
@@ -167,6 +202,8 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   }
   return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,
     scatter: { display: draft.scatter.display, markerSize: markerSize ?? 4, lineWidth: lineWidth ?? 2 },
+    line: { series: { ...draft.line.series } },
+    markerStyles: markerStyles.styles,
     seriesColors: { ...draft.seriesColors },
     showLegend: draft.showLegend, legendPosition: draft.legendPosition,
     imageBackground: draft.imageBackground, zoom: { ...draft.zoom }, xAxis, yAxis,
