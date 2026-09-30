@@ -16,9 +16,10 @@ use crate::{
     tool_instance::ToolInstanceId,
     worker::WorkerSession,
     workflow::{
-        ForIteration, InputValue, MessageFieldKind, MessageRecord, MessageTarget, ResultRow, Step,
-        StepExecution, StepId, StepKind, StepOutcome, StepResult, WhileIteration, WorkflowOutput,
-        WorkflowRunEvent, WorkflowRunResult, WorkflowRunSummary,
+        ForIteration, InputValue, MAX_MESSAGE_CHARS, MESSAGE_TRUNCATION_MARKER, MessageFieldKind,
+        MessageRecord, MessageTarget, ResultRow, Step, StepExecution, StepId, StepKind,
+        StepOutcome, StepResult, WhileIteration, WorkflowOutput, WorkflowRunEvent,
+        WorkflowRunResult, WorkflowRunSummary,
     },
 };
 
@@ -535,7 +536,25 @@ fn compose_message(
         }
     }
     text.push('\n');
-    Ok(text)
+    Ok(bound_message(text))
+}
+
+/// One message is bounded so a long scalar Output cannot grow the buffer without limit.
+/// The bound counts Unicode characters, never splits one, and keeps the single trailing newline.
+fn bound_message(text: String) -> String {
+    if text.chars().count() <= MAX_MESSAGE_CHARS {
+        return text;
+    }
+    // Reserve the marker plus the single trailing newline from the budget.
+    let keep = MAX_MESSAGE_CHARS - MESSAGE_TRUNCATION_MARKER.chars().count() - 1;
+    let mut bounded: String = text.chars().take(keep).collect();
+    // Do not let the cut point leave stray blank lines before the marker.
+    while bounded.ends_with('\n') {
+        bounded.pop();
+    }
+    bounded.push_str(MESSAGE_TRUNCATION_MARKER);
+    bounded.push('\n');
+    bounded
 }
 
 /// Show Message displays a single scalar value; structured values are reported explicitly.
@@ -656,7 +675,9 @@ mod tests {
         WorkflowExecutionError, execute_workflow, execute_workflow_streaming_with_loop_stop,
         execute_workflow_with_events,
     };
-    use crate::workflow::{Expression, ExpressionOperator};
+    use crate::workflow::{
+        Expression, ExpressionOperator, MAX_MESSAGE_CHARS, MESSAGE_TRUNCATION_MARKER,
+    };
 
     #[test]
     fn streaming_execution_emits_full_runtime_values_without_retaining_a_run_result() {
@@ -2007,6 +2028,89 @@ mod tests {
                 (MessageTarget::Message1, "kept\n".to_owned()),
                 (MessageTarget::Message1, "tick\n".to_owned()),
             ]
+        );
+    }
+
+    #[test]
+    fn show_message_bounds_one_very_long_message_and_keeps_its_trailing_newline() {
+        let wide = char::from_u32(0x7d2).unwrap();
+        let long: String = std::iter::repeat_n(wide, MAX_MESSAGE_CHARS * 2).collect();
+        let output = Step::new(
+            StepId::new("value").unwrap(),
+            StepKind::Output {
+                name: "Value".to_owned(),
+                value: InputValue::Literal(json!(long)),
+            },
+        );
+        let message = show_message(
+            "show-message-1",
+            MessageTarget::Message1,
+            vec![MessageField::output(
+                StepOutputReference::new(output.id().clone(), ""),
+                false,
+            )],
+        );
+        let (_, events) = run_simulation(&Workflow::new(vec![output, message]).unwrap());
+        let (_, text) = messages_of(&events).pop().expect("one message");
+
+        // The record is bounded, never splits a character, and still ends with one newline.
+        assert_eq!(text.chars().count(), MAX_MESSAGE_CHARS);
+        assert!(text.ends_with('\n'));
+        assert_eq!(text.matches('\n').count(), 1);
+        assert!(text.ends_with(&format!("{MESSAGE_TRUNCATION_MARKER}\n")));
+        assert!(!text.contains('\u{fffd}'), "no split character");
+        // A message within the bound is passed through untouched.
+        let (_, events) = run_simulation(
+            &Workflow::new(vec![show_message(
+                "show-message-1",
+                MessageTarget::Message1,
+                vec![MessageField::text("short", false)],
+            )])
+            .unwrap(),
+        );
+        assert_eq!(
+            messages_of(&events),
+            vec![(MessageTarget::Message1, "short\n".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_show_message_only_workflow_keeps_the_existing_no_output_row_fallback() {
+        // Show Message publishes no Output column and no Output Page of its own.
+        let message = show_message(
+            "show-message-1",
+            MessageTarget::Message1,
+            vec![MessageField::text("no outputs here", false)],
+        );
+        let workflow = Workflow::new(vec![message]).unwrap();
+        assert!(workflow.output_pages().is_empty());
+
+        let (summary, events) = run_simulation(&workflow);
+        assert!(summary.succeeded());
+        assert_eq!(
+            messages_of(&events),
+            vec![(MessageTarget::Message1, "no outputs here\n".to_owned())]
+        );
+        // The pre-existing fallback still commits one empty Results row.
+        let rows: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                WorkflowRunEvent::ResultRowCommitted(row) => Some(row),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].page(), "Results");
+        assert!(rows[0].outputs().is_empty());
+        // Show Message itself never contributes a row or a column.
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event, WorkflowRunEvent::ResultRowCommitted(row) if row.page() != "Results"
+                ))
+                .count(),
+            0
         );
     }
 

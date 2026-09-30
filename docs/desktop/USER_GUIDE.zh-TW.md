@@ -399,11 +399,13 @@ rows，不會再做第二次 expansion。
 - **Content Fields** 構成訊息內容。每個 step 最少 1 個、最多 10 個 field，預設建立
   1 個空白 String。可使用 **Add Field** 與 **Delete Field** 調整數量，Fields 依畫面
   順序串接。
-- **String** field 為自行輸入的文字，最多 256 個字元。
+- **String** field 為自行輸入的文字，最多 256 個 Unicode 字元；以 code point 計算，
+  因此 Emoji 等字元不會被提前截斷。
 - **Output** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
-  目前 step 之前、在當前 loop scope 內可見的 Outputs。Show Message 的 Output 必須是
-  單一數值，不支援 Custom Meters batch。若參考的值不是單一數字、文字或 Boolean，該
-  step 會明確報錯，不會寫出部分訊息。
+  目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
+  Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
+  其他 step。Show Message 的 Output 必須是單一數值，不支援 Custom Meters batch。若參考
+  的值不是單一數字、文字、Boolean 或 null，該 step 會明確報錯，不會寫出部分訊息。
 - **Newline** 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。
 
@@ -539,15 +541,21 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 ### 10.3 Messages
 
 **Messages** 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：**Message
-1**、**Message 2** 與 **Message 3**，由 step 選擇要寫入哪一個。每個 tab 以 latest
-first 依序保留自己的訊息，訊息內的換行也會保留。切換 tab 或收合面板都不會遺失訊息。
+1**、**Message 2** 與 **Message 3**，由 step 選擇要寫入哪一個。每個 tab 依 workflow
+產生的順序顯示訊息，**舊訊息在上、最新訊息在下**，因此 loop 的輸出可以由上往下閱讀。
+這與 **Last Run Execution Results** 及 **Output Data** 的 latest first 排列相反。
+訊息內的換行也會保留；切換 tab 或收合面板都不會遺失訊息。
 
 由於 loop 可能執行大量次數，每個 tab 僅保留最近 1,000 筆訊息。摘要列仍會顯示該次 run
-產生的訊息總數，因此可以知道是否還有更早的訊息。
+產生的訊息總數，因此可以知道是否還有更早的訊息。**Messages** 收合時不會重新載入
+訊息清單，但 run 仍會持續接收訊息並更新總數；重新展開後即可看到最新的訊息。
 
-訊息屬於產生它的那一次 run。開始新一輪 run 會清空訊息；run 失敗或 graceful stop 則會
-保留當輪已產生的訊息。**Clear Last Run**、New Template 與 Open Template 都會一併清除
-訊息。訊息不會存檔，也無法 export。
+單則訊息最多 4,096 個字元，避免過長的 Output 值填滿面板。超過時會縮短並標示
+`…[truncated]`，且結尾仍保有自己的換行。
+
+訊息屬於產生它的那一次 run。run 正常結束、失敗或 graceful stop 都會保留當輪已產生的
+訊息。開始新一輪 run 會清空上一輪的訊息。**Clear Last Run**、New Template 與 Open
+Template 都會一併清除訊息。訊息不會存檔，也無法 export。
 
 ### 10.4 Charts
 

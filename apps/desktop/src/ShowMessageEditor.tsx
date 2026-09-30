@@ -4,6 +4,7 @@ import {
   MESSAGE_TARGETS,
   MESSAGE_TARGET_LABELS,
   composeMessageText,
+  limitMessageText,
   showMessageOutputCandidates,
 } from './workflow'
 import type { MessageFieldWire, MessageTargetWire, OutputStep, ShowMessageStep } from './workflow'
@@ -69,9 +70,9 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
             ? <label className="step-property-field">
                 <span className="step-property-label">Text</span>
                 <input type="text" value={field.text} disabled={disabled}
-                  maxLength={MAX_MESSAGE_TEXT_CHARS}
                   onChange={event => updateField(index,
-                    textField(event.target.value, field.newline))} />
+                    textField(limitMessageText(event.target.value, MAX_MESSAGE_TEXT_CHARS),
+                      field.newline))} />
                 <span className="step-property-hint">
                   {Array.from(field.text).length} / {MAX_MESSAGE_TEXT_CHARS} characters
                 </span>

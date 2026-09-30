@@ -465,10 +465,12 @@ not an Output Page, so it never adds columns to your data, CSV, or charts.
 - A **String** field is text you type, up to 256 characters.
 - An **Output** field shows the value of an Output step. The list shows Output
   names, and only Outputs that come earlier in the workflow and are visible in
-  the current loop scope are offered. A Show Message Output must be a single
-  value; a Custom Meters batch is not supported. If a referenced value is not a
-  single number, piece of text, or Boolean, the step fails with a clear error
-  instead of writing a partial message.
+  the current loop scope are offered. Validation also requires a real Output
+  step, so a reference to an earlier Wait, Set Variable, or Show Message step is
+  rejected and is never redirected to a different step. A Show Message Output
+  must be a single value; a Custom Meters batch is not supported. If a
+  referenced value is not a single number, piece of text, Boolean, or null, the
+  step fails with a clear error instead of writing a partial message.
 - **Newline** adds a line break after that field. Every message ends with a
   line break on its own, so two Show Message steps never run together on the
   same line, and the last field does not need a Newline checkbox.
@@ -622,18 +624,27 @@ its Newer / Older paging are hidden until it is expanded.
 
 **Messages** collects the text written by Show Message steps. It has three
 independent tabs, **Message 1**, **Message 2**, and **Message 3**, and a step
-chooses which one it writes to. Each tab keeps its own messages in the order the
-workflow produced them, newest first, and a message keeps its own line breaks.
-Switching tabs or collapsing the panel never discards a message.
+chooses which one it writes to. Each tab lists its messages in the order the
+workflow produced them, oldest first, so a loop reads top to bottom. This is the
+opposite of **Last Run Execution Results** and **Output Data**, which are shown
+newest first. A message keeps its own line breaks. Switching tabs or collapsing
+the panel never discards a message.
 
 Because a loop can run many times, each tab keeps only its most recent 1,000
 messages. The summary line shows the total number of messages the run produced,
-so you can still see that older messages exist.
+so you can still see that older messages exist. While **Messages** is collapsed
+it does not reload the message list, but the run keeps collecting messages and
+updating the total, and the latest messages appear when you expand it again.
 
-Messages belong to the run that produced them. Starting a new run clears them,
-while a run that fails or is stopped keeps the messages it already wrote.
-**Clear Last Run**, a new Template, and opening a Template all clear them with
-the rest of the Last Run. Messages are not saved to disk and cannot be exported.
+One message is limited to 4,096 characters so a very long Output value cannot
+fill the panel. A longer message is shortened, marked with `…[truncated]`, and
+still ends with its own line break.
+
+Messages belong to the run that produced them. A run that ends normally, fails,
+or is stopped keeps the messages it already produced. Starting a new run clears
+the previous run's messages. **Clear Last Run**, a new Template, and opening a
+Template all clear them with the rest of the Last Run. Messages are not saved to
+disk and cannot be exported.
 
 ### 10.4 Charts
 

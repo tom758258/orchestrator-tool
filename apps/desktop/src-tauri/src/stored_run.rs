@@ -10,7 +10,8 @@ use std::{
 use orchestrator_tool::{
     template::Template,
     workflow::{
-        ForIteration, MessageTarget, ResultRow, StepExecution, StepOutcome, WhileIteration,
+        ForIteration, MessageTarget, ResultRow, Step, StepExecution, StepId, StepKind, StepOutcome,
+        WhileIteration,
     },
 };
 use serde::Serialize;
@@ -97,6 +98,7 @@ pub struct PageMetadataDto {
 pub struct MessageCountDto {
     pub target: String,
     pub total: u64,
+    pub revision: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -111,7 +113,6 @@ pub struct RunMetadataDto {
     pub latest_execution: Option<CompactExecutionDto>,
     pub pages: Vec<PageMetadataDto>,
     pub step_summaries: Vec<StepSummaryDto>,
-    pub message_revision: u64,
     pub messages: Vec<MessageCountDto>,
 }
 
@@ -138,7 +139,7 @@ pub struct ExecutionRowsDto {
 pub struct MessageRowsDto {
     pub run_id: u64,
     pub target: String,
-    pub message_revision: u64,
+    pub revision: u64,
     pub total_messages: u64,
     pub offset: usize,
     pub messages: Vec<String>,
@@ -273,7 +274,6 @@ pub struct StoredRun {
     step_summaries: BTreeMap<String, StepSummary>,
     pages: BTreeMap<String, StoredPage>,
     messages: [StoredMessages; 3],
-    message_revision: u64,
 }
 
 enum RunStatus {
@@ -300,6 +300,8 @@ pub fn message_target_index(target: &str) -> Option<usize> {
 struct StoredMessages {
     records: VecDeque<String>,
     total: u64,
+    /// Advances only when this tab changes, so an unrelated tab does not invalidate its window.
+    revision: u64,
 }
 
 impl StoredMessages {
@@ -307,18 +309,22 @@ impl StoredMessages {
         Self {
             records: VecDeque::with_capacity(MESSAGE_MAX_RECORDS),
             total: 0,
+            revision: 0,
         }
     }
 
     fn append(&mut self, text: String) {
         self.total += 1;
+        self.revision += 1;
         if self.records.len() == MESSAGE_MAX_RECORDS {
             self.records.pop_front();
         }
         self.records.push_back(text);
     }
 
-    /// Returns a newest-first window counted back from the newest record.
+    /// Returns the most recent `limit` retained records in production order,
+    /// skipping `offset` newer ones. This is independent of the newest-first
+    /// window used by the Execution Results list.
     fn window(&self, offset: usize, limit: usize) -> Vec<String> {
         let end = (self.records.len() as u64).saturating_sub(offset as u64) as usize;
         let start = end.saturating_sub(limit);
@@ -326,7 +332,6 @@ impl StoredMessages {
             .iter()
             .skip(start)
             .take(end - start)
-            .rev()
             .cloned()
             .collect()
     }
@@ -379,7 +384,6 @@ impl StoredRun {
             step_summaries: BTreeMap::new(),
             pages,
             messages: std::array::from_fn(|_| StoredMessages::new()),
-            message_revision: 0,
         }
     }
 
@@ -395,13 +399,15 @@ impl StoredRun {
             }
             orchestrator_tool::workflow::WorkflowRunEvent::MessageEmitted(record) => {
                 self.messages[record.target().index()].append(record.text().to_owned());
-                self.message_revision += 1;
             }
         }
     }
 
     fn append_execution(&mut self, execution: &StepExecution) {
-        let compact = compact_execution(execution);
+        // Show Message text is delivered by MessageEmitted, so it is not duplicated
+        // into the Execution History preview, latest_execution, or step summaries.
+        let show_message = self.is_show_message_step(execution.step_id());
+        let compact = compact_execution(execution, show_message);
         let succeeded = compact.status == "succeeded";
         let failed = compact.status == "failed";
         let cancelled = compact.status == "cancelled";
@@ -425,6 +431,24 @@ impl StoredRun {
             });
         self.executions.push(compact);
         self.execution_revision += 1;
+    }
+
+    /// Whether a step ID names a Show Message step anywhere in this template.
+    fn is_show_message_step(&self, step_id: &StepId) -> bool {
+        fn any_show_message(steps: &[Step], step_id: &StepId) -> bool {
+            steps.iter().any(|step| {
+                if step.id() == step_id {
+                    return matches!(step.kind(), StepKind::ShowMessage { .. });
+                }
+                match step.kind() {
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                        any_show_message(body, step_id)
+                    }
+                    _ => false,
+                }
+            })
+        }
+        any_show_message(self.template.workflow().steps(), step_id)
     }
 
     pub fn succeed(&mut self) {
@@ -475,18 +499,18 @@ impl StoredRun {
                 .iter()
                 .map(|(step_id, summary)| summary.dto(step_id))
                 .collect(),
-            message_revision: self.message_revision,
             messages: MessageTarget::ALL
                 .iter()
                 .map(|target| MessageCountDto {
                     target: message_target_name(*target).to_owned(),
                     total: self.messages[target.index()].total,
+                    revision: self.messages[target.index()].revision,
                 })
                 .collect(),
         }
     }
 
-    /// Returns a bounded newest-first window of one Message tab.
+    /// Returns a bounded window of one Message tab in production order.
     pub fn messages(
         &self,
         target: &str,
@@ -499,7 +523,7 @@ impl StoredRun {
         Ok(MessageRowsDto {
             run_id: self.run_id,
             target: target.to_owned(),
-            message_revision: self.message_revision,
+            revision: stored.revision,
             total_messages: stored.total,
             offset,
             messages: stored.window(offset, limit.min(MESSAGE_MAX_RECORDS)),
@@ -897,8 +921,9 @@ impl StepSummary {
     }
 }
 
-fn compact_execution(execution: &StepExecution) -> CompactExecutionDto {
+fn compact_execution(execution: &StepExecution, show_message: bool) -> CompactExecutionDto {
     let (status, output, output_omitted, message) = match execution.outcome() {
+        StepOutcome::Succeeded { output } if show_message => ("succeeded", None, false, None),
         StepOutcome::Succeeded { output } => {
             let (preview, omitted) = bounded_preview(output);
             ("succeeded", preview, omitted, None)
@@ -1093,15 +1118,19 @@ mod tests {
 
         let run = stored.read().unwrap();
         let metadata = run.metadata();
+        // Only the tab that actually changed advances its own revision.
         assert_eq!(
             metadata
                 .messages
                 .iter()
-                .map(|count| (count.target.as_str(), count.total))
+                .map(|count| (count.target.as_str(), count.total, count.revision))
                 .collect::<Vec<_>>(),
-            vec![("message-1", 1), ("message-2", 0), ("message-3", 0)]
+            vec![
+                ("message-1", 1, 1),
+                ("message-2", 0, 0),
+                ("message-3", 0, 0)
+            ]
         );
-        assert_eq!(metadata.message_revision, 1);
 
         let window = run.messages("message-1", 0, MESSAGE_MAX_RECORDS).unwrap();
         assert_eq!(window.total_messages, 1);
@@ -1135,17 +1164,18 @@ mod tests {
         let metadata = run.metadata();
         // The cumulative total keeps counting past the retained window.
         assert_eq!(metadata.messages[0].total, count);
-        assert_eq!(metadata.message_revision, count);
+        assert_eq!(metadata.messages[0].revision, count);
         let window = run.messages("message-1", 0, MESSAGE_MAX_RECORDS).unwrap();
         assert_eq!(window.messages.len(), MESSAGE_MAX_RECORDS);
-        // The oldest record is discarded and the newest is served first.
-        assert_eq!(window.messages[0], format!("{}\n", count - 1));
-        assert_eq!(window.messages[1], format!("{}\n", count - 2));
+        // Record 0 is discarded, so the retained window is records 1..=1000 in
+        // production order, and the newest record is last.
+        assert_eq!(window.messages[0], "1\n");
+        assert_eq!(window.messages[999], format!("{}\n", count - 1));
         assert!(!window.messages.iter().any(|text| text == "0\n"));
     }
 
     #[test]
-    fn message_windows_page_backwards_from_the_newest_record() {
+    fn message_windows_return_the_most_recent_records_in_production_order() {
         let stored = StoredRuns::default().begin(message_template());
         {
             let mut run = stored.write().unwrap();
@@ -1159,11 +1189,11 @@ mod tests {
         let run = stored.read().unwrap();
         assert_eq!(
             run.messages("message-2", 0, 3).unwrap().messages,
-            vec!["9\n".to_owned(), "8\n".to_owned(), "7\n".to_owned()]
+            vec!["7\n".to_owned(), "8\n".to_owned(), "9\n".to_owned()]
         );
         assert_eq!(
             run.messages("message-2", 3, 3).unwrap().messages,
-            vec!["6\n".to_owned(), "5\n".to_owned(), "4\n".to_owned()]
+            vec!["4\n".to_owned(), "5\n".to_owned(), "6\n".to_owned()]
         );
         // An offset beyond the retained history is an empty window, not an error.
         assert!(
@@ -1171,6 +1201,79 @@ mod tests {
                 .unwrap()
                 .messages
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn show_message_text_is_not_repeated_in_execution_previews_or_progress_metadata() {
+        let template = message_template();
+        let stored = StoredRuns::default().begin(template.clone());
+        let summary = run_workflow_streaming_with_loop_stop(
+            &template,
+            ExecutionMode::Simulate,
+            &Default::default(),
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(5),
+            |event| stored.write().unwrap().append_event(&event),
+            |_| false,
+        )
+        .unwrap();
+        assert!(summary.succeeded());
+        stored.write().unwrap().succeed();
+
+        let run = stored.read().unwrap();
+        // Show Message still produces a normal successful execution.
+        let executions = run.executions(0, 100);
+        assert_eq!(executions.total_executions, 2);
+        let show_message = executions
+            .executions
+            .iter()
+            .find(|item| item.step_id == "show-message-1")
+            .expect("the Show Message step is recorded");
+        assert_eq!(show_message.status, "succeeded");
+        // Its composed text is delivered only by the message buffer.
+        assert_eq!(show_message.output, None);
+        assert!(!show_message.output_omitted);
+        assert!(
+            run.executions(0, 100)
+                .executions
+                .iter()
+                .all(|item| item.output != Some(serde_json::json!("1\n"))),
+            "no execution preview carries the message body"
+        );
+        // A real Output step keeps its normal preview.
+        let output = executions
+            .executions
+            .iter()
+            .find(|item| item.step_id == "out")
+            .expect("the Output step is recorded");
+        assert_eq!(output.output, Some(serde_json::json!(1)));
+
+        // Progress metadata carries neither the message text nor the step output preview.
+        let metadata = run.metadata();
+        assert!(metadata
+            .latest_execution
+            .as_ref()
+            .is_some_and(|latest| latest.step_id == "show-message-1" && latest.output.is_none()));
+        let summary = metadata
+            .step_summaries
+            .iter()
+            .find(|item| item.step_id == "show-message-1")
+            .expect("the Show Message step is summarised");
+        assert_eq!(summary.status, "succeeded");
+        assert!(summary.all_succeeded);
+        assert_eq!(summary.output, None);
+        let output_summary = metadata
+            .step_summaries
+            .iter()
+            .find(|item| item.step_id == "out")
+            .expect("the Output step is summarised");
+        assert_eq!(output_summary.output, Some(serde_json::json!(1)));
+        // The message text is still reachable through the message buffer.
+        assert_eq!(
+            run.messages("message-1", 0, 10).unwrap().messages,
+            vec!["1\n".to_owned()]
         );
     }
 
@@ -1227,7 +1330,7 @@ mod tests {
             ),
             None,
         );
-        let compact = compact_execution(&large);
+        let compact = compact_execution(&large, false);
         assert!(compact.output_omitted);
         assert!(compact.output.is_none());
 
@@ -1241,7 +1344,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            compact_execution(&meter).output,
+            compact_execution(&meter, false).output,
             Some(serde_json::json!({"value": 1.25, "unit": "V"}))
         );
 
@@ -1255,7 +1358,7 @@ mod tests {
             ),
             None,
         );
-        let compact = compact_execution(&meter);
+        let compact = compact_execution(&meter, false);
         assert!(compact.output_omitted);
         assert_eq!(
             compact

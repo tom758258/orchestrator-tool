@@ -123,8 +123,7 @@ export type RunMetadataDto = {
   latest_execution: StepExecutionDto | null
   pages: RunPageMetadata[]
   step_summaries: StepSummaryDto[]
-  message_revision: number
-  messages: { target: MessageTargetWire; total: number }[]
+  messages: { target: MessageTargetWire; total: number; revision: number }[]
 }
 
 export type WorkflowRunEventDto = {
@@ -221,6 +220,36 @@ export function outputDefinitions(steps: readonly WorkflowStep[]): OutputStep[] 
 /** Output steps that a Show Message field may reference from the current lexical scope. */
 export function showMessageOutputCandidates(steps: readonly WorkflowStep[]): OutputStep[] {
   return steps.filter((step): step is OutputStep => step.type === 'output')
+}
+
+/** Truncates to at most `limit` Unicode characters without splitting a code point. */
+export function limitMessageText(text: string, limit: number): string {
+  const characters = Array.from(text)
+  return characters.length > limit ? characters.slice(0, limit).join('') : text
+}
+
+export type MessageWindow = { target: MessageTargetWire; total: number; revision: number }
+export type MessageWindowPage = { runId: number; target: MessageTargetWire; messages: string[] }
+
+/**
+ * Resolves which message texts the active tab may show. A fetched window is used only
+ * when it belongs to the run and target currently on screen, so switching tabs, starting
+ * a new run, or clearing the Last Run can never briefly show another tab's or run's text.
+ */
+export function visibleMessageWindow(page: MessageWindowPage | null,
+  active: { runId: number | null; target: MessageTargetWire; counts: readonly MessageWindow[] }) {
+  const own = active.counts.find(count => count.target === active.target)
+  const total = own?.total ?? 0
+  const matches = page !== null && page.runId === active.runId && page.target === active.target
+  const items = matches ? page.messages : []
+  return {
+    // The backend already returns production order, so the oldest retained message is first.
+    items,
+    total,
+    retained: items.length,
+    discarded: Math.max(0, total - items.length),
+    revision: own?.revision ?? 0,
+  }
 }
 
 /**

@@ -27,8 +27,8 @@ test('Show Message Target Message offers exactly three messages defaulting to Me
   // 1 to 10 fields: Add is capped and Delete keeps at least one field.
   assert.match(editor, /step\.fields\.length >= MAX_MESSAGE_FIELDS\}\s*\n\s*onClick=\{addField\}>Add Field</)
   assert.match(editor, /disabled=\{disabled \|\| step\.fields\.length <= 1\}\s*\n\s*onClick=\{\(\) => removeField\(index\)\}>Delete Field</)
-  // String text is limited to 256 characters.
-  assert.match(editor, /maxLength=\{MAX_MESSAGE_TEXT_CHARS\}/)
+  // String text is limited to 256 Unicode characters, not 256 UTF-16 units.
+  assert.match(editor, /limitMessageText\(event\.target\.value, MAX_MESSAGE_TEXT_CHARS\)/)
   assert.match(editor, /Array\.from\(field\.text\)\.length\} \/ \{MAX_MESSAGE_TEXT_CHARS\} characters/)
 })
 

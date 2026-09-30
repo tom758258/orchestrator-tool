@@ -1597,11 +1597,10 @@ mod regression_tests {
         assert_eq!(wire["run"]["execution_count"], 1);
         assert_eq!(wire["run"]["pages"][0]["row_count"], 1);
         assert_eq!(wire["completed_step_ids"], json!(["out"]));
-        // The batch carries message counts, never the message bodies themselves.
-        assert_eq!(wire["run"]["message_revision"], 1);
+        // The batch carries per-tab counts and revisions, never the message bodies.
         assert_eq!(
             wire["run"]["messages"][0],
-            json!({ "target": "message-1", "total": 1 })
+            json!({ "target": "message-1", "total": 1, "revision": 1 })
         );
         assert!(wire["run"].get("messages").is_some_and(|value| {
             value

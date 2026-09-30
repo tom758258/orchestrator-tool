@@ -453,6 +453,10 @@ impl MessageTarget {
 pub const MAX_MESSAGE_FIELDS: usize = 10;
 /// A Show Message String field allows at most 256 Unicode characters.
 pub const MAX_MESSAGE_TEXT_CHARS: usize = 256;
+/// One produced message is bounded so a long scalar Output cannot grow the buffer without limit.
+pub const MAX_MESSAGE_CHARS: usize = 4_096;
+/// Appended when a message is shortened by `MAX_MESSAGE_CHARS`.
+pub const MESSAGE_TRUNCATION_MARKER: &str = "…[truncated]";
 
 /// One concatenated segment of a Show Message step.
 #[derive(Clone, Debug, PartialEq)]
@@ -558,16 +562,24 @@ impl Workflow {
         let mut seen = HashSet::new();
         let mut output_names = HashSet::new();
         let mut pages = Vec::<OutputPage>::new();
+        /// Steps visible to the current lexical scope, tracked per kind.
+        #[derive(Default)]
+        struct Visible {
+            all: HashSet<StepId>,
+            outputs: HashSet<StepId>,
+        }
+
         fn validate_steps(
             steps: &[Step],
             seen: &mut HashSet<StepId>,
             output_names: &mut HashSet<String>,
-            available: &HashSet<StepId>,
+            available: &Visible,
             path: &[StepId],
             variables: &[VariableId],
             pages: &mut Vec<OutputPage>,
         ) -> Result<(), WorkflowError> {
-            let mut prior = available.clone();
+            let mut prior = available.all.clone();
+            let mut prior_outputs = available.outputs.clone();
             for step in steps {
                 if !seen.insert(step.id().clone()) {
                     return Err(WorkflowError::DuplicateStepId(step.id().clone()));
@@ -639,7 +651,10 @@ impl Workflow {
                             body,
                             seen,
                             output_names,
-                            &prior,
+                            &Visible {
+                                all: prior.clone(),
+                                outputs: prior_outputs.clone(),
+                            },
                             &child_path,
                             &child_variables,
                             pages,
@@ -710,13 +725,25 @@ impl Workflow {
                                     });
                                 }
                                 MessageFieldKind::Output(reference) => {
+                                    // Reference visibility is the shared rule; this step
+                                    // additionally requires a published Output step.
                                     validate_input(&InputValue::StepOutput(reference.clone()))?;
+                                    if !prior_outputs.contains(reference.step_id()) {
+                                        return Err(WorkflowError::MessageFieldNotOutput {
+                                            step_id: step.id().clone(),
+                                            target: reference.step_id().clone(),
+                                        });
+                                    }
                                 }
                                 MessageFieldKind::Text(_) => {}
                             }
                         }
                     }
                     StepKind::Wait { .. } => {}
+                }
+                // A Show Message field may only display a published Output step value.
+                if matches!(step.kind(), StepKind::Output { .. }) {
+                    prior_outputs.insert(step.id().clone());
                 }
                 prior.insert(step.id().clone());
             }
@@ -726,7 +753,7 @@ impl Workflow {
             &steps,
             &mut seen,
             &mut output_names,
-            &HashSet::new(),
+            &Visible::default(),
             &[],
             &[],
             &mut pages,
@@ -843,6 +870,7 @@ pub enum WorkflowError {
     InvalidRange(String),
     InvalidMessageFields(StepId),
     MessageTextTooLong { step_id: StepId, limit: usize },
+    MessageFieldNotOutput { step_id: StepId, target: StepId },
 }
 
 impl fmt::Display for WorkflowError {
@@ -906,6 +934,10 @@ impl fmt::Display for WorkflowError {
             Self::MessageTextTooLong { step_id, limit } => write!(
                 formatter,
                 "show-message step {step_id} field text exceeds {limit} characters"
+            ),
+            Self::MessageFieldNotOutput { step_id, target } => write!(
+                formatter,
+                "show-message step {step_id} can only display Output steps, but step {target} is not an Output"
             ),
         }
     }
@@ -1908,5 +1940,76 @@ mod tests {
             ])])
             .is_ok()
         );
+    }
+
+    #[test]
+    fn show_message_output_fields_reject_visible_non_output_steps() {
+        let referencing = |target: &str| {
+            Step::new(
+                StepId::new("report").unwrap(),
+                StepKind::ShowMessage {
+                    target: MessageTarget::Message1,
+                    fields: vec![MessageField::output(
+                        StepOutputReference::new(StepId::new(target).unwrap(), ""),
+                        false,
+                    )],
+                },
+            )
+        };
+        let wait = Step::new(
+            StepId::new("wait-1").unwrap(),
+            StepKind::Wait { duration_ms: 0 },
+        );
+        let set_variable = Step::new(
+            StepId::new("set-1").unwrap(),
+            StepKind::SetVariable {
+                variable: VariableId::new("x").unwrap(),
+                value: InputValue::Literal(json!(1)),
+            },
+        );
+        let earlier_show_message = Step::new(
+            StepId::new("note").unwrap(),
+            StepKind::ShowMessage {
+                target: MessageTarget::Message1,
+                fields: vec![MessageField::text("earlier", false)],
+            },
+        );
+        let output = Step::new(
+            StepId::new("iteration").unwrap(),
+            StepKind::Output {
+                name: "Iteration".to_owned(),
+                value: InputValue::Literal(json!(1)),
+            },
+        );
+        let visible = vec![
+            wait.clone(),
+            set_variable.clone(),
+            earlier_show_message.clone(),
+            output.clone(),
+        ];
+
+        // An earlier, visible Output step is accepted.
+        let mut with_output = visible.clone();
+        with_output.push(referencing("iteration"));
+        assert!(Workflow::new(with_output).is_ok());
+        // An earlier, visible non-Output step is rejected even though the shared
+        // reference rule already accepts it as a visible step.
+        for target in ["wait-1", "set-1", "note"] {
+            let mut steps = visible.clone();
+            steps.push(referencing(target));
+            let error = Workflow::new(steps).unwrap_err();
+            let message = error.to_string();
+            assert!(
+                matches!(error, WorkflowError::MessageFieldNotOutput { step_id, target: referenced }
+                    if step_id.as_str() == "report" && referenced.as_str() == target),
+                "expected {target} to be rejected, got {message}"
+            );
+            assert_eq!(
+                message,
+                format!(
+                    "show-message step report can only display Output steps, but step {target} is not an Output"
+                )
+            );
+        }
     }
 }

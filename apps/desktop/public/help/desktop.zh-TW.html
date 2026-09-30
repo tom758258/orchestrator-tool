@@ -366,11 +366,13 @@ rows，不會再做第二次 expansion。</p>
 <li><strong>Content Fields</strong> 構成訊息內容。每個 step 最少 1 個、最多 10 個 field，預設建立
   1 個空白 String。可使用 <strong>Add Field</strong> 與 <strong>Delete Field</strong> 調整數量，Fields 依畫面
   順序串接。</li>
-<li><strong>String</strong> field 為自行輸入的文字，最多 256 個字元。</li>
+<li><strong>String</strong> field 為自行輸入的文字，最多 256 個 Unicode 字元；以 code point 計算，
+  因此 Emoji 等字元不會被提前截斷。</li>
 <li><strong>Output</strong> field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
-  目前 step 之前、在當前 loop scope 內可見的 Outputs。Show Message 的 Output 必須是
-  單一數值，不支援 Custom Meters batch。若參考的值不是單一數字、文字或 Boolean，該
-  step 會明確報錯，不會寫出部分訊息。</li>
+  目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
+  Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
+  其他 step。Show Message 的 Output 必須是單一數值，不支援 Custom Meters batch。若參考
+  的值不是單一數字、文字、Boolean 或 null，該 step 會明確報錯，不會寫出部分訊息。</li>
 <li><strong>Newline</strong> 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。</li>
 </ul>
@@ -506,13 +508,18 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。</p>
 <h3 id="103-messages">10.3 Messages</h3>
 <p><strong>Messages</strong> 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：<strong>Message
-1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 以 latest
-first 依序保留自己的訊息，訊息內的換行也會保留。切換 tab 或收合面板都不會遺失訊息。</p>
+1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 依 workflow
+產生的順序顯示訊息，<strong>舊訊息在上、最新訊息在下</strong>，因此 loop 的輸出可以由上往下閱讀。
+這與 <strong>Last Run Execution Results</strong> 及 <strong>Output Data</strong> 的 latest first 排列相反。
+訊息內的換行也會保留；切換 tab 或收合面板都不會遺失訊息。</p>
 <p>由於 loop 可能執行大量次數，每個 tab 僅保留最近 1,000 筆訊息。摘要列仍會顯示該次 run
-產生的訊息總數，因此可以知道是否還有更早的訊息。</p>
-<p>訊息屬於產生它的那一次 run。開始新一輪 run 會清空訊息；run 失敗或 graceful stop 則會
-保留當輪已產生的訊息。<strong>Clear Last Run</strong>、New Template 與 Open Template 都會一併清除
-訊息。訊息不會存檔，也無法 export。</p>
+產生的訊息總數，因此可以知道是否還有更早的訊息。<strong>Messages</strong> 收合時不會重新載入
+訊息清單，但 run 仍會持續接收訊息並更新總數；重新展開後即可看到最新的訊息。</p>
+<p>單則訊息最多 4,096 個字元，避免過長的 Output 值填滿面板。超過時會縮短並標示
+<code>…[truncated]</code>，且結尾仍保有自己的換行。</p>
+<p>訊息屬於產生它的那一次 run。run 正常結束、失敗或 graceful stop 都會保留當輪已產生的
+訊息。開始新一輪 run 會清空上一輪的訊息。<strong>Clear Last Run</strong>、New Template 與 Open
+Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
 <h3 id="104-charts">10.4 Charts</h3>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart

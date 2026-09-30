@@ -181,10 +181,15 @@ semantics in schema v1.
 ## Show Message semantics
 
 A `show-message` step writes text to one of three independent Messages Panel
-tabs. It produces no Output Page, ResultRow, Popup, or Assert, and it does not
-affect CSV or chart data. It resolves its fields when it executes, so an Output
-reference always reads the value from the current iteration rather than a
-previous loop pass.
+tabs. It produces no Output Page, Popup, or Assert, and it does not affect CSV
+or chart data. It resolves its fields when it executes, so an Output reference
+always reads the value from the current iteration rather than a previous loop
+pass.
+
+A Show Message step never contributes an Output column or a ResultRow of its
+own. A workflow that contains no Output step at all still commits the
+pre-existing single empty `Results` row described under Output Pages; that
+fallback is unrelated to Show Message and is unchanged by it.
 
 `target` is `message-1`, `message-2`, or `message-3`. `fields` is an ordered
 list of 1 to 10 entries; each entry has a `kind` and a `newline` flag that
@@ -202,10 +207,15 @@ defaults to `false`. For example:
       ]
     }
 
-- `text` entries are user-entered content of at most 256 Unicode characters.
+- `text` entries are user-entered content of at most 256 Unicode characters,
+  counted in code points so astral characters such as Emoji are not truncated
+  early.
 - `output` entries name a step ID and an optional JSON Pointer; `""` selects the
-  complete Step Output. Reference visibility uses the same earlier-step and
-  lexical-scope rules as every other step-output reference.
+  complete Step Output. The referenced step must be a `StepKind::Output` that is
+  earlier than the Show Message step and visible from its lexical scope. The
+  ordinary earlier-step and lexical-scope reference rules apply unchanged, and a
+  visible but non-Output step is rejected as well; the reference is never
+  redirected to another step.
 - Fields concatenate in order. A newline follows every entry whose `newline` is
   `true`, except the last entry. Every message record then ends with exactly one
   newline, so consecutive Show Message steps never merge into one line and a
@@ -214,11 +224,29 @@ defaults to `false`. For example:
   or `null` is displayed as text; an array or object fails the step with an
   explicit error and emits no message. Custom Meters batches are rejected when
   the template is validated.
+- One produced message is bounded to 4096 Unicode characters so a long scalar
+  Output cannot grow the buffer without limit. A longer record is cut on a
+  character boundary, marked with `…[truncated]`, and still ends with exactly one
+  newline.
 - One successful Show Message execution produces exactly one message record and
-  keeps its normal Step Execution record. Messages already produced stay
-  visible when a later step fails or the run is stopped gracefully.
-- Message records are runtime data. They are not stored in the template, are not
-  exported, and are discarded when the run ends or the Last Run is cleared.
+  keeps its normal Step Execution record. The composed text is delivered only
+  through the message record; it is not repeated in the Execution History
+  preview, `latest_execution`, or step summaries.
+- Message records are runtime data. They are not stored in the template and are
+  not exported. Each tab keeps its most recent 1000 records in production order
+  and reports a cumulative total.
+
+### Message lifecycle
+
+Messages belong to the run that produced them and are cleared with that run's
+Last Run:
+
+- a run that ends normally keeps them;
+- a run that fails keeps every message produced before the failure;
+- a gracefully stopped run keeps the messages its completed iterations produced;
+- starting a new run clears the previous run's messages;
+- **Clear Last Run**, a new Template, and opening a Template clear them together
+  with the rest of the Last Run.
 
 ## InputValue and Expression
 

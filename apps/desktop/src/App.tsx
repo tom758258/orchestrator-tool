@@ -20,8 +20,8 @@ import { protectionChannelNumbers } from './powersProtectionSetup'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
-import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire } from './workflow'
+import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow } from './workflow'
 import ShowMessageEditor from './ShowMessageEditor'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
@@ -350,14 +350,15 @@ type ExecutionRowsResponse = {
 type MessageRowsResponse = {
   run_id: number
   target: MessageTargetWire
-  message_revision: number
+  revision: number
   total_messages: number
   offset: number
   messages: string[]
 }
 
-function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {
-  if (!enabled) return null
+const EMPTY_MESSAGE_COUNTS: readonly MessageWindow[] = []
+
+function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {  if (!enabled) return null
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
     .slice(0, 19).replace(/[T:]/g, '-')
   return { output_folder: outputFolder, timestamp, page, all_pages: allPages }
@@ -600,9 +601,15 @@ function App() {
     hasOlder: executionOffset + (executionPage?.executions.length ?? 0) < executionTotal,
   }
 
-  // Only the active Message tab is pulled; totals and the revision arrive with progress batches.
+  // Only the active Message tab is pulled, and only while the panel is expanded.
+  // A window belonging to another run or tab is ignored rather than shown.
+  const messageCounts = runMetadata?.messages ?? EMPTY_MESSAGE_COUNTS
+  const messageWindow = visibleMessageWindow(
+    messagePage === null ? null
+      : { runId: messagePage.run_id, target: messagePage.target, messages: messagePage.messages },
+    { runId: displayedRun?.run_id ?? null, target: messageTarget, counts: messageCounts })
   useEffect(() => {
-    if (!displayedRun) { setMessagePage(null); return }
+    if (!displayedRun || !messagesExpanded) return
     let cancelled = false
     void invoke<MessageRowsResponse>('get_last_run_messages', {
       runId: displayedRun.run_id, target: messageTarget, offset: 0, limit: MESSAGE_WINDOW_SIZE,
@@ -610,14 +617,8 @@ function App() {
       if (!cancelled && response.run_id === runIdRef.current) setMessagePage(response)
     }).catch(() => {})
     return () => { cancelled = true }
-  }, [displayedRun?.run_id, displayedRun?.message_revision, messageTarget])
-  const messageTotal = runMetadata?.messages.find(item => item.target === messageTarget)?.total ?? 0
-  const messages = {
-    items: messagePage?.messages ?? [],
-    total: messageTotal,
-    retained: messagePage?.messages.length ?? 0,
-    discarded: Math.max(0, messageTotal - (messagePage?.messages.length ?? 0)),
-  }
+  }, [displayedRun?.run_id, messageWindow.revision, messageTarget, messagesExpanded])
+  const messages = messageWindow
 
   useEffect(() => {
     setExportError(null)
@@ -2377,7 +2378,7 @@ function App() {
                     </button>
                   </h3>
                   <p className="run-result-count">
-                    {messages.total.toLocaleString('en-US')} {messages.total === 1 ? 'message' : 'messages'} · latest first
+                    {messages.total.toLocaleString('en-US')} {messages.total === 1 ? 'message' : 'messages'} · oldest first
                     {messages.discarded > 0 && ` · showing the most recent ${messages.retained.toLocaleString('en-US')}`}
                   </p>
                   {messagesExpanded && <>
@@ -2397,7 +2398,7 @@ function App() {
                         ? <p className="step-properties-empty">No messages were produced by this run.</p>
                         : <ol className="run-message-list" aria-label={`${MESSAGE_TARGET_LABELS[messageTarget]} messages`}>
                             {messages.items.map((text, index) => (
-                              <li className="run-message" key={`${index}:${messages.retained - index}`}>
+                              <li className="run-message" key={`${messages.revision}:${index}`}>
                                 <pre>{text}</pre>
                               </li>
                             ))}
