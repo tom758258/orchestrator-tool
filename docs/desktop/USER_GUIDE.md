@@ -652,31 +652,47 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
-Chart Sampling Options sits by the Workflow Run button and applies to both
-Simulation and Live. Preserve Significant Changes is off by default; enabling it
-with a positive finite percentage (default 5%) changes how Line Chart data is
-downsampled. Each pixel bucket compares raw values against a fixed reference:
-if only higher values meet the percentage threshold, it selects their Max; if
-only lower values qualify, it selects their Min; if both qualify, it selects
-both in original Iteration order. If neither qualifies, the bucket uses its
-last raw point. The last qualifying representative becomes the next bucket's
-reference; quiet buckets keep the previous reference so cumulative drift is
-not lost. First/last global points are also preserved. When fewer samples
-than twice the bucket count are visible, all points are shown without further
-reduction. Zero to nonzero counts as 100%; zero to zero counts as 0%.
-A blank, zero, or negative threshold blocks Run in both modes when enabled.
-The setting is snapshotted at RUN start, retained by that Last Run, and remains
-Desktop session state (not Template data). Turning it off keeps the original
-Min/Max rendering.
+Chart Sampling Options sits in the narrow Workflow sidebar immediately below
+Streaming; it applies to both Simulation and Live Line Charts. Preserve
+Significant Changes is **off** by default, and the positive finite percentage
+threshold defaults to **5%**. The original pixel-bucket Min/Max remains intact
+whether or not sampling is enabled. When enabled, a scan of the visible Raw
+Data can preserve up to two *additional* locally significant turns (upward
+Max and downward Min) per bucket, in original Iteration order, without deleting
+the original Min/Max extrema. Its normal comparison reference survives quiet
+buckets; one- or two-sample spikes do not become the permanent baseline when
+measurements recover. The entire plotted output remains bounded by approximately
+four points per bucket plus the global endpoints, even for large runs.
 
-For a Line Chart, Chart Settings → General → **Show All Raw Data** (off by default)
-bypasses downsampling and draws every loaded raw sample in the visible X range,
-including the two neighboring clipping samples when available. It takes effect
-immediately, even during a run, independently for each Chart; you do not need
-to RUN again. Line markers are configured separately under Series. Displaying
-all raw data can slow the Desktop interface or make it temporarily unresponsive,
-especially during Live. Neither display mode modifies committed Raw Data,
-CSV/XLSX exports or non-Line charts.
+The optional **Show Significant Change Markers** checkbox sits directly below
+the threshold, defaults to **off**, and is disabled while Preserve Significant
+Changes is off. When enabled, it labels only the qualifying upward/downward
+excursions, up to two markers per bucket; normal recoveries are not marked simply
+because they reverse a preceding spike. It does not enable symbols on every Line
+vertex or alter which points the Line plots. A plain Line may customize the
+per-Output marker size, shape, fill and border at
+**Chart Settings → Series → Marker appearance** without choosing Line + markers.
+The existing Line + markers option remains an independent setting that shows
+symbols for every plotted vertex. Marker shape/color also follows the existing
+per-Output styling and Export PNG.
+
+A blank, zero, negative or non-finite percentage blocks Run when Preserve
+Significant Changes is enabled; Simulation and Live use the same parser. Zero to
+nonzero counts as 100%, and zero to zero counts as 0%. The threshold and
+optional Marker checkbox are snapshotted at RUN start, retained by Last Run,
+and are Desktop session options (not Template data). Changing the controls
+after RUN does not change the Last Run's sampling; start a new run to use the
+new settings.
+
+For a Line Chart, **Chart Settings → General → Show All Raw Data** (off by
+default) bypasses plotted-point downsampling and draws every loaded raw sample
+in the visible X range, including the two neighboring clipping samples when
+available. It takes effect immediately, even during a run, independently for
+each Chart; you do not need to RUN again. Optional significant-change markers
+may remain visible if enabled for that run. Displaying all raw data can slow the
+Desktop interface or make it temporarily unresponsive, especially during Live.
+None of these display options modify committed Raw Data, CSV/XLSX exports or
+non-Line charts.
 
 Only **Line** supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select **Line**,

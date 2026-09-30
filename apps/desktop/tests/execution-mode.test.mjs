@@ -45,13 +45,14 @@ test('Live Resource remains stored for Live mode and saving it does not switch m
 
 test('Chart Sampling is shared by Simulation and Live, configured pre-run and frozen outside Template data', () => {
   // Available in both modes, and named as a general chart setting rather than a Live one.
-  assert.match(app, /chartSamplingOptions.*enabled: false, threshold: '5'/)
+  assert.match(app, /chartSamplingOptions.*enabled: false, threshold: '5', showMarkers: false/)
   assert.match(app, /<legend>Chart Sampling Options<\/legend>/)
   assert.match(app, /Preserve Significant Changes/)
   assert.doesNotMatch(app, /Live Chart Options|liveChartOptions|activeLiveChartOptions/)
 
   // One shared rule snapshots the setting and rejects an invalid threshold.
-  assert.match(app, /function chartSamplingSnapshot\(options: \{ enabled: boolean; threshold: string \}\)/)
+  assert.match(app, /function chartSamplingSnapshot\(options: \{ enabled: boolean; threshold: string; showMarkers: boolean \}\)/)
+  assert.match(app, /showMarkers: options\.showMarkers/)
   assert.match(app, /Chart Sampling change threshold must be a finite number greater than zero\./)
   // Both run paths validate first and store the same snapshot.
   const simulation = app.slice(app.indexOf('const runSimulation'), app.indexOf('const runSelectedMode'))
@@ -91,4 +92,17 @@ test('both run paths reject the same invalid thresholds through one shared parse
   }
   // Disabled sampling never inspects the threshold, so an empty field is harmless.
   assert.match(app, /const chartThresholdInvalid = chartSamplingOptions\.enabled &&/)
+})
+
+test('marker checkbox is in the left sidebar under Streaming, disabled when sampling is off', () => {
+  const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
+    app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
+  assert.ok(sidebar.indexOf('className="streaming-panel"') >= 0)
+  assert.ok(sidebar.indexOf('className="chart-sampling-options"') > sidebar.indexOf('className="streaming-panel"'))
+  assert.equal((app.match(/<legend>Chart Sampling Options<\/legend>/g) ?? []).length, 1)
+  assert.match(sidebar, /checked=\{chartSamplingOptions\.showMarkers\}/)
+  assert.match(sidebar, /disabled=\{!chartSamplingOptions\.enabled\}/)
+  assert.match(sidebar, /Show Significant Change Markers/)
+  assert.doesNotMatch(app.slice(app.indexOf('</aside>'), app.indexOf('className="workflow-actions"')),
+    /className="chart-sampling-options"/)
 })

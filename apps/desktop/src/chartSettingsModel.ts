@@ -126,9 +126,9 @@ function normalizedMarkerStyles(draft: ChartSettingsDraft):
   { styles: ChartPanel['markerStyles'] } | { error: string } {
   const active = new Set<string>()
   if (draft.type === 'line') {
-    Object.entries(draft.line.series).forEach(([name, settings]) => {
-      if (settings.markers) active.add(name)
-    })
+    // Marker appearance is editable even for a plain Line, because optional
+    // Significant Change Markers reuse the same per-Output style.
+    Object.keys(draft.markerStyles).forEach(name => active.add(name))
   }
   if (draft.type === 'combo') {
     Object.entries(draft.combo.series).forEach(([name, settings]) => {

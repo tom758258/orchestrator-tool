@@ -291,9 +291,13 @@ test('Line and Combo marker styles round-trip and validate active per-Output siz
   draft.markerStyles.V.size = '0'
   assert.match(validateChartSettingsDraft(draft).error, /V marker size/)
   draft.line.series.V.markers = false
+  // Appearance is still editable/validated for the opt-in Significant Change
+  // Markers even when the regular Line vertices have no Markers.
+  assert.match(validateChartSettingsDraft(draft).error, /V marker size/)
+  draft.markerStyles.V.size = '8'
   result = validateChartSettingsDraft(draft)
   assert.equal(result.error, undefined)
-  assert.equal(result.settings.markerStyles.V.size, 4)
+  assert.equal(result.settings.markerStyles.V.size, 8)
 
   const comboDraft = createChartSettingsDraft({ ...configured, type: 'combo',
     combo: { ...panel.combo, series: { V: { kind: 'line', axis: 'right', markers: true } } } })
@@ -503,4 +507,12 @@ test('Show All is a Line-only General setting with an explicit Live rendering wa
   assert.match(source, /draft\.type === 'line' && <>[\s\S]*?Show All Raw Data/)
   assert.match(source, /checked=\{draft\.showAllRawData\}/)
   assert.match(source, /may[\s\S]*?Desktop interface to lag[\s\S]*?Live execution/)
+})
+
+test('plain Line exposes existing per-Output marker appearance without enabling all point symbols', () => {
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  assert.match(source, /Marker appearance \(including Significant Change Markers\)/)
+  assert.match(source, /markerFields\(name, true\)/)
+  const unchanged = lineRendererSeries(panel, { name: 'V', data: [[1, 100], [2, 145]] }, 'red')
+  assert.equal(unchanged.showSymbol, false)
 })

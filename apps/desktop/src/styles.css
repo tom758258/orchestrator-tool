@@ -668,22 +668,31 @@ textarea:disabled {
 
 .chart-sampling-options {
   display: grid;
+  min-width: 0;
   gap: 8px;
-  margin-top: 16px;
-  padding: 10px 14px 12px;
+  margin: 0;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--panel-soft);
 }
 
 .chart-sampling-options > label {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chart-sampling-options .chart-sampling-threshold {
+  flex-direction: column;
+  gap: 4px;
 }
 
 .chart-sampling-options .chart-sampling-threshold input {
-  width: 104px;
-  max-width: 100%;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 
 .chart-sampling-options .tool-setup-hint { margin: 0; }
