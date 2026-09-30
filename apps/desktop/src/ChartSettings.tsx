@@ -254,7 +254,10 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
                 <option value="line">Line</option><option value="line-markers">Line + markers</option>
               </select>
             </label>
-            {series.markers && markerFields(name, true)}
+            <details className="chart-marker-appearance">
+              <summary>Marker appearance (including Significant Change Markers)</summary>
+              {markerFields(name, true)}
+            </details>
           </div>
         })}
       </fieldset>}

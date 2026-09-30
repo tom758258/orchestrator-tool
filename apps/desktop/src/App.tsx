@@ -363,12 +363,12 @@ const EMPTY_MESSAGE_COUNTS: readonly MessageWindow[] = []
  * Simulation and Live cannot disagree about an invalid threshold. Called only when the
  * option is enabled; throws before a run starts if the threshold is unusable.
  */
-function chartSamplingSnapshot(options: { enabled: boolean; threshold: string }): ChartChangeSettings {
+function chartSamplingSnapshot(options: { enabled: boolean; threshold: string; showMarkers: boolean }): ChartChangeSettings {
   const thresholdPercent = parseChartThresholdPercent(options.threshold)
   if (Number.isNaN(thresholdPercent)) {
     throw new Error('Chart Sampling change threshold must be a finite number greater than zero.')
   }
-  return { enabled: true, thresholdPercent }
+  return { enabled: true, thresholdPercent, showMarkers: options.showMarkers }
 }
 
 function streamingOptions(enabled: boolean, outputFolder: string | null, page: string, allPages: boolean) {  if (!enabled) return null
@@ -440,7 +440,7 @@ function App() {
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
-  const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5' })
+  const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5', showMarkers: false })
   // Snapshot of the Chart Sampling Options captured when the current run started.
   const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
@@ -1996,6 +1996,25 @@ function App() {
                     </div>}
                     {csvStreamFeedback}
                   </section>
+                  <fieldset className="chart-sampling-options" disabled={workflowBusy}>
+                    <legend>Chart Sampling Options</legend>
+                    <label><input type="checkbox" checked={chartSamplingOptions.enabled}
+                      onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
+                      Preserve Significant Changes</label>
+                    <label className="chart-sampling-threshold">Change Threshold (%)
+                      <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
+                        disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
+                        onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
+                    </label>
+                    <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
+                      disabled={!chartSamplingOptions.enabled}
+                      onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
+                      Show Significant Change Markers</label>
+                    <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Markers highlight only qualifying
+                      excursions; appearance: Chart Settings → Series. Show All Raw Data: General (may slow UI).</p>
+                    {chartThresholdInvalid && <p className="error" role="alert">
+                      Change Threshold must be a finite number greater than zero.</p>}
+                  </fieldset>
                 </aside>
 
                 <SequenceEditor
@@ -2358,22 +2377,6 @@ function App() {
                 </section>
               </div>
 
-              <fieldset className="chart-sampling-options" disabled={workflowBusy}>
-                <legend>Chart Sampling Options</legend>
-                <label><input type="checkbox" checked={chartSamplingOptions.enabled}
-                  onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
-                  Preserve Significant Changes</label>
-                <label className="chart-sampling-threshold">Change Threshold (%)
-                  <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
-                    disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
-                    onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
-                </label>
-                <p className="tool-setup-hint">For Line Charts in Simulation and Live. Each bucket shows a qualifying
-                  high, low, or both (in original order); quiet buckets keep their last point.
-                  Use Chart Settings → General → Show All Raw Data to bypass downsampling (may slow the interface).</p>
-                {chartThresholdInvalid && <p className="error" role="alert">
-                  Change Threshold must be a finite number greater than zero.</p>}
-              </fieldset>
               <div className="workflow-actions">
                 <button
                   className="action-button"

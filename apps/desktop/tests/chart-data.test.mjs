@@ -9,6 +9,7 @@ import {
   minMaxDecimateRange,
   prepareChartSeries,
   pruneChartData,
+  sampleLineRange,
 } from '../src/chartData.ts'
 import { addChartPanel } from '../src/chartPanels.ts'
 
@@ -194,54 +195,99 @@ test('Scatter X remains cached when it is not selected as a Y Output', () => {
   assert.equal(data.getSeries('unused').length, 0)
 })
 
-test('threshold buckets select qualifying Max, Min, or both in original order', () => {
-  const x = sequence(4)
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 140, 160, 150), 1, 30),
-    [[1, 100], [3, 160], [4, 150]])
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 65, 40, 60), 1, 30),
-    [[1, 100], [3, 40], [4, 60]])
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 140, 50, 160), 1, 30),
-    [[1, 100], [3, 50], [4, 160]])
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 160, 50, 140), 1, 30),
-    [[1, 100], [2, 160], [3, 50], [4, 140]])
-  // Quiet buckets still carry the line to their final raw sample.
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, 110, 120, 115), 1, 30),
-    [[1, 100], [4, 115]])
-})
-
-test('quiet buckets retain the comparison reference for cumulative drift', () => {
-  const values = Float64Array.of(100, 101, 102, 103, 104, 104, 105, 106, 106, 106, 106, 106)
-  assert.deepEqual(minMaxDecimate(sequence(values.length), values, 4, 5),
-    [[1, 100], [3, 102], [6, 104], [8, 106], [12, 106]])
-})
-
-test('zero, invalid raw values and disabled mode do not break threshold sampling', () => {
-  const x = sequence(4)
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(0, -5, 3, 0), 1, 50),
-    [[1, 0], [2, -5], [3, 3], [4, 0]])
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(0, -5, 3, 0), 1, 101),
-    [[1, 0], [4, 0]])
-  assert.deepEqual(minMaxDecimate(x, Float64Array.of(100, NaN, 160, 120), 1, 30),
-    [[1, 100], [3, 160], [4, 120]])
-  const values = Float64Array.of(100, 140, 50, 160)
+test('Enabled threshold retains the original Min/Max and adds qualified non-extreme local turns', () => {
+  const x = sequence(8)
+  const values = Float64Array.of(100, 160, 110, 140, 100, 100, 100, 100)
   const baseline = minMaxDecimate(x, values, 1)
-  for (const disabled of [null, 0, -1, NaN, Infinity]) {
-    assert.deepEqual(minMaxDecimate(x, values, 1, disabled), baseline)
+  const enabled = minMaxDecimate(x, values, 1, 30)
+  assert.deepEqual(baseline, [[1, 100], [2, 160], [8, 100]])
+  assert.deepEqual(enabled, [[1, 100], [2, 160], [3, 110], [8, 100]])
+  assert.ok(baseline.every(([iteration, value]) =>
+    enabled.some(point => point[0] === iteration && point[1] === value)))
+  assert.deepEqual([...values], [100, 160, 110, 140, 100, 100, 100, 100])
+})
+
+test('500k mostly-flat readings retain both rare real extrema and only mark those anomalies', () => {
+  const count = 500_000
+  const x = sequence(count)
+  const values = new Float64Array(count).fill(100)
+  values[168_237 - 1] = 145
+  values[428_901 - 1] = 60
+  const baseline = minMaxDecimate(x, values, 600)
+  const sampled = sampleLineRange(x, values, 600, { min: 1, max: count }, 20)
+  for (const special of [[168_237, 145], [428_901, 60]]) {
+    assert.ok(baseline.some(point => point[0] === special[0] && point[1] === special[1]))
+    assert.ok(sampled.data.some(point => point[0] === special[0] && point[1] === special[1]))
   }
-  assert.deepEqual([...values], [100, 140, 50, 160])
+  assert.deepEqual(sampled.significantMarkers, [[168_237, 145], [428_901, 60]])
+  assert.ok(baseline.every(([iteration, value]) =>
+    sampled.data.some(point => point[0] === iteration && point[1] === value)))
+  assert.ok(sampled.data.length <= 600 * 4 + 2)
+  assert.ok(sampled.significantMarkers.length <= 600 * 2)
+  assert.ok(sampled.data.every(([iteration], index) => index === 0 || iteration > sampled.data[index - 1][0]))
+  assert.equal(values[168_237 - 1], 145)
+  assert.equal(values[428_901 - 1], 60)
+})
+
+test('two identical rare spikes remain detectable after both return to the normal baseline', () => {
+  const count = 240_000
+  const x = sequence(count)
+  const values = new Float64Array(count).fill(100)
+  values[10_000 - 1] = 140
+  values[200_000 - 1] = 140
+  const sampled = sampleLineRange(x, values, 320, { min: 1, max: count }, 30)
+  assert.deepEqual(sampled.significantMarkers, [[10_000, 140], [200_000, 140]])
+  assert.ok(sampled.data.some(([iteration, value]) => iteration === 10_000 && value === 140))
+  assert.ok(sampled.data.some(([iteration, value]) => iteration === 200_000 && value === 140))
+})
+
+test('single-sample anomalies at pixel-bucket boundaries do not mark the recovery as abnormal', () => {
+  const x = sequence(10_000)
+  const values = new Float64Array(x.length).fill(100)
+  // 100 and 200 are the last raw positions of adjacent 100-sample buckets.
+  values[99] = 145
+  values[199] = 60
+  const sampled = sampleLineRange(x, values, 100, { min: 1, max: x.length }, 20)
+  assert.deepEqual(sampled.significantMarkers, [[100, 145], [200, 60]])
+  assert.ok(sampled.data.some(([iteration, value]) => iteration === 100 && value === 145))
+  assert.ok(sampled.data.some(([iteration, value]) => iteration === 200 && value === 60))
+})
+
+test('quiet periods retain a reference for a cumulative gradual increase', () => {
+  const y = Float64Array.of(100, 101, 102, 103, 104, 104, 105, 106, 106, 106, 106, 106)
+  const x = sequence(y.length)
+  const sampled = sampleLineRange(x, y, 4, { min: 1, max: y.length }, 5)
+  assert.ok(sampled.data.some(([iteration, value]) => iteration === 8 && value === 106))
+  assert.deepEqual(sampled.significantMarkers, [[8, 106]])
+})
+
+test('zero, invalid raw values and disabled threshold leave the Min/Max baseline intact', () => {
+  const x = sequence(4)
+  const values = Float64Array.of(0, -5, 3, 0)
+  const original = minMaxDecimate(x, values, 1)
+  for (const threshold of [null, 0, -1, NaN, Infinity, 50, 101]) {
+    const enabled = minMaxDecimate(x, values, 1, threshold)
+    assert.ok(original.every(([iteration, value]) =>
+      enabled.some(point => point[0] === iteration && point[1] === value)))
+  }
+  assert.deepEqual(sampleLineRange(x, Float64Array.of(100, NaN, 160, 100), 1,
+    { min: 1, max: 4 }, 30).significantMarkers, [[3, 160]])
+  assert.deepEqual([...values], [0, -5, 3, 0])
 })
 
 test('threshold sampler stays bounded, ordered and viewport-local at 500k rows', () => {
   const x = sequence(500_000)
   const y = Float64Array.from(x, (_, index) => [100, 160, 50, 140][index % 4])
   const points = minMaxDecimate(x, y, 320, 30)
-  assert.ok(points.length <= 642)
+  assert.ok(points.length <= 1_282)
   assert.ok(points.every(([iteration], index) => index === 0 || iteration > points[index - 1][0]))
   assert.deepEqual(points[0], [1, 100])
   assert.deepEqual(points.at(-1), [500_000, 140])
   const zoomed = minMaxDecimateRange(x, y, 320, { min: 200_000, max: 205_000 }, 30)
-  assert.ok(zoomed.length <= 642)
+  assert.ok(zoomed.length <= 1_282)
   assert.ok(zoomed[0][0] >= 199_999 && zoomed.at(-1)[0] <= 205_001)
+  const markerCount = sampleLineRange(x, y, 320, { min: 1, max: 500_000 }, 30).significantMarkers.length
+  assert.ok(markerCount <= 640)
 })
 
 test('selected Line Outputs sample independently and non-Line charts ignore the threshold', () => {

@@ -68,13 +68,21 @@ function markerRendererStyle(panel: ChartPanel, name: string, color: string) {
 }
 
 export function lineRendererSeries(panel: ChartPanel,
-  series: { name: string; data: [number, number][] }, color: string) {
+  series: { name: string; data: [number, number][]; significantMarkers?: [number, number][] }, color: string) {
   color = seriesColor(panel, series.name, color)
+  const { significantMarkers, ...line } = series
   const markers = panel.type === 'line' && lineSeriesSettings(panel, series.name).markers
-  const common = { ...series, type: 'line' as const, silent: true, emphasis: { disabled: true },
+  const marker = markerRendererStyle(panel, series.name, color)
+  // MarkPoint is separate from showSymbol: ordinary Line vertices stay marker-free
+  // even when the user opts to highlight only threshold-qualified excursions.
+  const qualifying = panel.type === 'line' && significantMarkers?.length ? {
+    markPoint: { silent: true, symbol: marker.symbol, symbolSize: marker.marker.size,
+      label: { show: false }, itemStyle: marker.itemStyle,
+      data: significantMarkers.map(([iteration, value]) => ({ coord: [iteration, value], value })) },
+  } : {}
+  const common = { ...line, ...qualifying, type: 'line' as const, silent: true, emphasis: { disabled: true },
     lineStyle: { color } }
   if (markers) {
-    const marker = markerRendererStyle(panel, series.name, color)
     return { ...common, showSymbol: true, symbol: marker.symbol, symbolSize: marker.marker.size,
       itemStyle: marker.itemStyle }
   }

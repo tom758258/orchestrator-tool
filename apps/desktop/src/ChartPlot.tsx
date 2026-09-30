@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
 import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
-import { DataZoomComponent, GridComponent, LegendComponent, TitleComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, LegendComponent, MarkPointComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type ChartChangeSettings, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
@@ -9,7 +9,7 @@ import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPres
   chartZoomSliderBottom, comboRendererSeries, lineRendererSeries, scatterRendererSeries } from './chartOptions'
 import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 
-use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, TitleComponent, CanvasRenderer])
+use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, MarkPointComponent, TitleComponent, CanvasRenderer])
 
 type ZoomRange = { min: number; max: number } | null
 const SCATTER_HOVER_RADIUS = 12

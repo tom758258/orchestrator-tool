@@ -189,7 +189,7 @@ export function nearestScatterHover(
   return best
 }
 
-export type ChartChangeSettings = { enabled: boolean; thresholdPercent: number }
+export type ChartChangeSettings = { enabled: boolean; thresholdPercent: number; showMarkers?: boolean }
 
 /**
  * Parses the Chart Sampling threshold field for both Simulation and Live, so both run
@@ -239,71 +239,120 @@ export function rawLinePointsInRange(
   return points
 }
 
+export type SampledLine = {
+  data: [number, number][]
+  significantMarkers: [number, number][]
+}
+
+// Existing Min/Max is the unconditional baseline. Threshold can preserve at most
+// two additional local turns per bucket; it must never replace baseline extrema.
+function sampleLine(iteration: Float64Array, values: Float64Array, pixelWidth: number,
+  changeThresholdPercent: number | null): SampledLine {
+  const count = Math.min(iteration.length, values.length)
+  const data: [number, number][] = []
+  const significantMarkers: [number, number][] = []
+  if (count === 0) return { data, significantMarkers }
+  const buckets = Math.max(1, Math.floor(pixelWidth))
+  const preserveChanges = changeThresholdPercent !== null &&
+    Number.isFinite(changeThresholdPercent) && changeThresholdPercent > 0
+  const showAll = count <= buckets * 2
+  if (showAll && !preserveChanges) {
+    for (let index = 0; index < count; index++) data.push([iteration[index], values[index]])
+    return { data, significantMarkers }
+  }
+
+  // When already showing every point, group raw samples in small runs solely
+  // to select bounded optional markers; never remove a plotted point.
+  const bucketCount = showAll ? Math.max(1, Math.ceil(count / 4)) : buckets
+  const selected = new Set<number>([0, count - 1])
+  let baseline = values[0]
+  if (!Number.isFinite(baseline)) {
+    baseline = values.find(value => Number.isFinite(value)) ?? Number.NaN
+  }
+
+  for (let bucket = 0; bucket < bucketCount; bucket++) {
+    const start = Math.floor(bucket * count / bucketCount)
+    const end = Math.floor((bucket + 1) * count / bucketCount)
+    let min = start
+    let max = start
+    for (let index = start + 1; index < end; index++) {
+      if (values[index] < values[min]) min = index
+      if (values[index] > values[max]) max = index
+    }
+    // Retain exact original Min/Max regardless of the optional threshold.
+    if (!showAll) { selected.add(min); selected.add(max) }
+    if (!preserveChanges || !Number.isFinite(baseline)) continue
+
+    let rising = -1
+    let falling = -1
+    let markerHigh = -1
+    let markerLow = -1
+    let displacedTail = 0
+    for (let index = start; index < end; index++) {
+      const value = values[index]
+      const previous = index > 0 ? values[index - 1] : baseline
+      if (!Number.isFinite(value)) { displacedTail = 0; continue }
+      const excursion = isSignificantChange(baseline, value, changeThresholdPercent!)
+      const localChange = isSignificantChange(previous, value, changeThresholdPercent!)
+      // A reversal (e.g. 160 -> 110) may qualify even when 110 is not a
+      // bucket extremum. Preserve its actual raw iteration, not an interpolated point.
+      if ((excursion && value > baseline) || (localChange && value > previous)) {
+        if (rising < 0 || value > values[rising]) rising = index
+      }
+      if ((excursion && value < baseline) || (localChange && value < previous)) {
+        if (falling < 0 || value < values[falling]) falling = index
+      }
+      // Only an excursion relative to the normal reference receives a Marker:
+      // do not flag a transient's return to baseline as another anomaly.
+      if (excursion && value > baseline && (markerHigh < 0 || value > values[markerHigh])) markerHigh = index
+      if (excursion && value < baseline && (markerLow < 0 || value < values[markerLow])) markerLow = index
+      displacedTail = excursion ? displacedTail + 1 : 0
+    }
+    if (!showAll) {
+      if (rising >= 0) selected.add(rising)
+      if (falling >= 0) selected.add(falling)
+    }
+    for (const index of [markerHigh, markerLow].filter(index => index >= 0).sort((a, b) => a - b)) {
+      significantMarkers.push([iteration[index], values[index]])
+    }
+    // An isolated one- or two-sample spike must not become the future
+    // reference. A level held for three consecutive raw samples may settle.
+    // Quiet buckets keep their original reference, preserving cumulative drift.
+    if (displacedTail >= 3) baseline = values[end - 1]
+  }
+
+  if (showAll) {
+    for (let index = 0; index < count; index++) data.push([iteration[index], values[index]])
+  } else {
+    for (const index of [...selected].sort((a, b) => a - b)) {
+      data.push([iteration[index], values[index]])
+    }
+  }
+  return { data, significantMarkers }
+}
+
+export function sampleLineRange(
+  iteration: Float64Array, values: Float64Array, pixelWidth: number,
+  range: { min: number; max: number }, changeThresholdPercent: number | null,
+): SampledLine {
+  const bounds = visibleSampleBounds(iteration, Math.min(iteration.length, values.length), range)
+  if (!bounds) return { data: [], significantMarkers: [] }
+  return sampleLine(iteration.subarray(bounds.start, bounds.end),
+    values.subarray(bounds.start, bounds.end), pixelWidth, changeThresholdPercent)
+}
+
 export function minMaxDecimateRange(
   iteration: Float64Array, values: Float64Array, pixelWidth: number,
   range: { min: number; max: number }, changeThresholdPercent: number | null = null,
 ): [number, number][] {
-  const bounds = visibleSampleBounds(iteration, Math.min(iteration.length, values.length), range)
-  if (!bounds) return []
-  return minMaxDecimate(iteration.subarray(bounds.start, bounds.end),
-    values.subarray(bounds.start, bounds.end), pixelWidth, changeThresholdPercent)
+  return sampleLineRange(iteration, values, pixelWidth, range, changeThresholdPercent).data
 }
 
 export function minMaxDecimate(
   iteration: Float64Array, values: Float64Array, pixelWidth: number,
   changeThresholdPercent: number | null = null,
 ): [number, number][] {
-  const count = values.length
-  const buckets = Math.max(1, Math.floor(pixelWidth))
-  const points: [number, number][] = []
-  const append = (index: number) => points.push([iteration[index], values[index]])
-  const preserveChanges = changeThresholdPercent !== null &&
-    Number.isFinite(changeThresholdPercent) && changeThresholdPercent > 0
-  if (count <= buckets * 2) {
-    for (let index = 0; index < count; index++) append(index)
-    return points
-  }
-  append(0)
-  // Keep the reference across quiet buckets so gradual changes can qualify.
-  let reference = values[0]
-  if (!Number.isFinite(reference)) reference = values.find(value => Number.isFinite(value)) ?? Number.NaN
-  for (let bucket = 0; bucket < buckets; bucket++) {
-    const start = Math.floor(bucket * count / buckets)
-    const end = Math.floor((bucket + 1) * count / buckets)
-    if (!preserveChanges) {
-      // Preserve the disabled Min/Max behaviour exactly.
-      let min = start
-      let max = start
-      for (let index = start + 1; index < end; index++) {
-        if (values[index] < values[min]) min = index
-        if (values[index] > values[max]) max = index
-      }
-      for (const index of min === max ? [min] : [Math.min(min, max), Math.max(min, max)]) {
-        if (points.at(-1)![0] !== iteration[index]) append(index)
-      }
-      continue
-    }
-    // Compare all raw points against the same reference for this bucket.
-    // Select only the most extreme qualifying high/low, never extra points.
-    let high = -1
-    let low = -1
-    for (let index = start; index < end; index++) {
-      const value = values[index]
-      if (!Number.isFinite(value) || !isSignificantChange(reference, value, changeThresholdPercent!)) continue
-      if (value > reference && (high < 0 || value > values[high])) high = index
-      if (value < reference && (low < 0 || value < values[low])) low = index
-    }
-    const selected = high < 0 && low < 0
-      ? [end - 1] : high < 0 ? [low] : low < 0 ? [high] : [Math.min(high, low), Math.max(high, low)]
-    // If there were qualifying points, carry the last selected representative
-    // (chronological order) to the next bucket. Quiet buckets leave it untouched.
-    if (high >= 0 || low >= 0) reference = values[selected[selected.length - 1]]
-    for (const index of selected) {
-      if (points.at(-1)![0] !== iteration[index]) append(index)
-    }
-  }
-  if (points.at(-1)![0] !== iteration[count - 1]) append(count - 1)
-  return points
+  return sampleLine(iteration, values, pixelWidth, changeThresholdPercent).data
 }
 
 export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixelWidth: number,
@@ -316,13 +365,21 @@ export function prepareChartSeries(panel: ChartPanel, data: PageChartData, pixel
   const scatterX = panel.scatterXOutput === null ? iteration : data.getSeries(panel.scatterXOutput)
   return panel.outputs.map((name, seriesIndex) => {
     const values = data.getSeries(name).subarray(0, count)
-    if (panel.type === 'line' && panel.showAllRawData) {
-      return { name, data: rawLinePointsInRange(iteration, values, range) }
+    if (panel.type === 'line') {
+      const threshold = changeSettings?.enabled ? changeSettings.thresholdPercent : null
+      // Show All bypasses plotted-point decimation; the optional marker selection
+      // still uses the same raw viewport and threshold without changing the Line.
+      const sampled = !panel.showAllRawData || (changeSettings?.enabled && changeSettings.showMarkers)
+        ? sampleLineRange(iteration, values, pixelWidth, range, threshold) : null
+      return { name,
+        data: panel.showAllRawData ? rawLinePointsInRange(iteration, values, range) : sampled!.data,
+        ...(changeSettings?.enabled && changeSettings.showMarkers
+          ? { significantMarkers: sampled!.significantMarkers } : {}),
+      }
     }
-    if (panel.type === 'line' || panel.type === 'area' ||
+    if (panel.type === 'area' ||
       (panel.type === 'combo' && comboSeriesSettings(panel, name, seriesIndex).kind === 'line')) {
-      return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range,
-        panel.type === 'line' && changeSettings?.enabled ? changeSettings.thresholdPercent : null) }
+      return { name, data: minMaxDecimateRange(iteration, values, pixelWidth, range) }
     }
     const pairs: [number, number][] = []
     const start = panel.type === 'scatter' || panel.type === 'bar' ? 0 : first

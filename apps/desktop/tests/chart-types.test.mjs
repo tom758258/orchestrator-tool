@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
+import { init } from 'echarts'
 import { addChartPanel, seriesColor } from '../src/chartPanels.ts'
 import { createPageChartData, minMaxDecimateRange, prepareChartSeries } from '../src/chartData.ts'
 import { comboRendererSeries, lineRendererSeries, scatterRendererSeries } from '../src/chartOptions.ts'
@@ -305,4 +306,57 @@ test('Line renderer resolves custom series color and returns to its supplied pal
   assert.equal(lineRendererSeries({ ...base, seriesColors: { I: '#123456' } }, series, 'red')
     .lineStyle.color, '#123456')
   assert.equal(lineRendererSeries(base, series, 'red').lineStyle.color, 'red')
+})
+
+test('the actual 500k-point Line renders only two opt-in significant markers in ECharts SVG', () => {
+  const count = 500_000
+  const page = createPageChartData()
+  const samples = new Array(count).fill(100)
+  samples[168_237 - 1] = 145
+  samples[428_901 - 1] = 60
+  assert.equal(page.append('Signal', 0, samples), true)
+  const configured = { ...addChartPanel([], 'Long', ['Signal'])[0], markerStyles: { Signal: {
+    shape: 'diamond', size: 8, fillColor: '#ff00ff', borderColor: '#000000',
+  } } }
+  const display = prepareChartSeries(configured, page, 600, { min: 1, max: count },
+    { enabled: true, thresholdPercent: 20, showMarkers: true })[0]
+  assert.deepEqual(display.significantMarkers, [[168_237, 145], [428_901, 60]])
+  const marked = lineRendererSeries(configured, display, 'red')
+  assert.equal(marked.showSymbol, false)
+  assert.equal(marked.symbol, 'none')
+  assert.deepEqual(marked.markPoint.data, [
+    { coord: [168_237, 145], value: 145 }, { coord: [428_901, 60], value: 60 },
+  ])
+  assert.equal(marked.markPoint.symbol, 'diamond')
+  assert.equal(marked.markPoint.symbolSize, 8)
+  assert.deepEqual(marked.markPoint.itemStyle, {
+    color: '#ff00ff', borderColor: '#000000', borderWidth: 1,
+  })
+  assert.equal(marked.markPoint.label.show, false)
+
+  const noMarkers = lineRendererSeries(configured,
+    prepareChartSeries(configured, page, 600, { min: 1, max: count },
+      { enabled: true, thresholdPercent: 20, showMarkers: false })[0], 'red')
+  assert.equal(noMarkers.markPoint, undefined)
+  assert.deepEqual(marked.data, noMarkers.data)
+  // Render the same full-range plotted Line with and without the MarkPoint
+  // component using the actual ECharts SVG backend, not a synthetic marker mock.
+  const makeChart = plot => {
+    const chart = init(null, null, { renderer: 'svg', ssr: true, width: 900, height: 350 })
+    chart.setOption({ animation: false, xAxis: { type: 'value', min: 1, max: count },
+      yAxis: { type: 'value', min: 0, max: 200 }, series: [plot] })
+    return chart
+  }
+  const raw = makeChart(noMarkers)
+  const highlighted = makeChart(marked)
+  try {
+    const without = raw.renderToSVGString()
+    const withMarkers = highlighted.renderToSVGString()
+    assert.match(without, /<svg/)
+    assert.match(withMarkers, /<svg/)
+    assert.ok(withMarkers.length > without.length, 'two qualifying MarkPoints should add SVG geometry')
+  } finally {
+    raw.dispose()
+    highlighted.dispose()
+  }
 })
