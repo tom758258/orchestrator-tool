@@ -166,7 +166,7 @@ function failurePresentation(message: string, stepType?: WorkflowStep['type']): 
     || normalized.includes('rejected')
   ) {
     return {
-      summary: 'The external tool rejected this operation.',
+      summary: 'This operation was not valid or supported with the current settings.',
       guidance: 'Check the step settings and whether the selected tool supports this operation.',
     }
   }
