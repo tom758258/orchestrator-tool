@@ -588,6 +588,11 @@ restores the same position in the result list.</p>
 <p>When <strong>Last Run Execution Results</strong> is collapsed it keeps its heading, the
 Execution Mode badge, and the execution count summary. The execution list and
 its Newer / Older paging are hidden until it is expanded.</p>
+<p>Failed runs and failed execution records show a short plain-language explanation
+first. The original error remains visible under <strong>Technical details</strong> for
+debugging. This extra explanation appears only for failures; successful and
+cancelled execution records keep the existing compact display. Instrument-specific
+SCPI/VISA details are preserved rather than reinterpreted by Desktop.</p>
 <h3 id="103-messages">10.3 Messages</h3>
 <p><strong>Messages</strong> collects the text written by Show Message steps. It has three
 independent tabs, <strong>Message 1</strong>, <strong>Message 2</strong>, and <strong>Message 3</strong>, and a step

@@ -111,6 +111,98 @@ function formatLiveResourceConfirmation(
   return lines.join('\n')
 }
 
+type FailurePresentation = {
+  summary: string
+  guidance: string
+}
+
+function failurePresentation(message: string, stepType?: WorkflowStep['type']): FailurePresentation {
+  const normalized = message.toLowerCase()
+
+  if (stepType === 'assert') {
+    return {
+      summary: 'This check did not pass.',
+      guidance: 'Review the expected condition and the value used by this check.',
+    }
+  }
+  if (normalized.includes('safety cleanup failed')) {
+    return {
+      summary: 'The run failed while performing safety cleanup.',
+      guidance: 'Review the technical details before running again. Any earlier workflow failure is kept in the same diagnostic.',
+    }
+  }
+  if (normalized.includes('worker startup failed') || normalized.includes('failed to start')) {
+    return {
+      summary: 'The external tool could not start.',
+      guidance: 'Check the configured executable and its runtime dependencies.',
+    }
+  }
+  if (normalized.includes('worker fatal error')) {
+    return {
+      summary: 'The external tool reported an error while executing this operation.',
+      guidance: 'Review the technical details below for the original tool or instrument error.',
+    }
+  }
+  if (normalized.includes('timed out') || normalized.includes('timeout')) {
+    return {
+      summary: 'The operation did not finish before the timeout.',
+      guidance: 'Check that the external tool is responsive and whether the operation needs more time.',
+    }
+  }
+  if (
+    normalized.includes('worker http failed')
+    || normalized.includes('http request failed')
+    || normalized.includes('event channel disconnected')
+    || normalized.includes('event i/o error')
+  ) {
+    return {
+      summary: 'Communication with the external tool was interrupted.',
+      guidance: 'Check that the external tool is still available and review the connection before trying again.',
+    }
+  }
+  if (
+    normalized.includes('invalid arguments')
+    || normalized.includes('unsupported action')
+    || normalized.includes('rejected')
+  ) {
+    return {
+      summary: 'The external tool rejected this operation.',
+      guidance: 'Check the step settings and whether the selected tool supports this operation.',
+    }
+  }
+  if (
+    (normalized.includes('invalid') && normalized.includes('worker response'))
+    || normalized.includes('invalid json')
+  ) {
+    return {
+      summary: 'Orchestrator could not understand the response from the external tool.',
+      guidance: 'Confirm the external tool version is compatible, then review the technical details.',
+    }
+  }
+  if (normalized.includes('worker shutdown failed') || normalized.includes('worker exited with')) {
+    return {
+      summary: 'The external tool did not shut down normally.',
+      guidance: 'Review the technical details before starting another run.',
+    }
+  }
+  return {
+    summary: 'This operation failed while executing.',
+    guidance: 'Review the technical details below for the original error.',
+  }
+}
+
+function FailureDetails({ message, stepType }: { message: string; stepType?: WorkflowStep['type'] }) {
+  const presentation = failurePresentation(message, stepType)
+  return (
+    <div className="failure-explanation">
+      <p className="failure-summary">{presentation.summary}</p>
+      <p className="failure-guidance">{presentation.guidance}</p>
+      <p className="failure-technical-label">Technical details</p>
+      <p className="run-result-message">{message}</p>
+    </div>
+  )
+}
+
 type WorkflowDraft = {
   schema_version: number
   name: string
@@ -537,6 +629,10 @@ function App() {
   const streamingPage = pages.some(page => page.name === streamPage) ? streamPage : pages[0]?.name ?? 'Results'
   const hasWorkflowOutputs = outputSteps.length > 0
   const runWorkflowSteps = runWorkflowSnapshot?.workflow.steps ?? []
+  const runStepsById = useMemo(
+    () => new Map(allWorkflowSteps(runWorkflowSnapshot?.workflow.steps ?? []).map(step => [step.id, step])),
+    [runWorkflowSnapshot],
+  )
   const { pages: runPages, page: runPage, outputs: runOutputs } = useMemo(() =>
     outputPageContext(runWorkflowSnapshot?.workflow.steps ?? [], selectedRunPage), [runWorkflowSnapshot, selectedRunPage])
   const hasRunOutputs = outputDefinitions(runWorkflowSteps).length > 0
@@ -2412,14 +2508,16 @@ function App() {
               )}
 
               {runError && (
-                <p className="error" role="alert">
-                  Run failed: {runError}
-                </p>
+                <div className="error" role="alert">
+                  <p className="failure-run-title">Run failed</p>
+                  <FailureDetails message={runError} />
+                </div>
               )}
               {displayedRun?.status === 'failed' && displayedRun.error && (
-                <p className="error" role="alert">
-                  Run failed: {displayedRun.error}
-                </p>
+                <div className="error" role="alert">
+                  <p className="failure-run-title">Run failed</p>
+                  <FailureDetails message={displayedRun.error} />
+                </div>
               )}
 
               {displayedRun && (
@@ -2492,9 +2590,8 @@ function App() {
                   </div>}
                   <ol key={executions.offset} className="run-result-list" aria-label="Last Run Execution Results" tabIndex={0}>
                     {executions.items.map((result, executionIndex) => {
-                      const isOutput = allWorkflowSteps(runWorkflowSteps).some((step) =>
-                        step.id === result.step_id && step.type === 'output',
-                      )
+                      const resultStep = runStepsById.get(result.step_id)
+                      const isOutput = resultStep?.type === 'output'
                       const formattedMeasurement = formatMeasurement(result.output)
                       const measurement = result.status !== 'succeeded'
                         ? null
@@ -2541,7 +2638,7 @@ function App() {
                               )}
                             </div>
                             {result.status === 'failed' && result.message && (
-                              <p className="run-result-message">{result.message}</p>
+                              <FailureDetails message={result.message} stepType={resultStep?.type} />
                             )}
                           </div>
                         </li>
