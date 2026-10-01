@@ -506,6 +506,10 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。</p>
 <p><strong>Last Run Execution Results</strong> 收合後仍保留標題、Execution Mode badge 與 execution
 數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。</p>
+<p>Failed run 與 failed execution record 會先顯示簡短、較容易理解的錯誤說明。原始錯誤仍保留在
+<strong>Technical details</strong> 下方供除錯使用。這層說明只在 failure 出現；successful 與 cancelled
+execution record 維持既有 compact display。Instrument-specific 的 SCPI/VISA 細節會原樣
+保留，不由 Desktop 猜測或重新解讀。</p>
 <h3 id="103-messages">10.3 Messages</h3>
 <p><strong>Messages</strong> 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：<strong>Message
 1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 依 workflow

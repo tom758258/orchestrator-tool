@@ -620,6 +620,12 @@ When **Last Run Execution Results** is collapsed it keeps its heading, the
 Execution Mode badge, and the execution count summary. The execution list and
 its Newer / Older paging are hidden until it is expanded.
 
+Failed runs and failed execution records show a short plain-language explanation
+first. The original error remains visible under **Technical details** for
+debugging. This extra explanation appears only for failures; successful and
+cancelled execution records keep the existing compact display. Instrument-specific
+SCPI/VISA details are preserved rather than reinterpreted by Desktop.
+
 ### 10.3 Messages
 
 **Messages** collects the text written by Show Message steps. It has three

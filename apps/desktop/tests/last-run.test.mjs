@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const workflowTypes = readFileSync(new URL('../src/workflow.ts', import.meta.url), 'utf8')
+const storedRun = readFileSync(new URL('../src-tauri/src/stored_run.rs', import.meta.url), 'utf8')
 
 test('manual export sends only the run selector and export options to Rust', () => {
   const handler = source.slice(source.indexOf('const handleExport'), source.indexOf('const selectedStep'))
@@ -40,9 +42,32 @@ test('Output shows Last Run Page tabs while Page editing stays in Workflow Prope
   assert.ok(properties.includes('selectedCompatiblePages.map'))
 })
 
-test('failed StoredRun diagnostics are rendered from compact metadata', () => {
-  assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error/)
-  assert.match(source, /Run failed: \{displayedRun\.error\}/)
+test('failed diagnostics add a user explanation and preserve technical details', () => {
+  assert.match(source, /function failurePresentation\(message: string, stepType\?: WorkflowStep\['type'\]\)/)
+  assert.match(source, /stepType === 'assert'/)
+  assert.match(source, /normalized\.includes\('timed out'\) \|\| normalized\.includes\('timeout'\)/)
+  assert.match(source, /This operation failed while executing\./)
+  assert.match(source, /Technical details/)
+  assert.match(source, /result\.status === 'failed' && result\.message/)
+  assert.match(source, /<FailureDetails message=\{result\.message\} stepType=\{resultStep\?\.type\} \/>/)
+})
+
+test('run failures use the same explanation without replacing raw diagnostics', () => {
+  assert.match(source, /runError && \([\s\S]*?<FailureDetails message=\{runError\} \/>/)
+  assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error[\s\S]*?<FailureDetails message=\{displayedRun\.error\} \/>/)
+})
+
+test('friendly failure text does not add per-execution DTO fields', () => {
+  const stepExecution = workflowTypes.slice(
+    workflowTypes.indexOf('export type StepExecutionDto'),
+    workflowTypes.indexOf('export type ResultRowDto'),
+  )
+  const compactExecution = storedRun.slice(
+    storedRun.indexOf('pub struct CompactExecutionDto'),
+    storedRun.indexOf('pub struct StepSummaryDto'),
+  )
+  assert.doesNotMatch(stepExecution, /user_message|failure_summary|failure_guidance/)
+  assert.doesNotMatch(compactExecution, /user_message|failure_summary|failure_guidance/)
 })
 
 test('bounded execution previews distinguish omitted data from a real null', () => {
