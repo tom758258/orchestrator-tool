@@ -118,7 +118,7 @@ test('Chart Options, Sampling and Y-axis collapse independently with existing +/
   // Top-level panels reuse the shared collapsible header and start expanded.
   for (const state of ['stepsExpanded', 'streamingExpanded', 'chartOptionsExpanded']) {
     const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
-    assert.match(app, new RegExp(`const \\\[\${state}, \${setter}\\\] = useState\\\(true\\\)`), state)
+    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
     assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
     assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '−' : '\\\\+'\\}</span>`), state)
     assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
@@ -130,7 +130,7 @@ test('Chart Options, Sampling and Y-axis collapse independently with existing +/
   // Sampling and Y-axis match the existing Steps category interaction but keep separate state.
   for (const state of ['chartSamplingExpanded', 'chartYAxisExpanded']) {
     const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
-    assert.match(app, new RegExp(`const \\\[\${state}, \${setter}\\\] = useState\\\(true\\\)`), state)
+    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
     assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
     assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
   }
@@ -144,7 +144,7 @@ test('collapsing Chart Options sections hides content without changing settings'
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
   for (const setter of ['setStepsExpanded', 'setStreamingExpanded', 'setChartOptionsExpanded',
     'setChartSamplingExpanded', 'setChartYAxisExpanded']) {
-    assert.equal((app.match(new RegExp(`const \\\[\\w+, ${setter}\\\]`, 'g')) ?? []).length, 1, setter)
+    assert.equal((app.match(new RegExp(`const \\[\\w+, ${setter}\\]`, 'g')) ?? []).length, 1, setter)
     assert.equal((sidebar.match(new RegExp(`${setter}\\(current => !current\\)`, 'g')) ?? []).length, 1, setter)
   }
   for (const setter of ['setStreamCsv', 'setStreamPage', 'setStreamAllPages', 'setStreamOutputFolder',
