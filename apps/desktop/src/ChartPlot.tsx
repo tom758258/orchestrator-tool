@@ -192,7 +192,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       ] : [],
       series: rendererSeries,
     }, { notMerge: true })
-  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors])
+  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors, fitData])
 
   useEffect(() => {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
