@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { failurePresentation } from '../src/failurePresentation.ts'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const workflowTypes = readFileSync(new URL('../src/workflow.ts', import.meta.url), 'utf8')
@@ -42,22 +43,75 @@ test('Output shows Last Run Page tabs while Page editing stays in Workflow Prope
   assert.ok(properties.includes('selectedCompatiblePages.map'))
 })
 
-test('failed diagnostics add a user explanation and preserve technical details', () => {
-  assert.match(source, /function failurePresentation\(message: string, stepType\?: WorkflowStep\['type'\]\)/)
-  assert.match(source, /stepType === 'assert'/)
-  assert.match(source, /normalized\.includes\('timed out'\) \|\| normalized\.includes\('timeout'\)/)
-  assert.match(source, /This operation failed while executing\./)
-  assert.match(source, /normalized\.includes\('invalid arguments'\)[\s\S]*?\|\| normalized\.includes\('unsupported action'\)/)
-  assert.match(source, /This operation was not valid or supported with the current settings\./)
-  assert.doesNotMatch(source, /The external tool rejected this operation\./)
+const invalidSettingsSummary = 'This operation was not valid or supported with the current settings.'
+
+test('failure presentation matches real invalid and unsupported adapter errors', () => {
+  for (const message of [
+    'invalid Powers arguments: channel must be a positive integer',
+    'invalid Meters arguments: unexpected argument field',
+    'unsupported Powers action example',
+    'unsupported Meters action example',
+    'workflow execution failed: invalid Powers arguments: channel must be a positive integer',
+  ]) {
+    assert.equal(failurePresentation(message).summary, invalidSettingsSummary)
+  }
+  assert.equal(
+    failurePresentation('instrument rejected command because device is busy').summary,
+    'This operation failed while executing.',
+  )
+})
+
+test('Assert failure presentation distinguishes a failed check from evaluation errors', () => {
+  assert.equal(
+    failurePresentation('Assertion failed.', { type: 'assert', message: '' }).summary,
+    'This check did not pass.',
+  )
+  assert.equal(
+    failurePresentation('Voltage must stay below limit.', {
+      type: 'assert', message: 'Voltage must stay below limit.',
+    }).summary,
+    'This check did not pass.',
+  )
+  assert.equal(
+    failurePresentation('unresolved variable foo', { type: 'assert', message: '' }).summary,
+    'This check could not be evaluated.',
+  )
+  const longMessage = '😀'.repeat(513)
+  const boundedMessage = Array.from(longMessage).slice(0, 512).join('')
+  assert.equal(
+    failurePresentation(boundedMessage, { type: 'assert', message: longMessage }).summary,
+    'This check did not pass.',
+  )
+})
+
+test('failed diagnostics use the presentation helper only for failed results and preserve technical details', () => {
+  assert.match(source, /import \{ failurePresentation \} from '\.\/failurePresentation'/)
+  assert.match(source, /const presentation = failurePresentation\(message, step\)/)
   assert.match(source, /Technical details/)
   assert.match(source, /result\.status === 'failed' && result\.message/)
-  assert.match(source, /<FailureDetails message=\{result\.message\} stepType=\{resultStep\?\.type\} \/>/)
+  assert.match(source, /<FailureDetails message=\{result\.message\} step=\{resultStep\} \/>/)
 })
 
 test('run failures use the same explanation without replacing raw diagnostics', () => {
   assert.match(source, /runError && \([\s\S]*?<FailureDetails message=\{runError\} \/>/)
   assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error[\s\S]*?<FailureDetails message=\{displayedRun\.error\} \/>/)
+})
+
+test('non-run actions keep errors local instead of labeling them as Run failed', () => {
+  const clearHandler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
+  assert.match(clearHandler, /setClearLastRunError\(null\)/)
+  assert.match(clearHandler, /setClearLastRunError\('Could not clear Last Run: ' \+ String\(message\)\)/)
+  assert.doesNotMatch(clearHandler, /setRunError\('Could not clear Last Run:/)
+
+  const folderHandler = source.slice(source.indexOf('async function selectOutputFolder'), source.indexOf('const handleExport'))
+  assert.match(folderHandler, /setStreamOutputFolderError\(null\)/)
+  assert.match(folderHandler, /setStreamOutputFolderError\('Could not select CSV output folder: ' \+ String\(message\)\)/)
+  assert.doesNotMatch(folderHandler, /setRunError\('Could not select CSV output folder:/)
+
+  const streamingPanel = source.slice(source.indexOf('<section className="streaming-panel"'), source.indexOf('<section className="chart-sampling-options"'))
+  assert.match(streamingPanel, /streamOutputFolderError &&/)
+  const outputPanel = source.slice(source.indexOf('<section id="output-panel"'))
+  assert.match(outputPanel, /clearLastRunError &&/)
 })
 
 test('friendly failure text does not add per-execution DTO fields', () => {
