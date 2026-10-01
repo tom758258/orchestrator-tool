@@ -180,7 +180,7 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
 
 export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
   fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[],
-  seriesColors: Record<string, string> = {}) {
+  seriesColors: Record<string, string> = {}, fitData = false) {
   const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
   const layout = chartLayout(panel)
@@ -209,7 +209,8 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
           ...(yAxis.interval === null ? {} : {
             interval: (_index: number, value: string) => Number(value) % yAxis.interval! === 0,
           }) } }
-      : axisOption(yAxis, 56, visual.yAxis),
+      : { ...axisOption(yAxis, 56, visual.yAxis),
+        ...(fitData && panel.type === 'line' ? { scale: true } : {}) },
   }
 }
 
