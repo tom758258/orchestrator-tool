@@ -16,17 +16,19 @@ test('Run Simulation is guarded immediately before React busy state can render',
   assert.doesNotMatch(button, /executionMode === 'live' &&/)
 })
 
-test('Simulation snapshots Chart Sampling Options the same way Live does', () => {
+test('Simulation snapshots Chart Options the same way Live does', () => {
   assert.match(simulation, /const chartSampling = chartSamplingOptions\.enabled\s*\n\s*\? chartSamplingSnapshot\(chartSamplingOptions\) : null/)
+  assert.match(simulation, /const fitData = chartFitData/)
   assert.match(simulation, /setRunChartSampling\(chartSampling\)/)
-  // Simulation no longer discards the option unconditionally.
+  assert.match(simulation, /setRunChartFitData\(fitData\)/)
+  // Simulation no longer discards the sampling snapshot unconditionally.
   assert.doesNotMatch(simulation, /setRunChartSampling\(null\)/)
   // The threshold is validated before the Last Run is replaced, so a bad value
   // cannot destroy the previous run.
   assert.ok(simulation.indexOf('chartSamplingSnapshot(') < simulation.indexOf('setRunWorkflowSnapshot(workflowDraft)'))
   assert.ok(simulation.indexOf('chartSamplingSnapshot(') < simulation.indexOf('runIdRef.current = null'))
-  // Changing the option for the next run does not alter the current Last Run chart.
-  assert.match(simulation, /\}, \[workflowDraft, chartSamplingOptions, receiveRunProgress,/)
+  // Changing either control for the next run does not alter the current Last Run chart.
+  assert.match(simulation, /\}, \[workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress,/)
 })
 
 test('Simulation validates streaming options before replacing Last Run state', () => {
