@@ -371,7 +371,8 @@ body {
 }
 
 .step-palette,
-.streaming-panel {
+.streaming-panel,
+.chart-sampling-options {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -380,7 +381,8 @@ body {
 }
 
 .step-palette h3,
-.streaming-panel h3 {
+.streaming-panel h3,
+.chart-sampling-options h3 {
   margin: 0;
   font-size: 1rem;
 }
@@ -666,36 +668,36 @@ textarea:disabled {
   margin-top: 16px;
 }
 
-.chart-sampling-options {
+/* Borderless group inside the Chart Sampling Options panel; the fieldset only
+   keeps the busy-run disable behavior. */
+.chart-sampling-fields {
   display: grid;
   min-width: 0;
   gap: 8px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel-soft);
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
 }
 
-.chart-sampling-options > label {
+.chart-sampling-fields > label {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   min-width: 0;
 }
 
-.chart-sampling-options .chart-sampling-threshold {
+.chart-sampling-fields .chart-sampling-threshold {
   flex-direction: column;
   gap: 4px;
 }
 
-.chart-sampling-options .chart-sampling-threshold input {
+.chart-sampling-fields .chart-sampling-threshold input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
 }
 
-.chart-sampling-options .tool-setup-hint { margin: 0; }
+.chart-sampling-fields .tool-setup-hint { margin: 0; }
 
 .execution-mode-control {
   display: flex;
@@ -803,7 +805,7 @@ textarea:disabled {
   font-size: 1rem;
 }
 
-/* Shared by the collapsible Messages and Execution Results panel headers. */
+/* Shared by the collapsible Workflow sidebar, Messages, and Execution Results panel headers. */
 .collapsible-header {
   display: flex;
   align-items: center;

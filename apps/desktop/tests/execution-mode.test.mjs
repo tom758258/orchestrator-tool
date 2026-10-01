@@ -46,7 +46,7 @@ test('Live Resource remains stored for Live mode and saving it does not switch m
 test('Chart Sampling is shared by Simulation and Live, configured pre-run and frozen outside Template data', () => {
   // Available in both modes, and named as a general chart setting rather than a Live one.
   assert.match(app, /chartSamplingOptions.*enabled: false, threshold: '5', showMarkers: false/)
-  assert.match(app, /<legend>Chart Sampling Options<\/legend>/)
+  assert.match(app, /aria-labelledby="chart-sampling-options-title"/)
   assert.match(app, /Preserve Significant Changes/)
   assert.doesNotMatch(app, /Live Chart Options|liveChartOptions|activeLiveChartOptions/)
 
@@ -99,10 +99,47 @@ test('marker checkbox is in the left sidebar under Streaming, disabled when samp
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
   assert.ok(sidebar.indexOf('className="streaming-panel"') >= 0)
   assert.ok(sidebar.indexOf('className="chart-sampling-options"') > sidebar.indexOf('className="streaming-panel"'))
-  assert.equal((app.match(/<legend>Chart Sampling Options<\/legend>/g) ?? []).length, 1)
+  assert.equal((app.match(/id="chart-sampling-options-title"/g) ?? []).length, 1)
   assert.match(sidebar, /checked=\{chartSamplingOptions\.showMarkers\}/)
   assert.match(sidebar, /disabled=\{!chartSamplingOptions\.enabled\}/)
   assert.match(sidebar, /Show Significant Change Markers/)
   assert.doesNotMatch(app.slice(app.indexOf('</aside>'), app.indexOf('className="workflow-actions"')),
     /className="chart-sampling-options"/)
+})
+
+test('Steps, Streaming and Chart Sampling Options collapse with the shared +/- header', () => {
+  const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
+    app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
+  // Every top-level sidebar panel starts expanded and reuses the shared header.
+  for (const state of ['stepsExpanded', 'streamingExpanded', 'chartSamplingExpanded']) {
+    const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
+    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
+    assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
+    assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '\u2212' : '\\+'\\}</span>`), state)
+    assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
+  }
+  // Panel order and the label content stay unchanged.
+  assert.ok(sidebar.indexOf('className="step-palette"') < sidebar.indexOf('className="streaming-panel"'))
+  assert.ok(sidebar.indexOf('className="streaming-panel"') < sidebar.indexOf('className="chart-sampling-options"'))
+
+  // Panel bodies render only while expanded, and the step category state is untouched.
+  assert.match(sidebar, /\{stepsExpanded && <>/)
+  assert.match(sidebar, /\{streamingExpanded && <>/)
+  assert.match(sidebar, /\{chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled=\{workflowBusy\}>/)
+  assert.match(sidebar, /aria-expanded=\{expandedStepCategories\[category\]\}/)
+  assert.doesNotMatch(sidebar, /<legend>Chart Sampling Options<\/legend>/)
+})
+
+test('collapsing a sidebar panel hides content without changing any setting', () => {
+  const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
+    app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
+  for (const setter of ['setStepsExpanded', 'setStreamingExpanded', 'setChartSamplingExpanded']) {
+    assert.equal((app.match(new RegExp(`const \\[\\w+, ${setter}\\]`, 'g')) ?? []).length, 1, setter)
+    assert.equal((sidebar.match(new RegExp(`${setter}\\(current => !current\\)`, 'g')) ?? []).length, 1, setter)
+  }
+  // Streaming and Chart Sampling keep their own state setters outside the panel toggles.
+  for (const setter of ['setStreamCsv', 'setStreamPage', 'setStreamAllPages', 'setStreamOutputFolder',
+    'setChartSamplingOptions', 'setExpandedStepCategories']) {
+    assert.ok(!sidebar.includes(`${setter}(current => !current)`), setter)
+  }
 })

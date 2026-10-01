@@ -6,7 +6,7 @@ const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const streamingFn = source.slice(source.indexOf('function streamingOptions'), source.indexOf('function App()'))
 const simulation = source.slice(source.indexOf('const runSimulation'), source.indexOf('const workflowBusy'))
 const live = source.slice(source.indexOf('const runLive'), source.indexOf('const runSimulation'))
-const panel = source.slice(source.indexOf('streaming-panel'), source.indexOf('csvStreamFeedback}\n                  </section>'))
+const panel = source.slice(source.indexOf('streaming-panel'), source.indexOf('csvStreamFeedback}\n                    </>}'))
 
 test('streamingOptions no longer requires a destination CSV or custom output folder', () => {
   assert.doesNotMatch(streamingFn, /Select a destination CSV/)

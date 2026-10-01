@@ -538,6 +538,9 @@ function App() {
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, Powers: true, Meters: true,
   })
+  const [stepsExpanded, setStepsExpanded] = useState(true)
+  const [streamingExpanded, setStreamingExpanded] = useState(true)
+  const [chartSamplingExpanded, setChartSamplingExpanded] = useState(true)
   const [executionsExpanded, setExecutionsExpanded] = useState(true)
   const [messagesExpanded, setMessagesExpanded] = useState(true)
   const [messageTarget, setMessageTarget] = useState<MessageTargetWire>('message-1')
@@ -2036,7 +2039,15 @@ function App() {
               <div className="workflow-builder">
                 <aside className="workflow-sidebar">
                   <section className="step-palette" aria-labelledby="step-palette-title">
-                    <h3 id="step-palette-title">Steps</h3>
+                    <h3 id="step-palette-title">
+                      <button type="button" className="collapsible-header"
+                        aria-expanded={stepsExpanded}
+                        onClick={() => setStepsExpanded(current => !current)}>
+                        Steps
+                        <span aria-hidden="true">{stepsExpanded ? '−' : '+'}</span>
+                      </button>
+                    </h3>
+                    {stepsExpanded && <>
                     <p>Adding to: {addingToLoop ? `${addingToLoop.type === 'for' ? 'For' : 'While'} "${addingToLoop.id}" body` : 'Root workflow'}</p>
                     {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
@@ -2069,9 +2080,18 @@ function App() {
                         </section>
                       ))}
                     </div>
+                    </>}
                   </section>
                   <section className="streaming-panel" aria-labelledby="streaming-panel-title">
-                    <h3 id="streaming-panel-title">Streaming</h3>
+                    <h3 id="streaming-panel-title">
+                      <button type="button" className="collapsible-header"
+                        aria-expanded={streamingExpanded}
+                        onClick={() => setStreamingExpanded(current => !current)}>
+                        Streaming
+                        <span aria-hidden="true">{streamingExpanded ? '−' : '+'}</span>
+                      </button>
+                    </h3>
+                    {streamingExpanded && <>
                     <label className="streaming-toggle">
                       <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
                         disabled={workflowBusy || !hasWorkflowOutputs}
@@ -2091,9 +2111,18 @@ function App() {
                       {streamOutputFolder !== null && <button className="action-button" type="button" disabled={workflowBusy} onClick={() => setStreamOutputFolder(null)}>Use Default</button>}
                     </div>}
                     {csvStreamFeedback}
+                    </>}
                   </section>
-                  <fieldset className="chart-sampling-options" disabled={workflowBusy}>
-                    <legend>Chart Sampling Options</legend>
+                  <section className="chart-sampling-options" aria-labelledby="chart-sampling-options-title">
+                    <h3 id="chart-sampling-options-title">
+                      <button type="button" className="collapsible-header"
+                        aria-expanded={chartSamplingExpanded}
+                        onClick={() => setChartSamplingExpanded(current => !current)}>
+                        Chart Sampling Options
+                        <span aria-hidden="true">{chartSamplingExpanded ? '−' : '+'}</span>
+                      </button>
+                    </h3>
+                    {chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled={workflowBusy}>
                     <label><input type="checkbox" checked={chartSamplingOptions.enabled}
                       onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
                       Preserve Significant Changes</label>
@@ -2110,7 +2139,8 @@ function App() {
                       excursions; appearance: Chart Settings → Series. Show All Raw Data: General (may slow UI).</p>
                     {chartThresholdInvalid && <p className="error" role="alert">
                       Change Threshold must be a finite number greater than zero.</p>}
-                  </fieldset>
+                    </fieldset>}
+                  </section>
                 </aside>
 
                 <SequenceEditor
