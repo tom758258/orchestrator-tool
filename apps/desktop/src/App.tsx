@@ -2703,7 +2703,10 @@ function App() {
                   ? 'Run did not fully complete. Committed rows are partial results and can be exported.'
                   : 'Run did not fully complete. No committed output rows are available for export.'}</p>}
                 {displayedRun?.status === 'failed' && displayedRun.error && (
-                  <p className="error" role="alert">{displayedRun.error}</p>
+                  <div className="error" role="alert">
+                    <p className="failure-run-title">Run failed</p>
+                    <FailureDetails message={displayedRun.error} />
+                  </div>
                 )}
                 {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
                 {runPage && (runWorkspace.starting || runPageMetadata) && <ResultChart key={runPage.name} panels={chartPanels} onPanelsChange={setChartPanels}

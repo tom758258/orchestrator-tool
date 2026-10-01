@@ -97,6 +97,16 @@ test('run failures use the same explanation without replacing raw diagnostics', 
   assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error[\s\S]*?<FailureDetails message=\{displayedRun\.error\} \/>/)
 })
 
+test('Output Last Run shows the shared failure presentation instead of the raw error only', () => {
+  const output = source.slice(source.indexOf('<section id="output-panel"'))
+  const start = output.indexOf("{displayedRun?.status === 'failed' && displayedRun.error && (")
+  assert.ok(start >= 0, 'Output must keep the failed run-level error condition')
+  const failure = output.slice(start, output.indexOf('</div>', start))
+  assert.match(failure, /<p className="failure-run-title">Run failed<\/p>/)
+  assert.match(failure, /<FailureDetails message=\{displayedRun\.error\} \/>/)
+  assert.doesNotMatch(output, /<p className="error" role="alert">\{displayedRun\.error\}<\/p>/)
+})
+
 test('non-run actions keep errors local instead of labeling them as Run failed', () => {
   const clearHandler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
   assert.match(clearHandler, /setClearLastRunError\(null\)/)
