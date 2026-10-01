@@ -15,7 +15,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -27,6 +27,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   numericNames: string[]
   running: boolean
   changeSettings?: ChartChangeSettings | null
+  fitData?: boolean
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
@@ -256,7 +257,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             <ChartPlot panel={visiblePanel}
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined}
-              changeSettings={changeSettings} />
+              changeSettings={changeSettings} fitData={fitData} />
           )}
           {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}

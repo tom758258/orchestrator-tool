@@ -568,30 +568,40 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
-Chart Sampling Options 位於 Workflow 左側窄欄的 Streaming 正下方，Simulation 與
-Live Line Chart 都能使用。Preserve Significant Changes **預設關閉**，
-Change Threshold (%) 預設為 **5%**，啟用時必須是有限且大於 0 的百分比。
-不論是否啟用，原本每個 pixel bucket 的 Min/Max 都會保留。啟用後會額外檢查
-可見範圍的 Raw Data，每個 bucket 最多再補兩個符合門檻的局部變化代表點
-（上升 Max、下降 Min），並按真正 Iteration 排序，不會刪除原本 Min/Max。
-正常值比較基準不會在安靜區段任意重設；單筆或雙筆異常恢復後，也不會永久將
-異常值當成後續基準。即使長時間量測，繪圖點數仍約束在每 bucket 最多四點，
-另保留整體首尾點。
+Chart Options 位於 Workflow 左側窄欄的 Streaming 正下方。最外層
+**Chart Options**、其中的 **Sampling** 與 **Y-axis** 都能彼此獨立展開或收合，
+三者在程式啟動時皆預設展開。收合只會隱藏控制項，不會改變其設定值。
 
-Threshold 下方另有 **Show Significant Change Markers**，**預設關閉**；
+**Sampling** 區塊可用於 Simulation 與 Live Line Chart。
+**Preserve Significant Changes** 預設關閉，Change Threshold (%) 預設為 **5%**，
+啟用時必須是有限且大於 0 的百分比。不論是否啟用，原本每個 pixel bucket 的
+Min/Max 都會保留。啟用後會額外檢查可見範圍的 Raw Data，每個 bucket 最多再補
+兩個符合門檻的局部變化代表點（上升 Max、下降 Min），並按真正 Iteration 排序，
+不會刪除原本 Min/Max。正常值比較基準不會在安靜區段任意重設；單筆或雙筆異常
+恢復後，也不會永久將異常值當成後續基準。即使長時間量測，繪圖點數仍約束在
+每 bucket 最多四點，另保留整體首尾點。
+
+Threshold 下方另有 **Show Significant Change Markers**，預設關閉；
 Preserve Significant Changes 關閉時無法操作。啟用後僅標示符合門檻的上升／
 下降異常代表點，每 bucket 最多兩個，不會把異常恢復正常的數值直接當成異常點，
 也不會對 Line 的全部繪圖點加上 Marker。Marker 開關不會改變折線的選點結果。
 普通 Line 即可在 **Chart Settings → Series → Marker appearance** 設定每個
 Output 的既有 Marker 尺寸、形狀、填色與邊框，不必先選 Line + markers。
-原本的 Line + markers 仍是獨立的功能，會為全部繪圖點顯示符號；Marker 樣式
-也沿用目前各 Output 的設定及 PNG 匯出方式。
+原本的 Line + markers 仍是獨立功能，會為全部繪圖點顯示符號；Marker 樣式也
+沿用目前各 Output 的設定及 PNG 匯出方式。
 
 門檻為空白、0、負數或非有限數字時，若 Preserve Significant Changes 已啟用，
 Simulation 與 Live 都會停用 Run。0 變成非 0 視為 100%，0 變成 0 視為 0%。
-Threshold 與專用 Marker 開關皆在 RUN 開始時建立快照，Last Run 沿用該次設定；
-它們是 Desktop session 選項，不寫入 Template。RUN 後修改欄位不會立即修改
-Last Run 圖形，需重新執行才會套用新的 RUN 設定。
+
+**Y-axis** 區塊提供 **Fit Data**，預設關閉，並可用於 Simulation 與 Live Line
+Chart。Fit Data 關閉時，Auto Y-axis 維持目前行為，範圍可能包含 0；開啟後，
+Auto Y-axis 會依繪圖資料範圍縮放，不再強制把 0 納入顯示，因此較容易觀察帶有
+offset 的小幅變化。Chart Settings 中手動指定的 Y-axis **Minimum**／**Maximum**
+仍照常套用。Fit Data 不改變非 Line chart type。
+
+Sampling 控制項與 Fit Data 都會在 RUN 開始時建立快照，Last Run 沿用該次設定。
+它們都是 Desktop session 選項，不寫入 Template。RUN 後修改這些控制項不會立即
+改變目前的 Last Run 圖形；需重新執行才會套用新的設定。
 
 Line Chart 可在 **Chart Settings → General → Show All Raw Data**（預設關閉）
 繞過繪圖降採樣，顯示 X 軸可見範圍內所有已載入 Raw Data（如有資料，另含兩端

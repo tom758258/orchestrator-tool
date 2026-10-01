@@ -372,7 +372,7 @@ body {
 
 .step-palette,
 .streaming-panel,
-.chart-sampling-options {
+.chart-options {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -382,7 +382,7 @@ body {
 
 .step-palette h3,
 .streaming-panel h3,
-.chart-sampling-options h3 {
+.chart-options h3 {
   margin: 0;
   font-size: 1rem;
 }
@@ -670,16 +670,30 @@ textarea:disabled {
 
 /* Borderless group inside the Chart Sampling Options panel; the fieldset only
    keeps the busy-run disable behavior. */
-.chart-sampling-fields {
+.chart-options-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.chart-option-section h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.chart-sampling-fields,
+.chart-y-axis-fields {
   display: grid;
   min-width: 0;
   gap: 8px;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   border: 0;
 }
 
-.chart-sampling-fields > label {
+.chart-sampling-fields > label,
+.chart-y-axis-fields > label {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -697,7 +711,8 @@ textarea:disabled {
   min-width: 0;
 }
 
-.chart-sampling-fields .tool-setup-hint { margin: 0; }
+.chart-sampling-fields .tool-setup-hint,
+.chart-y-axis-fields .tool-setup-hint { margin: 0; }
 
 .execution-mode-control {
   display: flex;

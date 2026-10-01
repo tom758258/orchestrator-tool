@@ -43,43 +43,46 @@ test('Live Resource remains stored for Live mode and saving it does not switch m
   assert.doesNotMatch(handler, /setExecutionMode/)
 })
 
-test('Chart Sampling is shared by Simulation and Live, configured pre-run and frozen outside Template data', () => {
-  // Available in both modes, and named as a general chart setting rather than a Live one.
+test('Chart Options are shared by Simulation and Live, snapshotted per run and outside Template data', () => {
   assert.match(app, /chartSamplingOptions.*enabled: false, threshold: '5', showMarkers: false/)
-  assert.match(app, /aria-labelledby="chart-sampling-options-title"/)
+  assert.match(app, /const \[chartFitData, setChartFitData\] = useState\(false\)/)
+  assert.match(app, /aria-labelledby="chart-options-title"/)
+  assert.match(app, /Chart Options/)
   assert.match(app, /Preserve Significant Changes/)
+  assert.match(app, /Fit Data/)
   assert.doesNotMatch(app, /Live Chart Options|liveChartOptions|activeLiveChartOptions/)
 
-  // One shared rule snapshots the setting and rejects an invalid threshold.
+  // Sampling keeps its shared validation rule; Fit Data is captured beside it.
   assert.match(app, /function chartSamplingSnapshot\(options: \{ enabled: boolean; threshold: string; showMarkers: boolean \}\)/)
   assert.match(app, /showMarkers: options\.showMarkers/)
   assert.match(app, /Chart Sampling change threshold must be a finite number greater than zero\./)
-  // Both run paths validate first and store the same snapshot.
   const simulation = app.slice(app.indexOf('const runSimulation'), app.indexOf('const runSelectedMode'))
   const live = app.slice(app.indexOf('const runLive'), app.indexOf('const runSimulation'))
   for (const [label, run] of [['Simulation', simulation], ['Live', live]]) {
     assert.match(run, /const chartSampling = chartSamplingOptions\.enabled\s*\n\s*\? chartSamplingSnapshot\(chartSamplingOptions\) : null/, label)
-    // Validation must precede any Last Run state being replaced.
+    assert.match(run, /const fitData = chartFitData/, label)
+    // Sampling validation must precede any Last Run state being replaced.
     assert.ok(run.indexOf('chartSamplingSnapshot(') < run.indexOf('setRunWorkflowSnapshot(workflowDraft)'), label)
     assert.ok(run.indexOf('chartSamplingSnapshot(') < run.indexOf('runIdRef.current = null'), label)
     assert.match(run, /setRunChartSampling\(chartSampling\)/, label)
+    assert.match(run, /setRunChartFitData\(fitData\)/, label)
   }
-  // The snapshot is stored, not the live form value, and is cleared with the Last Run.
+  // Last Run consumes snapshots, not the editable controls.
   assert.doesNotMatch(app, /setRunChartSampling\(chartSamplingOptions\)/)
+  assert.doesNotMatch(app, /setRunChartFitData\(chartFitData\)/)
   assert.match(app, /setRunChartSampling\(null\)/)
-
-  // The Last Run chart always uses the snapshot, with no mode condition.
-  assert.match(app, /changeSettings=\{runChartSampling\} \/>/)
+  assert.match(app, /setRunChartFitData\(false\)/)
+  assert.match(app, /changeSettings=\{runChartSampling\} fitData=\{runChartFitData\} \/>/)
   assert.doesNotMatch(app, /lastRunExecutionMode === 'live' \?/)
 
-  // An invalid threshold blocks the single mode-aware Run button in both modes.
+  // An invalid sampling threshold still blocks the single mode-aware Run button in both modes.
   const onClick = app.indexOf('onClick={() => void runSelectedMode()}')
   const button = app.slice(app.lastIndexOf('<button', onClick), app.indexOf('</button>', onClick))
   assert.match(button, /\|\| chartThresholdInvalid\}/)
   assert.doesNotMatch(button, /executionMode === 'live' &&/)
 
   const saveTemplate = app.slice(app.indexOf('const handleSaveTemplate'), app.indexOf('const handleSaveTemplate') + 1150)
-  assert.doesNotMatch(saveTemplate, /chartSamplingOptions|runChartSampling/)
+  assert.doesNotMatch(saveTemplate, /chartSamplingOptions|runChartSampling|chartFitData|runChartFitData/)
 })
 
 test('both run paths reject the same invalid thresholds through one shared parser', () => {
@@ -94,52 +97,58 @@ test('both run paths reject the same invalid thresholds through one shared parse
   assert.match(app, /const chartThresholdInvalid = chartSamplingOptions\.enabled &&/)
 })
 
-test('marker checkbox is in the left sidebar under Streaming, disabled when sampling is off', () => {
+test('Sampling and Fit Data controls are grouped under Chart Options below Streaming', () => {
   const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
   assert.ok(sidebar.indexOf('className="streaming-panel"') >= 0)
-  assert.ok(sidebar.indexOf('className="chart-sampling-options"') > sidebar.indexOf('className="streaming-panel"'))
-  assert.equal((app.match(/id="chart-sampling-options-title"/g) ?? []).length, 1)
+  assert.ok(sidebar.indexOf('className="chart-options"') > sidebar.indexOf('className="streaming-panel"'))
+  assert.equal((app.match(/id="chart-options-title"/g) ?? []).length, 1)
   assert.match(sidebar, /checked=\{chartSamplingOptions\.showMarkers\}/)
   assert.match(sidebar, /disabled=\{!chartSamplingOptions\.enabled\}/)
   assert.match(sidebar, /Show Significant Change Markers/)
+  assert.match(sidebar, /checked=\{chartFitData\}/)
+  assert.match(sidebar, /Fit Data/)
   assert.doesNotMatch(app.slice(app.indexOf('</aside>'), app.indexOf('className="workflow-actions"')),
-    /className="chart-sampling-options"/)
+    /className="chart-options"/)
 })
 
-test('Steps, Streaming and Chart Sampling Options collapse with the shared +/- header', () => {
+test('Chart Options, Sampling and Y-axis collapse independently with existing +/- headers', () => {
   const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
-  // Every top-level sidebar panel starts expanded and reuses the shared header.
-  for (const state of ['stepsExpanded', 'streamingExpanded', 'chartSamplingExpanded']) {
+  // Top-level panels reuse the shared collapsible header and start expanded.
+  for (const state of ['stepsExpanded', 'streamingExpanded', 'chartOptionsExpanded']) {
     const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
     assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
     assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
-    assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '\u2212' : '\\+'\\}</span>`), state)
+    assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '−' : '\\+'\\}</span>`), state)
     assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
   }
-  // Panel order and the label content stay unchanged.
   assert.ok(sidebar.indexOf('className="step-palette"') < sidebar.indexOf('className="streaming-panel"'))
-  assert.ok(sidebar.indexOf('className="streaming-panel"') < sidebar.indexOf('className="chart-sampling-options"'))
+  assert.ok(sidebar.indexOf('className="streaming-panel"') < sidebar.indexOf('className="chart-options"'))
+  assert.match(sidebar, /\{chartOptionsExpanded && <div className="chart-options-sections">/)
 
-  // Panel bodies render only while expanded, and the step category state is untouched.
-  assert.match(sidebar, /\{stepsExpanded && <>/)
-  assert.match(sidebar, /\{streamingExpanded && <>/)
+  // Sampling and Y-axis match the existing Steps category interaction but keep separate state.
+  for (const state of ['chartSamplingExpanded', 'chartYAxisExpanded']) {
+    const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
+    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
+    assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
+    assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
+  }
   assert.match(sidebar, /\{chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled=\{workflowBusy\}>/)
+  assert.match(sidebar, /\{chartYAxisExpanded && <fieldset className="chart-y-axis-fields" disabled=\{workflowBusy\}>/)
   assert.match(sidebar, /aria-expanded=\{expandedStepCategories\[category\]\}/)
-  assert.doesNotMatch(sidebar, /<legend>Chart Sampling Options<\/legend>/)
 })
 
-test('collapsing a sidebar panel hides content without changing any setting', () => {
+test('collapsing Chart Options sections hides content without changing settings', () => {
   const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
-  for (const setter of ['setStepsExpanded', 'setStreamingExpanded', 'setChartSamplingExpanded']) {
+  for (const setter of ['setStepsExpanded', 'setStreamingExpanded', 'setChartOptionsExpanded',
+    'setChartSamplingExpanded', 'setChartYAxisExpanded']) {
     assert.equal((app.match(new RegExp(`const \\[\\w+, ${setter}\\]`, 'g')) ?? []).length, 1, setter)
     assert.equal((sidebar.match(new RegExp(`${setter}\\(current => !current\\)`, 'g')) ?? []).length, 1, setter)
   }
-  // Streaming and Chart Sampling keep their own state setters outside the panel toggles.
   for (const setter of ['setStreamCsv', 'setStreamPage', 'setStreamAllPages', 'setStreamOutputFolder',
-    'setChartSamplingOptions', 'setExpandedStepCategories']) {
+    'setChartSamplingOptions', 'setChartFitData', 'setExpandedStepCategories']) {
     assert.ok(!sidebar.includes(`${setter}(current => !current)`), setter)
   }
 })

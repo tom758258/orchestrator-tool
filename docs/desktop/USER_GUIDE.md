@@ -658,17 +658,23 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
-Chart Sampling Options sits in the narrow Workflow sidebar immediately below
-Streaming; it applies to both Simulation and Live Line Charts. Preserve
-Significant Changes is **off** by default, and the positive finite percentage
-threshold defaults to **5%**. The original pixel-bucket Min/Max remains intact
-whether or not sampling is enabled. When enabled, a scan of the visible Raw
-Data can preserve up to two *additional* locally significant turns (upward
-Max and downward Min) per bucket, in original Iteration order, without deleting
-the original Min/Max extrema. Its normal comparison reference survives quiet
-buckets; one- or two-sample spikes do not become the permanent baseline when
-measurements recover. The entire plotted output remains bounded by approximately
-four points per bucket plus the global endpoints, even for large runs.
+Chart Options sits in the narrow Workflow sidebar immediately below
+Streaming. The outer **Chart Options** panel, its **Sampling** section, and its
+**Y-axis** section can each be expanded or collapsed independently; all three
+start expanded. Collapsing a section only hides its controls and does not change
+their values.
+
+The **Sampling** section applies to both Simulation and Live Line Charts.
+**Preserve Significant Changes** is **off** by default, and the positive finite
+percentage threshold defaults to **5%**. The original pixel-bucket Min/Max
+remains intact whether or not sampling is enabled. When enabled, a scan of the
+visible Raw Data can preserve up to two *additional* locally significant turns
+(upward Max and downward Min) per bucket, in original Iteration order, without
+deleting the original Min/Max extrema. Its normal comparison reference survives
+quiet buckets; one- or two-sample spikes do not become the permanent baseline
+when measurements recover. The entire plotted output remains bounded by
+approximately four points per bucket plus the global endpoints, even for large
+runs.
 
 The optional **Show Significant Change Markers** checkbox sits directly below
 the threshold, defaults to **off**, and is disabled while Preserve Significant
@@ -684,11 +690,20 @@ per-Output styling and Export PNG.
 
 A blank, zero, negative or non-finite percentage blocks Run when Preserve
 Significant Changes is enabled; Simulation and Live use the same parser. Zero to
-nonzero counts as 100%, and zero to zero counts as 0%. The threshold and
-optional Marker checkbox are snapshotted at RUN start, retained by Last Run,
-and are Desktop session options (not Template data). Changing the controls
-after RUN does not change the Last Run's sampling; start a new run to use the
-new settings.
+nonzero counts as 100%, and zero to zero counts as 0%.
+
+The **Y-axis** section contains **Fit Data**, which is **off** by default and
+applies to Simulation and Live Line Charts. With Fit Data off, the automatic
+Y-axis keeps the existing behavior and may include zero. With Fit Data on, the
+automatic Y-axis follows the plotted data range without forcing zero into view,
+making small changes in an offset signal easier to see. Manual Y-axis
+**Minimum** and **Maximum** values in Chart Settings still apply. Fit Data does
+not change non-Line chart types.
+
+Sampling controls and Fit Data are snapshotted at RUN start and retained by
+Last Run. They are Desktop session options, not Template data. Changing these
+controls after RUN does not change the current Last Run chart; start a new run
+to use the new settings.
 
 For a Line Chart, **Chart Settings → General → Show All Raw Data** (off by
 default) bypasses plotted-point downsampling and draws every loaded raw sample

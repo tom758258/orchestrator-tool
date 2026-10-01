@@ -455,14 +455,18 @@ function App() {
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
   const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5', showMarkers: false })
-  // Snapshot of the Chart Sampling Options captured when the current run started.
+  const [chartFitData, setChartFitData] = useState(false)
+  // Snapshots of Chart Options captured when the current run started.
   const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
+  const [runChartFitData, setRunChartFitData] = useState(false)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, Powers: true, Meters: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [streamingExpanded, setStreamingExpanded] = useState(true)
+  const [chartOptionsExpanded, setChartOptionsExpanded] = useState(true)
   const [chartSamplingExpanded, setChartSamplingExpanded] = useState(true)
+  const [chartYAxisExpanded, setChartYAxisExpanded] = useState(true)
   const [executionsExpanded, setExecutionsExpanded] = useState(true)
   const [messagesExpanded, setMessagesExpanded] = useState(true)
   const [messageTarget, setMessageTarget] = useState<MessageTargetWire>('message-1')
@@ -1187,6 +1191,7 @@ function App() {
       // discard the previous run.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
+      const fitData = chartFitData
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
       const [bindings, persistedIdentities] = await Promise.all([
@@ -1232,6 +1237,7 @@ function App() {
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('live')
       setRunChartSampling(chartSampling)
+      setRunChartFitData(fitData)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1269,7 +1275,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, chartSamplingOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1283,6 +1289,7 @@ function App() {
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
+      const fitData = chartFitData
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages,
       )
@@ -1294,6 +1301,7 @@ function App() {
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('simulate')
       setRunChartSampling(chartSampling)
+      setRunChartFitData(fitData)
       setWorkflowChangedSinceRun(false)
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
@@ -1328,7 +1336,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [workflowDraft, chartSamplingOptions, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -1361,6 +1369,7 @@ function App() {
       setRunWorkflowSnapshot(null)
       setChartPanels([])
       setRunChartSampling(null)
+      setRunChartFitData(false)
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
@@ -2046,33 +2055,62 @@ function App() {
                     {csvStreamFeedback}
                     </>}
                   </section>
-                  <section className="chart-sampling-options" aria-labelledby="chart-sampling-options-title">
-                    <h3 id="chart-sampling-options-title">
+                  <section className="chart-options" aria-labelledby="chart-options-title">
+                    <h3 id="chart-options-title">
                       <button type="button" className="collapsible-header"
-                        aria-expanded={chartSamplingExpanded}
-                        onClick={() => setChartSamplingExpanded(current => !current)}>
-                        Chart Sampling Options
-                        <span aria-hidden="true">{chartSamplingExpanded ? '−' : '+'}</span>
+                        aria-expanded={chartOptionsExpanded}
+                        onClick={() => setChartOptionsExpanded(current => !current)}>
+                        Chart Options
+                        <span aria-hidden="true">{chartOptionsExpanded ? '−' : '+'}</span>
                       </button>
                     </h3>
-                    {chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled={workflowBusy}>
-                    <label><input type="checkbox" checked={chartSamplingOptions.enabled}
-                      onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
-                      Preserve Significant Changes</label>
-                    <label className="chart-sampling-threshold">Change Threshold (%)
-                      <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
-                        disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
-                        onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
-                    </label>
-                    <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
-                      disabled={!chartSamplingOptions.enabled}
-                      onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
-                      Show Significant Change Markers</label>
-                    <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Markers highlight only qualifying
-                      excursions; appearance: Chart Settings → Series. Show All Raw Data: General (may slow UI).</p>
-                    {chartThresholdInvalid && <p className="error" role="alert">
-                      Change Threshold must be a finite number greater than zero.</p>}
-                    </fieldset>}
+                    {chartOptionsExpanded && <div className="chart-options-sections">
+                      <section className="chart-option-section">
+                        <h4>
+                          <button type="button" className="step-category-header"
+                            aria-expanded={chartSamplingExpanded}
+                            onClick={() => setChartSamplingExpanded(current => !current)}>
+                            Sampling
+                            <span aria-hidden="true">{chartSamplingExpanded ? '−' : '+'}</span>
+                          </button>
+                        </h4>
+                        {chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled={workflowBusy}>
+                          <label><input type="checkbox" checked={chartSamplingOptions.enabled}
+                            onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
+                            Preserve Significant Changes</label>
+                          <label className="chart-sampling-threshold">Change Threshold (%)
+                            <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
+                              disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
+                              onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
+                          </label>
+                          <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
+                            disabled={!chartSamplingOptions.enabled}
+                            onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
+                            Show Significant Change Markers</label>
+                          <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Markers highlight only qualifying
+                            excursions; appearance: Chart Settings → Series. Show All Raw Data: General (may slow UI).</p>
+                          {chartThresholdInvalid && <p className="error" role="alert">
+                            Change Threshold must be a finite number greater than zero.</p>}
+                        </fieldset>}
+                      </section>
+                      <section className="chart-option-section">
+                        <h4>
+                          <button type="button" className="step-category-header"
+                            aria-expanded={chartYAxisExpanded}
+                            onClick={() => setChartYAxisExpanded(current => !current)}>
+                            Y-axis
+                            <span aria-hidden="true">{chartYAxisExpanded ? '−' : '+'}</span>
+                          </button>
+                        </h4>
+                        {chartYAxisExpanded && <fieldset className="chart-y-axis-fields" disabled={workflowBusy}>
+                          <label><input type="checkbox" checked={chartFitData}
+                            onChange={event => setChartFitData(event.target.checked)} />
+                            Fit Data</label>
+                          <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Auto Y-axis follows the data range
+                            without forcing zero; manual Minimum/Maximum in Chart Settings still apply.</p>
+                        </fieldset>}
+                      </section>
+                    </div>}
                   </section>
                 </aside>
 
@@ -2672,7 +2710,7 @@ function App() {
                   runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
                   numericNames={chartNumericNames} page={runPage.name}
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
-                   changeSettings={runChartSampling} />}
+                  changeSettings={runChartSampling} fitData={runChartFitData} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">
