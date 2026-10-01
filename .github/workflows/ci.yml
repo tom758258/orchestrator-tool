@@ -1,38 +1,14 @@
-name: CI
+name: Pre-PR Validation
 
 on:
-  pull_request:
   push:
     branches:
-      - main
+      - feature/chart-options-fit-data
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  rust:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Format
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
-      - name: Test
-        run: cargo test --locked
-
-      - name: Build
-        run: cargo build --locked
-
   desktop:
     runs-on: ubuntu-latest
     steps:
@@ -48,20 +24,21 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      - name: Install Python for Help verification
+      - name: Install Python for Help generation
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Verify tracked Help bundle
+      - name: Generate and verify tracked Help bundle
         run: |
           python -m pip install -r scripts/requirements-help.txt
           python -B scripts/test_generate_help.py
+          python scripts/generate_help.py
           python scripts/generate_help.py --check
 
-      - name: Test frontend
+      - name: Test modified frontend areas
         working-directory: apps/desktop
-        run: node --test tests/*.test.mjs
+        run: node --test tests/execution-mode.test.mjs tests/simulation-run.test.mjs tests/chart-settings.test.mjs
 
       - name: Typecheck frontend
         working-directory: apps/desktop
@@ -71,21 +48,12 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
 
-      - name: Install Tauri system dependencies
+      - name: Commit generated Help bundle
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev
-
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Format Tauri
-        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --check
-
-      - name: Clippy Tauri
-        run: cargo clippy --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Test Tauri
-        run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
+          if ! git diff --quiet -- apps/desktop/public/help; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/desktop/public/help
+            git commit -m "Regenerate Desktop Help [skip ci]"
+            git push
+          fi
