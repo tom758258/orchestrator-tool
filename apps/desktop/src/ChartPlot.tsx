@@ -19,13 +19,14 @@ function autoSeriesColor(name: string, numericNames: string[]): string {
     `--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
 }
 
-export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings }: {
+export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings, fitData }: {
   panel: ChartPanel
   data: PageChartData
   numericNames: string[]
   charts: Map<number, EChartsType>
   statistical?: StatisticalDto
   changeSettings?: ChartChangeSettings | null
+  fitData?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -170,7 +171,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
       { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') },
-      fullDomain, rawIteration, statistic?.categories, legendSeriesColors)
+      fullDomain, rawIteration, statistic?.categories, legendSeriesColors, fitData)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
