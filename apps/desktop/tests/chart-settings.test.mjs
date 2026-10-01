@@ -33,6 +33,28 @@ test('Auto axes leave min, max and interval to ECharts', () => {
   assert.equal(options.yAxis.axisLabel.hideOverlap, true)
 })
 
+test('Fit Data scales only Line Y-axis and preserves explicit bounds', () => {
+  const off = chartPresentationOptions(panel, 1, colors)
+  assert.equal(Object.hasOwn(off.yAxis, 'scale'), false)
+
+  const fit = chartPresentationOptions(panel, 1, colors,
+    undefined, undefined, undefined, {}, true)
+  assert.equal(fit.yAxis.scale, true)
+  assert.equal(Object.hasOwn(fit.yAxis, 'min'), false)
+  assert.equal(Object.hasOwn(fit.yAxis, 'max'), false)
+
+  const manualPanel = { ...panel,
+    yAxis: { ...panel.yAxis, min: 95, max: 105 } }
+  const manual = chartPresentationOptions(manualPanel, 1, colors,
+    undefined, undefined, undefined, {}, true)
+  assert.equal(manual.yAxis.scale, true)
+  assert.deepEqual([manual.yAxis.min, manual.yAxis.max], [95, 105])
+
+  const area = chartPresentationOptions({ ...panel, type: 'area' }, 1, colors,
+    undefined, undefined, undefined, {}, true)
+  assert.equal(Object.hasOwn(area.yAxis, 'scale'), false)
+})
+
 test('explicit axes, grid, labels, ticks, title and legend map to ECharts', () => {
   const custom = { ...panel, title: 'Voltage', showLegend: true,
     xAxis: { ...panel.xAxis, min: 1, max: 10, interval: 2,
