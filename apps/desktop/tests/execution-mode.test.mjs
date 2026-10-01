@@ -120,7 +120,7 @@ test('Chart Options, Sampling and Y-axis collapse independently with existing +/
     const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
     assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
     assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
-    assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '−' : '\\\\+'\\}</span>`), state)
+    assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '−' : '\\+'\\}</span>`), state)
     assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)
   }
   assert.ok(sidebar.indexOf('className="step-palette"') < sidebar.indexOf('className="streaming-panel"'))
