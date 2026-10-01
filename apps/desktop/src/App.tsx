@@ -14,6 +14,7 @@ import PageResultSummary from './PageResultSummary'
 import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
 import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
+import { failurePresentation } from './failurePresentation'
 import ToolSetupEditor from './ToolSetupEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
@@ -111,88 +112,8 @@ function formatLiveResourceConfirmation(
   return lines.join('\n')
 }
 
-type FailurePresentation = {
-  summary: string
-  guidance: string
-}
-
-function failurePresentation(message: string, stepType?: WorkflowStep['type']): FailurePresentation {
-  const normalized = message.toLowerCase()
-
-  if (stepType === 'assert') {
-    return {
-      summary: 'This check did not pass.',
-      guidance: 'Review the expected condition and the value used by this check.',
-    }
-  }
-  if (normalized.includes('safety cleanup failed')) {
-    return {
-      summary: 'The run failed while performing safety cleanup.',
-      guidance: 'Review the technical details before running again. Any earlier workflow failure is kept in the same diagnostic.',
-    }
-  }
-  if (normalized.includes('worker startup failed') || normalized.includes('failed to start')) {
-    return {
-      summary: 'The external tool could not start.',
-      guidance: 'Check the configured executable and its runtime dependencies.',
-    }
-  }
-  if (normalized.includes('worker fatal error')) {
-    return {
-      summary: 'The external tool reported an error while executing this operation.',
-      guidance: 'Review the technical details below for the original tool or instrument error.',
-    }
-  }
-  if (normalized.includes('timed out') || normalized.includes('timeout')) {
-    return {
-      summary: 'The operation did not finish before the timeout.',
-      guidance: 'Check that the external tool is responsive and whether the operation needs more time.',
-    }
-  }
-  if (
-    normalized.includes('worker http failed')
-    || normalized.includes('http request failed')
-    || normalized.includes('event channel disconnected')
-    || normalized.includes('event i/o error')
-  ) {
-    return {
-      summary: 'Communication with the external tool was interrupted.',
-      guidance: 'Check that the external tool is still available and review the connection before trying again.',
-    }
-  }
-  if (
-    normalized.includes('invalid arguments')
-    || normalized.includes('unsupported action')
-    || normalized.includes('rejected')
-  ) {
-    return {
-      summary: 'This operation was not valid or supported with the current settings.',
-      guidance: 'Check the step settings and whether the selected tool supports this operation.',
-    }
-  }
-  if (
-    (normalized.includes('invalid') && normalized.includes('worker response'))
-    || normalized.includes('invalid json')
-  ) {
-    return {
-      summary: 'Orchestrator could not understand the response from the external tool.',
-      guidance: 'Confirm the external tool version is compatible, then review the technical details.',
-    }
-  }
-  if (normalized.includes('worker shutdown failed') || normalized.includes('worker exited with')) {
-    return {
-      summary: 'The external tool did not shut down normally.',
-      guidance: 'Review the technical details before starting another run.',
-    }
-  }
-  return {
-    summary: 'This operation failed while executing.',
-    guidance: 'Review the technical details below for the original error.',
-  }
-}
-
-function FailureDetails({ message, stepType }: { message: string; stepType?: WorkflowStep['type'] }) {
-  const presentation = failurePresentation(message, stepType)
+function FailureDetails({ message, step }: { message: string; step?: WorkflowStep }) {
+  const presentation = failurePresentation(message, step)
   return (
     <div className="failure-explanation">
       <p className="failure-summary">{presentation.summary}</p>
@@ -527,6 +448,7 @@ function App() {
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
   const [streamOutputFolder, setStreamOutputFolder] = useState<string | null>(null)
+  const [streamOutputFolderError, setStreamOutputFolderError] = useState<string | null>(null)
   const [chartSaving, setChartSaving] = useState(false)
   const [choosingStreamOutputFolder, setChoosingStreamOutputFolder] = useState(false)
   const [exportAllPages, setExportAllPages] = useState(false)
@@ -611,6 +533,7 @@ function App() {
   const progressChannelRef = useRef<Channel<DesktopRunEvent> | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [clearLastRunError, setClearLastRunError] = useState<string | null>(null)
   const [streamCsv, setStreamCsv] = useState(false)
   const [csvStreamStatus, setCsvStreamStatus] = useState<CsvStreamStatus | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -1321,6 +1244,7 @@ function App() {
       setExecutionPage(null)
       setMessagePage(null)
       setRunError(null)
+      setClearLastRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
@@ -1381,6 +1305,7 @@ function App() {
       setExecutionPage(null)
       setMessagePage(null)
       setRunError(null)
+      setClearLastRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
@@ -1427,6 +1352,7 @@ function App() {
     )
     if (!approved) return
 
+    setClearLastRunError(null)
     try {
       const runId = runMetadata?.run_id ?? runIdRef.current
       if (runId !== null) await invoke('clear_last_run', { runId })
@@ -1447,7 +1373,7 @@ function App() {
       setExportMessage(null)
       setWorkflowChangedSinceRun(false)
     } catch (message) {
-      setRunError('Could not clear Last Run: ' + String(message))
+      setClearLastRunError('Could not clear Last Run: ' + String(message))
     }
   }, [runWorkflowSnapshot, runMetadata, workflowBusy])
 
@@ -1465,12 +1391,13 @@ function App() {
   )
 
   async function selectOutputFolder() {
+    setStreamOutputFolderError(null)
     setChoosingStreamOutputFolder(true)
     try {
       const folder = await open({ directory: true, multiple: false, title: 'Select CSV output folder' })
       if (typeof folder === 'string') setStreamOutputFolder(folder)
     } catch (message) {
-      setRunError('Could not select CSV output folder: ' + String(message))
+      setStreamOutputFolderError('Could not select CSV output folder: ' + String(message))
     } finally {
       setChoosingStreamOutputFolder(false)
     }
@@ -2108,8 +2035,14 @@ function App() {
                         onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
                       <span className="streaming-destination">{streamOutputFolder ?? 'Default: <application folder>/data'}</span>
                       <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectOutputFolder()}>Select Folder</button>
-                      {streamOutputFolder !== null && <button className="action-button" type="button" disabled={workflowBusy} onClick={() => setStreamOutputFolder(null)}>Use Default</button>}
+                      {streamOutputFolder !== null && <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
+                        setStreamOutputFolder(null)
+                        setStreamOutputFolderError(null)
+                      }}>Use Default</button>}
                     </div>}
+                    {streamCsv && hasWorkflowOutputs && streamOutputFolderError && (
+                      <p className="error" role="alert">{streamOutputFolderError}</p>
+                    )}
                     {csvStreamFeedback}
                     </>}
                   </section>
@@ -2668,7 +2601,7 @@ function App() {
                               )}
                             </div>
                             {result.status === 'failed' && result.message && (
-                              <FailureDetails message={result.message} stepType={resultStep?.type} />
+                              <FailureDetails message={result.message} step={resultStep} />
                             )}
                           </div>
                         </li>
@@ -2708,6 +2641,7 @@ function App() {
                 {runWorkflowSnapshot && <button className="action-button action-button-danger" type="button"
                   disabled={workflowBusy} onClick={() => void handleClearLastRun()}>Clear Last Run</button>}
               </div>
+              {clearLastRunError && <p className="error" role="alert">{clearLastRunError}</p>}
               {runStatus === 'running' && <p role="status">{runningText}</p>}
               {runPage && <div className="last-run-page-tabs" role="tablist" aria-label="Last Run Pages">
                 {runPages.map((page, index) => <button key={page.name} type="button" role="tab"
