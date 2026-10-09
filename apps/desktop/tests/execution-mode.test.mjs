@@ -72,7 +72,7 @@ test('Chart Options are shared by Simulation and Live, snapshotted per run and o
   assert.doesNotMatch(app, /setRunChartFitData\(chartFitData\)/)
   assert.match(app, /setRunChartSampling\(null\)/)
   assert.match(app, /setRunChartFitData\(false\)/)
-  assert.match(app, /changeSettings=\{runChartSampling\} fitData=\{runChartFitData\} \/>/)
+  assert.match(app, /changeSettings=\{runChartSampling\} fitData=\{runChartFitData\}[\s\S]*?saveChartsWithTemplate=\{saveChartsWithTemplate\}[\s\S]*?onSaveChartsWithTemplateChange=\{setSaveChartsWithTemplate\} \/>/)
   assert.doesNotMatch(app, /lastRunExecutionMode === 'live' \?/)
 
   // An invalid sampling threshold still blocks the single mode-aware Run button in both modes.

@@ -569,6 +569,17 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
+Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with template**，
+預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
+開啟本來就含有 saved Charts 的 Template 時，checkbox 會自動勾選並還原這些 panels。
+取消勾選不會刪除目前畫面上的 Charts，只代表下一次 Save Template 不再保存它們。
+勾選狀態下執行 **Clear Last Run** 會保留 Chart 設定；一般未勾選的 session Charts
+則維持原本清除行為。
+
+此選項只保存 Chart definitions 與設定，不會保存 run data，也不保存目前互動操作產生的
+zoom／pan 位置。下方 Workflow 的 **Chart Options** 即使勾選本選項，仍然只屬於
+session，不會寫入 Template。
+
 Chart Options 位於 Workflow 左側窄欄的 **CSV Export** 正下方。最外層
 **Chart Options**、其中的 **Sampling** 與 **Y-axis** 都能彼此獨立展開或收合。
 程式啟動時，**Chart Options** 預設收合，內部的 **Sampling** 與 **Y-axis** 各自

@@ -1791,12 +1791,52 @@ mod regression_tests {
             "tool_instances": [],
             "name": "Round Trip",
             "workflow": { "steps": [
-                { "type": "wait", "id": "wait-1", "duration_ms": 1 }
-            ] }
+                {
+                    "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
+                    "value": { "source": "literal", "value": 3.3 }
+                }
+            ] },
+            "output_views": { "charts": [{
+                "page": "Results",
+                "title": "Voltage",
+                "outputs": ["Voltage"],
+                "type": "line",
+                "scatter_x_output": null,
+                "scatter": { "display": "markers", "marker_size": 4.0, "line_width": 2.0 },
+                "line": { "series": {} },
+                "marker_styles": {},
+                "series_colors": {},
+                "show_legend": true,
+                "legend_position": "top",
+                "image_background": "light",
+                "show_all_raw_data": false,
+                "zoom": { "enabled": false, "show_slider": true },
+                "x_axis": {
+                    "title": "Iteration", "min": null, "max": null, "interval": null,
+                    "show_labels": true, "show_ticks": true, "show_major_grid": false
+                },
+                "y_axis": {
+                    "title": "Voltage", "min": null, "max": null, "interval": null,
+                    "show_labels": true, "show_ticks": true, "show_major_grid": true
+                },
+                "combo": {
+                    "series": {},
+                    "right_axis": {
+                        "title": "", "min": null, "max": null, "interval": null,
+                        "show_labels": true, "show_ticks": true, "show_major_grid": false
+                    }
+                },
+                "histogram": {
+                    "mode": "auto", "value": null, "show_normal_curve": false,
+                    "mean": null, "std_dev": null
+                },
+                "box_plot": { "show_outliers": true }
+            }] }
         }"#;
         let saved =
             save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
         let loaded = load_workflow_template(path.display().to_string()).unwrap();
+        assert!(saved.contains("\"output_views\""));
         assert_eq!(saved, loaded);
         std::fs::remove_dir_all(dir).unwrap();
     }

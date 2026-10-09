@@ -1,10 +1,51 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
-  chartRequiredOutputs, chartRawOutputs, chartSupportsZoom, chartSupportsLive, comboSeriesSettings,
-  lineSeriesSettings, markerStyleSettings } from '../src/chartPanels.ts'
+  chartPanelToSavedChart, savedChartsToPanels, chartRequiredOutputs, chartRawOutputs, chartSupportsZoom,
+  chartSupportsLive, comboSeriesSettings, lineSeriesSettings, markerStyleSettings } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
+
+test('saved chart conversion preserves Chart settings without persisting runtime IDs', () => {
+  const original = {
+    ...panel(42, 'Results', ['Voltage', 'Current']),
+    title: 'Tutorial Chart',
+    type: 'combo',
+    scatterXOutput: 'Voltage',
+    scatter: { display: 'lines-markers', markerSize: 7, lineWidth: 3 },
+    line: { series: { Voltage: { markers: true } } },
+    markerStyles: { Voltage: { shape: 'diamond', size: 7, fillColor: '#ffffff', borderColor: '#000000' } },
+    seriesColors: { Voltage: '#123456' },
+    showLegend: false,
+    legendPosition: 'right',
+    imageBackground: 'dark',
+    showAllRawData: true,
+    zoom: { enabled: true, showSlider: false },
+    xAxis: { ...panel(0, 'Results', ['Voltage']).xAxis, title: 'X', min: 0, max: 5, interval: 1 },
+    yAxis: { ...panel(0, 'Results', ['Voltage']).yAxis, title: 'Y', min: -1, max: 10, interval: 2 },
+    combo: {
+      series: {
+        Voltage: { kind: 'line', axis: 'left', markers: true },
+        Current: { kind: 'column', axis: 'right', markers: false },
+      },
+      rightAxis: { ...panel(0, 'Results', ['Voltage']).combo.rightAxis, title: 'Current', max: 2 },
+    },
+    histogram: { mode: 'count', value: 20, showNormalCurve: true, mean: 3, stdDev: 0.5 },
+    boxPlot: { showOutliers: false },
+  }
+  const saved = chartPanelToSavedChart(original)
+  assert.equal(Object.hasOwn(saved, 'id'), false)
+  assert.deepEqual(saved.scatter, { display: 'lines-markers', marker_size: 7, line_width: 3 })
+  assert.equal(saved.x_axis.show_labels, true)
+  assert.equal(Object.hasOwn(saved.x_axis, 'showLabels'), false)
+  assert.deepEqual(saved.marker_styles.Voltage,
+    { shape: 'diamond', size: 7, fill_color: '#ffffff', border_color: '#000000' })
+  assert.equal(saved.histogram.show_normal_curve, true)
+  assert.equal(saved.histogram.std_dev, 0.5)
+  const restored = savedChartsToPanels([saved])[0]
+  assert.equal(restored.id, 0)
+  assert.deepEqual({ ...restored, id: original.id }, original)
+})
 
 test('persisted panels allocate a fresh ID after remount and removal', () => {
   const panels = [0, 1, 2].map(id => panel(id, 'A', ['Voltage']))

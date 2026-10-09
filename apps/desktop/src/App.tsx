@@ -11,7 +11,7 @@ import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
-import { chartRequiredOutputs, reconcileRunChartPanels, type ChartPanel } from './chartPanels'
+import { chartPanelToSavedChart, chartRequiredOutputs, reconcileRunChartPanels, savedChartsToPanels, type ChartPanel, type SavedOutputViews } from './chartPanels'
 import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import { failurePresentation } from './failurePresentation'
@@ -131,6 +131,19 @@ type WorkflowDraft = {
   workflow: {
     steps: WorkflowStep[]
   }
+  output_views?: SavedOutputViews
+}
+
+function workflowOnlyDraft(draft: WorkflowDraft): WorkflowDraft {
+  const workflowOnly = { ...draft }
+  delete workflowOnly.output_views
+  return workflowOnly
+}
+
+function templateDraftJson(draft: WorkflowDraft, panels: readonly ChartPanel[], includeCharts: boolean): string {
+  return JSON.stringify(includeCharts
+    ? { ...draft, output_views: { charts: panels.map(chartPanelToSavedChart) } }
+    : workflowOnlyDraft(draft))
 }
 
 type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
@@ -454,6 +467,7 @@ function App() {
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
+  const [saveChartsWithTemplate, setSaveChartsWithTemplate] = useState(false)
   const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5', showMarkers: false })
   const [chartFitData, setChartFitData] = useState(false)
   // Snapshots of Chart Options captured when the current run started.
@@ -616,11 +630,11 @@ function App() {
   // Numeric arrays survive Page/Output tab switches, but never cross a run ID.
   const chartData = useMemo(() => new Map<string, PageChartData>(), [runMetadata?.run_id])
   useEffect(() => {
-    if (!runWorkflowSnapshot || !displayedRun) return
+    if (!runWorkflowSnapshot || !displayedRun || saveChartsWithTemplate) return
     setChartPanels(panels => reconcileRunChartPanels(
       panels, outputPages(runWorkflowSnapshot.workflow.steps), displayedRun.pages,
     ))
-  }, [runWorkflowSnapshot, displayedRun])
+  }, [runWorkflowSnapshot, displayedRun, saveChartsWithTemplate])
   useEffect(() => {
     pruneChartData(chartData, chartPanels, activeTab === 'output' ? runPage?.name : undefined)
   }, [activeTab, chartData, chartPanels, runPage?.name])
@@ -698,7 +712,8 @@ function App() {
       )
       runGenerationRef.current += 1
       runIdRef.current = null
-      setWorkflowDraft(draft)
+      setWorkflowDraft(workflowOnlyDraft(draft))
+      setSaveChartsWithTemplate(false)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
@@ -917,9 +932,9 @@ function App() {
     setValidationError(null)
     try {
       const canonicalJson = await invoke<string>('validate_workflow_draft', {
-        templateJson: JSON.stringify(workflowDraft),
+        templateJson: templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate),
       })
-      const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
+      const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       setValidationStatus('valid')
@@ -927,7 +942,7 @@ function App() {
       setValidationStatus('idle')
       setValidationError(String(message))
     }
-  }, [workflowDraft])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate])
 
   const handleLoadTemplate = useCallback(async () => {
     setTemplateIoStatus('loading')
@@ -950,7 +965,8 @@ function App() {
       )
       runGenerationRef.current += 1
       runIdRef.current = null
-      setWorkflowDraft(loadedDraft)
+      setWorkflowDraft(workflowOnlyDraft(loadedDraft))
+      setSaveChartsWithTemplate(loadedDraft.output_views !== undefined)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
@@ -961,7 +977,7 @@ function App() {
       setExecutionPage(null)
       setMessagePage(null)
       setRunWorkflowSnapshot(null)
-      setChartPanels([])
+      setChartPanels(loadedDraft.output_views ? savedChartsToPanels(loadedDraft.output_views.charts) : [])
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
@@ -992,9 +1008,9 @@ function App() {
       }
       const canonicalJson = await invoke<string>('save_workflow_template', {
         path,
-        templateJson: JSON.stringify(workflowDraft),
+        templateJson: templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate),
       })
-      const canonicalDraft = JSON.parse(canonicalJson) as WorkflowDraft
+      const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       setValidationStatus('valid')
@@ -1005,7 +1021,7 @@ function App() {
       setTemplateIoError(String(message))
       setTemplateIoStatus('idle')
     }
-  }, [workflowDraft])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate])
 
   const handleBrowseToolExecutable = useCallback(
     async (toolId: string) => {
@@ -1367,7 +1383,7 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setRunWorkflowSnapshot(null)
-      setChartPanels([])
+      if (!saveChartsWithTemplate) setChartPanels([])
       setRunChartSampling(null)
       setRunChartFitData(false)
       setRunMetadata(null)
@@ -1384,7 +1400,7 @@ function App() {
     } catch (message) {
       setClearLastRunError('Could not clear Last Run: ' + String(message))
     }
-  }, [runWorkflowSnapshot, runMetadata, workflowBusy])
+  }, [runWorkflowSnapshot, runMetadata, workflowBusy, saveChartsWithTemplate])
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
@@ -2713,7 +2729,9 @@ function App() {
                   runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
                   numericNames={chartNumericNames} page={runPage.name}
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
-                  changeSettings={runChartSampling} fitData={runChartFitData} />}
+                  changeSettings={runChartSampling} fitData={runChartFitData}
+                  saveChartsWithTemplate={saveChartsWithTemplate}
+                  onSaveChartsWithTemplateChange={setSaveChartsWithTemplate} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">

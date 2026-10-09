@@ -7,7 +7,9 @@ future schema, migration framework, or compatibility layer.
 ## Version and ownership
 
 The root JSON object has schema_version 1, a template name, a tool_instances
-array, and a workflow object containing ordered steps:
+array, and a workflow object containing ordered steps. It may also contain
+optional output_views when the Desktop author explicitly chooses to save Chart
+definitions with the Template:
 
     {
       "schema_version": 1,
@@ -21,6 +23,9 @@ The Template is split into:
 - Tool Setup: the setup definition for each logical Tool Instance.
 - Workflow Sequence: the ordered procedure executed after the referenced
   Workers are ready.
+- Optional Output Views: saved Chart definitions used to restore the intended
+  result presentation. Templates without output_views retain the previous v1
+  wire shape.
 
 Schema v1 is parsed and serialized directly. Unsupported schema versions,
 unknown fields, invalid IDs, invalid references, and invalid values are
@@ -38,6 +43,66 @@ The Template does not contain:
 Those values belong to run state or local configuration. The separation is
 intentional: a Template can be moved between machines without carrying
 machine-specific resources.
+
+## Optional Output Views
+
+Desktop Charts remain session-only by default. When **Save charts with
+template** is enabled, the Template contains:
+
+    "output_views": {
+      "charts": [
+        {
+          "page": "Results",
+          "title": "Voltage Response",
+          "outputs": ["Voltage"],
+          "type": "line",
+          "scatter_x_output": null,
+          "scatter": { "display": "markers", "marker_size": 4, "line_width": 2 },
+          "line": { "series": {} },
+          "marker_styles": {},
+          "series_colors": {},
+          "show_legend": true,
+          "legend_position": "top",
+          "image_background": "light",
+          "show_all_raw_data": false,
+          "zoom": { "enabled": false, "show_slider": true },
+          "x_axis": {
+            "title": "Iteration", "min": null, "max": null, "interval": null,
+            "show_labels": true, "show_ticks": true, "show_major_grid": false
+          },
+          "y_axis": {
+            "title": "Voltage (V)", "min": null, "max": null, "interval": null,
+            "show_labels": true, "show_ticks": true, "show_major_grid": true
+          },
+          "combo": {
+            "series": {},
+            "right_axis": {
+              "title": "", "min": null, "max": null, "interval": null,
+              "show_labels": true, "show_ticks": true, "show_major_grid": false
+            }
+          },
+          "histogram": {
+            "mode": "auto", "value": null, "show_normal_curve": false,
+            "mean": null, "std_dev": null
+          },
+          "box_plot": { "show_outliers": true }
+        }
+      ]
+    }
+
+output_views is optional and is omitted when Chart persistence is not selected.
+An empty charts array is valid and preserves the selected opt-in state. At most
+eight Charts may be saved. Each Chart page must name an Output Page defined by
+the Workflow, every selected Output and optional Scatter X Output must exist on
+that Page, Histogram requires exactly one selected Output, and Combo requires at
+least two. Axis ranges and positive-size/bin constraints reuse the existing
+Desktop Chart Settings rules.
+
+The saved data is Chart configuration only. Runtime chart samples, calculated
+statistics, Run IDs, current zoom/pan position, open dialogs, export paths,
+loading state, and errors are not Template data. Workflow **Chart Options**
+(Sampling, Preserve Significant Changes, Show Significant Change Markers, and
+Fit Data) remain Desktop session options and are not saved by this opt-in.
 
 ## Tool Instances and setup
 

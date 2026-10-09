@@ -71,14 +71,26 @@ test('off-tab Chart cleanup does not preserve an unmounted Page cache', () => {
   assert.match(source, /activeTab === 'output' \? runPage\?\.name : undefined/)
 })
 
-test('workflow replacement and Clear Last Run still clear Chart configuration and run caches stay isolated', () => {
+test('template Chart persistence changes only the intended Last Run lifecycle boundaries', () => {
   const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  for (const name of ['createDraft', 'handleLoadTemplate', 'handleClearLastRun']) {
-    const start = source.indexOf(`const ${name} =`)
-    assert.notEqual(start, -1, name)
-    const next = source.indexOf('\n  const ', start)
-    assert.match(source.slice(start, next), /setChartPanels\(\[\]\)/)
-  }
+
+  const createStart = source.indexOf('const createDraft =')
+  const createEnd = source.indexOf('\n  const ', createStart)
+  assert.match(source.slice(createStart, createEnd), /setSaveChartsWithTemplate\(false\)/)
+  assert.match(source.slice(createStart, createEnd), /setChartPanels\(\[\]\)/)
+
+  const loadStart = source.indexOf('const handleLoadTemplate =')
+  const loadEnd = source.indexOf('\n  const ', loadStart)
+  const load = source.slice(loadStart, loadEnd)
+  assert.match(load, /setSaveChartsWithTemplate\(loadedDraft\.output_views !== undefined\)/)
+  assert.match(load, /savedChartsToPanels\(loadedDraft\.output_views\.charts\)/)
+
+  const clearStart = source.indexOf('const handleClearLastRun =')
+  const clearEnd = source.indexOf('\n  const ', clearStart)
+  const clear = source.slice(clearStart, clearEnd)
+  assert.match(clear, /if \(!saveChartsWithTemplate\) setChartPanels\(\[\]\)/)
+
   assert.match(source, /const chartData = useMemo\(\(\) => new Map<string, PageChartData>\(\), \[runMetadata\?\.run_id\]\)/)
+  assert.match(source, /if \(!runWorkflowSnapshot \|\| !displayedRun \|\| saveChartsWithTemplate\) return/)
   assert.match(source, /setChartPanels\(panels => reconcileRunChartPanels\(/)
 })
