@@ -54,29 +54,64 @@ export type ChartPanel = {
   boxPlot: { showOutliers: boolean }
 }
 
+export type SavedAxisSettings = {
+  title: string
+  min: number | null
+  max: number | null
+  interval: number | null
+  show_labels: boolean
+  show_ticks: boolean
+  show_major_grid: boolean
+}
+
 export type SavedChart = {
   page: string
   title: string
   outputs: string[]
   type: ChartType
   scatter_x_output: string | null
-  scatter: ScatterSettings
+  scatter: { display: ScatterSettings['display']; marker_size: number; line_width: number }
   line: { series: Record<string, LineSeriesSettings> }
-  marker_styles: Record<string, MarkerStyleSettings>
+  marker_styles: Record<string, {
+    shape: MarkerShape
+    size: number
+    fill_color: string | null
+    border_color: string | null
+  }>
   series_colors: Record<string, string>
   show_legend: boolean
   legend_position: LegendPosition
   image_background: ChartImageBackground
   show_all_raw_data: boolean
-  zoom: ZoomSettings
-  x_axis: AxisSettings
-  y_axis: AxisSettings
-  combo: { series: Record<string, ComboSeriesSettings>; right_axis: AxisSettings }
-  histogram: HistogramSettings
+  zoom: { enabled: boolean; show_slider: boolean }
+  x_axis: SavedAxisSettings
+  y_axis: SavedAxisSettings
+  combo: { series: Record<string, ComboSeriesSettings>; right_axis: SavedAxisSettings }
+  histogram: {
+    mode: HistogramSettings['mode']
+    value: number | null
+    show_normal_curve: boolean
+    mean: number | null
+    std_dev: number | null
+  }
   box_plot: { show_outliers: boolean }
 }
 
 export type SavedOutputViews = { charts: SavedChart[] }
+
+function axisToSaved(axis: AxisSettings): SavedAxisSettings {
+  return {
+    title: axis.title, min: axis.min, max: axis.max, interval: axis.interval,
+    show_labels: axis.showLabels, show_ticks: axis.showTicks, show_major_grid: axis.showMajorGrid,
+  }
+}
+
+function savedToAxis(axis: SavedAxisSettings): AxisSettings {
+  return {
+    title: axis.title, min: axis.min, max: axis.max, interval: axis.interval,
+    showLabels: axis.show_labels, showTicks: axis.show_ticks, showMajorGrid: axis.show_major_grid,
+  }
+}
 
 export function chartPanelToSavedChart(panel: ChartPanel): SavedChart {
   return {
@@ -85,21 +120,39 @@ export function chartPanelToSavedChart(panel: ChartPanel): SavedChart {
     outputs: [...panel.outputs],
     type: panel.type,
     scatter_x_output: panel.scatterXOutput,
-    scatter: { ...panel.scatter },
+    scatter: {
+      display: panel.scatter.display,
+      marker_size: panel.scatter.markerSize,
+      line_width: panel.scatter.lineWidth,
+    },
     line: { series: { ...panel.line.series } },
     marker_styles: Object.fromEntries(Object.entries(panel.markerStyles).map(([name, style]) =>
-      [name, { ...style }])),
+      [name, {
+        shape: style.shape,
+        size: style.size,
+        fill_color: style.fillColor,
+        border_color: style.borderColor,
+      }])),
     series_colors: { ...panel.seriesColors },
     show_legend: panel.showLegend,
     legend_position: panel.legendPosition,
     image_background: panel.imageBackground,
     show_all_raw_data: panel.showAllRawData,
-    zoom: { ...panel.zoom },
-    x_axis: { ...panel.xAxis },
-    y_axis: { ...panel.yAxis },
-    combo: { series: Object.fromEntries(Object.entries(panel.combo.series).map(([name, settings]) =>
-      [name, { ...settings }])), right_axis: { ...panel.combo.rightAxis } },
-    histogram: { ...panel.histogram },
+    zoom: { enabled: panel.zoom.enabled, show_slider: panel.zoom.showSlider },
+    x_axis: axisToSaved(panel.xAxis),
+    y_axis: axisToSaved(panel.yAxis),
+    combo: {
+      series: Object.fromEntries(Object.entries(panel.combo.series).map(([name, settings]) =>
+        [name, { ...settings }])),
+      right_axis: axisToSaved(panel.combo.rightAxis),
+    },
+    histogram: {
+      mode: panel.histogram.mode,
+      value: panel.histogram.value,
+      show_normal_curve: panel.histogram.showNormalCurve,
+      mean: panel.histogram.mean,
+      std_dev: panel.histogram.stdDev,
+    },
     box_plot: { show_outliers: panel.boxPlot.showOutliers },
   }
 }
@@ -112,21 +165,39 @@ export function savedChartsToPanels(charts: readonly SavedChart[]): ChartPanel[]
     outputs: [...chart.outputs],
     type: chart.type,
     scatterXOutput: chart.scatter_x_output,
-    scatter: { ...chart.scatter },
+    scatter: {
+      display: chart.scatter.display,
+      markerSize: chart.scatter.marker_size,
+      lineWidth: chart.scatter.line_width,
+    },
     line: { series: { ...chart.line.series } },
     markerStyles: Object.fromEntries(Object.entries(chart.marker_styles).map(([name, style]) =>
-      [name, { ...style }])),
+      [name, {
+        shape: style.shape,
+        size: style.size,
+        fillColor: style.fill_color,
+        borderColor: style.border_color,
+      }])),
     seriesColors: { ...chart.series_colors },
     showLegend: chart.show_legend,
     legendPosition: chart.legend_position,
     imageBackground: chart.image_background,
     showAllRawData: chart.show_all_raw_data,
-    zoom: { ...chart.zoom },
-    xAxis: { ...chart.x_axis },
-    yAxis: { ...chart.y_axis },
-    combo: { series: Object.fromEntries(Object.entries(chart.combo.series).map(([name, settings]) =>
-      [name, { ...settings }])), rightAxis: { ...chart.combo.right_axis } },
-    histogram: { ...chart.histogram },
+    zoom: { enabled: chart.zoom.enabled, showSlider: chart.zoom.show_slider },
+    xAxis: savedToAxis(chart.x_axis),
+    yAxis: savedToAxis(chart.y_axis),
+    combo: {
+      series: Object.fromEntries(Object.entries(chart.combo.series).map(([name, settings]) =>
+        [name, { ...settings }])),
+      rightAxis: savedToAxis(chart.combo.right_axis),
+    },
+    histogram: {
+      mode: chart.histogram.mode,
+      value: chart.histogram.value,
+      showNormalCurve: chart.histogram.show_normal_curve,
+      mean: chart.histogram.mean,
+      stdDev: chart.histogram.std_dev,
+    },
     boxPlot: { showOutliers: chart.box_plot.show_outliers },
   }))
 }
