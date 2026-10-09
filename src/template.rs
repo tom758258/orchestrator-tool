@@ -1496,6 +1496,64 @@ mod tests {
         Template::new("Power and Meter Test".to_owned(), meters_setup, workflow).unwrap()
     }
 
+    fn saved_chart_wire(chart_type: &str, outputs: Vec<&str>) -> Value {
+        json!({
+            "page": "Results",
+            "title": "Voltage Response",
+            "outputs": outputs,
+            "type": chart_type,
+            "scatter_x_output": null,
+            "scatter": {"display": "markers", "marker_size": 4.0, "line_width": 2.0},
+            "line": {"series": {}},
+            "marker_styles": {},
+            "series_colors": {},
+            "show_legend": true,
+            "legend_position": "top",
+            "image_background": "light",
+            "show_all_raw_data": false,
+            "zoom": {"enabled": false, "show_slider": true},
+            "x_axis": {
+                "title": "Iteration", "min": null, "max": null, "interval": null,
+                "show_labels": true, "show_ticks": true, "show_major_grid": false
+            },
+            "y_axis": {
+                "title": "Voltage (V)", "min": 0.0, "max": 5.0, "interval": 1.0,
+                "show_labels": true, "show_ticks": true, "show_major_grid": true
+            },
+            "combo": {
+                "series": {},
+                "right_axis": {
+                    "title": "", "min": null, "max": null, "interval": null,
+                    "show_labels": true, "show_ticks": true, "show_major_grid": false
+                }
+            },
+            "histogram": {
+                "mode": "auto", "value": null, "show_normal_curve": false,
+                "mean": null, "std_dev": null
+            },
+            "box_plot": {"show_outliers": true}
+        })
+    }
+
+    fn chart_template_wire() -> Value {
+        json!({
+            "schema_version": 1,
+            "name": "Chart Template",
+            "tool_instances": [],
+            "workflow": {"steps": [
+                {
+                    "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
+                    "value": {"source": "literal", "value": 3.3}
+                },
+                {
+                    "type": "output", "id": "current", "name": "Current", "page": "Results",
+                    "value": {"source": "literal", "value": 0.1}
+                }
+            ]},
+            "output_views": {"charts": [saved_chart_wire("line", vec!["Voltage"])]}
+        })
+    }
+
     #[test]
     fn template_json_round_trip_preserves_domain_and_wire_shape() {
         let original = sample_template();
@@ -1546,6 +1604,72 @@ mod tests {
         assert_eq!(
             restored.workflow().steps()[2].kind(),
             original.workflow().steps()[2].kind()
+        );
+    }
+
+    #[test]
+    fn output_views_are_optional_and_round_trip_when_present() {
+        let plain: Value =
+            serde_json::from_str(&sample_template().to_json_string().unwrap()).unwrap();
+        assert!(plain.get("output_views").is_none());
+
+        let wire = chart_template_wire();
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let serialized: Value =
+            serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+        assert_eq!(serialized["output_views"], wire["output_views"]);
+        assert_eq!(
+            Template::from_json_str(&serialized.to_string()).unwrap(),
+            template
+        );
+    }
+
+    #[test]
+    fn output_views_reject_invalid_chart_references_and_constraints() {
+        let mut unknown_page = chart_template_wire();
+        unknown_page["output_views"]["charts"][0]["page"] = json!("Missing");
+        assert!(
+            Template::from_json_str(&unknown_page.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("unknown Output Page")
+        );
+
+        let mut unknown_output = chart_template_wire();
+        unknown_output["output_views"]["charts"][0]["outputs"] = json!(["Missing"]);
+        assert!(
+            Template::from_json_str(&unknown_output.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("unknown Output")
+        );
+
+        let mut invalid_combo = chart_template_wire();
+        invalid_combo["output_views"]["charts"][0]["type"] = json!("combo");
+        assert!(
+            Template::from_json_str(&invalid_combo.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("Combo requires at least two Outputs")
+        );
+
+        let mut invalid_marker = chart_template_wire();
+        invalid_marker["output_views"]["charts"][0]["scatter"]["marker_size"] = json!(0);
+        assert!(
+            Template::from_json_str(&invalid_marker.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("marker size must be greater than zero")
+        );
+
+        let mut too_many = chart_template_wire();
+        too_many["output_views"]["charts"] =
+            Value::Array((0..9).map(|_| saved_chart_wire("line", vec!["Voltage"])).collect());
+        assert!(
+            Template::from_json_str(&too_many.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("at most 8 charts")
         );
     }
 
