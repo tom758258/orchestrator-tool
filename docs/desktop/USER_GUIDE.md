@@ -660,6 +660,20 @@ Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
+Charts are session-only by default. The Charts heading includes **Save charts
+with template**, which is off by default. Enable it when the current chart
+panels and their Chart Settings should be restored with the Template. Opening a
+Template that contains saved Charts turns the checkbox on and restores those
+panels. Turning it off does not remove the Charts from the current session; the
+next Save Template simply omits them. **Clear Last Run** keeps the chart
+configuration while this option is enabled; ordinary session-only Charts keep
+the previous clear behavior.
+
+This opt-in saves the chart definitions and settings only. It never saves run
+data or the current interactive zoom/pan position. The Workflow **Chart
+Options** described below remain session options even when Charts are saved
+with the Template.
+
 Chart Options sits in the narrow Workflow sidebar immediately below
 **CSV Export**. The outer **Chart Options** panel, its **Sampling** section, and
 its **Y-axis** section can each be expanded or collapsed independently.
