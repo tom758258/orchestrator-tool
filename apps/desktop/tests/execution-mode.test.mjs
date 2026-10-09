@@ -97,10 +97,11 @@ test('both run paths reject the same invalid thresholds through one shared parse
   assert.match(app, /const chartThresholdInvalid = chartSamplingOptions\.enabled &&/)
 })
 
-test('Sampling and Fit Data controls are grouped under Chart Options below Streaming', () => {
+test('Sampling and Fit Data controls are grouped under Chart Options below CSV Export', () => {
   const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
   assert.ok(sidebar.indexOf('className="streaming-panel"') >= 0)
+  assert.match(sidebar, /onClick=\{\(\) => setStreamingExpanded\(current => !current\)\}>\s*CSV Export\s*<span/)
   assert.ok(sidebar.indexOf('className="chart-options"') > sidebar.indexOf('className="streaming-panel"'))
   assert.equal((app.match(/id="chart-options-title"/g) ?? []).length, 1)
   assert.match(sidebar, /checked=\{chartSamplingOptions\.showMarkers\}/)
@@ -115,10 +116,11 @@ test('Sampling and Fit Data controls are grouped under Chart Options below Strea
 test('Chart Options, Sampling and Y-axis collapse independently with existing +/- headers', () => {
   const sidebar = app.slice(app.indexOf('<aside className="workflow-sidebar">'),
     app.indexOf('</aside>', app.indexOf('<aside className="workflow-sidebar">')))
-  // Top-level panels reuse the shared collapsible header and start expanded.
+  // Steps stays expanded; CSV Export and Chart Options start collapsed.
   for (const state of ['stepsExpanded', 'streamingExpanded', 'chartOptionsExpanded']) {
     const setter = `set${state[0].toUpperCase()}${state.slice(1)}`
-    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(true\\)`), state)
+    const initial = state === 'stepsExpanded'
+    assert.match(app, new RegExp(`const \\[${state}, ${setter}\\] = useState\\(${initial}\\)`), state)
     assert.match(sidebar, new RegExp(`aria-expanded=\\{${state}\\}`), state)
     assert.match(sidebar, new RegExp(`<span aria-hidden="true">\\{${state} \\? '−' : '\\+'\\}</span>`), state)
     assert.match(sidebar, new RegExp(`onClick=\\{\\(\\) => ${setter}\\(current => !current\\)\\}`), state)

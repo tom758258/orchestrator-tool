@@ -463,8 +463,8 @@ function App() {
     Workflow: true, Powers: true, Meters: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
-  const [streamingExpanded, setStreamingExpanded] = useState(true)
-  const [chartOptionsExpanded, setChartOptionsExpanded] = useState(true)
+  const [streamingExpanded, setStreamingExpanded] = useState(false)
+  const [chartOptionsExpanded, setChartOptionsExpanded] = useState(false)
   const [chartSamplingExpanded, setChartSamplingExpanded] = useState(true)
   const [chartYAxisExpanded, setChartYAxisExpanded] = useState(true)
   const [executionsExpanded, setExecutionsExpanded] = useState(true)
@@ -2023,7 +2023,7 @@ function App() {
                       <button type="button" className="collapsible-header"
                         aria-expanded={streamingExpanded}
                         onClick={() => setStreamingExpanded(current => !current)}>
-                        Streaming
+                        CSV Export
                         <span aria-hidden="true">{streamingExpanded ? '−' : '+'}</span>
                       </button>
                     </h3>

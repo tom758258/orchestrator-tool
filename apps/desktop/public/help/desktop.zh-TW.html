@@ -456,8 +456,9 @@ runtime authorization file 只用於該次 run，並會 best-effort remove。</p
 會在相同 cleanup 位置透過 powers-tool 送出 simulated Safe-Off，但不宣稱真實
 outputs 已被改變。</p>
 <h2 id="9-streaming-csv">9. Streaming CSV</h2>
-<p>Streaming CSV 在 Workflow 區域的 <strong>Streaming</strong> panel 設定，和 run 完成後再做的
-manual export 不同。</p>
+<p>Streaming CSV 在 Workflow 區域的 <strong>CSV Export</strong> panel 設定，和 run 完成後再做的
+manual export 不同。此區塊在程式啟動時預設收合，點擊標題可展開或收合；收合只會
+隱藏控制項，不會改變其設定值。</p>
 <p>Streaming 至少需要一個 Output。可選擇：</p>
 <ul>
 <li><strong>Selected Page</strong> — 選一個 Output Page，可選擇是否指定輸出資料夾。
@@ -528,9 +529,10 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。</p>
-<p>Chart Options 位於 Workflow 左側窄欄的 Streaming 正下方。最外層
-<strong>Chart Options</strong>、其中的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 都能彼此獨立展開或收合，
-三者在程式啟動時皆預設展開。收合只會隱藏控制項，不會改變其設定值。</p>
+<p>Chart Options 位於 Workflow 左側窄欄的 <strong>CSV Export</strong> 正下方。最外層
+<strong>Chart Options</strong>、其中的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 都能彼此獨立展開或收合。
+程式啟動時，<strong>Chart Options</strong> 預設收合，內部的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 各自
+預設展開。收合只會隱藏控制項，不會改變其設定值。</p>
 <p><strong>Sampling</strong> 區塊可用於 Simulation 與 Live Line Chart。
 <strong>Preserve Significant Changes</strong> 預設關閉，Change Threshold (%) 預設為 <strong>5%</strong>，
 啟用時必須是有限且大於 0 的百分比。不論是否啟用，原本每個 pixel bucket 的

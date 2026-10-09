@@ -531,8 +531,10 @@ a best-effort basis.</p>
 cleanup. Simulation follows the same cleanup position by sending simulated
 Safe-Off through powers-tool; it does not claim that real outputs were changed.</p>
 <h2 id="9-streaming-csv">9. Streaming CSV</h2>
-<p>Streaming CSV is configured in the Workflow area's <strong>Streaming</strong> panel. It
-is different from exporting a completed run later.</p>
+<p>Streaming CSV is configured in the Workflow area's <strong>CSV Export</strong> panel. It
+is different from exporting a completed run later. The panel starts collapsed
+when the application opens. Click its title to expand or collapse it; collapsing
+only hides the controls and does not change their values.</p>
 <p>Streaming requires at least one Output. Choose one of these modes:</p>
 <ul>
 <li><strong>Selected Page</strong> — choose one Output Page and optionally choose an output
@@ -619,10 +621,11 @@ disk and cannot be exported.</p>
 Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.</p>
 <p>Chart Options sits in the narrow Workflow sidebar immediately below
-Streaming. The outer <strong>Chart Options</strong> panel, its <strong>Sampling</strong> section, and its
-<strong>Y-axis</strong> section can each be expanded or collapsed independently; all three
-start expanded. Collapsing a section only hides its controls and does not change
-their values.</p>
+<strong>CSV Export</strong>. The outer <strong>Chart Options</strong> panel, its <strong>Sampling</strong> section, and
+its <strong>Y-axis</strong> section can each be expanded or collapsed independently.
+<strong>Chart Options</strong> starts collapsed when the application opens; <strong>Sampling</strong> and
+<strong>Y-axis</strong> each start expanded inside it. Collapsing a section only hides its
+controls and does not change their values.</p>
 <p>The <strong>Sampling</strong> section applies to both Simulation and Live Line Charts.
 <strong>Preserve Significant Changes</strong> is <strong>off</strong> by default, and the positive finite
 percentage threshold defaults to <strong>5%</strong>. The original pixel-bucket Min/Max

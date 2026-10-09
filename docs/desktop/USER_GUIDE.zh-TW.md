@@ -476,8 +476,9 @@ outputs 已被改變。
 
 ## 9. Streaming CSV
 
-Streaming CSV 在 Workflow 區域的 **Streaming** panel 設定，和 run 完成後再做的
-manual export 不同。
+Streaming CSV 在 Workflow 區域的 **CSV Export** panel 設定，和 run 完成後再做的
+manual export 不同。此區塊在程式啟動時預設收合，點擊標題可展開或收合；收合只會
+隱藏控制項，不會改變其設定值。
 
 Streaming 至少需要一個 Output。可選擇：
 
@@ -568,9 +569,10 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Out
 可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
 panels。
 
-Chart Options 位於 Workflow 左側窄欄的 Streaming 正下方。最外層
-**Chart Options**、其中的 **Sampling** 與 **Y-axis** 都能彼此獨立展開或收合，
-三者在程式啟動時皆預設展開。收合只會隱藏控制項，不會改變其設定值。
+Chart Options 位於 Workflow 左側窄欄的 **CSV Export** 正下方。最外層
+**Chart Options**、其中的 **Sampling** 與 **Y-axis** 都能彼此獨立展開或收合。
+程式啟動時，**Chart Options** 預設收合，內部的 **Sampling** 與 **Y-axis** 各自
+預設展開。收合只會隱藏控制項，不會改變其設定值。
 
 **Sampling** 區塊可用於 Simulation 與 Live Line Chart。
 **Preserve Significant Changes** 預設關閉，Change Threshold (%) 預設為 **5%**，

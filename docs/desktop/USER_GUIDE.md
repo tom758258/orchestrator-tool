@@ -551,8 +551,10 @@ Safe-Off through powers-tool; it does not claim that real outputs were changed.
 
 ## 9. Streaming CSV
 
-Streaming CSV is configured in the Workflow area's **Streaming** panel. It
-is different from exporting a completed run later.
+Streaming CSV is configured in the Workflow area's **CSV Export** panel. It
+is different from exporting a completed run later. The panel starts collapsed
+when the application opens. Click its title to expand or collapse it; collapsing
+only hides the controls and does not change their values.
 
 Streaming requires at least one Output. Choose one of these modes:
 
@@ -659,10 +661,11 @@ Output Page and can plot numeric Outputs from that Page. Desktop supports up
 to eight chart panels across the run's Pages.
 
 Chart Options sits in the narrow Workflow sidebar immediately below
-Streaming. The outer **Chart Options** panel, its **Sampling** section, and its
-**Y-axis** section can each be expanded or collapsed independently; all three
-start expanded. Collapsing a section only hides its controls and does not change
-their values.
+**CSV Export**. The outer **Chart Options** panel, its **Sampling** section, and
+its **Y-axis** section can each be expanded or collapsed independently.
+**Chart Options** starts collapsed when the application opens; **Sampling** and
+**Y-axis** each start expanded inside it. Collapsing a section only hides its
+controls and does not change their values.
 
 The **Sampling** section applies to both Simulation and Live Line Charts.
 **Preserve Significant Changes** is **off** by default, and the positive finite
