@@ -15,7 +15,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -28,6 +28,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   running: boolean
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
+  saveChartsWithTemplate: boolean
+  onSaveChartsWithTemplateChange: (checked: boolean) => void
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
@@ -193,8 +195,15 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   return <section className="result-chart" aria-label="Charts">
     <div className="section-header">
       <h3>Charts</h3>
-      <button className="action-button" type="button" onClick={addChart}
-        disabled={savingId !== null || numericNames.length === 0 || panels.length >= MAX_CHARTS}>+ Add Chart</button>
+      <div className="result-chart-header-actions">
+        <label className="result-chart-template-option">
+          <input type="checkbox" checked={saveChartsWithTemplate}
+            onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />
+          Save charts with template
+        </label>
+        <button className="action-button" type="button" onClick={addChart}
+          disabled={savingId !== null || numericNames.length === 0 || panels.length >= MAX_CHARTS}>+ Add Chart</button>
+      </div>
     </div>
     {panels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
     {numericNames.length === 0 ? <p>No numeric Outputs are available for charts on this Page.</p>
