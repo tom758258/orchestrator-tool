@@ -531,11 +531,7 @@ fn validate_output_views(
                 "chart {number} line width must be greater than zero"
             )));
         }
-        if chart
-            .marker_styles
-            .values()
-            .any(|style| style.size <= 0.0)
-        {
+        if chart.marker_styles.values().any(|style| style.size <= 0.0) {
             return Err(TemplateError::OutputViews(format!(
                 "chart {number} marker style size must be greater than zero"
             )));
@@ -773,7 +769,9 @@ impl fmt::Display for TemplateError {
                 )
             }
             Self::Json(source) => write!(formatter, "template JSON error: {source}"),
-            Self::OutputViews(message) => write!(formatter, "template output views error: {message}"),
+            Self::OutputViews(message) => {
+                write!(formatter, "template output views error: {message}")
+            }
             Self::UnsupportedSchemaVersion { expected, found } => write!(
                 formatter,
                 "unsupported template schema version {found}, expected {expected}"
@@ -804,9 +802,9 @@ impl Error for TemplateError {
             Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
-            Self::UnsupportedSchemaVersion { .. }
-            | Self::Instance(_)
-            | Self::OutputViews(_) => None,
+            Self::UnsupportedSchemaVersion { .. } | Self::Instance(_) | Self::OutputViews(_) => {
+                None
+            }
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
@@ -1615,8 +1613,7 @@ mod tests {
 
         let wire = chart_template_wire();
         let template = Template::from_json_str(&wire.to_string()).unwrap();
-        let serialized: Value =
-            serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+        let serialized: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
         assert_eq!(serialized["output_views"], wire["output_views"]);
         assert_eq!(
             Template::from_json_str(&serialized.to_string()).unwrap(),
@@ -1663,8 +1660,11 @@ mod tests {
         );
 
         let mut too_many = chart_template_wire();
-        too_many["output_views"]["charts"] =
-            Value::Array((0..9).map(|_| saved_chart_wire("line", vec!["Voltage"])).collect());
+        too_many["output_views"]["charts"] = Value::Array(
+            (0..9)
+                .map(|_| saved_chart_wire("line", vec!["Voltage"]))
+                .collect(),
+        );
         assert!(
             Template::from_json_str(&too_many.to_string())
                 .unwrap_err()
