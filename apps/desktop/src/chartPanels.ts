@@ -54,6 +54,83 @@ export type ChartPanel = {
   boxPlot: { showOutliers: boolean }
 }
 
+export type SavedChart = {
+  page: string
+  title: string
+  outputs: string[]
+  type: ChartType
+  scatter_x_output: string | null
+  scatter: ScatterSettings
+  line: { series: Record<string, LineSeriesSettings> }
+  marker_styles: Record<string, MarkerStyleSettings>
+  series_colors: Record<string, string>
+  show_legend: boolean
+  legend_position: LegendPosition
+  image_background: ChartImageBackground
+  show_all_raw_data: boolean
+  zoom: ZoomSettings
+  x_axis: AxisSettings
+  y_axis: AxisSettings
+  combo: { series: Record<string, ComboSeriesSettings>; right_axis: AxisSettings }
+  histogram: HistogramSettings
+  box_plot: { show_outliers: boolean }
+}
+
+export type SavedOutputViews = { charts: SavedChart[] }
+
+export function chartPanelToSavedChart(panel: ChartPanel): SavedChart {
+  return {
+    page: panel.page,
+    title: panel.title,
+    outputs: [...panel.outputs],
+    type: panel.type,
+    scatter_x_output: panel.scatterXOutput,
+    scatter: { ...panel.scatter },
+    line: { series: { ...panel.line.series } },
+    marker_styles: Object.fromEntries(Object.entries(panel.markerStyles).map(([name, style]) =>
+      [name, { ...style }])),
+    series_colors: { ...panel.seriesColors },
+    show_legend: panel.showLegend,
+    legend_position: panel.legendPosition,
+    image_background: panel.imageBackground,
+    show_all_raw_data: panel.showAllRawData,
+    zoom: { ...panel.zoom },
+    x_axis: { ...panel.xAxis },
+    y_axis: { ...panel.yAxis },
+    combo: { series: Object.fromEntries(Object.entries(panel.combo.series).map(([name, settings]) =>
+      [name, { ...settings }])), right_axis: { ...panel.combo.rightAxis } },
+    histogram: { ...panel.histogram },
+    box_plot: { show_outliers: panel.boxPlot.showOutliers },
+  }
+}
+
+export function savedChartsToPanels(charts: readonly SavedChart[]): ChartPanel[] {
+  return charts.map((chart, id) => ({
+    page: chart.page,
+    id,
+    title: chart.title,
+    outputs: [...chart.outputs],
+    type: chart.type,
+    scatterXOutput: chart.scatter_x_output,
+    scatter: { ...chart.scatter },
+    line: { series: { ...chart.line.series } },
+    markerStyles: Object.fromEntries(Object.entries(chart.marker_styles).map(([name, style]) =>
+      [name, { ...style }])),
+    seriesColors: { ...chart.series_colors },
+    showLegend: chart.show_legend,
+    legendPosition: chart.legend_position,
+    imageBackground: chart.image_background,
+    showAllRawData: chart.show_all_raw_data,
+    zoom: { ...chart.zoom },
+    xAxis: { ...chart.x_axis },
+    yAxis: { ...chart.y_axis },
+    combo: { series: Object.fromEntries(Object.entries(chart.combo.series).map(([name, settings]) =>
+      [name, { ...settings }])), rightAxis: { ...chart.combo.right_axis } },
+    histogram: { ...chart.histogram },
+    boxPlot: { showOutliers: chart.box_plot.show_outliers },
+  }))
+}
+
 export function seriesColor(panel: ChartPanel, output: string, autoColor: string): string {
   return Object.prototype.hasOwnProperty.call(panel.seriesColors, output)
     ? panel.seriesColors[output]
