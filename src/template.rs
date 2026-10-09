@@ -490,6 +490,11 @@ fn validate_output_views(
                 ))
             })?;
 
+        if chart.outputs.is_empty() {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} requires at least one Output"
+            )));
+        }
         for output in &chart.outputs {
             if !page.headers().contains(output) {
                 return Err(TemplateError::OutputViews(format!(
@@ -498,7 +503,8 @@ fn validate_output_views(
                 )));
             }
         }
-        if let Some(output) = &chart.scatter_x_output
+        if chart.chart_type == SavedChartType::Scatter
+            && let Some(output) = &chart.scatter_x_output
             && !page.headers().contains(output)
         {
             return Err(TemplateError::OutputViews(format!(
@@ -544,32 +550,34 @@ fn validate_output_views(
             &chart.combo.right_axis,
         )?;
 
-        match chart.histogram.mode {
-            HistogramMode::Auto => {}
-            HistogramMode::Count => {
-                let value = chart.histogram.value.ok_or_else(|| {
-                    TemplateError::OutputViews(format!(
-                        "chart {number} Histogram bin count is required"
-                    ))
-                })?;
-                if value.fract() != 0.0 || !(1.0..=200.0).contains(&value) {
-                    return Err(TemplateError::OutputViews(format!(
-                        "chart {number} Histogram bin count must be an integer from 1 to 200"
-                    )));
+        if chart.chart_type == SavedChartType::Histogram {
+            match chart.histogram.mode {
+                HistogramMode::Auto => {}
+                HistogramMode::Count => {
+                    let value = chart.histogram.value.ok_or_else(|| {
+                        TemplateError::OutputViews(format!(
+                            "chart {number} Histogram bin count is required"
+                        ))
+                    })?;
+                    if value.fract() != 0.0 || !(1.0..=200.0).contains(&value) {
+                        return Err(TemplateError::OutputViews(format!(
+                            "chart {number} Histogram bin count must be an integer from 1 to 200"
+                        )));
+                    }
+                }
+                HistogramMode::Width => {
+                    if !chart.histogram.value.is_some_and(|value| value > 0.0) {
+                        return Err(TemplateError::OutputViews(format!(
+                            "chart {number} Histogram bin width must be greater than zero"
+                        )));
+                    }
                 }
             }
-            HistogramMode::Width => {
-                if !chart.histogram.value.is_some_and(|value| value > 0.0) {
-                    return Err(TemplateError::OutputViews(format!(
-                        "chart {number} Histogram bin width must be greater than zero"
-                    )));
-                }
+            if chart.histogram.std_dev.is_some_and(|value| value <= 0.0) {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} normal-curve standard deviation must be greater than zero"
+                )));
             }
-        }
-        if chart.histogram.std_dev.is_some_and(|value| value <= 0.0) {
-            return Err(TemplateError::OutputViews(format!(
-                "chart {number} normal-curve standard deviation must be greater than zero"
-            )));
         }
     }
     Ok(())
