@@ -24,12 +24,193 @@ use crate::{
 /// Current template file format version.
 pub const TEMPLATE_SCHEMA_VERSION: u32 = 1;
 
+const MAX_SAVED_CHARTS: usize = 8;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputViews {
+    charts: Vec<SavedChart>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SavedChartType {
+    Line,
+    Scatter,
+    Column,
+    Area,
+    Bar,
+    Combo,
+    Histogram,
+    Boxplot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ScatterDisplay {
+    Markers,
+    Lines,
+    LinesMarkers,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum LegendPosition {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ImageBackground {
+    Light,
+    Dark,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum MarkerShape {
+    Circle,
+    Square,
+    Diamond,
+    Triangle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ComboSeriesKind {
+    Line,
+    Column,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ComboAxis {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum HistogramMode {
+    Auto,
+    Count,
+    Width,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AxisSettings {
+    title: String,
+    min: Option<f64>,
+    max: Option<f64>,
+    interval: Option<f64>,
+    show_labels: bool,
+    show_ticks: bool,
+    show_major_grid: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScatterSettings {
+    display: ScatterDisplay,
+    marker_size: f64,
+    line_width: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LineSeriesSettings {
+    markers: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MarkerStyleSettings {
+    shape: MarkerShape,
+    size: f64,
+    fill_color: Option<String>,
+    border_color: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ComboSeriesSettings {
+    kind: ComboSeriesKind,
+    axis: ComboAxis,
+    markers: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ZoomSettings {
+    enabled: bool,
+    show_slider: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistogramSettings {
+    mode: HistogramMode,
+    value: Option<f64>,
+    show_normal_curve: bool,
+    mean: Option<f64>,
+    std_dev: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedChart {
+    page: String,
+    title: String,
+    outputs: Vec<String>,
+    #[serde(rename = "type")]
+    chart_type: SavedChartType,
+    scatter_x_output: Option<String>,
+    scatter: ScatterSettings,
+    line: SavedLineSettings,
+    marker_styles: BTreeMap<String, MarkerStyleSettings>,
+    series_colors: BTreeMap<String, String>,
+    show_legend: bool,
+    legend_position: LegendPosition,
+    image_background: ImageBackground,
+    show_all_raw_data: bool,
+    zoom: ZoomSettings,
+    x_axis: AxisSettings,
+    y_axis: AxisSettings,
+    combo: SavedComboSettings,
+    histogram: HistogramSettings,
+    box_plot: SavedBoxPlotSettings,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedLineSettings {
+    series: BTreeMap<String, LineSeriesSettings>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedComboSettings {
+    series: BTreeMap<String, ComboSeriesSettings>,
+    right_axis: AxisSettings,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedBoxPlotSettings {
+    show_outliers: bool,
+}
+
 /// A persisted workflow template.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
     name: String,
     tool_instances: Vec<ToolInstance>,
     workflow: Workflow,
+    output_views: Option<OutputViews>,
     batch_sources: HashMap<StepId, StepId>,
 }
 
@@ -104,6 +285,7 @@ impl Template {
             name,
             tool_instances,
             workflow,
+            output_views: None,
             batch_sources,
         })
     }
@@ -238,7 +420,11 @@ impl Template {
                 })
             })
             .collect::<Result<Vec<_>, TemplateError>>()?;
-        Self::new(wire.name, instances, workflow)
+        let output_views = wire.output_views;
+        validate_output_views(&workflow, output_views.as_ref())?;
+        let mut template = Self::new(wire.name, instances, workflow)?;
+        template.output_views = output_views;
+        Ok(template)
     }
 
     /// Saves the template to a file as pretty JSON.
@@ -260,6 +446,137 @@ impl Template {
         })?;
         Self::from_json_str(&contents)
     }
+}
+
+fn validate_output_views(
+    workflow: &Workflow,
+    output_views: Option<&OutputViews>,
+) -> Result<(), TemplateError> {
+    let Some(output_views) = output_views else {
+        return Ok(());
+    };
+    if output_views.charts.len() > MAX_SAVED_CHARTS {
+        return Err(TemplateError::OutputViews(format!(
+            "at most {MAX_SAVED_CHARTS} charts can be saved with a template"
+        )));
+    }
+
+    fn validate_axis(label: &str, axis: &AxisSettings) -> Result<(), TemplateError> {
+        if let (Some(min), Some(max)) = (axis.min, axis.max)
+            && min >= max
+        {
+            return Err(TemplateError::OutputViews(format!(
+                "{label} minimum must be less than maximum"
+            )));
+        }
+        if axis.interval.is_some_and(|interval| interval <= 0.0) {
+            return Err(TemplateError::OutputViews(format!(
+                "{label} major unit must be greater than zero"
+            )));
+        }
+        Ok(())
+    }
+
+    for (index, chart) in output_views.charts.iter().enumerate() {
+        let number = index + 1;
+        let page = workflow
+            .output_pages()
+            .iter()
+            .find(|page| page.name() == chart.page)
+            .ok_or_else(|| {
+                TemplateError::OutputViews(format!(
+                    "chart {number} references unknown Output Page {:?}",
+                    chart.page
+                ))
+            })?;
+
+        for output in &chart.outputs {
+            if !page.headers().contains(output) {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} references unknown Output {output:?} on Page {:?}",
+                    chart.page
+                )));
+            }
+        }
+        if let Some(output) = &chart.scatter_x_output
+            && !page.headers().contains(output)
+        {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} references unknown scatter X Output {output:?} on Page {:?}",
+                chart.page
+            )));
+        }
+
+        match chart.chart_type {
+            SavedChartType::Histogram if chart.outputs.len() != 1 => {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} Histogram requires exactly one Output"
+                )));
+            }
+            SavedChartType::Combo if chart.outputs.len() < 2 => {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} Combo requires at least two Outputs"
+                )));
+            }
+            _ => {}
+        }
+
+        if chart.scatter.marker_size <= 0.0 {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} marker size must be greater than zero"
+            )));
+        }
+        if chart.scatter.line_width <= 0.0 {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} line width must be greater than zero"
+            )));
+        }
+        if chart
+            .marker_styles
+            .values()
+            .any(|style| style.size <= 0.0)
+        {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} marker style size must be greater than zero"
+            )));
+        }
+
+        validate_axis(&format!("chart {number} X Axis"), &chart.x_axis)?;
+        validate_axis(&format!("chart {number} Y Axis"), &chart.y_axis)?;
+        validate_axis(
+            &format!("chart {number} Right Y Axis"),
+            &chart.combo.right_axis,
+        )?;
+
+        match chart.histogram.mode {
+            HistogramMode::Auto => {}
+            HistogramMode::Count => {
+                let value = chart.histogram.value.ok_or_else(|| {
+                    TemplateError::OutputViews(format!(
+                        "chart {number} Histogram bin count is required"
+                    ))
+                })?;
+                if value.fract() != 0.0 || !(1.0..=200.0).contains(&value) {
+                    return Err(TemplateError::OutputViews(format!(
+                        "chart {number} Histogram bin count must be an integer from 1 to 200"
+                    )));
+                }
+            }
+            HistogramMode::Width => {
+                if !chart.histogram.value.is_some_and(|value| value > 0.0) {
+                    return Err(TemplateError::OutputViews(format!(
+                        "chart {number} Histogram bin width must be greater than zero"
+                    )));
+                }
+            }
+        }
+        if chart.histogram.std_dev.is_some_and(|value| value <= 0.0) {
+            return Err(TemplateError::OutputViews(format!(
+                "chart {number} normal-curve standard deviation must be greater than zero"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_batch_sources(
@@ -421,6 +738,7 @@ pub enum TemplateError {
         source: io::Error,
     },
     Json(serde_json::Error),
+    OutputViews(String),
     UnsupportedSchemaVersion {
         expected: u32,
         found: u32,
@@ -455,6 +773,7 @@ impl fmt::Display for TemplateError {
                 )
             }
             Self::Json(source) => write!(formatter, "template JSON error: {source}"),
+            Self::OutputViews(message) => write!(formatter, "template output views error: {message}"),
             Self::UnsupportedSchemaVersion { expected, found } => write!(
                 formatter,
                 "unsupported template schema version {found}, expected {expected}"
@@ -485,7 +804,9 @@ impl Error for TemplateError {
             Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
-            Self::UnsupportedSchemaVersion { .. } | Self::Instance(_) => None,
+            Self::UnsupportedSchemaVersion { .. }
+            | Self::Instance(_)
+            | Self::OutputViews(_) => None,
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
@@ -508,6 +829,8 @@ struct TemplateWire {
     name: String,
     tool_instances: Vec<ToolInstanceWire>,
     workflow: WorkflowWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_views: Option<OutputViews>,
 }
 
 impl TemplateWire {
@@ -527,6 +850,7 @@ impl TemplateWire {
                 })
                 .collect::<Result<_, serde_json::Error>>()?,
             workflow: WorkflowWire::from_workflow(template.workflow()),
+            output_views: template.output_views.clone(),
         })
     }
 }
