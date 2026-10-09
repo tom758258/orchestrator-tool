@@ -1537,6 +1537,21 @@ textarea:disabled {
   margin-bottom: 20px;
 }
 
+.result-chart-header-actions,
+.result-chart-template-option {
+  display: flex;
+  align-items: center;
+}
+
+.result-chart-header-actions {
+  gap: 16px;
+}
+
+.result-chart-template-option {
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .result-charts-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
