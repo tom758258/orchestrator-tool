@@ -35,6 +35,13 @@ test('saved chart conversion preserves Chart settings without persisting runtime
   }
   const saved = chartPanelToSavedChart(original)
   assert.equal(Object.hasOwn(saved, 'id'), false)
+  assert.deepEqual(saved.scatter, { display: 'lines-markers', marker_size: 7, line_width: 3 })
+  assert.equal(saved.x_axis.show_labels, true)
+  assert.equal(Object.hasOwn(saved.x_axis, 'showLabels'), false)
+  assert.deepEqual(saved.marker_styles.Voltage,
+    { shape: 'diamond', size: 7, fill_color: '#ffffff', border_color: '#000000' })
+  assert.equal(saved.histogram.show_normal_curve, true)
+  assert.equal(saved.histogram.std_dev, 0.5)
   const restored = savedChartsToPanels([saved])[0]
   assert.equal(restored.id, 0)
   assert.deepEqual({ ...restored, id: original.id }, original)
