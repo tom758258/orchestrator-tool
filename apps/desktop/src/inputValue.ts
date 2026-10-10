@@ -50,6 +50,12 @@ export type CuratedResultField = {
 export const CUSTOM_RESULT = 'custom'
 
 const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[]>> = {
+  'scopes/measure': [
+    { label: 'Value', pointer: '/value' },
+    { label: 'Unit', pointer: '/unit' },
+    { label: 'Channel', pointer: '/channel' },
+    { label: 'Item', pointer: '/item' },
+  ],
   'meters/measure': [
     { label: 'Value', pointer: '/value' },
     { label: 'Unit', pointer: '/unit' },

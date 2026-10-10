@@ -114,8 +114,11 @@ existing launch and Worker requests, but do not maintain a second capability
 database. Unsupported or evolving tool contracts must be reported rather than
 guessed.
 
-Scopes and Wavegen may be represented as independent Tool Instances, but
-their runtime actions are not currently supported by the orchestrator.
+Scopes supports optional acquisition/channel Setup and nine selected Worker
+actions. Its adapter validates startup identity, correlates terminal jobs, and
+assigns runtime artifact paths; instrument-specific validation remains external.
+Wavegen may be represented as a Tool Instance, but its runtime actions remain
+unsupported.
 Additional adapters, serial-tool handling, manifest-driven UI, plugin systems,
 and setup registries are outside this boundary until a concrete requirement
 exists.

@@ -4,7 +4,9 @@ use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{meters_setup::MetersSetup, powers_setup::PowersSetup, tool::ToolId};
+use crate::{
+    meters_setup::MetersSetup, powers_setup::PowersSetup, scopes_setup::ScopesSetup, tool::ToolId,
+};
 
 /// A logical instance ID, unique within a template.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -50,6 +52,7 @@ impl Error for InvalidToolInstanceId {}
 pub enum ToolSetup {
     Meters(MetersSetup),
     Powers(PowersSetup),
+    Scopes(ScopesSetup),
     Empty(EmptySetup),
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -72,14 +75,20 @@ impl ToolInstance {
     pub fn meters_setup(&self) -> Option<&MetersSetup> {
         match &self.setup {
             ToolSetup::Meters(setup) => Some(setup),
-            ToolSetup::Powers(_) | ToolSetup::Empty(_) => None,
+            ToolSetup::Powers(_) | ToolSetup::Scopes(_) | ToolSetup::Empty(_) => None,
         }
     }
 
     pub fn powers_setup(&self) -> Option<&PowersSetup> {
         match &self.setup {
             ToolSetup::Powers(setup) => Some(setup),
-            ToolSetup::Meters(_) | ToolSetup::Empty(_) => None,
+            ToolSetup::Meters(_) | ToolSetup::Scopes(_) | ToolSetup::Empty(_) => None,
+        }
+    }
+    pub fn scopes_setup(&self) -> Option<&ScopesSetup> {
+        match &self.setup {
+            ToolSetup::Scopes(setup) => Some(setup),
+            _ => None,
         }
     }
 }

@@ -78,8 +78,7 @@ window 開啟 bundled offline Desktop User Guide。</p>
 目前 target。Workflow 或 manual external operation 執行期間 selector 會鎖定。
 Execution Mode 只屬於 session state，不會保存到 Template 或 local configuration。</p>
 <p>Meters、Powers、Scopes 與 Wavegen instances 都會顯示此 badge。Badge 不代表新增
-runtime 支援；即使 external project 本身提供 simulator，Orchestrator 目前仍不支援
-Scopes 與 Wavegen Workflow actions。</p>
+Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。</p>
 <h2 id="4-設定-external-tools">4. 設定 external Tools</h2>
 <p>Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。</p>
@@ -143,7 +142,7 @@ capability database。Simulation 會使用 meter simulator profile 的 capabilit
 configuration，不會隨 Template 攜帶。可選的 last-known identity information
 也保存在 local state 中供 UI 顯示；這些 cached identity 資訊不代表目前的
 connection state 已被即時確認。</p>
-<p>目前 Desktop 支援 <strong>Meters</strong> 與 <strong>Powers</strong> 的 resource discovery。不要把
+<p>目前 Desktop 支援 <strong>Meters</strong>、<strong>Powers</strong> 與 <strong>Scopes</strong> 的 resource discovery。不要把
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
 列出可用 resources、選擇 resource、<strong>Save Resource</strong> 或 <strong>Clear Resource</strong>。</p>
 <p>Live Resource 永遠代表 machine-local real hardware。Simulation 不要求也不使用
@@ -225,6 +224,17 @@ protection latch，之後重新讀取完整 status。Clear Protection 不會修�
 <p>Workflow 或另一個 manual external operation 執行期間，Refresh Status 與 Clear
 Protection 都不可使用。若該型號不支援 remote clear，請從儀器 front panel
 清除 protection latch，再使用 <strong>Refresh Status</strong>。</p>
+<h3 id="55-scopes-setup">5.5 Scopes Setup</h3>
+<p>Scopes Setup 為選用設定。新的 instance 所有欄位都是 <strong>Unchanged</strong>。
+Acquisition Type 可選 Normal、Average、High Resolution 或 Peak；只有選擇 Average
+時才能編輯 Average Count。各通道列提供 Input Coupling、Probe Ratio、Bandwidth
+Limit、Waveform Invert 與 Channel Units。只保存及套用明確指定的值；留白或選擇
+Unchanged 不會送出設定命令。</p>
+<p>控制項使用 Scopes 提供的離線 capabilities。Simulation 使用 Scopes 預設的
+Keysight DSOX4024A profile；Live 使用所選 Resource 一起保存的 canonical model ID。
+資訊未知或不可取得時，會停用新的設定並顯示原因。不支援的欄位仍顯示但反灰；
+切換型號會保留既有值。實際型號支援與儀器限制仍由 Scopes 在 Workflow 前套用
+Setup 時驗證。Setup 失敗會停止 Workflow，並指出 instance／channel。</p>
 <h2 id="6-workflow-editor">6. Workflow Editor</h2>
 <p>Workflow editor 用來建立有順序的 steps。目前的 step types 是：</p>
 <ul>
@@ -237,7 +247,7 @@ Protection 都不可使用。若該型號不支援 remote clear，請從儀器 f
 <li><strong>For</strong> — 依 exact decimal range 重複執行 body。</li>
 <li><strong>While</strong> — 在 condition 為 true 時重複執行 body。</li>
 </ul>
-<p>在 <strong>Steps</strong> panel 點擊 <strong>Workflow</strong>、<strong>Powers</strong> 或 <strong>Meters</strong> 標題，可獨立展開
+<p>在 <strong>Steps</strong> panel 點擊 <strong>Workflow</strong>、<strong>Powers</strong>、<strong>Meters</strong> 或 <strong>Scopes</strong> 標題，可獨立展開
 或收合該分類。展開時顯示 <strong>−</strong>；收合時顯示 <strong>+</strong> 並隱藏該分類的 step buttons。
 App 開啟時三區預設全部展開；此狀態不會保存於 Template。</p>
 <p>Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
@@ -420,6 +430,20 @@ Double: 6000
 </code></pre>
 <p>因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
 目前的 iteration，不會取用上一輪的值。</p>
+<h3 id="67-scopes-actions-與-file-output">6.7 Scopes actions 與 File Output</h3>
+<p>Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
+Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。數值欄位沿用
+Literal、Variable、Step Output 與 Expression bindings。Measure 的 Value、Unit、
+Channel 與 Item 可供 Output 或 Assert 使用。Measurement Item 使用 <code>vpp</code>、<code>vavg</code>、
+<code>frequency</code> 或 <code>period</code> 等 canonical 名稱；型號支援由 Scopes 驗證。Capture Channels
+以逗號分隔；Points 必須是 Scopes 支援的數量（目前為 1000、5000 或 10000）。
+Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。</p>
+<p>展開左側 Workflow 的 <strong>Scopes File Output</strong>。<strong>Select Folder</strong> 選擇 Capture 與
+Screenshot 共用的資料夾；<strong>Use Default</strong> 回到 <strong>Orchestrator application folder / data</strong>。
+此選擇只屬於本機 runtime state，不保存至 Template。Capture 產生 CSV 與 metadata
+JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop iteration 與後續 run，
+都會取得新的絕對檔案路徑，不覆蓋既有檔案。Job 失敗或缺少必要檔案會使 step 失敗。
+此區塊與匯出 Workflow Output rows 的 CSV Export 分開。</p>
 <h2 id="7-run-simulation">7. Run Simulation</h2>
 <p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
@@ -443,8 +467,9 @@ Live hardware validation。前述 Unlimited While 加上 Meters Measure 的限�
 <p>請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 resource
 仍與確認時完全相同。Resource 改變或重複使用會使 Live execution 被拒絕，並要求
 重新確認。</p>
-<p>目前支援 Live 的 external tools 是 Powers 與 Meters。Unsupported Tool Type 會
-直接回報 error；目前 Desktop 不保證 Scopes 或 Wavegen 的 runtime execution。</p>
+<p>目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Scopes 需要已保存的
+canonical model ID，並使用原樣保存的 Resource；未知 identity 不會被替換成其他型號。
+Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。</p>
 <h3 id="81-powers-actions-與-cleanup">8.1 Powers actions 與 cleanup</h3>
 <p>Powers Live actions 包括設定值，以及 <code>output-on</code> 與 <code>output-off</code> actions。Live
 Powers write authorization 只存在於該次 Live run 的 runtime。</p>

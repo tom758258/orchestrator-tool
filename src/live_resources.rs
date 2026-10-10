@@ -71,6 +71,15 @@ pub fn list_live_resources(
         CaptureError::Timeout => format!("{tool} resource discovery timed out after 60 seconds"),
     })?;
     if !output.status.success() {
+        if tool == &ToolId::scopes() {
+            let detail =
+                crate::adapters::scopes::cli_error_detail("list-resources", &output.stdout)
+                    .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr).trim().to_owned());
+            return Err(format!(
+                "scopes resource discovery failed with {}: {detail}",
+                output.status
+            ));
+        }
         if tool == &ToolId::powers() {
             let detail = powers_error_detail(&output.stdout).or_else(|| {
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -92,7 +101,7 @@ pub fn list_live_resources(
 
 fn resource_field(tool: &ToolId) -> Result<&'static str, String> {
     match tool.as_str() {
-        "meters" => Ok("resource"),
+        "meters" | "scopes" => Ok("resource"),
         "powers" => Ok("name"),
         _ => Err(format!("{tool} live resource discovery is not supported")),
     }
@@ -107,7 +116,7 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandi
     if response["schema_version"].as_u64() != Some(2) {
         return Err(unexpected());
     }
-    // Meters uses a discovery event; Powers uses its CLI success envelope.
+    // Meters uses a discovery event; Powers and Scopes use CLI envelopes.
     let resources = if tool == &ToolId::meters() {
         if response["event"] != "list-resources"
             || response["live_only"] != true
@@ -116,6 +125,14 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandi
             return Err(unexpected());
         }
         &response["resources"]
+    } else if tool == &ToolId::scopes() {
+        if response["ok"] != true
+            || response["command"] != "list-resources"
+            || response["result"]["live_only"] != true
+        {
+            return Err(unexpected());
+        }
+        &response["result"]["live_resources"]
     } else {
         if response["ok"] != true
             || response["status"] != "ok"
@@ -157,7 +174,13 @@ fn parse_resources(tool: &ToolId, stdout: &[u8]) -> Result<Vec<LiveResourceCandi
                     .as_str()
                     .filter(|value| !value.trim().is_empty())
                     .map(str::to_owned);
-                candidate.manufacturer = idn["manufacturer"].as_str().map(str::to_owned);
+                candidate.manufacturer = idn[if tool == &ToolId::scopes() {
+                    "vendor"
+                } else {
+                    "manufacturer"
+                }]
+                .as_str()
+                .map(str::to_owned);
                 candidate.model = idn["model"].as_str().map(str::to_owned);
                 candidate.serial = idn["serial"].as_str().map(str::to_owned);
                 candidate.identity = idn["raw"].as_str().map(str::to_owned);
@@ -396,16 +419,29 @@ mod tests {
 
     #[test]
     fn unsupported_tools_are_rejected_before_inspection() {
-        for tool in [
-            ToolId::scopes(),
-            ToolId::wavegen(),
-            ToolId::new("unknown").unwrap(),
-        ] {
+        for tool in [ToolId::wavegen(), ToolId::new("unknown").unwrap()] {
             assert!(
                 list_live_resources(Path::new("unused"), &Config::default(), &tool)
                     .unwrap_err()
                     .contains("not supported")
             );
         }
+    }
+    #[test]
+    fn scopes_discovery_preserves_opaque_resources_and_unknown_models() {
+        let value = serde_json::json!({"schema_version":2,"ok":true,"command":"list-resources",
+            "result":{"live_only":true,"live_resources":[
+                {"resource":"vendor::Opaque/Case","model_id":"tektronix-tds2024b",
+                    "idn":{"vendor":"TEKTRONIX","model":"TDS2024B","serial":"123","raw":"TEKTRONIX,TDS2024B,123,1"}},
+                {"resource":"unknown::Exact","model_id":null,"idn":{"model":"Unknown"}}]}});
+        let rows = parse_resources(&ToolId::scopes(), value.to_string().as_bytes()).unwrap();
+        assert_eq!(rows[0].resource, "vendor::Opaque/Case");
+        assert_eq!(rows[0].manufacturer.as_deref(), Some("TEKTRONIX"));
+        assert_eq!(rows[0].model_id.as_deref(), Some("tektronix-tds2024b"));
+        assert_eq!(rows[1].model_id, None);
+        assert_eq!(rows[1].resource, "unknown::Exact");
+        let mut invalid = value;
+        invalid["ok"] = serde_json::json!(false);
+        assert!(parse_resources(&ToolId::scopes(), invalid.to_string().as_bytes()).is_err());
     }
 }

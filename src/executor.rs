@@ -1,7 +1,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
-    fmt, thread,
+    fmt,
+    path::Path,
+    thread,
     time::Duration,
 };
 
@@ -42,7 +44,7 @@ impl Error for WorkflowExecutionError {}
 /// Executes root steps and loop bodies sequentially with fail-fast semantics.
 ///
 /// `sessions` must contain already-started `WorkerSession` references for
-/// referenced Powers and Meters instances. The executor does not start or shut down workers.
+/// referenced Powers, Meters and Scopes instances. The executor does not start or shut down workers.
 pub fn execute_workflow(
     template: &Template,
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
@@ -88,6 +90,7 @@ pub fn execute_workflow_with_loop_stop(
         &mut on_event,
         &mut should_stop_after_iteration,
         true,
+        None,
     )?;
     Ok(WorkflowRunResult::new(
         execution.executions.expect("retained executions"),
@@ -104,6 +107,27 @@ pub fn execute_workflow_streaming_with_loop_stop(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
+    on_event: impl FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunSummary, WorkflowExecutionError> {
+    execute_workflow_streaming_with_loop_stop_and_scopes_output(
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        None,
+        on_event,
+        should_stop_after_iteration,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_workflow_streaming_with_loop_stop_and_scopes_output(
+    template: &Template,
+    sessions: &HashMap<ToolInstanceId, &WorkerSession>,
+    execution_mode: ExecutionMode,
+    action_timeout: Duration,
+    scopes_output_folder: Option<&Path>,
     mut on_event: impl FnMut(WorkflowRunEvent),
     mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunSummary, WorkflowExecutionError> {
@@ -115,10 +139,12 @@ pub fn execute_workflow_streaming_with_loop_stop(
         &mut on_event,
         &mut should_stop_after_iteration,
         false,
+        scopes_output_folder,
     )?;
     Ok(WorkflowRunSummary::new(execution.failure))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_workflow_internal(
     template: &Template,
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
@@ -127,6 +153,7 @@ fn execute_workflow_internal(
     on_event: &mut dyn FnMut(WorkflowRunEvent),
     should_stop_after_iteration: &mut dyn FnMut(&StepId) -> bool,
     retain_results: bool,
+    scopes_output_folder: Option<&Path>,
 ) -> Result<ExecutionResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
@@ -138,6 +165,7 @@ fn execute_workflow_internal(
         sessions,
         execution_mode,
         action_timeout,
+        scopes_output_folder,
         on_event,
         should_stop: should_stop_after_iteration,
         data: DataContext::new(),
@@ -170,6 +198,7 @@ struct Execution<'a> {
     sessions: &'a HashMap<ToolInstanceId, &'a WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
+    scopes_output_folder: Option<&'a Path>,
     on_event: &'a mut dyn FnMut(WorkflowRunEvent),
     should_stop: &'a mut dyn FnMut(&StepId) -> bool,
     data: DataContext,
@@ -211,6 +240,7 @@ impl Execution<'_> {
                         self.sessions,
                         self.execution_mode,
                         self.action_timeout,
+                        self.scopes_output_folder,
                     ),
                     None,
                 ),
@@ -410,6 +440,7 @@ fn clear_body_step_outputs(body: &[Step], data_context: &mut DataContext) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_non_loop_step(
     step: &Step,
     template: &Template,
@@ -417,6 +448,7 @@ fn execute_non_loop_step(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     action_timeout: Duration,
+    scopes_output_folder: Option<&Path>,
 ) -> StepOutcome {
     match step.kind() {
         StepKind::Assert { condition, message } => {
@@ -497,6 +529,7 @@ fn execute_non_loop_step(
                 sessions,
                 execution_mode,
                 action_timeout,
+                scopes_output_folder,
             ),
             Err(message) => StepOutcome::Failed { message },
         },
@@ -607,6 +640,7 @@ fn resolve_tool_arguments(
     Ok(arguments)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dispatch_tool_action(
     template: &Template,
     target: &ToolInstanceId,
@@ -615,6 +649,7 @@ fn dispatch_tool_action(
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
     timeout: Duration,
+    scopes_output_folder: Option<&Path>,
 ) -> StepOutcome {
     let Some(instance) = template
         .tool_instances()
@@ -629,7 +664,8 @@ fn dispatch_tool_action(
     let is_powers = tool == &ToolId::powers();
     let is_meters = tool == &ToolId::meters();
 
-    if !is_powers && !is_meters {
+    let is_scopes = tool == &ToolId::scopes();
+    if !is_powers && !is_meters && !is_scopes {
         return StepOutcome::Failed {
             message: format!("unsupported tool {tool}"),
         };
@@ -653,6 +689,17 @@ fn dispatch_tool_action(
             Err(error) => StepOutcome::Failed {
                 message: error.to_string(),
             },
+        }
+    } else if is_scopes {
+        match crate::adapters::scopes::run_action(
+            session,
+            action,
+            arguments,
+            scopes_output_folder,
+            timeout,
+        ) {
+            Ok(output) => StepOutcome::Succeeded { output },
+            Err(message) => StepOutcome::Failed { message },
         }
     } else {
         match crate::adapters::meters::run_action_with_setup(

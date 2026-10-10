@@ -1,3 +1,5 @@
+import { scopesChannelNumbers, updateScopesAcquisition, updateScopesChannel } from './scopesSetup'
+import type { ScopesCapabilities, ScopesSetup, ScopesChannel } from './scopesSetup'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ReactNode } from 'react'
@@ -24,7 +26,8 @@ export type MetersSetup = {
 export type ToolInstance =
   | { id: string; tool: 'meters'; setup: MetersSetup }
   | { id: string; tool: 'powers'; setup: PowersSetup }
-  | { id: string; tool: 'scopes' | 'wavegen'; setup: Record<string, never> }
+  | { id: string; tool: 'scopes'; setup: ScopesSetup }
+  | { id: string; tool: 'wavegen'; setup: Record<string, never> }
 
 export type PowersProtectionChannel = {
   channel: number
@@ -492,9 +495,93 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   </div>
 }
 
+function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExecutableKey }: {
+  value: ScopesSetup; onChange: (value: ScopesSetup) => void
+  modelId: string | null | undefined; executionMode: ExecutionMode; scopesExecutableKey: string
+}) {
+  const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
+  const key = JSON.stringify([executionMode, modelId, scopesExecutableKey])
+  useEffect(() => {
+    if (executionMode === 'live' && !modelId) return
+    let cancelled = false
+    invoke<ScopesCapabilities>('get_scopes_capabilities', { modelId, executionMode }).then(
+      value => { if (!cancelled) setLoaded({ key, value }) },
+      error => { if (!cancelled) setLoaded({ key, value: null, error: String(error) }) },
+    )
+    return () => { cancelled = true }
+  }, [executionMode, modelId, scopesExecutableKey, key])
+  const caps = loaded?.key === key ? loaded.value : null
+  const acquisition = value.acquisition ?? {}
+  const modes = caps?.acquisition_modes ?? []
+  const counts = caps?.average_counts ?? []
+  const [countDraft, setCountDraft] = useState<string | null>(null)
+  useEffect(() => { setCountDraft(null) }, [value.acquisition?.average_count])
+  const unsupportedMode = acquisition.acquisition_type !== undefined && !modes.includes(acquisition.acquisition_type)
+  const unsupportedCount = acquisition.average_count !== undefined && !counts.includes(acquisition.average_count)
+  return <div className="powers-protection-fields">
+    <h4 className="powers-section-heading">Acquisition Setup</h4>
+    <p className="tool-setup-hint">Only changed values are stored. Unchanged leaves the instrument setting unchanged.</p>
+    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline Scopes capabilities...</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !caps && <p className="tool-setup-hint">Capability unavailable: {loaded.error}</p>}
+    <div className="meters-setup-fields">
+      <label>Acquisition Type<select aria-label="Acquisition Type" value={acquisition.acquisition_type ?? ''}
+        disabled={modes.length === 0} onChange={event => {
+          const acquisition_type = (event.target.value || undefined) as typeof acquisition.acquisition_type
+          onChange(updateScopesAcquisition(value, { acquisition_type,
+            average_count: acquisition_type === 'average' ? acquisition.average_count : undefined }))
+        }}>
+        <option value="">Unchanged</option>
+        {(['normal', 'average', 'high_resolution', 'peak'] as const).map(mode =>
+          <option key={mode} value={mode} disabled={!modes.includes(mode)}>{mode.replace('_', ' ')}</option>)}
+      </select></label>
+      {unsupportedMode && <p className="tool-setup-hint">Unsupported by the current model; existing Acquisition Type preserved.</p>}
+      {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">Acquisition capability information is unavailable.</p>}
+      <label>Average Count<input aria-label="Average Count" type="number" step={1} min={counts[0]} max={counts.at(-1)} placeholder="Unchanged"
+        value={countDraft ?? acquisition.average_count ?? ''} disabled={acquisition.acquisition_type !== 'average' || !modes.includes('average') || counts.length === 0}
+        onChange={event => {
+          setCountDraft(event.target.value)
+          const average_count = event.target.value === '' ? undefined : Number(event.target.value)
+          if (average_count === undefined || counts.includes(average_count)) onChange(updateScopesAcquisition(value, { ...acquisition, average_count }))
+        }} onBlur={() => setCountDraft(null)} /></label>
+      {counts.length > 0 && <p className="tool-setup-hint">Supported counts: {counts.length <= 16 ? counts.join(', ') : `${counts[0]}–${counts.at(-1)} (${counts.length} supported integers)`}.</p>}
+      {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
+    </div>
+    <h4 className="powers-section-heading">Channel Configuration</h4>
+    <div className="powers-table-scroll"><table className="powers-protection-table">
+      <thead><tr><th>Channel</th><th>Input Coupling</th><th>Probe Ratio</th><th>Bandwidth Limit</th><th>Waveform Invert</th><th>Channel Units</th></tr></thead>
+      <tbody>{scopesChannelNumbers(caps, value).map(channel => {
+        const record = value.channels?.find(item => item.channel === channel) ?? { channel }
+        const supported = caps !== null && channel <= caps.analog_channels
+        const select = (field: 'coupling' | 'bandwidth_limit' | 'invert' | 'units', label: string, options: [string, string][]) => <>
+          <select aria-label={`Channel ${channel} ${label}`} disabled={!supported}
+            value={record[field] === undefined ? '' : String(record[field])} onChange={event => {
+              const setting = event.target.value === '' ? undefined : ['bandwidth_limit', 'invert'].includes(field)
+                ? event.target.value === 'true' : event.target.value
+              onChange(updateScopesChannel(value, channel, field, setting as ScopesChannel[typeof field]))
+            }}><option value="">Unchanged</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          {!supported && record[field] !== undefined && <span className="tool-setup-hint">Unavailable; existing value preserved.</span>}
+        </>
+        return <tr key={channel}><th scope="row">{channel}{!supported && <span className="tool-setup-hint">Unavailable; existing settings preserved.</span>}</th>
+          <td>{select('coupling', 'Input Coupling', [['ac', 'AC'], ['dc', 'DC']])}</td>
+          <td><input aria-label={`Channel ${channel} Probe Ratio`} type="number" min={0} step="any" placeholder="Unchanged"
+            value={record.probe_ratio ?? ''} disabled={!supported} onChange={event => {
+              if (event.target.value === '' || Number.isFinite(Number(event.target.value)))
+                onChange(updateScopesChannel(value, channel, 'probe_ratio', event.target.value === '' ? undefined : Number(event.target.value)))
+            }} />{!supported && record.probe_ratio !== undefined && <span className="tool-setup-hint">Unavailable; existing value preserved.</span>}</td>
+          <td>{select('bandwidth_limit', 'Bandwidth Limit', [['true', 'On'], ['false', 'Off']])}</td>
+          <td>{select('invert', 'Waveform Invert', [['true', 'On'], ['false', 'Off']])}</td>
+          <td>{select('units', 'Channel Units', [['volt', 'Volt'], ['amp', 'Amp']])}</td>
+        </tr>
+      })}</tbody>
+    </table></div>
+  </div>
+}
+
 function setupSummary(instance: ToolInstance): string {
   const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
   if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? 'Protection Setup' : 'No protection settings configured'}`
+  if (instance.tool === 'scopes') return `${type} · ${instance.setup.acquisition ? 'Acquisition Setup' : 'Acquisition Unchanged'} · ${instance.setup.channels?.length ?? 0} configured channels`
   if (instance.tool !== 'meters') return `${type} · No additional setup`
   const meters = instance.setup
   const voltage = meters.measurement === 'voltage-dc'
@@ -505,13 +592,14 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey }: {
+export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   configuredToolTypes: ToolInstance['tool'][]
   resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
   executionMode: ExecutionMode
   metersExecutableKey: string
   powersExecutableKey: string
+  scopesExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
@@ -583,6 +671,10 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                   executionMode={executionMode}
                   powersExecutableKey={powersExecutableKey}
                   onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
+              : instance.tool === 'scopes'
+                ? <ScopesSetupFields value={instance.setup} onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}
+                    modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
+                    executionMode={executionMode} scopesExecutableKey={scopesExecutableKey} />
               : <>
                   <p>No additional setup</p>
                   <p className="tool-setup-hint">{executionMode === 'simulate'

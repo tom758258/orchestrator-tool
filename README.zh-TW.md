@@ -13,7 +13,7 @@ Wavegen 等 external tools 仍是獨立專案與獨立 distribution。
 - 建立包含 Tool Setup 與有順序 Workflow 的 reusable Template。
 - 執行包含 Tool Action、Expression、Output、Output Page、For 與 While
   的 sequential workflow。
-- 以 Simulation 或 Live mode 執行目前支援的 Powers 與 Meters workflow。
+- 以 Simulation 或 Live mode 執行目前支援的 Powers、Meters 與 Scopes workflow。
 - 在 Desktop 中檢視 committed results、progress、Output Page、chart 與
   export；run 結束後，failed/incomplete run 已 committed 的資料也可作為 partial
   results 匯出。

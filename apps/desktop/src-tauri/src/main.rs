@@ -25,7 +25,7 @@ use orchestrator_tool::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
     },
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, run_workflow_streaming_with_loop_stop},
+    run::{ExecutionMode, run_workflow_streaming_with_loop_stop_and_scopes_output},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::Template,
@@ -317,6 +317,26 @@ async fn get_powers_capabilities(
 }
 
 #[tauri::command]
+async fn get_scopes_capabilities(
+    app: AppHandle,
+    model_id: Option<String>,
+    execution_mode: ExecutionMode,
+) -> Result<orchestrator_tool::adapters::scopes::ScopesCapabilities, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::adapters::scopes::get_capabilities_for_mode(
+            &application_dir,
+            &config,
+            execution_mode,
+            model_id.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn get_meters_range_options(
     app: AppHandle,
     model: Option<String>,
@@ -451,6 +471,7 @@ async fn run_workflow_simulation(
     template_json: String,
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
+    scopes_output_folder: Option<String>,
 ) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
     let runs = runs.inner().clone();
@@ -479,13 +500,14 @@ async fn run_workflow_simulation(
                 },
                 |event| batcher.push(&event),
                 |on_event| {
-                    run_workflow_streaming_with_loop_stop(
+                    run_workflow_streaming_with_loop_stop_and_scopes_output(
                         &template,
                         ExecutionMode::Simulate,
                         &launch_specs,
                         RUN_STARTUP_TIMEOUT,
                         RUN_ACTION_TIMEOUT,
                         RUN_SHUTDOWN_TIMEOUT,
+                        scopes_output_folder.as_deref().map(Path::new),
                         on_event,
                         |step_id| consume_loop_stop(&control, step_id),
                     )
@@ -513,6 +535,7 @@ async fn run_workflow_simulation(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn run_workflow_live(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
@@ -521,6 +544,7 @@ async fn run_workflow_live(
     confirmed_resources: HashMap<String, String>,
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
+    scopes_output_folder: Option<String>,
 ) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
     let runs = runs.inner().clone();
@@ -562,13 +586,14 @@ async fn run_workflow_live(
                 },
                 |event| batcher.push(&event),
                 |on_event| {
-                    run_workflow_streaming_with_loop_stop(
+                    run_workflow_streaming_with_loop_stop_and_scopes_output(
                         &template,
                         ExecutionMode::Live,
                         &launch_specs,
                         RUN_STARTUP_TIMEOUT,
                         RUN_ACTION_TIMEOUT,
                         RUN_SHUTDOWN_TIMEOUT,
+                        scopes_output_folder.as_deref().map(Path::new),
                         on_event,
                         |step_id| consume_loop_stop(&control, step_id),
                     )
@@ -1146,6 +1171,7 @@ fn main() {
             list_live_resources,
             get_meters_capabilities,
             get_powers_capabilities,
+            get_scopes_capabilities,
             refresh_powers_status,
             clear_powers_protection,
             get_meters_range_options,

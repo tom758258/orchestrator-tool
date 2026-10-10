@@ -61,9 +61,8 @@ while a Workflow or manual external operation is active. Execution Mode is
 session state; it is not saved in a Template or local configuration.
 
 Meters, Powers, Scopes, and Wavegen instances all show this badge. The badge
-does not add runtime support: Scopes and Wavegen Workflow actions remain
-unsupported by Orchestrator even when their external projects provide a
-simulator.
+does not add runtime support for Wavegen. Scopes supports the selected
+Workflow actions described below.
 
 ## 4. Configure external Tools
 
@@ -154,7 +153,7 @@ Desktop configuration. It is not carried in a Template. Optional last-known
 identity information is also stored locally for display; that cached identity
 is not a current connection check.
 
-The current Desktop supports resource discovery for **Meters** and **Powers**.
+The current Desktop supports resource discovery for **Meters**, **Powers**, and **Scopes**.
 Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, **Save Resource**, or
 **Clear Resource**.
@@ -268,6 +267,22 @@ manual external operation is active. If remote clear is unsupported for the mode
 clear the protection latch from the instrument front panel and then use
 **Refresh Status**.
 
+### 5.5 Scopes Setup
+
+Scopes Setup is optional. New instances start with all settings **Unchanged**.
+Choose Acquisition Type (Normal, Average, High Resolution, or Peak); Average
+Count is editable only with Average. Channel rows provide Input Coupling,
+Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit
+settings are saved and applied. Blank values and Unchanged send no commands.
+
+The controls use offline Scopes capabilities. Simulation uses Scopes' default
+Keysight DSOX4024A profile. Live uses the canonical model ID saved with the
+selected Resource. Unknown or unavailable capability information disables new
+settings with an explanation. Unsupported fields remain visible and disabled;
+changing models preserves existing settings. Scopes validates actual model
+support and instrument limits when applying Setup, before any Workflow step.
+A Setup failure stops the Workflow and identifies the instance/channel.
+
 ## 6. Workflow Editor
 
 The Workflow editor builds an ordered sequence of steps. The current step
@@ -283,7 +298,7 @@ types are:
 - **For** — repeat a body over an exact decimal range.
 - **While** — repeat a body while a condition remains true.
 
-In the **Steps** panel, click the **Workflow**, **Powers**, or **Meters** header
+In the **Steps** panel, click the **Workflow**, **Powers**, **Meters**, or **Scopes** header
 to expand or collapse that category independently. Expanded categories show
 **−**; collapsed categories show **+** and hide their step buttons. All three
 start expanded when the app opens. This state is not saved in Templates.
@@ -496,6 +511,26 @@ Double: 6000
 Because the fields are resolved when the step runs, a Show Message inside a For
 or While loop always reports the current iteration, never a previous one.
 
+### 6.7 Scopes actions and File Output
+
+The Scopes group offers Channel Display, Channel Scale, Channel Offset,
+Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, and
+Screenshot. Numeric inputs reuse Literal, Variable, Step Output, and Expression
+bindings. Measure exposes Value, Unit, Channel, and Item for Output or Assert.
+Use canonical measurement item names such as `vpp`, `vavg`, `frequency`, or
+`period`; Scopes validates model support. Capture Channels are a comma-separated
+list, and Points must be supported by Scopes (currently 1000, 5000, or 10000).
+A queued job counts as complete only after Scopes reports its terminal result.
+
+Expand **Scopes File Output** in the left Workflow panel. **Select Folder**
+chooses a folder shared by Capture and Screenshot; **Use Default** restores
+**Orchestrator application folder / data**. The choice is local runtime state
+and is never saved in a Template. Capture produces CSV and metadata JSON;
+Screenshot produces an image in the selected format. Every execution, including
+loop iterations and later runs, receives new absolute file paths. Existing
+files are not overwritten. Job failure or missing required files fails the step.
+This panel is separate from CSV Export of Workflow Output rows.
+
 ## 7. Run Simulation
 
 Before Simulation, configure every referenced external executable and ensure
@@ -528,9 +563,10 @@ hardware. The run validates that the resources are still exactly the ones
 confirmed. A changed resource or duplicate resource causes Live execution to
 be rejected and require a new confirmation.
 
-The currently supported Live external tools are Powers and Meters. An
-unsupported Tool Type is reported as an error; the Desktop does not currently
-promise Scopes or Wavegen runtime execution.
+The currently supported Live external tools are Powers, Meters, and Scopes.
+Scopes requires a saved canonical model ID and uses the exact saved Resource;
+unknown identities fail without a fallback. Wavegen runtime execution remains
+unsupported. Scopes Shutdown does not reset or restore instrument settings.
 
 ### 8.1 Powers actions and cleanup
 

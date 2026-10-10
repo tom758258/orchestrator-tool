@@ -1,3 +1,5 @@
+import ScopesActionEditor from './ScopesActionEditor'
+import { SCOPES_ACTIONS, scopesActionArguments, type ScopesAction } from './scopesActions'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
@@ -151,6 +153,7 @@ type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type StepPreset =
+  | `scope-${ScopesAction}`
   | 'for'
   | 'while'
   | 'assert'
@@ -173,6 +176,7 @@ type StepPresetOption = {
 }
 
 const STEP_PRESETS: StepPresetOption[] = [
+  ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
   { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
@@ -188,6 +192,7 @@ const STEP_PRESETS: StepPresetOption[] = [
 ]
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
+  ...Object.fromEntries(SCOPES_ACTIONS.map(([action, label]) => [`scopes/${action}`, label])),
   'powers/set-output': 'Power Set Output',
   'powers/protection-status': 'Power Protection Status',
   'powers/set-voltage': 'Power Set Voltage',
@@ -251,6 +256,10 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 }
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
+  if (preset.startsWith('scope-')) {
+    const action = preset.slice(6) as ScopesAction
+    return { type: 'tool-action', id, target, action, arguments: scopesActionArguments(action) }
+  }
   switch (preset) {
     case 'while':
       return { type: 'while', id, left: { source: 'literal', value: 0 }, operator: 'less-than', right: { source: 'literal', value: 1 }, max_iterations: 1000, steps: [] }
@@ -306,6 +315,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
       }
     case 'show-message':
       return { type: 'show-message', id, target: 'message-1', fields: [{ kind: 'text', text: '', newline: false }] }
+    default: throw new Error(`Unsupported preset ${preset}`)
   }
 }
 
@@ -460,6 +470,8 @@ function App() {
   const [selectedRunPage, setSelectedRunPage] = useState('Results')
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
+  const [scopesOutputFolder, setScopesOutputFolder] = useState<string | null>(null)
+  const [scopesOutputError, setScopesOutputError] = useState<string | null>(null)
   const [streamOutputFolder, setStreamOutputFolder] = useState<string | null>(null)
   const [streamOutputFolderError, setStreamOutputFolderError] = useState<string | null>(null)
   const [chartSaving, setChartSaving] = useState(false)
@@ -474,10 +486,11 @@ function App() {
   const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
   const [runChartFitData, setRunChartFitData] = useState(false)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
-    Workflow: true, Powers: true, Meters: true,
+    Workflow: true, Powers: true, Meters: true, Scopes: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [streamingExpanded, setStreamingExpanded] = useState(false)
+  const [scopesOutputExpanded, setScopesOutputExpanded] = useState(false)
   const [chartOptionsExpanded, setChartOptionsExpanded] = useState(false)
   const [chartSamplingExpanded, setChartSamplingExpanded] = useState(true)
   const [chartYAxisExpanded, setChartYAxisExpanded] = useState(true)
@@ -497,6 +510,8 @@ function App() {
   const metersTool = tools.find(tool => tool.tool_id === 'meters')
   const metersExecutableKey = JSON.stringify([metersTool?.source ?? null, metersTool?.path ?? null])
   const powersTool = tools.find(status => status.tool_id === 'powers')
+  const scopesTool = tools.find(tool => tool.tool_id === 'scopes')
+  const scopesExecutableKey = JSON.stringify([scopesTool?.source ?? null, scopesTool?.path ?? null])
   const powersExecutableKey = JSON.stringify([powersTool?.source ?? null, powersTool?.path ?? null])
   const [resourceIdentities, setResourceIdentities] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
@@ -1218,7 +1233,7 @@ function App() {
         allWorkflowSteps(workflowDraft.workflow.steps).some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
       const resources = referenced.map(instance => {
-        if (instance.tool !== 'powers' && instance.tool !== 'meters') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
+        if (instance.tool !== 'powers' && instance.tool !== 'meters' && instance.tool !== 'scopes') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
         const draftResource = resourceDrafts[instance.id]
         const persistedResource = bindings[instance.id]
         if ((draftResource?.trim() || persistedResource?.trim()) && draftResource !== persistedResource) {
@@ -1271,6 +1286,7 @@ function App() {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
         streamCsv: streamOptions,
+        scopesOutputFolder,
         confirmedResources,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
@@ -1291,7 +1307,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [scopesOutputFolder, resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1334,6 +1350,7 @@ function App() {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
         streamCsv: streamOptions,
+        scopesOutputFolder,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
@@ -1414,6 +1431,16 @@ function App() {
             : 'Workflow failed. No rows were streamed.'}</p>}
     </div>
   )
+
+  async function selectScopesOutputFolder() {
+    setScopesOutputError(null)
+    try {
+      const folder = await open({ directory: true, multiple: false, title: 'Select Scopes output folder' })
+      if (typeof folder === 'string') setScopesOutputFolder(folder)
+    } catch (message) {
+      setScopesOutputError('Could not select Scopes output folder: ' + String(message))
+    }
+  }
 
   async function selectOutputFolder() {
     setStreamOutputFolderError(null)
@@ -1768,6 +1795,7 @@ function App() {
                 resourceIdentities={resourceIdentities}
                 metersExecutableKey={metersExecutableKey}
                 powersExecutableKey={powersExecutableKey}
+                scopesExecutableKey={scopesExecutableKey}
                 steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while'))}
                 renderResource={instance => (
                   <>
@@ -1864,7 +1892,7 @@ function App() {
                         {executionMode === 'live' && <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>}
                       </div>
                     })()}
-                    {(instance.tool === 'powers' || instance.tool === 'meters') && (
+                    {(instance.tool === 'powers' || instance.tool === 'meters' || instance.tool === 'scopes') && (
                       <div className="live-resource">
                         <div className="live-device">
                           <strong>Live Device</strong>
@@ -2032,6 +2060,20 @@ function App() {
                         </section>
                       ))}
                     </div>
+                    </>}
+                  </section>
+                  <section className="streaming-panel" aria-labelledby="scopes-output-title">
+                    <h3 id="scopes-output-title"><button className="collapsible-header" type="button"
+                      aria-expanded={scopesOutputExpanded} onClick={() => setScopesOutputExpanded(value => !value)}>
+                      Scopes File Output<span aria-hidden="true">{scopesOutputExpanded ? '−' : '+'}</span>
+                    </button></h3>
+                    {scopesOutputExpanded && <>
+                      <p className="tool-setup-hint">Capture CSV, metadata and screenshots use this folder. Each execution creates new files.</p>
+                      <span className="streaming-destination">{scopesOutputFolder ?? 'Default: Orchestrator application folder / data'}</span>
+                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectScopesOutputFolder()}>Select Folder</button>
+                      <button className="action-button" type="button" disabled={workflowBusy || scopesOutputFolder === null}
+                        onClick={() => { setScopesOutputFolder(null); setScopesOutputError(null) }}>Use Default</button>
+                      {scopesOutputError && <p role="alert">{scopesOutputError}</p>}
                     </>}
                   </section>
                   <section className="streaming-panel" aria-labelledby="streaming-panel-title">
@@ -2390,6 +2432,12 @@ function App() {
                         />
                       )}
 
+                      {selectedToolAction && selectedAction?.startsWith('scopes/') && (
+                        <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
+                          earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
+                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                          onChange={next => updateStep(selectedToolAction.id, () => next)} />
+                      )}
                       {selectedToolAction && selectedPowersAction && (
                         <label className="step-property-field">
                           <span className="step-property-label">Channel</span>
@@ -2480,7 +2528,8 @@ function App() {
                       {selectedToolAction &&
                         !selectedPowersAction &&
                         selectedAction !== 'powers/protection-status' &&
-                        selectedAction !== 'meters/measure' && (
+                        selectedAction !== 'meters/measure' &&
+                        !selectedAction?.startsWith('scopes/') && (
                           <p className="step-properties-empty">
                             No editable properties are available for this step.
                           </p>

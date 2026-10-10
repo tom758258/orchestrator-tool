@@ -17,6 +17,7 @@ pub mod powers_setup;
 pub mod process;
 pub mod run;
 pub mod run_preparation;
+pub mod scopes_setup;
 pub mod status;
 pub mod template;
 pub mod tool;

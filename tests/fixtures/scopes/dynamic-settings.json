@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "name": "Scopes dynamic settings",
+  "tool_instances": [
+    {
+      "id": "scope",
+      "tool": "scopes",
+      "setup": {}
+    }
+  ],
+  "workflow": {
+    "steps": [
+      {
+        "type": "set-variable",
+        "id": "set-scale",
+        "variable": "scale",
+        "value": {
+          "source": "literal",
+          "value": 0.5
+        }
+      },
+      {
+        "type": "set-variable",
+        "id": "set-channel",
+        "variable": "channel",
+        "value": {
+          "source": "literal",
+          "value": 1
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "display",
+        "target": "scope",
+        "action": "channel-display",
+        "arguments": {
+          "on": true
+        },
+        "bindings": {
+          "channel": {
+            "source": "variable",
+            "variable": "channel"
+          }
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "scale",
+        "target": "scope",
+        "action": "channel-scale",
+        "arguments": {},
+        "bindings": {
+          "volts_per_division": {
+            "source": "variable",
+            "variable": "scale"
+          },
+          "channel": {
+            "source": "variable",
+            "variable": "channel"
+          }
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "offset",
+        "target": "scope",
+        "action": "channel-offset",
+        "arguments": {
+          "volts": 0.1
+        },
+        "bindings": {
+          "channel": {
+            "source": "variable",
+            "variable": "channel"
+          }
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "time-scale",
+        "target": "scope",
+        "action": "timebase-scale",
+        "arguments": {},
+        "bindings": {
+          "seconds_per_division": {
+            "source": "variable",
+            "variable": "scale"
+          }
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "time-position",
+        "target": "scope",
+        "action": "timebase-position",
+        "arguments": {
+          "seconds": 0
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "trigger",
+        "target": "scope",
+        "action": "trigger-edge",
+        "arguments": {
+          "slope": "positive"
+        },
+        "bindings": {
+          "source_channel": {
+            "source": "variable",
+            "variable": "channel"
+          },
+          "level": {
+            "source": "variable",
+            "variable": "scale"
+          }
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "read",
+        "target": "scope",
+        "action": "measure",
+        "arguments": {
+          "channel": 1,
+          "item": "vpp"
+        }
+      },
+      {
+        "type": "output",
+        "id": "value",
+        "name": "Value",
+        "page": "Results",
+        "value": {
+          "source": "step-output",
+          "step_id": "read",
+          "pointer": "/value"
+        }
+      }
+    ]
+  }
+}

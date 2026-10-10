@@ -37,6 +37,7 @@ The Template does not contain:
 - machine-local executable paths;
 - machine-local Live Resources or last-known resource identity;
 - runtime StepExecution or ResultRow data;
+- Scopes File Output folders or generated artifact destinations;
 - Desktop output-write authorization; or
 - Powers safety-cleanup state.
 
@@ -115,8 +116,10 @@ Each Tool Instance has:
 The Tool Type selects the setup schema; setup fields do not determine the Tool
 Type. Meters uses MetersSetup. Powers uses an optional per-channel Protection
 Setup. Existing Powers instances with `"setup": {}` remain valid and serialize
-the same way. Scopes and Wavegen continue to use empty setup objects. The
-schema_version remains 1.
+the same way. Scopes uses optional acquisition/channel settings; an empty
+Scopes setup remains valid. Wavegen continues to use an empty setup object. The
+schema_version remains 1. See [Scopes integration](scopes-integration.md) for
+its setup shape, selected actions, and runtime file-output boundary.
 
 For example, a Powers instance may contain:
 
@@ -178,8 +181,8 @@ limit; meters-tool remains authoritative for per-field limits, model trigger
 support, reading-memory capacity, and overflow-risk validation. Meter
 measurement remains a runtime action; it does not configure the session.
 
-Declaring a Scopes or Wavegen instance does not imply that its runtime actions
-are supported.
+Declaring a Wavegen instance does not imply that its runtime actions are
+supported. Scopes supports the nine actions documented in its integration reference.
 
 ## Workflow steps
 

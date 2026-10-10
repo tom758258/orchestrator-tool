@@ -1,4 +1,6 @@
-use std::{collections::HashMap, error::Error, fmt, process::ExitStatus, time::Duration};
+use std::{
+    collections::HashMap, error::Error, fmt, path::Path, process::ExitStatus, time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +9,7 @@ use crate::{
         PowersActionError, apply_protection_setup, protection_status_all, safe_off_all,
     },
     executor::{
-        WorkflowExecutionError, execute_workflow_streaming_with_loop_stop,
+        WorkflowExecutionError, execute_workflow_streaming_with_loop_stop_and_scopes_output,
         execute_workflow_with_loop_stop,
     },
     template::Template,
@@ -103,6 +105,7 @@ pub fn run_workflow_with_loop_stop(
         on_event,
         should_stop_after_iteration,
         true,
+        None,
     )? {
         RunCompletion::Full(result) => Ok(result),
         RunCompletion::Streaming(_) => unreachable!(),
@@ -121,6 +124,31 @@ pub fn run_workflow_streaming_with_loop_stop(
     on_event: impl FnMut(WorkflowRunEvent),
     should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunSummary, WorkflowRunError> {
+    run_workflow_streaming_with_loop_stop_and_scopes_output(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        None,
+        on_event,
+        should_stop_after_iteration,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_workflow_streaming_with_loop_stop_and_scopes_output(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    scopes_output_folder: Option<&Path>,
+    on_event: impl FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunSummary, WorkflowRunError> {
     match run_workflow_internal(
         template,
         execution_mode,
@@ -131,6 +159,7 @@ pub fn run_workflow_streaming_with_loop_stop(
         on_event,
         should_stop_after_iteration,
         false,
+        scopes_output_folder,
     )? {
         RunCompletion::Streaming(summary) => Ok(summary),
         RunCompletion::Full(_) => unreachable!(),
@@ -165,11 +194,12 @@ fn run_workflow_internal(
     mut on_event: impl FnMut(WorkflowRunEvent),
     mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
     retain_results: bool,
+    scopes_output_folder: Option<&Path>,
 ) -> Result<RunCompletion, WorkflowRunError> {
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
-        .filter(|instance| matches!(instance.tool.as_str(), "powers" | "meters"))
+        .filter(|instance| matches!(instance.tool.as_str(), "powers" | "meters" | "scopes"))
         .map(|instance| instance.id.clone())
         .collect::<Vec<_>>();
     let referenced_specs = referenced_instances
@@ -212,6 +242,32 @@ fn run_workflow_internal(
     let setup_result =
         (|| -> Result<(), WorkflowRunError> {
             for (id, session) in &sessions {
+                if let Some(instance) = template
+                    .tool_instances()
+                    .iter()
+                    .find(|instance| instance.id == *id && instance.tool == ToolId::scopes())
+                {
+                    crate::adapters::scopes::validate_session(
+                        session,
+                        execution_mode,
+                        &launch_specs[id],
+                        action_timeout,
+                    )
+                    .and_then(|()| {
+                        crate::adapters::scopes::apply_setup(
+                            session,
+                            instance
+                                .scopes_setup()
+                                .unwrap_or(&crate::scopes_setup::ScopesSetup::default()),
+                            action_timeout,
+                        )
+                    })
+                    .map_err(|detail| WorkflowRunError::ScopesSetup {
+                        instance: id.clone(),
+                        detail,
+                    })?;
+                    continue;
+                }
                 let Some(protection) = template
                     .tool_instances()
                     .iter()
@@ -276,11 +332,12 @@ fn run_workflow_internal(
         )
         .map(RunCompletion::Full)
     } else {
-        execute_workflow_streaming_with_loop_stop(
+        execute_workflow_streaming_with_loop_stop_and_scopes_output(
             template,
             &session_refs,
             execution_mode,
             action_timeout,
+            scopes_output_folder,
             &mut on_event,
             &mut should_stop_after_iteration,
         )
@@ -394,6 +451,10 @@ fn shutdown_workers(
 /// Errors produced while managing a workflow run.
 #[derive(Debug)]
 pub enum WorkflowRunError {
+    ScopesSetup {
+        instance: ToolInstanceId,
+        detail: String,
+    },
     ProtectionSetup {
         instance: ToolInstanceId,
         detail: String,
@@ -424,6 +485,9 @@ pub enum WorkflowRunError {
 impl fmt::Display for WorkflowRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ScopesSetup { instance, detail } => {
+                write!(formatter, "{instance} Scopes Setup failed: {detail}")
+            }
             Self::ProtectionSetup { instance, detail } => write!(
                 formatter,
                 "{instance} Powers Protection Setup failed: {detail}"
@@ -466,7 +530,7 @@ impl fmt::Display for WorkflowRunError {
 impl Error for WorkflowRunError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::ProtectionSetup { .. } => None,
+            Self::ProtectionSetup { .. } | Self::ScopesSetup { .. } => None,
             Self::WorkerStartup { source, .. } => Some(source),
             Self::WorkflowExecution(source) => Some(source),
             Self::WorkerShutdown { source, .. } => Some(source),

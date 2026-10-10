@@ -92,6 +92,29 @@ impl WorkerClient {
         required_json_response_with_status(response)
     }
 
+    /// Preserves the structured admission rejection returned by a Worker.
+    pub(crate) fn command_with_rejection_timeout(
+        &self,
+        payload: &Value,
+        timeout: Duration,
+    ) -> Result<(u16, Value), WorkerHttpError> {
+        let mut response = self
+            .agent
+            .post(&self.command_url)
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
+            .send_json(payload)
+            .map_err(WorkerHttpError::Request)?;
+        let status = response.status().as_u16();
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .map_err(WorkerHttpError::Request)?;
+        let value = serde_json::from_str(&body).map_err(WorkerHttpError::InvalidJson)?;
+        Ok((status, value))
+    }
+
     fn status_response(&self) -> Result<(u16, Value), WorkerHttpError> {
         let response = self
             .agent

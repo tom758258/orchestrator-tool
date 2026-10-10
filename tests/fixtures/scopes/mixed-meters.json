@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "name": "Scopes and Meters",
+  "tool_instances": [
+    {
+      "id": "scope",
+      "tool": "scopes",
+      "setup": {}
+    },
+    {
+      "id": "meter",
+      "tool": "meters",
+      "setup": {
+        "measurement": "voltage-dc",
+        "range_mode": "auto",
+        "manual_range": null,
+        "nplc": 1,
+        "auto_zero": "on",
+        "dcv_input_impedance": null,
+        "current_terminal": null
+      }
+    }
+  ],
+  "workflow": {
+    "steps": [
+      {
+        "type": "tool-action",
+        "id": "scope-read",
+        "target": "scope",
+        "action": "measure",
+        "arguments": {
+          "channel": 1,
+          "item": "vpp"
+        }
+      },
+      {
+        "type": "tool-action",
+        "id": "meter-read",
+        "target": "meter",
+        "action": "measure",
+        "arguments": {}
+      },
+      {
+        "type": "output",
+        "id": "scope-value",
+        "name": "Scope Value",
+        "page": "Results",
+        "value": {
+          "source": "step-output",
+          "step_id": "scope-read",
+          "pointer": "/value"
+        }
+      },
+      {
+        "type": "output",
+        "id": "meter-value",
+        "name": "Meter Value",
+        "page": "Results",
+        "value": {
+          "source": "step-output",
+          "step_id": "meter-read",
+          "pointer": "/value"
+        }
+      }
+    ]
+  }
+}

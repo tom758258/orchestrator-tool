@@ -13,7 +13,7 @@ Powers, Scopes, and Wavegen remain separate projects and distributions.
 - Define reusable Templates containing Tool Setup and an ordered Workflow.
 - Execute sequential workflows with Tool Actions, expressions, Outputs,
   Output Pages, For, and While.
-- Run supported Powers and Meters workflows in Simulation or Live mode.
+- Run supported Powers, Meters, and Scopes workflows in Simulation or Live mode.
 - Inspect committed results, progress, Output Pages, charts, and exports in
   the Desktop application.
 - Discover configured external tools and run bounded Worker diagnostics from

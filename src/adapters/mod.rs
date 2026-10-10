@@ -2,3 +2,4 @@
 
 pub mod meters;
 pub mod powers;
+pub mod scopes;

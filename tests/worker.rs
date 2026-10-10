@@ -111,6 +111,18 @@ fn main() {
         return;
     }
 
+    if arguments.first().is_some_and(|arg| arg == "--scopes-tests") {
+        scopes_worker_protocol_cases();
+        scopes_setup_failure_stops_workflow();
+        powers_and_meters_workflow_executes_end_to_end();
+        powers_protection_setup_lifecycle();
+        partial_startup_failure_shuts_down_started_worker();
+        invalid_ready_protocol_is_rejected();
+        non_2xx_http_response_is_rejected();
+        println!("Scopes protocol/setup and directly affected regression checks passed (7 groups)");
+        return;
+    }
+
     valid_ready_starts_worker_session();
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
@@ -496,6 +508,10 @@ fn run_meters_worker_fixture() {
 }
 
 fn run_fixture(scenario: &OsStr) {
+    if let Some(name) = scenario.to_str().filter(|name| name.starts_with("scopes-")) {
+        run_scopes_fixture(name);
+        return;
+    }
     match scenario.to_str().expect("fixture scenario must be UTF-8") {
         "valid-ready" => {
             print_json_line("");
@@ -1283,6 +1299,7 @@ fn write_response(mut stream: TcpStream, status: u16, body: &str) {
     let reason = match status {
         200 => "OK",
         202 => "Accepted",
+        429 => "Too Many Requests",
         503 => "Service Unavailable",
         _ => unreachable!(),
     };
@@ -1307,6 +1324,136 @@ fn fixture_spec(scenario: &str) -> WorkerLaunchSpec {
         env::current_exe().unwrap(),
         [OsString::from(FIXTURE_ARGUMENT), OsString::from(scenario)],
     )
+}
+
+fn run_scopes_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "scopes-fixture";
+    print_json_line(
+        &json!({"schema_version":2,"event":"ready","run_id":run_id,
+        "status_url":format!("{base}/status"),"command_url":format!("{base}/command"),
+        "stop_url":format!("{base}/stop")})
+        .to_string(),
+    );
+    loop {
+        let request = accept_request(&listener);
+        match request.path.as_str() {
+            "/status" => write_response(request.stream, 200, &json!({"schema_version":2,
+                "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
+                "mode":"simulate","model":if scenario == "scopes-wrong-model" {"unknown"} else {"keysight-dsox4024a"},
+                "resource":null}).to_string()),
+            "/command" => {
+                let command: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(command["schema_version"], 2);
+                assert!(command.get("context").is_none());
+                if scenario == "scopes-setup-failed" {
+                    assert_eq!(command["command"], "channel-invert");
+                    assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
+                }
+                if scenario == "scopes-rejected" {
+                    write_response(request.stream, 429, &json!({"schema_version":2,"status":"rejected",
+                        "command":command["command"],"job_id":command["job_id"],"reason":"queue_full"}).to_string());
+                    continue;
+                }
+                write_response(request.stream, 202, &json!({"schema_version":2,"status":"accepted",
+                    "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":"job-1"}).to_string());
+                if scenario == "scopes-timeout" { continue; }
+                thread::sleep(Duration::from_millis(50));
+                let failed = scenario == "scopes-failed" || scenario == "scopes-setup-failed";
+                let cancelled = scenario == "scopes-cancelled";
+                print_json_line(&json!({"schema_version":2,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
+                    "command":command["command"],"job_id":command["job_id"],
+                    "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
+                    "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
+                    "ok":!failed && !cancelled,"exit_code":if failed || cancelled {3} else {0},
+                    "error":if failed || cancelled {json!({"message":"fixture failure"})} else {json!(null)},
+                    "result":{"value":3.3,"unit":"V"},"files":[]}).to_string());
+            }
+            "/stop" => { write_response(request.stream, 200, r#"{"ok":true}"#); return; }
+            other => panic!("unexpected Scopes request {other}"),
+        }
+    }
+}
+
+fn scopes_worker_protocol_cases() {
+    use orchestrator_tool::adapters::scopes;
+    for scenario in [
+        "scopes-success",
+        "scopes-rejected",
+        "scopes-failed",
+        "scopes-cancelled",
+        "scopes-mismatch",
+        "scopes-timeout",
+        "scopes-wrong-model",
+        "scopes-admission-mismatch",
+        "scopes-event-mismatch",
+    ] {
+        let spec = fixture_spec(scenario);
+        let session = start_worker(&spec, Duration::from_secs(5)).unwrap();
+        if scenario == "scopes-success" {
+            assert!(
+                scopes::validate_session(
+                    &session,
+                    ExecutionMode::Live,
+                    &spec,
+                    Duration::from_secs(2)
+                )
+                .unwrap_err()
+                .contains("canonical model ID is missing")
+            );
+        }
+        let identity = scopes::validate_session(
+            &session,
+            ExecutionMode::Simulate,
+            &spec,
+            Duration::from_secs(2),
+        );
+        if scenario == "scopes-wrong-model" {
+            assert!(identity.is_err());
+        } else {
+            identity.unwrap();
+            let started = Instant::now();
+            let outcome = scopes::run_action(
+                &session,
+                &ActionId::new("measure").unwrap(),
+                &json!({"channel":1,"item":"vpp"}),
+                None,
+                Duration::from_millis(300),
+            );
+            if scenario == "scopes-success" {
+                assert_eq!(outcome.unwrap()["value"], 3.3);
+                assert!(started.elapsed() >= Duration::from_millis(50));
+            } else {
+                let error = outcome.unwrap_err();
+                if scenario == "scopes-rejected" {
+                    assert!(error.contains("queue_full"), "{error}");
+                }
+            }
+        }
+        assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+    }
+}
+
+fn scopes_setup_failure_stops_workflow() {
+    let template = Template::from_json_str(&json!({"schema_version":1,"name":"Setup failure",
+        "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
+        "workflow":{"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
+            "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
+    let error = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("scope").unwrap(),
+            fixture_spec("scopes-setup-failed"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("scope Scopes Setup failed"), "{error}");
+    assert!(error.contains("channel 2"), "{error}");
 }
 
 fn valid_ready_starts_worker_session() {

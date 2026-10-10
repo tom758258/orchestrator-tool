@@ -71,6 +71,24 @@ const template = {
   workflow: { steps: [{ type: 'tool-action', id: 'power-off-1', target: 'powers-1', action: 'output-off', arguments: {} }] },
 }
 
+test('Scopes File Output selects and resets a runtime folder without editing Template', async () => {
+  const app = await toolsView([status('scopes'), status('powers')])
+  const before = structuredClone(app.render().find(node => node.type === 'ToolSetupEditor').props.value)
+  button(app.render(), 'Workflow').props.onClick()
+  button(app.render(), 'Scopes File Output+').props.onClick()
+  let panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  assert.ok(text(panel).includes('Default: Orchestrator application folder / data'))
+  app.pick('C:\\Scopes Output')
+  await button(elements(panel), 'Select Folder').props.onClick()
+  await settle()
+  panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  assert.ok(text(panel).includes('C:\\Scopes Output'))
+  button(elements(panel), 'Use Default').props.onClick()
+  panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  assert.ok(text(panel).includes('Default: Orchestrator application folder / data'))
+  assert.deepEqual(app.render().find(node => node.type === 'ToolSetupEditor').props.value, before)
+})
+
 async function toolsView(initial) {
   let statuses = initial
   let picked = null

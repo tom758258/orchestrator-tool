@@ -1,6 +1,6 @@
 //! Pre-run validation and per-instance Worker launch preparation.
 use crate::{
-    adapters::{meters, powers},
+    adapters::{meters, powers, scopes},
     config::Config,
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
@@ -9,6 +9,7 @@ use crate::{
     meters_setup::MetersTriggerMode,
     run::ExecutionMode,
     template::Template,
+    tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
     workflow::{Step, StepKind},
@@ -94,7 +95,7 @@ pub fn validate_confirmed_live_resources(
 ) -> Result<(), String> {
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters") {
+        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes") {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -151,7 +152,7 @@ pub fn prepare_worker_launch_specs(
     let mut launch_specs = HashMap::new();
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters") {
+        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes") {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -171,6 +172,20 @@ pub fn prepare_worker_launch_specs(
             }
         }
         validate_unique_live_resources(&instances, config)?;
+        for instance in &instances {
+            if instance.tool == ToolId::scopes()
+                && config
+                    .live_resource_identities()
+                    .get(instance.id.as_str())
+                    .and_then(|identity| identity.model_id.as_deref())
+                    .is_none_or(|id| id.trim().is_empty())
+            {
+                return Err(format!(
+                    "{} Scopes canonical model ID is missing; select or refresh the Live Resource",
+                    instance.id
+                ));
+            }
+        }
     }
 
     for instance in instances {
@@ -270,6 +285,17 @@ pub fn prepare_worker_launch_specs(
                     .expect("live resources were validated"),
                 meters_limit,
                 instance.meters_setup().expect("Meters setup was validated"),
+            ),
+            (ExecutionMode::Simulate, "scopes") => scopes::simulate_worker_launch_spec(executable),
+            (ExecutionMode::Live, "scopes") => scopes::live_worker_launch_spec(
+                executable,
+                config
+                    .live_resource(&instance.id)
+                    .expect("validated resource"),
+                config.live_resource_identities()[instance.id.as_str()]
+                    .model_id
+                    .as_deref()
+                    .expect("validated model"),
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
         };

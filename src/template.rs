@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::{
     meters_setup::{MetersSetup, MetersSetupError},
     powers_setup::{PowersSetup, PowersSetupError},
+    scopes_setup::{ScopesSetup, ScopesSetupError},
     tool::{InvalidToolId, ToolId},
     tool_instance::{EmptySetup, ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
@@ -246,6 +247,14 @@ impl Template {
                             source,
                         })?
                 }
+                ToolSetup::Scopes(setup) if instance.tool == ToolId::scopes() => {
+                    setup
+                        .validate()
+                        .map_err(|source| TemplateError::ScopesSetup {
+                            instance: instance.id.clone(),
+                            source,
+                        })?
+                }
                 ToolSetup::Empty(_)
                     if instance.tool != ToolId::meters() && instance.tool != ToolId::powers() => {}
                 _ => {
@@ -280,6 +289,40 @@ impl Template {
                 "unknown tool instance target {target}"
             )));
         }
+        fn validate_scopes_files(
+            steps: &[Step],
+            instances: &[ToolInstance],
+        ) -> Result<(), TemplateError> {
+            for step in steps {
+                match step.kind() {
+                    StepKind::ToolAction {
+                        target,
+                        action,
+                        arguments,
+                        bindings,
+                    } if matches!(action.as_str(), "capture" | "screenshot")
+                        && instances.iter().any(|instance| {
+                            &instance.id == target && instance.tool == ToolId::scopes()
+                        }) =>
+                    {
+                        for key in ["csv", "meta", "plot", "output", "query_hardcopy"] {
+                            if arguments.get(key).is_some() || bindings.contains_key(key) {
+                                return Err(TemplateError::Instance(format!(
+                                    "Scopes step {}: {key} is managed by Scopes File Output and cannot be saved in a Template",
+                                    step.id()
+                                )));
+                            }
+                        }
+                    }
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                        validate_scopes_files(body, instances)?
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
+        validate_scopes_files(workflow.steps(), &tool_instances)?;
         let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
         Ok(Self {
             name,
@@ -405,6 +448,11 @@ impl Template {
                 } else if tool == ToolId::powers() {
                     ToolSetup::Powers(
                         serde_json::from_value::<PowersSetup>(instance.setup)
+                            .map_err(|_| invalid_setup())?,
+                    )
+                } else if tool == ToolId::scopes() {
+                    ToolSetup::Scopes(
+                        serde_json::from_value::<ScopesSetup>(instance.setup)
                             .map_err(|_| invalid_setup())?,
                     )
                 } else {
@@ -729,6 +777,10 @@ pub enum TemplateError {
         instance: ToolInstanceId,
         source: MetersSetupError,
     },
+    ScopesSetup {
+        instance: ToolInstanceId,
+        source: ScopesSetupError,
+    },
     PowersSetup {
         instance: ToolInstanceId,
         source: PowersSetupError,
@@ -796,6 +848,9 @@ impl fmt::Display for TemplateError {
             Self::MetersSetup { instance, source } => {
                 write!(formatter, "{instance} Meters setup error: {source}")
             }
+            Self::ScopesSetup { instance, source } => {
+                write!(formatter, "{instance} Scopes setup error: {source}")
+            }
             Self::PowersSetup { instance, source } => {
                 write!(formatter, "{instance} Powers setup error: {source}")
             }
@@ -818,6 +873,7 @@ impl Error for TemplateError {
             Self::InvalidToolId { source, .. } => Some(source),
             Self::MetersSetup { source, .. } => Some(source),
             Self::PowersSetup { source, .. } => Some(source),
+            Self::ScopesSetup { source, .. } => Some(source),
             Self::Workflow(source) => Some(source),
         }
     }

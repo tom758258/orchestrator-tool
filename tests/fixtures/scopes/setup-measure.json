@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "name": "Scopes setup and measurement",
+  "tool_instances": [
+    {
+      "id": "scope",
+      "tool": "scopes",
+      "setup": {
+        "acquisition": {
+          "acquisition_type": "average",
+          "average_count": 16
+        },
+        "channels": [
+          {
+            "channel": 1,
+            "coupling": "dc",
+            "probe_ratio": 10,
+            "bandwidth_limit": true,
+            "invert": true,
+            "units": "amp"
+          },
+          {
+            "channel": 2,
+            "coupling": "ac",
+            "probe_ratio": 1,
+            "bandwidth_limit": false,
+            "invert": false,
+            "units": "volt"
+          }
+        ]
+      }
+    }
+  ],
+  "workflow": {
+    "steps": [
+      {
+        "type": "tool-action",
+        "id": "read",
+        "target": "scope",
+        "action": "measure",
+        "arguments": {
+          "channel": 1,
+          "item": "vpp"
+        }
+      },
+      {
+        "type": "output",
+        "id": "value",
+        "name": "Value",
+        "page": "Results",
+        "value": {
+          "source": "step-output",
+          "step_id": "read",
+          "pointer": "/value"
+        }
+      },
+      {
+        "type": "output",
+        "id": "unit",
+        "name": "Unit",
+        "page": "Results",
+        "value": {
+          "source": "step-output",
+          "step_id": "read",
+          "pointer": "/unit"
+        }
+      },
+      {
+        "type": "assert",
+        "id": "check-value",
+        "left": {
+          "source": "step-output",
+          "step_id": "read",
+          "pointer": "/value"
+        },
+        "operator": "greater-than",
+        "right": {
+          "source": "literal",
+          "value": 0
+        },
+        "message": "Scopes measurement must be positive"
+      }
+    ]
+  }
+}

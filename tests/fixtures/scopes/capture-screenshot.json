@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "name": "Scopes file output",
+  "tool_instances": [
+    {
+      "id": "scope",
+      "tool": "scopes",
+      "setup": {}
+    }
+  ],
+  "workflow": {
+    "steps": [
+      {
+        "type": "for",
+        "id": "repeat",
+        "variable": "i",
+        "range": {
+          "start": "1",
+          "stop": "2",
+          "step": "1"
+        },
+        "steps": [
+          {
+            "type": "tool-action",
+            "id": "capture",
+            "target": "scope",
+            "action": "capture",
+            "arguments": {
+              "channel": [
+                1,
+                2
+              ],
+              "points": 1000
+            }
+          },
+          {
+            "type": "tool-action",
+            "id": "screen",
+            "target": "scope",
+            "action": "screenshot",
+            "arguments": {
+              "format": "png"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

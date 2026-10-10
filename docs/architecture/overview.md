@@ -40,7 +40,7 @@ A run follows this high-level flow:
    compatibility, and builds a Worker launch specification for each referenced
    Tool Instance.
 4. Core starts the Workers and waits for validated Worker Ready information
-   before invoking the Executor.
+   before applying referenced Scopes Setup and invoking the Executor.
 5. The Executor evaluates the ordered workflow sequentially, including nested
    For and While bodies, and emits progress events as steps complete and rows
    commit.
