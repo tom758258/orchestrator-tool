@@ -576,8 +576,9 @@ Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with
 勾選狀態下執行 **Clear Last Run** 會保留 Chart 設定；一般未勾選的 session Charts
 則維持原本清除行為。
 
-此選項只保存 Chart definitions 與設定，不會保存 run data，也不保存目前互動操作產生的
-zoom／pan 位置。下方 Workflow 的 **Chart Options** 即使勾選本選項，仍然只屬於
+此選項只保存 Chart definitions 與設定，不會保存 run data、Run ID、目前互動操作產生的
+zoom／pan 位置、loading/error UI state、dialog state 或 export destination/path。
+下方 Workflow 的 **Chart Options** 即使勾選本選項，仍然只屬於
 session，不會寫入 Template。
 
 Chart Options 位於 Workflow 左側窄欄的 **CSV Export** 正下方。最外層
@@ -714,8 +715,14 @@ Export PNG 與 Remove 會停用。它們不會載入即時 chart data，executio
 就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
 新 run 的資料尚未可用時，Line 顯示 **Waiting for run data**，不顯示上一 run
 的 plot，也不載入 chart data；資料可用後才開始即時更新。
-**+ Add Chart** 仍建立 Line chart。**Open Template**、替換 workflow 與
-**Clear Last Run** 會清除 chart session state。Chart settings 不屬於 Template data。
+**+ Add Chart** 仍建立 Line chart。**Open Template** 會以該 Template 的 saved
+Charts 取代目前的 Chart configuration；若沒有 saved Charts，則不會還原 persisted
+Chart configuration，且 **Save charts with template** 為未勾選。開啟含 saved Charts
+的 Template 後，可直接 Run Simulation，以還原的 definitions 與設定顯示新結果，
+不需重新設定 Chart。建立新的 blank Template 會清除 Chart configuration。
+**Clear Last Run** 會清除 Last Run data；**Save charts with template** 未勾選時，
+也會清除 session Charts，勾選時則保留 Chart configuration。只有啟用
+**Save charts with template** 時，Chart settings 才會成為 Template data。
 
 ### 10.5 Data 與 Summary
 
@@ -763,14 +770,20 @@ Template 會保存：
 - Tool Instances
 - Tool setup
 - Workflow
+- 可選的 saved Chart definitions/settings，僅在 **Save charts with template**
+  啟用時保存
 
 Template 不會保存：
 
 - executable paths；
 - Live Resources 或 last-known resource identity；
 - Simulation/Live mode；
-- Last Run 或 committed results；
-- chart session state；或
+- Last Run、Run ID 或 committed results；
+- 未選擇保存的 session-only Chart state；
+- 目前互動操作產生的 zoom／pan viewport；
+- Workflow Chart Options（Sampling、Preserve Significant Changes、Show
+  Significant Change Markers 與 Fit Data）；
+- loading/error UI state、dialog state 或 export destination/path；或
 - runtime Powers authorization。
 
 這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他

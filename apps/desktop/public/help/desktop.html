@@ -629,7 +629,8 @@ next Save Template simply omits them. <strong>Clear Last Run</strong> keeps the 
 configuration while this option is enabled; ordinary session-only Charts keep
 the previous clear behavior.</p>
 <p>This opt-in saves the chart definitions and settings only. It never saves run
-data or the current interactive zoom/pan position. The Workflow <strong>Chart
+data, Run IDs, the current interactive zoom/pan position, loading/error UI
+state, dialog state, or export destinations/paths. The Workflow <strong>Chart
 Options</strong> described below remain session options even when Charts are saved
 with the Template.</p>
 <p>Chart Options sits in the narrow Workflow sidebar immediately below
@@ -781,8 +782,15 @@ Panels stay visible and non-Line panels enter Waiting as soon as the run starts,
 even before its first progress update. Until the new run's data is available,
 Line displays <strong>Waiting for run data</strong> without showing the previous run's plot
 or loading chart data. It then updates live, and <strong>+ Add Chart</strong> still creates a Line chart.
-<strong>Open Template</strong>, workflow replacement, and <strong>Clear Last Run</strong> reset chart
-session state. Chart settings are not Template data.</p>
+<strong>Open Template</strong> replaces the current Chart configuration with the Template's
+saved Charts. If it has no saved Charts, no persisted Chart configuration is
+restored and <strong>Save charts with template</strong> is off. After opening a Template
+with saved Charts, run Simulation directly to display the new results using
+those definitions and settings; no Chart setup is needed. A new blank Template
+clears the Chart configuration. <strong>Clear Last Run</strong> removes Last Run data and
+clears session Charts when <strong>Save charts with template</strong> is off; when it is on,
+the Chart configuration is retained. Chart settings become Template data only
+when <strong>Save charts with template</strong> is enabled.</p>
 <h3 id="105-data-and-summary">10.5 Data and Summary</h3>
 <p><strong>Output Data</strong> is built from committed ResultRows. Large tables use
 virtualization for display, but the rows remain available for charts and
@@ -827,14 +835,20 @@ separate <code>New</code> button in the current UI.</p>
 <li>Tool Instances</li>
 <li>Tool setup</li>
 <li>Workflow</li>
+<li>Optional saved Chart definitions/settings, only when <strong>Save charts with
+  template</strong> is enabled</li>
 </ul>
 <p>A Template does not contain:</p>
 <ul>
 <li>executable paths;</li>
 <li>Live Resources or last-known resource identity;</li>
 <li>Simulation/Live mode;</li>
-<li>Last Run or committed results;</li>
-<li>chart session state; or</li>
+<li>Last Run, Run IDs, or committed results;</li>
+<li>session-only Chart state that was not selected for saving;</li>
+<li>the current interactive zoom/pan viewport;</li>
+<li>Workflow Chart Options (Sampling, Preserve Significant Changes, Show
+  Significant Change Markers, and Fit Data);</li>
+<li>loading/error UI state, dialog state, or export destinations/paths; or</li>
 <li>runtime Powers authorization.</li>
 </ul>
 <p>This separation keeps Templates portable while keeping executable paths,

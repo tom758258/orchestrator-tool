@@ -670,7 +670,8 @@ configuration while this option is enabled; ordinary session-only Charts keep
 the previous clear behavior.
 
 This opt-in saves the chart definitions and settings only. It never saves run
-data or the current interactive zoom/pan position. The Workflow **Chart
+data, Run IDs, the current interactive zoom/pan position, loading/error UI
+state, dialog state, or export destinations/paths. The Workflow **Chart
 Options** described below remain session options even when Charts are saved
 with the Template.
 
@@ -840,8 +841,15 @@ Panels stay visible and non-Line panels enter Waiting as soon as the run starts,
 even before its first progress update. Until the new run's data is available,
 Line displays **Waiting for run data** without showing the previous run's plot
 or loading chart data. It then updates live, and **+ Add Chart** still creates a Line chart.
-**Open Template**, workflow replacement, and **Clear Last Run** reset chart
-session state. Chart settings are not Template data.
+**Open Template** replaces the current Chart configuration with the Template's
+saved Charts. If it has no saved Charts, no persisted Chart configuration is
+restored and **Save charts with template** is off. After opening a Template
+with saved Charts, run Simulation directly to display the new results using
+those definitions and settings; no Chart setup is needed. A new blank Template
+clears the Chart configuration. **Clear Last Run** removes Last Run data and
+clears session Charts when **Save charts with template** is off; when it is on,
+the Chart configuration is retained. Chart settings become Template data only
+when **Save charts with template** is enabled.
 
 ### 10.5 Data and Summary
 
@@ -895,14 +903,20 @@ A Template contains:
 - Tool Instances
 - Tool setup
 - Workflow
+- Optional saved Chart definitions/settings, only when **Save charts with
+  template** is enabled
 
 A Template does not contain:
 
 - executable paths;
 - Live Resources or last-known resource identity;
 - Simulation/Live mode;
-- Last Run or committed results;
-- chart session state; or
+- Last Run, Run IDs, or committed results;
+- session-only Chart state that was not selected for saving;
+- the current interactive zoom/pan viewport;
+- Workflow Chart Options (Sampling, Preserve Significant Changes, Show
+  Significant Change Markers, and Fit Data);
+- loading/error UI state, dialog state, or export destinations/paths; or
 - runtime Powers authorization.
 
 This separation keeps Templates portable while keeping executable paths,
