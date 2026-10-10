@@ -524,28 +524,33 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
     {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline Scopes capabilities...</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key === key && !caps && <p className="tool-setup-hint">Capability unavailable: {loaded.error}</p>}
-    <div className="meters-setup-fields">
-      <label>Acquisition Type<select aria-label="Acquisition Type" value={acquisition.acquisition_type ?? ''}
-        disabled={modes.length === 0} onChange={event => {
-          const acquisition_type = (event.target.value || undefined) as typeof acquisition.acquisition_type
-          onChange(updateScopesAcquisition(value, { acquisition_type,
-            average_count: acquisition_type === 'average' ? acquisition.average_count : undefined }))
-        }}>
-        <option value="">Unchanged</option>
-        {(['normal', 'average', 'high_resolution', 'peak'] as const).map(mode =>
-          <option key={mode} value={mode} disabled={!modes.includes(mode)}>{mode.replace('_', ' ')}</option>)}
-      </select></label>
-      {unsupportedMode && <p className="tool-setup-hint">Unsupported by the current model; existing Acquisition Type preserved.</p>}
-      {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">Acquisition capability information is unavailable.</p>}
-      <label>Average Count<input aria-label="Average Count" type="number" step={1} min={counts[0]} max={counts.at(-1)} placeholder="Unchanged"
-        value={countDraft ?? acquisition.average_count ?? ''} disabled={acquisition.acquisition_type !== 'average' || !modes.includes('average') || counts.length === 0}
-        onChange={event => {
-          setCountDraft(event.target.value)
-          const average_count = event.target.value === '' ? undefined : Number(event.target.value)
-          if (average_count === undefined || counts.includes(average_count)) onChange(updateScopesAcquisition(value, { ...acquisition, average_count }))
-        }} onBlur={() => setCountDraft(null)} /></label>
-      {counts.length > 0 && <p className="tool-setup-hint">Supported counts: {counts.length <= 16 ? counts.join(', ') : `${counts[0]}–${counts.at(-1)} (${counts.length} supported integers)`}.</p>}
-      {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
+    <div className="scopes-acquisition-fields">
+      <div>
+        <label>Acquisition Type<select aria-label="Acquisition Type" value={acquisition.acquisition_type ?? ''}
+          disabled={modes.length === 0} onChange={event => {
+            const acquisition_type = (event.target.value || undefined) as typeof acquisition.acquisition_type
+            onChange(updateScopesAcquisition(value, { acquisition_type,
+              average_count: acquisition_type === 'average' ? acquisition.average_count : undefined }))
+          }}>
+          <option value="">Unchanged</option>
+          {(['normal', 'average', 'high_resolution', 'peak'] as const).map(mode =>
+            <option key={mode} value={mode} disabled={!modes.includes(mode)}>{mode.replace('_', ' ')}</option>)}
+        </select></label>
+        {unsupportedMode && <p className="tool-setup-hint">Unsupported by the current model; existing Acquisition Type preserved.</p>}
+        {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">Acquisition capability information is unavailable.</p>}
+      </div>
+      <div>
+        <label>Average Count<input aria-label="Average Count" type="number" step={1} min={counts[0]} max={counts.at(-1)} placeholder="Unchanged"
+          value={countDraft ?? acquisition.average_count ?? ''} disabled={acquisition.acquisition_type !== 'average' || !modes.includes('average') || counts.length === 0}
+          onChange={event => {
+            setCountDraft(event.target.value)
+            const average_count = event.target.value === '' ? undefined : Number(event.target.value)
+            if (average_count === undefined || counts.includes(average_count)) onChange(updateScopesAcquisition(value, { ...acquisition, average_count }))
+          }} onBlur={() => setCountDraft(null)} /></label>
+        <p className="tool-setup-hint">Requires Acquisition Type = Average.</p>
+        {counts.length > 0 && <p className="tool-setup-hint">Supported counts: {counts.length <= 16 ? counts.join(', ') : `${counts[0]}–${counts.at(-1)} (${counts.length} supported integers)`}.</p>}
+        {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
+      </div>
     </div>
     <h4 className="powers-section-heading">Channel Configuration</h4>
     <div className="powers-table-scroll"><table className="powers-protection-table">

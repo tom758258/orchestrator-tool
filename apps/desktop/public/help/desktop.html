@@ -508,6 +508,11 @@ Use canonical measurement item names such as <code>vpp</code>, <code>vavg</code>
 <code>period</code>; Scopes validates model support. Capture Channels are a comma-separated
 list, and Points must be supported by Scopes (currently 1000, 5000, or 10000).
 A queued job counts as complete only after Scopes reports its terminal result.</p>
+<p>Screenshot <strong>Image Format</strong> uses offline Scopes capabilities: Simulation uses
+the default model, and Live uses the saved device model. Unsupported formats
+remain visible but disabled. A saved unsupported format is preserved with a
+warning when the model changes. If capabilities are unavailable, the editor
+shows the reason and disables new format selections.</p>
 <p>Expand <strong>Scopes File Output</strong> in the left Workflow panel. <strong>Select Folder</strong>
 chooses a folder shared by Capture and Screenshot; <strong>Use Default</strong> restores
 <strong>Orchestrator application folder / data</strong>. The choice is local runtime state

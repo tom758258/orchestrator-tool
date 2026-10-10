@@ -1295,6 +1295,33 @@ textarea:disabled {
   gap: 12px;
 }
 
+.scopes-acquisition-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scopes-acquisition-fields > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scopes-acquisition-fields label {
+  display: grid;
+  gap: 8px;
+}
+
+.scopes-acquisition-fields input,
+.scopes-acquisition-fields select {
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .scopes-acquisition-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .powers-section-heading {
   margin: 16px 0 12px;
   padding-bottom: 8px;

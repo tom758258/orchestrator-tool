@@ -2434,6 +2434,8 @@ function App() {
 
                       {selectedToolAction && selectedAction?.startsWith('scopes/') && (
                         <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
+                          executionMode={executionMode} scopesExecutableKey={scopesExecutableKey}
+                          modelId={executionMode === 'live' ? resourceIdentities[selectedToolAction.target]?.model_id : undefined}
                           earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           onChange={next => updateStep(selectedToolAction.id, () => next)} />

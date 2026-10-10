@@ -27,8 +27,18 @@ test('frontend rejects stale progress metadata before updating current run state
 
 test('both Desktop run commands use streaming Core execution and return compact metadata', () => {
   const production = backend.slice(0, backend.indexOf('#[cfg(test)]\nmod tests'))
-  assert.equal((production.match(/run_workflow_streaming_with_loop_stop\s*\(/g) ?? []).length, 2)
+  assert.equal((production.match(/run_workflow_streaming_with_loop_stop_and_scopes_output\s*\(/g) ?? []).length, 2)
   assert.equal((production.match(/Result<RunMetadataDto, String>/g) ?? []).length, 2)
+  for (const [command, mode] of [['simulation', 'Simulate'], ['live', 'Live']]) {
+    const start = production.indexOf(`async fn run_workflow_${command}(`)
+    assert.ok(start >= 0)
+    const next = production.indexOf('\n#[tauri::command]', start)
+    const body = production.slice(start, next < 0 ? production.length : next)
+    assert.match(body, /Result<RunMetadataDto, String>/)
+    assert.match(body, new RegExp(`run_workflow_streaming_with_loop_stop_and_scopes_output\\s*\\(\\s*&template,\\s*ExecutionMode::${mode}`))
+    assert.match(body, /let metadata = stored\.read\(\)\.unwrap\(\)\.metadata\(\);\s*Ok\(metadata\)/)
+    assert.doesNotMatch(body, /result_rows|step_executions/)
+  }
   assert.doesNotMatch(production, /workflow_run_result_dto/)
 })
 

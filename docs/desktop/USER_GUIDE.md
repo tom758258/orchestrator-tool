@@ -522,6 +522,12 @@ Use canonical measurement item names such as `vpp`, `vavg`, `frequency`, or
 list, and Points must be supported by Scopes (currently 1000, 5000, or 10000).
 A queued job counts as complete only after Scopes reports its terminal result.
 
+Screenshot **Image Format** uses offline Scopes capabilities: Simulation uses
+the default model, and Live uses the saved device model. Unsupported formats
+remain visible but disabled. A saved unsupported format is preserved with a
+warning when the model changes. If capabilities are unavailable, the editor
+shows the reason and disables new format selections.
+
 Expand **Scopes File Output** in the left Workflow panel. **Select Folder**
 chooses a folder shared by Capture and Screenshot; **Use Default** restores
 **Orchestrator application folder / data**. The choice is local runtime state

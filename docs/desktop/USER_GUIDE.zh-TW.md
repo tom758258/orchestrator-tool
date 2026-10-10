@@ -452,6 +452,11 @@ Channel 與 Item 可供 Output 或 Assert 使用。Measurement Item 使用 `vpp`
 以逗號分隔；Points 必須是 Scopes 支援的數量（目前為 1000、5000 或 10000）。
 Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。
 
+Screenshot 的 **Image Format** 依 Scopes 離線 Capabilities 控制：Simulation 使用
+預設型號，Live 使用已保存的裝置型號。不支援的格式仍顯示，但無法選取。切換型號時，
+已保存但不支援的格式會保留並顯示警告。若無法取得 Capabilities，編輯器會顯示原因，
+並停用新的格式選擇。
+
 展開左側 Workflow 的 **Scopes File Output**。**Select Folder** 選擇 Capture 與
 Screenshot 共用的資料夾；**Use Default** 回到 **Orchestrator application folder / data**。
 此選擇只屬於本機 runtime state，不保存至 Template。Capture 產生 CSV 與 metadata

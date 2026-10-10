@@ -1,12 +1,33 @@
 import InputValueEditor from './InputValueEditor'
+import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import type { ExecutionMode } from './executionMode'
+import type { ScopesCapabilities } from './scopesSetup'
 import type { InputValueWire } from './inputValue'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { ToolActionStep, WorkflowStep } from './workflow'
 
-export default function ScopesActionEditor({ step, instances, earlierSteps, earlierVariables, disabled, onChange, stepLabel }: {
+export default function ScopesActionEditor({ step, instances, earlierSteps, earlierVariables, disabled, onChange, stepLabel,
+  executionMode, modelId, scopesExecutableKey }: {
   step: ToolActionStep; instances: ToolInstance[]; earlierSteps: WorkflowStep[]; earlierVariables: string[]
   disabled: boolean; onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
+  executionMode: ExecutionMode; modelId: string | null | undefined; scopesExecutableKey: string
 }) {
+  const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
+  const capabilityModelId = executionMode === 'live' ? modelId : undefined
+  const key = JSON.stringify([executionMode, capabilityModelId, scopesExecutableKey, step.target])
+  useEffect(() => {
+    if (step.action !== 'screenshot' || (executionMode === 'live' && !capabilityModelId)) return
+    let cancelled = false
+    invoke<ScopesCapabilities>('get_scopes_capabilities', { modelId: capabilityModelId, executionMode }).then(
+      value => { if (!cancelled) setLoaded({ key, value }) },
+      error => { if (!cancelled) setLoaded({ key, value: null, error: String(error) }) },
+    )
+    return () => { cancelled = true }
+  }, [step.action, executionMode, capabilityModelId, key])
+  const caps = loaded?.key === key ? loaded.value : null
+  const formats = caps?.screenshot_formats ?? []
+  const format = String(step.arguments.format ?? 'png')
   const change = (key: string, value: unknown) => onChange({ ...step, arguments: { ...step.arguments, [key]: value } })
   const numeric = (key: string, label: string, fallback: number) => <InputValueEditor key={`${step.id}-${key}`}
     value={step.bindings?.[key] ?? { source: 'literal', value: step.arguments[key] as number ?? fallback }}
@@ -56,9 +77,19 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
     </>}
     {step.action === 'screenshot' && <>
       <label className="step-property-field"><span className="step-property-label">Image Format</span>
-        <select value={String(step.arguments.format ?? 'png')} disabled={disabled} onChange={event => change('format', event.target.value)}>
-          <option value="png">PNG</option><option value="bmp">BMP</option><option value="bmp8bit">BMP 8-bit</option>
+        <select aria-label="Image Format" value={format} disabled={disabled || formats.length === 0} onChange={event => {
+          if (!disabled && formats.includes(event.target.value)) change('format', event.target.value)
+        }}>
+          <option value="png" disabled={!formats.includes('png')}>PNG</option>
+          <option value="bmp" disabled={!formats.includes('bmp')}>BMP</option>
+          <option value="bmp8bit" disabled={!formats.includes('bmp8bit')}>BMP 8-bit</option>
+          {!['png', 'bmp', 'bmp8bit'].includes(format) && <option value={format} disabled>{format}</option>}
         </select></label>
+      {executionMode === 'live' && !capabilityModelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
+      {(executionMode === 'simulate' || capabilityModelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline Scopes capabilities...</p>}
+      {(executionMode === 'simulate' || capabilityModelId) && loaded?.key === key && !caps && <p className="tool-setup-hint">Capability unavailable: {loaded.error}</p>}
+      {caps && formats.length === 0 && <p className="tool-setup-hint">Screenshot formats are unavailable for the current model.</p>}
+      {caps && !formats.includes(format) && <p className="tool-setup-hint">Unsupported by the current model; existing Image Format preserved.</p>}
       <p className="tool-setup-hint">The image is saved in Scopes File Output. Scopes validates the format against the selected model.</p>
     </>}
   </>
