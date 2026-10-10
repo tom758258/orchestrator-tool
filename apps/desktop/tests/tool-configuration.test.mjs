@@ -72,7 +72,7 @@ const template = {
 }
 
 test('Scopes File Output selects and resets a runtime folder without editing Template', async () => {
-  const app = await toolsView([status('scopes'), status('powers')])
+  const app = await toolsView([status('scopes'), status('powers')], { tool_instances: [], workflow: { steps: [] } })
   const before = structuredClone(app.render().find(node => node.type === 'ToolSetupEditor').props.value)
   button(app.render(), 'Workflow').props.onClick()
   button(app.render(), 'Scopes File Output+').props.onClick()
@@ -89,7 +89,7 @@ test('Scopes File Output selects and resets a runtime folder without editing Tem
   assert.deepEqual(app.render().find(node => node.type === 'ToolSetupEditor').props.value, before)
 })
 
-async function toolsView(initial) {
+async function toolsView(initial, draft = template) {
   let statuses = initial
   let picked = null
   let reject = false
@@ -99,7 +99,7 @@ async function toolsView(initial) {
     async invoke(command, args) {
       calls.push([command, args])
       if (command === 'get_tool_status') return statuses
-      if (command === 'create_workflow_draft') return JSON.stringify(template)
+      if (command === 'create_workflow_draft' || command === 'load_workflow_template') return JSON.stringify(draft)
       if (command === 'get_live_resources' || command === 'get_live_resource_identities') return {}
       if (command === 'set_tool_executable') {
         if (reject) throw new Error('Incompatible executable')
@@ -114,6 +114,124 @@ async function toolsView(initial) {
   await settle()
   return { render, calls, pick(value, invalid = false) { picked = value; reject = invalid } }
 }
+
+const categoryNames = ['Workflow', 'Meters', 'Powers', 'Scopes']
+const categorySections = app => app.render().filter(node => node.type === 'section' && categoryNames.includes(node.key)
+  && elements(node).some(child => child.props.className === 'step-category-header'))
+const categoryHeader = section => elements(section).find(node => node.props.className === 'step-category-header')
+const categorySteps = section => elements(section).filter(node => node.props.className === 'action-button step-palette-button')
+
+function assertCategories(app, unlocked) {
+  const sections = categorySections(app)
+  assert.deepEqual(sections.map(section => section.key), categoryNames)
+  for (const section of sections) {
+    const header = categoryHeader(section)
+    const locked = section.key !== 'Workflow' && !unlocked.includes(section.key)
+    assert.equal(header.props.disabled, locked, section.key)
+    if (locked) {
+      assert.equal(header.props['aria-expanded'], false, section.key)
+      assert.equal(categorySteps(section).length, 0, section.key)
+      const hint = elements(section).find(node => node.props.id === header.props['aria-describedby'])
+      assert.equal(text(hint), `No ${section.key} Tool Instance. Add one in Setup.`)
+      assert.ok(text(header).includes('🔒'))
+    }
+  }
+  return sections
+}
+
+test('Steps categories keep fixed order and lock only by Template instances in either mode', async () => {
+  const empty = { tool_instances: [], workflow: { steps: [] } }
+  const app = await toolsView([status('meters'), status('powers'), status('scopes')], empty)
+  button(app.render(), 'Workflow').props.onClick()
+  const sections = assertCategories(app, [])
+  assert.equal(categoryHeader(sections[0]).props['aria-expanded'], true)
+  assert.deepEqual(categorySteps(sections[0]).map(text),
+    ['While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
+
+  const meters = { id: 'meters-1', tool: 'meters', setup: {} }
+  app.render().find(node => node.type === 'ToolSetupEditor').props.onChange([meters])
+  for (const mode of ['simulate', 'live']) {
+    button(app.render(), mode === 'simulate' ? 'Simulation' : 'Live').props.onClick()
+    const meterSection = assertCategories(app, ['Meters'])[1]
+    assert.equal(categoryHeader(meterSection).props['aria-expanded'], true)
+    assert.deepEqual(categorySteps(meterSection).map(text), ['Meter Measure'])
+    assert.equal(categorySteps(meterSection)[0].props.disabled, false)
+  }
+  const setup = app.render().find(node => node.type === 'ToolSetupEditor').props
+  assert.deepEqual(setup.resourceIdentities, {})
+  assert.deepEqual(setup.steps, [])
+})
+
+test('Steps categories update immediately through Setup add/remove and preserve manual collapse', async () => {
+  const app = await toolsView([status('meters'), status('powers'), status('scopes')],
+    { tool_instances: [], workflow: { steps: [] } })
+  const renderSetup = await component('ToolSetupEditor')
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const add = tool => {
+    renderSetup(setup()).find(node => node.props['aria-label'] === 'Tool type').props.onChange({ target: { value: tool } })
+    button(renderSetup(setup()), 'Add Tool Instance').props.onClick()
+  }
+  const remove = id => {
+    const instance = renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === id)
+    const control = button(elements(instance), 'Remove Tool Instance')
+    assert.equal(control.props.disabled, false)
+    control.props.onClick()
+  }
+  button(app.render(), 'Workflow').props.onClick()
+  for (const tool of ['meters', 'powers', 'scopes']) {
+    add(tool)
+    assertCategories(app, categoryNames.slice(1, categoryNames.indexOf(tool[0].toUpperCase() + tool.slice(1)) + 1))
+  }
+  let sections = assertCategories(app, categoryNames.slice(1))
+  assert.deepEqual(categorySteps(sections[2]).map(text),
+    ['Power Set Output', 'Power Protection Status', 'Power Output ON', 'Power Output OFF'])
+  const scopeLabels = (await import('../src/scopesActions.ts')).SCOPES_ACTIONS.map(([, label]) => label)
+  assert.deepEqual(categorySteps(sections[3]).map(text), scopeLabels)
+  for (const name of categoryNames) {
+    const section = categorySections(app).find(item => item.key === name)
+    categoryHeader(section).props.onClick()
+    const collapsed = categorySections(app).find(item => item.key === name)
+    assert.equal(categoryHeader(collapsed).props['aria-expanded'], false)
+    assert.equal(categorySteps(collapsed).length, 0)
+    categoryHeader(collapsed).props.onClick()
+    assert.equal(categoryHeader(categorySections(app).find(item => item.key === name)).props['aria-expanded'], true)
+  }
+  add('powers')
+  remove('powers-1')
+  assertCategories(app, ['Meters', 'Powers', 'Scopes'])
+  remove('powers-2')
+  assertCategories(app, ['Meters', 'Scopes'])
+  remove('scopes-1')
+  assertCategories(app, ['Meters'])
+  add('scopes')
+  sections = assertCategories(app, ['Meters', 'Scopes'])
+  assert.equal(categoryHeader(sections[3]).props['aria-expanded'], true)
+  categorySteps(sections[1])[0].props.onClick()
+  assert.equal(setup().steps[0].target, 'meters-1')
+  const referenced = renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === 'meters-1')
+  assert.equal(button(elements(referenced), 'Remove Tool Instance').props.disabled, true)
+})
+
+test('Steps categories use loaded Template instances despite unavailable executables without editing data', async () => {
+  const original = structuredClone(template)
+  const app = await toolsView([status('powers', 'error', 'error'), status('scopes', 'not-configured')])
+  app.render().find(node => node.type === 'ToolSetupEditor').props.onChange([])
+  app.pick('existing-template.json')
+  button(app.render(), 'Open Template').props.onClick()
+  await settle()
+  assert.ok(app.calls.some(([command]) => command === 'load_workflow_template'))
+  button(app.render(), 'Workflow').props.onClick()
+  assertCategories(app, ['Powers', 'Scopes'])
+  for (const section of categorySections(app).slice(2)) {
+    assert.equal(categoryHeader(section).props['aria-expanded'], true)
+    assert.ok(categorySteps(section).every(step => step.props.disabled === false))
+  }
+  const setup = app.render().find(node => node.type === 'ToolSetupEditor').props
+  assert.deepEqual(setup.value, original.tool_instances)
+  assert.deepEqual(setup.steps, original.workflow.steps)
+  assert.deepEqual(template, original)
+  assert.equal(button(app.render(), 'Simulation').props['aria-pressed'], true)
+})
 
 test('Tools cards and Add candidates use configuration status, including broken executables', async () => {
   for (const state of ['available', 'missing', 'not-file', 'error']) {

@@ -290,10 +290,21 @@ types are:</p>
 <li><strong>For</strong> — repeat a body over an exact decimal range.</li>
 <li><strong>While</strong> — repeat a body while a condition remains true.</li>
 </ul>
-<p>In the <strong>Steps</strong> panel, click the <strong>Workflow</strong>, <strong>Powers</strong>, <strong>Meters</strong>, or <strong>Scopes</strong> header
-to expand or collapse that category independently. Expanded categories show
-<strong>−</strong>; collapsed categories show <strong>+</strong> and hide their step buttons. All three
-start expanded when the app opens. This state is not saved in Templates.</p>
+<p>The <strong>Steps</strong> categories always appear in this order: <strong>Workflow</strong>, <strong>Meters</strong>,
+<strong>Powers</strong>, <strong>Scopes</strong>. Workflow is always available. Each instrument category
+requires at least one matching Tool Instance in the current Template. Without
+one, its header is greyed out with a lock and a hint to add an instance in
+<strong>Setup</strong>; it stays collapsed and cannot be expanded. Adding the first matching
+instance unlocks it immediately; removing the last locks it again. Loading a
+Template updates the locks from its instances without changing existing steps.
+Saved Live Resources, executable configuration, capabilities, and Execution Mode
+do not affect these locks. Adding a Tool Instance and saving a Live Resource are
+separate operations; Simulation editing does not require a Live Resource.</p>
+<p>Click an available category header to expand or collapse it independently.
+Expanded categories show <strong>−</strong>; collapsed categories show <strong>+</strong> and hide their
+step buttons. Available categories start expanded when the app opens. This
+state is not saved in Templates. <strong>Scopes File Output</strong> remains independently
+available even when the Scopes category is locked.</p>
 <p>Steps can be placed in the root workflow or inside loop bodies. Use the step
 properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate

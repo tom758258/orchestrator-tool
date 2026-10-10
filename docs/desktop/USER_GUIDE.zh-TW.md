@@ -255,9 +255,17 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **For** — 依 exact decimal range 重複執行 body。
 - **While** — 在 condition 為 true 時重複執行 body。
 
-在 **Steps** panel 點擊 **Workflow**、**Powers**、**Meters** 或 **Scopes** 標題，可獨立展開
-或收合該分類。展開時顯示 **−**；收合時顯示 **+** 並隱藏該分類的 step buttons。
-App 開啟時三區預設全部展開；此狀態不會保存於 Template。
+**Steps** 分類固定依 **Workflow**、**Meters**、**Powers**、**Scopes** 排列。
+Workflow 永遠可用；各儀器分類需在目前 Template 中有至少一個對應的 Tool Instance。
+沒有時，標題會灰化並顯示鎖頭及前往 **Setup** 新增 instance 的提示；分類維持收合，
+無法展開。新增第一個同類 instance 後立即解鎖；移除最後一個後再次鎖定。載入
+Template 時會依其中的 instances 更新鎖定狀態，不會變更既有 steps。
+已保存的 Live Resource、EXE 配置、capabilities 與 Execution Mode 都不影響分類鎖定。
+新增 Tool Instance 與保存 Live Resource 是不同操作；Simulation 編輯不需要 Live Resource。
+
+點擊可用分類的標題，可獨立展開或收合該分類。展開時顯示 **−**；收合時顯示 **+**
+並隱藏該分類的 step buttons。App 開啟時可用分類預設展開；此狀態不會保存於
+Template。即使 Scopes 分類鎖定，**Scopes File Output** 仍然可獨立使用。
 
 Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run

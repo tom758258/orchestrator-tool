@@ -298,10 +298,22 @@ types are:
 - **For** — repeat a body over an exact decimal range.
 - **While** — repeat a body while a condition remains true.
 
-In the **Steps** panel, click the **Workflow**, **Powers**, **Meters**, or **Scopes** header
-to expand or collapse that category independently. Expanded categories show
-**−**; collapsed categories show **+** and hide their step buttons. All three
-start expanded when the app opens. This state is not saved in Templates.
+The **Steps** categories always appear in this order: **Workflow**, **Meters**,
+**Powers**, **Scopes**. Workflow is always available. Each instrument category
+requires at least one matching Tool Instance in the current Template. Without
+one, its header is greyed out with a lock and a hint to add an instance in
+**Setup**; it stays collapsed and cannot be expanded. Adding the first matching
+instance unlocks it immediately; removing the last locks it again. Loading a
+Template updates the locks from its instances without changing existing steps.
+Saved Live Resources, executable configuration, capabilities, and Execution Mode
+do not affect these locks. Adding a Tool Instance and saving a Live Resource are
+separate operations; Simulation editing does not require a Live Resource.
+
+Click an available category header to expand or collapse it independently.
+Expanded categories show **−**; collapsed categories show **+** and hide their
+step buttons. Available categories start expanded when the app opens. This
+state is not saved in Templates. **Scopes File Output** remains independently
+available even when the Scopes category is locked.
 
 Steps can be placed in the root workflow or inside loop bodies. Use the step
 properties area to edit the selected step. Use Validate when you want to

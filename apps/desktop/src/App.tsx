@@ -175,6 +175,8 @@ type StepPresetOption = {
   tool?: ToolInstance['tool']
 }
 
+const STEP_CATEGORY_ORDER = ['Workflow', 'Meters', 'Powers', 'Scopes'] as const
+
 const STEP_PRESETS: StepPresetOption[] = [
   ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
   { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
@@ -2032,20 +2034,30 @@ function App() {
                     {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
                     <div className="step-palette-items">
-                      {[...new Set(STEP_PRESETS.map(preset => preset.category))].map(category => (
+                      {STEP_CATEGORY_ORDER.map(category => {
+                        const presets = STEP_PRESETS.filter(preset => preset.category === category)
+                        const tool = presets[0]?.tool
+                        const locked = Boolean(tool) && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
+                        const expanded = !locked && expandedStepCategories[category]
+                        return (
                         <section key={category}>
                           <h4>
                             <button type="button" className="step-category-header"
-                              aria-expanded={expandedStepCategories[category]}
+                              disabled={locked}
+                              aria-expanded={expanded}
+                              aria-describedby={locked ? `step-category-${category}-hint` : undefined}
                               onClick={() => setExpandedStepCategories(current => ({
                                 ...current, [category]: !current[category],
                               }))}>
                               {category}
-                              <span aria-hidden="true">{expandedStepCategories[category] ? '−' : '+'}</span>
+                              <span aria-hidden="true">{locked ? '🔒' : expanded ? '−' : '+'}</span>
                             </button>
                           </h4>
-                          {expandedStepCategories[category] && <div className="step-palette-items">
-                            {STEP_PRESETS.filter(preset => preset.category === category).map((preset) => (
+                          {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
+                            No {category} Tool Instance. Add one in Setup.
+                          </p>}
+                          {expanded && <div className="step-palette-items">
+                            {presets.map((preset) => (
                               <button
                                 key={preset.value}
                                 className="action-button step-palette-button"
@@ -2058,7 +2070,8 @@ function App() {
                             ))}
                           </div>}
                         </section>
-                      ))}
+                        )
+                      })}
                     </div>
                     </>}
                   </section>

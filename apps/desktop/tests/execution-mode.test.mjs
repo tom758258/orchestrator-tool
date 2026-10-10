@@ -138,7 +138,8 @@ test('Chart Options, Sampling and Y-axis collapse independently with existing +/
   }
   assert.match(sidebar, /\{chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled=\{workflowBusy\}>/)
   assert.match(sidebar, /\{chartYAxisExpanded && <fieldset className="chart-y-axis-fields" disabled=\{workflowBusy\}>/)
-  assert.match(sidebar, /aria-expanded=\{expandedStepCategories\[category\]\}/)
+  assert.match(sidebar, /const expanded = !locked && expandedStepCategories\[category\]/)
+  assert.match(sidebar, /aria-expanded=\{expanded\}/)
 })
 
 test('collapsing Chart Options sections hides content without changing settings', () => {
