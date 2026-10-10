@@ -5,8 +5,7 @@ import React from 'react'
 import { transformWithOxc } from 'vite'
 
 // Exercise rendered controls and handlers with local hooks and mocked native I/O.
-async function component(name, native = {}) {
-  const source = fs.readFileSync(new URL(`../src/${name}.tsx`, import.meta.url), 'utf8')
+async function component(name, native = {}, source = fs.readFileSync(new URL(`../src/${name}.tsx`, import.meta.url), 'utf8')) {
   const { code } = await transformWithOxc(source, `${name}.tsx`, { jsx: { runtime: 'classic' } })
   const modules = {}
   for (const [, path] of code.matchAll(/import .+? from "([^"]+)";/g)) {
@@ -71,25 +70,118 @@ const template = {
   workflow: { steps: [{ type: 'tool-action', id: 'power-off-1', target: 'powers-1', action: 'output-off', arguments: {} }] },
 }
 
-test('Scopes File Output selects and resets a runtime folder without editing Template', async () => {
+const scopesOutputPanel = app => app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+const scopesOutputHeader = app => elements(scopesOutputPanel(app)).find(node => node.type === 'button'
+  && node.props.className === 'collapsible-header')
+
+function assertScopesOutputLocked(app) {
+  const panel = scopesOutputPanel(app)
+  const header = scopesOutputHeader(app)
+  assert.equal(header.props.disabled, true)
+  assert.equal(header.props['aria-expanded'], false)
+  assert.ok(text(header).includes('🔒'))
+  assert.equal(text(elements(panel).find(node => node.props.id === header.props['aria-describedby'])),
+    'No Scopes Tool Instance. Add one in Setup.')
+  assert.equal(button(elements(panel), 'Select Folder'), undefined)
+  assert.equal(button(elements(panel), 'Use Default'), undefined)
+  assert.ok(!elements(panel).some(node => node.props.className === 'streaming-destination'))
+}
+
+test('Scopes File Output locks by instances and preserves folder selection and reset without editing Template', async () => {
   const app = await toolsView([status('scopes'), status('powers')], { tool_instances: [], workflow: { steps: [] } })
-  const before = structuredClone(app.render().find(node => node.type === 'ToolSetupEditor').props.value)
+  const renderSetup = await component('ToolSetupEditor')
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const add = () => {
+    renderSetup(setup()).find(node => node.props['aria-label'] === 'Tool type').props.onChange({ target: { value: 'scopes' } })
+    button(renderSetup(setup()), 'Add Tool Instance').props.onClick()
+  }
+  const remove = id => {
+    const instance = renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === id)
+    const control = button(elements(instance), 'Remove Tool Instance')
+    assert.equal(control.props.disabled, false)
+    control.props.onClick()
+  }
   button(app.render(), 'Workflow').props.onClick()
-  button(app.render(), 'Scopes File Output+').props.onClick()
-  let panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  assertCategories(app, [])
+  assertScopesOutputLocked(app)
+
+  add()
+  assertCategories(app, ['Scopes'])
+  assert.equal(scopesOutputHeader(app).props.disabled, false)
+  assert.equal(scopesOutputHeader(app).props['aria-expanded'], false)
+  assert.deepEqual(setup().resourceIdentities, {})
+  const before = structuredClone(setup().value)
+  for (const mode of ['simulate', 'live']) {
+    button(app.render(), mode === 'simulate' ? 'Simulation' : 'Live').props.onClick()
+    assert.equal(scopesOutputHeader(app).props.disabled, false)
+    assert.equal(categoryHeader(assertCategories(app, ['Scopes'])[3]).props['aria-expanded'], true)
+  }
+  scopesOutputHeader(app).props.onClick()
+  let panel = scopesOutputPanel(app)
   assert.ok(text(panel).includes('Default: Orchestrator application folder / data'))
   app.pick('C:\\Scopes Output')
   await button(elements(panel), 'Select Folder').props.onClick()
   await settle()
-  panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  panel = scopesOutputPanel(app)
   assert.ok(text(panel).includes('C:\\Scopes Output'))
+  assert.deepEqual(setup().value, before)
+  assert.deepEqual(setup().steps, [])
+
+  categoryHeader(categorySections(app)[3]).props.onClick()
+  assert.equal(categoryHeader(categorySections(app)[3]).props['aria-expanded'], false)
+  assert.equal(scopesOutputHeader(app).props['aria-expanded'], true)
+  scopesOutputHeader(app).props.onClick()
+  categoryHeader(categorySections(app)[3]).props.onClick()
+  assert.equal(categoryHeader(categorySections(app)[3]).props['aria-expanded'], true)
+  assert.equal(scopesOutputHeader(app).props['aria-expanded'], false)
+  scopesOutputHeader(app).props.onClick()
+
+  add()
+  remove('scopes-1')
+  assertCategories(app, ['Scopes'])
+  assert.equal(scopesOutputHeader(app).props.disabled, false)
+  assert.ok(text(scopesOutputPanel(app)).includes('C:\\Scopes Output'))
+  remove('scopes-2')
+  assertCategories(app, [])
+  assertScopesOutputLocked(app)
+  add()
+  assertCategories(app, ['Scopes'])
+  assert.equal(scopesOutputHeader(app).props['aria-expanded'], true)
+  assert.ok(text(scopesOutputPanel(app)).includes('C:\\Scopes Output'))
+
+  app.pick('empty-template.json')
+  button(app.render(), 'Open Template').props.onClick()
+  await settle()
+  assertCategories(app, [])
+  assertScopesOutputLocked(app)
+  assert.deepEqual(setup().steps, [])
+  add()
+  panel = scopesOutputPanel(app)
+  assert.ok(text(panel).includes('C:\\Scopes Output'))
+  const beforeReset = structuredClone(setup().value)
   button(elements(panel), 'Use Default').props.onClick()
-  panel = app.render().find(node => node.props['aria-labelledby'] === 'scopes-output-title')
+  panel = scopesOutputPanel(app)
   assert.ok(text(panel).includes('Default: Orchestrator application folder / data'))
-  assert.deepEqual(app.render().find(node => node.type === 'ToolSetupEditor').props.value, before)
+  assert.deepEqual(setup().value, beforeReset)
+  assert.deepEqual(setup().steps, [])
+  assert.equal(button(elements(panel), 'Use Default').props.disabled, true)
 })
 
-async function toolsView(initial, draft = template) {
+test('Steps categories keep tool mapping independent of the first preset tool', async () => {
+  const source = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  const alteredPresets = source.replace("category: 'Scopes', tool: 'scopes' as const",
+    "category: 'Scopes', tool: 'powers' as const")
+  assert.notEqual(alteredPresets, source)
+  const app = await toolsView([status('powers'), status('scopes')],
+    { tool_instances: [{ id: 'scopes-1', tool: 'scopes', setup: {} }], workflow: { steps: [] } }, alteredPresets)
+  button(app.render(), 'Workflow').props.onClick()
+  assertCategories(app, ['Scopes'])
+  const header = categoryHeader(categorySections(app)[3])
+  assert.equal(header.props.disabled, false)
+  assert.equal(header.props['aria-expanded'], true)
+})
+
+async function toolsView(initial, draft = template, source) {
   let statuses = initial
   let picked = null
   let reject = false
@@ -108,7 +200,7 @@ async function toolsView(initial, draft = template) {
         statuses = statuses.map(tool => tool.tool_id === args.toolId ? status(tool.tool_id, 'not-configured') : tool)
       } else throw new Error(`Unexpected command: ${command}`)
     },
-  })
+  }, source)
   button(render(), 'Refresh').props.onClick()
   button(render(), 'New Template').props.onClick()
   await settle()
@@ -143,6 +235,7 @@ test('Steps categories keep fixed order and lock only by Template instances in e
   const empty = { tool_instances: [], workflow: { steps: [] } }
   const app = await toolsView([status('meters'), status('powers'), status('scopes')], empty)
   button(app.render(), 'Workflow').props.onClick()
+  assertScopesOutputLocked(app)
   const sections = assertCategories(app, [])
   assert.equal(categoryHeader(sections[0]).props['aria-expanded'], true)
   assert.deepEqual(categorySteps(sections[0]).map(text),
@@ -210,6 +303,13 @@ test('Steps categories update immediately through Setup add/remove and preserve 
   assert.equal(setup().steps[0].target, 'meters-1')
   const referenced = renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === 'meters-1')
   assert.equal(button(elements(referenced), 'Remove Tool Instance').props.disabled, true)
+  add('powers')
+  sections = assertCategories(app, ['Meters', 'Powers', 'Scopes'])
+  button(elements(sections[2]), 'Power Output OFF').props.onClick()
+  button(elements(categorySections(app)[0]), 'Wait').props.onClick()
+  assert.equal(setup().steps[1].target, setup().value.find(instance => instance.tool === 'powers').id)
+  assert.equal(setup().steps[1].action, 'output-off')
+  assert.equal(setup().steps[2].type, 'wait')
 })
 
 test('Steps categories use loaded Template instances despite unavailable executables without editing data', async () => {
@@ -222,6 +322,10 @@ test('Steps categories use loaded Template instances despite unavailable executa
   assert.ok(app.calls.some(([command]) => command === 'load_workflow_template'))
   button(app.render(), 'Workflow').props.onClick()
   assertCategories(app, ['Powers', 'Scopes'])
+  assert.equal(scopesOutputHeader(app).props.disabled, false)
+  scopesOutputHeader(app).props.onClick()
+  assert.equal(scopesOutputHeader(app).props['aria-expanded'], true)
+  assert.ok(button(elements(scopesOutputPanel(app)), 'Select Folder'))
   for (const section of categorySections(app).slice(2)) {
     assert.equal(categoryHeader(section).props['aria-expanded'], true)
     assert.ok(categorySteps(section).every(step => step.props.disabled === false))

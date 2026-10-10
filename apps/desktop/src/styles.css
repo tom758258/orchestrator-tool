@@ -434,7 +434,8 @@ body {
   cursor: pointer;
 }
 
-.step-category-header:disabled {
+.step-category-header:disabled,
+.collapsible-header:disabled {
   color: var(--muted);
   cursor: default;
 }

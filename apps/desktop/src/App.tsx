@@ -175,7 +175,12 @@ type StepPresetOption = {
   tool?: ToolInstance['tool']
 }
 
-const STEP_CATEGORY_ORDER = ['Workflow', 'Meters', 'Powers', 'Scopes'] as const
+const STEP_CATEGORIES = [
+  { category: 'Workflow', tool: null },
+  { category: 'Meters', tool: 'meters' },
+  { category: 'Powers', tool: 'powers' },
+  { category: 'Scopes', tool: 'scopes' },
+] as const
 
 const STEP_PRESETS: StepPresetOption[] = [
   ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
@@ -531,6 +536,8 @@ function App() {
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
   const [toolConfigError, setToolConfigError] = useState<string | null>(null)
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null)
+  const scopesOutputLocked = !workflowDraft?.tool_instances.some(instance => instance.tool === 'scopes')
+  const scopesOutputVisible = !scopesOutputLocked && scopesOutputExpanded
   const powersModels = executionMode === 'simulate' ? [null]
     : [...new Set((workflowDraft?.tool_instances ?? []).flatMap(instance => {
         const modelId = resourceIdentities[instance.id]?.model_id
@@ -2034,10 +2041,9 @@ function App() {
                     {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
                     <div className="step-palette-items">
-                      {STEP_CATEGORY_ORDER.map(category => {
+                      {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
-                        const tool = presets[0]?.tool
-                        const locked = Boolean(tool) && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
+                        const locked = tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
                         const expanded = !locked && expandedStepCategories[category]
                         return (
                         <section key={category}>
@@ -2077,10 +2083,16 @@ function App() {
                   </section>
                   <section className="streaming-panel" aria-labelledby="scopes-output-title">
                     <h3 id="scopes-output-title"><button className="collapsible-header" type="button"
-                      aria-expanded={scopesOutputExpanded} onClick={() => setScopesOutputExpanded(value => !value)}>
-                      Scopes File Output<span aria-hidden="true">{scopesOutputExpanded ? '−' : '+'}</span>
+                      disabled={scopesOutputLocked}
+                      aria-expanded={scopesOutputVisible}
+                      aria-describedby={scopesOutputLocked ? 'scopes-output-hint' : undefined}
+                      onClick={() => setScopesOutputExpanded(value => !value)}>
+                      Scopes File Output<span aria-hidden="true">{scopesOutputLocked ? '🔒' : scopesOutputVisible ? '−' : '+'}</span>
                     </button></h3>
-                    {scopesOutputExpanded && <>
+                    {scopesOutputLocked && <p className="step-category-hint" id="scopes-output-hint">
+                      No Scopes Tool Instance. Add one in Setup.
+                    </p>}
+                    {scopesOutputVisible && <>
                       <p className="tool-setup-hint">Capture CSV, metadata and screenshots use this folder. Each execution creates new files.</p>
                       <span className="streaming-destination">{scopesOutputFolder ?? 'Default: Orchestrator application folder / data'}</span>
                       <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectScopesOutputFolder()}>Select Folder</button>

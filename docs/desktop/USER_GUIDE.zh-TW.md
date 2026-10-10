@@ -265,7 +265,8 @@ Template 時會依其中的 instances 更新鎖定狀態，不會變更既有 st
 
 點擊可用分類的標題，可獨立展開或收合該分類。展開時顯示 **−**；收合時顯示 **+**
 並隱藏該分類的 step buttons。App 開啟時可用分類預設展開；此狀態不會保存於
-Template。即使 Scopes 分類鎖定，**Scopes File Output** 仍然可獨立使用。
+Template。**Scopes File Output** 維持獨立面板及自己的展開／收合狀態，
+並採用相同的 Scopes Tool Instance 鎖定條件。
 
 Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
@@ -465,7 +466,14 @@ Screenshot 的 **Image Format** 依 Scopes 離線 Capabilities 控制：Simulati
 已保存但不支援的格式會保留並顯示警告。若無法取得 Capabilities，編輯器會顯示原因，
 並停用新的格式選擇。
 
-展開左側 Workflow 的 **Scopes File Output**。**Select Folder** 選擇 Capture 與
+左側 Workflow 的 **Scopes File Output** 需要目前 Template 中至少有一個 Scopes
+Tool Instance。沒有時，標題會灰化並顯示鎖頭與 **No Scopes Tool Instance. Add one in Setup.**，
+無法展開，內部設定也會隱藏。新增第一個 Scopes instance 後解鎖；移除最後一個後
+再次鎖定。載入 Template 時會依其中的 instances 更新鎖定狀態。Simulation 與 Live
+採用相同條件，不需要已保存的 Live Resource。鎖定或解鎖會保留已選資料夾及
+展開／收合狀態，並與 Scopes step 分類各自獨立。
+
+解鎖後可展開 **Scopes File Output**。**Select Folder** 選擇 Capture 與
 Screenshot 共用的資料夾；**Use Default** 回到 **Orchestrator application folder / data**。
 此選擇只屬於本機 runtime state，不保存至 Template。Capture 產生 CSV 與 metadata
 JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop iteration 與後續 run，

@@ -312,8 +312,8 @@ separate operations; Simulation editing does not require a Live Resource.
 Click an available category header to expand or collapse it independently.
 Expanded categories show **−**; collapsed categories show **+** and hide their
 step buttons. Available categories start expanded when the app opens. This
-state is not saved in Templates. **Scopes File Output** remains independently
-available even when the Scopes category is locked.
+state is not saved in Templates. **Scopes File Output** remains a separate panel
+with its own expand/collapse state and uses the same Scopes Tool Instance lock.
 
 Steps can be placed in the root workflow or inside loop bodies. Use the step
 properties area to edit the selected step. Use Validate when you want to
@@ -540,7 +540,16 @@ remain visible but disabled. A saved unsupported format is preserved with a
 warning when the model changes. If capabilities are unavailable, the editor
 shows the reason and disables new format selections.
 
-Expand **Scopes File Output** in the left Workflow panel. **Select Folder**
+**Scopes File Output** in the left Workflow panel requires at least one Scopes
+Tool Instance in the current Template. Without one, its header is greyed out,
+shows a lock and **No Scopes Tool Instance. Add one in Setup.**, and cannot be
+expanded; its settings are hidden. Adding the first Scopes instance unlocks it;
+removing the last locks it again. Loading a Template updates this lock from its
+instances. Simulation and Live use the same rule, without requiring a saved Live
+Resource. Locking or unlocking preserves the chosen folder and expand/collapse
+state, independently of the Scopes step category.
+
+When unlocked, expand **Scopes File Output**. **Select Folder**
 chooses a folder shared by Capture and Screenshot; **Use Default** restores
 **Orchestrator application folder / data**. The choice is local runtime state
 and is never saved in a Template. Capture produces CSV and metadata JSON;

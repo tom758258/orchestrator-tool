@@ -303,8 +303,8 @@ separate operations; Simulation editing does not require a Live Resource.</p>
 <p>Click an available category header to expand or collapse it independently.
 Expanded categories show <strong>−</strong>; collapsed categories show <strong>+</strong> and hide their
 step buttons. Available categories start expanded when the app opens. This
-state is not saved in Templates. <strong>Scopes File Output</strong> remains independently
-available even when the Scopes category is locked.</p>
+state is not saved in Templates. <strong>Scopes File Output</strong> remains a separate panel
+with its own expand/collapse state and uses the same Scopes Tool Instance lock.</p>
 <p>Steps can be placed in the root workflow or inside loop bodies. Use the step
 properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate
@@ -524,7 +524,15 @@ the default model, and Live uses the saved device model. Unsupported formats
 remain visible but disabled. A saved unsupported format is preserved with a
 warning when the model changes. If capabilities are unavailable, the editor
 shows the reason and disables new format selections.</p>
-<p>Expand <strong>Scopes File Output</strong> in the left Workflow panel. <strong>Select Folder</strong>
+<p><strong>Scopes File Output</strong> in the left Workflow panel requires at least one Scopes
+Tool Instance in the current Template. Without one, its header is greyed out,
+shows a lock and <strong>No Scopes Tool Instance. Add one in Setup.</strong>, and cannot be
+expanded; its settings are hidden. Adding the first Scopes instance unlocks it;
+removing the last locks it again. Loading a Template updates this lock from its
+instances. Simulation and Live use the same rule, without requiring a saved Live
+Resource. Locking or unlocking preserves the chosen folder and expand/collapse
+state, independently of the Scopes step category.</p>
+<p>When unlocked, expand <strong>Scopes File Output</strong>. <strong>Select Folder</strong>
 chooses a folder shared by Capture and Screenshot; <strong>Use Default</strong> restores
 <strong>Orchestrator application folder / data</strong>. The choice is local runtime state
 and is never saved in a Template. Capture produces CSV and metadata JSON;
