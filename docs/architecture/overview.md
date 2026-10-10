@@ -53,10 +53,13 @@ A run follows this high-level flow:
    second Core WorkflowRunResult.
 
 The Template contains the durable test definition: Tool Instances, setup
-data, and Workflow steps. Execution mode, executable paths, Live Resources,
-runtime results, output authorization, and safety-cleanup state are not stored
-in the Template. This separation keeps portable workflow definitions distinct
-from machine-local state.
+data, and Workflow steps. It may also contain optional Output Views with saved
+Chart definitions/settings in output_views.charts when the Desktop author
+enables **Save charts with template**. This opt-in is off by default; saving
+with it off omits output_views. Execution mode, executable paths, Live
+Resources, runtime results, output authorization, and safety-cleanup state are
+not stored in the Template. This separation keeps portable workflow definitions
+distinct from machine-local state.
 
 For and While execution is sequential. The current workflow validator permits
 nested loops up to five levels. The exact decimal range, lexical scope,
@@ -137,20 +140,35 @@ The current Desktop presentation architecture has these properties:
   panels across the run pages, and the final remaining panel cannot be
   removed. Last Run Page tabs keep Charts, Summary, and Data views on the same
   run snapshot. Chart panel configuration survives Page/tab changes and new
-  Simulation/Live runs through the existing Page/Output reconciliation. When
-  no panels remain, the first Page receives one default panel if it has numeric
-  Outputs. Template/workflow replacement and Clear Last Run still reset chart
-  session state. Each
+  Simulation/Live runs subject to the existing Page/Output compatibility rules.
+  Session-only panels use Page/Output reconciliation; when no panels remain,
+  the first Page receives one default panel if it has numeric Outputs. When
+  **Save charts with template** is on, runtime run metadata does not reconcile
+  saved Chart definitions. **Open Template** replaces the current Chart
+  configuration with the Template's saved Charts and turns the checkbox on
+  when output_views is present. Without output_views, no persisted Chart
+  configuration is restored and the checkbox is off. Restored Charts use the
+  new run's data when Simulation runs, without requiring Chart setup. A new
+  blank Template clears Chart configuration. **Clear Last Run** removes Last
+  Run data and clears session Charts when the opt-in is off; when it is on,
+  Chart configuration is retained. Turning the opt-in off keeps the current
+  Charts but omits output_views on the next Save Template. Each
   panel keeps its type, Scatter X source, selected Outputs, per-Output colors
   and marker styles, per-Output Line marker enablement, Combo series and
   right-axis settings, Histogram bins and Normal overrides, Box outlier
   visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
-  background in Last Run session state. The
-  current zoom viewport is transient presentation state and resets when the
-  configured X-axis minimum or maximum changes. These settings are not Template
-  data. Single-chart PNG export uses a light or dark palette independently of
-  the application theme, captures the current viewport and ECharts-rendered
-  title, and excludes interactive DataZoom controls.
+  background in Desktop session state by default. With **Save charts with
+  template** enabled, these definitions/settings become optional Template
+  output_views.charts. Runtime panel IDs, actual run samples/data, calculated
+  runtime/statistical results, Run IDs, loading/error UI state, dialog state,
+  and export destinations/paths are never Template data. The current interactive
+  zoom/pan viewport remains transient presentation state and resets when the
+  configured X-axis minimum or maximum changes; it is not saved with the
+  configured zoom settings. Workflow **Chart Options** (Sampling, Preserve
+  Significant Changes, Show Significant Change Markers, and Fit Data) remain
+  session-only even when the opt-in is on. Single-chart PNG export uses a light
+  or dark palette independently of the application theme, captures the current
+  viewport and ECharts-rendered title, and excludes interactive DataZoom controls.
 - Live visualization remains Line only, defined by `chartSupportsLive`. While
   running, preserved non-Line panels display a locked Waiting state without a
   plot; Output selection, Settings, Export PNG, and Remove are disabled. Only
