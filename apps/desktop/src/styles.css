@@ -1276,6 +1276,8 @@ textarea:disabled {
 }
 
 .tool-setup legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin-bottom: 8px;
   padding: 0;
   font-weight: 600;

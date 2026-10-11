@@ -1,3 +1,4 @@
+import { toolInstanceLabel } from './toolInstanceLabel'
 import { scopesChannelNumbers, updateScopesAcquisition, updateScopesChannel } from './scopesSetup'
 import type { ScopesCapabilities, ScopesSetup, ScopesChannel } from './scopesSetup'
 import { useEffect, useState } from 'react'
@@ -23,11 +24,12 @@ export type MetersSetup = {
   allow_buffer_overflow_risk?: boolean
 }
 
-export type ToolInstance =
+export type ToolInstance = { display_name?: string } & (
   | { id: string; tool: 'meters'; setup: MetersSetup }
   | { id: string; tool: 'powers'; setup: PowersSetup }
   | { id: string; tool: 'scopes'; setup: ScopesSetup }
   | { id: string; tool: 'wavegen'; setup: Record<string, never> }
+)
 
 export type PowersProtectionChannel = {
   channel: number
@@ -655,13 +657,29 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
               ? current.filter(id => id !== instance.id) : [...current, instance.id])}>
             {collapsed ? '+' : '−'}
           </button>
-          {instance.id}
+          <span>{toolInstanceLabel(instance, false)}</span>
           <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span>
         </legend>
+        {instance.display_name?.trim() && <p className="tool-setup-hint">Instance ID: {instance.id}</p>}
         {!configuredToolTypes.includes(instance.tool) && <p className="tool-setup-hint" role="status">
           {instance.tool[0].toUpperCase() + instance.tool.slice(1)} is not configured in Tools.
         </p>}
         {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
+          <label className="step-property-field">
+            <span className="step-property-label">Display Name (optional)</span>
+            <input type="text" disabled={disabled} value={instance.display_name ?? ''}
+              onChange={event => {
+                if (disabled) return
+                const display_name = event.target.value || undefined
+                onChange(value.map(item => item.id === instance.id ? { ...item, display_name } : item))
+              }}
+              onBlur={event => {
+                if (disabled) return
+                const display_name = event.target.value.trim() || undefined
+                onChange(value.map(item => item.id === instance.id ? { ...item, display_name } : item))
+              }} />
+            <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>
+          </label>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'
             ? <MetersSetupFields metersExecutableKey={metersExecutableKey}

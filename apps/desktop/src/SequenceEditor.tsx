@@ -1,3 +1,4 @@
+import { toolInstanceLabel } from './toolInstanceLabel'
 import { useEffect, useRef, useState } from 'react'
 import { canMoveSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -90,7 +91,8 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
           return channel
         }
       }
-      return step.target
+      const instance = instances.find(instance => instance.id === step.target)
+      return instance ? toolInstanceLabel(instance) : step.target
     }
   }
 }

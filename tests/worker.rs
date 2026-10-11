@@ -3008,11 +3008,13 @@ fn test_template(workflow: &Workflow) -> Template {
         "Test".to_owned(),
         vec![
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: orchestrator_tool::tool::ToolId::powers(),
                 setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
             },
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("meters-1").unwrap(),
                 tool: orchestrator_tool::tool::ToolId::meters(),
                 setup: ToolSetup::Meters(MetersSetup {
@@ -3057,6 +3059,7 @@ fn multiple_powers_cleanup_attempts_every_session() {
     let instances = ["powers-1", "powers-2"]
         .into_iter()
         .map(|id| ToolInstance {
+            display_name: None,
             id: ToolInstanceId::new(id).unwrap(),
             tool: orchestrator_tool::tool::ToolId::powers(),
             setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),

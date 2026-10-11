@@ -106,6 +106,19 @@ those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
 is not locally configured, with a warning that disappears after configuration.
 
+Expand any Powers, Meters, Scopes, or Wavegen instance to edit **Display Name
+(optional)**. Leave it blank to use the default instance ID. Names may include
+Chinese, English, numbers, and spaces, and different instances may share a name.
+The Setup title and Workflow Target options update immediately; the original
+**Instance ID** remains visible, including when collapsed. Target options keep
+any available model and serial information. Sequence summaries that show a target
+also show its name and ID; action and parameter summaries keep their existing format.
+Names are saved with the Template and restored on loading. Leading and trailing
+spaces are trimmed on leaving the field or saving; clearing the name or entering
+only whitespace restores the ID. Editing is disabled while busy. Renaming does
+not change Workflow references, Simulation/Live mode, or saved Live Resources.
+Wavegen names can be saved even though its runtime actions are not yet supported.
+
 Numeric fields use direct typing and native ArrowUp / ArrowDown stepping;
 spinner buttons are hidden.
 

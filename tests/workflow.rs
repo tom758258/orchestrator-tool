@@ -122,11 +122,13 @@ fn workflow_template_step_result_integration() {
         "Workflow Integration".to_owned(),
         vec![
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: ToolId::powers(),
                 setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
             },
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("meters-1").unwrap(),
                 tool: ToolId::meters(),
                 setup: ToolSetup::Meters(

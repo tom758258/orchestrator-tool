@@ -110,8 +110,22 @@ Fit Data) remain Desktop session options and are not saved by this opt-in.
 Each Tool Instance has:
 
 - id: a unique logical Tool Instance ID within the Template;
+- display_name: optional presentation-only text; omitted when unset;
 - tool: the external Tool Type ID; and
 - setup: tool-specific setup data.
+
+All Tool Types, including Powers, Meters, Scopes, and Wavegen, use the same
+optional `display_name` field. Names may contain ordinary Unicode text and may
+be duplicated. Leading and trailing whitespace is trimmed when constructing or
+loading a Template; empty or whitespace-only names are treated as unset and
+serialized without the field, never as `"display_name": null`.
+
+For example: `{"id": "powers-1", "display_name": "DUT Power Supply", "tool": "powers", "setup": {}}`.
+The name affects presentation only. The `id`, Workflow Step `target`, local Live
+Resource and identity keys, and runtime instance references remain unchanged.
+Existing Templates without this field load normally and retain their original
+field shape. The schema_version remains 1. Older strict schema v1 readers may
+reject Templates containing `display_name`; no legacy export mode is provided.
 
 The Tool Type selects the setup schema; setup fields do not determine the Tool
 Type. Meters uses MetersSetup. Powers uses an optional per-channel Protection

@@ -105,6 +105,15 @@ Live Resources 不屬於 Template。</p>
 <p><strong>Add Tool Instance</strong> 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
 對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。</p>
+<p>展開任一 Powers、Meters、Scopes 或 Wavegen instance，即可編輯 <strong>Display Name
+(optional)</strong>。留空會使用預設 instance ID。名稱可包含中文、英文、數字與空格，
+不同 instances 也可使用相同名稱。Setup 標題與 Workflow Target 選項會立即更新；
+原始 <strong>Instance ID</strong> 仍會顯示，收合時也能辨識。Target 選項會保留可用的型號與
+序號資訊。Sequence 原本顯示 target 的摘要會顯示名稱與 ID；action 與參數摘要
+維持原有格式。名稱隨 Template 保存並於載入時還原；離開欄位或保存時會去除
+前後空白。清空或只輸入空白會恢復顯示 ID。忙碌時無法編輯名稱。修改名稱不會
+改變 Workflow 引用、Simulation／Live 模式或已保存的 Live Resources。
+Wavegen 即使尚未支援 runtime actions，仍可保存名稱。</p>
 <p>數值欄位使用直接輸入及原生 ArrowUp / ArrowDown stepping；spinner 按鈕隱藏。</p>
 <h3 id="51-meters-setup">5.1 Meters Setup</h3>
 <p>目前 Meters Tool Instance 的 Setup 提供：</p>

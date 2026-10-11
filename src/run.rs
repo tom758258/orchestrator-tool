@@ -667,6 +667,7 @@ mod tests {
         crate::template::Template::new(
             "Test".to_owned(),
             vec![crate::tool_instance::ToolInstance {
+                display_name: None,
                 id: crate::tool_instance::ToolInstanceId::new("powers-1").unwrap(),
                 tool: crate::tool::ToolId::powers(),
                 setup: crate::tool_instance::ToolSetup::Powers(

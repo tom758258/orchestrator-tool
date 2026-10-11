@@ -18,6 +18,7 @@ import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, t
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import { failurePresentation } from './failurePresentation'
 import ToolSetupEditor from './ToolSetupEditor'
+import { toolInstanceLabel } from './toolInstanceLabel'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
@@ -82,11 +83,12 @@ function deviceName(identity: ResourceIdentity | null | undefined): string {
     || identity?.identity?.trim() || ''
 }
 
-function targetLabel(id: string, identity: ResourceIdentity | null | undefined): string {
+function targetLabel(instance: ToolInstance, identity: ResourceIdentity | null | undefined): string {
   const name = identity?.model?.trim() || deviceName(identity)
   const serial = identity?.serial?.trim()
   const detail = [name, serial ? `[${serial}]` : ''].filter(Boolean).join(' ')
-  return detail ? `${id} — ${detail}` : id
+  const label = toolInstanceLabel(instance)
+  return detail ? `${label} — ${detail}` : label
 }
 
 function formatResourceCandidate(candidate: LiveResourceCandidate): string {
@@ -2291,7 +2293,7 @@ function App() {
                           updateStep(selectedToolAction.id, step => step.type === 'tool-action' ? { ...step, target } : step)
                         }}>
                           {workflowDraft.tool_instances.filter(instance => instance.tool === workflowDraft.tool_instances.find(item => item.id === selectedToolAction.target)?.tool)
-                            .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance.id, resourceIdentities[instance.id])}</option>)}
+                            .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance, resourceIdentities[instance.id])}</option>)}
                         </select>
                       </label>}
                       {selectedStep.type === 'for' && <>

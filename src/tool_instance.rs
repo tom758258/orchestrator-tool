@@ -68,6 +68,7 @@ impl Default for ToolSetup {
 /// Per-instance setup, checked when constructing a Template.
 pub struct ToolInstance {
     pub id: ToolInstanceId,
+    pub display_name: Option<String>,
     pub tool: ToolId,
     pub setup: ToolSetup,
 }

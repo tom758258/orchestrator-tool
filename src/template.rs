@@ -219,11 +219,17 @@ impl Template {
     /// Creates a template.
     pub fn new(
         name: String,
-        tool_instances: Vec<ToolInstance>,
+        mut tool_instances: Vec<ToolInstance>,
         workflow: Workflow,
     ) -> Result<Self, TemplateError> {
         let mut ids = std::collections::HashSet::new();
-        for instance in &tool_instances {
+        for instance in &mut tool_instances {
+            instance.display_name = instance
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned);
             if !ids.insert(&instance.id) {
                 return Err(TemplateError::Instance(format!(
                     "duplicate tool instance ID {}",
@@ -462,6 +468,7 @@ impl Template {
                     )
                 };
                 Ok(ToolInstance {
+                    display_name: instance.display_name,
                     id: instance.id,
                     tool,
                     setup,
@@ -906,6 +913,7 @@ impl TemplateWire {
                 .map(|instance| {
                     Ok(ToolInstanceWire {
                         id: instance.id.clone(),
+                        display_name: instance.display_name.clone(),
                         tool: instance.tool.as_str().to_owned(),
                         setup: serde_json::to_value(&instance.setup)?,
                     })
@@ -921,6 +929,8 @@ impl TemplateWire {
 #[serde(deny_unknown_fields)]
 struct ToolInstanceWire {
     id: ToolInstanceId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
     tool: String,
     setup: Value,
 }
@@ -1535,6 +1545,7 @@ mod tests {
         .unwrap();
         let meters_setup = vec![
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("meters-1").unwrap(),
                 tool: ToolId::meters(),
                 setup: ToolSetup::Meters(MetersSetup {
@@ -1550,12 +1561,133 @@ mod tests {
                 }),
             },
             ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: ToolId::powers(),
                 setup: ToolSetup::Powers(PowersSetup::default()),
             },
         ];
         Template::new("Power and Meter Test".to_owned(), meters_setup, workflow).unwrap()
+    }
+
+    #[test]
+    fn display_name_legacy_templates_omit_the_optional_field() {
+        let original = sample_template();
+        let json = original.to_json_string().unwrap();
+        assert!(!json.contains("display_name"));
+        let loaded = Template::from_json_str(&json).unwrap();
+        assert!(
+            loaded
+                .tool_instances()
+                .iter()
+                .all(|instance| instance.display_name.is_none())
+        );
+        assert_eq!(loaded, original);
+        assert_eq!(loaded.to_json_string().unwrap(), json);
+    }
+
+    #[test]
+    fn display_name_all_tool_types_round_trip_without_changing_references() {
+        let original = sample_template();
+        let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
+        wire["tool_instances"].as_array_mut().unwrap().extend([
+            json!({"id": "scopes-1", "tool": "scopes", "setup": {}}),
+            json!({"id": "wavegen-1", "tool": "wavegen", "setup": {}}),
+        ]);
+        let unnamed = wire.clone();
+        let names = [
+            "DC Multimeter",
+            "DUT Power Supply",
+            "示波器 123",
+            "Signal Generator",
+        ];
+        for (instance, name) in wire["tool_instances"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(names)
+        {
+            instance["display_name"] = json!(name);
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let validated = Template::new(
+            template.name().to_owned(),
+            template.tool_instances().to_vec(),
+            template.workflow().clone(),
+        )
+        .unwrap();
+        assert_eq!(validated, template);
+        let directory = TestDir::new();
+        let path = directory.path().join("display-name.json");
+        template.save_to_file(&path).unwrap();
+        let loaded = Template::load_from_file(&path).unwrap();
+        assert_eq!(loaded, template);
+        let mut saved: Value = serde_json::from_str(&loaded.to_json_string().unwrap()).unwrap();
+        for (instance, name) in saved["tool_instances"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(names)
+        {
+            assert_eq!(
+                instance.as_object_mut().unwrap().remove("display_name"),
+                Some(json!(name))
+            );
+        }
+        assert_eq!(saved, unnamed);
+        assert_eq!(saved["schema_version"], 1);
+    }
+
+    #[test]
+    fn display_name_trims_clears_and_allows_duplicate_names() {
+        let original = sample_template();
+        for name in ["  相同 Name 123  ", "", " \t\n "] {
+            let mut instances = original.tool_instances().to_vec();
+            for instance in &mut instances {
+                instance.display_name = Some(name.to_owned());
+            }
+            let template = Template::new(
+                original.name().to_owned(),
+                instances,
+                original.workflow().clone(),
+            )
+            .unwrap();
+            let expected = if name.trim().is_empty() {
+                None
+            } else {
+                Some(name.trim())
+            };
+            for instance in template.tool_instances() {
+                assert_eq!(instance.display_name.as_deref(), expected);
+            }
+            let json = template.to_json_string().unwrap();
+            assert_eq!(json.contains("display_name"), expected.is_some());
+            assert_eq!(Template::from_json_str(&json).unwrap(), template);
+        }
+        let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
+        wire["tool_instances"][0]["display_name"] = json!("   ");
+        let loaded = Template::from_json_str(&wire.to_string()).unwrap();
+        assert_eq!(loaded, original);
+    }
+
+    #[test]
+    fn display_name_preserves_strict_unknown_field_and_type_validation() {
+        let original = sample_template();
+        let mut wire: Value = serde_json::from_str(&original.to_json_string().unwrap()).unwrap();
+        wire["tool_instances"][0]["display_name"] = json!("Meter");
+        wire["tool_instances"][0]["unknown"] = json!(true);
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field")
+        );
+        wire["tool_instances"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("unknown");
+        wire["tool_instances"][0]["display_name"] = json!(123);
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
     }
 
     fn saved_chart_wire(chart_type: &str, outputs: Vec<&str>) -> Value {
@@ -1881,6 +2013,7 @@ mod tests {
             (ToolId::powers(), ToolSetup::default()),
         ] {
             let instance = ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("tool-1").unwrap(),
                 tool,
                 setup,
@@ -1901,6 +2034,7 @@ mod tests {
         let original = Template::new(
             "Bound voltage".to_owned(),
             vec![ToolInstance {
+                display_name: None,
                 id: ToolInstanceId::new("powers-1").unwrap(),
                 tool: ToolId::powers(),
                 setup: ToolSetup::Powers(PowersSetup::default()),

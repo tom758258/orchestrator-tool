@@ -181,18 +181,21 @@ test('Steps categories keep tool mapping independent of the first preset tool', 
   assert.equal(header.props['aria-expanded'], true)
 })
 
-async function toolsView(initial, draft = template, source) {
+async function toolsView(initial, draft = template, source, local = {}) {
   let statuses = initial
   let picked = null
   let reject = false
   const calls = []
   const render = await component('App', {
     open: async () => picked,
+    save: async () => picked,
     async invoke(command, args) {
       calls.push([command, args])
       if (command === 'get_tool_status') return statuses
       if (command === 'create_workflow_draft' || command === 'load_workflow_template') return JSON.stringify(draft)
-      if (command === 'get_live_resources' || command === 'get_live_resource_identities') return {}
+      if (command === 'get_live_resources') return local.resources ?? {}
+      if (command === 'get_live_resource_identities') return local.identities ?? {}
+      if (command === 'save_workflow_template' || command === 'validate_workflow_template') return args.templateJson
       if (command === 'set_tool_executable') {
         if (reject) throw new Error('Incompatible executable')
         statuses = statuses.map(tool => tool.tool_id === args.toolId ? status(tool.tool_id) : tool)
@@ -458,4 +461,121 @@ test('Setup candidates change safely while existing instances remain visible wit
   view = render({ ...props, configuredToolTypes: ['powers', 'scopes'] })
   assert.equal(view.filter(node => node.props.role === 'status').length, 0)
   assert.deepEqual(value, original)
+})
+
+
+test('display_name: all four Setup types add, edit, clear, collapse and keep IDs and controls', async () => {
+  const render = await component('ToolSetupEditor')
+  const props = { value: [], steps: [], disabled: false, executionMode: 'simulate', resourceIdentities: {},
+    configuredToolTypes: ['powers', 'meters', 'scopes', 'wavegen'], renderResource: instance => instance.id,
+    onChange: next => { props.value = next } }
+  const field = id => render(props).find(node => node.type === 'fieldset' && node.key === id)
+  const input = id => elements(field(id)).find(node => node.type === 'input' && node.props.type === 'text')
+  for (const tool of props.configuredToolTypes) {
+    render(props).find(node => node.props['aria-label'] === 'Tool type').props.onChange({ target: { value: tool } })
+    button(render(props), 'Add Tool Instance').props.onClick()
+    const id = `${tool}-1`
+    const original = structuredClone(props.value.find(item => item.id === id))
+    assert.equal(original.display_name, undefined)
+    assert.ok(text(field(id)).includes(id))
+    assert.equal(input(id).props.value, '')
+    input(id).props.onChange({ target: { value: '  儀器 Name 123  ' } })
+    assert.equal(input(id).props.value, '  儀器 Name 123  ', 'typing preserves spaces and cursor position')
+    assert.ok(text(elements(field(id)).find(node => node.type === 'legend')).includes('儀器 Name 123'))
+    assert.ok(text(field(id)).includes(`Instance ID: ${id}`))
+    input(id).props.onBlur({ target: { value: input(id).props.value } })
+    assert.equal(input(id).props.value, '儀器 Name 123')
+    elements(field(id)).find(node => node.props.className?.includes('tool-setup-toggle')).props.onClick()
+    assert.equal(input(id), undefined)
+    assert.ok(text(field(id)).includes(`Instance ID: ${id}`))
+    elements(field(id)).find(node => node.props.className?.includes('tool-setup-toggle')).props.onClick()
+    assert.equal(input(id).props.value, '儀器 Name 123')
+    assert.ok(button(elements(field(id)), 'Remove Tool Instance'))
+    assert.ok(text(field(id)).includes('SIMULATION'))
+    props.disabled = true
+    assert.equal(field(id).props.disabled, true)
+    assert.equal(input(id).props.disabled, true)
+    const locked = structuredClone(props.value)
+    input(id).props.onChange({ target: { value: 'blocked' } })
+    input(id).props.onBlur({ target: { value: 'blocked' } })
+    assert.deepEqual(props.value, locked)
+    props.disabled = false
+    for (const blank of ['', '   ']) {
+      input(id).props.onChange({ target: { value: blank } })
+      assert.equal(text(elements(field(id)).find(node => node.type === 'legend')).includes('儀器 Name 123'), false)
+      input(id).props.onBlur({ target: { value: blank } })
+      assert.equal(props.value.find(item => item.id === id).display_name, undefined)
+      assert.deepEqual(JSON.parse(JSON.stringify(props.value.find(item => item.id === id))), original)
+    }
+    input(id).props.onChange({ target: { value: 'Shared name' } })
+    const { display_name, ...unchanged } = props.value.find(item => item.id === id)
+    assert.equal(display_name, 'Shared name')
+    assert.deepEqual(unchanged, original)
+  }
+  assert.equal(props.value.filter(item => item.display_name === 'Shared name').length, 4)
+  button(elements(field('wavegen-1')), 'Remove Tool Instance').props.onClick()
+  assert.equal(props.value.some(item => item.id === 'wavegen-1'), false)
+})
+
+test('display_name: App synchronizes targets and sequence, preserves identities, references and saving', async () => {
+  const draft = structuredClone(template)
+  draft.schema_version = 1
+  draft.name = 'Display names'
+  draft.tool_instances.push({ id: 'powers-2', tool: 'powers', setup: {} },
+    { id: 'meters-1', tool: 'meters', setup: {} }, { id: 'wavegen-1', tool: 'wavegen', setup: {} })
+  draft.workflow.steps.push({ ...draft.workflow.steps[0], id: 'power-off-2' },
+    { type: 'tool-action', id: 'meter-read-1', target: 'meters-1', action: 'measure', arguments: {} },
+    { type: 'tool-action', id: 'scope-query-1', target: 'scopes-1', action: 'query', arguments: {} })
+  const originalSteps = structuredClone(draft.workflow.steps)
+  const local = { resources: { 'powers-1': 'USB0::Power::INSTR' }, identities: {
+    'powers-1': { model: 'E36312A', model_id: 'e36312a', serial: 'SN001' } } }
+  const app = await toolsView(['powers', 'meters', 'scopes', 'wavegen'].map(tool => status(tool)), draft, undefined, local)
+  const renderSetup = await component('ToolSetupEditor')
+  const renderSequence = await component('SequenceEditor')
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const sequence = () => app.render().find(node => node.type === 'SequenceEditor').props
+  const rename = (id, name) => {
+    const field = renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === id)
+    elements(field).find(node => node.type === 'input' && node.props.type === 'text').props.onChange({ target: { value: name } })
+  }
+  const selectTarget = () => app.render().find(node => node.type === 'select' && elements(node).some(child => child.type === 'option' && child.props.value === 'powers-1'))
+  button(app.render(), 'Workflow').props.onClick()
+  sequence().onSelectStep('power-off-1')
+  assert.deepEqual(elements(selectTarget()).filter(node => node.type === 'option').map(text),
+    ['powers-1 — E36312A [SN001]', 'powers-2'])
+  const callsBefore = app.calls.length
+  for (const id of ['powers-1', 'powers-2', 'meters-1', 'scopes-1', 'wavegen-1']) rename(id, id === 'powers-2' ? 'Other power' : 'Shared name')
+  assert.deepEqual(app.calls.slice(callsBefore), [], 'name events perform no native I/O')
+  assert.deepEqual(elements(selectTarget()).filter(node => node.type === 'option').map(node => [node.props.value, text(node)]),
+    [['powers-1', 'Shared name (powers-1) — E36312A [SN001]'], ['powers-2', 'Other power (powers-2)']])
+  assert.deepEqual(setup().steps, originalSteps)
+  assert.deepEqual(setup().resourceIdentities, local.identities)
+  const summaries = renderSequence(sequence()).filter(node => node.props.className === 'sequence-step-summary').map(text)
+  assert.deepEqual(summaries, ['CH?', 'CH?', 'Shared name (meters-1)', 'Shared name (scopes-1)'])
+  rename('meters-1', '')
+  assert.ok(renderSequence(sequence()).some(node => node.props.className === 'sequence-step-summary' && text(node) === 'meters-1'))
+  rename('powers-1', 'Latest power')
+  sequence().onSelectStep('power-off-2')
+  assert.equal(selectTarget().props.value, 'powers-1')
+  assert.ok(text(selectTarget()).includes('Latest power (powers-1)'))
+  selectTarget().props.onChange({ target: { value: 'powers-2' } })
+  assert.equal(setup().steps[1].target, 'powers-2')
+  assert.deepEqual(setup().steps[0], originalSteps[0])
+  assert.deepEqual({ ...setup().steps[1], target: 'powers-1' }, originalSteps[1])
+  rename('powers-1', '   ')
+  assert.ok(text(selectTarget()).includes('powers-1 — E36312A [SN001]'))
+  for (const mode of ['Live', 'Simulation']) {
+    button(app.render(), mode).props.onClick()
+    assert.equal(setup().value.find(item => item.id === 'wavegen-1').display_name, 'Shared name')
+    assert.deepEqual(setup().resourceIdentities, local.identities)
+  }
+  app.pick('names.json')
+  button(app.render(), 'Save Template').props.onClick()
+  assert.equal(setup().disabled, true, 'saving uses the existing busy lock')
+  await settle()
+  const saved = JSON.parse(app.calls.find(([command]) => command === 'save_workflow_template')[1].templateJson)
+  assert.equal(saved.tool_instances.find(item => item.id === 'wavegen-1').display_name, 'Shared name')
+  assert.deepEqual(saved.workflow.steps, setup().steps)
+  assert.ok(!JSON.stringify(saved.tool_instances.find(item => item.id === 'meters-1')).includes('display_name'))
+  assert.ok(!app.calls.slice(callsBefore).some(([command]) => /resource/.test(command)))
 })
