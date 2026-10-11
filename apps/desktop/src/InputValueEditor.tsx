@@ -17,6 +17,7 @@ type ReferenceOptions = {
   stepLabel: (step: WorkflowStep) => string
   earlierVariables: readonly string[]
   disabled: boolean
+  numericSetpoint?: boolean
 }
 
 const SOURCE_HELP = {
@@ -158,13 +159,13 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
   }
 }
 
-function SourceOptions({ earlierSteps, earlierVariables }: ReferenceOptions) {
+function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false }: ReferenceOptions) {
   const hasStepOutput = stepOutputCandidates(earlierSteps).length > 0
   return (
     <>
       <option value="literal">Fixed value</option>
       <option value="variable" disabled={earlierVariables.length === 0}>Variable</option>
-      <option value="step-output" disabled={!hasStepOutput}>Previous step result</option>
+      {!numericSetpoint && <option value="step-output" disabled={!hasStepOutput}>Previous step result</option>}
     </>
   )
 }
@@ -202,9 +203,9 @@ type InputValueEditorProps = ReferenceOptions & {
 }
 
 export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
-  literalDefault = 0, ...references }: InputValueEditorProps) {
+  literalDefault = 0, numericSetpoint = false, ...references }: InputValueEditorProps) {
   const operandEditor = (side: 'left' | 'right') => value.source === 'expression' && (
-    <ExpressionOperandEditor {...references} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
+    <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
       onChange={(operand) => onChange({ ...value, [side]: operand })} />
   )
 
@@ -218,13 +219,16 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
             : event.target.value === 'elapsed-time' || event.target.value === 'timestamp'
               ? { source: event.target.value }
               : defaultOperand(event.target.value, references, literalDefault))}>
-          <SourceOptions {...references} />
+          <SourceOptions {...references} numericSetpoint={numericSetpoint} />
           <option value="expression">Calculation</option>
-          <option value="elapsed-time">Elapsed time</option>
-          <option value="timestamp">Timestamp</option>
+          {!numericSetpoint && <>
+            <option value="elapsed-time">Elapsed time</option>
+            <option value="timestamp">Timestamp</option>
+          </>}
         </select>
       </label>
-      <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
+      <p className="value-source-help">{numericSetpoint && value.source === 'expression'
+        ? 'Calculate a numeric value from fixed numbers or variables.' : SOURCE_HELP[value.source]}</p>
       {value.source === 'expression' ? (
         <div className="step-properties-fields" role="group" aria-label="Calculation">
           <span className="step-property-label">Calculation</span>
@@ -233,7 +237,8 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
             <span className="step-property-label">Operator</span>
             <select value={value.operator} disabled={references.disabled}
               onChange={(event) => onChange({ ...value, operator: event.target.value as typeof value.operator })}>
-              {Object.entries(EXPRESSION_OPERATORS).map(([operator, symbol]) => (
+              {Object.entries(EXPRESSION_OPERATORS)
+                .filter(([operator]) => !numericSetpoint || ['add', 'subtract', 'multiply', 'divide'].includes(operator)).map(([operator, symbol]) => (
                 <option key={operator} value={operator}>{symbol}</option>
               ))}
             </select>

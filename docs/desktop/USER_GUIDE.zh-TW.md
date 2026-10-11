@@ -342,8 +342,11 @@ result column。
 Channel 為必填；兩個設定值至少須選取一項。使用 **Set Voltage** 與
 **Set Current Limit** 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
 輸入欄位顯示 **Voltage (V)** 與 **Current Limit (A)**。
-已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
-Voltage 與 Current Limit 解析後必須是數值，否則 Powers action validation 會失敗。
+Power Set Output 與 Power Set Voltage 的設定值只允許數值 **Fixed value**、
+**Variable** 或 **Calculation**。Calculation 的運算元只允許固定數值或變數，
+運算子只允許 Add、Subtract、Multiply 或 Divide。設定值不能使用 Previous step result、
+Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
+變數解析後仍必須是數值，否則 Powers action validation 會失敗。
 **Current Limit** 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
 電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 **Power Output ON**。
 
@@ -482,11 +485,19 @@ Double: 6000
 ### 6.7 Scopes actions 與 File Output
 
 Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
-Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。Channel 以外的數值欄位沿用
-Literal、Variable、Step Output 與 Expression bindings。Measure 的 Value、Unit、
-Channel 與 Item 可供 Output 或 Assert 使用。Measurement Item 使用 `vpp`、`vavg`、
-`frequency` 或 `period` 等 canonical 名稱；型號支援由 Scopes 驗證。Capture 的
-Points 必須是 Scopes 支援的數量（目前為 1000、5000 或 10000）。
+Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。
+Channel Scale、Channel Offset、Timebase Scale、Timebase Position 與 Edge Trigger Level
+只允許數值 **Fixed value**、**Variable** 或 **Calculation** 設定值。
+Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
+或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
+仍保有原有來源能力。Measure 的 Value、Unit、Channel 與 Item 可供 Output 或 Assert 使用。
+
+**Measurement Item**、Trigger **Slope** 與 Capture **Points** 都是依目前 Scopes
+Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical 字串；Points 儲存
+數字，不能使用 binding。Simulation 使用預設型號；Live 使用目標的 canonical model ID。
+切換模式、型號、目標 instance 或執行檔會重新載入選項。載入中、Capabilities 無法取得
+或清單為空時會停用選擇。設定不合法或無法確認時，必須明確重新選擇；選項不會自動改寫
+已儲存值。最終型號支援仍由 Scopes 驗證。
 Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。
 
 Channel Display、Channel Scale、Channel Offset 與 Measure 使用固定的 **Channel**

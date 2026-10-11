@@ -402,10 +402,12 @@ Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
 **Set Voltage** and **Set Current Limit** to include or remove each setpoint;
 unchecking leaves that instrument setting unchanged. The fields show **Voltage
-(V)** and **Current Limit (A)**. Each selected setpoint can
-use a fixed value, variable, previous step result, calculation, elapsed time,
-or timestamp. The resolved Voltage and Current Limit must be numeric, or Powers
-action validation fails. **Current Limit** is the power supply output
+(V)** and **Current Limit (A)**. Power Set Output and Power Set Voltage allow
+only numeric **Fixed value**, **Variable**, or **Calculation** setpoints.
+Calculation operands allow only fixed numbers or variables, with Add, Subtract,
+Multiply, or Divide. Previous step result, Elapsed time, Timestamp, and comparison
+calculations are unavailable for setpoints. Templates enforce these restrictions.
+Resolved variables must still be numeric or Powers action validation fails. **Current Limit** is the power supply output
 current-limit setpoint, expressed in A, not a forced output current. This step
 only configures the setpoints. Use **Power Output ON** separately to enable the output.
 
@@ -560,12 +562,21 @@ or While loop always reports the current iteration, never a previous one.
 
 The Scopes group offers Channel Display, Channel Scale, Channel Offset,
 Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, and
-Screenshot. Numeric inputs other than Channel reuse Literal, Variable, Step
-Output, and Expression bindings. Measure exposes Value, Unit, Channel, and Item
-for Output or Assert.
-Use canonical measurement item names such as `vpp`, `vavg`, `frequency`, or
-`period`; Scopes validates model support. Capture Points must be supported by
-Scopes (currently 1000, 5000, or 10000).
+Screenshot. Channel Scale, Channel Offset, Timebase Scale, Timebase Position,
+and Edge Trigger Level allow only numeric **Fixed value**, **Variable**, or
+**Calculation** setpoints. Calculation operands are fixed numbers or variables,
+with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
+general Output, Set Variable, Assert, and While sources remain available.
+Measure exposes Value, Unit, Channel, and Item for Output or Assert.
+
+**Measurement Item**, trigger **Slope**, and Capture **Points** are fixed dropdowns
+from the current Scopes capabilities. Measurement items and slopes save canonical
+strings; Points saves a number and cannot use a binding. Simulation uses the
+default model; Live uses the target's canonical model ID. Changing mode, model,
+target instance, or executable reloads the options. Loading, unavailable
+capabilities, or empty lists disable selection. An invalid or unconfirmed value
+requires explicit reselection; options never change saved values automatically.
+Scopes validates final model support.
 A queued job counts as complete only after Scopes reports its terminal result.
 
 Channel Display, Channel Scale, Channel Offset, and Measure use a fixed

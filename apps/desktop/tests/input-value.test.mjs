@@ -118,3 +118,86 @@ test('only Tool Actions are offered as Step Output candidates', () => {
   ]
   assert.deepEqual(stepOutputCandidates([...structuralSteps, meterMeasure]), [meterMeasure])
 })
+
+// Execute the actual editor and its child components using the existing JSX test pattern.
+async function valueEditor(component = 'InputValueEditor') {
+  const React = (await import('react')).default
+  const { readFileSync } = await import('node:fs')
+  const { transformWithOxc } = await import('vite')
+  const inputValue = await import('../src/inputValue.ts')
+  const source = readFileSync(new URL('../src/InputValueEditor.tsx', import.meta.url), 'utf8')
+  const { code } = await transformWithOxc(source, 'InputValueEditor.tsx', { jsx: { runtime: 'classic' } })
+  const modules = { react: { useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}] },
+    './inputValue': inputValue }
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '').replace(/export /g, '')
+  const render = new Function('React', 'modules', `${body}; return { InputValueEditor, ExpressionOperandEditor }`)(React, modules)[component]
+  return props => {
+    const nodes = []
+    function visit(node) {
+      if (Array.isArray(node)) node.forEach(visit)
+      else if (React.isValidElement(node)) {
+        if (node.type === React.Fragment) visit(node.props.children)
+        else if (typeof node.type === 'function') visit(node.type(node.props))
+        else { nodes.push(node); visit(node.props.children) }
+      }
+    }
+    visit(render({ earlierSteps: [meterMeasure], instances, earlierVariables: ['x'], disabled: false,
+      stepLabel: step => step.id, onChange: () => {}, ...props }))
+    return nodes
+  }
+}
+
+function fieldOptions(nodes, label) {
+  const field = nodes.find(node => node.type === 'label' && [node.props.children[0]?.props.children].flat().join('') === label)
+  assert.ok(field, label)
+  const select = field.props.children.find(node => node?.type === 'select')
+  // Options are expanded separately from their JSX component wrappers.
+  const start = nodes.indexOf(select)
+  const next = nodes.findIndex((node, i) => i > start && node.type !== 'option')
+  return nodes.slice(start + 1, next < 0 ? undefined : next).filter(node => node.type === 'option')
+    .map(node => node.props.value)
+}
+
+test('actual Numeric Setpoint editor offers only numeric sources, operands and arithmetic', async () => {
+  const render = await valueEditor()
+  const expression = { source: 'expression', left: { source: 'literal', value: 2 }, operator: 'add',
+    right: { source: 'variable', variable: 'x' } }
+  const nodes = render({ value: expression, numericSetpoint: true })
+  assert.deepEqual(fieldOptions(nodes, 'Value Source'), ['literal', 'variable', 'expression'])
+  assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable'])
+  assert.deepEqual(fieldOptions(nodes, 'Right Source'), ['literal', 'variable'])
+  assert.deepEqual(fieldOptions(nodes, 'Operator'), ['add', 'subtract', 'multiply', 'divide'])
+  let changed
+  const literalNodes = render({ value: { source: 'literal', value: 3 }, numericSetpoint: true,
+    onChange: value => { changed = value } })
+  literalNodes.find(node => node.type === 'input').props.onChange({ currentTarget: { valueAsNumber: 4.5 } })
+  assert.deepEqual(changed, { source: 'literal', value: 4.5 })
+})
+
+test('actual general editor retains result/time sources and comparison calculations', async () => {
+  const render = await valueEditor()
+  const nodes = render({ value: { source: 'expression', left: { source: 'literal', value: 2 },
+    operator: 'equal', right: { source: 'variable', variable: 'x' } } })
+  assert.deepEqual(fieldOptions(nodes, 'Value Source'),
+    ['literal', 'variable', 'step-output', 'expression', 'elapsed-time', 'timestamp'])
+  assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable', 'step-output'])
+  assert.deepEqual(fieldOptions(nodes, 'Right Source'), ['literal', 'variable', 'step-output'])
+  assert.deepEqual(fieldOptions(nodes, 'Operator'),
+    ['add', 'subtract', 'multiply', 'divide', ...Object.keys(COMPARISON_OPERATORS)])
+  const result = render({ value: { source: 'step-output', step_id: 'measure-1', pointer: '/value' } })
+  assert.ok(result.some(node => node.type === 'select' && node.props.value === 'measure-1'))
+})
+
+test('actual Assert and While operand editor retains boolean literals and step results', async () => {
+  const render = await valueEditor('ExpressionOperandEditor')
+  let changed
+  const nodes = render({ side: 'Left', allowBooleanLiteral: true,
+    value: { source: 'literal', value: true }, onChange: value => { changed = value } })
+  assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable', 'step-output'])
+  assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean'])
+  const boolean = nodes.find(node => node.type === 'select' && node.props.value === 'true')
+  assert.ok(boolean)
+  boolean.props.onChange({ target: { value: 'false' } })
+  assert.deepEqual(changed, { source: 'literal', value: false })
+})

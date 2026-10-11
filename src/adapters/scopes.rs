@@ -30,6 +30,9 @@ pub struct ScopesCapabilities {
     pub average_counts: Option<Vec<u32>>,
     pub screenshot_formats: Vec<String>,
     pub measurement_items: Option<Vec<String>>,
+    pub direct_measurement_items: Vec<String>,
+    pub trigger_edge_slopes: Vec<String>,
+    pub capture_point_options: Vec<u32>,
 }
 
 pub fn get_capabilities_for_mode(
@@ -104,6 +107,9 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
         average_counts: Option<Vec<u32>>,
         screenshot_formats: Vec<String>,
         measurement_items: Option<Vec<String>>,
+        direct_measurement_items: Vec<String>,
+        trigger_edge_slopes: Vec<String>,
+        capture_point_options: Vec<u32>,
     }
     #[derive(Deserialize)]
     struct Response {
@@ -130,6 +136,9 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
         average_counts: r.capabilities.average_counts,
         screenshot_formats: r.capabilities.screenshot_formats,
         measurement_items: r.capabilities.measurement_items,
+        direct_measurement_items: r.capabilities.direct_measurement_items,
+        trigger_edge_slopes: r.capabilities.trigger_edge_slopes,
+        capture_point_options: r.capabilities.capture_point_options,
     })
 }
 
@@ -584,10 +593,56 @@ mod tests {
     }
     #[test]
     fn scopes_capabilities_preserves_unknown_information_and_checks_model() {
-        let value = json!({"schema_version":2,"event":"capabilities","model":{"model_id":"test","display_name":"Test"},"capabilities":{"analog_channels":2,"acquisition_modes":["normal","average"],"average_counts":[4,16],"screenshot_formats":["bmp"],"future":true}});
+        let value = json!({"schema_version":2,"event":"capabilities","model":{"model_id":"test","display_name":"Test"},"capabilities":{"analog_channels":2,"acquisition_modes":["normal","average"],"average_counts":[4,16],"screenshot_formats":["bmp"],"measurement_items":["pair-only"],"direct_measurement_items":["vpp","frequency"],"trigger_edge_slopes":["positive","negative"],"capture_point_options":[1000,5000],"future":true}});
         let caps = parse_capabilities(value.to_string().as_bytes(), Some("test")).unwrap();
         assert_eq!(caps.average_counts, Some(vec![4, 16]));
-        assert!(caps.measurement_items.is_none());
+        assert_eq!(caps.measurement_items, Some(vec!["pair-only".into()]));
+        assert_eq!(caps.direct_measurement_items, vec!["vpp", "frequency"]);
+        assert_eq!(caps.trigger_edge_slopes, vec!["positive", "negative"]);
+        assert_eq!(caps.capture_point_options, vec![1000, 5000]);
+        let serialized = serde_json::to_value(&caps).unwrap();
+        for field in [
+            "direct_measurement_items",
+            "trigger_edge_slopes",
+            "capture_point_options",
+        ] {
+            assert_eq!(serialized[field], value["capabilities"][field]);
+            let mut missing = value.clone();
+            missing["capabilities"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                parse_capabilities(missing.to_string().as_bytes(), None)
+                    .unwrap_err()
+                    .contains(field)
+            );
+            for invalid in [Value::Null, json!("invalid")] {
+                let mut malformed = value.clone();
+                malformed["capabilities"][field] = invalid;
+                assert!(parse_capabilities(malformed.to_string().as_bytes(), None).is_err());
+            }
+            let mut empty = value.clone();
+            empty["capabilities"][field] = json!([]);
+            assert_eq!(
+                serde_json::to_value(
+                    parse_capabilities(empty.to_string().as_bytes(), None).unwrap()
+                )
+                .unwrap()[field],
+                json!([])
+            );
+        }
+        let mut no_allowlist = value.clone();
+        no_allowlist["capabilities"]
+            .as_object_mut()
+            .unwrap()
+            .remove("measurement_items");
+        assert!(
+            parse_capabilities(no_allowlist.to_string().as_bytes(), None)
+                .unwrap()
+                .measurement_items
+                .is_none()
+        );
         assert!(parse_capabilities(value.to_string().as_bytes(), Some("other")).is_err());
         let error = json!({"schema_version":2,"event":"error","command":"capabilities","ok":false,
             "error":{"message":"Unsupported physical oscilloscope model ID: unknown-model"}});

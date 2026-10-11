@@ -59,6 +59,22 @@ bindings. Instrument validation remains external.
 | `capture` | `channel` array, `points` |
 | `screenshot` | `format` |
 
+Desktop uses the required `direct_measurement_items`, `trigger_edge_slopes`,
+and `capture_point_options` arrays from `capabilities --json` for fixed
+Measure Item, Trigger Slope, and Capture Points dropdowns. Missing required
+fields fail capability parsing; empty arrays disable selection. The broader
+`measurement_items` allowlist is not the direct Measure option source.
+Capabilities are queried again when mode, canonical model ID, target, or
+executable changes; cancelled requests cannot overwrite current choices.
+Invalid or unconfirmed choices require explicit reselection.
+
+Template/Core requires fixed nonempty Item/Slope strings and a fixed positive
+integer Points value, with no bindings. It does not duplicate model allowlists.
+The five numeric Scopes setpoints accept numeric literal, Variable, or arithmetic
+Calculation sources only; Calculation operands are numeric literals or Variables.
+These restrictions also apply inside For and While bodies. Scopes remains
+responsible for runtime values and final model support.
+
 Measure returns Scopes' structured result, including `value`, `unit`, `channel`,
 and `item`, for ordinary Output/Assert/dataflow. Orchestrator does not infer
 measurement units from channel Setup. HTTP 202 only admits a job. Completion

@@ -19,6 +19,9 @@ export type ScopesCapabilities = {
   average_counts: number[] | null
   screenshot_formats: string[]
   measurement_items: string[] | null
+  direct_measurement_items: string[]
+  trigger_edge_slopes: string[]
+  capture_point_options: number[]
 }
 
 export function updateScopesAcquisition(value: ScopesSetup, acquisition: ScopesAcquisition): ScopesSetup {

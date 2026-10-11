@@ -47,7 +47,9 @@ const setupEditor = invoke => componentEditor('ToolSetupEditor.tsx', 'ScopesSetu
 const actionEditor = invoke => componentEditor('ScopesActionEditor.tsx', 'ScopesActionEditor', invoke)
 
 const caps = { model_id: 'tektronix-tds2024b', model_name: 'TDS2024B', analog_channels: 4,
-  acquisition_modes: ['normal', 'average', 'peak'], average_counts: [4, 16, 64, 128], screenshot_formats: ['bmp'], measurement_items: null }
+  acquisition_modes: ['normal', 'average', 'peak'], average_counts: [4, 16, 64, 128], screenshot_formats: ['bmp'], measurement_items: ['pair-only'],
+  direct_measurement_items: ['vpp', 'frequency'], trigger_edge_slopes: ['positive', 'negative'],
+  capture_point_options: [1000, 5000] }
 const settle = () => new Promise(resolve => setImmediate(resolve))
 const control = (view, label) => view.find(node => node.props['aria-label'] === label)
 
@@ -317,9 +319,11 @@ test('Scopes Channel editor retains numeric bindings and replaces invalid saved 
   control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
   assert.deepEqual(step.arguments.channel, [1, 2])
   assert.equal(control(render(props()), 'Capture CH2').props.checked, true)
-  const points = render(props()).find(node => node.props.literalLabel === 'Points')
-  points.props.onChange({ source: 'variable', variable: 'scale' })
-  assert.deepEqual(step.bindings.points, { source: 'variable', variable: 'scale' })
+  const points = control(render(props()), 'Points')
+  assert.equal(points.type, 'select')
+  points.props.onChange({ target: { value: '5000' } })
+  assert.equal(step.arguments.points, 5000)
+  assert.equal(step.bindings, undefined)
   assert.deepEqual(step.arguments.channel, [1, 2])
 })
 
@@ -375,7 +379,7 @@ test('Scopes Channel preserves unsupported values and bindings through reload un
     assert.equal(elements(control(view, label)).find(node => node.type === 'option' && node.props.value === '4').props.disabled, true)
     assert.ok(JSON.stringify(view).includes('not supported by the current model'))
     const binding = { source: 'variable', variable: 'legacy-channel' }
-    step = { ...step, bindings: { [key]: binding, [numericKey]: { source: 'elapsed-time' } } }
+    step = { ...step, bindings: { [key]: binding, [numericKey]: { source: 'variable', variable: 'scale' } } }
     const original = structuredClone(step)
     step = JSON.parse(JSON.stringify(step))
     view = render(props())
@@ -384,7 +388,7 @@ test('Scopes Channel preserves unsupported values and bindings through reload un
     assert.ok(JSON.stringify(view).includes('Channel binding preserved'))
     assert.deepEqual(step, original)
     const field = view.find(node => node.props.literalLabel === (action === 'trigger-edge' ? 'Level (V)' : 'Volts per Division'))
-    assert.deepEqual(field.props.value, { source: 'elapsed-time' })
+    assert.deepEqual(field.props.value, { source: 'variable', variable: 'scale' })
     field.props.onChange({ source: 'variable', variable: 'value' })
     assert.deepEqual(step.bindings[key], binding)
     assert.equal(step.arguments[key], 4)
@@ -430,7 +434,7 @@ test('Scopes Channel Capture selects nonempty number arrays and preserves unsupp
   assert.deepEqual(step.arguments.channel, [2])
   control(render({ ...props(), disabled: true }), 'Capture CH1').props.onChange({ target: { checked: true } })
   assert.deepEqual(step.arguments.channel, [2])
-  step = { ...step, bindings: { points: { source: 'variable', variable: 'points' }, extra: { source: 'variable', variable: 'extra' } } }
+  step = { ...step, bindings: { extra: { source: 'variable', variable: 'extra' } } }
   for (const saved of [[1, 1], [1, 2, 2], [1, 4], [], 'invalid', [0], [1, '2'], 2, null, undefined]) {
     step = { ...step, arguments: { ...step.arguments, channel: saved } }
     const original = structuredClone(step)
@@ -456,7 +460,7 @@ test('Scopes Channel Capture selects nonempty number arrays and preserves unsupp
     assert.deepEqual(step.arguments, { channel: [replacement], points: 1000, extra: 'preserved' })
     assert.deepEqual(step.bindings, original.bindings)
   }
-  step = { ...step, bindings: { channel: { source: 'variable', variable: 'channels' }, points: { source: 'variable', variable: 'points' } } }
+  step = { ...step, bindings: { channel: { source: 'variable', variable: 'channels' }, extra: { source: 'variable', variable: 'extra' } } }
   const original = structuredClone(step)
   view = render(props())
   assert.ok(JSON.stringify(view).includes('Channel binding preserved'))
@@ -464,7 +468,7 @@ test('Scopes Channel Capture selects nonempty number arrays and preserves unsupp
   assert.equal(control(view, 'Capture CH2').props.checked, false)
   control(view, 'Capture CH1').props.onChange({ target: { checked: true } })
   assert.deepEqual(step.arguments.channel, [1])
-  assert.deepEqual(step.bindings, { points: original.bindings.points })
+  assert.deepEqual(step.bindings, { extra: original.bindings.extra })
 })
 
 test('Scopes Channel capabilities gate missing loading error and empty channel lists without writes', async () => {
@@ -543,7 +547,7 @@ test('Scopes Channel change leaves Offset Trigger and Measure fields unchanged',
     const key = action === 'trigger-edge' ? 'source_channel' : 'channel'
     const numericKey = action === 'trigger-edge' ? 'level' : 'volts'
     let step = { ...screenshotProps().step, action, arguments: scopesActionArguments(action),
-      ...(action === 'measure' ? {} : { bindings: { [numericKey]: { source: 'timestamp' } } }) }
+      ...(action === 'measure' ? {} : { bindings: { [numericKey]: { source: 'variable', variable: 'offset' } } }) }
     const props = () => screenshotProps({ step, onChange: next => { step = next } })
     render(props()); await settle()
     const original = structuredClone(step)
@@ -552,7 +556,7 @@ test('Scopes Channel change leaves Offset Trigger and Measure fields unchanged',
     const view = render(props())
     if (action !== 'measure') {
       const field = view.find(node => node.props.literalLabel === (action === 'trigger-edge' ? 'Level (V)' : 'Offset (V)'))
-      assert.deepEqual(field.props.value, { source: 'timestamp' })
+      assert.deepEqual(field.props.value, { source: 'variable', variable: 'offset' })
       field.props.onChange({ source: 'variable', variable: 'value' })
       assert.deepEqual(step.bindings[numericKey], { source: 'variable', variable: 'value' })
     }
@@ -561,9 +565,150 @@ test('Scopes Channel change leaves Offset Trigger and Measure fields unchanged',
       assert.equal(step.arguments.slope, 'negative')
       assert.equal(step.arguments.source_channel, 2)
     } else if (action === 'measure') {
-      view.find(node => node.type === 'input' && node.props.type === 'text').props.onChange({ target: { value: 'frequency' } })
+      control(view, 'Measurement Item').props.onChange({ target: { value: 'frequency' } })
       assert.equal(step.arguments.item, 'frequency')
       assert.equal(step.arguments.channel, 2)
     }
   }
 })
+
+test('all five Scopes setpoint fields use the shared Numeric Setpoint mode and isolate writes', async () => {
+  for (const [action, key, label] of [
+    ['channel-scale', 'volts_per_division', 'Volts per Division'],
+    ['channel-offset', 'volts', 'Offset (V)'],
+    ['timebase-scale', 'seconds_per_division', 'Seconds per Division'],
+    ['timebase-position', 'seconds', 'Position (s)'],
+    ['trigger-edge', 'level', 'Level (V)'],
+  ]) {
+    const render = await actionEditor(async () => caps)
+    let step = { ...screenshotProps().step, action, arguments: scopesActionArguments(action),
+      bindings: { extra: { source: 'variable', variable: 'extra' } } }
+    const props = () => screenshotProps({ step, onChange: next => { step = next } })
+    const original = structuredClone(step)
+    const field = render(props()).find(node => node.props.literalLabel === label)
+    assert.equal(field.props.numericSetpoint, true, action)
+    const value = { source: 'expression', left: { source: 'literal', value: 2 },
+      operator: 'multiply', right: { source: 'variable', variable: 'scale' } }
+    field.props.onChange(value)
+    assert.deepEqual(step.arguments, original.arguments)
+    assert.deepEqual(step.bindings, { ...original.bindings, [key]: value })
+    render(props()).find(node => node.props.literalLabel === label).props.onChange({ source: 'literal', value: 3 })
+    assert.deepEqual(step.arguments, { ...original.arguments, [key]: 3 })
+    assert.deepEqual(step.bindings, original.bindings)
+    await settle()
+  }
+})
+
+const capabilityChoices = [
+  ['measure', 'item', 'Measurement Item', 'direct_measurement_items', 'vpp', 'frequency'],
+  ['trigger-edge', 'slope', 'Slope', 'trigger_edge_slopes', 'positive', 'negative'],
+  ['capture', 'points', 'Points', 'capture_point_options', 1000, 5000],
+]
+const choiceOptions = select => elements(select).filter(node => node.type === 'option' && !node.props.disabled)
+  .map(node => node.props.value)
+
+for (const [action, key, label, capabilityField, initial, replacement] of capabilityChoices) {
+  test(`Scopes ${label} selects only capability choices and writes the canonical value in isolation`, async () => {
+    const render = await actionEditor(async () => caps)
+    let step = { ...screenshotProps().step, action, arguments: { ...scopesActionArguments(action), [key]: initial },
+      bindings: { extra: { source: 'variable', variable: 'extra' } } }
+    const props = () => screenshotProps({ step, onChange: next => { step = next } })
+    render(props()); await settle()
+    let view = render(props())
+    assert.equal(control(view, label).type, 'select')
+    assert.deepEqual(choiceOptions(control(view, label)), caps[capabilityField])
+    assert.ok(!view.some(node => node.props.literalLabel === label))
+    const original = structuredClone(step)
+    control(view, label).props.onChange({ target: { value: 'unsupported' } })
+    assert.deepEqual(step, original)
+    control(render({ ...props(), disabled: true }), label).props.onChange({ target: { value: String(replacement) } })
+    assert.deepEqual(step, original)
+    control(view, label).props.onChange({ target: { value: String(replacement) } })
+    assert.deepEqual(step, { ...original, arguments: { ...original.arguments, [key]: replacement } })
+    assert.equal(typeof step.arguments[key], typeof replacement)
+    view = render({ ...props(), step: JSON.parse(JSON.stringify(step)) })
+    assert.equal(control(view, label).props.value, String(replacement))
+  })
+
+  test(`Scopes ${label} disables unavailable choices and requires explicit reselection of invalid values`, async () => {
+    let step = { ...screenshotProps().step, action, arguments: { ...scopesActionArguments(action), [key]: 'unsupported' } }
+    let changes = 0
+    const props = () => screenshotProps({ step, onChange: next => { changes++; step = next } })
+    for (const result of ['failure', 'empty', 'missing']) {
+      const render = await actionEditor(async () => {
+        if (result === 'failure') throw 'capability failure'
+        if (result === 'empty') return { ...caps, [capabilityField]: [] }
+        const missing = { ...caps }; delete missing[capabilityField]; return missing
+      })
+      let view = render({ ...props(), executionMode: 'live', modelId: null })
+      assert.equal(control(view, label).props.disabled, true)
+      assert.ok(JSON.stringify(view).includes('Select or refresh a supported Live Resource'))
+      view = render(props())
+      assert.equal(control(view, label).props.disabled, true)
+      assert.ok(JSON.stringify(view).includes('Loading offline Scopes capabilities'))
+      await settle()
+      view = render(props())
+      assert.equal(control(view, label).props.disabled, true)
+      assert.deepEqual(choiceOptions(control(view, label)), [])
+      control(view, label).props.onChange({ target: { value: String(replacement) } })
+      assert.ok(JSON.stringify(view).includes('options are unavailable'))
+      if (result === 'failure') assert.ok(JSON.stringify(view).includes('capability failure'))
+      assert.equal(changes, 0)
+    }
+    const render = await actionEditor(async () => caps)
+    render(props()); await settle()
+    let view = render(props())
+    assert.equal(control(view, label).props.value, '')
+    assert.ok(JSON.stringify(view).includes('invalid or unconfirmed'))
+    assert.equal(changes, 0)
+    control(view, label).props.onChange({ target: { value: String(replacement) } })
+    assert.equal(step.arguments[key], replacement)
+    assert.equal(changes, 1)
+    // Invalid bindings are rejected by Core; choosing a fixed value also repairs an in-memory draft.
+    step = { ...step, bindings: { [key]: { source: 'variable', variable: 'invalid' },
+      extra: { source: 'variable', variable: 'extra' } } }
+    view = render(props())
+    assert.equal(control(view, label).props.value, '')
+    assert.ok(JSON.stringify(view).includes('invalid or unconfirmed'))
+    control(view, label).props.onChange({ target: { value: String(initial) } })
+    assert.equal(step.arguments[key], initial)
+    assert.deepEqual(step.bindings, { extra: { source: 'variable', variable: 'extra' } })
+  })
+
+  test(`Scopes ${label} refreshes mode/model/target/EXE and ignores stale requests`, async () => {
+    const pending = []
+    const render = await actionEditor((command, args) => new Promise((resolve, reject) => pending.push({ args, resolve, reject })))
+    const step = { ...screenshotProps().step, action, arguments: { ...scopesActionArguments(action), [key]: initial } }
+    let props = screenshotProps({ step, onChange: () => assert.fail('capabilities must not change parameters') })
+    render(props)
+    assert.deepEqual(pending[0].args, { modelId: undefined, executionMode: 'simulate' })
+    props = { ...props, executionMode: 'live', modelId: 'old' }; render(props)
+    props = { ...props, modelId: 'new' }; render(props)
+    pending[2].resolve({ ...caps, [capabilityField]: [replacement] }); await settle()
+    pending[0].resolve(caps); pending[1].reject('stale failure'); await settle()
+    let view = render(props)
+    assert.deepEqual(choiceOptions(control(view, label)), [replacement])
+    assert.equal(control(view, label).props.value, '')
+    assert.ok(JSON.stringify(view).includes('invalid or unconfirmed'))
+    assert.ok(!JSON.stringify(view).includes('stale failure'))
+    for (const next of [
+      { ...props, step: { ...step, target: 'scope-2' } },
+      { ...props, step: { ...step, target: 'scope-2' }, scopesExecutableKey: 'new.exe' },
+      { ...props, step: { ...step, target: 'scope-2' }, scopesExecutableKey: 'new.exe', executionMode: 'simulate' },
+    ]) {
+      props = next; view = render(props)
+      assert.equal(control(view, label).props.disabled, true)
+      assert.deepEqual(choiceOptions(control(view, label)), [])
+    }
+    pending[5].resolve(caps); await settle()
+    pending[3].resolve({ ...caps, [capabilityField]: [] }); pending[4].reject('stale EXE failure'); await settle()
+    view = render(props)
+    assert.deepEqual(choiceOptions(control(view, label)), caps[capabilityField])
+    assert.equal(control(view, label).props.value, String(initial))
+    assert.deepEqual(pending.map(request => request.args), [
+      { modelId: undefined, executionMode: 'simulate' }, { modelId: 'old', executionMode: 'live' },
+      { modelId: 'new', executionMode: 'live' }, { modelId: 'new', executionMode: 'live' },
+      { modelId: 'new', executionMode: 'live' }, { modelId: undefined, executionMode: 'simulate' },
+    ])
+  })
+}

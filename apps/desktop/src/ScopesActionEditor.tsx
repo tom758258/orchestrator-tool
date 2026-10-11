@@ -35,7 +35,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   const formats = caps?.screenshot_formats ?? []
   const format = String(step.arguments.format ?? 'png')
   const change = (key: string, value: unknown) => onChange({ ...step, arguments: { ...step.arguments, [key]: value } })
-  const changeChannel = (key: string, value: number | number[]) => {
+  const changeFixed = (key: string, value: string | number | number[]) => {
     const bindings = { ...step.bindings }
     delete bindings[key]
     const next: ToolActionStep = { ...step, arguments: { ...step.arguments, [key]: value }, bindings }
@@ -51,7 +51,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
         <select aria-label={label} value={bound || saved === undefined ? '' : String(saved)}
           disabled={disabled || channels.length === 0} onChange={event => {
             const value = Number(event.target.value)
-            if (!disabled && channels.includes(value)) changeChannel(key, value)
+            if (!disabled && channels.includes(value)) changeFixed(key, value)
           }}>
           <option value="" disabled>{bound ? 'Bound channel (preserved)' : 'Select a channel...'}</option>
           {!bound && saved !== undefined && !supported && <option value={String(saved)} disabled>
@@ -65,8 +65,28 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
         </p>}
     </>
   }
+  const capabilityChoice = (key: string, label: string, options: readonly (string | number)[]) => {
+    const saved = step.arguments[key]
+    const supported = options.some(option => option === saved)
+    const valid = !step.bindings?.[key] && supported
+    return <>
+      <label className="step-property-field"><span className="step-property-label">{label}</span>
+        <select aria-label={label} value={valid ? String(saved) : ''} disabled={disabled || options.length === 0}
+          onChange={event => {
+            const value = options.find(option => String(option) === event.target.value)
+            if (!disabled && value !== undefined) changeFixed(key, value)
+          }}>
+          <option value="" disabled>Select {label.toLowerCase()}...</option>
+          {options.map(option => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+      {options.length === 0 && <p className="tool-setup-hint">{label} options are unavailable.</p>}
+      {!valid && <p className="tool-setup-hint">{label} is invalid or unconfirmed. Select a supported fixed value.</p>}
+    </>
+  }
   const numeric = (key: string, label: string, fallback: number) => <InputValueEditor key={`${step.id}-${key}`}
     value={step.bindings?.[key] ?? { source: 'literal', value: step.arguments[key] as number ?? fallback }}
+    numericSetpoint
     sourceLabel={`${label} Source`} literalLabel={label} literalDefault={fallback}
     earlierSteps={earlierSteps} earlierVariables={earlierVariables} instances={instances} stepLabel={stepLabel} disabled={disabled}
     onChange={(value: InputValueWire) => {
@@ -101,14 +121,9 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
     {step.action === 'timebase-position' && numeric('seconds', 'Position (s)', 0)}
     {step.action === 'trigger-edge' && <>
       {channelSelector('source_channel', 'Source Channel')}{numeric('level', 'Level (V)', 0)}
-      <label className="step-property-field"><span className="step-property-label">Slope</span><select value={String(step.arguments.slope ?? 'positive')}
-        disabled={disabled} onChange={event => change('slope', event.target.value)}>
-        {['positive', 'negative', 'either', 'alternate'].map(slope => <option key={slope} value={slope}>{slope}</option>)}
-      </select></label>
+      {capabilityChoice('slope', 'Slope', caps?.trigger_edge_slopes ?? [])}
     </>}
-    {step.action === 'measure' && <label className="step-property-field"><span className="step-property-label">Measurement Item</span>
-      <input type="text" value={String(step.arguments.item ?? '')} disabled={disabled} onChange={event => change('item', event.target.value)} />
-      <span className="tool-setup-hint">Use a canonical Scopes item, such as vpp, vavg, frequency or period. Scopes validates model support.</span></label>}
+    {step.action === 'measure' && capabilityChoice('item', 'Measurement Item', caps?.direct_measurement_items ?? [])}
     {step.action === 'capture' && <>
       <div className="step-property-field"><span className="step-property-label">Channels</span>
         {channels.map(channel => <label key={channel} className="step-property-checkbox">
@@ -117,7 +132,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
               if (disabled || !channels.includes(channel)) return
               const next = event.target.checked ? [...new Set([...selectedChannels, channel])]
                 : selectedChannels.filter(value => value !== channel)
-              if (next.length) changeChannel('channel', next.sort((a, b) => a - b))
+              if (next.length) changeFixed('channel', next.sort((a, b) => a - b))
             }} />CH{channel}
         </label>)}
       </div>
@@ -126,7 +141,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
           Saved Capture channels {JSON.stringify(savedChannels) ?? '(unset)'} preserved: {caps
             ? 'invalid or not supported by the current model. Select channels to replace them.' : 'support cannot be confirmed.'}
         </p>}
-      {numeric('points', 'Points', 1000)}
+      {capabilityChoice('points', 'Points', caps?.capture_point_options ?? [])}
       <p className="tool-setup-hint">CSV and metadata are saved in Scopes File Output. Every execution creates new files.</p>
     </>}
     {step.action === 'screenshot' && <>

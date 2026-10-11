@@ -225,7 +225,7 @@ test('checkbox handlers hide removed fields, keep one setpoint and preserve othe
   state.view().checkboxes[1].props.onChange({ target: { checked: true } })
   assert.equal(state.value.arguments.current, 1)
   assert.equal(state.value.arguments.voltage, 0)
-  for (const value of [{ source: 'variable', variable: 'limit' }, { source: 'step-output', step_id: 'previous', pointer: '/value' },
+  for (const value of [{ source: 'variable', variable: 'limit' }, { source: 'expression', left: { source: 'variable', variable: 'limit' }, operator: 'multiply', right: { source: 'literal', value: 2 } },
     { source: 'expression', left: { source: 'literal', value: 1 }, operator: 'add', right: { source: 'literal', value: 2 } }]) {
     state.view().inputs[1].props.onChange(value)
     assert.deepEqual(state.value.bindings.current, value)
@@ -303,4 +303,14 @@ test('cancelled capability requests cannot overwrite the current mode or executa
   resolveOld({ channels: [1, 2, 3] })
   await settled()
   assert.deepEqual(loaded, { key: current.key, models: { simulator: { status: 'ready', channels: [6] } } })
+})
+
+test('Powers Set Voltage and both Set Output fields use the shared Numeric Setpoint mode', () => {
+  for (const action of ['set-voltage', 'set-output']) {
+    const fields = editor(action).view().inputs
+    assert.equal(fields.length, action === 'set-voltage' ? 1 : 2)
+    assert.ok(fields.every(field => field.props.numericSetpoint === true))
+    assert.deepEqual(fields.map(field => field.props.sourceLabel),
+      action === 'set-voltage' ? ['Voltage Source'] : ['Voltage Source', 'Current Limit Source'])
+  }
 })

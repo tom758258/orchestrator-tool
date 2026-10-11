@@ -2581,6 +2581,7 @@ function App() {
                                   sourceLabel={`${label} Source`}
                                   literalLabel={`${label} (${name === 'voltage' ? 'V' : 'A'})`}
                                   literalDefault={powerSetpointLiteralDefault(selectedToolAction, name)}
+                                  numericSetpoint
                                   earlierSteps={earlierSteps}
                                   instances={workflowDraft.tool_instances}
                                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}

@@ -329,6 +329,7 @@ impl Template {
             Ok(())
         }
         validate_scopes_files(workflow.steps(), &tool_instances)?;
+        validate_tool_action_parameters(workflow.steps(), &tool_instances)?;
         let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
         Ok(Self {
             name,
@@ -501,6 +502,128 @@ impl Template {
         })?;
         Self::from_json_str(&contents)
     }
+}
+
+fn validate_tool_action_parameters(
+    steps: &[Step],
+    instances: &[ToolInstance],
+) -> Result<(), TemplateError> {
+    fn numeric_source(input: &InputValue) -> Result<(), &'static str> {
+        match input {
+            InputValue::Literal(value) if value.is_number() => Ok(()),
+            InputValue::Literal(_) => Err("literal must be numeric"),
+            InputValue::Variable(_) => Ok(()),
+            InputValue::Expression(expression) => {
+                if expression.operator().is_comparison() {
+                    return Err("Calculation requires an arithmetic operator");
+                }
+                for operand in [expression.left(), expression.right()] {
+                    match operand {
+                        ExpressionOperand::Literal(value) if value.is_number() => {}
+                        ExpressionOperand::Variable(_) => {}
+                        _ => {
+                            return Err(
+                                "Calculation operand must be a numeric literal or Variable",
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
+            _ => Err("source must be numeric literal, Variable, or Calculation"),
+        }
+    }
+
+    for step in steps {
+        match step.kind() {
+            StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                validate_tool_action_parameters(body, instances)?;
+            }
+            StepKind::ToolAction {
+                target,
+                action,
+                arguments,
+                bindings,
+            } => {
+                let tool = &instances
+                    .iter()
+                    .find(|instance| &instance.id == target)
+                    .expect("template targets are validated")
+                    .tool;
+                let error = |parameter: &str, reason: &str| {
+                    TemplateError::Instance(format!(
+                        "Step {} ({tool}/{action}) parameter {parameter}: {reason}",
+                        step.id()
+                    ))
+                };
+                let numeric_parameters: &[&str] = if *tool == ToolId::scopes() {
+                    match action.as_str() {
+                        "channel-scale" => &["volts_per_division"],
+                        "channel-offset" => &["volts"],
+                        "timebase-scale" => &["seconds_per_division"],
+                        "timebase-position" => &["seconds"],
+                        "trigger-edge" => &["level"],
+                        _ => &[],
+                    }
+                } else if *tool == ToolId::powers() {
+                    match action.as_str() {
+                        "set-voltage" => &["voltage"],
+                        "set-output" => &["voltage", "current"],
+                        _ => &[],
+                    }
+                } else {
+                    &[]
+                };
+                for &parameter in numeric_parameters {
+                    if let Some(input) = bindings.get(parameter) {
+                        numeric_source(input).map_err(|reason| error(parameter, reason))?;
+                    } else if let Some(value) = arguments.get(parameter)
+                        && !value.is_number()
+                    {
+                        return Err(error(parameter, "fixed value must be numeric"));
+                    }
+                }
+                if *tool == ToolId::scopes() {
+                    let choice = match action.as_str() {
+                        "measure" => Some(("item", false)),
+                        "trigger-edge" => Some(("slope", false)),
+                        "capture" => Some(("points", true)),
+                        _ => None,
+                    };
+                    if let Some((parameter, integer)) = choice {
+                        if bindings.contains_key(parameter) {
+                            return Err(error(
+                                parameter,
+                                "requires a fixed value; binding is not allowed",
+                            ));
+                        }
+                        let value = arguments.get(parameter);
+                        let valid = if integer {
+                            value
+                                .and_then(Value::as_u64)
+                                .is_some_and(|number| number > 0)
+                        } else {
+                            value
+                                .and_then(Value::as_str)
+                                .is_some_and(|text| !text.trim().is_empty())
+                        };
+                        if !valid {
+                            return Err(error(
+                                parameter,
+                                if integer {
+                                    "fixed value must be a positive integer"
+                                } else {
+                                    "fixed value must be a nonempty string"
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn validate_output_views(
@@ -2027,6 +2150,310 @@ mod tests {
                 Err(TemplateError::Instance(_))
             ));
         }
+    }
+
+    fn action_parameter_template(
+        tool: &str,
+        action: &str,
+        arguments: Value,
+        bindings: Value,
+        nesting: &str,
+    ) -> Value {
+        let step = json!({"type":"tool-action","id":"setpoint","target":"device",
+            "action":action,"arguments":arguments,"bindings":bindings});
+        let mut steps = match nesting {
+            "for" => json!([{"type":"for","id":"loop","variable":"index",
+                "range":{"start":"0","stop":"1","step":"1"},"steps":[step]}]),
+            "while" => json!([{"type":"while","id":"loop","max_iterations":1,
+                "left":{"source":"literal","value":0},"operator":"less-than",
+                "right":{"source":"literal","value":1},"steps":[step]}]),
+            _ => json!([step]),
+        };
+        steps.as_array_mut().unwrap().insert(
+            0,
+            json!({"type":"tool-action","id":"previous","target":"device",
+                "action":"inspect","arguments":{}}),
+        );
+        json!({"schema_version":1,"name":"Parameter validation",
+            "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
+            "workflow":{"steps":steps}})
+    }
+
+    fn check_action_parameters(wire: &Value, expected_reason: Option<(&str, &str)>) {
+        let tool = wire["tool_instances"][0]["tool"].as_str().unwrap();
+        let instance = ToolInstance {
+            display_name: None,
+            id: ToolInstanceId::new("device").unwrap(),
+            tool: ToolId::new(tool).unwrap(),
+            setup: match tool {
+                "scopes" => ToolSetup::Scopes(crate::scopes_setup::ScopesSetup::default()),
+                "powers" => ToolSetup::Powers(PowersSetup::default()),
+                _ => ToolSetup::Empty(crate::tool_instance::EmptySetup {}),
+            },
+        };
+        let workflow =
+            super::workflow_from_wire(serde_json::from_value(wire["workflow"].clone()).unwrap())
+                .unwrap();
+        for result in [
+            Template::new("Parameter validation".into(), vec![instance], workflow),
+            Template::from_json_str(&wire.to_string()),
+        ] {
+            if let Some((parameter, reason)) = expected_reason {
+                let error = result.unwrap_err().to_string();
+                for text in ["setpoint", tool, parameter, reason] {
+                    assert!(error.contains(text), "missing {text}: {error}");
+                }
+                let mut step = wire["workflow"]["steps"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    .unwrap();
+                if step["type"] != "tool-action" {
+                    step = &step["steps"][0];
+                }
+                assert!(error.contains(step["action"].as_str().unwrap()), "{error}");
+            } else {
+                result.unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_setpoint_parameters_validate_sources_in_root_for_and_while() {
+        let number = json!({"source":"literal","value":2});
+        let variable = json!({"source":"variable","variable":"value"});
+        let result = json!({"source":"step-output","step_id":"previous","pointer":"/value"});
+        for (tool, action, parameter) in [
+            ("scopes", "channel-scale", "volts_per_division"),
+            ("scopes", "channel-offset", "volts"),
+            ("scopes", "timebase-scale", "seconds_per_division"),
+            ("scopes", "timebase-position", "seconds"),
+            ("scopes", "trigger-edge", "level"),
+            ("powers", "set-voltage", "voltage"),
+            ("powers", "set-output", "voltage"),
+            ("powers", "set-output", "current"),
+        ] {
+            for nesting in ["root", "for", "while"] {
+                let mut arguments = json!({"channel":1,"slope":"positive"});
+                arguments[parameter] = json!(1.5);
+                check_action_parameters(
+                    &action_parameter_template(tool, action, arguments.clone(), json!({}), nesting),
+                    None,
+                );
+                let mut cases = vec![(number.clone(), None), (variable.clone(), None)];
+                for operator in ["add", "subtract", "multiply", "divide"] {
+                    cases.push((
+                        json!({"source":"expression","left":number,"operator":operator,
+                        "right":variable}),
+                        None,
+                    ));
+                }
+                for source in ["step-output", "elapsed-time", "timestamp"] {
+                    let input = if source == "step-output" {
+                        result.clone()
+                    } else {
+                        json!({"source":source})
+                    };
+                    cases.push((input, Some("source")));
+                }
+                for value in [json!("2"), json!(true), Value::Null, json!([]), json!({})] {
+                    cases.push((json!({"source":"literal","value":value}), Some("numeric")));
+                    for side in ["left", "right"] {
+                        let mut expression = json!({"source":"expression","left":number,
+                            "operator":"add","right":number});
+                        expression[side] = json!({"source":"literal","value":value});
+                        cases.push((expression, Some("operand")));
+                    }
+                }
+                for side in ["left", "right"] {
+                    let mut expression = json!({"source":"expression","left":number,
+                        "operator":"add","right":number});
+                    expression[side] = result.clone();
+                    cases.push((expression, Some("operand")));
+                }
+                for operator in [
+                    "equal",
+                    "not-equal",
+                    "greater-than",
+                    "greater-than-or-equal",
+                    "less-than",
+                    "less-than-or-equal",
+                ] {
+                    cases.push((
+                        json!({"source":"expression","left":number,"operator":operator,
+                        "right":variable}),
+                        Some("arithmetic"),
+                    ));
+                }
+                for (input, reason) in cases {
+                    let mut bindings = json!({});
+                    bindings[parameter] = input;
+                    check_action_parameters(
+                        &action_parameter_template(
+                            tool,
+                            action,
+                            arguments.clone(),
+                            bindings,
+                            nesting,
+                        ),
+                        reason.map(|reason| (parameter, reason)),
+                    );
+                }
+                for value in [json!("1"), json!(true), Value::Null, json!([])] {
+                    arguments[parameter] = value;
+                    check_action_parameters(
+                        &action_parameter_template(
+                            tool,
+                            action,
+                            arguments.clone(),
+                            json!({}),
+                            nesting,
+                        ),
+                        Some((parameter, "numeric")),
+                    );
+                }
+                // A binding replaces the stored argument; only the effective fixed value is checked.
+                check_action_parameters(
+                    &action_parameter_template(
+                        tool,
+                        action,
+                        arguments.clone(),
+                        json!({parameter:variable}),
+                        nesting,
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scopes_capability_choice_parameters_require_fixed_structures() {
+        for (action, parameter, valid, invalid, reason) in [
+            (
+                "measure",
+                "item",
+                json!("future-item"),
+                vec![json!(""), json!("  "), json!(2), Value::Null],
+                "nonempty string",
+            ),
+            (
+                "trigger-edge",
+                "slope",
+                json!("future-slope"),
+                vec![json!(""), json!("  "), json!(true), Value::Null],
+                "nonempty string",
+            ),
+            (
+                "capture",
+                "points",
+                json!(1234),
+                vec![
+                    json!(0),
+                    json!(-1),
+                    json!(1.5),
+                    json!("1000"),
+                    json!(true),
+                    Value::Null,
+                ],
+                "positive integer",
+            ),
+        ] {
+            for nesting in ["root", "for", "while"] {
+                let arguments = json!({parameter:valid});
+                check_action_parameters(
+                    &action_parameter_template(
+                        "scopes",
+                        action,
+                        arguments.clone(),
+                        json!({}),
+                        nesting,
+                    ),
+                    None,
+                );
+                for source in [
+                    "literal",
+                    "variable",
+                    "expression",
+                    "step-output",
+                    "elapsed-time",
+                    "timestamp",
+                ] {
+                    let input = match source {
+                        "literal" => json!({"source":source,"value":valid}),
+                        "variable" => json!({"source":source,"variable":"value"}),
+                        "expression" => {
+                            json!({"source":source,"left":{"source":"literal","value":1},
+                            "operator":"add","right":{"source":"literal","value":1}})
+                        }
+                        "step-output" => {
+                            json!({"source":source,"step_id":"previous","pointer":"/value"})
+                        }
+                        _ => json!({"source":source}),
+                    };
+                    check_action_parameters(
+                        &action_parameter_template(
+                            "scopes",
+                            action,
+                            arguments.clone(),
+                            json!({parameter:input}),
+                            nesting,
+                        ),
+                        Some((parameter, "binding")),
+                    );
+                }
+                for value in &invalid {
+                    check_action_parameters(
+                        &action_parameter_template(
+                            "scopes",
+                            action,
+                            json!({parameter:value}),
+                            json!({}),
+                            nesting,
+                        ),
+                        Some((parameter, reason)),
+                    );
+                }
+                check_action_parameters(
+                    &action_parameter_template("scopes", action, json!({}), json!({}), nesting),
+                    Some((parameter, reason)),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tool_action_parameter_rules_use_tool_identity_and_only_designated_fields() {
+        for (tool, action, parameter) in [
+            ("wavegen", "set-voltage", "voltage"),
+            ("powers", "channel-scale", "volts_per_division"),
+            ("powers", "measure", "item"),
+            ("wavegen", "capture", "points"),
+            ("scopes", "channel-offset", "channel"),
+            ("powers", "set-output", "channel"),
+        ] {
+            check_action_parameters(
+                &action_parameter_template(
+                    tool,
+                    action,
+                    json!({}),
+                    json!({parameter:{"source":"timestamp"}}),
+                    "while",
+                ),
+                None,
+            );
+        }
+        // Optional Powers setpoints remain optional.
+        check_action_parameters(
+            &action_parameter_template(
+                "powers",
+                "set-output",
+                json!({"voltage":0}),
+                json!({}),
+                "root",
+            ),
+            None,
+        );
     }
 
     #[test]

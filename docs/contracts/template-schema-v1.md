@@ -232,6 +232,23 @@ separate action. Existing `set-voltage` steps remain valid: they require
 `channel` and `voltage`, reject `current`, and retain their action name when
 loaded and saved. Schema version remains 1; no action migration occurs.
 
+Numeric setpoints accept only numeric literal, Variable, or Calculation sources.
+This applies to Scopes `channel-scale.volts_per_division`, `channel-offset.volts`,
+`timebase-scale.seconds_per_division`, `timebase-position.seconds`, and
+`trigger-edge.level`, plus Powers `set-voltage.voltage` and
+`set-output.voltage/current`. Calculation operands must be numeric literals or
+Variables and operators must be Add, Subtract, Multiply, or Divide. Effective
+fixed arguments must be JSON numbers. Bindings override arguments as usual;
+dynamic variable values remain subject to runtime and Worker validation.
+
+Scopes `measure.item` and `trigger-edge.slope` require fixed nonempty strings;
+`capture.points` requires a fixed positive JSON integer. None accepts a binding.
+Template construction and JSON loading enforce these rules recursively in For
+and While bodies, based on the target instance's Tool Type and Action. Other
+parameters and general workflow dataflow retain their existing source rules.
+Desktop choices come from Scopes capabilities; Core does not store model
+allowlists, and Scopes validates final model support.
+
 Powers `protection-status` is a read-only Tool Action. Its required `channel`
 argument is an exact positive JSON integer or the exact string `"all"`; no
 other argument fields are accepted. For example:
