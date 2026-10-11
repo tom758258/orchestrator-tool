@@ -77,7 +77,11 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
             if (!disabled && value !== undefined) changeFixed(key, value)
           }}>
           <option value="" disabled>Select {label.toLowerCase()}...</option>
-          {options.map(option => <option key={option} value={option}>{option}</option>)}
+          {options.map(option => <option key={option} value={option}>
+            {key === 'item' && typeof option === 'string'
+              ? option === 'vpp' ? 'Vp-p' : option.replace(/[a-z]/i, letter => letter.toUpperCase())
+              : option}
+          </option>)}
         </select>
       </label>
       {options.length === 0 && <p className="tool-setup-hint">{label} options are unavailable.</p>}

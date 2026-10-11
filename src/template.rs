@@ -581,7 +581,24 @@ fn validate_tool_action_parameters(
                         && !value.is_number()
                     {
                         return Err(error(parameter, "fixed value must be numeric"));
+                    } else if arguments.get(parameter).is_none() && action.as_str() != "set-output"
+                    {
+                        return Err(error(
+                            parameter,
+                            "required setpoint is missing from arguments and bindings",
+                        ));
                     }
+                }
+                if *tool == ToolId::powers()
+                    && action.as_str() == "set-output"
+                    && !numeric_parameters.iter().any(|parameter| {
+                        arguments.get(*parameter).is_some() || bindings.contains_key(*parameter)
+                    })
+                {
+                    return Err(error(
+                        "voltage or current",
+                        "at least one setpoint is required; both are missing from arguments and bindings",
+                    ));
                 }
                 if *tool == ToolId::scopes() {
                     let choice = match action.as_str() {
@@ -2240,6 +2257,35 @@ mod tests {
                     &action_parameter_template(tool, action, arguments.clone(), json!({}), nesting),
                     None,
                 );
+                let missing = json!({"channel":1,"slope":"positive"});
+                check_action_parameters(
+                    &action_parameter_template(tool, action, missing.clone(), json!({}), nesting),
+                    Some((
+                        if action == "set-output" {
+                            "voltage or current"
+                        } else {
+                            parameter
+                        },
+                        "missing",
+                    )),
+                );
+                for input in [
+                    number.clone(),
+                    variable.clone(),
+                    json!({"source":"expression","left":number,"operator":"add",
+                        "right":variable}),
+                ] {
+                    check_action_parameters(
+                        &action_parameter_template(
+                            tool,
+                            action,
+                            missing.clone(),
+                            json!({parameter:input}),
+                            nesting,
+                        ),
+                        None,
+                    );
+                }
                 let mut cases = vec![(number.clone(), None), (variable.clone(), None)];
                 for operator in ["add", "subtract", "multiply", "divide"] {
                     cases.push((
@@ -2328,6 +2374,34 @@ mod tests {
     }
 
     #[test]
+    fn powers_set_output_requires_at_least_one_setpoint_in_root_for_and_while() {
+        let variable = json!({"source":"variable","variable":"value"});
+        for nesting in ["root", "for", "while"] {
+            for (arguments, bindings) in [
+                (json!({"voltage":0}), json!({})),
+                (json!({"current":0.2}), json!({})),
+                (json!({"voltage":0,"current":0.2}), json!({})),
+                (json!({}), json!({"voltage":variable})),
+                (json!({}), json!({"current":variable})),
+                (json!({}), json!({"voltage":variable,"current":variable})),
+                (json!({"voltage":0}), json!({"current":variable})),
+                (json!({"current":0.2}), json!({"voltage":variable})),
+            ] {
+                check_action_parameters(
+                    &action_parameter_template(
+                        "powers",
+                        "set-output",
+                        arguments,
+                        bindings,
+                        nesting,
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+
+    #[test]
     fn scopes_capability_choice_parameters_require_fixed_structures() {
         for (action, parameter, valid, invalid, reason) in [
             (
@@ -2360,7 +2434,10 @@ mod tests {
             ),
         ] {
             for nesting in ["root", "for", "while"] {
-                let arguments = json!({parameter:valid});
+                let mut arguments = json!({parameter:valid});
+                if action == "trigger-edge" {
+                    arguments["level"] = json!(0);
+                }
                 check_action_parameters(
                     &action_parameter_template(
                         "scopes",
@@ -2403,19 +2480,22 @@ mod tests {
                     );
                 }
                 for value in &invalid {
+                    let mut invalid_arguments = arguments.clone();
+                    invalid_arguments[parameter] = value.clone();
                     check_action_parameters(
                         &action_parameter_template(
                             "scopes",
                             action,
-                            json!({parameter:value}),
+                            invalid_arguments,
                             json!({}),
                             nesting,
                         ),
                         Some((parameter, reason)),
                     );
                 }
+                arguments.as_object_mut().unwrap().remove(parameter);
                 check_action_parameters(
-                    &action_parameter_template("scopes", action, json!({}), json!({}), nesting),
+                    &action_parameter_template("scopes", action, arguments, json!({}), nesting),
                     Some((parameter, reason)),
                 );
             }
@@ -2424,19 +2504,39 @@ mod tests {
 
     #[test]
     fn tool_action_parameter_rules_use_tool_identity_and_only_designated_fields() {
-        for (tool, action, parameter) in [
-            ("wavegen", "set-voltage", "voltage"),
-            ("powers", "channel-scale", "volts_per_division"),
-            ("powers", "measure", "item"),
-            ("wavegen", "capture", "points"),
-            ("scopes", "channel-offset", "channel"),
-            ("powers", "set-output", "channel"),
+        for (tool, action, parameter, arguments) in [
+            ("wavegen", "set-voltage", "voltage", json!({})),
+            ("powers", "channel-scale", "volts_per_division", json!({})),
+            ("wavegen", "channel-offset", "volts", json!({})),
+            (
+                "wavegen",
+                "timebase-scale",
+                "seconds_per_division",
+                json!({}),
+            ),
+            ("wavegen", "timebase-position", "seconds", json!({})),
+            ("wavegen", "trigger-edge", "level", json!({})),
+            ("wavegen", "set-output", "current", json!({})),
+            (
+                "scopes",
+                "channel-display",
+                "channel",
+                json!({"query":true}),
+            ),
+            ("scopes", "screenshot", "format", json!({})),
+            ("powers", "output-on", "channel", json!({})),
+            ("powers", "output-off", "channel", json!({})),
+            ("powers", "protection-status", "channel", json!({})),
+            ("powers", "measure", "item", json!({})),
+            ("wavegen", "capture", "points", json!({})),
+            ("scopes", "channel-offset", "channel", json!({"volts":0})),
+            ("powers", "set-output", "channel", json!({"voltage":0})),
         ] {
             check_action_parameters(
                 &action_parameter_template(
                     tool,
                     action,
-                    json!({}),
+                    arguments,
                     json!({parameter:{"source":"timestamp"}}),
                     "while",
                 ),

@@ -567,11 +567,14 @@ and Edge Trigger Level allow only numeric **Fixed value**, **Variable**, or
 **Calculation** setpoints. Calculation operands are fixed numbers or variables,
 with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
 general Output, Set Variable, Assert, and While sources remain available.
+Each of these five Scopes setpoints is required, supplied by a fixed value or binding.
 Measure exposes Value, Unit, Channel, and Item for Output or Assert.
 
 **Measurement Item**, trigger **Slope**, and Capture **Points** are fixed dropdowns
 from the current Scopes capabilities. Measurement items and slopes save canonical
-strings; Points saves a number and cannot use a binding. Simulation uses the
+strings; Measurement Item capitalizes the first English letter for display,
+with `vpp` shown as **Vp-p** while still saving `vpp`. Points saves a number and
+cannot use a binding. Simulation uses the
 default model; Live uses the target's canonical model ID. Changing mode, model,
 target instance, or executable reloads the options. Loading, unavailable
 capabilities, or empty lists disable selection. An invalid or unconfirmed value

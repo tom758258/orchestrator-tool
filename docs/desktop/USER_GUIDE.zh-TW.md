@@ -491,9 +491,11 @@ Channel Scale、Channel Offset、Timebase Scale、Timebase Position 與 Edge Tri
 Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
 或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
 仍保有原有來源能力。Measure 的 Value、Unit、Channel 與 Item 可供 Output 或 Assert 使用。
+這五個 Scopes 設定值皆為必填，須提供固定數值或 binding。
 
 **Measurement Item**、Trigger **Slope** 與 Capture **Points** 都是依目前 Scopes
-Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical 字串；Points 儲存
+Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical 字串；Measurement Item
+顯示時將第一個英文字母大寫，`vpp` 顯示為 **Vp-p**，儲存值仍為 `vpp`。Points 儲存
 數字，不能使用 binding。Simulation 使用預設型號；Live 使用目標的 canonical model ID。
 切換模式、型號、目標 instance 或執行檔會重新載入選項。載入中、Capabilities 無法取得
 或清單為空時會停用選擇。設定不合法或無法確認時，必須明確重新選擇；選項不會自動改寫

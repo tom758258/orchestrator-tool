@@ -607,6 +607,34 @@ const capabilityChoices = [
 const choiceOptions = select => elements(select).filter(node => node.type === 'option' && !node.props.disabled)
   .map(node => node.props.value)
 
+test('Scopes Measurement Item displays readable labels and preserves canonical selections on rerender', async () => {
+  const items = ['vpp', 'frequency', 'period', 'vavg', 'riseTime', '10percent', 'Vmax']
+  const labels = ['Vp-p', 'Frequency', 'Period', 'Vavg', 'RiseTime', '10Percent', 'Vmax']
+  const capabilities = { ...caps, direct_measurement_items: items }
+  const render = await actionEditor(async () => capabilities)
+  let step = { ...screenshotProps().step, action: 'measure', arguments: { channel: 1, item: 'frequency' } }
+  const props = () => screenshotProps({ step, onChange: next => { step = next } })
+  render(props()); await settle()
+  let view = render(props())
+  const options = elements(control(view, 'Measurement Item')).filter(node => node.type === 'option' && !node.props.disabled)
+  assert.deepEqual(options.map(node => [node.props.value, node.props.children]), items.map((item, i) => [item, labels[i]]))
+  assert.deepEqual(capabilities.direct_measurement_items, items)
+  assert.ok(!choiceOptions(control(view, 'Measurement Item')).includes('pair-only'))
+  const original = structuredClone(step)
+  control(view, 'Measurement Item').props.onChange({ target: { value: 'Vp-p' } })
+  assert.deepEqual(step, original)
+  for (const item of ['vpp', 'period', 'vavg', 'frequency']) {
+    control(view, 'Measurement Item').props.onChange({ target: { value: item } })
+    assert.deepEqual(step.arguments, { channel: 1, item })
+    step = JSON.parse(JSON.stringify(step))
+    view = render(props())
+    const select = control(view, 'Measurement Item')
+    assert.equal(select.props.value, item)
+    assert.equal(elements(select).find(node => node.type === 'option' && node.props.value === select.props.value).props.children,
+      labels[items.indexOf(item)])
+  }
+})
+
 for (const [action, key, label, capabilityField, initial, replacement] of capabilityChoices) {
   test(`Scopes ${label} selects only capability choices and writes the canonical value in isolation`, async () => {
     const render = await actionEditor(async () => caps)
@@ -617,6 +645,8 @@ for (const [action, key, label, capabilityField, initial, replacement] of capabi
     let view = render(props())
     assert.equal(control(view, label).type, 'select')
     assert.deepEqual(choiceOptions(control(view, label)), caps[capabilityField])
+    assert.deepEqual(elements(control(view, label)).filter(node => node.type === 'option' && !node.props.disabled)
+      .map(node => node.props.children), label === 'Measurement Item' ? ['Vp-p', 'Frequency'] : caps[capabilityField])
     assert.ok(!view.some(node => node.props.literalLabel === label))
     const original = structuredClone(step)
     control(view, label).props.onChange({ target: { value: 'unsupported' } })

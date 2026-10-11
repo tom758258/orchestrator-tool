@@ -240,6 +240,8 @@ This applies to Scopes `channel-scale.volts_per_division`, `channel-offset.volts
 Variables and operators must be Add, Subtract, Multiply, or Divide. Effective
 fixed arguments must be JSON numbers. Bindings override arguments as usual;
 dynamic variable values remain subject to runtime and Worker validation.
+Each of the five Scopes setpoints is required in `arguments` or `bindings`.
+Powers `set-voltage` requires `voltage`; `set-output` requires either setpoint.
 
 Scopes `measure.item` and `trigger-edge.slope` require fixed nonempty strings;
 `capture.points` requires a fixed positive JSON integer. None accepts a binding.
