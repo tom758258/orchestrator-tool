@@ -1885,7 +1885,7 @@ mod regression_tests {
                 "workflow": { "steps": [
                     { "type": "wait", "id": "wait-1", "duration_ms": 1 },
                     { "type": "tool-action", "id": "meter-read-1", "target": "meters-1", "action": "measure", "arguments": {} },
-                    { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": {} }
+                    { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": { "channel": [1], "points": 1000 } }
                 ] }
             }"#,
         )
