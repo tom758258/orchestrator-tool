@@ -676,6 +676,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
               onBlur={event => {
                 if (disabled) return
                 const display_name = event.target.value.trim() || undefined
+                if (display_name === instance.display_name) return
                 onChange(value.map(item => item.id === instance.id ? { ...item, display_name } : item))
               }} />
             <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>

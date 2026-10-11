@@ -27,7 +27,10 @@ async function component(name, native = {}, source = fs.readFileSync(new URL(`..
     useState(initial) {
       const index = cursor++
       if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial
-      return [state[index], next => { state[index] = typeof next === 'function' ? next(state[index]) : next }]
+      return [state[index], next => {
+        native.onStateUpdate?.(index)
+        state[index] = typeof next === 'function' ? next(state[index]) : next
+      }]
     },
     useEffect() {},
     useCallback: callback => callback,
@@ -186,7 +189,10 @@ async function toolsView(initial, draft = template, source, local = {}) {
   let picked = null
   let reject = false
   const calls = []
+  const updates = []
   const render = await component('App', {
+    onStateUpdate: index => updates.push(index),
+    Channel: class { constructor(onmessage) { this.onmessage = onmessage } },
     open: async () => picked,
     save: async () => picked,
     async invoke(command, args) {
@@ -195,7 +201,11 @@ async function toolsView(initial, draft = template, source, local = {}) {
       if (command === 'create_workflow_draft' || command === 'load_workflow_template') return JSON.stringify(draft)
       if (command === 'get_live_resources') return local.resources ?? {}
       if (command === 'get_live_resource_identities') return local.identities ?? {}
-      if (command === 'save_workflow_template' || command === 'validate_workflow_template') return args.templateJson
+      if (command === 'save_workflow_template' || command === 'validate_workflow_draft') {
+        if (command === 'validate_workflow_draft' && local.validationError) throw new Error(local.validationError)
+        return args.templateJson
+      }
+      if (command === 'run_workflow_simulation') return structuredClone(local.runMetadata)
       if (command === 'set_tool_executable') {
         if (reject) throw new Error('Incompatible executable')
         statuses = statuses.map(tool => tool.tool_id === args.toolId ? status(tool.tool_id) : tool)
@@ -207,7 +217,7 @@ async function toolsView(initial, draft = template, source, local = {}) {
   button(render(), 'Refresh').props.onClick()
   button(render(), 'New Template').props.onClick()
   await settle()
-  return { render, calls, pick(value, invalid = false) { picked = value; reject = invalid } }
+  return { render, calls, updates, pick(value, invalid = false) { picked = value; reject = invalid } }
 }
 
 const categoryNames = ['Workflow', 'Meters', 'Powers', 'Scopes']
@@ -578,4 +588,164 @@ test('display_name: App synchronizes targets and sequence, preserves identities,
   assert.deepEqual(saved.workflow.steps, setup().steps)
   assert.ok(!JSON.stringify(saved.tool_instances.find(item => item.id === 'meters-1')).includes('display_name'))
   assert.ok(!app.calls.slice(callsBefore).some(([command]) => /resource/.test(command)))
+  const loaded = await toolsView(['powers', 'meters', 'scopes', 'wavegen'].map(tool => status(tool)), saved)
+  loaded.pick('names.json')
+  button(loaded.render(), 'Open Template').props.onClick()
+  await settle()
+  const loadedSetup = loaded.render().find(node => node.type === 'ToolSetupEditor').props
+  assert.deepEqual(loadedSetup.value, saved.tool_instances)
+  assert.deepEqual(loadedSetup.steps, saved.workflow.steps)
+})
+
+test('display_name: Blur only updates a changed normalized value', async () => {
+  const render = await component('ToolSetupEditor')
+  const changes = []
+  const props = { value: [], steps: [], disabled: false, executionMode: 'simulate', resourceIdentities: {},
+    configuredToolTypes: ['powers'], renderResource: () => null, onChange: next => changes.push(next) }
+  for (const [stored, entered, expected, count] of [
+    [undefined, '', undefined, 0],
+    ['Power A', 'Power A', 'Power A', 0],
+    ['Power A', 'Power A ', 'Power A', 0],
+    ['  Power A  ', '  Power A  ', 'Power A', 1],
+    ['Power A', 'Power B', 'Power B', 1],
+    ['Power A', '', undefined, 1],
+    ['   ', '   ', undefined, 1],
+  ]) {
+    props.value = [{ id: 'powers-1', tool: 'powers', setup: {}, display_name: stored }]
+    changes.length = 0
+    const input = render(props).find(node => node.type === 'input' && node.props.type === 'text')
+    input.props.onBlur({ target: { value: entered } })
+    assert.equal(changes.length, count, `${JSON.stringify(stored)} -> ${JSON.stringify(entered)}`)
+    assert.equal((changes.at(-1) ?? props.value)[0].display_name, expected)
+  }
+})
+
+const completedRun = {
+  run_id: 7, status: 'succeeded', error: null, completed_successfully: true, manual_exportable: false,
+  execution_count: 1, execution_revision: 1, latest_execution: null, pages: [], messages: [],
+  step_summaries: [{ step_id: 'power-off-1', status: 'succeeded', output: null, message: null }],
+}
+
+async function validatedRunView(draft = structuredClone(template), local = {}) {
+  const app = await toolsView(['powers', 'meters', 'scopes', 'wavegen'].map(tool => status(tool)), draft, undefined,
+    { ...local, runMetadata: completedRun })
+  app.pick('validated.json')
+  button(app.render(), 'Open Template').props.onClick()
+  await settle()
+  button(app.render(), 'Workflow').props.onClick()
+  button(app.render(), 'Run Simulation').props.onClick()
+  await settle()
+  assert.deepEqual(app.render().find(node => node.type === 'SequenceEditor').props.runResults, completedRun.step_summaries)
+  assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+  assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'))
+  return app
+}
+
+test('display_name: no-op and renaming preserve completed Sequence results, validation and Template message', async () => {
+  const app = await validatedRunView()
+  const renderSetup = await component('ToolSetupEditor')
+  const renderSequence = await component('SequenceEditor')
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const sequence = () => app.render().find(node => node.type === 'SequenceEditor').props
+  const input = () => elements(renderSetup(setup()).find(node => node.type === 'fieldset' && node.key === 'powers-1'))
+    .find(node => node.type === 'input' && node.props.type === 'text')
+  const results = sequence().runResults
+  const steps = setup().steps
+  const callOffset = app.calls.length
+  const unchanged = () => {
+    assert.equal(sequence().runResults, results, 'unchanged execution keeps previous results visible')
+    assert.deepEqual(setup().steps, steps)
+    assert.ok(renderSequence(sequence()).some(node => node.props.className === 'sequence-step-result' && text(node).includes('succeeded')))
+    assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+    assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'))
+    assert.deepEqual(app.calls.slice(callOffset), [], 'display-name operations perform no native I/O')
+  }
+  let before = setup().value
+  let writes = app.updates.length
+  input().props.onBlur({ target: { value: '' } })
+  assert.equal(setup().value, before)
+  assert.equal(app.updates.length, writes)
+  unchanged()
+  input().props.onChange({ target: { value: 'Power A' } })
+  assert.equal(setup().value[0].display_name, 'Power A')
+  unchanged()
+  for (const action of [
+    () => input().props.onBlur({ target: { value: 'Power A' } }),
+    () => input().props.onChange({ target: { value: 'Power A' } }),
+    () => setup().onChange(structuredClone(setup().value)),
+  ]) {
+    before = setup().value
+    writes = app.updates.length
+    action()
+    assert.equal(setup().value, before, 'no-op retains the draft instances')
+    assert.equal(app.updates.length, writes, 'no-op invokes no state setters')
+    unchanged()
+  }
+  for (const name of ['  Power A  ', 'Power B', '', '   ']) {
+    input().props.onChange({ target: { value: name } })
+    assert.equal(input().props.value, name)
+    unchanged()
+    input().props.onBlur({ target: { value: name } })
+    assert.equal(setup().value[0].display_name, name.trim() || undefined)
+    unchanged()
+  }
+})
+
+test('display_name: renaming preserves prior Workflow edits and existing validation errors', async () => {
+  const local = {}
+  const app = await validatedRunView(undefined, local)
+  const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+  const sequence = () => app.render().find(node => node.type === 'SequenceEditor').props
+  sequence().onDeleteStep('power-off-1')
+  assert.equal(sequence().runResults, null, 'a genuine Workflow edit invalidates previous Sequence results')
+  app.pick('changed.json')
+  button(app.render(), 'Save Template').props.onClick()
+  await settle()
+  setup().onChange(setup().value.map(instance => ({ ...instance, display_name: 'Named after step edit' })))
+  assert.equal(sequence().runResults, null, 'renaming must preserve the prior changed flag')
+  assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+  assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template saved.'))
+  // Use the existing validation handler to create a real local error.
+  const invalid = await toolsView([status('powers')], structuredClone(template), undefined, local)
+  button(invalid.render(), 'Workflow').props.onClick()
+  local.validationError = 'Existing setup validation error'
+  button(invalid.render(), 'Validate').props.onClick()
+  await settle()
+  const error = () => invalid.render().find(node => node.props.role === 'alert' && text(node).includes('Validation failed:'))
+  assert.ok(text(error()).includes(local.validationError))
+  const invalidSetup = () => invalid.render().find(node => node.type === 'ToolSetupEditor').props
+  invalidSetup().onChange(invalidSetup().value.map(instance => ({ ...instance, display_name: 'Rename with error' })))
+  assert.ok(text(error()).includes(local.validationError), 'display metadata must not clear unrelated validation errors')
+  invalidSetup().onChange(invalidSetup().value.map(instance => instance.tool === 'powers'
+    ? { ...instance, setup: { protection: { channels: [{ channel: 1, ovp_voltage: 12 }] } } } : instance))
+  assert.equal(error(), undefined, 'genuine setup edits retain the original error reset behavior')
+})
+
+test('display_name: Setup, ID, type and instance-list changes retain execution invalidation', async () => {
+  for (const [label, change] of [
+    ['Powers Setup', values => values.map(instance => instance.tool === 'powers'
+      ? { ...instance, setup: { protection: { channels: [{ channel: 1, ovp_voltage: 12 }] } } } : instance)],
+    ['Meters Setup', values => values.map(instance => instance.tool === 'meters'
+      ? { ...instance, setup: { ...instance.setup, nplc: 10 } } : instance)],
+    ['Scopes Setup', values => values.map(instance => instance.tool === 'scopes'
+      ? { ...instance, setup: { ...instance.setup, acquisition: { acquisition_type: 'average', average_count: 16 } } } : instance)],
+    ['Instance ID', values => values.map(instance => instance.id === 'powers-1' ? { ...instance, id: 'powers-2' } : instance)],
+    ['Tool type', values => values.map(instance => instance.id === 'powers-1' ? { ...instance, tool: 'wavegen' } : instance)],
+    ['Add instance', values => [...values, { id: 'wavegen-1', tool: 'wavegen', setup: {} }]],
+    ['Remove instance', values => values.filter(instance => instance.id !== 'scopes-1')],
+    ['Instance order', values => [...values].reverse()],
+  ]) {
+    const draft = structuredClone(template)
+    draft.tool_instances.push({ id: 'meters-1', tool: 'meters', setup: { nplc: 1 } })
+    const app = await validatedRunView(draft)
+    const setup = () => app.render().find(node => node.type === 'ToolSetupEditor').props
+    const steps = setup().steps
+    const next = change(setup().value).map(instance => ({ ...instance, display_name: 'Also renamed' }))
+    setup().onChange(next)
+    assert.deepEqual(setup().value, next, label)
+    assert.deepEqual(setup().steps, steps, label)
+    assert.equal(app.render().find(node => node.type === 'SequenceEditor').props.runResults, null, label)
+    assert.ok(!app.render().some(node => node.props.className === 'validation-success'), label)
+    assert.ok(!app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'), label)
+  }
 })

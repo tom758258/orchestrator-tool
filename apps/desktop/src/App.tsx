@@ -800,15 +800,24 @@ function App() {
   )
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
+    if (!workflowDraft) return
+    const previous = workflowDraft.tool_instances
+    const executionChanged = previous.length !== tool_instances.length || tool_instances.some((instance, index) => {
+      const current = previous[index]
+      return instance.id !== current.id || instance.tool !== current.tool
+        || JSON.stringify(instance.setup) !== JSON.stringify(current.setup)
+    })
+    if (!executionChanged && tool_instances.every((instance, index) => instance.display_name === previous[index].display_name)) return
+    setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
+    if (!executionChanged) return
     setPowersStatuses(current => Object.fromEntries(
       Object.entries(current).filter(([id]) => tool_instances.some(instance => instance.id === id)),
     ))
-    setWorkflowDraft((current) => current ? { ...current, tool_instances } : current)
     setWorkflowChangedSinceRun(true)
     setValidationStatus('idle')
     setValidationError(null)
     setTemplateIoMessage(null)
-  }, [])
+  }, [workflowDraft])
 
   const addStep = useCallback((preset: StepPresetOption) => {
     if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) {
