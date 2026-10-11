@@ -482,12 +482,27 @@ Double: 6000
 ### 6.7 Scopes actions 與 File Output
 
 Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
-Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。數值欄位沿用
+Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。Channel 以外的數值欄位沿用
 Literal、Variable、Step Output 與 Expression bindings。Measure 的 Value、Unit、
 Channel 與 Item 可供 Output 或 Assert 使用。Measurement Item 使用 `vpp`、`vavg`、
-`frequency` 或 `period` 等 canonical 名稱；型號支援由 Scopes 驗證。Capture Channels
-以逗號分隔；Points 必須是 Scopes 支援的數量（目前為 1000、5000 或 10000）。
+`frequency` 或 `period` 等 canonical 名稱；型號支援由 Scopes 驗證。Capture 的
+Points 必須是 Scopes 支援的數量（目前為 1000、5000 或 10000）。
 Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。
+
+Channel Display、Channel Scale、Channel Offset 與 Measure 使用固定的 **Channel**
+下拉選單；Edge Trigger 使用 **Source Channel**。選項依 Scopes 離線 Capabilities
+顯示為 **CH1**、**CH2** 等。Simulation 使用模擬器通道；Live 使用目標 instance
+已識別的型號。切換模式、目標 instance、Live 型號或 Scopes 執行檔時，會重新載入選項。
+載入中、缺少 Live 型號、查詢失敗或沒有支援通道時，會停用新的固定選擇並顯示提示。
+已儲存但不支援的值仍會顯示，儲存與重新載入時也會保留。既有 Channel binding
+會保留並顯示提示；只有明確選擇支援的固定通道，才會取代原值並移除該 binding。
+其他 bindings 保持不變。
+
+Capture 的 **Channels** 使用依 Capabilities 提供的 **CH1**、**CH2** 等核取方塊。
+可選擇一個或多個通道，最後一個已選通道無法取消勾選。已儲存但不支援的通道或
+無效舊值會保留並顯示提示，所有核取方塊顯示為未勾選；勾選支援通道後，才以有效
+選擇取代原資料。既有 Channel binding 同樣保留，直到明確選擇固定通道才會取代。
+載入 Capabilities 或切換型號不會自動改寫已儲存通道。
 
 Screenshot 的 **Image Format** 依 Scopes 離線 Capabilities 控制：Simulation 使用
 預設型號，Live 使用已保存的裝置型號。不支援的格式仍顯示，但無法選取。切換型號時，

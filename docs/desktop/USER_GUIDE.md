@@ -560,12 +560,32 @@ or While loop always reports the current iteration, never a previous one.
 
 The Scopes group offers Channel Display, Channel Scale, Channel Offset,
 Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, and
-Screenshot. Numeric inputs reuse Literal, Variable, Step Output, and Expression
-bindings. Measure exposes Value, Unit, Channel, and Item for Output or Assert.
+Screenshot. Numeric inputs other than Channel reuse Literal, Variable, Step
+Output, and Expression bindings. Measure exposes Value, Unit, Channel, and Item
+for Output or Assert.
 Use canonical measurement item names such as `vpp`, `vavg`, `frequency`, or
-`period`; Scopes validates model support. Capture Channels are a comma-separated
-list, and Points must be supported by Scopes (currently 1000, 5000, or 10000).
+`period`; Scopes validates model support. Capture Points must be supported by
+Scopes (currently 1000, 5000, or 10000).
 A queued job counts as complete only after Scopes reports its terminal result.
+
+Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
+**Channel** dropdown; Edge Trigger uses **Source Channel**. Options are **CH1**,
+**CH2**, etc., from offline Scopes capabilities. Simulation uses simulator
+channels; Live uses the target instance's identified model. Changing mode,
+target instance, Live model, or Scopes executable refreshes the options.
+Loading, missing Live model, query failure, or no supported channels prevents
+new fixed selections and shows a hint. Saved unsupported values stay visible
+and are preserved when saving and reloading. Existing Channel bindings are
+preserved with a hint; only explicitly choosing a supported fixed channel
+replaces the value and removes its binding. Other bindings remain unchanged.
+
+Capture **Channels** uses capability-based **CH1**, **CH2**, etc., checkboxes.
+Choose one or more channels; the last selected channel cannot be unchecked.
+Saved unsupported channels or invalid values are preserved with a hint and
+shown with no boxes checked. Checking a supported channel replaces them with
+a valid selection. Existing Channel bindings are likewise preserved until
+fixed channels are explicitly selected. Loading capabilities or changing models
+never rewrites saved channels automatically.
 
 Screenshot **Image Format** uses offline Scopes capabilities: Simulation uses
 the default model, and Live uses the saved device model. Unsupported formats

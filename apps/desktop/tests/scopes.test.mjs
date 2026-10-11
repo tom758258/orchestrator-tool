@@ -283,18 +283,23 @@ test('Scopes Screenshot ignores stale capabilities after model changes and actio
   assert.equal(control(view, 'Image Format').props.disabled, true)
 })
 
-test('other eight Scopes actions never request Screenshot capabilities', async () => {
-  const render = await actionEditor(() => assert.fail('only Screenshot may query capabilities'))
+test('Scopes Channel actions request capabilities while Timebase actions do not', async () => {
+  const calls = []
+  const render = await actionEditor(async (_, args) => { calls.push(args); return caps })
   for (const [action] of SCOPES_ACTIONS.filter(([action]) => action !== 'screenshot')) {
     const props = screenshotProps({ step: { ...screenshotProps().step, action, arguments: scopesActionArguments(action) } })
+    const before = calls.length
     assert.equal(control(render(props), 'Image Format'), undefined)
+    assert.equal(calls.length - before, action.startsWith('timebase-') ? 0 : 1)
+    await settle()
   }
 })
 
-test('Scopes action editor uses existing bindings and retains invalid Capture input for worker validation', async () => {
-  const render = await actionEditor(() => assert.fail('non-Screenshot action must not query capabilities'))
+test('Scopes Channel editor retains numeric bindings and replaces invalid saved Capture only on selection', async () => {
+  const render = await actionEditor(async () => caps)
   let step = { type: 'tool-action', id: 'scale', target: 'scope', action: 'channel-scale', arguments: { channel: 1, volts_per_division: 1 } }
   const props = () => ({ step, instances: [], earlierSteps: [], earlierVariables: ['scale'], disabled: false, stepLabel: value => value.id, onChange: next => { step = next }, executionMode: 'simulate', scopesExecutableKey: 'scopes.exe' })
+  render(props()); await settle()
   let field = elements(render(props())).find(node => node.props.literalLabel === 'Volts per Division')
   field.props.onChange({ source: 'variable', variable: 'scale' })
   assert.deepEqual(step.bindings.volts_per_division, { source: 'variable', variable: 'scale' })
@@ -302,14 +307,238 @@ test('Scopes action editor uses existing bindings and retains invalid Capture in
   field.props.onChange({ source: 'literal', value: 2 })
   assert.equal(step.arguments.volts_per_division, 2)
   assert.equal(step.bindings, undefined)
-  step = { ...step, action: 'capture', arguments: { channel: [1], points: 1000 } }
-  let input = elements(render(props())).find(node => node.type === 'input')
-  const originalKey = input.key
-  input.props.onBlur({ target: { value: '1, 2' } })
-  assert.deepEqual(step.arguments.channel, [1, 2])
-  input = elements(render(props())).find(node => node.type === 'input')
-  assert.equal(input.props.defaultValue, '1, 2')
-  assert.notEqual(input.key, originalKey)
-  input.props.onBlur({ target: { value: 'invalid' } })
+  step = { ...step, action: 'capture', arguments: { channel: 'invalid', points: 1000 } }
+  let view = render(props()); await settle()
   assert.equal(step.arguments.channel, 'invalid')
+  assert.ok(JSON.stringify(view).includes('Saved Capture channels'))
+  control(view, 'Capture CH1').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [1])
+  view = render(props())
+  control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [1, 2])
+  assert.equal(control(render(props()), 'Capture CH2').props.checked, true)
+  const points = render(props()).find(node => node.props.literalLabel === 'Points')
+  points.props.onChange({ source: 'variable', variable: 'scale' })
+  assert.deepEqual(step.bindings.points, { source: 'variable', variable: 'scale' })
+  assert.deepEqual(step.arguments.channel, [1, 2])
+})
+
+for (const action of ['channel-display', 'channel-scale', 'channel-offset', 'trigger-edge', 'measure']) {
+  test(`Scopes Channel fixed selector uses capability options and numeric writes for ${action}`, async () => {
+    const render = await actionEditor(async () => ({ ...caps, analog_channels: 2 }))
+    const key = action === 'trigger-edge' ? 'source_channel' : 'channel'
+    const label = action === 'trigger-edge' ? 'Source Channel' : 'Channel'
+    let step = { ...screenshotProps().step, action, arguments: { ...scopesActionArguments(action), [key]: 1 } }
+    const props = () => screenshotProps({ step, onChange: next => { step = next } })
+    render(props()); await settle()
+    let view = render(props())
+    const select = control(view, label)
+    assert.deepEqual(elements(select).filter(node => node.type === 'option' && !node.props.disabled)
+      .map(node => [node.props.value, node.props.children.join('')]), [[1, 'CH1'], [2, 'CH2']])
+    assert.ok(!view.some(node => node.props.sourceLabel === `${label} Source`))
+    const original = structuredClone(step)
+    select.props.onChange({ target: { value: '4' } })
+    assert.deepEqual(step, original)
+    select.props.onChange({ target: { value: '2' } })
+    assert.deepEqual(step.arguments, { ...original.arguments, [key]: 2 })
+    const roundTrip = JSON.parse(JSON.stringify(step))
+    assert.equal(control(render({ ...props(), step: roundTrip }), label).props.value, '2')
+    control(render({ ...props(), disabled: true }), label).props.onChange({ target: { value: '1' } })
+    assert.deepEqual(step, roundTrip)
+    if (action === 'channel-display') {
+      view = render(props())
+      const display = view.find(node => node.type === 'select' && node.props.value === 'on')
+      display.props.onChange({ target: { value: 'off' } })
+      assert.equal(step.arguments.off, true)
+      assert.equal(step.arguments.on, undefined)
+      assert.equal(step.arguments.query, undefined)
+      assert.equal(step.arguments.channel, 2)
+      render(props()).find(node => node.type === 'select' && node.props.value === 'off')
+        .props.onChange({ target: { value: 'on' } })
+      assert.equal(step.arguments.on, true)
+      assert.equal(step.arguments.off, undefined)
+    }
+  })
+}
+
+test('Scopes Channel preserves unsupported values and bindings through reload until explicit replacement', async () => {
+  for (const action of ['channel-scale', 'trigger-edge']) {
+    const render = await actionEditor(async () => ({ ...caps, analog_channels: 2 }))
+    const key = action === 'trigger-edge' ? 'source_channel' : 'channel'
+    const label = action === 'trigger-edge' ? 'Source Channel' : 'Channel'
+    const numericKey = action === 'trigger-edge' ? 'level' : 'volts_per_division'
+    let step = { ...screenshotProps().step, action, arguments: { ...scopesActionArguments(action), [key]: 4, extra: 'preserved' } }
+    const props = () => screenshotProps({ step, onChange: next => { step = next } })
+    render(props()); await settle()
+    let view = render(props())
+    assert.equal(control(view, label).props.value, '4')
+    assert.equal(elements(control(view, label)).find(node => node.type === 'option' && node.props.value === '4').props.disabled, true)
+    assert.ok(JSON.stringify(view).includes('not supported by the current model'))
+    const binding = { source: 'variable', variable: 'legacy-channel' }
+    step = { ...step, bindings: { [key]: binding, [numericKey]: { source: 'elapsed-time' } } }
+    const original = structuredClone(step)
+    step = JSON.parse(JSON.stringify(step))
+    view = render(props())
+    assert.equal(control(view, label).props.value, '')
+    assert.ok(JSON.stringify(view).includes('Bound channel (preserved)'))
+    assert.ok(JSON.stringify(view).includes('Channel binding preserved'))
+    assert.deepEqual(step, original)
+    const field = view.find(node => node.props.literalLabel === (action === 'trigger-edge' ? 'Level (V)' : 'Volts per Division'))
+    assert.deepEqual(field.props.value, { source: 'elapsed-time' })
+    field.props.onChange({ source: 'variable', variable: 'value' })
+    assert.deepEqual(step.bindings[key], binding)
+    assert.equal(step.arguments[key], 4)
+    control(render(props()), label).props.onChange({ target: { value: '2' } })
+    assert.equal(step.arguments[key], 2)
+    assert.equal(step.bindings[key], undefined)
+    assert.deepEqual(step.bindings[numericKey], { source: 'variable', variable: 'value' })
+    assert.equal(step.arguments.extra, 'preserved')
+    delete step.bindings[numericKey]
+    step.bindings[key] = binding
+    control(render(props()), label).props.onChange({ target: { value: '1' } })
+    assert.equal(step.bindings, undefined)
+  }
+})
+
+test('Scopes Channel Capture selects nonempty number arrays and preserves unsupported or invalid templates', async () => {
+  const render = await actionEditor(async () => ({ ...caps, analog_channels: 2 }))
+  let step = { ...screenshotProps().step, action: 'capture', arguments: { channel: [1], points: 1000, extra: 'preserved' } }
+  const props = () => screenshotProps({ step, onChange: next => { step = next } })
+  render(props()); await settle()
+  let view = render(props())
+  assert.deepEqual(view.filter(node => node.type === 'input').map(node => node.props['aria-label']), ['Capture CH1', 'Capture CH2'])
+  assert.equal(control(view, 'Capture CH1').props.disabled, true)
+  control(view, 'Capture CH1').props.onChange({ target: { checked: false } })
+  assert.deepEqual(step.arguments.channel, [1])
+  control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [1, 2])
+  assert.equal(control(render(props()), 'Capture CH1').props.disabled, false)
+  control(render(props()), 'Capture CH1').props.onChange({ target: { checked: false } })
+  assert.deepEqual(step.arguments.channel, [2])
+  control(render({ ...props(), disabled: true }), 'Capture CH1').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [2])
+  for (const saved of [[1, 4], [], 'invalid', [0], [1, '2'], 2, null, undefined]) {
+    step = { ...step, arguments: { ...step.arguments, channel: saved } }
+    const original = structuredClone(step)
+    view = render(props())
+    assert.deepEqual(step, original)
+    assert.ok(JSON.stringify(view).includes('invalid or not supported'))
+    assert.equal(control(view, 'Capture CH1').props.checked, false)
+    assert.equal(control(view, 'Capture CH2').props.checked, false)
+    const reloaded = JSON.parse(JSON.stringify(step))
+    render({ ...props(), step: reloaded })
+    assert.deepEqual(JSON.parse(JSON.stringify(step)), reloaded)
+    control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
+    assert.deepEqual(step.arguments, { channel: [2], points: 1000, extra: 'preserved' })
+  }
+  step = { ...step, bindings: { channel: { source: 'variable', variable: 'channels' }, points: { source: 'variable', variable: 'points' } } }
+  const original = structuredClone(step)
+  view = render(props())
+  assert.ok(JSON.stringify(view).includes('Channel binding preserved'))
+  assert.deepEqual(step, original)
+  assert.equal(control(view, 'Capture CH2').props.checked, false)
+  control(view, 'Capture CH1').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [1])
+  assert.deepEqual(step.bindings, { points: original.bindings.points })
+})
+
+test('Scopes Channel capabilities gate missing loading error and empty channel lists without writes', async () => {
+  for (const action of ['measure', 'capture']) {
+    let calls = 0
+    const render = await actionEditor(async () => { calls++; throw 'offline capability failure' })
+    const props = screenshotProps({ executionMode: 'live', modelId: null,
+      step: { ...screenshotProps().step, action, arguments: scopesActionArguments(action) } })
+    let view = render(props)
+    assert.equal(calls, 0)
+    assert.ok(JSON.stringify(view).includes('Select or refresh a supported Live Resource'))
+    if (action === 'measure') assert.equal(control(view, 'Channel').props.disabled, true)
+    else assert.equal(view.filter(node => node.type === 'input' && node.props.type === 'checkbox').length, 0)
+    const next = { ...props, modelId: caps.model_id }
+    view = render(next)
+    assert.ok(JSON.stringify(view).includes('Loading offline Scopes capabilities'))
+    await settle()
+    view = render(next)
+    assert.ok(JSON.stringify(view).includes('offline capability failure'))
+    if (action === 'measure') {
+      assert.equal(control(view, 'Channel').props.disabled, true)
+      control(view, 'Channel').props.onChange({ target: { value: '1' } })
+    }
+    const empty = await actionEditor(async () => ({ ...caps, analog_channels: 0 }))
+    empty(props); empty(next); await settle()
+    view = empty(next)
+    assert.ok(JSON.stringify(view).includes('No supported channels were returned'))
+  }
+})
+
+test('Scopes Channel reloads Simulation Live model instance and EXE and ignores stale success or errors', async () => {
+  const pending = []
+  const render = await actionEditor((command, args) => new Promise((resolve, reject) => pending.push({ command, args, resolve, reject })))
+  const step = { ...screenshotProps().step, action: 'measure', arguments: { channel: 4, item: 'vpp' }, bindings: { channel: { source: 'variable', variable: 'legacy' } } }
+  const saved = structuredClone(step)
+  let props = screenshotProps({ step, modelId: 'saved-live-model' })
+  render(props)
+  assert.deepEqual(pending[0].args, { modelId: undefined, executionMode: 'simulate' })
+  props = { ...props, executionMode: 'live', modelId: 'old-model' }
+  render(props)
+  props = { ...props, modelId: 'new-model' }
+  render(props)
+  pending[2].resolve({ ...caps, analog_channels: 2 }); await settle()
+  pending[1].reject('stale failure'); pending[0].resolve(caps); await settle()
+  let view = render(props)
+  assert.deepEqual(elements(control(view, 'Channel')).filter(node => node.type === 'option' && !node.props.disabled).map(node => node.props.value), [1, 2])
+  assert.ok(!JSON.stringify(view).includes('stale failure'))
+  for (const next of [{ ...props, step: { ...step, target: 'scope-2' } },
+    { ...props, step: { ...step, target: 'scope-2' }, scopesExecutableKey: 'new-scopes.exe' },
+    { ...props, executionMode: 'simulate', step: { ...step, target: 'scope-2' }, scopesExecutableKey: 'new-scopes.exe' }]) {
+    props = next
+    view = render(props)
+    assert.equal(control(view, 'Channel').props.disabled, true)
+    assert.ok(JSON.stringify(view).includes('Loading offline Scopes capabilities'))
+  }
+  pending[5].resolve(caps); await settle()
+  pending[4].resolve({ ...caps, analog_channels: 1 }); pending[3].reject('stale instance failure'); await settle()
+  view = render(props)
+  assert.deepEqual(elements(control(view, 'Channel')).filter(node => node.type === 'option' && !node.props.disabled).map(node => node.props.value), [1, 2, 3, 4])
+  assert.equal(pending.length, 6)
+  assert.ok(pending.every(call => call.command === 'get_scopes_capabilities'))
+  assert.deepEqual(pending.slice(3).map(call => call.args), [
+    { modelId: 'new-model', executionMode: 'live' }, { modelId: 'new-model', executionMode: 'live' },
+    { modelId: undefined, executionMode: 'simulate' },
+  ])
+  assert.deepEqual(step, saved)
+  const original = structuredClone(props.step)
+  render({ ...props, executionMode: 'live', modelId: null })
+  assert.equal(pending.length, 6)
+  assert.deepEqual(props.step, original)
+})
+
+test('Scopes Channel change leaves Offset Trigger and Measure fields unchanged', async () => {
+  for (const action of ['channel-offset', 'trigger-edge', 'measure']) {
+    const render = await actionEditor(async () => caps)
+    const key = action === 'trigger-edge' ? 'source_channel' : 'channel'
+    const numericKey = action === 'trigger-edge' ? 'level' : 'volts'
+    let step = { ...screenshotProps().step, action, arguments: scopesActionArguments(action),
+      ...(action === 'measure' ? {} : { bindings: { [numericKey]: { source: 'timestamp' } } }) }
+    const props = () => screenshotProps({ step, onChange: next => { step = next } })
+    render(props()); await settle()
+    const original = structuredClone(step)
+    control(render(props()), action === 'trigger-edge' ? 'Source Channel' : 'Channel').props.onChange({ target: { value: '2' } })
+    assert.deepEqual(step, { ...original, arguments: { ...original.arguments, [key]: 2 } })
+    const view = render(props())
+    if (action !== 'measure') {
+      const field = view.find(node => node.props.literalLabel === (action === 'trigger-edge' ? 'Level (V)' : 'Offset (V)'))
+      assert.deepEqual(field.props.value, { source: 'timestamp' })
+      field.props.onChange({ source: 'variable', variable: 'value' })
+      assert.deepEqual(step.bindings[numericKey], { source: 'variable', variable: 'value' })
+    }
+    if (action === 'trigger-edge') {
+      view.find(node => node.type === 'select' && node.props.value === 'positive').props.onChange({ target: { value: 'negative' } })
+      assert.equal(step.arguments.slope, 'negative')
+      assert.equal(step.arguments.source_channel, 2)
+    } else if (action === 'measure') {
+      view.find(node => node.type === 'input' && node.props.type === 'text').props.onChange({ target: { value: 'frequency' } })
+      assert.equal(step.arguments.item, 'frequency')
+      assert.equal(step.arguments.channel, 2)
+    }
+  }
 })

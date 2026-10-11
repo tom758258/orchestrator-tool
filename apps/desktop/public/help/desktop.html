@@ -543,12 +543,30 @@ or While loop always reports the current iteration, never a previous one.</p>
 <h3 id="67-scopes-actions-and-file-output">6.7 Scopes actions and File Output</h3>
 <p>The Scopes group offers Channel Display, Channel Scale, Channel Offset,
 Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, and
-Screenshot. Numeric inputs reuse Literal, Variable, Step Output, and Expression
-bindings. Measure exposes Value, Unit, Channel, and Item for Output or Assert.
+Screenshot. Numeric inputs other than Channel reuse Literal, Variable, Step
+Output, and Expression bindings. Measure exposes Value, Unit, Channel, and Item
+for Output or Assert.
 Use canonical measurement item names such as <code>vpp</code>, <code>vavg</code>, <code>frequency</code>, or
-<code>period</code>; Scopes validates model support. Capture Channels are a comma-separated
-list, and Points must be supported by Scopes (currently 1000, 5000, or 10000).
+<code>period</code>; Scopes validates model support. Capture Points must be supported by
+Scopes (currently 1000, 5000, or 10000).
 A queued job counts as complete only after Scopes reports its terminal result.</p>
+<p>Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
+<strong>Channel</strong> dropdown; Edge Trigger uses <strong>Source Channel</strong>. Options are <strong>CH1</strong>,
+<strong>CH2</strong>, etc., from offline Scopes capabilities. Simulation uses simulator
+channels; Live uses the target instance's identified model. Changing mode,
+target instance, Live model, or Scopes executable refreshes the options.
+Loading, missing Live model, query failure, or no supported channels prevents
+new fixed selections and shows a hint. Saved unsupported values stay visible
+and are preserved when saving and reloading. Existing Channel bindings are
+preserved with a hint; only explicitly choosing a supported fixed channel
+replaces the value and removes its binding. Other bindings remain unchanged.</p>
+<p>Capture <strong>Channels</strong> uses capability-based <strong>CH1</strong>, <strong>CH2</strong>, etc., checkboxes.
+Choose one or more channels; the last selected channel cannot be unchecked.
+Saved unsupported channels or invalid values are preserved with a hint and
+shown with no boxes checked. Checking a supported channel replaces them with
+a valid selection. Existing Channel bindings are likewise preserved until
+fixed channels are explicitly selected. Loading capabilities or changing models
+never rewrites saved channels automatically.</p>
 <p>Screenshot <strong>Image Format</strong> uses offline Scopes capabilities: Simulation uses
 the default model, and Live uses the saved device model. Unsupported formats
 remain visible but disabled. A saved unsupported format is preserved with a
