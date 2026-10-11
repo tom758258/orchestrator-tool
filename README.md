@@ -103,6 +103,11 @@ Common frontend static checks from `apps/desktop`:
     npm.cmd run typecheck
     npm.cmd run build
 
+Python is used only to generate and validate Desktop offline Help; normal
+Desktop builds and Desktop users do not need it. Developers changing Help
+should see [Desktop offline Help](docs/help/README.md). A virtual environment
+is recommended but optional.
+
 ### WebView2 runtime
 
 The Desktop uses the system Microsoft Edge WebView2 Runtime on Windows. It
@@ -141,7 +146,7 @@ The CLI is intended for engineering setup and diagnostics:
 
 It reports configured executable status and performs bounded, simulate-mode
 Worker checks where supported. It does not replace the Desktop workflow
-interface and does not require a CLI USER_GUIDE in this phase.
+interface.
 
 ## Documentation
 

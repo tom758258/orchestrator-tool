@@ -101,6 +101,10 @@ behavior, setup interpretation, or external-tool contracts.
 
 ## Documentation expectations
 
+Official documentation should describe actual project behavior, architecture,
+and maintenance requirements. Omit unnecessary conversation history, informal
+design references, and temporary decisions.
+
 The root README files are project entry points. Keep them concise and link
 durable details to focused documentation:
 

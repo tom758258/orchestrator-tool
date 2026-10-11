@@ -119,9 +119,6 @@ actions. Its adapter validates startup identity, correlates terminal jobs, and
 assigns runtime artifact paths; instrument-specific validation remains external.
 Wavegen may be represented as a Tool Instance, but its runtime actions remain
 unsupported.
-Additional adapters, serial-tool handling, manifest-driven UI, plugin systems,
-and setup registries are outside this boundary until a concrete requirement
-exists.
 
 ## Powers execution lifecycle
 

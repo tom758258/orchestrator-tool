@@ -104,6 +104,10 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
     npm.cmd run typecheck
     npm.cmd run build
 
+Python 僅用於產生與驗證 Desktop 離線 Help；一般 Desktop build 與 Desktop
+使用者不需要安裝 Python。修改 Help 的開發者請參閱
+[Desktop 離線 Help](docs/help/README.md)。建議使用 venv，但不強制。
+
 ### WebView2 runtime
 
 Desktop 在 Windows 上使用系統的 Microsoft Edge WebView2 Runtime。建立
@@ -139,8 +143,7 @@ CLI 用於工程設定與診斷：
     orchestrator-tool --config <PATH> tools list
 
 CLI 回報 configured executable status，並在支援的工具上執行 bounded
-simulate-mode Worker checks。CLI 不取代 Desktop Workflow interface；本階段
-也不建立 CLI USER_GUIDE。
+simulate-mode Worker checks。CLI 不取代 Desktop Workflow interface。
 
 ## Documentation
 
