@@ -297,17 +297,33 @@ Calculation 不是任意 nested expression tree。</p>
 <p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。</p>
 <h4 id="power-set-output">Power Set Output</h4>
+<p><strong>Power Set Output</strong>、舊版 <strong>Power Set Voltage</strong>、<strong>Power Output ON</strong>、
+<strong>Power Output OFF</strong>，以及 <strong>Power Protection Status</strong> 的 <strong>Specific channel</strong>
+共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
+通道，顯示為 <strong>CH1</strong>、<strong>CH2</strong> 等。Simulation 使用模擬器通道；Live 使用 Setup
+中已儲存 Resource 所辨識的型號。切換目標 instance、Execution Mode 或 Powers
+執行檔時，可選通道也會更新。</p>
+<p>載入中、缺少 Live 型號、capabilities 查詢失敗或通道清單為空時，會顯示提示並
+停用固定通道選擇。已儲存但不在支援清單內的通道仍會顯示，標示為不支援或
+無法確認，儲存及重新載入時也會保留。既有 Channel binding 顯示為
+<strong>Bound channel (preserved)</strong>。只有明確選擇支援的固定通道，才會取代原通道值
+或其 binding；capabilities 不會自動改寫它。</p>
 <p>加入 <strong>Power Set Output</strong> 可設定通道的 Voltage、Current Limit，或同時設定兩者。
-Channel 為必填；兩個設定值至少須選取一項。使用核取方塊加入或移除設定值。
+Channel 為必填；兩個設定值至少須選取一項。使用 <strong>Set Voltage</strong> 與
+<strong>Set Current Limit</strong> 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
+輸入欄位顯示 <strong>Voltage (V)</strong> 與 <strong>Current Limit (A)</strong>。
 已選取的設定值可使用固定值、變數、先前步驟結果、計算、經過時間或時間戳記。
 Voltage 與 Current Limit 解析後必須是數值，否則 Powers action validation 會失敗。
-<strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A。
-Set Output 不會啟用通道輸出；需要啟用時，另加 <strong>Power Output ON</strong>。</p>
+<strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
+電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 <strong>Power Output ON</strong>。</p>
 <p>含有 <strong>Power Set Voltage</strong> 的既有 Template 仍可編輯，儲存後也會保留原 action。
 新建步驟使用 <strong>Power Set Output</strong>。</p>
 <h4 id="power-protection-status">Power Protection Status</h4>
 <p>加入 <strong>Power Protection Status</strong> 可讀取 protection trip 狀態，不會改變儀器設定。
-Channel 可選 <strong>All</strong> 或指定正整數通道。結果提供 <strong>Protection Tripped</strong>、
+Channel 可選 <strong>All</strong>，或選擇 <strong>Specific channel</strong> 後從 Channel 下拉選單指定通道。
+主動從 All 切換至 Specific 時，會選取第一個支援的通道。capabilities 不可用或
+未提供通道時，Specific 無法選取，並保留 All；既有 Specific 值仍會保留。
+結果提供 <strong>Protection Tripped</strong>、
 <strong>Over Voltage Tripped</strong> 與 <strong>Over Current Tripped</strong>。只要過電壓或過電流
 protection 任一觸發，Protection Tripped 即為 true。實際型號支援由 Powers Tool
 驗證。</p>

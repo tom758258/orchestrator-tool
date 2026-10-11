@@ -370,14 +370,31 @@ not become result columns merely because they were referenced.
 
 #### Power Set Output
 
+The Channel dropdown is shared by **Power Set Output**, legacy **Power Set
+Voltage**, **Power Output ON**, **Power Output OFF**, and the **Specific channel**
+selection in **Power Protection Status**. It lists only channels confirmed by
+the target instance's capabilities as **CH1**, **CH2**, etc. Simulation uses the
+simulator channels; Live uses the model identified for the saved Resource in
+Setup. Changing the target instance, Execution Mode, or Powers executable
+updates the available channels.
+
+Loading, a missing Live model, a failed capability query, or an empty channel
+list displays a hint and disables fixed channel selection. Saved channels
+outside the supported list remain visible as unsupported or unconfirmed and
+are preserved when saving and reloading. Existing Channel bindings are shown
+as **Bound channel (preserved)**. Selecting a supported fixed channel explicitly
+replaces the saved channel or its binding; capabilities never change it automatically.
+
 Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
-the checkboxes to include or remove each setpoint. Each selected setpoint can
+**Set Voltage** and **Set Current Limit** to include or remove each setpoint;
+unchecking leaves that instrument setting unchanged. The fields show **Voltage
+(V)** and **Current Limit (A)**. Each selected setpoint can
 use a fixed value, variable, previous step result, calculation, elapsed time,
 or timestamp. The resolved Voltage and Current Limit must be numeric, or Powers
 action validation fails. **Current Limit** is the power supply output
-current-limit setpoint, expressed in A. Set Output does not enable the channel
-output; add **Power Output ON** when the procedure should turn it on.
+current-limit setpoint, expressed in A, not a forced output current. This step
+only configures the setpoints. Use **Power Output ON** separately to enable the output.
 
 Existing Templates containing **Power Set Voltage** remain editable and keep
 that action when saved. New steps use **Power Set Output**.
@@ -385,8 +402,11 @@ that action when saved. New steps use **Power Set Output**.
 #### Power Protection Status
 
 Add **Power Protection Status** to read protection trip state without changing
-instrument settings. Select **All** channels or a specific positive integer
-channel. The result offers **Protection Tripped**, **Over Voltage Tripped**, and
+instrument settings. Select **All** channels or **Specific channel** and choose
+from the Channel dropdown. Switching from All to Specific selects the first
+supported channel. If capabilities are unavailable or contain no channels,
+Specific is unavailable and All is preserved; existing Specific values remain
+preserved. The result offers **Protection Tripped**, **Over Voltage Tripped**, and
 **Over Current Tripped**. Protection Tripped is true when either voltage or
 current protection has tripped. Powers Tool validates actual model support.
 

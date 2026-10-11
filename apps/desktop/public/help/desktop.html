@@ -352,20 +352,38 @@ require numbers. A Calculation is not an arbitrary nested expression tree.</p>
 <p>An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.</p>
 <h4 id="power-set-output">Power Set Output</h4>
+<p>The Channel dropdown is shared by <strong>Power Set Output</strong>, legacy <strong>Power Set
+Voltage</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, and the <strong>Specific channel</strong>
+selection in <strong>Power Protection Status</strong>. It lists only channels confirmed by
+the target instance's capabilities as <strong>CH1</strong>, <strong>CH2</strong>, etc. Simulation uses the
+simulator channels; Live uses the model identified for the saved Resource in
+Setup. Changing the target instance, Execution Mode, or Powers executable
+updates the available channels.</p>
+<p>Loading, a missing Live model, a failed capability query, or an empty channel
+list displays a hint and disables fixed channel selection. Saved channels
+outside the supported list remain visible as unsupported or unconfirmed and
+are preserved when saving and reloading. Existing Channel bindings are shown
+as <strong>Bound channel (preserved)</strong>. Selecting a supported fixed channel explicitly
+replaces the saved channel or its binding; capabilities never change it automatically.</p>
 <p>Add <strong>Power Set Output</strong> to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
-the checkboxes to include or remove each setpoint. Each selected setpoint can
+<strong>Set Voltage</strong> and <strong>Set Current Limit</strong> to include or remove each setpoint;
+unchecking leaves that instrument setting unchanged. The fields show <strong>Voltage
+(V)</strong> and <strong>Current Limit (A)</strong>. Each selected setpoint can
 use a fixed value, variable, previous step result, calculation, elapsed time,
 or timestamp. The resolved Voltage and Current Limit must be numeric, or Powers
 action validation fails. <strong>Current Limit</strong> is the power supply output
-current-limit setpoint, expressed in A. Set Output does not enable the channel
-output; add <strong>Power Output ON</strong> when the procedure should turn it on.</p>
+current-limit setpoint, expressed in A, not a forced output current. This step
+only configures the setpoints. Use <strong>Power Output ON</strong> separately to enable the output.</p>
 <p>Existing Templates containing <strong>Power Set Voltage</strong> remain editable and keep
 that action when saved. New steps use <strong>Power Set Output</strong>.</p>
 <h4 id="power-protection-status">Power Protection Status</h4>
 <p>Add <strong>Power Protection Status</strong> to read protection trip state without changing
-instrument settings. Select <strong>All</strong> channels or a specific positive integer
-channel. The result offers <strong>Protection Tripped</strong>, <strong>Over Voltage Tripped</strong>, and
+instrument settings. Select <strong>All</strong> channels or <strong>Specific channel</strong> and choose
+from the Channel dropdown. Switching from All to Specific selects the first
+supported channel. If capabilities are unavailable or contain no channels,
+Specific is unavailable and All is preserved; existing Specific values remain
+preserved. The result offers <strong>Protection Tripped</strong>, <strong>Over Voltage Tripped</strong>, and
 <strong>Over Current Tripped</strong>. Protection Tripped is true when either voltage or
 current protection has tripped. Powers Tool validates actual model support.</p>
 <p>To fail the Workflow after a trip, add an <strong>Assert</strong> after Power Protection

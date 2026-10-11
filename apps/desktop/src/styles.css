@@ -1340,10 +1340,14 @@ textarea:disabled {
   font-size: 1rem;
 }
 
-.powers-protection-toggle {
+.powers-protection-toggle,
+.step-property-checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.powers-protection-toggle {
   margin: 12px 0;
 }
 

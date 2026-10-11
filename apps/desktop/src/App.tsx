@@ -216,7 +216,7 @@ const STEP_HELP: Record<string, string> = {
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
   output: 'Publish a value as a final Workflow result. This does not control a Power output.',
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
-  'powers/set-output': 'Set Voltage, Current Limit, or both for a Power channel. Current Limit is the power supply output current-limit setpoint. Specify at least one. This does not enable output; use Power Output ON separately.',
+  'powers/set-output': 'This step only configures the setpoints. Use Power Output ON separately to enable the output.',
   'powers/protection-status': 'Power Protection Status reads the selected Power channel protection state without changing instrument settings. Use Protection Tripped with Assert when the Workflow should fail after detecting a protection trip.',
   'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
@@ -527,7 +527,7 @@ function App() {
   const [powersStatuses, setPowersStatuses] = useState<Record<string, PowersStatusState>>({})
   const [powersOperationBusy, setPowersOperationBusy] = useState<string | null>(null)
   const [powersCapabilityChannels, setPowersCapabilityChannels] = useState<{
-    key: string; models: Record<string, number[]>
+    key: string; models: Record<string, { status: 'ready'; channels: number[] } | { status: 'error' }>
   } | null>(null)
   const [discoveredResources, setDiscoveredResources] = useState<Record<string, LiveResourceCandidate[] | undefined>>({})
   const [discoveryErrors, setDiscoveryErrors] = useState<Record<string, string | null>>({})
@@ -584,9 +584,10 @@ function App() {
   useEffect(() => {
     let cancelled = false
     void Promise.all(powersModels.map(async modelId => {
-      const channels = await invoke<{ channels: number[] }>('get_powers_capabilities', { modelId, executionMode })
-        .then(capabilities => capabilities.channels, () => [])
-      return [modelId ?? 'simulator', channels] as const
+      const result = await invoke<{ channels: number[] }>('get_powers_capabilities', { modelId, executionMode })
+        .then(capabilities => ({ status: 'ready' as const, channels: capabilities.channels }),
+          () => ({ status: 'error' as const }))
+      return [modelId ?? 'simulator', result] as const
     })).then(models => {
       if (!cancelled) setPowersCapabilityChannels({ key: powersCapabilityKey, models: Object.fromEntries(models) })
     })
@@ -878,13 +879,18 @@ function App() {
           return step
         }
 
-        return {
+        const bindings = { ...step.bindings }
+        delete bindings[name]
+        const updated: ToolActionStep = {
           ...step,
           arguments: {
             ...step.arguments,
             [name]: value,
           },
+          bindings,
         }
+        if (Object.keys(bindings).length === 0) delete updated.bindings
+        return updated
       })
     },
     [updateStep],
@@ -1520,6 +1526,47 @@ function App() {
     selectedAction === 'powers/set-voltage' ||
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
+  const selectedPowersModel = executionMode === 'simulate' ? 'simulator'
+    : selectedToolAction ? resourceIdentities[selectedToolAction.target]?.model_id : undefined
+  const selectedPowersCapabilities = powersCapabilityChannels?.key === powersCapabilityKey && selectedPowersModel
+    ? powersCapabilityChannels.models[selectedPowersModel] : undefined
+  const selectedPowersChannels = selectedPowersCapabilities?.status === 'ready' ? selectedPowersCapabilities.channels : []
+  const powersChannelHint = !selectedPowersModel
+    ? 'Channel capabilities unavailable. Select or refresh a supported Live Resource in Setup.'
+    : !selectedPowersCapabilities ? 'Loading channel capabilities...'
+    : selectedPowersCapabilities.status === 'error' ? 'Channel capabilities query failed. Check the configured powers-tool.'
+    : selectedPowersChannels.length === 0 ? 'No supported channels were returned for the current model.' : null
+  const channelBound = selectedToolAction?.bindings?.channel !== undefined
+  const savedChannel = selectedToolAction?.arguments.channel
+  const savedChannelSupported = typeof savedChannel === 'number' && selectedPowersChannels.includes(savedChannel)
+  const powersChannelSelector = selectedToolAction && <>
+    <label className="step-property-field">
+      <span className="step-property-label">Channel</span>
+      <select aria-label="Channel" value={channelBound || savedChannel === undefined ? '' : String(savedChannel)}
+        disabled={workflowBusy || selectedPowersChannels.length === 0}
+        onChange={event => {
+          const channel = Number(event.target.value)
+          if (isPositiveInteger(channel) && selectedPowersChannels.includes(channel)) {
+            updateToolArgument(selectedToolAction.id, 'channel', channel)
+          }
+        }}>
+        <option value="" disabled>{channelBound ? 'Bound channel (preserved)' : 'Select a channel...'}</option>
+        {!channelBound && savedChannel !== undefined && !savedChannelSupported && (
+          <option value={String(savedChannel)} disabled>
+            CH{String(savedChannel)} ({selectedPowersCapabilities?.status === 'ready' ? 'not supported' : 'unconfirmed'})
+          </option>
+        )}
+        {selectedPowersChannels.map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
+      </select>
+    </label>
+    {powersChannelHint && <p className="value-source-help">{powersChannelHint}</p>}
+    {channelBound
+      ? <p className="value-source-help">Channel binding preserved. Select a fixed channel to replace it.</p>
+      : savedChannel !== undefined && !savedChannelSupported && <p className="value-source-help">
+          Saved channel {String(savedChannel)} preserved: {selectedPowersCapabilities?.status === 'ready'
+            ? 'not supported by the current model.' : 'support cannot be confirmed.'}
+        </p>}
+  </>
 
   return (
     <main className="app">
@@ -1820,8 +1867,9 @@ function App() {
                         (channel.over_voltage_tripped || channel.over_current_tripped))
                       const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
                       const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
-                      const capabilityChannels = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
-                        ? powersCapabilityChannels.models[capabilityModel] ?? [] : []
+                      const capabilityResult = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
+                        ? powersCapabilityChannels.models[capabilityModel] : undefined
+                      const capabilityChannels = capabilityResult?.status === 'ready' ? capabilityResult.channels : []
                       const statusChannels = protectionChannelNumbers(
                         capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
                       )
@@ -2466,22 +2514,7 @@ function App() {
                           onChange={next => updateStep(selectedToolAction.id, () => next)} />
                       )}
                       {selectedToolAction && selectedPowersAction && (
-                        <label className="step-property-field">
-                          <span className="step-property-label">Channel</span>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={numericArgument(selectedToolAction, 'channel')}
-                            disabled={workflowBusy}
-                            onChange={(event) => {
-                              const channel = event.currentTarget.valueAsNumber
-                              if (isPositiveInteger(channel)) {
-                                updateToolArgument(selectedToolAction.id, 'channel', channel)
-                              }
-                            }}
-                          />
-                        </label>
+                        powersChannelSelector
                       )}
 
                       {selectedToolAction && selectedAction === 'powers/protection-status' && (
@@ -2489,26 +2522,21 @@ function App() {
                           <label className="step-property-field">
                             <span className="step-property-label">Channel selection</span>
                             <select
-                              value={selectedToolAction.arguments.channel === 'all' ? 'all' : 'specific'}
+                              value={!channelBound && savedChannel === 'all' ? 'all' : 'specific'}
                               disabled={workflowBusy}
-                              onChange={(event) => updateToolArgument(selectedToolAction.id, 'channel', event.target.value === 'all' ? 'all' : 1)}
+                              onChange={event => {
+                                if (event.target.value === 'all') updateToolArgument(selectedToolAction.id, 'channel', 'all')
+                                else if (selectedPowersChannels.length > 0) {
+                                  updateToolArgument(selectedToolAction.id, 'channel', selectedPowersChannels[0])
+                                }
+                              }}
                             >
                               <option value="all">All</option>
-                              <option value="specific">Specific channel</option>
+                              <option value="specific" disabled={selectedPowersChannels.length === 0}>Specific channel</option>
                             </select>
                           </label>
-                          {selectedToolAction.arguments.channel !== 'all' && (
-                            <label className="step-property-field">
-                              <span className="step-property-label">Channel</span>
-                              <input type="number" min="1" step="1"
-                                value={numericArgument(selectedToolAction, 'channel')}
-                                disabled={workflowBusy}
-                                onChange={(event) => {
-                                  const channel = event.currentTarget.valueAsNumber
-                                  if (isPositiveInteger(channel)) updateToolArgument(selectedToolAction.id, 'channel', channel)
-                                }}
-                              />
-                            </label>
+                          {channelBound || savedChannel !== 'all' ? powersChannelSelector : powersChannelHint && (
+                            <p className="value-source-help">Specific channel is unavailable. {powersChannelHint}</p>
                           )}
                         </>
                       )}
@@ -2521,21 +2549,26 @@ function App() {
                             const label = name === 'voltage' ? 'Voltage' : 'Current Limit'
                             return <div className="step-properties-fields" key={`${selectedStep.id}-${name}`}>
                               {selectedAction === 'powers/set-output' && (
-                                <label className="step-property-field">
-                                  <span className="step-property-label">Set {label}</span>
+                                <label className="step-property-field step-property-checkbox">
                                   <input type="checkbox" checked={active}
                                     disabled={workflowBusy || (active && !hasPowerSetpoint(selectedToolAction, name === 'voltage' ? 'current' : 'voltage'))}
                                     onChange={(event) => updateStep(selectedToolAction.id, step =>
                                       step.type === 'tool-action'
                                         ? togglePowerSetpoint(step, name, event.target.checked)
                                         : step)} />
+                                  <span className="step-property-label">Set {label}</span>
                                 </label>
                               )}
+                              {selectedAction === 'powers/set-output' && <p className="value-source-help">
+                                {name === 'voltage'
+                                  ? "Set the channel's output voltage. Uncheck to leave the existing voltage setting unchanged."
+                                  : 'Set the maximum allowed output current, not a forced output current. Uncheck to leave the existing limit unchanged.'}
+                              </p>}
                               {(active || selectedAction === 'powers/set-voltage') && (
                                 <InputValueEditor
                                   value={selectedToolAction.bindings?.[name] ?? { source: 'literal', value: numericArgument(selectedToolAction, name) }}
                                   sourceLabel={`${label} Source`}
-                                  literalLabel={label}
+                                  literalLabel={`${label} (${name === 'voltage' ? 'V' : 'A'})`}
                                   literalDefault={powerSetpointLiteralDefault(selectedToolAction, name)}
                                   earlierSteps={earlierSteps}
                                   instances={workflowDraft.tool_instances}
