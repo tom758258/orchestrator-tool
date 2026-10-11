@@ -82,6 +82,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   const savedChannels = step.arguments.channel
   const captureSupported = Array.isArray(savedChannels) && savedChannels.length > 0
     && savedChannels.every(value => typeof value === 'number' && channels.includes(value))
+    && new Set(savedChannels).size === savedChannels.length
   const captureBound = step.bindings?.channel !== undefined
   const selectedChannels: number[] = captureSupported && !captureBound ? [...new Set(savedChannels)] : []
   return <>

@@ -403,24 +403,46 @@ test('Scopes Channel preserves unsupported values and bindings through reload un
 test('Scopes Channel Capture selects nonempty number arrays and preserves unsupported or invalid templates', async () => {
   const render = await actionEditor(async () => ({ ...caps, analog_channels: 2 }))
   let step = { ...screenshotProps().step, action: 'capture', arguments: { channel: [1], points: 1000, extra: 'preserved' } }
-  const props = () => screenshotProps({ step, onChange: next => { step = next } })
+  let changes = 0
+  const props = () => screenshotProps({ step, onChange: next => { changes++; step = next } })
+  const initial = structuredClone(step)
   render(props()); await settle()
   let view = render(props())
+  assert.deepEqual(step, initial)
+  assert.equal(changes, 0)
   assert.deepEqual(view.filter(node => node.type === 'input').map(node => node.props['aria-label']), ['Capture CH1', 'Capture CH2'])
+  assert.equal(control(view, 'Capture CH1').props.checked, true)
+  assert.equal(control(view, 'Capture CH2').props.checked, false)
+  assert.ok(!JSON.stringify(view).includes('invalid or not supported'))
   assert.equal(control(view, 'Capture CH1').props.disabled, true)
   control(view, 'Capture CH1').props.onChange({ target: { checked: false } })
   assert.deepEqual(step.arguments.channel, [1])
   control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
   assert.deepEqual(step.arguments.channel, [1, 2])
-  assert.equal(control(render(props()), 'Capture CH1').props.disabled, false)
+  view = render(props())
+  assert.equal(control(view, 'Capture CH1').props.checked, true)
+  assert.equal(control(view, 'Capture CH2').props.checked, true)
+  assert.ok(!JSON.stringify(view).includes('invalid or not supported'))
+  assert.equal(control(view, 'Capture CH1').props.disabled, false)
+  control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.channel, [1, 2])
   control(render(props()), 'Capture CH1').props.onChange({ target: { checked: false } })
   assert.deepEqual(step.arguments.channel, [2])
   control(render({ ...props(), disabled: true }), 'Capture CH1').props.onChange({ target: { checked: true } })
   assert.deepEqual(step.arguments.channel, [2])
-  for (const saved of [[1, 4], [], 'invalid', [0], [1, '2'], 2, null, undefined]) {
+  step = { ...step, bindings: { points: { source: 'variable', variable: 'points' }, extra: { source: 'variable', variable: 'extra' } } }
+  for (const saved of [[1, 1], [1, 2, 2], [1, 4], [], 'invalid', [0], [1, '2'], 2, null, undefined]) {
     step = { ...step, arguments: { ...step.arguments, channel: saved } }
     const original = structuredClone(step)
+    const writes = changes
     view = render(props())
+    if (Array.isArray(saved) && new Set(saved).size !== saved.length) {
+      const live = { ...props(), executionMode: 'live', modelId: 'two-channel' }
+      render(live); await settle(); render(live)
+      render(props()); await settle()
+      view = render(props())
+    }
+    assert.equal(changes, writes)
     assert.deepEqual(step, original)
     assert.ok(JSON.stringify(view).includes('invalid or not supported'))
     assert.equal(control(view, 'Capture CH1').props.checked, false)
@@ -428,8 +450,11 @@ test('Scopes Channel Capture selects nonempty number arrays and preserves unsupp
     const reloaded = JSON.parse(JSON.stringify(step))
     render({ ...props(), step: reloaded })
     assert.deepEqual(JSON.parse(JSON.stringify(step)), reloaded)
-    control(view, 'Capture CH2').props.onChange({ target: { checked: true } })
-    assert.deepEqual(step.arguments, { channel: [2], points: 1000, extra: 'preserved' })
+    assert.equal(changes, writes)
+    const replacement = Array.isArray(saved) && saved.length === 2 && saved[1] === 1 ? 1 : 2
+    control(view, `Capture CH${replacement}`).props.onChange({ target: { checked: true } })
+    assert.deepEqual(step.arguments, { channel: [replacement], points: 1000, extra: 'preserved' })
+    assert.deepEqual(step.bindings, original.bindings)
   }
   step = { ...step, bindings: { channel: { source: 'variable', variable: 'channels' }, points: { source: 'variable', variable: 'points' } } }
   const original = structuredClone(step)
