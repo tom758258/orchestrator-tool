@@ -34,6 +34,51 @@ test('elapsed Output display uses accumulated units and millisecond precision', 
   }
 })
 
+test('negative elapsed display uses one sign and preserves millisecond rounding', () => {
+  for (const [seconds, minutes, hours] of [
+    [-0.5, '-00:00.500', '-00:00:00.500'],
+    [-60.001, '-01:00.001', '-00:01:00.001'],
+    [-3600.123, '-60:00.123', '-01:00:00.123'],
+    [-90061.123, '-1501:01.123', '-25:01:01.123'],
+    [-0.0006, '-00:00.001', '-00:00:00.001'],
+    [-0.0015, '-00:00.001', '-00:00:00.001'],
+    [-59.9996, '-01:00.000', '-00:01:00.000'],
+    [59.9996, '01:00.000', '00:01:00.000'],
+    ...[0, -0, -0.0001, -0.0005].map(seconds => [seconds, '00:00.000', '00:00:00.000']),
+  ]) {
+    assert.equal(formatElapsedTime(seconds, 'minutes-seconds'), minutes)
+    assert.equal(formatElapsedTime(seconds, 'hours-minutes-seconds'), hours)
+  }
+  assert.equal(formatElapsedTime(-0.5, 'seconds'), '-0.500')
+  assert.equal(formatElapsedTime(-90061.123, 'days-decimal'), '-1.042374109 d')
+})
+
+test('Scatter formats negative elapsed ticks while retaining raw seconds', () => {
+  const base = addChartPanel([], 'Results', ['Voltage'])[0]
+  const panel = { ...base, type: 'scatter', scatterXOutput: 'Time',
+    xAxis: { ...base.xAxis, min: -90061.123, max: 0, interval: 0.5 } }
+  const x = [-90061.123, -3600.123, -60.001, -0.5, 0]
+  const y = [12, 13, 14, 15, 16]
+  const data = createPageChartData()
+  data.append('Time', 0, x)
+  data.append('Voltage', 0, y)
+  const expected = [
+    ['minutes-seconds', ['-1501:01.123', '-60:00.123', '-01:00.001', '-00:00.500', '00:00.000']],
+    ['hours-minutes-seconds', ['-25:01:01.123', '-01:00:00.123', '-00:01:00.001', '-00:00:00.500', '00:00:00.000']],
+  ]
+  for (const [format, labels] of expected) {
+    const axis = chartPresentationOptions(panel, 1, colors, undefined, undefined, undefined, {}, false,
+      { kind: 'elapsed-time', format }).xAxis
+    assert.deepEqual(x.map(axis.axisLabel.formatter), labels)
+    assert.equal(axis.min, -90061.123)
+    assert.equal(axis.max, 0)
+    assert.equal(axis.interval, 0.5)
+    assert.deepEqual(prepareChartSeries(panel, data, 800, { min: 1, max: 5 })[0].data,
+      x.map((value, row) => [value, y[row]]))
+    assert.deepEqual(Array.from(data.getSeries('Time')), x)
+  }
+})
+
 test('Timestamp display combinations preserve the full raw value in any host timezone', () => {
   const originalTZ = process.env.TZ
   try {

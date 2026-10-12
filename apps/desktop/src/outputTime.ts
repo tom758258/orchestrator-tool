@@ -21,11 +21,13 @@ export function changeOutputValue(step: OutputStep, value: InputValueWire): Outp
 export function formatElapsedTime(seconds: number, format: ElapsedTimeFormat): string {
   if (format === 'seconds') return seconds.toFixed(3)
   if (format === 'days-decimal') return `${(seconds / 86400).toFixed(9)} d`
-  const ms = Math.round(seconds * 1000)
+  const roundedMs = Math.round(seconds * 1000)
+  const sign = roundedMs < 0 ? '-' : ''
+  const ms = Math.abs(roundedMs)
   const wholeSeconds = Math.floor(ms / 1000)
   const tail = `${String(wholeSeconds % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`
-  if (format === 'minutes-seconds') return `${String(Math.floor(wholeSeconds / 60)).padStart(2, '0')}:${tail}`
-  return `${String(Math.floor(wholeSeconds / 3600)).padStart(2, '0')}:${String(Math.floor(wholeSeconds / 60) % 60).padStart(2, '0')}:${tail}`
+  if (format === 'minutes-seconds') return `${sign}${String(Math.floor(wholeSeconds / 60)).padStart(2, '0')}:${tail}`
+  return `${sign}${String(Math.floor(wholeSeconds / 3600)).padStart(2, '0')}:${String(Math.floor(wholeSeconds / 60) % 60).padStart(2, '0')}:${tail}`
 }
 
 export function formatTimestamp(value: string, format: TimestampFormat): string {
