@@ -1,0 +1,53 @@
+name: Build Windows Desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install stable Rust (Windows x64 MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Tauri release EXE without installer
+        working-directory: apps/desktop
+        run: npm run tauri build -- --no-bundle
+
+      - name: Verify EXE and record short commit SHA
+        id: artifact
+        shell: pwsh
+        run: |
+          $exe = "apps/desktop/src-tauri/target/release/Orchestrator Tool.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Expected Windows EXE not found: $exe"
+          }
+          $shortSha = (git rev-parse --short=7 HEAD).Trim()
+          "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+          Get-Item -LiteralPath $exe | Select-Object FullName, Length
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-tool-windows-x64-${{ steps.artifact.outputs.short_sha }}
+          path: apps/desktop/src-tauri/target/release/Orchestrator Tool.exe
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
