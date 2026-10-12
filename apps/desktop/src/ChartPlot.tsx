@@ -1,4 +1,4 @@
-import { formatTimestampMillis, type TimestampFormat } from './outputTime'
+import type { OutputTimeFormat } from './outputTime'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
 import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
@@ -7,7 +7,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type ChartChangeSettings, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
-  chartZoomSliderBottom, comboRendererSeries, lineRendererSeries, scatterRendererSeries } from './chartOptions'
+  chartZoomSliderBottom, comboRendererSeries, formatScatterX, lineRendererSeries, scatterRendererSeries } from './chartOptions'
 import { statisticalChartSeries, type StatisticalDto } from './chartStatistics'
 
 use([LineChart, BarChart, BoxplotChart, ScatterChart, DataZoomComponent, GridComponent, LegendComponent, MarkPointComponent, TitleComponent, CanvasRenderer])
@@ -20,7 +20,7 @@ function autoSeriesColor(name: string, numericNames: string[]): string {
     `--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
 }
 
-export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings, fitData, timestampFormat }: {
+export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings, fitData, xTimeFormat }: {
   panel: ChartPanel
   data: PageChartData
   numericNames: string[]
@@ -28,7 +28,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   statistical?: StatisticalDto
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
-  timestampFormat?: TimestampFormat
+  xTimeFormat?: OutputTimeFormat
 }) {
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -173,7 +173,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
       { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') },
-      fullDomain, rawIteration, statistic?.categories, legendSeriesColors, fitData, timestampFormat)
+      fullDomain, rawIteration, statistic?.categories, legendSeriesColors, fitData, xTimeFormat)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
@@ -194,7 +194,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       ] : [],
       series: rendererSeries,
     }, { notMerge: true })
-  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors, fitData, timestampFormat])
+  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors, fitData, xTimeFormat])
 
   useEffect(() => {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
@@ -249,7 +249,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
         // Scatter hover always reports an actual raw row; line displays never interpolate a synthetic value.
         tip.textContent = [`Iteration ${rawIteration[hit.rowIndex]}`,
           ...(panel.scatterXOutput === null ? []
-            : [`X ${panel.scatterXOutput} ${timestampFormat ? formatTimestampMillis(scatterXValues[hit.rowIndex], timestampFormat) : scatterXValues[hit.rowIndex]}`]),
+            : [`X ${panel.scatterXOutput} ${formatScatterX(scatterXValues[hit.rowIndex], xTimeFormat)}`]),
           ...rawSeries.map(series => `Y ${series.name} ${series.values[hit.rowIndex]}`)].join('\n')
         line.hidden = true
         positionTip(event.offsetX, event.offsetY)
@@ -295,7 +295,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       zr.off('globalout', hide)
     }
   }, [panel.type, panel.scatter.display, panel.scatterXOutput, rawIteration, rawRowCount,
-    rawSeries, scatterXValues, timestampFormat])
+    rawSeries, scatterXValues, xTimeFormat])
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"

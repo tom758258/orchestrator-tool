@@ -4,7 +4,7 @@ import { changeOutputValue, formatElapsedTime, formatOutputValue, formatTimestam
 import { copySteps, pasteSteps, singleSelection } from '../src/stepEditing.ts'
 import { addChartPanel, chartRequiredOutputs, reconcileRunChartPanels } from '../src/chartPanels.ts'
 import { createPageChartData, prepareChartSeries } from '../src/chartData.ts'
-import { chartPresentationOptions } from '../src/chartOptions.ts'
+import { chartPresentationOptions, formatScatterX } from '../src/chartOptions.ts'
 
 const step = (source, time_format) => ({ type: 'output', id: 'out', name: 'Time', page: 'Results', value: { source }, time_format })
 const formats = ['seconds', 'minutes-seconds', 'hours-minutes-seconds', 'days-decimal']
@@ -129,5 +129,93 @@ test('ECharts renders readable fixed-offset Timestamp X labels across midnight',
     assert.doesNotMatch(svg, /2026-10-1[23]T/)
   } finally {
     chart.dispose()
+  }
+})
+
+test('Scatter Elapsed axes and hover share Output display while preserving raw pairs', () => {
+  const panel = { ...addChartPanel([], 'Results', ['Voltage'])[0], type: 'scatter', scatterXOutput: 'Time' }
+  const data = createPageChartData()
+  const x = [2.857, 3600.123, 90061.123]
+  data.append('Time', 0, x)
+  data.append('Voltage', 0, [12, 13, 14])
+  const pairs = [[2.857, 12], [3600.123, 13], [90061.123, 14]]
+  const expected = [
+    ['2.857', '3600.123', '90061.123'],
+    ['00:02.857', '60:00.123', '1501:01.123'],
+    ['00:00:02.857', '01:00:00.123', '25:01:01.123'],
+    ['0.000033067 d', '0.041668090 d', '1.042374109 d'],
+  ]
+  formats.forEach((format, index) => {
+    const timeFormat = { kind: 'elapsed-time', format }
+    const axis = chartPresentationOptions(panel, 1, colors, undefined, undefined, undefined, {}, false, timeFormat).xAxis
+    assert.equal(axis.scale, undefined)
+    assert.deepEqual(x.map(axis.axisLabel.formatter), expected[index])
+    assert.deepEqual(x.map(value => formatScatterX(value, timeFormat)), expected[index])
+    assert.deepEqual(x.map(value => formatOutputValue(step('elapsed-time', timeFormat), value)), expected[index])
+    assert.deepEqual(prepareChartSeries(panel, data, 800, { min: 1, max: 3 })[0].data, pairs)
+    assert.deepEqual(Array.from(data.getSeries('Time')), x)
+    assert.equal(chartPresentationOptions({ ...panel, type: 'line' }, 1, colors,
+      undefined, undefined, undefined, {}, false, timeFormat).xAxis.axisLabel.formatter, undefined)
+  })
+  assert.equal(formatScatterX(2.857), 2.857)
+  assert.equal(chartPresentationOptions(panel, 1, colors).xAxis.axisLabel.formatter, undefined)
+  combinations.forEach(([include_date, include_utc_offset], index) => {
+    assert.equal(formatScatterX(Date.parse(timestamp), { kind: 'timestamp', include_date, include_utc_offset }), displays[index])
+  })
+})
+
+test('ECharts renders all four Elapsed X formats and clears the formatter for ordinary X', async () => {
+  const { init } = await import('echarts')
+  const base = addChartPanel([], 'Results', ['Voltage'])[0]
+  const panel = { ...base, type: 'scatter', scatterXOutput: 'Time',
+    xAxis: { ...base.xAxis, min: 2.857, max: 4.857, interval: 1 } }
+  const expected = ['2.857', '00:02.857', '00:00:02.857', '0.000033067 d']
+  const pairs = [[2.857, 12], [4.857, 13]]
+  const chart = init(null, null, { renderer: 'svg', ssr: true, width: 1000, height: 400 })
+  try {
+    formats.forEach((format, index) => {
+      chart.setOption({ animation: false, ...chartPresentationOptions(panel, 1, colors, undefined,
+        undefined, undefined, {}, false, { kind: 'elapsed-time', format }),
+      series: [{ name: 'Voltage', type: 'scatter', data: pairs }] }, { notMerge: true })
+      assert.ok(chart.renderToSVGString().includes(`>${expected[index]}</text>`), format)
+      assert.deepEqual(chart.getOption().series[0].data, pairs)
+    })
+    chart.setOption({ animation: false, ...chartPresentationOptions({ ...panel, scatterXOutput: 'Voltage' }, 1, colors),
+      series: [{ name: 'Voltage', type: 'scatter', data: pairs }] }, { notMerge: true })
+    assert.equal(chart.getOption().xAxis[0].axisLabel.formatter, undefined)
+    assert.doesNotMatch(chart.renderToSVGString(), /00:02\.857|0\.000033067 d/)
+  } finally {
+    chart.dispose()
+  }
+})
+
+test('Scatter hover formats the actual hit X only and retains raw Y and hit logic', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { stripTypeScriptTypes } = await import('node:module')
+  const { nearestScatterHover } = await import('../src/chartData.ts')
+  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
+  const start = source.indexOf('      const inspect = () => {')
+  const end = source.indexOf('      const move =', start)
+  const inspectSource = stripTypeScriptTypes(source.slice(start, end))
+  const x = new Float64Array([2.857, 4.857])
+  const rawSeries = [{ name: 'Voltage', values: new Float64Array([12.3456789, 13]) }]
+  const chart = { containPixel: () => true, convertFromPixel: (_finder, point) => point }
+  for (const timeFormat of [...formats.map(format => ({ kind: 'elapsed-time', format })), undefined,
+    { kind: 'timestamp', include_date: false, include_utc_offset: true }]) {
+    if (timeFormat?.kind === 'timestamp') x[0] = Date.parse(timestamp)
+    const tip = { textContent: '' }
+    const line = { hidden: false }
+    let hidden = false
+    const inspect = new Function('chart', 'scatterXValues', 'rawSeries', 'rawIteration', 'panel',
+      'xTimeFormat', 'tip', 'line', 'nearestScatterHover', 'formatScatterX', 'hide', 'positionTip',
+      `let frame = null; let pending = { offsetX: ${x[0]}, offsetY: 12.3456789 };
+      const rawRowCount = 2; const yValues = rawSeries.map(series => series.values);
+      const SCATTER_HOVER_RADIUS = 12; ${inspectSource}; return inspect;`)(
+      chart, x, rawSeries, new Float64Array([1, 2]), { scatterXOutput: 'Time', scatter: { display: 'markers' } },
+      timeFormat, tip, line, nearestScatterHover, formatScatterX, () => { hidden = true }, () => {})
+    inspect()
+    assert.equal(hidden, false)
+    assert.equal(tip.textContent, `Iteration 1\nX Time ${formatScatterX(x[0], timeFormat)}\nY Voltage 12.3456789`)
+    assert.equal(line.hidden, true)
   }
 })

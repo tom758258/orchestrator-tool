@@ -341,3 +341,68 @@ test('Waiting precedes plot rendering and locks every panel action without locki
   const addAction = source.slice(source.indexOf('<button'), source.indexOf('>+ Add Chart</button>'))
   assert.doesNotMatch(addAction, /waiting|running/)
 })
+
+test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs to Settings', async () => {
+  const React = (await import('react')).default
+  const { transformWithOxc } = await import('vite')
+  const chartDataModule = await import('../src/chartData.ts')
+  const chartPanels = await import('../src/chartPanels.ts')
+  const chartStatistics = await import('../src/chartStatistics.ts')
+  const Plot = () => null
+  const Settings = () => null
+  let settingsId = null
+  let stateIndex = 0
+  const modules = { react: {
+    useMemo: factory => factory(), useRef: value => ({ current: value }), useEffect: () => {},
+    useState(initial) {
+      const index = stateIndex++
+      return [index === 2 ? settingsId : typeof initial === 'function' ? initial() : initial,
+        value => { if (index === 2) settingsId = value }]
+    },
+  }, './ChartPlot': Plot, './ChartSettings': Settings, './chartData': chartDataModule,
+  './chartPanels': chartPanels, './chartStatistics': chartStatistics, './chartPng': { chartPng: () => {} },
+  '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
+  '@tauri-apps/plugin-dialog': { save: () => {} } }
+  const { code } = await transformWithOxc(source, 'ResultChart.tsx', { jsx: { runtime: 'classic' } })
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
+  const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)
+  const data = createPageChartData()
+  data.append('Elapsed', 0, [2.857, 4.857])
+  data.append('Time', 0, [Date.parse('2026-10-12T23:59:59.900+08:00'), Date.parse('2026-10-13T00:00:00.100+08:00')])
+  data.append('V', 0, [12, 13])
+  const panel = { ...addChartPanel([], 'A', ['V'])[0], type: 'scatter', scatterXOutput: 'Elapsed' }
+  const formats = ['seconds', 'minutes-seconds', 'hours-minutes-seconds', 'days-decimal']
+  const outputs = [
+    { name: 'Elapsed', value: { source: 'elapsed-time' }, time_format: { kind: 'elapsed-time', format: 'seconds' } },
+    { name: 'Time', value: { source: 'timestamp' }, time_format: { kind: 'timestamp', include_date: false, include_utc_offset: true } },
+    { name: 'V', value: { source: 'literal', value: 1 } },
+  ]
+  function render() {
+    stateIndex = 0
+    const nodes = []
+    function visit(node) {
+      if (Array.isArray(node)) node.forEach(visit)
+      else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
+    }
+    visit(component({ runId: 1, revision: 1, rowCount: 2, numericNames: ['V', 'Elapsed'], timestampNames: ['Time'], outputs,
+      panels: [panel], page: 'A', chartData: new Map([['A', data]]), running: false }))
+    return nodes
+  }
+  for (const format of formats) {
+    outputs[0].time_format = { kind: 'elapsed-time', format }
+    assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, outputs[0].time_format)
+  }
+  panel.scatterXOutput = 'Time'
+  assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, outputs[1].time_format)
+  panel.scatterXOutput = 'V'
+  assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, undefined)
+  panel.type = 'line'
+  panel.scatterXOutput = 'Elapsed'
+  assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, undefined)
+  render().find(node => node.type === 'button' && node.props.children === 'Settings').props.onClick()
+  assert.equal(render().find(node => node.type === Settings).props.outputs, outputs)
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /numericNames=\{chartNumericNames\} page=\{runPage\.name\} outputs=\{runOutputs\}/)
+  assert.match(app, /outputPageContext\(runWorkflowSnapshot\?\.workflow\.steps \?\? \[\], selectedRunPage\)/)
+})

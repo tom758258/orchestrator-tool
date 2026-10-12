@@ -7,7 +7,8 @@ import { runInNewContext } from 'node:vm'
 test('Page Result Summary consumes Rust metadata without scanning ResultRows', () => {
   const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const component = readFileSync(new URL('../src/PageResultSummary.tsx', import.meta.url), 'utf8')
-  assert.match(app, /<PageResultSummary summaries=\{runPageMetadata\.summaries\} \/>/)
+  assert.match(app, /<PageResultSummary summaries=\{runPageMetadata\.summaries\} outputs=\{runOutputs\} \/>/)
+  assert.match(app, /outputPageContext\(runWorkflowSnapshot\?\.workflow\.steps \?\? \[\], selectedRunPage\)/)
   assert.match(component, /summaries: readonly NumericSummary\[\]/)
   assert.doesNotMatch(component, /ResultRowDto|summarizePageResults/)
 })
@@ -34,4 +35,46 @@ test('Summary defaults and optional derived columns use metadata and preserve mi
     assert.equal(derived.twoSigma, std_dev)
     assert.equal(derived.threeSigma, std_dev)
   }
+})
+
+test('actual Summary renders all Elapsed statistics with snapshot formats and preserves metadata', async () => {
+  const React = (await import('react')).default
+  const { transformWithOxc } = await import('vite')
+  const outputTime = await import('../src/outputTime.ts')
+  const source = readFileSync(new URL('../src/PageResultSummary.tsx', import.meta.url), 'utf8')
+  const { code } = await transformWithOxc(source, 'PageResultSummary.tsx', { jsx: { runtime: 'classic' } })
+  const modules = { react: { useState: () => [['count', 'min', 'max', 'avg', 'range', 'stdDev', 'twoSigma', 'threeSigma'], () => {}] },
+    './outputTime': outputTime }
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
+  const render = new Function('React', 'modules', `${body}; return PageResultSummary`)(React, modules)
+  const formats = ['seconds', 'minutes-seconds', 'hours-minutes-seconds', 'days-decimal']
+  const outputs = formats.map(format => ({ type: 'output', id: format, name: format, page: 'Results',
+    value: { source: 'elapsed-time' }, time_format: { kind: 'elapsed-time', format } }))
+  outputs.push({ type: 'output', id: 'V', name: 'V', page: 'Results', value: { source: 'literal', value: 1 } })
+  const summary = { count: 7, min: 2.857, max: 90061.123, avg: 45031.990123456, std_dev: 60.123456789 }
+  const summaries = outputs.map(output => Object.freeze({ name: output.name, ...summary }))
+  summaries.push(Object.freeze({ name: 'missing', count: 1, min: 2.857, max: 2.857, avg: 2.857, std_dev: null }))
+  outputs.push({ ...outputs[0], name: 'missing' })
+  const before = structuredClone({ summaries, outputs })
+  const rows = []
+  function visit(node) {
+    if (Array.isArray(node)) node.forEach(visit)
+    else if (React.isValidElement(node)) {
+      if (node.type === 'tr' && node.props.children[0]?.props.scope === 'row') rows.push(node)
+      visit(node.props.children)
+    }
+  }
+  visit(render({ summaries, outputs }))
+  const values = rows.map(row => row.props.children[1].map(cell => cell.props.children))
+  const rawValues = [summary.min, summary.max, summary.avg, summary.max - summary.min,
+    summary.std_dev, summary.std_dev * 2, summary.std_dev * 3]
+  formats.forEach((format, index) => {
+    assert.equal(values[index][0], 7)
+    assert.deepEqual(values[index].slice(1), rawValues.map(value => outputTime.formatOutputValue(outputs[index], value)))
+  })
+  assert.deepEqual(values[4], [7, ...rawValues])
+  assert.deepEqual(values[5], [1, '2.857', '2.857', '2.857', '0.000', '—', '—', '—'])
+  assert.deepEqual({ summaries, outputs }, before)
+  assert.doesNotMatch(source, /ResultRow|Math\.sqrt|summarizePageResults/)
 })

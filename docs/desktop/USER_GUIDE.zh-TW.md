@@ -778,7 +778,10 @@ Scatter 的 **Marker size** 與 **Line width** 接受有限且大於 0 的數值
 Lines 依該順序連線。Timestamp X 使用完整日期時間轉成的絕對毫秒座標，跨午夜時
 持續增加；X 標籤與 hover 依該 Output 的 Include Date／Include UTC Offset 選項
 顯示固定 UTC+08:00 時間，不受電腦時區影響。Timestamp 不提供作為 Y series、
-Summary、Histogram 或其他量測統計。Elapsed X 一律使用原始秒數。
+Summary、Histogram 或其他量測統計。Elapsed X 一律使用原始秒數，X 軸標籤與
+Tooltip 的 X 值則依該 Output 的 Time Format 顯示。Chart Settings 的 X-axis
+**Minimum**、**Maximum** 與 **Major unit** 一律輸入原始秒數，即使標籤顯示
+分鐘、小時或十進位天數也相同。
 Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
 但只會回報實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個
 Outputs；每個 Output 可選 Column、Line 或 Line + markers，並指定 Left Y 或
@@ -862,6 +865,9 @@ Chart configuration，且 **Save charts with template** 為未勾選。開啟含
 以及 Range（Max − Min）、Std Dev（σ）、2σ 與 3σ。Std Dev 為樣本標準差，
 計算式為 `sqrt(M2 / (n - 1))`；2σ 與 3σ 為其倍數。只有一筆 sample 時，
 三個 σ 欄位均顯示 `—`，Range 仍可顯示；至少兩筆且全部相同的資料其 Std Dev = 0。
+Elapsed time Output 的 Min、Max、Avg、Range、Std Dev、2σ 與 3σ 依該次 run 的
+Output Time Format 顯示，與 Output Data 和 Scatter X 一致。Count 維持整數，
+缺少的統計值維持 `—`。格式化僅影響顯示，底層統計仍保留原始秒數與精度。
 欄位選擇僅為暫時的 presentation 設定。若 Page 沒有 numeric Outputs，則不會
 顯示 numeric summary。
 

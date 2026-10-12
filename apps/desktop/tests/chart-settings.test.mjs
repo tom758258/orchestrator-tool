@@ -538,3 +538,76 @@ test('plain Line exposes existing per-Output marker appearance without enabling 
   const unchanged = lineRendererSeries(panel, { name: 'V', data: [[1, 100], [2, 145]] }, 'red')
   assert.equal(unchanged.showSymbol, false)
 })
+
+test('actual Settings follows the unapplied Elapsed X draft and keeps axis inputs in seconds', async () => {
+  const React = (await import('react')).default
+  const { transformWithOxc } = await import('vite')
+  const chartPanels = await import('../src/chartPanels.ts')
+  const settingsModel = await import('../src/chartSettingsModel.ts')
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  const { code } = await transformWithOxc(source, 'ChartSettings.tsx', { jsx: { runtime: 'classic' } })
+  const slots = []
+  let cursor = 0
+  const modules = { react: {
+    useRef: () => ({ current: null }), useEffect: () => {},
+    useState(initial) {
+      const index = cursor++
+      if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
+      return [slots[index], update => { slots[index] = typeof update === 'function' ? update(slots[index]) : update }]
+    },
+  }, './chartPanels': chartPanels, './chartSettingsModel': settingsModel }
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
+  const component = new Function('React', 'modules', `${body}; return ChartSettings`)(React, modules)
+  const configured = { ...panel, type: 'scatter', scatterXOutput: 'V' }
+  const before = structuredClone(configured)
+  const outputs = [
+    { name: 'Elapsed', value: { source: 'elapsed-time' }, time_format: { kind: 'elapsed-time', format: 'days-decimal' } },
+    { name: 'Time', value: { source: 'timestamp' }, time_format: { kind: 'timestamp', include_date: true, include_utc_offset: true } },
+    { name: 'V', value: { source: 'literal', value: 1 } },
+  ]
+  let applied
+  function render() {
+    cursor = 0
+    const nodes = []
+    function visit(node) {
+      if (Array.isArray(node)) node.forEach(visit)
+      else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
+    }
+    visit(component({ panel: configured, numericNames: ['V', 'Elapsed'], scatterXNames: ['V', 'Elapsed', 'Time'], outputs,
+      running: false, hasRows: true, onApply: value => { applied = value }, onClose: () => {} }))
+    return nodes
+  }
+  const field = (nodes, label) => nodes.find(node => node.type === 'label' && node.props.children[0] === label)
+    .props.children.find(node => node?.type === 'select' || node?.type === 'input')
+  const hint = nodes => nodes.filter(node => node.type === 'p' && node.props.className === 'chart-settings-help'
+    && String(node.props.children).includes('X-axis Minimum'))
+  assert.equal(hint(render()).length, 0)
+  field(render(), 'X source').props.onChange({ target: { value: 'Elapsed' } })
+  const nodes = render()
+  assert.equal(hint(nodes).length, 1)
+  assert.equal(hint(nodes)[0].props.children.trim(),
+    'X-axis Minimum, Maximum, and Major unit use raw seconds. Axis labels follow the selected Elapsed Time format.')
+  const xAxis = nodes.find(node => node.type === 'fieldset' && node.props.children[0]?.props.children === 'X Axis')
+  const axisInputs = xAxis.props.children[2].props.children.map(label => label.props.children[1])
+  for (const [index, value] of ['2.857', '90061.123', '0.001'].entries()) {
+    assert.equal(axisInputs[index].props.type, 'text')
+    assert.equal(axisInputs[index].props.inputMode, 'decimal')
+    axisInputs[index].props.onChange({ target: { value } })
+  }
+  render().find(node => node.type === 'button' && node.props.children === 'Apply').props.onClick()
+  assert.deepEqual([applied.xAxis.min, applied.xAxis.max, applied.xAxis.interval], [2.857, 90061.123, 0.001])
+  axisInputs[0].props.onChange({ target: { value: '00:02.857' } })
+  applied = undefined
+  render().find(node => node.type === 'button' && node.props.children === 'Apply').props.onClick()
+  assert.equal(applied, undefined)
+  assert.ok(render().some(node => node.props.role === 'alert'))
+  assert.deepEqual(configured, before)
+  for (const source of ['Time', 'V', '', 'Elapsed']) {
+    field(render(), 'X source').props.onChange({ target: { value: source } })
+    assert.equal(hint(render()).length, source === 'Elapsed' ? 1 : 0)
+  }
+  field(render(), 'Chart type').props.onChange({ target: { value: 'line' } })
+  assert.equal(hint(render()).length, 0)
+  assert.deepEqual(configured, before)
+})

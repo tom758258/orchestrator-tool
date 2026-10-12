@@ -204,7 +204,8 @@ test('actual Assert and While operand editor retains boolean literals and step r
 })
 
 function timeFormatControl(nodes, label) {
-  const field = nodes.find(node => node.type === 'label' && node.props.children[0]?.props.children === label)
+  const field = nodes.find(node => node.type === 'label'
+    && node.props.children.some(child => child?.type === 'span' && child.props.children === label))
   assert.ok(field, label)
   const control = field.props.children.find(node => node?.type === 'select' || node?.type === 'input')
   assert.ok(control, label)
@@ -267,6 +268,16 @@ test('actual Output Timestamp checkboxes preserve independent settings and full 
     assert.equal(checkbox.type, 'input')
     assert.equal(checkbox.props.type, 'checkbox')
     assert.equal(checkbox.props.checked, true)
+    const field = nodes.find(node => node.type === 'label' && node.props.children.includes(checkbox))
+    assert.equal(field.props.className, 'step-property-field step-property-checkbox')
+    assert.equal(field.props.children[0], checkbox)
+    assert.equal(field.props.children[1].type, 'span')
+    assert.equal(field.props.children[1].props.children, label)
+    assert.equal(field.props.children.filter(child => child?.type === 'input').length, 1)
+    for (const disabled of [false, true]) {
+      const disabledNodes = render({ value: output.value, timeFormat, disabled, onTimeFormatChange: () => {} })
+      assert.equal(timeFormatControl(disabledNodes, label).props.disabled, disabled)
+    }
   }
   const changes = [
     ['Include Date', false, { kind: 'timestamp', include_date: false, include_utc_offset: true }],
@@ -293,7 +304,8 @@ test('actual non-Output editors omit time format controls and retain general sou
     { kind: 'timestamp', include_date: true, include_utc_offset: true },
   ]
   const assertNoTimeControls = nodes => assert.equal(nodes.some(node => node.type === 'label'
-    && ['Time Format', 'Include Date', 'Include UTC Offset'].includes(node.props.children[0]?.props.children)), false)
+    && node.props.children.some(child => child?.type === 'span'
+      && ['Time Format', 'Include Date', 'Include UTC Offset'].includes(child.props.children))), false)
   for (const timeFormat of settings) {
     const value = { source: timeFormat.kind }
     for (const props of [{}, { timeFormat }, { onTimeFormatChange: () => assert.fail('Unexpected format change') }]) {

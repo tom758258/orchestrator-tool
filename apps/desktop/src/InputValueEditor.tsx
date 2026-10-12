@@ -243,13 +243,15 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
         <p className="value-source-help">XLSX time cells are numeric: Seconds uses seconds; other formats use Excel days. CSV retains raw seconds.</p>
       </>}
       {value.source === 'timestamp' && timeFormat?.kind === 'timestamp' && onTimeFormatChange && <>
-        <label className="step-property-field"><span className="step-property-label">Include Date</span>
+        <label className="step-property-field step-property-checkbox">
           <input type="checkbox" checked={timeFormat.include_date} disabled={references.disabled}
             onChange={event => onTimeFormatChange({ ...timeFormat, include_date: event.target.checked })} />
+          <span className="step-property-label">Include Date</span>
         </label>
-        <label className="step-property-field"><span className="step-property-label">Include UTC Offset</span>
+        <label className="step-property-field step-property-checkbox">
           <input type="checkbox" checked={timeFormat.include_utc_offset} disabled={references.disabled}
             onChange={event => onTimeFormatChange({ ...timeFormat, include_utc_offset: event.target.checked })} />
+          <span className="step-property-label">Include UTC Offset</span>
         </label>
         <p className="value-source-help">Hiding Date or UTC Offset affects display only. XLSX retains the full numeric date/time; CSV retains the full ISO timestamp.</p>
       </>}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { NumericSummary } from './workflow'
+import { formatElapsedTime } from './outputTime'
+import type { NumericSummary, OutputStep } from './workflow'
 
 const columns = [
   { key: 'count', label: 'Count', value: (s: NumericSummary) => s.count, default: true },
@@ -12,7 +13,10 @@ const columns = [
   { key: 'threeSigma', label: '3σ', value: (s: NumericSummary) => s.std_dev === null ? null : s.std_dev * 3, default: false },
 ] as const
 
-export default function PageResultSummary({ summaries }: { summaries: readonly NumericSummary[] }) {
+export default function PageResultSummary({ summaries, outputs }: {
+  summaries: readonly NumericSummary[]
+  outputs: readonly OutputStep[]
+}) {
   const [selected, setSelected] = useState<string[]>(() => columns.filter(column => column.default).map(column => column.key))
   const visible = columns.filter(column => selected.includes(column.key))
   return <section className="page-result-summary" aria-labelledby="page-result-summary-title">
@@ -33,10 +37,19 @@ export default function PageResultSummary({ summaries }: { summaries: readonly N
           <thead><tr>
             <th scope="col">Output</th>{visible.map(column => <th scope="col" key={column.key}>{column.label}</th>)}
           </tr></thead>
-          <tbody>{summaries.map(summary => <tr key={summary.name}>
-            <th scope="row">{summary.name}</th>
-            {visible.map(column => <td key={column.key}>{column.value(summary) ?? '—'}</td>)}
-          </tr>)}</tbody>
+          <tbody>{summaries.map(summary => {
+            const output = outputs.find(output => output.name === summary.name)
+            const format = output?.value.source === 'elapsed-time' && output.time_format?.kind === 'elapsed-time'
+              ? output.time_format.format : undefined
+            return <tr key={summary.name}>
+              <th scope="row">{summary.name}</th>
+              {visible.map(column => {
+                const value = column.value(summary)
+                return <td key={column.key}>{value === null ? '—' : column.key !== 'count' && format
+                  ? formatElapsedTime(value, format) : value}</td>
+              })}
+            </tr>
+          })}</tbody>
         </table>
       </div>
     )}

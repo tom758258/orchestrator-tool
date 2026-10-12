@@ -2862,7 +2862,7 @@ function App() {
                   changeSettings={runChartSampling} fitData={runChartFitData}
                   saveChartsWithTemplate={saveChartsWithTemplate}
                   onSaveChartsWithTemplateChange={setSaveChartsWithTemplate} />}
-                {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} />}
+                {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} outputs={runOutputs} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">
                     <h3 id="output-data-title">Output Data</h3>

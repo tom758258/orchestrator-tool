@@ -918,7 +918,10 @@ as an absolute millisecond coordinate, so it remains continuous across midnight.
 X labels and hover use that Output's Include Date / Include UTC Offset options in
 fixed UTC+08:00, independent of the computer timezone. Timestamp is excluded from
 Y series, Summary, Histogram, and other measurement statistics. Elapsed X retains
-raw seconds regardless of its display format. Scatter hover uses screen-space
+raw seconds regardless of its display format. Elapsed X-axis labels and Tooltip X
+values follow the Output's Time Format. In Chart Settings, X-axis **Minimum**,
+**Maximum**, and **Major unit** always use raw seconds, including when labels show
+minutes, hours, or decimal days. Scatter hover uses screen-space
 proximity; line displays may be selected through a visible segment but always
 report an actual raw row rather than an interpolated measurement. Combo
 requires at least two selected Outputs; each Output can use Column, Line, or
@@ -1017,6 +1020,10 @@ controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std
 is the sample standard deviation, calculated as `sqrt(M2 / (n - 1))`; 2σ and 3σ
 are its multiples. One sample displays `—` for all three σ columns, while Range
 remains available; constant data with at least two samples has Std Dev = 0.
+For Elapsed time Outputs, Min, Max, Avg, Range, Std Dev, 2σ, and 3σ follow the
+Output's Time Format from that run, matching Output Data and Scatter X display.
+Count remains an integer, and missing statistics remain `—`. Formatting affects
+display only; the underlying statistics retain their original precision in seconds.
 Column choices are temporary presentation settings. If a Page has no numeric
 Outputs, there is no numeric summary to show.
 

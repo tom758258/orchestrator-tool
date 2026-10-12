@@ -218,9 +218,9 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
         const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
-        const xFormat = panel.type === 'scatter'
-          ? outputs.find(output => output.name === panel.scatterXOutput)?.time_format : undefined
-        const timestampFormat = xFormat?.kind === 'timestamp' ? xFormat : undefined
+        const xOutput = panel.type === 'scatter'
+          ? outputs.find(output => output.name === panel.scatterXOutput) : undefined
+        const xTimeFormat = xOutput?.value.source === xOutput?.time_format?.kind ? xOutput?.time_format : undefined
         const statisticKey = runId === null ? null : statisticalRequestKey(runId, visiblePanel)
         const statisticState = statistical[panel.id]
         const statisticReady = statisticKey !== null && statisticState?.key === statisticKey && !!statisticState.response
@@ -273,9 +273,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
             <ChartPlot panel={visiblePanel}
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined}
-              changeSettings={changeSettings} fitData={fitData} timestampFormat={timestampFormat} />
+              changeSettings={changeSettings} fitData={fitData} xTimeFormat={xTimeFormat} />
           )}
           {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={scatterXNames}
+            outputs={outputs}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
               onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings,

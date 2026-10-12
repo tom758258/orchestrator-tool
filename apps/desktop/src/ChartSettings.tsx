@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { OutputStep } from './workflow'
 import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings,
   type AxisSettings, type ChartPanel, type ChartType, type MarkerShape } from './chartPanels'
 import { chartTypeAxisTitles, createChartSettingsDraft, validateChartSettingsDraft, type ChartSettingsDraft } from './chartSettingsModel'
@@ -8,10 +9,11 @@ type NumericKey = 'min' | 'max' | 'interval'
 type MarkerDraft = ChartSettingsDraft['markerStyles'][string]
 const settingsTabs = ['General', 'Series', 'Axes', 'Analysis', 'Export'] as const
 
-export default function ChartSettings({ panel, numericNames, scatterXNames = numericNames, running, hasRows, onApply, onClose }: {
+export default function ChartSettings({ panel, numericNames, scatterXNames = numericNames, outputs, running, hasRows, onApply, onClose }: {
   panel: ChartPanel
   numericNames: string[]
   scatterXNames?: string[]
+  outputs: readonly OutputStep[]
   running: boolean
   hasRows: boolean
   onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
@@ -124,6 +126,10 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
               onChange={event => updateAxis(axis, key, event.target.value)} />
           </label>)}
       </div>}
+      {axis === 'xAxis' && draft.type === 'scatter' && outputs.some(output =>
+        output.name === draft.scatterXOutput && output.value.source === 'elapsed-time') && <p className="chart-settings-help">
+        X-axis Minimum, Maximum, and Major unit use raw seconds. Axis labels follow the selected Elapsed Time format.
+      </p>}
       <div className="chart-settings-toggles">
         {([['showLabels', 'Show labels'], ['showTicks', 'Show tick marks'],
           ['showMajorGrid', 'Show major gridlines']] as [keyof Pick<AxisSettings,

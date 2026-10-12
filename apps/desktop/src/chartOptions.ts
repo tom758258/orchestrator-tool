@@ -1,4 +1,4 @@
-import { formatTimestampMillis, type TimestampFormat } from './outputTime.ts'
+import { formatElapsedTime, formatTimestampMillis, type OutputTimeFormat } from './outputTime.ts'
 import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings, seriesColor,
   type AxisSettings, type ChartPanel, type MarkerShape } from './chartPanels.ts'
 
@@ -179,9 +179,15 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
   }
 }
 
+export function formatScatterX(value: number, timeFormat?: OutputTimeFormat): string | number {
+  if (timeFormat?.kind === 'elapsed-time') return formatElapsedTime(value, timeFormat.format)
+  if (timeFormat?.kind === 'timestamp') return formatTimestampMillis(value, timeFormat)
+  return value
+}
+
 export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
   fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[],
-  seriesColors: Record<string, string> = {}, fitData = false, timestampFormat?: TimestampFormat) {
+  seriesColors: Record<string, string> = {}, fitData = false, xTimeFormat?: OutputTimeFormat) {
   const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
   const layout = chartLayout(panel)
@@ -197,10 +203,10 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
     xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,
       36, visual.xAxis),
       ...(categories ? { type: 'category' as const, data: categories } : {}),
-      ...(panel.type === 'scatter' && timestampFormat ? {
-        scale: true,
+      ...(panel.type === 'scatter' && xTimeFormat ? {
+        ...(xTimeFormat.kind === 'timestamp' ? { scale: true } : {}),
         axisLabel: { ...visual.xAxis.axisLabel, show: xAxis.showLabels,
-          formatter: (value: number) => formatTimestampMillis(value, timestampFormat) },
+          formatter: (value: number) => formatScatterX(value, xTimeFormat) },
       } : {}),
       ...(fullDomain && chartSupportsZoom(panel.type) && panel.zoom.enabled ? fullDomain : {}) },
     yAxis: panel.type === 'combo' && comboHasRightAxis(panel)
