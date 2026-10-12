@@ -780,8 +780,9 @@ rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete
 <li><strong>All Run Pages / XLSX</strong> — 建立一個 workbook，每個 Page 一個 worksheet。</li>
 </ul>
 <p>Export 使用 committed ResultRows。XLSX 會將安全數值寫為 Excel Number cells，
-可直接計算與繪圖。超過 15 位有效數字，或在 Excel 數值表示中會失去數值的數字，
-會以原本儲存的 JSON 表示保留為 Text。看起來像數字的字串仍為 Text；布林值寫為
+可直接計算與繪圖。安全 Number 必須符合最多 15 位有效數字及 Excel 支援範圍。
+超出上述限制，或在 Excel 數值表示中會失去數值的數字，會以原本儲存的 JSON 表示
+保留為 Text。看起來像數字的字串仍為 Text；布林值寫為
 Boolean cells，null 寫為 Blank，Array／Object 保留為 compact JSON Text。
 Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。匯出不會加入 formulas
 或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV

@@ -1015,9 +1015,10 @@ Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
 - **All Run Pages / XLSX** — creates one workbook with one worksheet per Page.
 
 Exports use committed ResultRows. XLSX writes safe numbers as Excel Number cells,
-so you can calculate and plot them directly. Numbers exceeding 15 significant
-digits or losing value in Excel's numeric representation remain Text using their
-stored JSON representation. Numeric-looking strings remain Text; booleans become
+so you can calculate and plot them directly. Safe numbers must have at most 15
+significant digits and be within Excel's supported numeric range. Numbers outside
+these limits or losing value in Excel's numeric representation remain Text using
+their stored JSON representation. Numeric-looking strings remain Text; booleans become
 Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
 Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is

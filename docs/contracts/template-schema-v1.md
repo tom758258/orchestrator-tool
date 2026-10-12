@@ -578,6 +578,10 @@ XLSX uses rust_xlsxwriter and writes JSON strings as Text (including numeric-loo
 strings), booleans as Boolean, null as Blank, and arrays/objects as compact JSON
 Text. Numbers become Excel Number cells only when all of these checks pass:
 
+- Zero is allowed. Non-zero absolute values must be within Excel's documented
+  ordinary Number range, inclusive: 2.2251E-308 through 9.99999999999999E+307.
+  This excludes the larger range available via formulas. See
+  [Excel specifications and limits](https://support.microsoft.com/en-us/excel/excel-specifications-and-limits).
 - The JSON Number's decimal representation has at most 15 significant digits,
   excluding leading zeros and trailing zeros that do not change its value.
 - Conversion to finite, normal-or-zero f64 preserves the decimal value when

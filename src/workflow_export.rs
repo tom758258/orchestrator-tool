@@ -151,6 +151,9 @@ fn excel_number(number: &serde_json::Number) -> Option<f64> {
     if !value.is_finite() || (value != 0.0 && !value.is_normal()) {
         return None;
     }
+    if value != 0.0 && !(2.2251e-308..=9.99999999999999e307).contains(&value.abs()) {
+        return None;
+    }
     let original = decimal_parts(&number.to_string());
     if original.0.trim_start_matches('-').len() > 15
         || original != decimal_parts(&value.to_string())
