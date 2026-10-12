@@ -102,13 +102,39 @@ pub fn pages_xlsx(datasets: &[PageDataset<'_>]) -> Result<Vec<u8>, String> {
         worksheet
             .set_name(dataset.page.name())
             .map_err(|e| e.to_string())?;
+        let formats: Vec<_> = dataset
+            .page
+            .time_formats()
+            .iter()
+            .map(|format| {
+                format.map(|format| {
+                    rust_xlsxwriter::Format::new().set_num_format(format.excel_number_format())
+                })
+            })
+            .collect();
         for (column, name) in dataset.page.headers().iter().enumerate() {
+            if dataset.page.time_formats()[column].is_some() {
+                worksheet
+                    .set_column_width(u16::try_from(column).map_err(|e| e.to_string())?, 36)
+                    .map_err(|e| e.to_string())?;
+            }
             worksheet
                 .write_string(0, u16::try_from(column).map_err(|e| e.to_string())?, name)
                 .map_err(|e| e.to_string())?;
         }
         for (index, row) in dataset.rows.iter().enumerate() {
             for (column, output) in row.outputs().iter().enumerate() {
+                if let Some(time_format) = dataset.page.time_formats()[column] {
+                    worksheet
+                        .write_number_with_format(
+                            u32::try_from(index + 1).map_err(|e| e.to_string())?,
+                            u16::try_from(column).map_err(|e| e.to_string())?,
+                            time_format.excel_value(output.value())?,
+                            formats[column].as_ref().unwrap(),
+                        )
+                        .map_err(|e| e.to_string())?;
+                    continue;
+                }
                 let row = u32::try_from(index + 1).map_err(|e| e.to_string())?;
                 let column = u16::try_from(column).map_err(|e| e.to_string())?;
                 let result = match output.value() {

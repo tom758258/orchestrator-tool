@@ -1,3 +1,4 @@
+import type { OutputTimeFormat } from './outputTime.ts'
 import type { ComparisonOperator, ExpressionOperandWire, InputValueWire } from './inputValue'
 import { MESSAGE_WINDOW_SIZE } from './executionWindow.ts'
 
@@ -20,6 +21,7 @@ type OutputStep = {
   name: string
   page: string
   value: InputValueWire
+  time_format?: OutputTimeFormat
 }
 
 export type { OutputStep }
@@ -105,6 +107,7 @@ export type RunPageMetadata = {
   revision: number
   iteration_rows: boolean
   numeric_outputs: string[]
+  timestamp_outputs: string[]
   summaries: NumericSummary[]
 }
 export type StepSummaryDto = Pick<StepExecutionDto, 'step_id' | 'status' | 'output' | 'output_omitted' | 'message'> & {

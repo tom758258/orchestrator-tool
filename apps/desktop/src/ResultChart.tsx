@@ -1,3 +1,4 @@
+import type { OutputStep } from './workflow'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
@@ -15,7 +16,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -25,6 +26,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   panels: ChartPanel[]
   onPanelsChange: (panels: ChartPanel[]) => void
   numericNames: string[]
+  timestampNames: string[]
+  outputs: OutputStep[]
   running: boolean
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
@@ -38,21 +41,22 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
   const [settingsId, setSettingsId] = useState<number | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
+  const scatterXNames = useMemo(() => [...numericNames, ...timestampNames], [numericNames, timestampNames])
   const waitingForRunData = runId === null || (running && rowCount === 0)
   const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
   const loadingPanels = useMemo(() => localPanels.filter(panel =>
     runId !== null && (!running || chartSupportsLive(panel.type))), [localPanels, running, runId])
   const data = useMemo(() => {
-    if (!loadingPanels.some(panel => chartRawOutputs(panel).some(name => numericNames.includes(name)))) return null
+    if (!loadingPanels.some(panel => chartRawOutputs(panel).some(name => scatterXNames.includes(name)))) return null
     let local = chartData.get(page)
     if (!local) {
       local = createPageChartData()
       chartData.set(page, local)
     }
     return local
-  }, [chartData, page, loadingPanels, numericNames, dataVersion])
+  }, [chartData, page, loadingPanels, scatterXNames, dataVersion])
   const requestedNames = useMemo(() => [...new Set(loadingPanels.flatMap(chartRawOutputs))]
-    .filter(name => numericNames.includes(name)), [loadingPanels, numericNames])
+    .filter(name => scatterXNames.includes(name)), [loadingPanels, scatterXNames])
   const requestedKey = useMemo(() => JSON.stringify([...requestedNames].sort()), [requestedNames])
   const latestRowCountRef = useRef(rowCount)
   latestRowCountRef.current = rowCount
@@ -214,6 +218,9 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
         const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
+        const xFormat = panel.type === 'scatter'
+          ? outputs.find(output => output.name === panel.scatterXOutput)?.time_format : undefined
+        const timestampFormat = xFormat?.kind === 'timestamp' ? xFormat : undefined
         const statisticKey = runId === null ? null : statisticalRequestKey(runId, visiblePanel)
         const statisticState = statistical[panel.id]
         const statisticReady = statisticKey !== null && statisticState?.key === statisticKey && !!statisticState.response
@@ -266,9 +273,9 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, p
             <ChartPlot panel={visiblePanel}
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined}
-              changeSettings={changeSettings} fitData={fitData} />
+              changeSettings={changeSettings} fitData={fitData} timestampFormat={timestampFormat} />
           )}
-          {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames}
+          {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={scatterXNames}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
               onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings,

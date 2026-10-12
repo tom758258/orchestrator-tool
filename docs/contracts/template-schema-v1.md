@@ -467,6 +467,27 @@ execution, and external tool limits still apply.
 
 ## Output Pages and ResultRow semantics
 
+Time-source Output steps also require a per-step `time_format` object in V1:
+
+- Elapsed: `{"kind":"elapsed-time","format":"seconds"}`. Allowed formats are
+  `seconds`, `minutes-seconds`, `hours-minutes-seconds`, and `days-decimal`.
+- Timestamp: `{"kind":"timestamp","include_date":true,"include_utc_offset":true}`.
+  Both booleans are required. New Desktop Outputs default to Seconds or both
+  Timestamp options enabled.
+- Non-time Output steps omit `time_format`. Missing or mismatched time settings
+  are rejected; there is no migration. Set Variable and Tool Action InputValues
+  retain their existing wire shape and time-source behavior.
+
+Desktop Output Data formats values without changing committed ResultRows. XLSX
+writes numeric cells: Seconds retains seconds with `0.000`; other Elapsed formats
+use seconds / 86400 with `[mm]:ss.000`, `[hh]:mm:ss.000`, or
+`0.000000000 "d"`. Timestamp retains its complete UTC+08:00 local date/time as
+an Excel serial, using `yyyy-mm-dd"T"hh:mm:ss.000"+08:00"` with the date and
+offset portions independently omitted for display. CSV and streaming retain raw
+seconds and the complete ISO timestamp. Timestamp can be Scatter X, converted
+to absolute milliseconds; it cannot be a selected Y/statistical Output in saved
+Charts. Axis labels and hover display use its Output settings in fixed UTC+08:00.
+
 Every Output step has explicit id, name, page, and value fields. A newly
 created Desktop Output may default to the Results page, but page is explicit
 Template data and is not a deserialization fallback.

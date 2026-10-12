@@ -114,7 +114,7 @@ function loadingHarness(invoke) {
   }
   return {
     async update(next) {
-      props = next
+      props = { timestampNames: [], outputs: [], ...next }
       commit()
       for (let count = 0; count < 20; count++) {
         await new Promise(resolve => setImmediate(resolve))
@@ -126,6 +126,34 @@ function loadingHarness(invoke) {
     dispose() { slots.forEach(slot => slot.cleanup?.()) },
   }
 }
+
+test('Timestamp Scatter X loads numeric milliseconds separately from measurement statistics', async () => {
+  const calls = []
+  const times = [Date.parse('2026-10-12T23:59:59.900+08:00'), Date.parse('2026-10-13T00:00:00.100+08:00')]
+  const harness = loadingHarness(async (command, args) => {
+    calls.push({ command, ...args })
+    return { run_id: args.runId, page: args.page, start_row: args.startRow,
+      series: Object.fromEntries(args.outputs.map(name => [name, name === 'Time' ? times : [12, 13]])) }
+  })
+  const base = addChartPanel([], 'A', ['Voltage'])[0]
+  const chartData = new Map()
+  try {
+    await harness.update({ runId: 1, revision: 1, rowCount: 2, page: 'A', running: false,
+      numericNames: ['Voltage'], timestampNames: ['Time'], chartData,
+      panels: [{ ...base, type: 'scatter', scatterXOutput: 'Time' }] })
+    assert.deepEqual(calls.map(call => [call.command, call.outputs]),
+      [['get_last_run_chart_series', ['Time', 'Voltage']]])
+    assert.deepEqual([...chartData.get('A').getSeries('Time')], times)
+    assert.equal(chartData.get('A').getSeries('Time')[1] - chartData.get('A').getSeries('Time')[0], 200)
+    calls.length = 0
+    await harness.update({ runId: 1, revision: 1, rowCount: 2, page: 'A', running: false,
+      numericNames: ['Voltage'], timestampNames: ['Time'], chartData,
+      panels: [{ ...base, type: 'histogram', outputs: ['Time'] }] })
+    assert.deepEqual(calls, [])
+  } finally {
+    harness.dispose()
+  }
+})
 
 for (const type of ['line', 'scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
   test(`${type}: actual requests obey live eligibility and automatically resume after running`, async () => {
@@ -204,7 +232,7 @@ test('a mixed Page only loads Line dependencies during running', async () => {
 test('preserved panels wait through a new run ID until the first committed row starts Line loading', async () => {
   const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const numericNamesFor = new Function('runStatus', 'runPageMetadata', 'chartPanels', 'runPage',
-    'chartRequiredOutputs', appSource.slice(appSource.indexOf('  const chartNumericNames ='),
+    'chartRequiredOutputs', 'runOutputs', appSource.slice(appSource.indexOf('  const chartNumericNames ='),
       appSource.indexOf('  // Numeric arrays survive')) + '\nreturn chartNumericNames')
   const calls = []
   const harness = loadingHarness(async (command, args) => {
@@ -219,7 +247,7 @@ test('preserved panels wait through a new run ID until the first committed row s
     numericNames: ['V', 'I', 'X'], chartData: new Map([['A', oldData]]), panels: [base] }
   const pages = [{ name: 'A', outputs: ['V', 'I', 'X'].map(name => ({ name })) }]
   const numericNames = (metadata, running, panels) => numericNamesFor(
-    running ? 'running' : 'succeeded', metadata, panels, pages[0], chartRequiredOutputs)
+    running ? 'running' : 'succeeded', metadata, panels, pages[0], chartRequiredOutputs, pages[0].outputs.map(output => ({ ...output, value: { source: 'literal' } })))
   try {
     await harness.update(props)
     assert.equal(calls.length, 0)

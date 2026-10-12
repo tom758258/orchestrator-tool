@@ -7,6 +7,7 @@ use std::{
     },
 };
 
+use orchestrator_tool::output_time::{OutputTimeFormat, timestamp_millis};
 use orchestrator_tool::{
     template::Template,
     workflow::{
@@ -91,6 +92,7 @@ pub struct PageMetadataDto {
     pub revision: u64,
     pub iteration_rows: bool,
     pub numeric_outputs: Vec<String>,
+    pub timestamp_outputs: Vec<String>,
     pub summaries: Vec<NumericSummaryDto>,
 }
 
@@ -350,6 +352,7 @@ struct StoredPage {
     revision: u64,
     iteration_rows: bool,
     numeric_eligible: HashMap<String, bool>,
+    timestamp_eligible: HashMap<String, bool>,
     summaries: BTreeMap<String, NumericAccumulator>,
 }
 
@@ -365,10 +368,16 @@ impl StoredRun {
     fn new(run_id: u64, template: Template) -> Self {
         let mut pages = BTreeMap::new();
         for page in template.workflow().output_pages() {
-            pages.insert(
-                page.name().to_owned(),
-                StoredPage::new(page.headers().to_vec()),
-            );
+            pages.insert(page.name().to_owned(), {
+                let mut stored = StoredPage::new(page.headers().to_vec());
+                for (name, format) in page.headers().iter().zip(page.time_formats()) {
+                    if matches!(format, Some(OutputTimeFormat::Timestamp { .. })) {
+                        stored.timestamp_eligible.insert(name.clone(), true);
+                        stored.numeric_eligible.insert(name.clone(), false);
+                    }
+                }
+                stored
+            });
         }
         if pages.is_empty() {
             pages.insert("Results".to_owned(), StoredPage::new(Vec::new()));
@@ -596,11 +605,8 @@ impl StoredRun {
             .min(page_data.rows.len());
         let mut series = BTreeMap::new();
         for name in outputs {
-            if !page_data
-                .numeric_eligible
-                .get(name)
-                .copied()
-                .unwrap_or(false)
+            let timestamp = page_data.timestamp_eligible.get(name) == Some(&true);
+            if (!timestamp && page_data.numeric_eligible.get(name) != Some(&true))
                 || page_data.rows.is_empty()
             {
                 return Err(format!(
@@ -613,8 +619,14 @@ impl StoredRun {
                     row.outputs()
                         .iter()
                         .find(|output| output.name() == name)
-                        .and_then(|output| output.value().as_f64())
-                        .expect("numeric eligibility maintained while appending")
+                        .and_then(|output| {
+                            if timestamp {
+                                timestamp_millis(output.value()).ok()
+                            } else {
+                                output.value().as_f64()
+                            }
+                        })
+                        .expect("chart eligibility maintained while appending")
                 })
                 .collect();
             series.insert(name.clone(), values);
@@ -804,6 +816,7 @@ impl StoredPage {
             revision: 0,
             iteration_rows: false,
             numeric_eligible,
+            timestamp_eligible: HashMap::new(),
             summaries: BTreeMap::new(),
         }
     }
@@ -811,6 +824,14 @@ impl StoredPage {
     fn append(&mut self, row: ResultRow) {
         self.iteration_rows |= row.for_iteration().is_some() || row.while_iteration().is_some();
         for name in &self.output_names {
+            if let Some(eligible) = self.timestamp_eligible.get_mut(name) {
+                *eligible &= row
+                    .outputs()
+                    .iter()
+                    .find(|output| output.name() == name)
+                    .is_some_and(|output| timestamp_millis(output.value()).is_ok());
+                continue;
+            }
             let value = row
                 .outputs()
                 .iter()
@@ -822,6 +843,9 @@ impl StoredPage {
             }
         }
         for output in row.outputs() {
+            if self.timestamp_eligible.contains_key(output.name()) {
+                continue;
+            }
             if let Some(value) = output.value().as_f64().filter(|value| value.is_finite()) {
                 self.summaries
                     .entry(output.name().to_owned())
@@ -840,6 +864,15 @@ impl StoredPage {
             row_count: self.rows.len(),
             revision: self.revision,
             iteration_rows: self.iteration_rows,
+            timestamp_outputs: if self.rows.is_empty() {
+                Vec::new()
+            } else {
+                self.output_names
+                    .iter()
+                    .filter(|name| self.timestamp_eligible.get(*name) == Some(&true))
+                    .cloned()
+                    .collect()
+            },
             numeric_outputs: if self.rows.is_empty() {
                 Vec::new()
             } else {
@@ -1058,6 +1091,76 @@ mod tests {
     use orchestrator_tool::workflow::{
         MessageRecord, ResultRow, StepId, StepResult, WorkflowOutput, WorkflowRunEvent,
     };
+
+    #[test]
+    fn output_time_timestamp_chart_series_excludes_statistics_and_preserves_rows() {
+        let template = Template::from_json_str(&serde_json::json!({
+            "schema_version":1, "name":"Time chart", "tool_instances":[],
+            "workflow":{"steps":[
+                {"type":"output", "id":"time", "name":"Time", "page":"Results",
+                 "value":{"source":"timestamp"}, "time_format":{"kind":"timestamp", "include_date":false, "include_utc_offset":false}},
+                {"type":"output", "id":"elapsed", "name":"Elapsed", "page":"Results",
+                 "value":{"source":"elapsed-time"}, "time_format":{"kind":"elapsed-time", "format":"hours-minutes-seconds"}}
+            ]}
+        }).to_string()).unwrap();
+        let mut run = StoredRun::new(42, template);
+        let stamps = [
+            "2026-10-12T23:59:59.900+08:00",
+            "2026-10-13T00:00:00.100+08:00",
+        ];
+        for (index, stamp) in stamps.iter().enumerate() {
+            run.append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(
+                    vec![
+                        WorkflowOutput::new("Time".to_owned(), Value::from(*stamp)),
+                        WorkflowOutput::new(
+                            "Elapsed".to_owned(),
+                            Value::from(90061.123 + index as f64 * 0.2),
+                        ),
+                    ],
+                    None,
+                )
+                .with_page("Results"),
+            ));
+        }
+        let metadata = run.metadata();
+        assert_eq!(metadata.pages[0].timestamp_outputs, ["Time"]);
+        assert_eq!(metadata.pages[0].numeric_outputs, ["Elapsed"]);
+        assert_eq!(metadata.pages[0].summaries.len(), 1);
+        assert_eq!(metadata.pages[0].summaries[0].name, "Elapsed");
+        let series = run
+            .chart_series("Results", &["Time".to_owned(), "Elapsed".to_owned()], 0, 2)
+            .unwrap();
+        assert_eq!(series.series["Time"][1] - series.series["Time"][0], 200.0);
+        assert_eq!(series.series["Elapsed"][0], 90061.123);
+        let tail = run
+            .chart_series("Results", &["Time".to_owned()], 1, 1)
+            .unwrap();
+        assert_eq!(tail.series["Time"], [series.series["Time"][1]]);
+        assert!(run.box_plot("Results", &["Time".to_owned()]).is_err());
+        assert!(run.histogram("Results", "Time", "auto", None).is_err());
+        assert!(run.pages["Results"].numeric_values("Time").is_err());
+        // Output Data remains newest first and retains the complete original ISO value.
+        assert_eq!(
+            run.page_rows("Results", 0, 2).unwrap().rows[0].outputs[0].value,
+            stamps[1]
+        );
+        run.append_event(&WorkflowRunEvent::ResultRowCommitted(
+            ResultRow::new(
+                vec![
+                    WorkflowOutput::new("Time".to_owned(), Value::from("invalid")),
+                    WorkflowOutput::new("Elapsed".to_owned(), Value::from(90062)),
+                ],
+                None,
+            )
+            .with_page("Results"),
+        ));
+        assert!(run.metadata().pages[0].timestamp_outputs.is_empty());
+        assert!(
+            run.chart_series("Results", &["Time".to_owned()], 0, 1)
+                .is_err()
+        );
+    }
 
     fn template() -> Template {
         Template::from_json_str(

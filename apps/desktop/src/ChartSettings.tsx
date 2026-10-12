@@ -8,9 +8,10 @@ type NumericKey = 'min' | 'max' | 'interval'
 type MarkerDraft = ChartSettingsDraft['markerStyles'][string]
 const settingsTabs = ['General', 'Series', 'Axes', 'Analysis', 'Export'] as const
 
-export default function ChartSettings({ panel, numericNames, running, hasRows, onApply, onClose }: {
+export default function ChartSettings({ panel, numericNames, scatterXNames = numericNames, running, hasRows, onApply, onClose }: {
   panel: ChartPanel
   numericNames: string[]
+  scatterXNames?: string[]
   running: boolean
   hasRows: boolean
   onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
@@ -268,7 +269,7 @@ export default function ChartSettings({ panel, numericNames, running, hasRows, o
           <select value={draft.scatterXOutput ?? ''} onChange={event =>
             changeScatterXOutput(event.target.value || null)}>
             <option value="">Iteration</option>
-            {numericNames.map(name => <option key={name} value={name}>{name}</option>)}
+            {scatterXNames.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
         </label>
         <label className="chart-settings-field">Display

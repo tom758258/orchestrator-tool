@@ -320,6 +320,17 @@ operand 可選 Number 或 Boolean。Equality 可比較 boolean（例如 `true ==
 及其他 JSON 值，且不進行型別轉換；arithmetic 與大小比較僅接受數值。
 Calculation 不是任意 nested expression tree。
 
+Output 的 **Elapsed time** 來源提供 **Time Format**：**Seconds**（預設）、
+**Minutes:Seconds**、**Hours:Minutes:Seconds** 與 **Days (Decimal)**。分鐘與小時
+可累積超過 60 分鐘與 24 小時；Output Data 的秒數顯示三位小數，十進位天數顯示
+九位小數。例如 90061.123 秒可顯示為 1501:01.123、25:01:01.123 或 1.042374109 d。
+
+**Timestamp** Output 的 **Include Date** 與 **Include UTC Offset** 預設勾選，
+顯示如 `2026-10-12T23:24:10.123+08:00`。取消任一選項只隱藏對應部分；底層保留
+完整 UTC+08:00 日期時間，跨午夜也不會丟失日期。設定屬於各個 Output，Template
+儲存／載入及 Step 複製／貼上會保留；切換 Value Source 時清除舊時間設定。
+Set Variable 與 Tool Action 的時間來源維持原有行為。
+
 只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。
 
@@ -754,11 +765,15 @@ series color，也可改為獨立的 custom color。Legend 會反映實際的 li
 若原本選取多個 Outputs 後切換成 Histogram，**Apply** 會保留第一個已選取的 Output。
 
 在 chart panel 勾選多個 **Outputs**，即可比較多個 numeric series。Scatter 的
-**X source** 可選 Iteration 或任一 numeric Output；只作為 Scatter X 的 Output
+**X source** 可選 Iteration、任一 numeric Output 或 Timestamp Output；只作為 Scatter X 的 Output
 不必同時勾選為 Y series。**Display** 可選 Markers、Lines 或 Lines + markers；
 Scatter 的 **Marker size** 與 **Line width** 接受有限且大於 0 的數值，並用於
 顯示對應元素的模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；
-Lines 依該順序連線。Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
+Lines 依該順序連線。Timestamp X 使用完整日期時間轉成的絕對毫秒座標，跨午夜時
+持續增加；X 標籤與 hover 依該 Output 的 Include Date／Include UTC Offset 選項
+顯示固定 UTC+08:00 時間，不受電腦時區影響。Timestamp 不提供作為 Y series、
+Summary、Histogram 或其他量測統計。Elapsed X 一律使用原始秒數。
+Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
 但只會回報實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個
 Outputs；每個 Output 可選 Column、Line 或 Line + markers，並指定 Left Y 或
 Right Y。左右 Y 軸可分別設定，Combo 支援 Iteration X 軸縮放。
@@ -859,6 +874,11 @@ rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete
 - **Run Page / XLSX** — 將選取的 Page 匯出為一個 worksheet。
 - **All Run Pages / CSV** — 在指定 destination folder 中為每個 Page 建立一份 CSV。
 - **All Run Pages / XLSX** — 建立一個 workbook，每個 Page 一個 worksheet。
+
+所有 XLSX 時間格式都是可計算與繪圖的數值儲存格。Elapsed **Seconds** 儲存秒數；
+其他三種格式儲存秒數 / 86400（Excel 天數）。Timestamp 即使隱藏 Date，也保留
+完整日期時間序號；`T` 與 `+08:00` 是固定顯示文字。Excel 天數相減後乘以 86400
+即可換算為秒。CSV 與 streaming 一律保留原始 Elapsed 秒數與完整 ISO Timestamp。
 
 Export 使用 committed ResultRows。XLSX 會將安全數值寫為 Excel Number cells，
 可直接計算與繪圖。安全 Number 必須符合最多 15 位有效數字及 Excel 支援範圍。

@@ -242,6 +242,7 @@ pub struct Step {
     id: StepId,
     kind: StepKind,
     output_page: String,
+    output_time_format: Option<crate::output_time::OutputTimeFormat>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -354,9 +355,27 @@ impl Error for NumericRangeError {}
 impl Step {
     /// Creates a workflow step.
     pub fn new(id: StepId, kind: StepKind) -> Self {
+        use crate::output_time::{ElapsedTimeFormat, OutputTimeFormat};
+        let output_time_format = match &kind {
+            StepKind::Output {
+                value: InputValue::ElapsedTime,
+                ..
+            } => Some(OutputTimeFormat::ElapsedTime {
+                format: ElapsedTimeFormat::Seconds,
+            }),
+            StepKind::Output {
+                value: InputValue::Timestamp,
+                ..
+            } => Some(OutputTimeFormat::Timestamp {
+                include_date: true,
+                include_utc_offset: true,
+            }),
+            _ => None,
+        };
         Self {
             id,
             kind,
+            output_time_format,
             output_page: "Results".to_owned(),
         }
     }
@@ -364,6 +383,18 @@ impl Step {
     pub fn with_output_page(mut self, name: impl Into<String>) -> Self {
         self.output_page = name.into();
         self
+    }
+
+    pub fn with_output_time_format(
+        mut self,
+        format: Option<crate::output_time::OutputTimeFormat>,
+    ) -> Self {
+        self.output_time_format = format;
+        self
+    }
+
+    pub fn output_time_format(&self) -> Option<crate::output_time::OutputTimeFormat> {
+        self.output_time_format
     }
 
     pub fn output_page(&self) -> &str {
@@ -507,6 +538,7 @@ pub struct OutputPage {
     name: String,
     row_scope: Vec<StepId>,
     headers: Vec<String>,
+    time_formats: Vec<Option<crate::output_time::OutputTimeFormat>>,
 }
 
 impl OutputPage {
@@ -516,6 +548,10 @@ impl OutputPage {
     pub fn row_scope(&self) -> &[StepId] {
         &self.row_scope
     }
+    pub fn time_formats(&self) -> &[Option<crate::output_time::OutputTimeFormat>] {
+        &self.time_formats
+    }
+
     pub fn headers(&self) -> &[String] {
         &self.headers
     }
@@ -673,6 +709,21 @@ impl Workflow {
                         validate_input(value)?;
                     }
                     StepKind::Output { name, value } => {
+                        use crate::output_time::OutputTimeFormat;
+                        let valid_format = match (value, step.output_time_format()) {
+                            (
+                                InputValue::ElapsedTime,
+                                Some(OutputTimeFormat::ElapsedTime { .. }),
+                            )
+                            | (InputValue::Timestamp, Some(OutputTimeFormat::Timestamp { .. })) => {
+                                true
+                            }
+                            (InputValue::ElapsedTime | InputValue::Timestamp, _) => false,
+                            (_, format) => format.is_none(),
+                        };
+                        if !valid_format {
+                            return Err(WorkflowError::InvalidOutputTimeFormat(step.id().clone()));
+                        }
                         if name.trim().is_empty() {
                             return Err(WorkflowError::InvalidOutputName(step.id().clone()));
                         }
@@ -690,6 +741,7 @@ impl Workflow {
                                 return Err(WorkflowError::PageScopeMismatch(page.name.clone()));
                             }
                             page.headers.push(name.clone());
+                            page.time_formats.push(step.output_time_format());
                         } else {
                             if pages.iter().any(|page| {
                                 page.name.to_lowercase() == step.output_page().to_lowercase()
@@ -702,6 +754,7 @@ impl Workflow {
                                 name: step.output_page().to_owned(),
                                 row_scope: path.to_vec(),
                                 headers: vec![name.clone()],
+                                time_formats: vec![step.output_time_format()],
                             });
                         }
                     }
@@ -860,6 +913,7 @@ pub enum WorkflowError {
     EmptyUnlimitedWhileBody(StepId),
     DuplicateStepId(StepId),
     InvalidOutputName(StepId),
+    InvalidOutputTimeFormat(StepId),
     DuplicateOutputName(String),
     InvalidStepOutputReference { step_id: StepId, target: StepId },
     NestedLoop(StepId),
@@ -894,6 +948,10 @@ impl fmt::Display for WorkflowError {
                     "assert step {step_id} requires a comparison operator"
                 )
             }
+            Self::InvalidOutputTimeFormat(step_id) => write!(
+                formatter,
+                "output step {step_id} time format must match its value source"
+            ),
             Self::InvalidOutputName(step_id) => {
                 write!(formatter, "output step {step_id} name must not be blank")
             }

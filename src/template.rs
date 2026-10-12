@@ -691,6 +691,22 @@ fn validate_output_views(
             )));
         }
         for output in &chart.outputs {
+            if page
+                .headers()
+                .iter()
+                .zip(page.time_formats())
+                .any(|(name, format)| {
+                    name == output
+                        && matches!(
+                            format,
+                            Some(crate::output_time::OutputTimeFormat::Timestamp { .. })
+                        )
+                })
+            {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} Timestamp Output {output:?} may only be used as Scatter X"
+                )));
+            }
             if !page.headers().contains(output) {
                 return Err(TemplateError::OutputViews(format!(
                     "chart {number} references unknown Output {output:?} on Page {:?}",
@@ -1117,6 +1133,8 @@ enum StepWire {
         name: String,
         page: String,
         value: InputValueWire,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        time_format: Option<crate::output_time::OutputTimeFormat>,
     },
     Wait {
         id: String,
@@ -1229,6 +1247,7 @@ impl StepWire {
             StepKind::Output { name, value } => Self::Output {
                 name: name.clone(),
                 page: step.output_page().to_owned(),
+                time_format: step.output_time_format(),
                 id: step.id().as_str().to_owned(),
                 value: InputValueWire::from_input(value),
             },
@@ -1487,6 +1506,7 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
             name,
             page,
             value,
+            time_format,
         } => {
             let step_id = StepId::new(&id)
                 .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
@@ -1497,7 +1517,8 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                     value: input_from_wire(value)?,
                 },
             )
-            .with_output_page(page))
+            .with_output_page(page)
+            .with_output_time_format(time_format))
         }
         StepWire::Wait { id, duration_ms } => {
             let step_id = StepId::new(&id)
@@ -1886,6 +1907,30 @@ mod tests {
             ]},
             "output_views": {"charts": [saved_chart_wire("line", vec!["Voltage"])]}
         })
+    }
+
+    #[test]
+    fn output_time_saved_chart_allows_timestamp_only_as_scatter_x() {
+        let mut wire = chart_template_wire();
+        wire["workflow"]["steps"][1]["value"] = json!({"source":"timestamp"});
+        wire["workflow"]["steps"][1]["time_format"] =
+            json!({"kind":"timestamp", "include_date":false, "include_utc_offset":true});
+        wire["output_views"]["charts"][0] = saved_chart_wire("scatter", vec!["Voltage"]);
+        wire["output_views"]["charts"][0]["scatter_x_output"] = json!("Current");
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        assert_eq!(
+            Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+            template
+        );
+        for chart_type in ["scatter", "line", "histogram", "boxplot"] {
+            wire["output_views"]["charts"][0] = saved_chart_wire(chart_type, vec!["Current"]);
+            assert!(
+                Template::from_json_str(&wire.to_string())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("may only be used as Scatter X")
+            );
+        }
     }
 
     #[test]
@@ -2766,13 +2811,18 @@ mod tests {
             ("elapsed-time", InputValue::ElapsedTime),
             ("timestamp", InputValue::Timestamp),
         ] {
-            let wire = json!({
+            let mut wire = json!({
                 "schema_version": 1, "name": "Time inputs", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
                     { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
                 ] }
             });
+            wire["workflow"]["steps"][1]["time_format"] = if source == "elapsed-time" {
+                json!({"kind":"elapsed-time", "format":"seconds"})
+            } else {
+                json!({"kind":"timestamp", "include_date":true, "include_utc_offset":true})
+            };
             let template = Template::from_json_str(&wire.to_string()).unwrap();
             for step in template.workflow().steps() {
                 match step.kind() {

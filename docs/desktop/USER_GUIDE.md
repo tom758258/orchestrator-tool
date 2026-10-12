@@ -378,6 +378,19 @@ or Boolean. Equality can compare booleans (for example, `true == false`) and
 other JSON values without type coercion; arithmetic and ordering comparisons
 require numbers. A Calculation is not an arbitrary nested expression tree.
 
+For an Output with **Elapsed time**, **Time Format** offers **Seconds** (default),
+**Minutes:Seconds**, **Hours:Minutes:Seconds**, and **Days (Decimal)**. Minutes
+and hours accumulate beyond 60 minutes and 24 hours. Output Data shows three
+decimal places for seconds and nine for decimal days. For example, 90061.123
+seconds displays as 1501:01.123, 25:01:01.123, or 1.042374109 d.
+
+For a **Timestamp** Output, **Include Date** and **Include UTC Offset** default
+to enabled, displaying `2026-10-12T23:24:10.123+08:00`. Disable either option to
+hide its portion. This affects display only; the full date/time remains stored
+in fixed UTC+08:00, including across midnight. These settings belong to each
+Output and survive Template save/load and step copy/paste. Changing Value Source
+clears the old time settings. Set Variable and Tool Action time sources are unchanged.
+
 An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.
 
@@ -888,12 +901,17 @@ Histogram. When switching to Histogram with multiple Outputs selected,
 **Apply** keeps the first selected Output.
 
 A chart panel can select multiple **Outputs** to compare numeric series.
-Scatter **X source** can be Iteration or any numeric Output, and an Output used
+Scatter **X source** can be Iteration, any numeric Output, or a Timestamp Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. **Display** can
 show Markers, Lines, or Lines + markers. Scatter **Marker size** and **Line
 width** accept positive finite numbers and apply to the modes that show them.
 Scatter keeps raw X/Y pairs in original row order, including nonmonotonic X
-values; Lines connect those pairs in that order. Scatter hover uses screen-space
+values; Lines connect those pairs in that order. Timestamp X uses the full date/time
+as an absolute millisecond coordinate, so it remains continuous across midnight.
+X labels and hover use that Output's Include Date / Include UTC Offset options in
+fixed UTC+08:00, independent of the computer timezone. Timestamp is excluded from
+Y series, Summary, Histogram, and other measurement statistics. Elapsed X retains
+raw seconds regardless of its display format. Scatter hover uses screen-space
 proximity; line displays may be selected through a visible segment but always
 report an actual raw row rather than an interpolated measurement. Combo
 requires at least two selected Outputs; each Output can use Column, Line, or
@@ -1013,6 +1031,13 @@ Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
 - **All Run Pages / CSV** — creates one CSV file per Page in the selected
   destination folder.
 - **All Run Pages / XLSX** — creates one workbook with one worksheet per Page.
+
+All XLSX time formats use numeric cells suitable for calculations and plotting.
+Elapsed **Seconds** stores seconds; the other three formats store seconds / 86400
+(Excel days). Timestamp stores the complete date/time serial even when Date is
+hidden; `T` and `+08:00` are fixed display text. To convert a difference in Excel
+days to seconds, multiply by 86400. CSV and streaming always retain raw Elapsed
+seconds and the full ISO Timestamp, regardless of display settings.
 
 Exports use committed ResultRows. XLSX writes safe numbers as Excel Number cells,
 so you can calculate and plot them directly. Safe numbers must have at most 15

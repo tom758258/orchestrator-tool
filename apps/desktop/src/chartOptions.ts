@@ -1,3 +1,4 @@
+import { formatTimestampMillis, type TimestampFormat } from './outputTime.ts'
 import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings, seriesColor,
   type AxisSettings, type ChartPanel, type MarkerShape } from './chartPanels.ts'
 
@@ -180,7 +181,7 @@ function axisOption(axis: AxisSettings, nameGap: number, visual: ReturnType<type
 
 export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
   fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[],
-  seriesColors: Record<string, string> = {}, fitData = false) {
+  seriesColors: Record<string, string> = {}, fitData = false, timestampFormat?: TimestampFormat) {
   const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
   const layout = chartLayout(panel)
@@ -196,6 +197,11 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
     xAxis: { ...axisOption(categories ? { ...xAxis, min: null, max: null, interval: null } : xAxis,
       36, visual.xAxis),
       ...(categories ? { type: 'category' as const, data: categories } : {}),
+      ...(panel.type === 'scatter' && timestampFormat ? {
+        scale: true,
+        axisLabel: { ...visual.xAxis.axisLabel, show: xAxis.showLabels,
+          formatter: (value: number) => formatTimestampMillis(value, timestampFormat) },
+      } : {}),
       ...(fullDomain && chartSupportsZoom(panel.type) && panel.zoom.enabled ? fullDomain : {}) },
     yAxis: panel.type === 'combo' && comboHasRightAxis(panel)
       ? [axisOption(panel.yAxis, 56, visual.yAxis),

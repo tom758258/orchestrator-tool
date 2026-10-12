@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import type { ResultRowDto } from './workflow'
+import { formatOutputValue } from './outputTime'
+import type { OutputStep, ResultRowDto } from './workflow'
 import {
   OUTPUT_ROW_HEIGHT,
   OUTPUT_ROW_OVERSCAN,
@@ -27,7 +28,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   page: string
   rowCount: number
   revision: number
-  outputs: readonly { id: string; name: string }[]
+  outputs: readonly OutputStep[]
   iterationRows: boolean
 }) {
   const scroll = useRef<HTMLDivElement>(null)
@@ -130,6 +131,10 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   const items = displayWindow
     ? virtualOutputWindow(displayWindow.rows, displayWindow.offset, displayWindow.total_rows)
     : []
+  const formattedRows = useMemo(() => displayWindow?.rows.map(row => {
+    const values = new Map(row.outputs.map(output => [output.name, output.value]))
+    return outputs.map(step => formatOutputValue(step, values.get(step.name)))
+  }) ?? [], [displayWindow?.rows, outputs])
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
   const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
 
@@ -147,12 +152,11 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
         {displayRange.topSpacerHeight > 0 && <tr aria-hidden="true">
           <td className="output-table-spacer" colSpan={columnCount} style={{ height: displayRange.topSpacerHeight }} />
         </tr>}
-        {items.map(({ row, index, iteration }) => (
+        {items.map(({ index, iteration }) => (
           <tr key={index} aria-rowindex={index + 2}>
             {iterationRows && <td>{iteration}</td>}
-            {outputs.map(step => {
-              const output = row.outputs.find(output => output.name === step.name) ?? { value: undefined }
-              const value = typeof output.value === 'string' ? output.value : JSON.stringify(output.value) ?? '—'
+            {outputs.map((step, column) => {
+              const value = formattedRows[index - displayWindow!.offset][column]
               return <td key={step.id} title={value}>{value}</td>
             })}
           </tr>

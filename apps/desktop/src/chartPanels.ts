@@ -262,6 +262,7 @@ export function reconcileChartPanels(
   pages: { name: string; outputs: { name: string }[] }[],
   currentPage: string,
   numericNames: string[] | null,
+  timestampNames: string[] = [],
 ): ChartPanel[] {
   let reconciled: ChartPanel[] | undefined
   panels.forEach((panel, index) => {
@@ -272,9 +273,10 @@ export function reconcileChartPanels(
     }
     const names = panel.page === currentPage && numericNames !== null
       ? numericNames : page.outputs.map(output => output.name)
-    const scatterXOutput = panel.type === 'scatter' && panel.scatterXOutput !== null && !names.includes(panel.scatterXOutput)
+    const xNames = panel.page === currentPage ? [...names, ...timestampNames] : names
+    const scatterXOutput = panel.type === 'scatter' && panel.scatterXOutput !== null && !xNames.includes(panel.scatterXOutput)
       ? null : panel.scatterXOutput
-    if (chartRequiredOutputs(panel).every(name => names.includes(name))) {
+    if (panel.outputs.every(name => names.includes(name)) && scatterXOutput === panel.scatterXOutput) {
       reconciled?.push(panel)
       return
     }
@@ -320,7 +322,7 @@ export function reconcileRunChartPanels(
   const firstNumeric: string[] = metadata.find(page => page.name === pages[0]?.name)?.numeric_outputs ?? []
   for (const page of pages) {
     const current = metadata.find(item => item.name === page.name)
-    reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null)
+    reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null, current?.timestamp_outputs ?? [])
   }
   return reconciled.length === 0 && pages[0]
     ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled

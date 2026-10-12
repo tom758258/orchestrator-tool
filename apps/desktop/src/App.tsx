@@ -21,6 +21,7 @@ import ToolSetupEditor from './ToolSetupEditor'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
+import { changeOutputValue } from './outputTime'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
@@ -653,6 +654,7 @@ function App() {
   const runWorkspace = lastRunWorkspaceState(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata)
   const chartNumericNames = runStatus === 'running' && (runPageMetadata?.row_count ?? 0) === 0
     ? [...new Set(chartPanels.filter(panel => panel.page === runPage?.name).flatMap(chartRequiredOutputs))]
+      .filter(name => !runOutputs.some(output => output.name === name && output.value.source === 'timestamp'))
     : runPageMetadata?.numeric_outputs ?? []
   // Numeric arrays survive Page/Output tab switches, but never cross a run ID.
   const chartData = useMemo(() => new Map<string, PageChartData>(), [runMetadata?.run_id])
@@ -2404,13 +2406,16 @@ function App() {
                         <InputValueEditor
                           key={selectedStep.id}
                           value={selectedValue}
+                          timeFormat={selectedStep.type === 'output' ? selectedStep.time_format : undefined}
+                          onTimeFormatChange={selectedStep.type === 'output' ? format => updateStep(selectedStep.id, step =>
+                            step.type === 'output' ? { ...step, time_format: format } : step) : undefined}
                           earlierSteps={earlierSteps}
                           instances={workflowDraft.tool_instances}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
                           disabled={workflowBusy}
                           onChange={(value) => updateStep(selectedStep.id, (step) =>
-                            step.type === 'output' || step.type === 'set-variable'
+                            step.type === 'output' ? changeOutputValue(step, value) : step.type === 'set-variable'
                               ? { ...step, value } : step)}
                         />
                       )}
@@ -2848,7 +2853,10 @@ function App() {
                 {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
                 {runPage && (runWorkspace.starting || runPageMetadata) && <ResultChart key={runPage.name} panels={chartPanels} onPanelsChange={setChartPanels}
                   runId={displayedRun?.run_id ?? null} revision={runPageMetadata?.revision ?? 0} rowCount={runPageMetadata?.row_count ?? 0}
-                  numericNames={chartNumericNames} page={runPage.name}
+                  numericNames={chartNumericNames} page={runPage.name} outputs={runOutputs}
+                  timestampNames={runStatus === 'running' && (runPageMetadata?.row_count ?? 0) === 0
+                    ? runOutputs.filter(output => output.value.source === 'timestamp').map(output => output.name)
+                    : runPageMetadata?.timestamp_outputs ?? []}
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
                   changeSettings={runChartSampling} fitData={runChartFitData}
                   saveChartsWithTemplate={saveChartsWithTemplate}

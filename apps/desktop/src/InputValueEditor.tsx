@@ -1,3 +1,4 @@
+import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
 import { useState } from 'react'
 import {
   CUSTOM_RESULT,
@@ -195,6 +196,8 @@ export function ExpressionOperandEditor({ value, onChange, side, allowBooleanLit
 }
 
 type InputValueEditorProps = ReferenceOptions & {
+  timeFormat?: OutputTimeFormat
+  onTimeFormatChange?: (format: OutputTimeFormat) => void
   value: InputValueWire
   onChange: (value: InputValueWire) => void
   sourceLabel?: string
@@ -203,7 +206,7 @@ type InputValueEditorProps = ReferenceOptions & {
 }
 
 export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
-  literalDefault = 0, numericSetpoint = false, ...references }: InputValueEditorProps) {
+  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, ...references }: InputValueEditorProps) {
   const operandEditor = (side: 'left' | 'right') => value.source === 'expression' && (
     <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
       onChange={(operand) => onChange({ ...value, [side]: operand })} />
@@ -229,6 +232,27 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
       </label>
       <p className="value-source-help">{numericSetpoint && value.source === 'expression'
         ? 'Calculate a numeric value from fixed numbers or variables.' : SOURCE_HELP[value.source]}</p>
+      {value.source === 'elapsed-time' && timeFormat?.kind === 'elapsed-time' && onTimeFormatChange && <>
+        <label className="step-property-field">
+          <span className="step-property-label">Time Format</span>
+          <select value={timeFormat.format} disabled={references.disabled}
+            onChange={event => onTimeFormatChange({ kind: 'elapsed-time', format: event.target.value as ElapsedTimeFormat })}>
+            {Object.entries(ELAPSED_TIME_FORMATS).map(([format, label]) => <option key={format} value={format}>{label}</option>)}
+          </select>
+        </label>
+        <p className="value-source-help">XLSX time cells are numeric: Seconds uses seconds; other formats use Excel days. CSV retains raw seconds.</p>
+      </>}
+      {value.source === 'timestamp' && timeFormat?.kind === 'timestamp' && onTimeFormatChange && <>
+        <label className="step-property-field"><span className="step-property-label">Include Date</span>
+          <input type="checkbox" checked={timeFormat.include_date} disabled={references.disabled}
+            onChange={event => onTimeFormatChange({ ...timeFormat, include_date: event.target.checked })} />
+        </label>
+        <label className="step-property-field"><span className="step-property-label">Include UTC Offset</span>
+          <input type="checkbox" checked={timeFormat.include_utc_offset} disabled={references.disabled}
+            onChange={event => onTimeFormatChange({ ...timeFormat, include_utc_offset: event.target.checked })} />
+        </label>
+        <p className="value-source-help">Hiding Date or UTC Offset affects display only. XLSX retains the full numeric date/time; CSV retains the full ISO timestamp.</p>
+      </>}
       {value.source === 'expression' ? (
         <div className="step-properties-fields" role="group" aria-label="Calculation">
           <span className="step-property-label">Calculation</span>
