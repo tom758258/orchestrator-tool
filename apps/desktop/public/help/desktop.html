@@ -922,6 +922,9 @@ Outputs, there is no numeric summary to show.</p>
 active and the selected export scope contains committed Output rows. Failed or
 incomplete runs keep their failure/incomplete status and export those committed
 rows as partial results.</p>
+<p>Manual export defaults to <strong>XLSX</strong> each time the application starts. You can
+switch between <strong>CSV</strong> and <strong>XLSX</strong> during the current session; this choice is not
+saved. Streaming CSV behavior is unchanged.</p>
 <p>Choose <strong>Run Page</strong> or <strong>All Run Pages</strong>, then choose <strong>CSV</strong> or <strong>XLSX</strong>:</p>
 <ul>
 <li><strong>Run Page / CSV</strong> — exports the selected Page as one CSV file.</li>
@@ -930,9 +933,14 @@ rows as partial results.</p>
   destination folder.</li>
 <li><strong>All Run Pages / XLSX</strong> — creates one workbook with one worksheet per Page.</li>
 </ul>
-<p>Exports use committed ResultRows. XLSX cells are currently written as plain
-text; exports do not add formulas, embedded charts, or native numeric cell
-types. All-Pages CSV export does not overwrite existing Page CSV files.</p>
+<p>Exports use committed ResultRows. XLSX writes safe numbers as Excel Number cells,
+so you can calculate and plot them directly. Numbers exceeding 15 significant
+digits or losing value in Excel's numeric representation remain Text using their
+stored JSON representation. Numeric-looking strings remain Text; booleans become
+Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
+Export preserves stored results; it cannot recover precision already lost when
+JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
+unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.</p>
 <p>Graceful Stop is not itself a failure or cancellation. After execution stops,
 any rows already committed before a failure or incomplete termination remain
 eligible for manual export. Rows still staged by a failed or stopped owning

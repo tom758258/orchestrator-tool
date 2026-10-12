@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, io::Cursor, time::Duration};
 
-use calamine::{Reader, Xlsx};
+use calamine::{Data, Reader, Xlsx};
 use orchestrator_tool::{
     executor::execute_workflow_with_loop_stop,
     run::ExecutionMode,
@@ -288,6 +288,26 @@ fn current_and_all_page_xlsx_match_csv_datasets() {
                 .records()
                 .map(|r| r.unwrap().iter().map(str::to_owned).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
+            let expected_cells: Vec<Vec<Data>> = std::iter::once(
+                dataset
+                    .page
+                    .headers()
+                    .iter()
+                    .cloned()
+                    .map(Data::String)
+                    .collect(),
+            )
+            .chain(dataset.rows.iter().map(|row| {
+                row.outputs()
+                    .iter()
+                    .map(|output| Data::Float(output.value().as_f64().unwrap()))
+                    .collect()
+            }))
+            .collect();
+            assert_eq!(
+                range.rows().map(<[Data]>::to_vec).collect::<Vec<_>>(),
+                expected_cells
+            );
             assert_eq!(
                 range
                     .rows()

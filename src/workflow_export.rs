@@ -91,7 +91,7 @@ pub fn write_page_csv_rows<'a>(
     Ok(())
 }
 
-/// Uses the same text conversion as CSV, without formulas or automatic type coercion.
+/// Preserves JSON cell types, falling back to text when Excel would lose numeric precision.
 pub fn pages_xlsx(datasets: &[PageDataset<'_>]) -> Result<Vec<u8>, String> {
     if datasets.is_empty() {
         return Err("No Output Pages available for export".to_owned());
@@ -109,15 +109,63 @@ pub fn pages_xlsx(datasets: &[PageDataset<'_>]) -> Result<Vec<u8>, String> {
         }
         for (index, row) in dataset.rows.iter().enumerate() {
             for (column, output) in row.outputs().iter().enumerate() {
-                worksheet
-                    .write_string(
-                        u32::try_from(index + 1).map_err(|e| e.to_string())?,
-                        u16::try_from(column).map_err(|e| e.to_string())?,
-                        export_cell(output.value()),
-                    )
-                    .map_err(|e| e.to_string())?;
+                let row = u32::try_from(index + 1).map_err(|e| e.to_string())?;
+                let column = u16::try_from(column).map_err(|e| e.to_string())?;
+                let result = match output.value() {
+                    serde_json::Value::Number(number) => match excel_number(number) {
+                        Some(value) => worksheet.write_number(row, column, value),
+                        None => worksheet.write_string(row, column, number.to_string()),
+                    },
+                    serde_json::Value::Bool(value) => worksheet.write_boolean(row, column, *value),
+                    serde_json::Value::Null => continue,
+                    value => worksheet.write_string(row, column, export_cell(value)),
+                };
+                result.map_err(|e| e.to_string())?;
             }
         }
     }
     workbook.save_to_buffer().map_err(|e| e.to_string())
+}
+
+// Compare decimal values independently of decimal-point placement and exponent notation.
+fn decimal_parts(text: &str) -> (String, i32) {
+    let (mantissa, exponent) = text.split_once(['e', 'E']).unwrap_or((text, "0"));
+    let exponent: i32 = exponent.parse().expect("JSON number exponent");
+    let fractional_digits = mantissa
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return ("0".to_owned(), 0);
+    }
+    let significant = digits.trim_end_matches('0');
+    let exponent = exponent - fractional_digits as i32 + (digits.len() - significant.len()) as i32;
+    let sign = if mantissa.starts_with('-') { "-" } else { "" };
+    (format!("{sign}{significant}"), exponent)
+}
+
+fn excel_number(number: &serde_json::Number) -> Option<f64> {
+    let value = number.as_f64()?;
+    // Excel does not support subnormal numbers, infinities, or NaN.
+    if !value.is_finite() || (value != 0.0 && !value.is_normal()) {
+        return None;
+    }
+    let original = decimal_parts(&number.to_string());
+    if original.0.trim_start_matches('-').len() > 15
+        || original != decimal_parts(&value.to_string())
+    {
+        return None;
+    }
+    // A shortest decimal round trip alone does not prove a large integer is exact.
+    if number
+        .as_i64()
+        .is_some_and(|integer| value as i128 != i128::from(integer))
+        || number
+            .as_u64()
+            .is_some_and(|integer| value as i128 != i128::from(integer))
+    {
+        return None;
+    }
+    Some(value)
 }

@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::workflow::{ResultRow, WorkflowOutput};
 
-/// Shared textual representation for CSV and XLSX cells.
+/// Textual representation for CSV cells and XLSX text fallbacks.
 pub fn export_cell(value: &Value) -> String {
     match value {
         Value::String(value) => value.clone(),

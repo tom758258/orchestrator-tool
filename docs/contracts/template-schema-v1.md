@@ -565,13 +565,33 @@ use PageDataset row references. CSV excludes For/While iteration metadata.
 Every committed row must match its owning Page's declared Output names, order,
 and count. Page export also validates row occurrence metadata against the Page's
 innermost owning loop. Root Page rows must carry no loop occurrence metadata.
-Cell conversion is shared: strings retain their contents, null becomes empty,
-and other JSON values use compact JSON text.
+CSV cell conversion is unchanged: strings retain their contents, null becomes
+empty, and other JSON values use compact JSON text.
 
 Run Page export can produce CSV or a one-worksheet XLSX. All Run Pages can
 produce multiple CSV files or one workbook with one worksheet per Page.
-XLSX uses rust_xlsxwriter and writes plain text cells without formulas,
-styling, charts, or native numeric cell typing. All-Page export does not
+Desktop manual export defaults to XLSX on each application start. Users can
+switch between CSV and XLSX for the current session; the choice is not persisted.
+CSV streaming is unchanged.
+
+XLSX uses rust_xlsxwriter and writes JSON strings as Text (including numeric-looking
+strings), booleans as Boolean, null as Blank, and arrays/objects as compact JSON
+Text. Numbers become Excel Number cells only when all of these checks pass:
+
+- The JSON Number's decimal representation has at most 15 significant digits,
+  excluding leading zeros and trailing zeros that do not change its value.
+- Conversion to finite, normal-or-zero f64 preserves the decimal value when
+  compared with f64's shortest decimal representation, accounting for decimal
+  points, signs, and scientific notation. Excel does not support subnormal values.
+- JSON integers are exactly representable by the converted f64; a decimal round
+  trip alone is insufficient for large integers with trailing zeros.
+
+Other numbers remain Text using the JSON Number's original stored representation;
+export never rounds them to fit Excel. This refers to the ResultRow JSON Value,
+not a pre-parsing JSON token: the existing serde_json configuration stores
+fractional numbers as f64, so precision or notation lost before export cannot be
+recovered. ResultRows and CSV serialization are not modified. Exports do not add
+formulas, styling, or charts. All-Page export does not
 overwrite existing CSV files. Manual export is available only after the run is
 no longer active and consumes committed StoredRun rows. A failed or incomplete
 run remains visibly failed or incomplete, but its already committed ResultRows

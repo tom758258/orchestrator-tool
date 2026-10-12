@@ -850,6 +850,9 @@ Manual export 會在 run 不再 active，且目前 export scope 存在 committed
 rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete 狀態，
 但可把已 committed rows 作為 partial results 匯出。
 
+每次啟動 Application 時，manual export 預設為 **XLSX**。你可以在當次使用期間
+切換 **CSV** 與 **XLSX**，此選擇不會保存。Streaming CSV 行為維持不變。
+
 選擇 **Run Page** 或 **All Run Pages**，再選 **CSV** 或 **XLSX**：
 
 - **Run Page / CSV** — 將選取的 Page 匯出為一份 CSV。
@@ -857,9 +860,13 @@ rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete
 - **All Run Pages / CSV** — 在指定 destination folder 中為每個 Page 建立一份 CSV。
 - **All Run Pages / XLSX** — 建立一個 workbook，每個 Page 一個 worksheet。
 
-Export 使用 committed ResultRows。XLSX cells 目前以 plain text 寫出，不會加入
-formulas、embedded charts 或 native numeric cell types。All-Pages CSV export 不會
-覆寫既有 Page CSV files。
+Export 使用 committed ResultRows。XLSX 會將安全數值寫為 Excel Number cells，
+可直接計算與繪圖。超過 15 位有效數字，或在 Excel 數值表示中會失去數值的數字，
+會以原本儲存的 JSON 表示保留為 Text。看起來像數字的字串仍為 Text；布林值寫為
+Boolean cells，null 寫為 Blank，Array／Object 保留為 compact JSON Text。
+Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。匯出不會加入 formulas
+或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV
+files。
 
 Graceful Stop 本身不是 failure 或 cancellation。Execution 停止後，failure 或
 incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged

@@ -486,7 +486,7 @@ function App() {
   const [chartSaving, setChartSaving] = useState(false)
   const [choosingStreamOutputFolder, setChoosingStreamOutputFolder] = useState(false)
   const [exportAllPages, setExportAllPages] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
+  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('xlsx')
   const [chartPanels, setChartPanels] = useState<ChartPanel[]>([])
   const [saveChartsWithTemplate, setSaveChartsWithTemplate] = useState(false)
   const [chartSamplingOptions, setChartSamplingOptions] = useState({ enabled: false, threshold: '5', showMarkers: false })

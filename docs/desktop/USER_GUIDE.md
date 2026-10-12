@@ -1002,6 +1002,10 @@ active and the selected export scope contains committed Output rows. Failed or
 incomplete runs keep their failure/incomplete status and export those committed
 rows as partial results.
 
+Manual export defaults to **XLSX** each time the application starts. You can
+switch between **CSV** and **XLSX** during the current session; this choice is not
+saved. Streaming CSV behavior is unchanged.
+
 Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
 
 - **Run Page / CSV** — exports the selected Page as one CSV file.
@@ -1010,9 +1014,14 @@ Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
   destination folder.
 - **All Run Pages / XLSX** — creates one workbook with one worksheet per Page.
 
-Exports use committed ResultRows. XLSX cells are currently written as plain
-text; exports do not add formulas, embedded charts, or native numeric cell
-types. All-Pages CSV export does not overwrite existing Page CSV files.
+Exports use committed ResultRows. XLSX writes safe numbers as Excel Number cells,
+so you can calculate and plot them directly. Numbers exceeding 15 significant
+digits or losing value in Excel's numeric representation remain Text using their
+stored JSON representation. Numeric-looking strings remain Text; booleans become
+Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
+Export preserves stored results; it cannot recover precision already lost when
+JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
+unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.
 
 Graceful Stop is not itself a failure or cancellation. After execution stops,
 any rows already committed before a failure or incomplete termination remain
