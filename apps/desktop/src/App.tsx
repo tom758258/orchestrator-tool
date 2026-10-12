@@ -2075,16 +2075,64 @@ function App() {
 
           {workflowDraft && (
             <div className="workflow-summary">
-              <dl className="workflow-details">
-                <div className="detail-row">
-                  <dt className="detail-label">Template</dt>
-                  <dd className="detail-value">{workflowDraft.name}</dd>
+              <div className="workflow-summary-header">
+                <dl className="workflow-details">
+                  <div className="detail-row">
+                    <dt className="detail-label">Template</dt>
+                    <dd className="detail-value">{workflowDraft.name}</dd>
+                  </div>
+                  <div className="detail-row">
+                    <dt className="detail-label">Steps</dt>
+                    <dd className="detail-value">{allWorkflowSteps(workflowDraft.workflow.steps).length}</dd>
+                  </div>
+                </dl>
+                <div className="workflow-actions">
+                  <button
+                    className="action-button"
+                    type="button"
+                    onClick={() => void validateDraft()}
+                    disabled={workflowBusy}
+                  >
+                    {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
+                  </button>
+                  <button
+                    className="action-button action-button-primary"
+                    type="button"
+                    onClick={() => void runSelectedMode()}
+                    disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid}
+                  >
+                    Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
+                  </button>
+                  {stopControls}
                 </div>
-                <div className="detail-row">
-                  <dt className="detail-label">Steps</dt>
-                  <dd className="detail-value">{allWorkflowSteps(workflowDraft.workflow.steps).length}</dd>
+              </div>
+              {stopFeedback}
+              {runStatus === 'running' && <p role="status">{runningText}</p>}
+
+              {validationStatus === 'valid' && (
+                <p className="validation-success" role="status">
+                  Valid
+                </p>
+              )}
+
+              {validationError && (
+                <p className="error" role="alert">
+                  Validation failed: {validationError}
+                </p>
+              )}
+
+              {runError && (
+                <div className="error" role="alert">
+                  <p className="failure-run-title">Run failed</p>
+                  <FailureDetails message={runError} />
                 </div>
-              </dl>
+              )}
+              {displayedRun?.status === 'failed' && displayedRun.error && displayedRun.error !== runError && (
+                <div className="error" role="alert">
+                  <p className="failure-run-title">Run failed</p>
+                  <FailureDetails message={displayedRun.error} />
+                </div>
+              )}
 
               <div className="workflow-builder">
                 <aside className="workflow-sidebar">
@@ -2615,53 +2663,6 @@ function App() {
                   )}
                 </section>
               </div>
-
-              <div className="workflow-actions">
-                <button
-                  className="action-button"
-                  type="button"
-                  onClick={() => void validateDraft()}
-                  disabled={workflowBusy}
-                >
-                  {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
-                </button>
-                <button
-                  className="action-button action-button-primary"
-                  type="button"
-                  onClick={() => void runSelectedMode()}
-                  disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid}
-                >
-                  Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
-                </button>
-                {stopControls}
-              </div>
-              {stopFeedback}
-              {runStatus === 'running' && <p role="status">{runningText}</p>}
-
-              {validationStatus === 'valid' && (
-                <p className="validation-success" role="status">
-                  Valid
-                </p>
-              )}
-
-              {validationError && (
-                <p className="error" role="alert">
-                  Validation failed: {validationError}
-                </p>
-              )}
-
-              {runError && (
-                <div className="error" role="alert">
-                  <p className="failure-run-title">Run failed</p>
-                  <FailureDetails message={runError} />
-                </div>
-              )}
-              {displayedRun?.status === 'failed' && displayedRun.error && (
-                <div className="error" role="alert">
-                  <p className="failure-run-title">Run failed</p>
-                  <FailureDetails message={displayedRun.error} />
-                </div>
-              )}
 
               {displayedRun && (
                 <section className="run-messages" aria-labelledby="run-messages-title">

@@ -282,6 +282,12 @@ Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編�
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
+**Validate**、**Run Simulation / Run Live** 與 active loop 的 **Stop** 控制項
+位於 Workflow summary 右上方，與 **Template**、**Steps** 資訊並排。驗證、
+執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
+查看詳細 run 錯誤。視窗較窄時控制項會換行。**Clear Workflow** 仍位於
+**Sequence** header。
+
 在 **Sequence** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
 **Shift+Click** 從選取起點選取連續範圍。多選只限同一 sibling list：root
 steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shift 點擊時，

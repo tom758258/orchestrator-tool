@@ -334,6 +334,13 @@ check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
 
+**Validate**, **Run Simulation / Run Live**, and active loop **Stop** controls
+appear at the top-right of the Workflow summary, beside **Template** and
+**Steps**. Validation, running, Stop, and run failure feedback appears below
+these controls, above the Builder. Detailed run errors remain available there.
+Controls wrap when the window is narrow. **Clear Workflow** stays in the
+**Sequence** header.
+
 In **Sequence**, click a step to select it. **Ctrl+Click** adds or removes an
 individual step; **Shift+Click** selects the range from the selection anchor.
 Multi-selection stays within one sibling list: root steps or the body of one

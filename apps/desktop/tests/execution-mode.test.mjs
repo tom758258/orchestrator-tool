@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { transformWithOxc } from 'vite'
+import { allWorkflowSteps } from '../src/workflow.ts'
+import { failurePresentation } from '../src/failurePresentation.ts'
 import { parseChartThresholdPercent } from '../src/chartData.ts'
 
 const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
@@ -109,7 +114,7 @@ test('Sampling and Fit Data controls are grouped under Chart Options below CSV E
   assert.match(sidebar, /Show Significant Change Markers/)
   assert.match(sidebar, /checked=\{chartFitData\}/)
   assert.match(sidebar, /Fit Data/)
-  assert.doesNotMatch(app.slice(app.indexOf('</aside>'), app.indexOf('className="workflow-actions"')),
+  assert.doesNotMatch(app.slice(app.indexOf('</aside>'), app.indexOf('className="run-messages"')),
     /className="chart-options"/)
 })
 
@@ -153,5 +158,144 @@ test('collapsing Chart Options sections hides content without changing settings'
   for (const setter of ['setStreamCsv', 'setStreamPage', 'setStreamAllPages', 'setStreamOutputFolder',
     'setChartSamplingOptions', 'setChartFitData', 'setExpandedStepCategories']) {
     assert.ok(!sidebar.includes(`${setter}(current => !current)`), setter)
+  }
+})
+
+test('Workflow controls and feedback precede the Builder, with Clear Workflow kept in Sequence', () => {
+  const workflow = app.slice(app.indexOf('<div className="workflow-summary">'), app.indexOf("{activeTab === 'output' && ("))
+  const builder = workflow.indexOf('<div className="workflow-builder">')
+  const header = workflow.slice(0, builder)
+  assert.match(header, /className="workflow-summary-header"/)
+  assert.match(header, /className="workflow-details"[\s\S]*className="workflow-actions"/)
+  assert.match(header, /validateDraft\(\)[\s\S]*runSelectedMode\(\)[\s\S]*\{stopControls\}/)
+  for (const feedback of ['{stopFeedback}', '{runningText}', 'Valid', 'Validation failed:', 'Run failed', '<FailureDetails']) {
+    assert.ok(header.includes(feedback), feedback)
+  }
+  const below = workflow.slice(builder)
+  assert.doesNotMatch(below, /workflow-actions|\{stopControls\}|\{stopFeedback\}|Validation failed:|failure-run-title/)
+  assert.equal((workflow.match(/className="workflow-actions"/g) ?? []).length, 1)
+  assert.match(below, /<SequenceEditor[\s\S]*onClearWorkflow=\{\(\) => void clearWorkflow\(\)\}/)
+})
+
+// Render the actual summary JSX using the same isolated JSX approach as Properties tests.
+const summaryStart = app.indexOf('<div className="workflow-summary-header">')
+const summary = app.slice(summaryStart, app.indexOf('<div className="workflow-builder">', summaryStart))
+const stop = app.slice(app.indexOf('  const requestStop ='), app.indexOf('  const displayedRun ='))
+const failure = app.slice(app.indexOf('function FailureDetails('), app.indexOf('type WorkflowDraft ='))
+const { code: summaryCode } = await transformWithOxc(`${failure}
+function summaryView(params) {
+  const { workflowDraft, workflowBusy, toolConfigBusy, loading, chartThresholdInvalid,
+    executionMode, validationStatus, validationError, runStatus, runningText, runError,
+    displayedRun, activeLoop, activeAncestors, stopRequest, stopping, setStopRequest,
+    invoke, validateDraft, runSelectedMode } = params
+  ${stop}
+  return <>${summary}</>
+}`, 'workflow-summary.tsx', { jsx: { runtime: 'classic' } })
+const renderSummary = new Function('React', 'allWorkflowSteps', 'failurePresentation',
+  `${summaryCode}; return summaryView`)(React, allWorkflowSteps, failurePresentation)
+const summaryDefaults = {
+  workflowDraft: { name: 'Untitled', workflow: { steps: [] } }, workflowBusy: false,
+  toolConfigBusy: null, loading: false, chartThresholdInvalid: false, executionMode: 'simulate',
+  validationStatus: 'idle', validationError: null, runStatus: 'idle', runningText: 'Running…',
+  runError: null, displayedRun: null, activeLoop: null, activeAncestors: [], stopRequest: null,
+  stopping: false, setStopRequest: () => {}, invoke: async () => true,
+  validateDraft: () => {}, runSelectedMode: () => {},
+}
+function summaryElements(node) {
+  if (Array.isArray(node)) return node.flatMap(summaryElements)
+  return React.isValidElement(node) ? [node, ...summaryElements(node.props.children)] : []
+}
+function summaryView(overrides = {}) {
+  const tree = renderSummary({ ...summaryDefaults, ...overrides })
+  return { html: renderToStaticMarkup(tree), buttons: summaryElements(tree).filter(node => node.type === 'button') }
+}
+
+test('summary renders one ordered mode-aware Run and preserves handlers and disabled gates', () => {
+  const calls = []
+  for (const executionMode of ['simulate', 'live']) {
+    const view = summaryView({ executionMode, validateDraft: () => calls.push('validate'), runSelectedMode: () => calls.push(executionMode) })
+    assert.equal(view.buttons.length, 2)
+    assert.equal(renderToStaticMarkup(view.buttons[0]).includes('Validate'), true)
+    assert.match(renderToStaticMarkup(view.buttons[1]), new RegExp(`Run ${executionMode === 'live' ? 'Live' : 'Simulation'}`))
+    view.buttons[0].props.onClick()
+    view.buttons[1].props.onClick()
+    for (const gate of ['workflowBusy', 'toolConfigBusy', 'loading', 'chartThresholdInvalid']) {
+      const disabled = summaryView({ executionMode, [gate]: gate === 'toolConfigBusy' ? 'meters' : true })
+      assert.equal(disabled.buttons[1].props.disabled, true, gate)
+      assert.equal(disabled.buttons[0].props.disabled, gate === 'workflowBusy', gate)
+    }
+  }
+  assert.deepEqual(calls, ['validate', 'simulate', 'validate', 'live'])
+  assert.match(summaryView({ validationStatus: 'validating', workflowBusy: true }).html, /Validating…/)
+})
+
+test('summary renders status and detailed alerts beside the controls without repeating the same run error', () => {
+  assert.match(summaryView({ validationStatus: 'valid' }).html, /role="status">Valid/)
+  assert.match(summaryView({ validationError: 'Invalid template' }).html, /role="alert">Validation failed: Invalid template/)
+  assert.match(summaryView({ runStatus: 'running' }).html, /role="status">Running…/)
+  for (const overrides of [{ runError: 'Execution failed' }, { displayedRun: { status: 'failed', error: 'Execution failed' } },
+    { runError: 'Execution failed', displayedRun: { status: 'failed', error: 'Execution failed' } }]) {
+    const { html } = summaryView(overrides)
+    assert.equal((html.match(/failure-run-title/g) ?? []).length, 1)
+    assert.match(html, /role="alert"/)
+    assert.match(html, /Technical details/)
+    assert.match(html, /run-result-message">Execution failed/)
+  }
+})
+
+test('summary preserves loop Stop, pending disable state, rejection and retry feedback', async () => {
+  const calls = []
+  let request = null
+  const params = { activeLoop: { id: 'inner' }, activeAncestors: [{ id: 'outer' }], runStatus: 'running',
+    invoke: async (command, args) => { calls.push([command, args.loopStepId]); return true },
+    setStopRequest: value => { request = typeof value === 'function' ? value(request) : value } }
+  const view = summaryView(params)
+  assert.equal(view.buttons.length, 4)
+  await view.buttons[2].props.onClick()
+  await view.buttons[3].props.onClick()
+  assert.deepEqual(calls, [['request_workflow_stop', 'outer'], ['request_workflow_stop', 'inner']])
+  assert.match(view.html, /Finishes the current innermost iteration/)
+  const pending = summaryView({ ...params, stopping: true, stopRequest: { loopId: 'inner' }, runningText: 'Stopping…' })
+  assert.ok(pending.buttons.slice(2).every(button => button.props.disabled))
+  assert.match(pending.html, /Stopping…/)
+  await pending.buttons[3].props.onClick()
+  assert.equal(calls.length, 2, 'Stopping does not issue another request')
+  await summaryView({ ...params, invoke: async () => { throw 'Transport failed' } }).buttons[3].props.onClick()
+  const failed = summaryView({ ...params, stopRequest: request })
+  assert.match(failed.html, /role="alert">Stop request failed: Transport failed/)
+  assert.ok(failed.buttons.slice(2).every(button => !button.props.disabled))
+  await summaryView({ ...params, invoke: async () => false }).buttons[3].props.onClick()
+  assert.equal(request, null)
+})
+
+test('existing Validate callback still invokes validation and publishes success or failure', async () => {
+  const validate = app.slice(app.indexOf('  const validateDraft ='), app.indexOf('  const handleLoadTemplate ='))
+  const { code } = await transformWithOxc(`function validation(params) {
+    const { workflowDraft, invoke, setValidationStatus, setValidationError, setWorkflowDraft, setStepSelection } = params
+    const chartPanels = [], saveChartsWithTemplate = false
+    const useCallback = fn => fn
+    const templateDraftJson = draft => JSON.stringify(draft)
+    const workflowOnlyDraft = draft => draft
+    const reconcileSelection = (_steps, selection) => selection
+    ${validate}
+    return validateDraft
+  }`, 'summary-validation.ts', {})
+  const callback = new Function(`${code}; return validation`)()
+  for (const fail of [false, true]) {
+    const statuses = [], errors = [], calls = []
+    let canonical = null
+    await callback({ workflowDraft: summaryDefaults.workflowDraft,
+      invoke: async (command, args) => {
+        calls.push([command, args.templateJson])
+        if (fail) throw 'Invalid template'
+        return JSON.stringify(summaryDefaults.workflowDraft)
+      },
+      setValidationStatus: status => statuses.push(status), setValidationError: error => errors.push(error),
+      setWorkflowDraft: draft => { canonical = draft }, setStepSelection: () => {},
+    })()
+    assert.deepEqual(calls, [['validate_workflow_draft', JSON.stringify(summaryDefaults.workflowDraft)]])
+    assert.deepEqual(statuses, ['validating', fail ? 'idle' : 'valid'])
+    assert.deepEqual(errors, fail ? [null, 'Invalid template'] : [null])
+    assert.equal(canonical !== null, !fail)
   }
 })
