@@ -125,10 +125,11 @@ async function valueEditor(component = 'InputValueEditor') {
   const { readFileSync } = await import('node:fs')
   const { transformWithOxc } = await import('vite')
   const inputValue = await import('../src/inputValue.ts')
+  const outputTime = await import('../src/outputTime.ts')
   const source = readFileSync(new URL('../src/InputValueEditor.tsx', import.meta.url), 'utf8')
   const { code } = await transformWithOxc(source, 'InputValueEditor.tsx', { jsx: { runtime: 'classic' } })
   const modules = { react: { useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}] },
-    './inputValue': inputValue }
+    './inputValue': inputValue, './outputTime': outputTime }
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '').replace(/export /g, '')
   const render = new Function('React', 'modules', `${body}; return { InputValueEditor, ExpressionOperandEditor }`)(React, modules)[component]
@@ -200,4 +201,108 @@ test('actual Assert and While operand editor retains boolean literals and step r
   assert.ok(boolean)
   boolean.props.onChange({ target: { value: 'false' } })
   assert.deepEqual(changed, { source: 'literal', value: false })
+})
+
+function timeFormatControl(nodes, label) {
+  const field = nodes.find(node => node.type === 'label' && node.props.children[0]?.props.children === label)
+  assert.ok(field, label)
+  const control = field.props.children.find(node => node?.type === 'select' || node?.type === 'input')
+  assert.ok(control, label)
+  return control
+}
+
+test('actual Output elapsed editor offers four formats and changes only format settings', async () => {
+  const render = await valueEditor()
+  const sourceChanges = []
+  const onChange = value => sourceChanges.push(value)
+  const literalNodes = render({ value: { source: 'literal', value: 0 }, onChange })
+  literalNodes.find(node => node.type === 'select').props.onChange({ target: { value: 'elapsed-time' } })
+  assert.deepEqual(sourceChanges, [{ source: 'elapsed-time' }])
+
+  const value = sourceChanges.pop()
+  let timeFormat = { kind: 'elapsed-time', format: 'seconds' }
+  const formatChanges = []
+  const onTimeFormatChange = format => { timeFormat = format; formatChanges.push(format) }
+  const nodes = render({ value, timeFormat, onChange, onTimeFormatChange })
+  const select = timeFormatControl(nodes, 'Time Format')
+  assert.equal(select.type, 'select')
+  assert.equal(select.props.value, 'seconds')
+  const options = [
+    ['seconds', 'Seconds'],
+    ['minutes-seconds', 'Minutes:Seconds'],
+    ['hours-minutes-seconds', 'Hours:Minutes:Seconds'],
+    ['days-decimal', 'Days (Decimal)'],
+  ]
+  assert.deepEqual(select.props.children.map(option => [option.props.value, option.props.children]), options)
+  for (const [format] of options) {
+    timeFormatControl(render({ value, timeFormat, onChange, onTimeFormatChange }), 'Time Format')
+      .props.onChange({ target: { value: format } })
+    assert.deepEqual(timeFormat, { kind: 'elapsed-time', format })
+    assert.equal(timeFormatControl(render({ value, timeFormat, onChange, onTimeFormatChange }), 'Time Format').props.value, format)
+  }
+  assert.deepEqual(formatChanges, options.map(([format]) => ({ kind: 'elapsed-time', format })))
+  assert.deepEqual(sourceChanges, [])
+  assert.deepEqual(value, { source: 'elapsed-time' })
+})
+
+test('actual Output Timestamp checkboxes preserve independent settings and full ISO defaults', async () => {
+  const render = await valueEditor()
+  const { changeOutputValue, formatOutputValue } = await import('../src/outputTime.ts')
+  const output = changeOutputValue({ type: 'output', id: 'time', name: 'Time', page: 'Results',
+    value: { source: 'literal', value: 0 } }, { source: 'timestamp' })
+  const original = structuredClone(output)
+  const timestamp = '2026-10-12T23:24:10.123+08:00'
+  assert.deepEqual(output.time_format, { kind: 'timestamp', include_date: true, include_utc_offset: true })
+  assert.equal(formatOutputValue(output, timestamp), timestamp)
+
+  let timeFormat = output.time_format
+  const formatChanges = []
+  const sourceChanges = []
+  const renderSettings = () => render({ value: output.value, timeFormat,
+    onChange: value => sourceChanges.push(value),
+    onTimeFormatChange: format => { timeFormat = format; formatChanges.push(format) } })
+  const nodes = renderSettings()
+  for (const label of ['Include Date', 'Include UTC Offset']) {
+    const checkbox = timeFormatControl(nodes, label)
+    assert.equal(checkbox.type, 'input')
+    assert.equal(checkbox.props.type, 'checkbox')
+    assert.equal(checkbox.props.checked, true)
+  }
+  const changes = [
+    ['Include Date', false, { kind: 'timestamp', include_date: false, include_utc_offset: true }],
+    ['Include UTC Offset', false, { kind: 'timestamp', include_date: false, include_utc_offset: false }],
+    ['Include Date', true, { kind: 'timestamp', include_date: true, include_utc_offset: false }],
+    ['Include UTC Offset', true, { kind: 'timestamp', include_date: true, include_utc_offset: true }],
+  ]
+  for (const [label, checked, expected] of changes) {
+    timeFormatControl(renderSettings(), label).props.onChange({ target: { checked } })
+    assert.deepEqual(timeFormat, expected)
+    const updated = renderSettings()
+    assert.equal(timeFormatControl(updated, 'Include Date').props.checked, expected.include_date)
+    assert.equal(timeFormatControl(updated, 'Include UTC Offset').props.checked, expected.include_utc_offset)
+  }
+  assert.deepEqual(formatChanges, changes.map(([, , expected]) => expected))
+  assert.deepEqual(sourceChanges, [])
+  assert.deepEqual(output, original)
+})
+
+test('actual non-Output editors omit time format controls and retain general sources', async () => {
+  const render = await valueEditor()
+  const settings = [
+    { kind: 'elapsed-time', format: 'seconds' },
+    { kind: 'timestamp', include_date: true, include_utc_offset: true },
+  ]
+  const assertNoTimeControls = nodes => assert.equal(nodes.some(node => node.type === 'label'
+    && ['Time Format', 'Include Date', 'Include UTC Offset'].includes(node.props.children[0]?.props.children)), false)
+  for (const timeFormat of settings) {
+    const value = { source: timeFormat.kind }
+    for (const props of [{}, { timeFormat }, { onTimeFormatChange: () => assert.fail('Unexpected format change') }]) {
+      const nodes = render({ value, ...props })
+      assertNoTimeControls(nodes)
+      assert.deepEqual(fieldOptions(nodes, 'Value Source'),
+        ['literal', 'variable', 'step-output', 'expression', 'elapsed-time', 'timestamp'])
+    }
+    assertNoTimeControls(render({ value: { source: 'literal', value: 0 }, timeFormat,
+      onTimeFormatChange: () => assert.fail('Unexpected format change') }))
+  }
 })
