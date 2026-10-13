@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { formatElapsedTime } from './outputTime'
+import { formatElapsedTime, formatNumber } from './outputTime'
+import type { NumericDisplayFormat } from './outputTime'
 import type { NumericSummary, OutputStep } from './workflow'
 
 const columns = [
@@ -13,9 +14,10 @@ const columns = [
   { key: 'threeSigma', label: '3σ', value: (s: NumericSummary) => s.std_dev === null ? null : s.std_dev * 3, default: false },
 ] as const
 
-export default function PageResultSummary({ summaries, outputs }: {
+export default function PageResultSummary({ summaries, outputs, numericFormat }: {
   summaries: readonly NumericSummary[]
   outputs: readonly OutputStep[]
+  numericFormat: NumericDisplayFormat
 }) {
   const [selected, setSelected] = useState<string[]>(() => columns.filter(column => column.default).map(column => column.key))
   const visible = columns.filter(column => selected.includes(column.key))
@@ -46,7 +48,7 @@ export default function PageResultSummary({ summaries, outputs }: {
               {visible.map(column => {
                 const value = column.value(summary)
                 return <td key={column.key}>{value === null ? '—' : column.key !== 'count' && format
-                  ? formatElapsedTime(value, format) : value}</td>
+                  ? formatElapsedTime(value, format) : column.key === 'count' ? value : formatNumber(value, numericFormat)}</td>
               })}
             </tr>
           })}</tbody>

@@ -21,7 +21,8 @@ import ToolSetupEditor from './ToolSetupEditor'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
-import { changeOutputValue } from './outputTime'
+import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT } from './outputTime'
+import type { NumericDisplayFormat } from './outputTime'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
@@ -478,6 +479,7 @@ function App() {
   }, [themePreference])
 
   const [selectedRunPage, setSelectedRunPage] = useState('Results')
+  const [numericFormat, setNumericFormat] = useState<NumericDisplayFormat>(DEFAULT_NUMERIC_DISPLAY_FORMAT)
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
   const [scopesOutputFolder, setScopesOutputFolder] = useState<string | null>(null)
@@ -2862,7 +2864,23 @@ function App() {
                   changeSettings={runChartSampling} fitData={runChartFitData}
                   saveChartsWithTemplate={saveChartsWithTemplate}
                   onSaveChartsWithTemplateChange={setSaveChartsWithTemplate} />}
-                {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} outputs={runOutputs} />}
+                {runPageMetadata && runPageMetadata.row_count > 0 && <div className="numeric-display-settings">
+                  <label>Number display
+                    <select value={numericFormat.mode} onChange={event => setNumericFormat(current => ({
+                      ...current, mode: event.target.value as NumericDisplayFormat['mode'],
+                    }))}>
+                      <option value="auto">Auto</option><option value="fixed">Fixed</option><option value="raw">Raw</option>
+                    </select>
+                  </label>
+                  {numericFormat.mode === 'fixed' && <label>Decimal places
+                    <select value={numericFormat.decimalPlaces} onChange={event => setNumericFormat(current => ({
+                      ...current, decimalPlaces: Number(event.target.value),
+                    }))}>
+                      {Array.from({ length: 13 }, (_, places) => <option key={places} value={places}>{places}</option>)}
+                    </select>
+                  </label>}
+                </div>}
+                {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} outputs={runOutputs} numericFormat={numericFormat} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <section className="output-data" aria-labelledby="output-data-title">
                     <h3 id="output-data-title">Output Data</h3>
@@ -2871,7 +2889,7 @@ function App() {
                     </p>
                     <VirtualizedOutputTable key={`${displayedRun.run_id}:${runPage.name}`} runId={displayedRun.run_id} page={runPage.name}
                       rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
-                      outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} />
+                      outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} numericFormat={numericFormat} />
                   </section>
                 )}
               </div>

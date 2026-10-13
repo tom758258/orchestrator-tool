@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { formatOutputValue } from './outputTime'
+import type { NumericDisplayFormat } from './outputTime'
 import type { OutputStep, ResultRowDto } from './workflow'
 import {
   OUTPUT_ROW_HEIGHT,
@@ -23,13 +24,14 @@ type PageRowsResponse = {
   rows: ResultRowDto[]
 }
 
-export default function VirtualizedOutputTable({ runId, page, rowCount, revision, outputs, iterationRows }: {
+export default function VirtualizedOutputTable({ runId, page, rowCount, revision, outputs, iterationRows, numericFormat }: {
   runId: number
   page: string
   rowCount: number
   revision: number
   outputs: readonly OutputStep[]
   iterationRows: boolean
+  numericFormat: NumericDisplayFormat
 }) {
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
@@ -133,8 +135,8 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
     : []
   const formattedRows = useMemo(() => displayWindow?.rows.map(row => {
     const values = new Map(row.outputs.map(output => [output.name, output.value]))
-    return outputs.map(step => formatOutputValue(step, values.get(step.name)))
-  }) ?? [], [displayWindow?.rows, outputs])
+    return outputs.map(step => formatOutputValue(step, values.get(step.name), numericFormat))
+  }) ?? [], [displayWindow?.rows, outputs, numericFormat])
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
   const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
 

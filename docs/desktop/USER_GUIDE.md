@@ -1015,6 +1015,14 @@ when **Save charts with template** is enabled.
 virtualization for display, but the rows remain available for charts and
 export.
 
+**Number display** shares one setting between Summary and Output Data. **Auto**
+(default) shows up to 15 significant digits and simplifies floating-point tails;
+**Fixed** shows 0–12 decimal places; **Raw** shows the original JavaScript Number
+string. Changes apply immediately and carry across Run Pages for the current
+Desktop session. Count stays an integer, and Elapsed Time/Timestamp formats take
+priority. These settings do not change stored values, statistics, Charts, exports,
+or templates.
+
 **Summary** shows Count, Min, Max, and Avg by default. **Columns ▾** independently
 controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std Dev
 is the sample standard deviation, calculated as `sqrt(M2 / (n - 1))`; 2σ and 3σ
@@ -1053,11 +1061,12 @@ hidden; `T` and `+08:00` are fixed display text. To convert a difference in Exce
 days to seconds, multiply by 86400. CSV and streaming always retain raw Elapsed
 seconds and the full ISO Timestamp, regardless of display settings.
 
-Exports use committed ResultRows. XLSX writes safe numbers as Excel Number cells,
-so you can calculate and plot them directly. Safe numbers must have at most 15
-significant digits and be within Excel's supported numeric range. Numbers outside
-these limits or losing value in Excel's numeric representation remain Text using
-their stored JSON representation. Numeric-looking strings remain Text; booleans become
+Exports use committed ResultRows. XLSX writes finite floating-point values within
+Excel's supported numeric range as Number cells without rounding stored values,
+so you can calculate and plot them directly at Excel's native precision (about 15
+significant digits). JSON integers retain the existing precision protection;
+unsafe integers and numbers outside Excel's range remain Text using their stored
+JSON representation. Numeric-looking strings remain Text; booleans become
 Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
 Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is

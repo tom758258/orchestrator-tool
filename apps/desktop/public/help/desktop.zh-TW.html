@@ -781,6 +781,11 @@ Chart configuration，且 <strong>Save charts with template</strong> 為未勾�
 <h3 id="105-data-與-summary">10.5 Data 與 Summary</h3>
 <p><strong>Output Data</strong> 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。</p>
+<p><strong>Number display</strong> 讓 Summary 與 Output Data 共用一組設定。<strong>Auto</strong>（預設）
+顯示最多 15 位有效數字並簡化浮點尾差；<strong>Fixed</strong> 顯示固定 0～12 位小數；
+<strong>Raw</strong> 顯示原本 JavaScript Number 的字串。切換立即生效，且可在目前 Desktop
+使用期間跨 Run Page 沿用。Count 維持整數，Elapsed Time／Timestamp 格式優先。
+這些設定不會改變儲存值、統計結果、Charts、匯出內容或 Template。</p>
 <p><strong>Summary</strong> 預設顯示 Count、Min、Max 與 Avg。<strong>Columns ▾</strong> 可分別控制這些欄位，
 以及 Range（Max − Min）、Std Dev（σ）、2σ 與 3σ。Std Dev 為樣本標準差，
 計算式為 <code>sqrt(M2 / (n - 1))</code>；2σ 與 3σ 為其倍數。只有一筆 sample 時，
@@ -807,10 +812,10 @@ rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete
 其他三種格式儲存秒數 / 86400（Excel 天數）。Timestamp 即使隱藏 Date，也保留
 完整日期時間序號；<code>T</code> 與 <code>+08:00</code> 是固定顯示文字。Excel 天數相減後乘以 86400
 即可換算為秒。CSV 與 streaming 一律保留原始 Elapsed 秒數與完整 ISO Timestamp。</p>
-<p>Export 使用 committed ResultRows。XLSX 會將安全數值寫為 Excel Number cells，
-可直接計算與繪圖。安全 Number 必須符合最多 15 位有效數字及 Excel 支援範圍。
-超出上述限制，或在 Excel 數值表示中會失去數值的數字，會以原本儲存的 JSON 表示
-保留為 Text。看起來像數字的字串仍為 Text；布林值寫為
+<p>Export 使用 committed ResultRows。XLSX 會將 Excel 支援範圍內的有限浮點數寫為
+Number cells，不對儲存值額外 Round，可依 Excel 原生精度（約 15 位有效數字）
+直接計算與繪圖。JSON 整數維持既有精度保護；不安全的整數與 Excel 範圍外的
+數值會以原本儲存的 JSON 表示保留為 Text。看起來像數字的字串仍為 Text；布林值寫為
 Boolean cells，null 寫為 Blank，Array／Object 保留為 compact JSON Text。
 Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。匯出不會加入 formulas
 或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV

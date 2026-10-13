@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{collections::HashMap, io::Cursor, time::Duration};
 
 use calamine::{Data, Reader, Xlsx};
 use orchestrator_tool::{
@@ -106,14 +106,17 @@ fn xlsx_numbers_keep_safe_precision_and_preserve_unsafe_json_text() {
         ("-1e308", false),
         ("1000000000000001", false),
         ("-1000000000000001", false),
+        ("1000000000000001.0", true),
         ("9007199254740991", false),
         ("9007199254740992", false),
         ("9007199254740993", false),
         ("18446744073709551615", false),
         ("-9223372036854775808", false),
         ("1234567890123450000", false),
-        ("0.1234567890123456", false),
-        ("1.234567890123456e100", false),
+        ("0.1234567890123456", true),
+        ("10.600000000000001", true),
+        ("-10.600000000000001", true),
+        ("1.234567890123456e100", true),
         ("1e-308", false),
         ("5e-324", false),
     ];
@@ -143,5 +146,59 @@ fn xlsx_numbers_keep_safe_precision_and_preserve_unsafe_json_text() {
     assert_eq!(
         record.iter().collect::<Vec<_>>(),
         values.iter().map(Value::to_string).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn xlsx_exports_all_accumulated_float_rows_as_numbers_without_rounding() {
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version": 1, "name": "Float accumulation", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "init", "variable": "y",
+                  "value": { "source": "literal", "value": 10 } },
+                { "type": "for", "id": "repeat", "variable": "i",
+                  "range": { "start": "1", "stop": "20", "step": "1" }, "steps": [
+                    { "type": "set-variable", "id": "add", "variable": "y", "value": {
+                        "source": "expression", "left": { "source": "variable", "variable": "y" },
+                        "operator": "add", "right": { "source": "literal", "value": 0.3 } } },
+                    { "type": "output", "id": "out", "name": "y", "page": "Values",
+                      "value": { "source": "variable", "variable": "y" } }
+                  ] }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let run = orchestrator_tool::executor::execute_workflow(
+        &template,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let rows = run.result_rows();
+    assert_eq!(rows.len(), 20);
+    let original_rows = rows.to_vec();
+    let datasets = page_datasets(template.workflow(), rows, None).unwrap();
+    let csv_before = page_csv(&datasets[0]).unwrap();
+    let mut workbook = Xlsx::new(Cursor::new(pages_xlsx(&datasets).unwrap())).unwrap();
+    let range = workbook.worksheet_range("Values").unwrap();
+    let mut expected = 10.0;
+    for (index, row) in rows.iter().enumerate() {
+        expected += 0.3;
+        let original = row.outputs()[0].value().as_f64().unwrap();
+        assert_eq!(original, expected);
+        let Some(Data::Float(exported)) = range.get_value(((index + 1) as u32, 0)) else {
+            panic!("Row {index} must be an Excel Number");
+        };
+        assert!((exported - original).abs() <= original.abs() * f64::EPSILON);
+    }
+    assert_eq!(rows, original_rows);
+    assert_eq!(page_csv(&datasets[0]).unwrap(), csv_before);
+    assert!(
+        String::from_utf8(csv_before)
+            .unwrap()
+            .contains("10.600000000000001")
     );
 }

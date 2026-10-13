@@ -4,6 +4,14 @@ import type { OutputStep } from './workflow.ts'
 export type ElapsedTimeFormat = 'seconds' | 'minutes-seconds' | 'hours-minutes-seconds' | 'days-decimal'
 export type TimestampFormat = { kind: 'timestamp'; include_date: boolean; include_utc_offset: boolean }
 export type OutputTimeFormat = { kind: 'elapsed-time'; format: ElapsedTimeFormat } | TimestampFormat
+export type NumericDisplayFormat = { mode: 'auto' | 'fixed' | 'raw'; decimalPlaces: number }
+export const DEFAULT_NUMERIC_DISPLAY_FORMAT: NumericDisplayFormat = { mode: 'auto', decimalPlaces: 2 }
+
+export function formatNumber(value: number, format: NumericDisplayFormat): string {
+  if (format.mode === 'raw') return String(value)
+  if (format.mode === 'fixed') return value.toFixed(Math.max(0, Math.min(12, Math.trunc(format.decimalPlaces) || 0)))
+  return String(Number(value.toPrecision(15)))
+}
 
 export const ELAPSED_TIME_FORMATS: Record<ElapsedTimeFormat, string> = {
   seconds: 'Seconds', 'minutes-seconds': 'Minutes:Seconds',
@@ -41,7 +49,7 @@ export function formatTimestampMillis(value: number, format: TimestampFormat): s
   return formatTimestamp(iso, format)
 }
 
-export function formatOutputValue(step: OutputStep, value: unknown): string {
+export function formatOutputValue(step: OutputStep, value: unknown, numericFormat: NumericDisplayFormat = DEFAULT_NUMERIC_DISPLAY_FORMAT): string {
   const format = step.time_format
   if (step.value.source === 'elapsed-time' && format?.kind === 'elapsed-time' && typeof value === 'number') {
     return formatElapsedTime(value, format.format)
@@ -49,5 +57,6 @@ export function formatOutputValue(step: OutputStep, value: unknown): string {
   if (step.value.source === 'timestamp' && format?.kind === 'timestamp' && typeof value === 'string') {
     return formatTimestamp(value, format)
   }
+  if (typeof value === 'number') return formatNumber(value, numericFormat)
   return typeof value === 'string' ? value : JSON.stringify(value) ?? '—'
 }

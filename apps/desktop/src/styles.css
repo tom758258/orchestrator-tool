@@ -1968,6 +1968,19 @@ input[type="radio"] {
   margin-top: 20px;
 }
 
+.numeric-display-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.numeric-display-settings label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .result-chart-plot {
   background: var(--chart-surface);
 }

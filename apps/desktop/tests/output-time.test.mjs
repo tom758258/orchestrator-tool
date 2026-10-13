@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { changeOutputValue, formatElapsedTime, formatOutputValue, formatTimestamp, formatTimestampMillis } from '../src/outputTime.ts'
+import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT, formatNumber, formatElapsedTime, formatOutputValue, formatTimestamp, formatTimestampMillis } from '../src/outputTime.ts'
 import { copySteps, pasteSteps, singleSelection } from '../src/stepEditing.ts'
 import { addChartPanel, chartRequiredOutputs, reconcileRunChartPanels } from '../src/chartPanels.ts'
 import { createPageChartData, prepareChartSeries } from '../src/chartData.ts'
@@ -12,6 +12,49 @@ const combinations = [[true, true], [true, false], [false, true], [false, false]
 const timestamp = '2026-10-12T23:24:10.123+08:00'
 const displays = [timestamp, '2026-10-12T23:24:10.123', '23:24:10.123+08:00', '23:24:10.123']
 const colors = { ink: '#000', axis: '#000', grid: '#ccc' }
+
+test('numeric display defaults to Auto and formats floats without changing values', () => {
+  assert.equal(DEFAULT_NUMERIC_DISPLAY_FORMAT.mode, 'auto')
+  const output = step('literal')
+  const values = Object.freeze([10.600000000000001, 16.000000000000014, -10.900000000000002,
+    0, 1.234567890123456e100, 1.234567890123456e-100])
+  const expected = ['10.6', '16', '-10.9', '0', '1.23456789012346e+100', '1.23456789012346e-100']
+  const before = structuredClone(values)
+  values.forEach((value, index) => {
+    assert.equal(formatOutputValue(output, value), expected[index])
+    assert.equal(formatOutputValue(output, value, { mode: 'raw', decimalPlaces: 2 }), String(value))
+  })
+  assert.equal(formatOutputValue(output, values[0], { mode: 'fixed', decimalPlaces: 2 }), '10.60')
+  assert.deepEqual(values, before)
+})
+
+test('Fixed supports every decimal place from 0 to 12 and bounds invalid precision', () => {
+  for (let decimalPlaces = 0; decimalPlaces <= 12; decimalPlaces++) {
+    assert.equal(formatNumber(10.6, { mode: 'fixed', decimalPlaces }), (10.6).toFixed(decimalPlaces))
+    assert.equal(formatNumber(-10.6, { mode: 'fixed', decimalPlaces }), (-10.6).toFixed(decimalPlaces))
+  }
+  assert.equal(formatNumber(10.6, { mode: 'fixed', decimalPlaces: -1 }), '11')
+  assert.equal(formatNumber(10.6, { mode: 'fixed', decimalPlaces: 13 }), '10.600000000000')
+})
+
+test('numeric settings preserve time formats and nonnumeric Output values', () => {
+  for (const mode of ['auto', 'fixed', 'raw']) {
+    const numericFormat = { mode, decimalPlaces: 2 }
+    formats.forEach(format => {
+      const output = step('elapsed-time', { kind: 'elapsed-time', format })
+      assert.equal(formatOutputValue(output, 90061.123, numericFormat), formatElapsedTime(90061.123, format))
+    })
+    combinations.forEach(([include_date, include_utc_offset], index) => {
+      const output = step('timestamp', { kind: 'timestamp', include_date, include_utc_offset })
+      assert.equal(formatOutputValue(output, timestamp, numericFormat), displays[index])
+    })
+    for (const value of ['10.600000000000001', true, false, null, { value: 10.600000000000001 },
+      [10.600000000000001], undefined]) {
+      assert.equal(formatOutputValue(step('literal'), value, numericFormat),
+        typeof value === 'string' ? value : JSON.stringify(value) ?? '—')
+    }
+  }
+})
 
 test('elapsed Output display uses accumulated units and millisecond precision', () => {
   const expected = ['90061.123', '1501:01.123', '25:01:01.123', '1.042374109 d']

@@ -91,7 +91,7 @@ pub fn write_page_csv_rows<'a>(
     Ok(())
 }
 
-/// Preserves JSON cell types, falling back to text when Excel would lose numeric precision.
+/// Preserves JSON cell types, protecting integer precision and Excel's numeric range.
 pub fn pages_xlsx(datasets: &[PageDataset<'_>]) -> Result<Vec<u8>, String> {
     if datasets.is_empty() {
         return Err("No Output Pages available for export".to_owned());
@@ -179,6 +179,10 @@ fn excel_number(number: &serde_json::Number) -> Option<f64> {
     }
     if value != 0.0 && !(2.2251e-308..=9.99999999999999e307).contains(&value.abs()) {
         return None;
+    }
+    // Accept ordinary floats at Excel's native precision without rounding the source value.
+    if number.is_f64() {
+        return Some(value);
     }
     let original = decimal_parts(&number.to_string());
     if original.0.trim_start_matches('-').len() > 15
