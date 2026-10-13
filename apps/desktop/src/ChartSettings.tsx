@@ -40,6 +40,10 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
   }
 
   function apply() {
+    if (running && draft.type !== panel.type && draft.type !== 'line') {
+      setError('Only Line or the current chart type can be used while a run is in progress.')
+      return
+    }
     const result = validateChartSettingsDraft(draft)
     if (!result.settings) {
       setError(result.error)
@@ -174,7 +178,7 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
       <fieldset className="chart-settings-general">
         <legend>General</legend>
         <label className="chart-settings-field">Chart type
-          <select value={draft.type} disabled={running || !hasRows} onChange={event => {
+          <select value={draft.type} disabled={running ? panel.type === 'line' : !hasRows} onChange={event => {
             const type = event.target.value as ChartType
             setDraft(current => {
               const titles = chartTypeAxisTitles(current, type, panel.outputs[0] ?? '')
@@ -185,13 +189,13 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
             setError(null)
           }}>
             <option value="line">Line</option>
-            <option value="scatter">XY Scatter</option>
-            <option value="column">Column</option>
-            <option value="area">Area</option>
-            <option value="bar">Bar</option>
-            <option value="combo">Combo</option>
-            <option value="histogram">Histogram</option>
-            <option value="boxplot">Box &amp; Whisker</option>
+            <option value="scatter" disabled={running && panel.type !== 'scatter'}>XY Scatter</option>
+            <option value="column" disabled={running && panel.type !== 'column'}>Column</option>
+            <option value="area" disabled={running && panel.type !== 'area'}>Area</option>
+            <option value="bar" disabled={running && panel.type !== 'bar'}>Bar</option>
+            <option value="combo" disabled={running && panel.type !== 'combo'}>Combo</option>
+            <option value="histogram" disabled={running && panel.type !== 'histogram'}>Histogram</option>
+            <option value="boxplot" disabled={running && panel.type !== 'boxplot'}>Box &amp; Whisker</option>
           </select>
         </label>
         {draft.type === 'combo' && <p className="chart-settings-help">

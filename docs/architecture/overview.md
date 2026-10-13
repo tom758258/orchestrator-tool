@@ -170,8 +170,14 @@ The current Desktop presentation architecture has these properties:
   or dark palette independently of the application theme, captures the current
   viewport and ECharts-rendered title, and excludes interactive DataZoom controls.
 - Live visualization remains Line only, defined by `chartSupportsLive`. While
-  running, preserved non-Line panels display a locked Waiting state without a
-  plot; Output selection, Settings, Export PNG, and Remove are disabled. Only
+  running, preserved non-Line panels display Waiting without a plot; Output
+  selection and Export PNG remain disabled, while Settings and Remove are
+  available subject to PNG-saving and last-chart removal guards. Chart Settings
+  allows retaining the current type or switching non-Line to Line, including
+  before the first committed row; options and Apply enforce this rule. Line
+  cannot switch to non-Line while running. Applying Line makes the panel eligible
+  for the existing raw-series loader using the current run ID. Simulation and
+  Live share these rules through the same running flag. Only
   Line panels contribute raw-series loader requests, and statistical requests
   remain post-run only. When running becomes false, the existing loaders and
   statistical effects automatically load the new run's committed rows. Raw

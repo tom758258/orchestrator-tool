@@ -324,22 +324,119 @@ for (const type of ['scatter', 'histogram', 'boxplot']) {
   })
 }
 
-test('Waiting precedes plot rendering and locks every panel action without locking Add Chart', () => {
-  assert.match(source, /const waiting = running && !chartSupportsLive\(panel.type\)/)
-  for (const label of ['Export PNG', 'Settings', 'Remove']) {
-    const action = source.slice(source.lastIndexOf('<button', source.indexOf(`>${label}</button>`)),
-      source.indexOf(`>${label}</button>`))
-    assert.match(action, /disabled=\{waiting \|\|/)
+test('switching to Line and removing panels preserves current-run loading for remaining charts', async () => {
+  for (const initialRows of [0, 2]) {
+    const calls = []
+    const harness = loadingHarness(async (command, args) => {
+      calls.push({ command, ...args })
+      return { run_id: args.runId, page: args.page, start_row: args.startRow,
+        series: Object.fromEntries(args.outputs.map(name => [name, Array(args.limit).fill(args.runId)])) }
+    })
+    const base = addChartPanel([], 'A', ['V'])[0]
+    const panels = [base, { ...base, id: 1, type: 'histogram', outputs: ['I'] },
+      { ...base, id: 2, type: 'scatter', outputs: ['X'] }]
+    const props = { runId: 77, revision: 1, rowCount: initialRows, page: 'A', panels,
+      numericNames: ['V', 'I', 'X'], chartData: new Map(), running: true }
+    try {
+      await harness.update(props)
+      calls.length = 0
+      const switched = { ...props, panels: panels.map(panel => panel.id === 1 ? { ...panel, type: 'line' } : panel) }
+      const live = await harness.update(switched)
+      assert.deepEqual(live.requestedNames, ['V', 'I'])
+      if (initialRows === 0) {
+        assert.deepEqual(calls, [])
+        await harness.update({ ...switched, revision: 2, rowCount: 2 })
+      }
+      assert.deepEqual(calls.map(call => [call.command, call.runId, call.outputs]),
+        [['get_last_run_chart_series', 77, initialRows === 0 ? ['I', 'V'] : ['I']]])
+      calls.length = 0
+      // Remove a Waiting panel without restarting or losing the live charts' data.
+      const removedWaiting = { ...switched, rowCount: 2, panels: switched.panels.filter(panel => panel.id !== 2) }
+      await harness.update(removedWaiting)
+      assert.deepEqual(calls, [])
+      assert.deepEqual([...props.chartData.get('A').getSeries('I')], [77, 77])
+      // Removing a live panel drops only its dependency; the remaining chart keeps loading tails.
+      const remaining = { ...removedWaiting, panels: [base] }
+      const result = await harness.update(remaining)
+      assert.deepEqual(result.requestedNames, ['V'])
+      assert.equal(props.chartData.get('A').length('I'), 0)
+      assert.deepEqual(calls, [])
+      await harness.update({ ...remaining, revision: 3, rowCount: 3 })
+      assert.deepEqual(calls.map(call => [call.command, call.runId, call.outputs, call.startRow]),
+        [['get_last_run_chart_series', 77, ['V'], 2]])
+      assert.deepEqual([...props.chartData.get('A').getSeries('V')], [77, 77, 77])
+    } finally {
+      harness.dispose()
+    }
   }
-  assert.match(source, /<fieldset className="result-chart-outputs" disabled=\{waiting \|\|/)
-  assert.match(source, /\{!waiting && settingsId === panel.id && <ChartSettings/)
-  const plotBranch = source.slice(source.indexOf('{waiting ? <div'), source.indexOf('<ChartPlot'))
-  assert.match(plotBranch, /Waiting for run to finish/)
-  assert.match(plotBranch, /This chart does not support live updates\. It will update automatically when the run finishes\./)
-  assert.match(plotBranch, /<\/div> : waitingForRunData \? <p role="status">Waiting for run data<\/p>\s*: selectedOutputs/)
-  assert.match(source, /const analysisReady = runId !== null &&/)
-  const addAction = source.slice(source.indexOf('<button'), source.indexOf('>+ Add Chart</button>'))
-  assert.doesNotMatch(addAction, /waiting|running/)
+})
+
+test('Waiting keeps Settings and Remove available while locking Export PNG and Outputs', async () => {
+  const React = (await import('react')).default
+  const { transformWithOxc } = await import('vite')
+  const chartDataModule = await import('../src/chartData.ts')
+  const chartPanels = await import('../src/chartPanels.ts')
+  const chartStatistics = await import('../src/chartStatistics.ts')
+  const Plot = () => null
+  const Settings = () => null
+  let settingsId = null
+  let savingId = null
+  let stateIndex = 0
+  const modules = { react: {
+    useMemo: factory => factory(), useRef: value => ({ current: value }), useEffect: () => {},
+    useState(initial) {
+      const index = stateIndex++
+      return [index === 0 ? savingId : index === 2 ? settingsId : initial,
+        value => { if (index === 2) settingsId = value }]
+    },
+  }, './ChartPlot': Plot, './ChartSettings': Settings, './chartData': chartDataModule,
+  './chartPanels': chartPanels, './chartStatistics': chartStatistics, './chartPng': { chartPng: () => {} },
+  '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
+  '@tauri-apps/plugin-dialog': { save: () => {} } }
+  const { code } = await transformWithOxc(source, 'ResultChart.tsx', { jsx: { runtime: 'classic' } })
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
+  const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)
+  const base = addChartPanel([], 'A', ['V'])[0]
+  let panels
+  function render(rowCount) {
+    stateIndex = 0
+    const nodes = []
+    function visit(node) {
+      if (Array.isArray(node)) node.forEach(visit)
+      else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
+    }
+    visit(component({ runId: 77, revision: 1, rowCount, numericNames: ['V'], timestampNames: [], outputs: [],
+      panels, onPanelsChange: value => { panels = value }, page: 'A', chartData: new Map(), running: true }))
+    return nodes
+  }
+  const button = (nodes, label) => nodes.find(node => node.type === 'button' && node.props.children === label)
+  for (const type of ['scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
+    for (const rowCount of [0, 2]) {
+      panels = [{ ...base, type }, { ...base, id: 1, page: 'B' }]
+      settingsId = null
+      const nodes = render(rowCount)
+      assert.equal(button(nodes, 'Settings').props.disabled, false)
+      assert.equal(button(nodes, 'Remove').props.disabled, false)
+      assert.equal(button(nodes, 'Export PNG').props.disabled, true)
+      assert.equal(button(nodes, '+ Add Chart').props.disabled, false)
+      assert.equal(nodes.find(node => node.type === 'fieldset').props.disabled, true)
+      assert.ok(nodes.some(node => node.props.children === 'Waiting for run to finish'))
+      assert.equal(nodes.some(node => node.type === Plot), false)
+      button(nodes, 'Settings').props.onClick()
+      const dialog = render(rowCount).find(node => node.type === Settings)
+      assert.equal(dialog.props.panel.type, type)
+      assert.equal(dialog.props.running, true)
+      assert.equal(dialog.props.hasRows, rowCount > 0)
+      savingId = 1
+      assert.equal(button(render(rowCount), 'Settings').props.disabled, true)
+      assert.equal(button(render(rowCount), 'Remove').props.disabled, true)
+      savingId = null
+      const remaining = panels[1]
+      button(render(rowCount), 'Remove').props.onClick()
+      assert.deepEqual(panels, [remaining])
+    }
+  }
 })
 
 test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs to Settings', async () => {

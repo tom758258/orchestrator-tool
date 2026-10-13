@@ -1631,7 +1631,8 @@ textarea:disabled {
   background: var(--panel);
 }
 
-.result-chart-panel-waiting {
+.result-chart-panel-waiting .result-chart-outputs,
+.result-chart-panel-waiting .result-chart-waiting {
   opacity: 0.65;
 }
 

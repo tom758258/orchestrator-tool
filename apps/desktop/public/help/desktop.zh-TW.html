@@ -764,8 +764,12 @@ surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不�
 分開設定。兩種背景都會保留自訂 series 顏色與 Normal curve。</p>
 <p>Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
 並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
-顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection、Settings、
-Export PNG 與 Remove 會停用。它們不會載入即時 chart data，execution 停止後
+顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection 與 Export PNG
+仍停用，Settings 與 Remove 可操作，但最後一張 Chart 不可移除。
+執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
+第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。
+Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels
+不會載入即時 chart data，execution 停止後
 自動使用新 run 的 committed rows 更新，不需手動 refresh。Run 開始時 panels
 就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
 新 run 的資料尚未可用時，Line 顯示 <strong>Waiting for run data</strong>，不顯示上一 run

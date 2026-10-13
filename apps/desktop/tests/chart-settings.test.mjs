@@ -539,6 +539,77 @@ test('plain Line exposes existing per-Output marker appearance without enabling 
   assert.equal(unchanged.showSymbol, false)
 })
 
+test('actual Settings restricts running type changes in options and Apply, including before the first row', async () => {
+  const React = (await import('react')).default
+  const { transformWithOxc } = await import('vite')
+  const chartPanels = await import('../src/chartPanels.ts')
+  const settingsModel = await import('../src/chartSettingsModel.ts')
+  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
+  const { code } = await transformWithOxc(source, 'ChartSettings.tsx', { jsx: { runtime: 'classic' } })
+  const slots = []
+  let cursor = 0
+  const modules = { react: {
+    useRef: () => ({ current: null }), useEffect: () => {},
+    useState(initial) {
+      const index = cursor++
+      if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial
+      return [slots[index], update => { slots[index] = typeof update === 'function' ? update(slots[index]) : update }]
+    },
+  }, './chartPanels': chartPanels, './chartSettingsModel': settingsModel }
+  const body = code.replace(/import (.+?) from "([^"]+)";/g,
+    (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
+  const component = new Function('React', 'modules', `${body}; return ChartSettings`)(React, modules)
+  const types = ['line', 'scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']
+  let props
+  let applied
+  function render() {
+    cursor = 0
+    const nodes = []
+    function visit(node) {
+      if (Array.isArray(node)) node.forEach(visit)
+      else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
+    }
+    visit(component({ ...props, numericNames: ['V', 'I'], outputs: [],
+      onApply: value => { applied = value }, onClose: () => {} }))
+    return nodes
+  }
+  const typeSelect = () => render().find(node => node.type === 'label' && node.props.children[0] === 'Chart type')
+    .props.children[1]
+  const apply = () => render().find(node => node.type === 'button' && node.props.children === 'Apply').props.onClick()
+  for (const running of [true, false]) {
+    for (const hasRows of [true, false]) {
+      for (const currentType of types) {
+        props = { panel: { ...panel, type: currentType, outputs: ['V', 'I'] }, running, hasRows }
+        const before = structuredClone(props.panel)
+        for (const targetType of types) {
+          slots.length = 0
+          applied = undefined
+          const select = typeSelect()
+          assert.equal(select.props.disabled, running ? currentType === 'line' : !hasRows)
+          const option = select.props.children.find(node => node.props.value === targetType)
+          const allowed = !running || targetType === 'line' || targetType === currentType
+          assert.equal(!!option.props.disabled, !allowed)
+          // Invoke the handler even for disabled options to verify Apply enforces the rule.
+          select.props.onChange({ target: { value: targetType } })
+          apply()
+          assert.equal(applied?.type, allowed ? targetType : undefined)
+          assert.equal(render().some(node => node.props.role === 'alert'), !allowed)
+          assert.deepEqual(props.panel, before)
+        }
+      }
+    }
+  }
+  // A dialog can hold a non-Line draft selected before execution starts.
+  slots.length = 0
+  props = { panel, running: false, hasRows: true }
+  typeSelect().props.onChange({ target: { value: 'bar' } })
+  props = { ...props, running: true }
+  applied = undefined
+  apply()
+  assert.equal(applied, undefined)
+  assert.ok(render().some(node => node.props.role === 'alert'))
+})
+
 test('actual Settings follows the unapplied Elapsed X draft and keeps axis inputs in seconds', async () => {
   const React = (await import('react')).default
   const { transformWithOxc } = await import('vite')

@@ -992,9 +992,14 @@ Normal curve are included in either background.
 Chart configuration survives Page/tab changes and subsequent Simulation or
 Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
 original Page and order while running, display **Waiting for run to finish**,
-and hide the plot. Their Output selection, Settings, Export PNG, and Remove
-actions are disabled. They do not load live chart data and automatically update
-from the new run's committed rows when execution stops; no refresh is needed.
+and hide the plot. Their Output selection and Export PNG remain disabled;
+Settings and Remove remain available, but the last chart cannot be removed.
+During execution, Chart type allows keeping the current type or switching a
+non-Line chart to Line, even before the first row arrives. Line cannot switch
+to a non-Line type until execution stops. After Apply, Line uses the current
+run's data and updates live. Panels that remain non-Line do not load live chart
+data and automatically update from the new run's committed rows when execution
+stops; no refresh is needed.
 Panels stay visible and non-Line panels enter Waiting as soon as the run starts,
 even before its first progress update. Until the new run's data is available,
 Line displays **Waiting for run data** without showing the previous run's plot

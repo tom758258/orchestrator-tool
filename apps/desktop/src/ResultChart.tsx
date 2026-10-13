@@ -234,10 +234,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
             <div className="result-chart-panel-actions">
               <button className="action-button" type="button" disabled={waiting || savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
                 onClick={() => void saveImage(panel.id, index)}>Export PNG</button>
-              <button className="action-button" type="button" disabled={waiting || savingId !== null}
+              <button className="action-button" type="button" disabled={savingId !== null}
                 onClick={() => setSettingsId(panel.id)}>Settings</button>
               <button className="action-button action-button-danger" type="button"
-                aria-label={`Remove Chart ${index + 1}`} disabled={waiting || savingId !== null || !canRemoveChartPanel(panels)}
+                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null || !canRemoveChartPanel(panels)}
                 onClick={() => {
                   if (saving.current) return
                   if (feedback?.id === panel.id) setFeedback(null)
@@ -275,7 +275,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
               statistical={isStatistical ? statisticState?.response : undefined}
               changeSettings={changeSettings} fitData={fitData} xTimeFormat={xTimeFormat} />
           )}
-          {!waiting && settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={scatterXNames}
+          {settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={scatterXNames}
             outputs={outputs}
             running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
             onApply={settings => {
