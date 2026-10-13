@@ -10,7 +10,8 @@ export const DEFAULT_NUMERIC_DISPLAY_FORMAT: NumericDisplayFormat = { mode: 'aut
 export function formatNumber(value: number, format: NumericDisplayFormat): string {
   if (format.mode === 'raw') return String(value)
   if (format.mode === 'fixed') return value.toFixed(Math.max(0, Math.min(12, Math.trunc(format.decimalPlaces) || 0)))
-  return String(Number(value.toPrecision(15)))
+  const formatted = Number(value.toPrecision(15))
+  return String(Number.isFinite(value) && !Number.isFinite(formatted) ? value : formatted)
 }
 
 export const ELAPSED_TIME_FORMATS: Record<ElapsedTimeFormat, string> = {

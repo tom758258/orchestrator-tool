@@ -17,8 +17,9 @@ test('numeric display defaults to Auto and formats floats without changing value
   assert.equal(DEFAULT_NUMERIC_DISPLAY_FORMAT.mode, 'auto')
   const output = step('literal')
   const values = Object.freeze([10.600000000000001, 16.000000000000014, -10.900000000000002,
-    0, 1.234567890123456e100, 1.234567890123456e-100])
-  const expected = ['10.6', '16', '-10.9', '0', '1.23456789012346e+100', '1.23456789012346e-100']
+    0, 1.234567890123456e100, 1.234567890123456e-100, Number.MAX_VALUE, -Number.MAX_VALUE])
+  const expected = ['10.6', '16', '-10.9', '0', '1.23456789012346e+100', '1.23456789012346e-100',
+    '1.7976931348623157e+308', '-1.7976931348623157e+308']
   const before = structuredClone(values)
   values.forEach((value, index) => {
     assert.equal(formatOutputValue(output, value), expected[index])
