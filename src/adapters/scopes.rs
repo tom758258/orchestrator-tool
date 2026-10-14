@@ -300,10 +300,29 @@ fn terminal_result(event: &Value, command: &str, arguments: &Value) -> Result<Va
         || event["exit_code"].as_i64() != Some(0)
         || !event["error"].is_null()
     {
-        return Err(format!(
-            "Scopes {command} ended with {}: {}",
-            event["state"], event["error"]
-        ));
+        let state = event["state"].as_str().unwrap_or("unknown");
+        let mut message = format!("Scopes {command} ended with {state:?}");
+        if let Some(exit_code) = event["exit_code"].as_i64() {
+            message.push_str(&format!(" (exit code {exit_code})"));
+        }
+        let detail = event["error"]["message"]
+            .as_str()
+            .filter(|message| !message.trim().is_empty())
+            .or_else(|| {
+                // Cancellation and other abnormal states are not invalid measurements.
+                if command == "measure" && state == "failed" && event["result"]["valid"] == false {
+                    event["result"]["reason"]
+                        .as_str()
+                        .filter(|reason| !reason.trim().is_empty())
+                } else {
+                    None
+                }
+            });
+        if let Some(detail) = detail {
+            message.push_str(": ");
+            message.push_str(detail);
+        }
+        return Err(message);
     }
     let mut result = event["result"]
         .as_object()
@@ -652,6 +671,159 @@ mod tests {
                 .contains("unknown-model")
         );
         assert!(cli_error_detail("list-resources", error.to_string().as_bytes()).is_none());
+    }
+    #[test]
+    fn scopes_terminal_measure_failure_uses_result_reason() {
+        let event = json!({"event":"job_finished","state":"failed","ok":false,"exit_code":3,
+            "error":null,"result":{"valid":false,"reason":"Measurement is out of range",
+                "channel":1,"item":"vpp"}});
+        let error = terminal_result(&event, "measure", &json!({})).unwrap_err();
+        assert!(error.contains("Measurement is out of range"));
+        assert!(!error.contains("null"));
+    }
+    #[test]
+    fn scopes_terminal_worker_error_takes_priority() {
+        let event = json!({"event":"job_finished","state":"failed","ok":false,"exit_code":3,
+            "error":{"message":"  Instrument communication failed  "},
+            "result":{"valid":false,"reason":"Measurement is out of range"}});
+        let error = terminal_result(&event, "measure", &json!({})).unwrap_err();
+        assert!(error.ends_with(":   Instrument communication failed  "));
+        assert!(!error.contains("Measurement is out of range"));
+    }
+    #[test]
+    fn scopes_terminal_failure_falls_back_to_state_and_exit_code() {
+        for result in [
+            Value::Null,
+            json!({}),
+            json!({"valid":false}),
+            json!({"valid":false,"reason":null}),
+            json!({"valid":false,"reason":""}),
+            json!({"valid":false,"reason":" \t\n "}),
+            json!({"valid":false,"reason":42}),
+            json!({"valid":true,"reason":"Not an invalid measurement"}),
+            json!({"reason":"Missing validity"}),
+            json!({"valid":"false","reason":"Malformed validity"}),
+        ] {
+            let event = json!({"event":"job_finished","state":"failed","ok":false,
+                "exit_code":3,"error":null,"result":result});
+            assert_eq!(
+                terminal_result(&event, "measure", &json!({})).unwrap_err(),
+                "Scopes measure ended with \"failed\" (exit code 3)"
+            );
+        }
+    }
+    #[test]
+    fn scopes_terminal_empty_or_missing_error_message_falls_back() {
+        for error in [
+            Value::Null,
+            json!({}),
+            json!({"message":""}),
+            json!({"message":" \t\n "}),
+            json!({"message":null}),
+            json!({"message":42}),
+            json!("malformed error"),
+        ] {
+            let mut event = json!({"event":"job_finished","state":"failed","ok":false,
+                "exit_code":3,"error":error,
+                "result":{"valid":false,"reason":"Worker measurement reason"}});
+            assert!(
+                terminal_result(&event, "measure", &json!({}))
+                    .unwrap_err()
+                    .ends_with(": Worker measurement reason")
+            );
+            event.as_object_mut().unwrap().remove("result");
+            assert_eq!(
+                terminal_result(&event, "measure", &json!({})).unwrap_err(),
+                "Scopes measure ended with \"failed\" (exit code 3)"
+            );
+        }
+        assert_eq!(
+            terminal_result(
+                &json!({"event":"job_finished","state":"failed"}),
+                "measure",
+                &json!({})
+            )
+            .unwrap_err(),
+            "Scopes measure ended with \"failed\""
+        );
+        assert_eq!(
+            terminal_result(&json!({"event":"job_finished"}), "measure", &json!({})).unwrap_err(),
+            "Scopes measure ended with \"unknown\""
+        );
+    }
+    #[test]
+    fn scopes_terminal_succeeded_preserves_result() {
+        let event = json!({"event":"job_finished","state":"succeeded","ok":true,
+            "exit_code":0,"error":null,"result":{"valid":true,"reason":null,"channel":1,
+                "item":"vpp","value":2.5,"unit":"V","future":{"retained":true}}});
+        assert_eq!(
+            terminal_result(&event, "measure", &json!({})).unwrap(),
+            event["result"]
+        );
+    }
+    #[test]
+    fn scopes_terminal_cancelled_does_not_use_measure_reason() {
+        for state in ["cancelled", "running"] {
+            let mut event = json!({"event":"job_finished","state":state,"ok":false,
+                "exit_code":3,"error":null,
+                "result":{"valid":false,"reason":"Inapplicable measurement reason"}});
+            let error = terminal_result(&event, "measure", &json!({})).unwrap_err();
+            assert!(error.contains(state));
+            assert!(error.contains("exit code 3"));
+            assert!(!error.contains("Inapplicable measurement reason"));
+            assert!(!error.contains("null"));
+            event["error"] = json!({"message":"Worker stopped the job"});
+            assert!(
+                terminal_result(&event, "measure", &json!({}))
+                    .unwrap_err()
+                    .ends_with(": Worker stopped the job")
+            );
+        }
+    }
+    #[test]
+    fn scopes_terminal_non_measure_failure_does_not_use_measure_reason() {
+        let mut event = json!({"event":"job_finished","state":"failed","ok":false,
+            "exit_code":3,"error":null,
+            "result":{"valid":false,"reason":"Inapplicable measurement reason"}});
+        assert_eq!(
+            terminal_result(&event, "channel-scale", &json!({})).unwrap_err(),
+            "Scopes channel-scale ended with \"failed\" (exit code 3)"
+        );
+        event["error"] = json!({"message":"Unsupported scale"});
+        assert!(
+            terminal_result(&event, "channel-scale", &json!({}))
+                .unwrap_err()
+                .ends_with(": Unsupported scale")
+        );
+    }
+    #[test]
+    fn scopes_terminal_success_conditions_and_structured_result_are_required() {
+        let event = json!({"event":"job_finished","state":"succeeded","ok":true,
+            "exit_code":0,"error":null,"result":{}});
+        for (field, value) in [
+            ("state", json!("failed")),
+            ("ok", json!(false)),
+            ("exit_code", json!(3)),
+            ("error", json!({"message":"Worker error"})),
+            ("result", Value::Null),
+        ] {
+            let mut invalid = event.clone();
+            invalid[field] = value;
+            assert!(terminal_result(&invalid, "measure", &json!({})).is_err());
+            invalid.as_object_mut().unwrap().remove(field);
+            if field == "error" {
+                assert!(terminal_result(&invalid, "measure", &json!({})).is_ok());
+            } else {
+                assert!(terminal_result(&invalid, "measure", &json!({})).is_err());
+            }
+        }
+        // Result validity remains data, not an additional success condition.
+        let mut event = event;
+        event["result"] = json!({"valid":false,"reason":"Worker supplied result"});
+        assert_eq!(
+            terminal_result(&event, "measure", &json!({})).unwrap(),
+            event["result"]
+        );
     }
     #[test]
     fn scopes_terminal_failure_and_missing_files_are_rejected() {
