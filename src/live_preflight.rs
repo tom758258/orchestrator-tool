@@ -104,6 +104,15 @@ fn scan_actions(
                 bindings,
             } if target == &instance.id => {
                 let mut fixed = arguments.clone();
+                // Check the Adapter's effective default only when no runtime binding supplies it.
+                if instance.tool.as_str() == "scopes"
+                    && action.as_str() == "screenshot"
+                    && fixed.is_object()
+                    && !bindings.contains_key("format")
+                    && fixed.get("format").is_none()
+                {
+                    fixed["format"] = Value::from(scopes::DEFAULT_SCREENSHOT_FORMAT);
+                }
                 if let Some(object) = fixed.as_object_mut() {
                     for name in bindings.keys() {
                         object.remove(name);
@@ -138,6 +147,11 @@ pub(crate) struct CapabilityCheck<'a> {
     errors: &'a mut Vec<String>,
 }
 impl CapabilityCheck<'_> {
+    pub(crate) fn invalid(&mut self, parameter: &str, reason: &str) {
+        self.errors
+            .push(format!("{}: {parameter} {reason}", self.context));
+    }
+
     pub(crate) fn option(&mut self, parameter: &str, value: &Value, supported: Option<Value>) {
         match supported {
             Some(supported)
@@ -145,14 +159,47 @@ impl CapabilityCheck<'_> {
                     .as_array()
                     .is_some_and(|values| values.contains(value)) => {}
             Some(supported) => self.errors.push(format!(
-                "{}: {parameter}={value} is unsupported; supported values: {supported}",
-                self.context
+                "{}: {parameter}={value} is unsupported; supported values: {}",
+                self.context,
+                supported_values_summary(&supported)
             )),
             None => self.errors.push(format!(
                 "{}: {parameter}={value} cannot be checked; required capability is unavailable",
                 self.context
             )),
         }
+    }
+}
+
+fn supported_values_summary(supported: &Value) -> String {
+    const PREVIEW_ITEMS: usize = 8;
+    const MAX_PREVIEW_CHARS: usize = 256;
+    let Some(values) = supported.as_array() else {
+        return "unavailable (expected a list)".into();
+    };
+    if values.len() > PREVIEW_ITEMS
+        && values.iter().all(|value| value.as_u64().is_some())
+        && values
+            .windows(2)
+            .all(|pair| pair[0].as_u64().unwrap().checked_add(1) == pair[1].as_u64())
+    {
+        return format!(
+            "{}–{} ({} values)",
+            values[0],
+            values[values.len() - 1],
+            values.len()
+        );
+    }
+    let preview = serde_json::to_string(&values[..values.len().min(PREVIEW_ITEMS)]).unwrap();
+    let truncated = preview.chars().count() > MAX_PREVIEW_CHARS;
+    if values.len() > PREVIEW_ITEMS || truncated {
+        format!(
+            "{}… ({} values total)",
+            preview.chars().take(MAX_PREVIEW_CHARS).collect::<String>(),
+            values.len()
+        )
+    } else {
+        preview
     }
 }
 
@@ -296,6 +343,128 @@ mod tests {
                 .is_empty()
             );
         }
+    }
+
+    #[test]
+    fn live_preflight_screenshot_checks_effective_format_without_rewriting_template() {
+        for (formats, args, passes) in [
+            (vec!["png"], json!({"format":"png"}), true),
+            (vec!["bmp"], json!({"format":"png"}), false),
+            (vec!["bmp"], json!({"format":"bmp"}), true),
+            (vec!["jpeg"], json!({"format":"jpeg"}), true),
+            (vec!["jpeg"], json!({"format":"png"}), false),
+            (vec!["png"], json!({}), true),
+            (vec!["bmp"], json!({}), false),
+            (vec!["jpeg"], json!({}), false),
+            (vec!["png"], json!({"format":"gif"}), false),
+            (vec!["bmp8bit"], json!({"format":"bmp8bit"}), true),
+        ] {
+            let template = template(
+                "scopes",
+                json!({}),
+                json!([action("scopes", "screenshot", args)]),
+            );
+            let before = template.to_json_string().unwrap();
+            let errors = validate_with_capabilities(&template, |_| {
+                let mut caps = scopes_caps();
+                caps.screenshot_formats = formats.iter().map(|value| (*value).into()).collect();
+                Ok(Capabilities::Scopes(caps))
+            });
+            assert_eq!(errors.is_empty(), passes, "{before}: {errors:?}");
+            if !passes {
+                assert_eq!(errors.len(), 1);
+                assert!(errors[0].contains("format=") && errors[0].contains("unsupported"));
+            }
+            assert_eq!(before, template.to_json_string().unwrap());
+        }
+        // An omitted bound format is dynamic too; PNG must not be inferred for it.
+        let mut bound = action("scopes", "screenshot", json!({}));
+        bound["bindings"] = json!({"format":{"source":"literal","value":"jpeg"}});
+        assert!(
+            validate_with_capabilities(&template("scopes", json!({}), json!([bound])), |_| {
+                let mut caps = scopes_caps();
+                caps.screenshot_formats = vec!["jpeg".into()];
+                Ok(Capabilities::Scopes(caps))
+            })
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn live_preflight_capture_fixed_channels_require_nonempty_unique_supported_values() {
+        for (channels, passes, reason) in [
+            (json!([]), false, "at least one"),
+            (json!([1, 1]), false, "duplicate"),
+            (json!([1, 3]), false, "unsupported"),
+            (json!([1, 2]), true, ""),
+            (json!([2]), true, ""),
+        ] {
+            let template = template(
+                "scopes",
+                json!({}),
+                json!([action(
+                    "scopes",
+                    "capture",
+                    json!({"channel":channels,"points":1000})
+                )]),
+            );
+            let errors = check(&template);
+            assert_eq!(errors.is_empty(), passes, "{channels}: {errors:?}");
+            if !passes {
+                assert_eq!(errors.len(), 1);
+                assert!(errors[0].contains("channel") && errors[0].contains(reason));
+            }
+        }
+    }
+
+    #[test]
+    fn live_preflight_large_capability_errors_are_bounded_without_truncating_validation() {
+        for (counts, invalid, valid, range) in [
+            ((2..=65536).collect::<Vec<u32>>(), 65537, 65536, true),
+            (
+                (2..=65536).step_by(2).collect::<Vec<u32>>(),
+                3,
+                65536,
+                false,
+            ),
+        ] {
+            let validate = |value| {
+                validate_with_capabilities(
+                    &template(
+                        "scopes",
+                        json!({"acquisition":{"acquisition_type":"average","average_count":value}}),
+                        json!([action(
+                            "scopes",
+                            "capture",
+                            json!({"channel":[1],"points":1000})
+                        )]),
+                    ),
+                    |_| {
+                        let mut caps = scopes_caps();
+                        caps.average_counts = Some(counts.clone());
+                        Ok(Capabilities::Scopes(caps))
+                    },
+                )
+            };
+            let errors = validate(invalid);
+            assert_eq!(errors.len(), 1);
+            assert!(errors[0].contains("average_count=") && errors[0].contains("unsupported"));
+            assert!(errors[0].len() < 512, "error length: {}", errors[0].len());
+            assert_eq!(errors[0].contains("2–65536"), range);
+            assert!(errors[0].contains(&format!("{} values", counts.len())));
+            assert!(validate(valid).is_empty());
+        }
+        assert_eq!(supported_values_summary(&json!([4, 16])), "[4,16]");
+        assert_eq!(
+            supported_values_summary(&json!(["png", "bmp"])),
+            "[\"png\",\"bmp\"]"
+        );
+        assert!(
+            supported_values_summary(&json!(["界".repeat(1000)]))
+                .chars()
+                .count()
+                < 300
+        );
     }
 
     #[test]

@@ -95,10 +95,61 @@ test('live_preflight keeps Last Run until the backend accepts a new run, then re
   assert.equal(h.context.view.runMetadata.run_id, 8)
   assert.equal(h.context.view.runStatus, 'running')
   assert.equal(h.context.view.messagePage, null)
+  assert.equal(h.context.runIdRef.current, 8)
+  assert.equal(h.context.view.executionPage, null)
+  // Startup is still pending with no Step progress, but the accepted Run is visible.
+  await settle()
+  assert.equal(h.context.view.runStatus, 'running')
+  h.context.view.executionPage = ['new execution']
+  h.context.view.messagePage = ['new message']
+  const snapshot = h.context.view.runWorkflowSnapshot
+  const progress = { ...next, execution_count: 1 }
+  h.context.progressChannelRef.current.onmessage({ type: 'progress-batch', run: progress, completed_step_ids: ['off'] })
+  h.context.progressChannelRef.current.onmessage({ type: 'progress-batch', run: progress, completed_step_ids: [] })
+  assert.equal(h.context.view.runWorkflowSnapshot, snapshot)
+  assert.deepEqual(h.context.view.executionPage, ['new execution'])
+  assert.deepEqual(h.context.view.messagePage, ['new message'])
   complete({ ...next, status: 'succeeded' })
   await run
   assert.equal(h.context.view.runMetadata.status, 'succeeded')
   assert.equal(h.context.view.runStatus, 'idle')
+})
+
+test('accepted Live Worker startup failure is shown on the new Run', async () => {
+  let complete
+  const h = liveHarness(() => new Promise(resolve => { complete = resolve }))
+  const run = h.run()
+  await settle()
+  const next = { run_id: 8, status: 'running', execution_count: 0, error: null }
+  h.context.progressChannelRef.current.onmessage({ type: 'progress-batch', run: next, completed_step_ids: [] })
+  complete({ ...next, status: 'failed', error: 'Worker startup failed' })
+  await run
+  assert.equal(h.context.runIdRef.current, 8)
+  assert.equal(h.context.view.runMetadata.status, 'failed')
+  assert.equal(h.context.view.runMetadata.error, 'Worker startup failed')
+  assert.equal(h.context.preflightError, undefined)
+})
+
+test('stale Live generation events and completion cannot replace the current Run', async () => {
+  let complete
+  const h = liveHarness(() => new Promise(resolve => { complete = resolve }))
+  const run = h.run()
+  await settle()
+  const staleChannel = h.context.progressChannelRef.current
+  h.context.runGenerationRef.current += 1
+  const current = { run_id: 9, status: 'running' }
+  h.context.runIdRef.current = 9
+  h.context.view.runMetadata = current
+  h.context.view.runStatus = 'running'
+  staleChannel.onmessage({ type: 'progress-batch', run: { run_id: 8, status: 'running' }, completed_step_ids: [] })
+  staleChannel.onmessage({ type: 'csv-stream', status: { state: 'failed' } })
+  complete({ run_id: 8, status: 'succeeded' })
+  await run
+  assert.equal(h.context.runIdRef.current, 9)
+  assert.equal(h.context.view.runMetadata, current)
+  assert.equal(h.context.view.runStatus, 'running')
+  assert.deepEqual(h.context.view.messagePage, ['message'])
+  assert.equal(h.context.view.csvStreamStatus, undefined)
 })
 
 test('live_preflight Checking or Failed prevents Live invocation through the callback guard', async () => {

@@ -35,6 +35,8 @@ pub struct ScopesCapabilities {
     pub capture_point_options: Vec<u32>,
 }
 
+pub(crate) const DEFAULT_SCREENSHOT_FORMAT: &str = "png";
+
 pub(crate) fn validate_preflight_action(
     action: &str,
     arguments: &Value,
@@ -53,6 +55,18 @@ pub(crate) fn validate_preflight_action(
         && let Some(value) = arguments.get(field)
     {
         if let Some(values) = value.as_array() {
+            if action == "capture" {
+                if values.is_empty() {
+                    check.invalid(field, "must contain at least one channel");
+                }
+                if values
+                    .iter()
+                    .enumerate()
+                    .any(|(index, value)| values[..index].contains(value))
+                {
+                    check.invalid(field, "must not contain duplicate channels");
+                }
+            }
             for value in values {
                 check.option(field, value, Some(channels.clone()));
             }
@@ -553,10 +567,11 @@ fn prepare_file_arguments(
         _ => match arguments
             .get("format")
             .and_then(Value::as_str)
-            .unwrap_or("png")
+            .unwrap_or(DEFAULT_SCREENSHOT_FORMAT)
         {
             "png" => "png",
             "bmp" | "bmp8bit" => "bmp",
+            "jpeg" => "jpeg",
             other => return Err(format!("unsupported screenshot format {other}")),
         },
     };
@@ -935,6 +950,28 @@ mod tests {
             "existing"
         );
         assert!(Path::new(a["csv"].as_str().unwrap()).is_absolute());
+        for (arguments, extension) in [
+            (json!({"format":"png"}), "png"),
+            (json!({"format":"bmp"}), "bmp"),
+            (json!({"format":"bmp8bit"}), "bmp"),
+            (json!({"format":"jpeg"}), "jpeg"),
+            (json!({}), "png"),
+        ] {
+            let mut prepared = arguments.clone();
+            prepare_file_arguments("screenshot", &mut prepared, Some(&folder)).unwrap();
+            assert_eq!(
+                Path::new(prepared["output"].as_str().unwrap())
+                    .extension()
+                    .unwrap(),
+                extension
+            );
+            assert_eq!(prepared.get("format"), arguments.get("format"));
+        }
+        assert!(
+            prepare_file_arguments("screenshot", &mut json!({"format":"gif"}), Some(&folder))
+                .unwrap_err()
+                .contains("unsupported screenshot format")
+        );
         assert!(
             prepare_file_arguments(
                 "screenshot",

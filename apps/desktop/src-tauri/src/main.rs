@@ -579,6 +579,7 @@ async fn run_workflow_live(
             &application_dir,
             &config,
             &confirmed_resources,
+            &on_progress,
         )?;
         let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
         let outcome = (|| {
@@ -647,6 +648,7 @@ fn begin_live_run(
     application_dir: &Path,
     config: &Config,
     confirmed_resources: &HashMap<String, String>,
+    on_progress: &Channel<WorkflowRunEventDto>,
 ) -> Result<
     (
         Arc<RwLock<StoredRun>>,
@@ -661,7 +663,13 @@ fn begin_live_run(
     }
     let specs =
         prepare_worker_launch_specs(template, ExecutionMode::Live, application_dir, config)?;
-    Ok((runs.begin(template.clone()), specs))
+    let stored = runs.begin(template.clone());
+    // Notify Desktop before authorization, Worker startup, or the first Step completes.
+    let _ = on_progress.send(WorkflowRunEventDto::ProgressBatch {
+        run: Box::new(stored.read().unwrap().metadata()),
+        completed_step_ids: Vec::new(),
+    });
+    Ok((stored, specs))
 }
 
 impl PowersWriteAuthorization {
@@ -1347,6 +1355,18 @@ mod tests {
             .iter()
             .map(|(id, resource)| (id.clone(), resource.clone()))
             .collect();
+        let messages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received = messages.clone();
+        let channel = tauri::ipc::Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+                panic!("expected JSON progress");
+            };
+            received
+                .lock()
+                .unwrap()
+                .push(serde_json::from_str::<serde_json::Value>(&json).unwrap());
+            Ok(())
+        });
         let runs = StoredRuns::default();
         let previous = runs.begin(export_template());
         previous
@@ -1359,7 +1379,15 @@ mod tests {
         previous.write().unwrap().succeed();
         let before = serde_json::to_value(previous.read().unwrap().metadata()).unwrap();
         let id = previous.read().unwrap().run_id;
-        let error = match begin_live_run(&runs, &template, &dir, &config, &confirmed) {
+        let previous_rows = serde_json::to_value(
+            previous
+                .read()
+                .unwrap()
+                .page_rows("Results", 0, 10)
+                .unwrap(),
+        )
+        .unwrap();
+        let error = match begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel) {
             Err(error) => error,
             Ok(_) => panic!("incompatible model must be rejected"),
         };
@@ -1367,7 +1395,20 @@ mod tests {
             error.contains("Live Preflight failed") && error.contains("second-off"),
             "{error}"
         );
+        assert!(messages.lock().unwrap().is_empty());
         assert!(std::sync::Arc::ptr_eq(&runs.get(id).unwrap(), &previous));
+        assert_eq!(
+            serde_json::to_value(
+                runs.get(id)
+                    .unwrap()
+                    .read()
+                    .unwrap()
+                    .page_rows("Results", 0, 10)
+                    .unwrap()
+            )
+            .unwrap(),
+            previous_rows
+        );
         assert_eq!(
             serde_json::to_value(runs.get(id).unwrap().read().unwrap().metadata()).unwrap(),
             before
@@ -1386,8 +1427,17 @@ mod tests {
         // The same confirmed resources now use the newly saved model, never the UI's old pass.
         config.set_live_resource_with_identity(&second, "USB::SECOND", identity("three-channel"));
         let (accepted, specs) =
-            begin_live_run(&runs, &template, &dir, &config, &confirmed).unwrap();
+            begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).unwrap();
         assert_eq!(accepted.read().unwrap().run_id, id + 1);
+        {
+            let messages = messages.lock().unwrap();
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0]["type"], "progress-batch");
+            assert_eq!(messages[0]["run"]["run_id"], id + 1);
+            assert_eq!(messages[0]["run"]["status"], "running");
+            assert_eq!(messages[0]["run"]["execution_count"], 0);
+            assert_eq!(messages[0]["completed_step_ids"], json!([]));
+        }
         assert_eq!(specs.len(), 2);
         assert!(
             specs[&first]
@@ -1397,25 +1447,33 @@ mod tests {
         );
         let accepted_id = accepted.read().unwrap().run_id;
         config.set_executable_path(&ToolId::powers(), dir.join("unavailable-tool.cmd"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
         ));
         config.set_executable_path(&ToolId::powers(), &executable);
         config.set_live_resource_with_identity(&second, "USB::SECOND", identity("two-channel"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
         ));
         config.set_live_resource_with_identity(&second, "USB::CHANGED", identity("three-channel"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
         ));
+        assert_eq!(messages.lock().unwrap().len(), 1);
         assert!(!std::fs::read_to_string(marker).unwrap().contains("worker"));
+        // Startup failure belongs to the accepted Run even without a completed Step.
+        accepted.write().unwrap().fail("Worker startup failed");
+        let failed = accepted.read().unwrap().metadata();
+        assert_eq!(failed.run_id, accepted_id);
+        assert_eq!(failed.status, "failed");
+        assert_eq!(failed.execution_count, 0);
+        assert_eq!(failed.error.as_deref(), Some("Worker startup failed"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
