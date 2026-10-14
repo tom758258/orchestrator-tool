@@ -568,6 +568,21 @@ Live hardware validation。前述 Unlimited While 加上 Meters Measure 的限�
 ## 8. Run Live
 
 在 Execution Mode 選擇 **Live** 後，同一個 Run control 會變成 **Run Live**。
+Desktop 會自動依每個 referenced instance 已保存的型號 Capability，檢查 Powers 與
+Scopes 的 Workflow 固定參數及 Setup。**Live Preflight: Checking** 表示檢查中，
+此時不能 Run；**Passed** 才能進入既有的 Live confirmation 流程。**Failed** 會以
+紅色顯示已發現的不相容設定，修正並重新檢查成功前不能 Run。無法取得必要 Capability
+或 Model ID 也會阻擋 Live；未使用的 instance 與未使用的選用 Capability 欄位不會阻擋。
+
+更換 Template、修改 Workflow 參數或 Setup、保存 Resource／型號，或更換 Powers／Scopes
+executable，都會使舊結果失效並重新檢查。Resource 或 identity draft 變更必須先保存。
+For／While 內的固定值也會檢查，但不執行迴圈；被 binding 覆蓋的值仍由 Worker 在執行時
+驗證。Preflight 不會修改 Template 或自動替換成支援的通道。Simulation 不受影響。
+
+後端在啟動 Worker、建立 Powers write authorization 或替換 Last Run 前，會再次檢查
+當次已保存的設定。Preflight 拒絕執行時會保留原 Last Run、結果與 Output，並顯示為
+Preflight failure，不會呈現成已執行 Workflow 的 failure。
+
 開始 Live 前，Desktop 會：
 
 - 確認 referenced Tool Instances；
@@ -581,8 +596,9 @@ Live hardware validation。前述 Unlimited While 加上 Meters Measure 的限�
 仍與確認時完全相同。Resource 改變或重複使用會使 Live execution 被拒絕，並要求
 重新確認。
 
-目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Scopes 需要已保存的
-canonical model ID，並使用原樣保存的 Resource；未知 identity 不會被替換成其他型號。
+目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Powers 與 Scopes 的
+Preflight 使用已保存的 canonical model ID。Scopes 使用原樣保存的 Resource；
+未知 identity 不會被替換成其他型號。
 Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。
 
 ### 8.1 Powers actions 與 cleanup

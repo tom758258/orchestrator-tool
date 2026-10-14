@@ -24,6 +24,7 @@ use orchestrator_tool::{
     discovery::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
     },
+    live_preflight::validate_live_preflight,
     live_resources::LiveResourceCandidate,
     run::{ExecutionMode, run_workflow_streaming_with_loop_stop_and_scopes_output},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
@@ -337,6 +338,25 @@ async fn get_scopes_capabilities(
 }
 
 #[tauri::command]
+async fn check_live_preflight(
+    app: AppHandle,
+    template_json: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let template =
+            Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        Ok(validate_live_preflight(
+            &template,
+            &application_dir,
+            &load_desktop_config(&app)?,
+        ))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn get_meters_range_options(
     app: AppHandle,
     model: Option<String>,
@@ -549,21 +569,19 @@ async fn run_workflow_live(
     let control = state.register()?;
     let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        runs.clear_current();
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-        let stored = runs.begin(template.clone());
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        let (stored, mut launch_specs) = begin_live_run(
+            &runs,
+            &template,
+            &application_dir,
+            &config,
+            &confirmed_resources,
+        )?;
         let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
         let outcome = (|| {
-            let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-            let config = load_desktop_config(&app)?;
-            validate_confirmed_live_resources(&template, &config, &confirmed_resources)?;
-            let mut launch_specs = prepare_worker_launch_specs(
-                &template,
-                ExecutionMode::Live,
-                &application_dir,
-                &config,
-            )?;
             let mut authorizations = Vec::new();
             for instance in template.referenced_tool_instances() {
                 if instance.tool == ToolId::powers() {
@@ -621,6 +639,30 @@ async fn run_workflow_live(
 }
 
 struct PowersWriteAuthorization(PathBuf);
+
+#[allow(clippy::type_complexity)]
+fn begin_live_run(
+    runs: &StoredRuns,
+    template: &Template,
+    application_dir: &Path,
+    config: &Config,
+    confirmed_resources: &HashMap<String, String>,
+) -> Result<
+    (
+        Arc<RwLock<StoredRun>>,
+        HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    ),
+    String,
+> {
+    validate_confirmed_live_resources(template, config, confirmed_resources)?;
+    let errors = validate_live_preflight(template, application_dir, config);
+    if !errors.is_empty() {
+        return Err(format!("Live Preflight failed:\n{}", errors.join("\n")));
+    }
+    let specs =
+        prepare_worker_launch_specs(template, ExecutionMode::Live, application_dir, config)?;
+    Ok((runs.begin(template.clone()), specs))
+}
 
 impl PowersWriteAuthorization {
     fn prepare(dir: &Path, spec: &mut WorkerLaunchSpec) -> Result<Self, String> {
@@ -1172,6 +1214,7 @@ fn main() {
             get_meters_capabilities,
             get_powers_capabilities,
             get_scopes_capabilities,
+            check_live_preflight,
             refresh_powers_status,
             clear_powers_protection,
             get_meters_range_options,
@@ -1251,6 +1294,129 @@ mod tests {
             .to_string(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn live_preflight_backend_rechecks_saved_models_before_replacing_last_run() {
+        use super::{Config, ResourceIdentity, ToolId, ToolInstanceId, begin_live_run};
+        let dir = unique_test_dir("live-preflight");
+        let marker = dir.join("invocations.txt");
+        let capabilities = |model: &str, channels| {
+            json!({"schema_version":2,"ok":true,"status":"ok",
+            "command":{"name":"capabilities"},"data":{"model_id":model,"model_name":model,"channels":channels,
+            "protection_features":{"ovp_voltage":true,"ocp":true,"ocp_delay":true,"ocp_delay_triggers":[]}}})
+        };
+        let two = capabilities("two-channel", json!([1, 2]));
+        let three = capabilities("three-channel", json!([1, 2, 3]));
+        let manifest = json!({"schema_version":2,"event":"tool_manifest","tool_id":"powers","tool_version":"test",
+            "worker_protocol":{"compatibility_policy":"exact","schema_versions":[2]}});
+        #[cfg(windows)]
+        let executable = {
+            let path = dir.join("powers-tool.cmd");
+            std::fs::write(&path, format!("@echo off\r\necho %*>>\"{}\"\r\nif \"%1\"==\"manifest\" goto manifest\r\nif not \"%1\"==\"capabilities\" exit /b 1\r\nif \"%3\"==\"three-channel\" goto three\r\necho {two}\r\nexit /b 0\r\n:three\r\necho {three}\r\nexit /b 0\r\n:manifest\r\necho {manifest}\r\n", marker.display())).unwrap();
+            path
+        };
+        #[cfg(unix)]
+        let executable = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("powers-tool");
+            std::fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nif [ \"$1\" = manifest ]; then printf '%s\\n' '{manifest}'; elif [ \"$1\" = capabilities ]; then if [ \"$3\" = three-channel ]; then printf '%s\\n' '{three}'; else printf '%s\\n' '{two}'; fi; else exit 1; fi\n", marker.display())).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            path
+        };
+        let template = Template::from_json_str(&json!({"schema_version":1,"name":"Live", "tool_instances":[
+            {"id":"first","tool":"powers","setup":{}}, {"id":"second","tool":"powers","setup":{}}
+        ],"workflow":{"steps":[
+            {"type":"tool-action","id":"first-off","target":"first","action":"output-off","arguments":{"channel":3}},
+            {"type":"tool-action","id":"second-off","target":"second","action":"output-off","arguments":{"channel":3}}
+        ]}}).to_string()).unwrap();
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::powers(), &executable);
+        let first = ToolInstanceId::new("first").unwrap();
+        let second = ToolInstanceId::new("second").unwrap();
+        let identity = |model: &str| {
+            Some(ResourceIdentity {
+                model_id: Some(model.into()),
+                ..Default::default()
+            })
+        };
+        config.set_live_resource_with_identity(&first, "USB::FIRST", identity("three-channel"));
+        config.set_live_resource_with_identity(&second, "USB::SECOND", identity("two-channel"));
+        let confirmed = config
+            .live_resources()
+            .iter()
+            .map(|(id, resource)| (id.clone(), resource.clone()))
+            .collect();
+        let runs = StoredRuns::default();
+        let previous = runs.begin(export_template());
+        previous
+            .write()
+            .unwrap()
+            .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                ResultRow::new(vec![WorkflowOutput::new("Voltage".into(), json!(5))], None)
+                    .with_page("Results"),
+            ));
+        previous.write().unwrap().succeed();
+        let before = serde_json::to_value(previous.read().unwrap().metadata()).unwrap();
+        let id = previous.read().unwrap().run_id;
+        let error = match begin_live_run(&runs, &template, &dir, &config, &confirmed) {
+            Err(error) => error,
+            Ok(_) => panic!("incompatible model must be rejected"),
+        };
+        assert!(
+            error.contains("Live Preflight failed") && error.contains("second-off"),
+            "{error}"
+        );
+        assert!(std::sync::Arc::ptr_eq(&runs.get(id).unwrap(), &previous));
+        assert_eq!(
+            serde_json::to_value(runs.get(id).unwrap().read().unwrap().metadata()).unwrap(),
+            before
+        );
+        assert!(
+            std::fs::read_to_string(&marker)
+                .unwrap()
+                .lines()
+                .all(|line| line.starts_with("capabilities"))
+        );
+        let queries = std::fs::read_to_string(&marker).unwrap();
+        assert!(
+            queries.contains("--model three-channel") && queries.contains("--model two-channel")
+        );
+
+        // The same confirmed resources now use the newly saved model, never the UI's old pass.
+        config.set_live_resource_with_identity(&second, "USB::SECOND", identity("three-channel"));
+        let (accepted, specs) =
+            begin_live_run(&runs, &template, &dir, &config, &confirmed).unwrap();
+        assert_eq!(accepted.read().unwrap().run_id, id + 1);
+        assert_eq!(specs.len(), 2);
+        assert!(
+            specs[&first]
+                .arguments()
+                .windows(2)
+                .any(|pair| pair == ["--resource", "USB::FIRST"])
+        );
+        let accepted_id = accepted.read().unwrap().run_id;
+        config.set_executable_path(&ToolId::powers(), dir.join("unavailable-tool.cmd"));
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(std::sync::Arc::ptr_eq(
+            &runs.get(accepted_id).unwrap(),
+            &accepted
+        ));
+        config.set_executable_path(&ToolId::powers(), &executable);
+        config.set_live_resource_with_identity(&second, "USB::SECOND", identity("two-channel"));
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(std::sync::Arc::ptr_eq(
+            &runs.get(accepted_id).unwrap(),
+            &accepted
+        ));
+        config.set_live_resource_with_identity(&second, "USB::CHANGED", identity("three-channel"));
+        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed).is_err());
+        assert!(std::sync::Arc::ptr_eq(
+            &runs.get(accepted_id).unwrap(),
+            &accepted
+        ));
+        assert!(!std::fs::read_to_string(marker).unwrap().contains("worker"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

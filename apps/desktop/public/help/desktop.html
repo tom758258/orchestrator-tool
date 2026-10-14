@@ -632,7 +632,24 @@ validation. The Unlimited While plus Meters Measure restriction described
 above still applies.</p>
 <h2 id="8-run-live">8. Run Live</h2>
 <p>Select <strong>Live</strong> in Execution Mode; the same Run control becomes <strong>Run Live</strong>.
-Before starting Live, Desktop:</p>
+Desktop automatically checks fixed Powers and Scopes Workflow parameters and
+Setup against each referenced instance's saved model capabilities. <strong>Live
+Preflight: Checking</strong> blocks Run while checking; <strong>Passed</strong> allows the existing
+Live confirmation flow. <strong>Failed</strong> shows the known incompatibilities in red and
+blocks Run until corrected and checked successfully. Required capabilities or
+model IDs that cannot be obtained also block Live. Unused instances and unused
+optional capability fields do not block it.</p>
+<p>Changing the Template, Workflow parameters, Setup, saved Resource/model, or
+Powers/Scopes executable invalidates the previous result and triggers another
+check. Save any Resource or identity draft changes first. Fixed values inside
+For/While are checked without running the loops; values overridden by bindings
+remain subject to Worker runtime validation. Preflight never changes your
+Template or substitutes a supported channel. Simulation is unaffected.</p>
+<p>The backend checks the current saved settings again before starting Workers,
+creating Powers write authorization, or replacing Last Run. A rejected
+Preflight leaves the previous Last Run, results, and Output intact and is shown
+as a Preflight failure, rather than a completed Workflow failure.</p>
+<p>Before starting Live, Desktop:</p>
 <ul>
 <li>checks the referenced Tool Instances;</li>
 <li>loads their persisted Live Resources;</li>
@@ -646,7 +663,7 @@ hardware. The run validates that the resources are still exactly the ones
 confirmed. A changed resource or duplicate resource causes Live execution to
 be rejected and require a new confirmation.</p>
 <p>The currently supported Live external tools are Powers, Meters, and Scopes.
-Scopes requires a saved canonical model ID and uses the exact saved Resource;
+Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
 unknown identities fail without a fallback. Wavegen runtime execution remains
 unsupported. Scopes Shutdown does not reset or restore instrument settings.</p>
 <h3 id="81-powers-actions-and-cleanup">8.1 Powers actions and cleanup</h3>

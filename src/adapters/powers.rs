@@ -50,6 +50,62 @@ pub struct PowersCapabilities {
     pub protection_features: PowersProtectionFeatures,
 }
 
+pub(crate) fn validate_preflight_action(
+    action: &str,
+    arguments: &Value,
+    caps: &PowersCapabilities,
+    check: &mut crate::live_preflight::CapabilityCheck<'_>,
+) {
+    if matches!(
+        action,
+        "set-output" | "set-voltage" | "output-on" | "output-off" | "protection-status"
+    ) && let Some(channel) = arguments.get("channel")
+        && !(action == "protection-status" && channel == "all")
+    {
+        check.option("channel", channel, Some(json!(caps.channels)));
+    }
+}
+
+pub(crate) fn validate_preflight_setup(
+    setup: &crate::powers_setup::PowersSetup,
+    caps: &PowersCapabilities,
+    check: &mut crate::live_preflight::CapabilityCheck<'_>,
+) {
+    if let Some(protection) = &setup.protection {
+        for record in &protection.channels {
+            check.option(
+                "channel",
+                &json!(record.channel),
+                Some(json!(caps.channels)),
+            );
+            let fields =
+                serde_json::to_value(record).expect("finite validated protection settings");
+            for (field, supported) in [
+                ("ovp_voltage", caps.protection_features.ovp_voltage),
+                ("ocp", caps.protection_features.ocp),
+                ("ocp_delay", caps.protection_features.ocp_delay),
+            ] {
+                if let Some(value) = fields.get(field)
+                    && !supported
+                {
+                    check.option(
+                        &format!("CH{} {field}", record.channel),
+                        value,
+                        Some(json!([])),
+                    );
+                }
+            }
+            if let Some(value) = fields.get("ocp_delay_trigger") {
+                check.option(
+                    &format!("CH{} ocp_delay_trigger", record.channel),
+                    value,
+                    Some(json!(caps.protection_features.ocp_delay_triggers)),
+                );
+            }
+        }
+    }
+}
+
 pub fn get_capabilities(
     application_dir: &Path,
     config: &Config,

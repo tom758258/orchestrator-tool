@@ -142,6 +142,22 @@ fn validate_unique_live_resources(
     Ok(())
 }
 
+pub(crate) fn validate_live_resources(template: &Template, config: &Config) -> Result<(), String> {
+    let instances = template.referenced_tool_instances();
+    for instance in &instances {
+        if config
+            .live_resource(&instance.id)
+            .is_none_or(|resource| resource.trim().is_empty())
+        {
+            return Err(format!(
+                "{} ({}) live resource is not configured",
+                instance.id, instance.tool
+            ));
+        }
+    }
+    validate_unique_live_resources(&instances, config)
+}
+
 pub fn prepare_worker_launch_specs(
     template: &Template,
     execution_mode: ExecutionMode,
@@ -160,18 +176,7 @@ pub fn prepare_worker_launch_specs(
         }
     }
     if execution_mode == ExecutionMode::Live {
-        for instance in &instances {
-            if config
-                .live_resource(&instance.id)
-                .is_none_or(|resource| resource.trim().is_empty())
-            {
-                return Err(format!(
-                    "{} ({}) live resource is not configured",
-                    instance.id, instance.tool
-                ));
-            }
-        }
-        validate_unique_live_resources(&instances, config)?;
+        validate_live_resources(template, config)?;
         for instance in &instances {
             if instance.tool == ToolId::scopes()
                 && config

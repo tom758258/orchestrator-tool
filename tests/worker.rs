@@ -123,6 +123,19 @@ fn main() {
         return;
     }
 
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--live-preflight-tests")
+    {
+        powers_set_output_binding_reaches_worker();
+        scopes_worker_protocol_cases();
+        live_workflow_cleanup_lifecycle();
+        powers_protection_setup_lifecycle();
+        live_preflight_dynamic_worker_failure_retains_powers_cleanup();
+        println!("Live Preflight directly affected runtime regression checks passed (5 groups)");
+        return;
+    }
+
     valid_ready_starts_worker_session();
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
@@ -167,6 +180,7 @@ fn main() {
     powers_protection_setup_lifecycle();
     multiple_powers_cleanup_attempts_every_session();
     two_meters_use_distinct_sessions();
+    live_preflight_dynamic_worker_failure_retains_powers_cleanup();
 }
 
 fn run_powers_worker_fixture() {
@@ -1341,12 +1355,17 @@ fn run_scopes_fixture(scenario: &str) {
         match request.path.as_str() {
             "/status" => write_response(request.stream, 200, &json!({"schema_version":2,
                 "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
-                "mode":"simulate","model":if scenario == "scopes-wrong-model" {"unknown"} else {"keysight-dsox4024a"},
-                "resource":null}).to_string()),
+                "mode":if scenario == "scopes-dynamic-failed" {"live"} else {"simulate"},
+                "model":if scenario == "scopes-wrong-model" {"unknown"} else {"keysight-dsox4024a"},
+                "resource":if scenario == "scopes-dynamic-failed" {json!("USB::SCOPE")} else {json!(null)}}).to_string()),
             "/command" => {
                 let command: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
                 assert_eq!(command["schema_version"], 2);
                 assert!(command.get("context").is_none());
+                if scenario == "scopes-dynamic-failed" {
+                    assert_eq!(command["command"], "measure");
+                    assert_eq!(command["arguments"]["channel"], 99);
+                }
                 if scenario == "scopes-setup-failed" {
                     assert_eq!(command["command"], "channel-invert");
                     assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
@@ -1360,7 +1379,7 @@ fn run_scopes_fixture(scenario: &str) {
                     "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":"job-1"}).to_string());
                 if scenario == "scopes-timeout" { continue; }
                 thread::sleep(Duration::from_millis(50));
-                let failed = scenario == "scopes-failed" || scenario == "scopes-setup-failed";
+                let failed = matches!(scenario, "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed");
                 let cancelled = scenario == "scopes-cancelled";
                 print_json_line(&json!({"schema_version":2,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
                     "command":command["command"],"job_id":command["job_id"],
@@ -1454,6 +1473,65 @@ fn scopes_setup_failure_stops_workflow() {
     .to_string();
     assert!(error.contains("scope Scopes Setup failed"), "{error}");
     assert!(error.contains("channel 2"), "{error}");
+}
+
+fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
+    let template = Template::from_json_str(&json!({"schema_version":1,"name":"Dynamic Worker failure",
+        "tool_instances":[{"id":"power","tool":"powers","setup":{}},{"id":"scope","tool":"scopes","setup":{}}],
+        "workflow":{"steps":[
+            {"type":"set-variable","id":"channel","variable":"channel","value":{"source":"literal","value":99}},
+            {"type":"tool-action","id":"set","target":"power","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+            {"type":"tool-action","id":"on","target":"power","action":"output-on","arguments":{"channel":1}},
+            {"type":"tool-action","id":"measure","target":"scope","action":"measure","arguments":{"channel":1,"item":"vpp"},"bindings":{"channel":{"source":"variable","variable":"channel"}}},
+            {"type":"tool-action","id":"later","target":"power","action":"output-off","arguments":{"channel":1}}
+        ]}}).to_string()).unwrap();
+    let marker = env::temp_dir().join(format!("orchestrator-preflight-dynamic-{}", process::id()));
+    let _ = fs::remove_file(&marker);
+    // SAFETY: fixture groups run sequentially and sessions finish before removal.
+    unsafe { env::set_var(CLEANUP_MARKER_ENV, &marker) };
+    let outcome = run_workflow(
+        &template,
+        ExecutionMode::Live,
+        &HashMap::from([
+            (
+                ToolInstanceId::new("power").unwrap(),
+                fixture_spec("live-assert-failure"),
+            ),
+            (
+                ToolInstanceId::new("scope").unwrap(),
+                WorkerLaunchSpec::new(
+                    env::current_exe().unwrap(),
+                    [
+                        FIXTURE_ARGUMENT,
+                        "scopes-dynamic-failed",
+                        "--model",
+                        "keysight-dsox4024a",
+                        "--resource",
+                        "USB::SCOPE",
+                    ],
+                ),
+            ),
+        ]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
+    assert!(
+        matches!(outcome.step_executions()[3].outcome(), StepOutcome::Failed { message } if message.contains("fixture failure"))
+    );
+    assert!(
+        !outcome
+            .step_executions()
+            .iter()
+            .any(|step| step.step_id().as_str() == "later")
+    );
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        "set\noutput-on\nsafe-off\nstop\n"
+    );
+    fs::remove_file(marker).unwrap();
 }
 
 fn valid_ready_starts_worker_session() {

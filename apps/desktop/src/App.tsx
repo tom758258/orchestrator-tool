@@ -1,4 +1,5 @@
 import ScopesActionEditor from './ScopesActionEditor'
+import { useLivePreflight } from './useLivePreflight'
 import { SCOPES_ACTIONS, scopesActionArguments, type ScopesAction } from './scopesActions'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
@@ -566,9 +567,13 @@ function App() {
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
+  const livePreflight = useLivePreflight(executionMode, workflowDraft, savedResources, resourceDrafts,
+    resourceIdentities, resourceIdentityDrafts, powersExecutableKey, scopesExecutableKey,
+    loading || draftLoading || templateIoStatus === 'loading' || toolConfigBusy !== null)
   const runInFlightRef = useRef(false)
   const runGenerationRef = useRef(0)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
+  const [liveStartError, setLiveStartError] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
   const [workflowChangedSinceRun, setWorkflowChangedSinceRun] = useState(false)
@@ -1244,10 +1249,12 @@ function App() {
       return
     }
     setLiveConfirmationPending(true)
+    setLiveStartError(null)
     let started = false
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
+      if (livePreflight.blocked) return
       // Validate before any Last Run state is replaced, so an invalid threshold cannot
       // discard the previous run.
       const chartSampling = chartSamplingOptions.enabled
@@ -1290,28 +1297,35 @@ function App() {
       const streamOptions = streamingOptions(
         streamCsv && hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages,
       )
-      runIdRef.current = null
       generation = ++runGenerationRef.current
-      onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
+      const acceptRun = () => {
+        if (started) return
+        runIdRef.current = null
+        const snapshotPages = outputPages(workflowDraft.workflow.steps)
+        setRunWorkflowSnapshot(workflowDraft)
+        setLastRunExecutionMode('live')
+        setRunChartSampling(chartSampling)
+        setRunChartFitData(fitData)
+        setWorkflowChangedSinceRun(false)
+        setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
+        started = true
+        setLiveConfirmationPending(false)
+        setStopRequest(null)
+        setCsvStreamStatus(null)
+        setExecutionOffset(0)
+        setRunStatus('running')
+        setRunMetadata(null)
+        setExecutionPage(null)
+        setMessagePage(null)
+        setRunError(null)
+        setClearLastRunError(null)
+      }
+      onProgress = new Channel<DesktopRunEvent>(event => {
+        if (!isCurrentRunGeneration(generation, runGenerationRef.current)) return
+        acceptRun()
+        receiveRunProgress(event, generation!)
+      })
       progressChannelRef.current = onProgress
-      const snapshotPages = outputPages(workflowDraft.workflow.steps)
-      setRunWorkflowSnapshot(workflowDraft)
-      setLastRunExecutionMode('live')
-      setRunChartSampling(chartSampling)
-      setRunChartFitData(fitData)
-      setWorkflowChangedSinceRun(false)
-      setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
-      started = true
-      setLiveConfirmationPending(false)
-      setStopRequest(null)
-      setCsvStreamStatus(null)
-      setExecutionOffset(0)
-      setRunStatus('running')
-      setRunMetadata(null)
-      setExecutionPage(null)
-      setMessagePage(null)
-      setRunError(null)
-      setClearLastRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_live', {
         templateJson: JSON.stringify(workflowDraft),
         onProgress,
@@ -1320,11 +1334,16 @@ function App() {
         confirmedResources,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
+        acceptRun()
         runIdRef.current = results.run_id
         setRunMetadata(results)
       }
     } catch (message) {
-      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) setRunError(String(message))
+      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) {
+        if (started) setRunError(String(message))
+        else if (String(message).startsWith('Live Preflight failed:')) livePreflight.reject(String(message))
+        else setLiveStartError(String(message))
+      }
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
@@ -1337,7 +1356,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [scopesOutputFolder, resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [livePreflight, scopesOutputFolder, resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -2101,7 +2120,7 @@ function App() {
                     className="action-button action-button-primary"
                     type="button"
                     onClick={() => void runSelectedMode()}
-                    disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid}
+                    disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid || livePreflight.blocked}
                   >
                     Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
                   </button>
@@ -2109,6 +2128,15 @@ function App() {
                 </div>
               </div>
               {stopFeedback}
+              {executionMode === 'live' && livePreflight.status === 'checking' && <p role="status">Live Preflight: Checking…</p>}
+              {executionMode === 'live' && livePreflight.status === 'passed' && <p className="validation-success" role="status">Live Preflight: Passed</p>}
+              {executionMode === 'live' && livePreflight.status === 'failed' && <div className="error" role="alert">
+                <p>Live Preflight failed — Live run has not started.</p>
+                {livePreflight.errors.map((error, index) => <p key={index}>{error}</p>)}
+              </div>}
+              {executionMode === 'live' && liveStartError && <div className="error" role="alert">
+                <p>Live run did not start</p><FailureDetails message={liveStartError} />
+              </div>}
               {runStatus === 'running' && <p role="status">{runningText}</p>}
 
               {validationStatus === 'valid' && (

@@ -663,6 +663,26 @@ above still applies.
 ## 8. Run Live
 
 Select **Live** in Execution Mode; the same Run control becomes **Run Live**.
+Desktop automatically checks fixed Powers and Scopes Workflow parameters and
+Setup against each referenced instance's saved model capabilities. **Live
+Preflight: Checking** blocks Run while checking; **Passed** allows the existing
+Live confirmation flow. **Failed** shows the known incompatibilities in red and
+blocks Run until corrected and checked successfully. Required capabilities or
+model IDs that cannot be obtained also block Live. Unused instances and unused
+optional capability fields do not block it.
+
+Changing the Template, Workflow parameters, Setup, saved Resource/model, or
+Powers/Scopes executable invalidates the previous result and triggers another
+check. Save any Resource or identity draft changes first. Fixed values inside
+For/While are checked without running the loops; values overridden by bindings
+remain subject to Worker runtime validation. Preflight never changes your
+Template or substitutes a supported channel. Simulation is unaffected.
+
+The backend checks the current saved settings again before starting Workers,
+creating Powers write authorization, or replacing Last Run. A rejected
+Preflight leaves the previous Last Run, results, and Output intact and is shown
+as a Preflight failure, rather than a completed Workflow failure.
+
 Before starting Live, Desktop:
 
 - checks the referenced Tool Instances;
@@ -678,7 +698,7 @@ confirmed. A changed resource or duplicate resource causes Live execution to
 be rejected and require a new confirmation.
 
 The currently supported Live external tools are Powers, Meters, and Scopes.
-Scopes requires a saved canonical model ID and uses the exact saved Resource;
+Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
 unknown identities fail without a fallback. Wavegen runtime execution remains
 unsupported. Scopes Shutdown does not reset or restore instrument settings.
 

@@ -35,6 +35,75 @@ pub struct ScopesCapabilities {
     pub capture_point_options: Vec<u32>,
 }
 
+pub(crate) fn validate_preflight_action(
+    action: &str,
+    arguments: &Value,
+    caps: &ScopesCapabilities,
+    check: &mut crate::live_preflight::CapabilityCheck<'_>,
+) {
+    let channels = json!((1..=caps.analog_channels).collect::<Vec<_>>());
+    let channel_field = match action {
+        "channel-display" | "channel-scale" | "channel-offset" | "measure" | "capture" => {
+            Some("channel")
+        }
+        "trigger-edge" => Some("source_channel"),
+        _ => None,
+    };
+    if let Some(field) = channel_field
+        && let Some(value) = arguments.get(field)
+    {
+        if let Some(values) = value.as_array() {
+            for value in values {
+                check.option(field, value, Some(channels.clone()));
+            }
+        } else {
+            check.option(field, value, Some(channels));
+        }
+    }
+    let option = match action {
+        "measure" => Some(("item", json!(caps.direct_measurement_items))),
+        "trigger-edge" => Some(("slope", json!(caps.trigger_edge_slopes))),
+        "capture" => Some(("points", json!(caps.capture_point_options))),
+        "screenshot" => Some(("format", json!(caps.screenshot_formats))),
+        _ => None,
+    };
+    if let Some((field, supported)) = option
+        && let Some(value) = arguments.get(field)
+    {
+        check.option(field, value, Some(supported));
+    }
+}
+
+pub(crate) fn validate_preflight_setup(
+    setup: &ScopesSetup,
+    caps: &ScopesCapabilities,
+    check: &mut crate::live_preflight::CapabilityCheck<'_>,
+) {
+    for channel in &setup.channels {
+        check.option(
+            "channel",
+            &json!(channel.channel),
+            Some(json!((1..=caps.analog_channels).collect::<Vec<_>>())),
+        );
+    }
+    if let Some(acquisition) = &setup.acquisition {
+        if let Some(mode) = acquisition.acquisition_type {
+            check.option(
+                "acquisition_type",
+                &json!(mode),
+                caps.acquisition_modes.as_ref().map(|values| json!(values)),
+            );
+        }
+        if let Some(count) = acquisition.average_count {
+            check.option(
+                "average_count",
+                &json!(count),
+                caps.average_counts.as_ref().map(|values| json!(values)),
+            );
+        }
+    }
+}
+
 pub fn get_capabilities_for_mode(
     application_dir: &Path,
     config: &Config,
