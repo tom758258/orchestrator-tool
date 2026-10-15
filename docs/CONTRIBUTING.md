@@ -21,6 +21,7 @@ From the repository root, the normal package commands are:
 For Desktop frontend work, run from apps/desktop:
 
     npm.cmd ci
+    npm.cmd test
     npm.cmd run typecheck
     npm.cmd run build
 
@@ -78,6 +79,13 @@ For workflow or Template changes, cover the durable contract that changed:
 schema parsing and rejection, stable IDs, lexical scope, loop boundaries,
 Output Pages, ResultRow commit behavior, progress events, or export data
 conversion. Do not add tests that only lock README wording or heading order.
+
+The Desktop `npm test` command runs Node tests for pure modules and existing
+fixtures, followed by Vitest and React Testing Library component tests in
+jsdom. Prefer rendered controls and observable behavior for new component
+coverage, mocking native I/O at the Tauri boundary. Assert serialized IPC
+contracts in Rust tests. Migrate legacy source-slicing and fake-Hook tests
+in focused changes instead of expanding those harnesses.
 
 For Desktop changes, run the relevant frontend checks and, when native
 behavior is involved, the Tauri checks or a full Desktop run. For external

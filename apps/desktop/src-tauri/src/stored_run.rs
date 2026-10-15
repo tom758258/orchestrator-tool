@@ -1436,6 +1436,14 @@ mod tests {
         let compact = compact_execution(&large, false);
         assert!(compact.output_omitted);
         assert!(compact.output.is_none());
+        assert_eq!(
+            serde_json::to_value(&compact).unwrap(),
+            serde_json::json!({
+                "step_id": "large", "status": "succeeded",
+                "output": null, "output_omitted": true, "message": null,
+                "for_iteration": null, "while_iteration": null,
+            })
+        );
 
         let meter = StepExecution::new(
             StepResult::new(

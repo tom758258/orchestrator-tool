@@ -61,7 +61,7 @@ jobs:
 
       - name: Test frontend
         working-directory: apps/desktop
-        run: node --test tests/*.test.mjs
+        run: npm test
 
       - name: Typecheck frontend
         working-directory: apps/desktop

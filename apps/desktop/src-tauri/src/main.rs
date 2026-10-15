@@ -1857,8 +1857,14 @@ mod regression_tests {
                 .as_array()
                 .is_some_and(|list| list.iter().all(|item| item.get("text").is_none()))
         }));
-        assert!(wire.get("result_rows").is_none());
-        assert!(wire.get("step_executions").is_none());
+        assert_eq!(wire.as_object().unwrap().len(), 3);
+        let run = &wire["run"];
+        for field in ["result_rows", "step_executions", "rows", "executions"] {
+            assert!(run.get(field).is_none(), "unbounded payload field: {field}");
+        }
+        assert!(run["pages"][0].get("rows").is_none());
+        assert_eq!(run["pages"][0]["summaries"][0]["count"], 1);
+        assert_eq!(run["latest_execution"]["step_id"], "out");
     }
 
     #[test]

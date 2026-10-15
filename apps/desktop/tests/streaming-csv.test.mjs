@@ -4,8 +4,6 @@ import { test } from 'node:test'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const streamingFn = source.slice(source.indexOf('function streamingOptions'), source.indexOf('function App()'))
-const simulation = source.slice(source.indexOf('const runSimulation'), source.indexOf('const workflowBusy'))
-const live = source.slice(source.indexOf('const runLive'), source.indexOf('const runSimulation'))
 const panel = source.slice(source.indexOf('streaming-panel'), source.indexOf('csvStreamFeedback}\n                    </>}'))
 
 test('streamingOptions no longer requires a destination CSV or custom output folder', () => {
@@ -48,14 +46,4 @@ test('Selected Page and All Pages share one folder selection', () => {
 
 test('Use Default and folder controls stay locked while a run is active', () => {
   assert.match(panel, /disabled=\{workflowBusy\}/)
-})
-
-test('Simulation still builds streaming options before replacing Last Run state', () => {
-  assert.ok(simulation.indexOf('streamingOptions(') < simulation.indexOf('runIdRef.current = null'))
-  assert.ok(simulation.indexOf('streamingOptions(') < simulation.indexOf('setRunWorkflowSnapshot(workflowDraft)'))
-})
-
-test('Live still builds streaming options before replacing Last Run state', () => {
-  assert.ok(live.indexOf('streamingOptions(') < live.indexOf('runIdRef.current = null'))
-  assert.ok(live.indexOf('streamingOptions(') < live.indexOf('setRunWorkflowSnapshot(workflowDraft)'))
 })

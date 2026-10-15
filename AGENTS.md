@@ -49,6 +49,7 @@ These instructions define long-term, repository-specific boundaries for agents w
   - `cargo build --locked`
 - Desktop frontend baseline checks (from `apps/desktop`):
   - `npm ci`
+  - `npm test`
   - `npm run typecheck`
   - `npm run build`
 - Desktop Tauri baseline checks (from the repository root):

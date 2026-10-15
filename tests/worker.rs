@@ -172,6 +172,8 @@ fn main() {
     meters_custom_auto_exit_completes_workflow();
     meters_custom_shutdown_waits_for_exit_after_stop_failure();
     meters_custom_outputs_expand_rows_and_preserve_staging();
+    scopes_worker_protocol_cases();
+    scopes_setup_failure_stops_workflow();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
     three_meter_measurements_shutdown_normally();

@@ -629,6 +629,8 @@ const completedRun = {
   step_summaries: [{ step_id: 'power-off-1', status: 'succeeded', output: null, message: null }],
 }
 
+const runSummary = app => app.render().find(node => node.type === 'WorkflowRunSummary').props
+
 async function validatedRunView(draft = structuredClone(template), local = {}) {
   const app = await toolsView(['powers', 'meters', 'scopes', 'wavegen'].map(tool => status(tool)), draft, undefined,
     { ...local, runMetadata: completedRun })
@@ -636,10 +638,10 @@ async function validatedRunView(draft = structuredClone(template), local = {}) {
   button(app.render(), 'Open Template').props.onClick()
   await settle()
   button(app.render(), 'Workflow').props.onClick()
-  button(app.render(), 'Run Simulation').props.onClick()
+  runSummary(app).runSelectedMode()
   await settle()
   assert.deepEqual(app.render().find(node => node.type === 'SequenceEditor').props.runResults, completedRun.step_summaries)
-  assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+  assert.equal(runSummary(app).validationStatus, 'valid')
   assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'))
   return app
 }
@@ -659,7 +661,7 @@ test('display_name: no-op and renaming preserve completed Sequence results, vali
     assert.equal(sequence().runResults, results, 'unchanged execution keeps previous results visible')
     assert.deepEqual(setup().steps, steps)
     assert.ok(renderSequence(sequence()).some(node => node.props.className === 'sequence-step-result' && text(node).includes('succeeded')))
-    assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+    assert.equal(runSummary(app).validationStatus, 'valid')
     assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'))
     assert.deepEqual(app.calls.slice(callOffset), [], 'display-name operations perform no native I/O')
   }
@@ -706,22 +708,22 @@ test('display_name: renaming preserves prior Workflow edits and existing validat
   await settle()
   setup().onChange(setup().value.map(instance => ({ ...instance, display_name: 'Named after step edit' })))
   assert.equal(sequence().runResults, null, 'renaming must preserve the prior changed flag')
-  assert.ok(app.render().some(node => node.props.className === 'validation-success'))
+  assert.equal(runSummary(app).validationStatus, 'valid')
   assert.ok(app.render().some(node => node.props.role === 'status' && text(node) === 'Template saved.'))
   // Use the existing validation handler to create a real local error.
   const invalid = await toolsView([status('powers')], structuredClone(template), undefined, local)
   button(invalid.render(), 'Workflow').props.onClick()
   local.validationError = 'Existing setup validation error'
-  button(invalid.render(), 'Validate').props.onClick()
+  runSummary(invalid).validateDraft()
   await settle()
-  const error = () => invalid.render().find(node => node.props.role === 'alert' && text(node).includes('Validation failed:'))
-  assert.ok(text(error()).includes(local.validationError))
+  const error = () => runSummary(invalid).validationError
+  assert.ok(error().includes(local.validationError))
   const invalidSetup = () => invalid.render().find(node => node.type === 'ToolSetupEditor').props
   invalidSetup().onChange(invalidSetup().value.map(instance => ({ ...instance, display_name: 'Rename with error' })))
-  assert.ok(text(error()).includes(local.validationError), 'display metadata must not clear unrelated validation errors')
+  assert.ok(error().includes(local.validationError), 'display metadata must not clear unrelated validation errors')
   invalidSetup().onChange(invalidSetup().value.map(instance => instance.tool === 'powers'
     ? { ...instance, setup: { protection: { channels: [{ channel: 1, ovp_voltage: 12 }] } } } : instance))
-  assert.equal(error(), undefined, 'genuine setup edits retain the original error reset behavior')
+  assert.equal(error(), null, 'genuine setup edits retain the original error reset behavior')
 })
 
 test('display_name: Setup, ID, type and instance-list changes retain execution invalidation', async () => {
@@ -748,7 +750,7 @@ test('display_name: Setup, ID, type and instance-list changes retain execution i
     assert.deepEqual(setup().value, next, label)
     assert.deepEqual(setup().steps, steps, label)
     assert.equal(app.render().find(node => node.type === 'SequenceEditor').props.runResults, null, label)
-    assert.ok(!app.render().some(node => node.props.className === 'validation-success'), label)
+    assert.equal(runSummary(app).validationStatus, 'idle', label)
     assert.ok(!app.render().some(node => node.props.role === 'status' && text(node) === 'Template loaded.'), label)
   }
 })

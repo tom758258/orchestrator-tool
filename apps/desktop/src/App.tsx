@@ -14,10 +14,12 @@ import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
-import { chartPanelToSavedChart, chartRequiredOutputs, reconcileRunChartPanels, savedChartsToPanels, type ChartPanel, type SavedOutputViews } from './chartPanels'
+import { chartRequiredOutputs, reconcileRunChartPanels, savedChartsToPanels, type ChartPanel } from './chartPanels'
 import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
-import { failurePresentation } from './failurePresentation'
+import FailureDetails from './FailureDetails'
+import WorkflowRunSummary from './WorkflowRunSummary'
+import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import type { ToolInstance } from './ToolSetupEditor'
@@ -117,40 +119,6 @@ function formatLiveResourceConfirmation(
   }
   lines.push(resource)
   return lines.join('\n')
-}
-
-function FailureDetails({ message, step }: { message: string; step?: WorkflowStep }) {
-  const presentation = failurePresentation(message, step)
-  return (
-    <div className="failure-explanation">
-      <p className="failure-summary">{presentation.summary}</p>
-      <p className="failure-guidance">{presentation.guidance}</p>
-      <p className="failure-technical-label">Technical details</p>
-      <p className="run-result-message">{message}</p>
-    </div>
-  )
-}
-
-type WorkflowDraft = {
-  schema_version: number
-  name: string
-  tool_instances: ToolInstance[]
-  workflow: {
-    steps: WorkflowStep[]
-  }
-  output_views?: SavedOutputViews
-}
-
-function workflowOnlyDraft(draft: WorkflowDraft): WorkflowDraft {
-  const workflowOnly = { ...draft }
-  delete workflowOnly.output_views
-  return workflowOnly
-}
-
-function templateDraftJson(draft: WorkflowDraft, panels: readonly ChartPanel[], includeCharts: boolean): string {
-  return JSON.stringify(includeCharts
-    ? { ...draft, output_views: { charts: panels.map(chartPanelToSavedChart) } }
-    : workflowOnlyDraft(draft))
 }
 
 type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
@@ -2096,73 +2064,15 @@ function App() {
 
           {workflowDraft && (
             <div className="workflow-summary">
-              <div className="workflow-summary-header">
-                <dl className="workflow-details">
-                  <div className="detail-row">
-                    <dt className="detail-label">Template</dt>
-                    <dd className="detail-value">{workflowDraft.name}</dd>
-                  </div>
-                  <div className="detail-row">
-                    <dt className="detail-label">Steps</dt>
-                    <dd className="detail-value">{allWorkflowSteps(workflowDraft.workflow.steps).length}</dd>
-                  </div>
-                </dl>
-                <div className="workflow-actions">
-                  <button
-                    className="action-button"
-                    type="button"
-                    onClick={() => void validateDraft()}
-                    disabled={workflowBusy}
-                  >
-                    {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
-                  </button>
-                  <button
-                    className="action-button action-button-primary"
-                    type="button"
-                    onClick={() => void runSelectedMode()}
-                    disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid || livePreflight.blocked}
-                  >
-                    Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
-                  </button>
-                  {stopControls}
-                </div>
-              </div>
-              {stopFeedback}
-              {executionMode === 'live' && livePreflight.status === 'checking' && <p role="status">Live Preflight: Checking…</p>}
-              {executionMode === 'live' && livePreflight.status === 'passed' && <p className="validation-success" role="status">Live Preflight: Passed</p>}
-              {executionMode === 'live' && livePreflight.status === 'failed' && <div className="error" role="alert">
-                <p>Live Preflight failed — Live run has not started.</p>
-                {livePreflight.errors.map((error, index) => <p key={index}>{error}</p>)}
-              </div>}
-              {executionMode === 'live' && liveStartError && <div className="error" role="alert">
-                <p>Live run did not start</p><FailureDetails message={liveStartError} />
-              </div>}
-              {runStatus === 'running' && <p role="status">{runningText}</p>}
-
-              {validationStatus === 'valid' && (
-                <p className="validation-success" role="status">
-                  Valid
-                </p>
-              )}
-
-              {validationError && (
-                <p className="error" role="alert">
-                  Validation failed: {validationError}
-                </p>
-              )}
-
-              {runError && (
-                <div className="error" role="alert">
-                  <p className="failure-run-title">Run failed</p>
-                  <FailureDetails message={runError} />
-                </div>
-              )}
-              {displayedRun?.status === 'failed' && displayedRun.error && displayedRun.error !== runError && (
-                <div className="error" role="alert">
-                  <p className="failure-run-title">Run failed</p>
-                  <FailureDetails message={displayedRun.error} />
-                </div>
-              )}
+              <WorkflowRunSummary
+                workflowDraft={workflowDraft} workflowBusy={workflowBusy}
+                toolConfigBusy={toolConfigBusy} loading={loading} chartThresholdInvalid={chartThresholdInvalid}
+                executionMode={executionMode} validationStatus={validationStatus} validationError={validationError}
+                runStatus={runStatus} runningText={runningText} runError={runError}
+                displayedRun={displayedRun} livePreflight={livePreflight} liveStartError={liveStartError}
+                validateDraft={validateDraft} runSelectedMode={runSelectedMode}
+                stopControls={stopControls} stopFeedback={stopFeedback}
+              />
 
               <div className="workflow-builder">
                 <aside className="workflow-sidebar">

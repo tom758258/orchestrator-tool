@@ -99,8 +99,9 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
 
 ### Validation
 
-來自 `apps/desktop` 的 frontend static checks：
+來自 `apps/desktop` 的 frontend checks：
 
+    npm.cmd test
     npm.cmd run typecheck
     npm.cmd run build
 

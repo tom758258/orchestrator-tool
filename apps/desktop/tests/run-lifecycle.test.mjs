@@ -9,11 +9,6 @@ test('a started run keeps the Chart workspace render path before its first metad
   assert.deepEqual(lastRunWorkspaceState(true, false, true), { starting: false, visible: true })
   assert.deepEqual(lastRunWorkspaceState(true, true, false), { starting: true, visible: true })
   assert.deepEqual(lastRunWorkspaceState(true, true, true), { starting: false, visible: true })
-  const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(source, /lastRunWorkspaceState\(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata\)/)
-  assert.match(source, /\{!runWorkspace.visible \? \([\s\S]*?No run results yet\./)
-  assert.match(source, /\(runWorkspace.starting \|\| runPageMetadata\) && <ResultChart/)
-  assert.match(source, /runId=\{displayedRun\?\.run_id \?\? null\}/)
 })
 
 test('Live and Simulation share one immediate run gate before React state can render', () => {
@@ -28,17 +23,6 @@ test('stale generations cannot publish progress or completion state', () => {
   assert.equal(isCurrentRunGeneration(4, 4), true)
   assert.equal(isCurrentRunGeneration(3, 4), false)
   assert.equal(isCurrentRunGeneration(null, 4), false)
-})
-
-test('both run entry points use the shared gate and preserve Chart configuration', () => {
-  const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const live = source.slice(source.indexOf('const runLive'), source.indexOf('const runSimulation'))
-  const simulation = source.slice(source.indexOf('const runSimulation'), source.indexOf('const workflowBusy'))
-  for (const run of [live, simulation]) {
-    assert.match(run, /claimRunGate\(runInFlightRef\)/)
-    assert.match(run, /releaseRunGate\(runInFlightRef\)/)
-    assert.doesNotMatch(run, /setChartPanels\(/)
-  }
 })
 
 test('workflow replacement resolves only after the old StoredRun clears', async () => {

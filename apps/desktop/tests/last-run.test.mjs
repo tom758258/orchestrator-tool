@@ -4,8 +4,6 @@ import { test } from 'node:test'
 import { failurePresentation } from '../src/failurePresentation.ts'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-const workflowTypes = readFileSync(new URL('../src/workflow.ts', import.meta.url), 'utf8')
-const storedRun = readFileSync(new URL('../src-tauri/src/stored_run.rs', import.meta.url), 'utf8')
 
 test('manual export sends only the run selector and export options to Rust', () => {
   const handler = source.slice(source.indexOf('const handleExport'), source.indexOf('const selectedStep'))
@@ -25,12 +23,6 @@ test('Clear Last Run clears Rust ownership before dropping frontend state', () =
   assert.match(handler, /setChartPanels\(\[\]\)/)
   assert.match(handler, /runIdRef\.current = null/)
   assert.match(handler, /Could not clear Last Run/)
-})
-
-test('frontend Last Run state is metadata and one execution window only', () => {
-  assert.match(source, /useState<RunMetadataDto \| null>/)
-  assert.match(source, /useState<ExecutionRowsResponse \| null>/)
-  assert.doesNotMatch(source, /useState<WorkflowRunResultDto|setRunResult|setRunProgress/)
 })
 
 test('Output shows Last Run Page tabs while Page editing stays in Workflow Properties', () => {
@@ -84,29 +76,6 @@ test('Assert failure presentation distinguishes a failed check from evaluation e
   )
 })
 
-test('failed diagnostics use the presentation helper only for failed results and preserve technical details', () => {
-  assert.match(source, /import \{ failurePresentation \} from '\.\/failurePresentation'/)
-  assert.match(source, /const presentation = failurePresentation\(message, step\)/)
-  assert.match(source, /Technical details/)
-  assert.match(source, /result\.status === 'failed' && result\.message/)
-  assert.match(source, /<FailureDetails message=\{result\.message\} step=\{resultStep\} \/>/)
-})
-
-test('run failures use the same explanation without replacing raw diagnostics', () => {
-  assert.match(source, /runError && \([\s\S]*?<FailureDetails message=\{runError\} \/>/)
-  assert.match(source, /displayedRun\?\.status === 'failed' && displayedRun\.error[\s\S]*?<FailureDetails message=\{displayedRun\.error\} \/>/)
-})
-
-test('Output Last Run shows the shared failure presentation instead of the raw error only', () => {
-  const output = source.slice(source.indexOf('<section id="output-panel"'))
-  const start = output.indexOf("{displayedRun?.status === 'failed' && displayedRun.error && (")
-  assert.ok(start >= 0, 'Output must keep the failed run-level error condition')
-  const failure = output.slice(start, output.indexOf('</div>', start))
-  assert.match(failure, /<p className="failure-run-title">Run failed<\/p>/)
-  assert.match(failure, /<FailureDetails message=\{displayedRun\.error\} \/>/)
-  assert.doesNotMatch(output, /<p className="error" role="alert">\{displayedRun\.error\}<\/p>/)
-})
-
 test('non-run actions keep errors local instead of labeling them as Run failed', () => {
   const clearHandler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
   assert.match(clearHandler, /setClearLastRunError\(null\)/)
@@ -124,24 +93,10 @@ test('non-run actions keep errors local instead of labeling them as Run failed',
   assert.match(outputPanel, /clearLastRunError &&/)
 })
 
-test('friendly failure text does not add per-execution DTO fields', () => {
-  const stepExecution = workflowTypes.slice(
-    workflowTypes.indexOf('export type StepExecutionDto'),
-    workflowTypes.indexOf('export type ResultRowDto'),
-  )
-  const compactExecution = storedRun.slice(
-    storedRun.indexOf('pub struct CompactExecutionDto'),
-    storedRun.indexOf('pub struct StepSummaryDto'),
-  )
-  assert.doesNotMatch(stepExecution, /user_message|failure_summary|failure_guidance/)
-  assert.doesNotMatch(compactExecution, /user_message|failure_summary|failure_guidance/)
-})
-
 test('bounded execution previews distinguish omitted data from a real null', () => {
   assert.match(source, /result\.output_omitted && result\.output === null/)
   assert.match(source, /Preview omitted/)
 })
-
 
 test('failed or terminal incomplete runs are labeled and exported as Partial Results', () => {
   assert.match(source, /runMetadata\?\.completed_successfully === true/)

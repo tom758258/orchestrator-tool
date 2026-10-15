@@ -9,6 +9,7 @@ import {
   minMaxDecimateRange,
   prepareChartSeries,
   pruneChartData,
+  parseChartThresholdPercent,
   sampleLineRange,
 } from '../src/chartData.ts'
 import { addChartPanel } from '../src/chartPanels.ts'
@@ -337,4 +338,14 @@ test('25k-row incremental chart loading preserves threshold sampling across the 
   const panel = addChartPanel([], 'A', ['V'])[0]
   assert.deepEqual(prepareChartSeries(panel, chart, 1, { min: 1, max: count },
     { enabled: true, thresholdPercent: 30 })[0].data, minMaxDecimate(x, y, 1, 30))
+})
+
+test('chart thresholds accept only finite positive numbers', () => {
+  for (const valid of ['5', ' 5 ', '0.5', '100', '1e2']) {
+    assert.equal(parseChartThresholdPercent(valid), Number(valid.trim()), valid)
+  }
+  for (const invalid of ['', '   ', '0', '0.0', '-5', '-0.1', 'abc', '5abc', 'NaN',
+    'Infinity', '-Infinity', '1/0']) {
+    assert.ok(Number.isNaN(parseChartThresholdPercent(invalid)), `expected ${invalid} to be invalid`)
+  }
 })

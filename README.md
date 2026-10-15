@@ -98,8 +98,9 @@ For frontend work that does not require Tauri-backed application state or native
 
 ### Validation
 
-Common frontend static checks from `apps/desktop`:
+Common frontend checks from `apps/desktop`:
 
+    npm.cmd test
     npm.cmd run typecheck
     npm.cmd run build
 

@@ -1,3 +1,4 @@
+import { templateDraftJson, workflowOnlyDraft } from '../src/templateDraft.ts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -10,9 +11,7 @@ const context = app.slice(app.indexOf('  const selectedPowersAction ='), app.ind
 const fields = app.slice(app.indexOf('                      {selectedToolAction && selectedPowersAction && ('),
   app.indexOf("                      {selectedAction === 'meters/measure' && ("))
 const handlers = app.slice(app.indexOf('  const updateToolArgument ='), app.indexOf('  const moveStep ='))
-const serialization = app.slice(app.indexOf('function workflowOnlyDraft('), app.indexOf('type ActiveTab ='))
-const { code: serializationCode } = await transformWithOxc(serialization, 'serialization.ts', {})
-const roundTrip = new Function(`${serializationCode}; return draft => workflowOnlyDraft(JSON.parse(templateDraftJson(draft, [], false)))`)()
+const roundTrip = draft => workflowOnlyDraft(JSON.parse(templateDraftJson(draft, [], false)))
 const { code } = await transformWithOxc(`function properties(params) {
   const { selectedToolAction, selectedAction, workflowDraft, executionMode, resourceIdentities,
     powersCapabilityChannels, powersCapabilityKey, workflowBusy, updateStep } = params

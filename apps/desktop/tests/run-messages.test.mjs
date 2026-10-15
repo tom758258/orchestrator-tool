@@ -7,7 +7,6 @@ import { composeMessageText } from '../src/workflow.ts'
 
 const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const editor = readFileSync(new URL('../src/ShowMessageEditor.tsx', import.meta.url), 'utf8')
-const storedRun = readFileSync(new URL('../src-tauri/src/stored_run.rs', import.meta.url), 'utf8')
 
 const page = (runId, target, messages) => ({ runId, target, messages })
 const counts = (...entries) => entries.map(([target, total, revision]) => ({ target, total, revision }))
@@ -113,10 +112,6 @@ test('R06 only the active tab revision drives a refetch, and a collapsed panel p
   assert.match(source, /const messageCounts = runMetadata\?\.messages \?\? EMPTY_MESSAGE_COUNTS/)
   assert.match(source, /invoke<MessageRowsResponse>\('get_last_run_messages', \{\s*\n\s*runId: displayedRun\.run_id, target: messageTarget, offset: 0, limit: MESSAGE_WINDOW_SIZE,/)
   assert.equal(MESSAGE_WINDOW_SIZE, 1_000)
-  // Per-tab revision lives on the stored buffer, not on a single shared counter.
-  assert.match(storedRun, /revision: u64,/)
-  assert.match(storedRun, /self\.total \+= 1;\s*\n\s*self\.revision \+= 1;/)
-  assert.doesNotMatch(storedRun, /message_revision/)
 })
 
 test('R05 the frontend limits String fields by Unicode character, not UTF-16 unit', () => {
@@ -143,11 +138,7 @@ test('R05 the frontend limits String fields by Unicode character, not UTF-16 uni
   assert.ok(!/[\uD800-\uDFFF]/.test(cut.replace(/[\u{1F600}-\u{1F64F}]/gu, '')))
 })
 
-test('R08 the bounded message is truncated in Core and the preview matches the shape', () => {
-  // The Core bound and the marker are exported once and reused by the executor.
-  const workflow = readFileSync(new URL('../../../src/workflow.rs', import.meta.url), 'utf8')
-  assert.match(workflow, /pub const MAX_MESSAGE_CHARS: usize = 4_096;/)
-  assert.match(workflow, /pub const MESSAGE_TRUNCATION_MARKER: &str = "…\[truncated\]";/)
+test('R08 the message preview keeps the record terminator and target labels', () => {
   // The Message Preview still ends with exactly one newline, like a real record.
   assert.equal(composeMessageText([{ kind: 'text', text: 'a', newline: false }], () => undefined), 'a\n')
   assert.match(editor, /<pre>\{composeMessageText\(step\.fields,/)

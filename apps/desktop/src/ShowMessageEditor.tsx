@@ -5,7 +5,6 @@ import {
   MESSAGE_TARGET_LABELS,
   composeMessageText,
   limitMessageText,
-  showMessageOutputCandidates,
 } from './workflow'
 import type { MessageFieldWire, MessageTargetWire, OutputStep, ShowMessageStep } from './workflow'
 
