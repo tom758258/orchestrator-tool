@@ -12,7 +12,8 @@ test('Run Simulation is guarded immediately before React busy state can render',
   const button = source.slice(source.lastIndexOf('<button', onClick), source.indexOf('</button>', onClick))
   assert.match(button, /disabled=\{workflowBusy \|\| toolConfigBusy !== null \|\| loading/)
   // Chart Sampling is mode-independent, so an invalid threshold blocks Simulation too.
-  assert.match(button, /\|\| chartThresholdInvalid\}/)
+  assert.match(button, /\|\| chartThresholdInvalid\b/)
+  assert.match(button, /\|\| livePreflight\.blocked\b/)
   assert.doesNotMatch(button, /executionMode === 'live' &&/)
 })
 

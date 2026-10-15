@@ -393,10 +393,16 @@ mod tests {
     #[test]
     fn live_preflight_capture_fixed_channels_require_nonempty_unique_supported_values() {
         for (channels, passes, reason) in [
+            (json!(1), false, "array"),
+            (json!("1"), false, "array"),
+            (json!(null), false, "array"),
+            (json!({"value":1}), false, "array"),
+            (json!(true), false, "array"),
             (json!([]), false, "at least one"),
             (json!([1, 1]), false, "duplicate"),
             (json!([1, 3]), false, "unsupported"),
             (json!([1, 2]), true, ""),
+            (json!([1]), true, ""),
             (json!([2]), true, ""),
         ] {
             let template = template(
@@ -408,13 +414,21 @@ mod tests {
                     json!({"channel":channels,"points":1000})
                 )]),
             );
+            let before = template.to_json_string().unwrap();
             let errors = check(&template);
             assert_eq!(errors.is_empty(), passes, "{channels}: {errors:?}");
             if !passes {
                 assert_eq!(errors.len(), 1);
                 assert!(errors[0].contains("channel") && errors[0].contains(reason));
             }
+            assert_eq!(before, template.to_json_string().unwrap());
         }
+        let mut bound = action("scopes", "capture", json!({"channel":1,"points":1000}));
+        bound["bindings"] = json!({"channel":{"source":"literal","value":[1]}});
+        let template = template("scopes", json!({}), json!([bound]));
+        let before = template.to_json_string().unwrap();
+        assert!(check(&template).is_empty());
+        assert_eq!(before, template.to_json_string().unwrap());
     }
 
     #[test]

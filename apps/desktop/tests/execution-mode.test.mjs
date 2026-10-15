@@ -83,7 +83,8 @@ test('Chart Options are shared by Simulation and Live, snapshotted per run and o
   // An invalid sampling threshold still blocks the single mode-aware Run button in both modes.
   const onClick = app.indexOf('onClick={() => void runSelectedMode()}')
   const button = app.slice(app.lastIndexOf('<button', onClick), app.indexOf('</button>', onClick))
-  assert.match(button, /\|\| chartThresholdInvalid\}/)
+  assert.match(button, /\|\| chartThresholdInvalid\b/)
+  assert.match(button, /\|\| livePreflight\.blocked\b/)
   assert.doesNotMatch(button, /executionMode === 'live' &&/)
 
   const saveTemplate = app.slice(app.indexOf('const handleSaveTemplate'), app.indexOf('const handleSaveTemplate') + 1150)
@@ -187,7 +188,7 @@ function summaryView(params) {
   const { workflowDraft, workflowBusy, toolConfigBusy, loading, chartThresholdInvalid,
     executionMode, validationStatus, validationError, runStatus, runningText, runError,
     displayedRun, activeLoop, activeAncestors, stopRequest, stopping, setStopRequest,
-    invoke, validateDraft, runSelectedMode } = params
+    invoke, validateDraft, runSelectedMode, livePreflight, liveStartError } = params
   ${stop}
   return <>${summary}</>
 }`, 'workflow-summary.tsx', { jsx: { runtime: 'classic' } })
@@ -200,6 +201,7 @@ const summaryDefaults = {
   runError: null, displayedRun: null, activeLoop: null, activeAncestors: [], stopRequest: null,
   stopping: false, setStopRequest: () => {}, invoke: async () => true,
   validateDraft: () => {}, runSelectedMode: () => {},
+  livePreflight: { status: 'passed', blocked: false, errors: [], reject: () => {} }, liveStartError: null,
 }
 function summaryElements(node) {
   if (Array.isArray(node)) return node.flatMap(summaryElements)
@@ -217,12 +219,28 @@ test('summary renders one ordered mode-aware Run and preserves handlers and disa
     assert.equal(view.buttons.length, 2)
     assert.equal(renderToStaticMarkup(view.buttons[0]).includes('Validate'), true)
     assert.match(renderToStaticMarkup(view.buttons[1]), new RegExp(`Run ${executionMode === 'live' ? 'Live' : 'Simulation'}`))
+    assert.equal(view.buttons[1].props.disabled, false)
     view.buttons[0].props.onClick()
     view.buttons[1].props.onClick()
     for (const gate of ['workflowBusy', 'toolConfigBusy', 'loading', 'chartThresholdInvalid']) {
       const disabled = summaryView({ executionMode, [gate]: gate === 'toolConfigBusy' ? 'meters' : true })
       assert.equal(disabled.buttons[1].props.disabled, true, gate)
       assert.equal(disabled.buttons[0].props.disabled, gate === 'workflowBusy', gate)
+    }
+    for (const status of ['checking', 'failed', 'passed']) {
+      // The hook owns mode-aware blocking; render each of its possible results.
+      const blocked = executionMode === 'live' && status !== 'passed'
+      const preflight = summaryView({ executionMode,
+        livePreflight: { ...summaryDefaults.livePreflight, status, blocked,
+          errors: status === 'failed' ? ['CH3 unsupported'] : [] } })
+      assert.equal(preflight.buttons[1].props.disabled, blocked, `${executionMode} ${status}`)
+      if (executionMode === 'live') {
+        if (status === 'failed') {
+          assert.match(preflight.html, /role="alert"/)
+          assert.match(preflight.html, /Live Preflight failed/)
+          assert.match(preflight.html, /CH3 unsupported/)
+        } else assert.match(preflight.html, new RegExp(`Live Preflight: ${status === 'checking' ? 'Checking…' : 'Passed'}`))
+      } else assert.doesNotMatch(preflight.html, /Live Preflight|CH3 unsupported/)
     }
   }
   assert.deepEqual(calls, ['validate', 'simulate', 'validate', 'live'])

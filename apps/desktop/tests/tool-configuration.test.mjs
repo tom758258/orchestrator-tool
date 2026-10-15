@@ -11,6 +11,9 @@ async function component(name, native = {}, source = fs.readFileSync(new URL(`..
   for (const [, path] of code.matchAll(/import .+? from "([^"]+)";/g)) {
     if (path === 'react') continue
     if (path.startsWith('@tauri-apps/')) modules[path] = native
+    else if (path === './useLivePreflight') modules[path] = {
+      useLivePreflight: () => ({ status: 'passed', blocked: false, errors: [], reject: () => {} }),
+    }
     else if (fs.existsSync(new URL(`../src/${path}.ts`, import.meta.url))) {
       modules[path] = await import(`../src/${path}.ts`)
     } else modules[path] = { default: path.slice(2), ExpressionOperandEditor: 'ExpressionOperandEditor' }

@@ -70,6 +70,8 @@ pub(crate) fn validate_preflight_action(
             for value in values {
                 check.option(field, value, Some(channels.clone()));
             }
+        } else if action == "capture" {
+            check.invalid(field, "must be an array of channels");
         } else {
             check.option(field, value, Some(channels));
         }
