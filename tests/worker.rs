@@ -5,7 +5,9 @@ use std::{
     fs,
     io::{self, BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
-    process, thread,
+    process,
+    sync::{Mutex, OnceLock},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -22,12 +24,14 @@ use orchestrator_tool::{
             safe_off_all,
         },
     },
+    manifest::{ToolManifest, parse_manifest},
     meters_setup::{AutoZero, MetersMeasurement, MetersSetup, MetersTriggerMode, RangeMode},
     run::{
         ExecutionMode, WorkflowRunError, run_simulated_workflow, run_workflow,
         run_workflow_with_events,
     },
     template::Template,
+    tool::ToolId,
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     worker::{WorkerLaunchSpec, WorkerShutdownError, WorkerStartError, start_worker},
     worker_http::{WorkerClient, WorkerHttpError},
@@ -39,6 +43,284 @@ use orchestrator_tool::{
     workflow_csv::serialize_result_rows_csv,
 };
 use serde_json::json;
+
+const FIXTURE_UTC: &str = "2026-10-23T10:00:00Z";
+
+#[derive(Default)]
+struct FixtureV3 {
+    run_id: String,
+    features: serde_json::Value,
+    urls: serde_json::Value,
+    current_path: String,
+    current_body: serde_json::Value,
+    jobs: HashMap<String, (String, String)>,
+    ready_seen: bool,
+    summary_seen: bool,
+}
+
+fn fixture_context() -> &'static Mutex<FixtureV3> {
+    static STATE: OnceLock<Mutex<FixtureV3>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(FixtureV3::default()))
+}
+
+fn fake_error(value: serde_json::Value) -> serde_json::Value {
+    if value.is_null() {
+        return value;
+    }
+    if value.get("category").is_some() && value.get("details").is_some() {
+        return value;
+    }
+    json!({"category":"execution",
+        "code":value["code"].as_str().unwrap_or("fixture_failed"),
+        "message":value["message"].as_str().unwrap_or("fixture failure"),
+        "details":{}})
+}
+
+fn fixture_event_json(line: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return line.to_owned();
+    };
+    if !value.is_object()
+        || (value["event"] == "ready"
+            && value["timestamp_utc"].is_string()
+            && value["features"].is_object())
+    {
+        return line.to_owned();
+    }
+    let mut state = fixture_context().lock().unwrap();
+    if value["event"] == "ready" {
+        state.ready_seen = true;
+        state.run_id = value["run_id"].as_str().unwrap_or("fixture-run").to_owned();
+        state.urls = json!({"status_url":value["status_url"],
+            "command_url":value["command_url"],"stop_url":value["stop_url"]});
+        state.features = if state.run_id.contains("meter") || state.run_id == "run-123" {
+            json!({})
+        } else {
+            json!({"common.async_jobs":{"contract_version":1}})
+        };
+        value["features"] = state.features.clone();
+    }
+    if value["event"] == "status" {
+        let state_str = value
+            .get("worker_state")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| value.get("status").and_then(serde_json::Value::as_str))
+            .unwrap_or("running");
+        value["worker_state"] = json!(if state_str == "error" {
+            "failed"
+        } else if matches!(state_str, "starting" | "running" | "stopping") {
+            state_str
+        } else {
+            "running"
+        });
+        if value.get("fatal_error").is_none() {
+            value["fatal_error"] = json!(null);
+        }
+    }
+    if value["event"] == "summary" {
+        state.summary_seen = true;
+    }
+    value["schema_version"] = json!(3);
+    value["timestamp_utc"] = json!(FIXTURE_UTC);
+    if value.get("run_id").is_none() && state.ready_seen {
+        value["run_id"] = json!(state.run_id);
+    }
+    if value["event"] == "summary" {
+        value["ok"] = value.get("ok").cloned().unwrap_or(json!(true));
+        value["fatal_error"] = value.get("fatal_error").cloned().unwrap_or(json!(null));
+        value["exit_code"] = value.get("exit_code").cloned().unwrap_or(json!(0));
+    }
+    if value["event"] == "error" {
+        if value.get("scope").is_none() {
+            value["scope"] = json!("worker");
+        }
+        if value.get("fatal").is_none() {
+            value["fatal"] = json!(true);
+        }
+        let detail = value
+            .get("error")
+            .cloned()
+            .unwrap_or_else(|| json!({"code":"startup_error","message":value["message"]}));
+        value["error"] = fake_error(detail);
+    }
+    if value["event"] == "job_finished" {
+        let worker_id = value["worker_job_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        if value.get("job_id").is_none() {
+            if let Some((client, _)) = state.jobs.get(&worker_id) {
+                value["job_id"] = json!(client);
+            } else {
+                value["job_id"] = json!(null);
+            }
+        }
+        if value.get("command").is_none()
+            && let Some((_, command)) = state.jobs.get(&worker_id)
+        {
+            value["command"] = json!(command);
+        }
+        if value.get("result").is_none() {
+            value["result"] = json!(null);
+        }
+        let error = value.get("error").cloned().unwrap_or(json!(null));
+        value["error"] = fake_error(error);
+    }
+    value.to_string()
+}
+
+fn fixture_summary() {
+    let should_emit = {
+        let state = fixture_context().lock().unwrap();
+        state.ready_seen && !state.summary_seen
+    };
+    if should_emit {
+        print_json_line(r#"{"event":"summary","ok":true,"fatal_error":null,"exit_code":0}"#);
+    }
+}
+
+fn fixture_status(value: &mut serde_json::Value, state: &FixtureV3) {
+    value["schema_version"] = json!(3);
+    value["timestamp_utc"] = json!(FIXTURE_UTC);
+    value["run_id"] = json!(state.run_id);
+    for key in ["status_url", "command_url", "stop_url"] {
+        value[key] = state.urls[key].clone();
+    }
+    value["features"] = state.features.clone();
+    let failed = value["status"] == "error" || value["worker_state"] == "failed";
+    value["worker_state"] = json!(if failed { "failed" } else { "running" });
+    if value.get("fatal_error").is_none() {
+        value["fatal_error"] = json!(null);
+    } else if !value["fatal_error"].is_null() {
+        value["fatal_error"] = fake_error(value["fatal_error"].clone());
+    }
+    if value["fatal_error"].is_null() && failed {
+        value["fatal_error"] = json!({"category":"worker",
+            "code":"fixture_failure","message":"fixture failed","details":{}});
+    }
+    if state.features.get("common.async_jobs").is_some() {
+        if value.get("active_job").is_none() {
+            value["active_job"] = json!(null);
+        }
+        if value.get("last_job").is_none() {
+            value["last_job"] = json!(null);
+        }
+        for name in ["active_job", "last_job"] {
+            if value[name].is_null() {
+                continue;
+            }
+            let job_id = value[name]["worker_job_id"]
+                .as_str()
+                .unwrap_or("unknown-job")
+                .to_owned();
+            let old = value[name]
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            if let Some(old) = old {
+                let mapped = if old == "accepted" { "queued" } else { &old };
+                value[name]["state"] = json!(mapped);
+            }
+            let current_state = value[name]["state"]
+                .as_str()
+                .unwrap_or("running")
+                .to_owned();
+            value[name]["timestamp_utc"] = json!(FIXTURE_UTC);
+            if let Some((client, command)) = state.jobs.get(&job_id) {
+                value[name]["job_id"] = json!(client);
+                value[name]["command"] = json!(command);
+            } else {
+                value[name]["job_id"] = json!(null);
+                value[name]["command"] = json!("fixture-other-job");
+            }
+            if matches!(current_state.as_str(), "succeeded" | "failed" | "cancelled") {
+                value[name]["ok"] = json!(current_state == "succeeded");
+                if value[name].get("result").is_none() {
+                    value[name]["result"] = json!(null);
+                }
+                value[name]["error"] = if current_state == "failed" {
+                    fake_error(
+                        value[name]
+                            .get("error")
+                            .cloned()
+                            .unwrap_or(json!({"message":"fixture job failed"})),
+                    )
+                } else {
+                    json!(null)
+                };
+            }
+        }
+    }
+}
+
+fn fixture_http_json(status_code: u16, body: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(body) else {
+        if body.trim().is_empty() {
+            return if status_code == 200 || status_code == 202 {
+                let state = fixture_context().lock().unwrap();
+                json!({"schema_version":3,"run_id":state.run_id,
+                    "status":"accepted","error":null})
+                .to_string()
+            } else {
+                body.to_owned()
+            };
+        }
+        return body.to_owned();
+    };
+    let mut state = fixture_context().lock().unwrap();
+    if !value.is_object() {
+        return body.to_owned();
+    }
+    let current_path = state.current_path.clone();
+    match current_path.as_str() {
+        "/status" if status_code == 200 => fixture_status(&mut value, &state),
+        "/stop" if status_code == 200 || status_code == 202 => {
+            value = json!({"schema_version":3,"run_id":state.run_id,
+                "status":"accepted","error":null});
+        }
+        "/command" if status_code == 202 && state.current_body.get("command").is_some() => {
+            let request = state.current_body.clone();
+            let command = request["command"]
+                .as_str()
+                .unwrap_or("fixture-command")
+                .to_owned();
+            let client = value
+                .get("job_id")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| request["job_id"].as_str())
+                .unwrap_or("fixture-client")
+                .to_owned();
+            let worker = value["worker_job_id"].as_str().unwrap_or("").to_owned();
+            let kind = if command == "software_trigger" {
+                "control"
+            } else {
+                "async_job"
+            };
+            if kind == "async_job" && !worker.is_empty() {
+                state
+                    .jobs
+                    .insert(worker.clone(), (client.clone(), command.clone()));
+            }
+            value = json!({"schema_version":3,"run_id":state.run_id,
+                "status":"accepted","error":null,"command":command,"job_id":client,
+                "kind":kind,"worker_job_id":if kind == "control" {
+                    json!(null)
+                } else { json!(worker) }});
+        }
+        "/command" if matches!(status_code, 400 | 409 | 429 | 500) => {
+            value["schema_version"] = json!(3);
+            value["run_id"] = json!(state.run_id);
+            value["command"] = state.current_body["command"].clone();
+            value["job_id"] = state.current_body["job_id"].clone();
+            value["kind"] = json!("async_job");
+            value["worker_job_id"] = json!(null);
+            value["error"] = json!({"category":"admission","code":"queue_full",
+                "message":"queue_full","details":{}});
+        }
+        _ => {}
+    }
+    value.to_string()
+}
 
 const FIXTURE_ARGUMENT: &str = "--worker-fixture";
 const POWERS_WORKER_ARGUMENTS: [&str; 9] = [
@@ -83,10 +365,12 @@ fn main() {
 
     if arguments == POWERS_WORKER_ARGUMENTS.map(OsString::from) {
         run_powers_worker_fixture();
+        fixture_summary();
         return;
     }
     if arguments == METERS_WORKER_ARGUMENTS.map(OsString::from) {
         run_meters_worker_fixture();
+        fixture_summary();
         return;
     }
 
@@ -108,6 +392,7 @@ fn main() {
             .get(1)
             .expect("Worker fixture scenario is required");
         run_fixture(scenario);
+        fixture_summary();
         return;
     }
 
@@ -149,6 +434,7 @@ fn main() {
     runtime_events_are_available_after_ready();
     runtime_event_receive_times_out_when_no_event();
     powers_worker_smoke_correlates_terminal_job();
+    common_v3_accepts_additional_tool_without_parser_branch();
     powers_operation_failure_preserves_nonzero_worker_exit();
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
@@ -193,7 +479,7 @@ fn run_powers_worker_fixture() {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -211,7 +497,7 @@ fn run_powers_worker_fixture() {
         request.stream,
         200,
         &json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "service": "powers-tool",
             "run_id": run_id,
             "status": if scenario == "fatal-nonzero" { "error" } else { "ready" },
@@ -246,19 +532,20 @@ fn run_powers_worker_fixture() {
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
         json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "read-status",
             "arguments": { "channel": "all" },
             "context": {
                 "mode": "simulate",
                 "planning_model_id": "keysight-e36312a"
-            }
+            },
+            "job_id": serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["job_id"]
         })
     );
     write_response(
         request.stream,
         202,
-        r#"{"schema_version":2,"status":"accepted","command":"read-status","worker_job_id":"job-current"}"#,
+        r#"{"schema_version":3,"status":"accepted","command":"read-status","worker_job_id":"job-current"}"#,
     );
 
     let jobs = if scenario == "terminal-failure" {
@@ -295,7 +582,7 @@ fn run_powers_worker_fixture() {
             request.stream,
             200,
             &json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "service": "powers-tool",
                 "run_id": run_id,
                 "status": "ready",
@@ -321,7 +608,7 @@ fn run_manual_powers_fixture(scenario: &str) {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -366,7 +653,7 @@ fn run_manual_powers_fixture(scenario: &str) {
             ("POST", "/command")
         );
         let body = serde_json::from_slice::<serde_json::Value>(&request.body).unwrap();
-        assert_eq!(body["schema_version"], 2);
+        assert_eq!(body["schema_version"], 3);
         assert_eq!(body["command"], command);
         assert_eq!(body["arguments"], arguments);
         assert_eq!(
@@ -382,7 +669,7 @@ fn run_manual_powers_fixture(scenario: &str) {
             request.stream,
             202,
             &json!({
-                "schema_version":2,
+                "schema_version":3,
                 "status":"accepted",
                 "command":command,
                 "worker_job_id":job_id
@@ -418,7 +705,7 @@ fn run_manual_powers_fixture(scenario: &str) {
             request.stream,
             200,
             &json!({
-                "schema_version":2,
+                "schema_version":3,
                 "service":"powers-tool",
                 "run_id":run_id,
                 "status":"ready",
@@ -449,7 +736,7 @@ fn run_meters_worker_fixture() {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -467,7 +754,7 @@ fn run_meters_worker_fixture() {
         request.stream,
         200,
         &json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "service": "keysight-meter",
             "run_id": run_id,
             "status": "running",
@@ -485,7 +772,7 @@ fn run_meters_worker_fixture() {
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
         json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "software_trigger",
             "job_id": "orchestrator-meter-smoke"
         })
@@ -493,7 +780,7 @@ fn run_meters_worker_fixture() {
     write_response(
         request.stream,
         202,
-        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":"orchestrator-meter-smoke"}"#,
+        r#"{"schema_version":3,"status":"accepted","command":"software_trigger","job_id":"orchestrator-meter-smoke"}"#,
     );
 
     let request = accept_request(&listener);
@@ -505,7 +792,7 @@ fn run_meters_worker_fixture() {
         request.stream,
         200,
         &json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "service": "keysight-meter",
             "run_id": run_id,
             "status": "running",
@@ -533,7 +820,7 @@ fn run_fixture(scenario: &OsStr) {
             print_json_line("");
             print_json_line(r#"{"event":"boot","message":"starting"}"#);
             print_json_line(
-                r#"{"event":"ready","schema_version":2,"run_id":"run-123","status_url":"http://127.0.0.1/status","command_url":"http://127.0.0.1/command","stop_url":"http://127.0.0.1/stop","future_optional_field":true}"#,
+                r#"{"event":"ready","schema_version":3,"run_id":"run-123","status_url":"http://127.0.0.1/status","command_url":"http://127.0.0.1/command","stop_url":"http://127.0.0.1/stop","future_optional_field":true}"#,
             );
             thread::sleep(Duration::from_secs(30));
         }
@@ -549,7 +836,7 @@ fn run_fixture(scenario: &OsStr) {
         }
         "exit-before-ready-with-stdout-error" => {
             print_json_line(
-                r#"{"event":"error","schema_version":2,"exit_code":2,"message":"  fixture structured startup validation failed  "}"#,
+                r#"{"event":"error","schema_version":3,"exit_code":2,"message":"  fixture structured startup validation failed  "}"#,
             );
             io::stdout().flush().unwrap();
             eprint!("fixture stderr fallback");
@@ -565,7 +852,7 @@ fn run_fixture(scenario: &OsStr) {
             print_json_line(
                 &json!({
                     "event": "ready",
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "run_id": "run-123",
                     "status_url": format!("{base_url}/status"),
                     "command_url": format!("{base_url}/command"),
@@ -593,7 +880,7 @@ fn run_fixture(scenario: &OsStr) {
             print_json_line(
                 &json!({
                     "event": "ready",
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "run_id": "run-123",
                     "status_url": format!("{base_url}/status"),
                     "command_url": format!("{base_url}/command"),
@@ -611,7 +898,7 @@ fn run_fixture(scenario: &OsStr) {
             print_json_line(
                 &json!({
                     "event": "ready",
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "run_id": "partial-startup-cleanup-run",
                     "status_url": format!("{base_url}/status"),
                     "command_url": format!("{base_url}/command"),
@@ -633,7 +920,7 @@ fn run_fixture(scenario: &OsStr) {
             write_response(
                 request.stream,
                 202,
-                r#"{"schema_version":2,"status":"accepted","command":"safe-off","worker_job_id":"partial-cleanup"}"#,
+                r#"{"schema_version":3,"status":"accepted","command":"safe-off","worker_job_id":"partial-cleanup"}"#,
             );
             let request = accept_request(&listener);
             assert_eq!(
@@ -643,7 +930,7 @@ fn run_fixture(scenario: &OsStr) {
             write_response(
                 request.stream,
                 200,
-                r#"{"schema_version":2,"service":"powers-tool","run_id":"partial-startup-cleanup-run","status":"ready","fatal_error":null,"last_job":{"worker_job_id":"partial-cleanup","status":"succeeded","result":{"ok":true}}}"#,
+                r#"{"schema_version":3,"service":"powers-tool","run_id":"partial-startup-cleanup-run","status":"ready","fatal_error":null,"last_job":{"worker_job_id":"partial-cleanup","status":"succeeded","result":{"ok":true}}}"#,
             );
             let request = accept_request(&listener);
             assert_eq!(
@@ -657,6 +944,7 @@ fn run_fixture(scenario: &OsStr) {
         "http-round-trip" | "http-non-2xx" | "shutdown-graceful" | "shutdown-timeout" => {
             run_http_fixture(scenario.to_str().unwrap())
         }
+        "conformance-extra-tool" => run_extra_v3_tool_fixture(),
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
         "powers-workflow-set-output" => run_powers_workflow_fixture("simulate-set-output"),
@@ -714,7 +1002,7 @@ fn run_http_fixture(scenario: &str) {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": format!("{scenario}-run"),
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -782,7 +1070,7 @@ fn run_powers_runtime_fixture() {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -796,7 +1084,7 @@ fn run_powers_runtime_fixture() {
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, "/command");
     let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-    assert_eq!(body["schema_version"], 2);
+    assert_eq!(body["schema_version"], 3);
     let command = body["command"].as_str().unwrap().to_owned();
     assert!(matches!(
         command.as_str(),
@@ -829,7 +1117,7 @@ fn run_powers_runtime_fixture() {
         request.stream,
         202,
         &format!(
-            r#"{{"schema_version":2,"status":"accepted","command":"{command}","worker_job_id":"job-runtime-001"}}"#
+            r#"{{"schema_version":3,"status":"accepted","command":"{command}","worker_job_id":"job-runtime-001"}}"#
         ),
     );
 
@@ -841,7 +1129,7 @@ fn run_powers_runtime_fixture() {
         request.stream,
         200,
         &json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "service": "powers-tool",
             "run_id": run_id,
             "status": "busy",
@@ -863,7 +1151,7 @@ fn run_powers_runtime_fixture() {
         request.stream,
         200,
         &json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "service": "powers-tool",
             "run_id": run_id,
             "status": "ready",
@@ -896,7 +1184,7 @@ fn run_powers_runtime_fixture() {
         write_response(
             request.stream,
             202,
-            r#"{"schema_version":2,"status":"accepted","command":"safe-off","worker_job_id":"job-cleanup"}"#,
+            r#"{"schema_version":3,"status":"accepted","command":"safe-off","worker_job_id":"job-cleanup"}"#,
         );
         request = accept_request(&listener);
         assert_eq!(request.method, "GET");
@@ -905,7 +1193,7 @@ fn run_powers_runtime_fixture() {
             request.stream,
             200,
             &json!({
-                "schema_version":2,"service":"powers-tool","run_id":run_id,
+                "schema_version":3,"service":"powers-tool","run_id":run_id,
                 "status":"ready","fatal_error":null,
                 "last_job":{"worker_job_id":"job-cleanup","status":"succeeded","result":{"ok":true}}
             })
@@ -947,7 +1235,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -1023,10 +1311,11 @@ fn run_powers_workflow_fixture(scenario: &str) {
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&request.body).unwrap(),
             json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "command": command,
                 "arguments": arguments,
-                "context": context
+                "context": context,
+                "job_id": serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["job_id"].clone()
             })
         );
         record_event_if_requested(command);
@@ -1034,7 +1323,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
             request.stream,
             202,
             &json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "status": "accepted",
                 "command": command,
                 "worker_job_id": worker_job_id
@@ -1051,7 +1340,7 @@ fn run_powers_workflow_fixture(scenario: &str) {
             request.stream,
             200,
             &json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "service": "powers-tool",
                 "run_id": run_id,
                 "status": "ready",
@@ -1092,7 +1381,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
     print_json_line(
         &json!({
             "event": "ready",
-            "schema_version": 2,
+            "schema_version": 3,
             "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
@@ -1106,7 +1395,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
         assert_eq!(request.method, "POST");
         assert_eq!(request.path, "/command");
         let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-        assert_eq!(body["schema_version"], 2);
+        assert_eq!(body["schema_version"], 3);
         assert_eq!(body["command"], "software_trigger");
         assert_eq!(body["arguments"], json!({}));
         assert!(
@@ -1114,8 +1403,8 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
             "meters runtime must not send context"
         );
         assert!(
-            body.get("job_id").is_none(),
-            "meters runtime must omit job_id"
+            body["job_id"].as_str().is_some_and(|id| !id.is_empty()),
+            "Common v3 requires unique non-empty client job_id"
         );
         assert!(
             body.get("metadata").is_none(),
@@ -1124,7 +1413,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
         write_response(
             request.stream,
             202,
-            r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
+            r#"{"schema_version":3,"status":"accepted","command":"software_trigger","job_id":null}"#,
         );
 
         // Emit a non-matching event first, then the matching sample.
@@ -1148,6 +1437,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
         );
 
         if sequence >= max_samples {
+            fixture_summary();
             return;
         }
     }
@@ -1156,6 +1446,7 @@ fn run_meters_runtime_fixture(measurements: usize, max_samples: usize, value: se
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, "/stop");
     write_response(request.stream, 200, r#"{"ok":true}"#);
+    fixture_summary();
 }
 
 fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<Duration>) {
@@ -1164,7 +1455,7 @@ fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<
     let run_id = format!("meters-custom-runtime-run-{}", process::id());
     print_json_line(
         &json!({
-            "event": "ready", "schema_version": 2, "run_id": run_id,
+            "event": "ready", "schema_version": 3, "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
             "stop_url": format!("{base_url}/stop")
@@ -1179,7 +1470,7 @@ fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<
     write_response(
         request.stream,
         202,
-        r#"{"schema_version":2,"status":"accepted","command":"software_trigger","job_id":null}"#,
+        r#"{"schema_version":3,"status":"accepted","command":"software_trigger","job_id":null}"#,
     );
     if let Some(exit_delay) = exit_delay {
         // Make the samples visible only after the HTTP endpoint is closed.
@@ -1190,10 +1481,13 @@ fn run_meters_custom_runtime_fixture(sample_delay: Duration, exit_delay: Option<
             writeln!(
                 output,
                 "{}",
-                json!({
-                    "event": "sample", "run_id": run_id, "value": value,
-                    "sequence": sequence + 1, "unit": "V"
-                })
+                fixture_event_json(
+                    &json!({
+                        "event": "sample", "run_id": run_id, "value": value,
+                        "sequence": sequence + 1, "unit": "V"
+                    })
+                    .to_string()
+                )
             )
             .unwrap();
         }
@@ -1231,7 +1525,7 @@ fn run_meters_passive_custom_runtime_fixture(
     let run_id = format!("meters-passive-custom-run-{}", process::id());
     print_json_line(
         &json!({
-            "event": "ready", "schema_version": 2, "run_id": run_id,
+            "event": "ready", "schema_version": 3, "run_id": run_id,
             "status_url": format!("{base_url}/status"),
             "command_url": format!("{base_url}/command"),
             "stop_url": format!("{base_url}/stop")
@@ -1302,6 +1596,11 @@ fn accept_request(listener: &TcpListener) -> TestRequest {
     let mut body = vec![0; content_length];
     reader.read_exact(&mut body).unwrap();
 
+    {
+        let mut state = fixture_context().lock().unwrap();
+        state.current_path = path.clone();
+        state.current_body = serde_json::from_slice(&body).unwrap_or(json!({}));
+    }
     TestRequest {
         stream,
         method,
@@ -1312,6 +1611,8 @@ fn accept_request(listener: &TcpListener) -> TestRequest {
 }
 
 fn write_response(mut stream: TcpStream, status: u16, body: &str) {
+    let converted = fixture_http_json(status, body);
+    let body = converted.as_str();
     let reason = match status {
         200 => "OK",
         202 => "Accepted",
@@ -1331,8 +1632,48 @@ fn write_response(mut stream: TcpStream, status: u16, body: &str) {
 fn print_json_line(line: &str) {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
-    writeln!(stdout, "{line}").unwrap();
+    let converted = fixture_event_json(line);
+    writeln!(stdout, "{converted}").unwrap();
     stdout.flush().unwrap();
+}
+
+fn fixture_manifest(scenario: &str) -> ToolManifest {
+    let name = if scenario.starts_with("meters-") {
+        "meters"
+    } else if scenario.starts_with("scopes-") {
+        "scopes"
+    } else if scenario == "conformance-extra-tool" {
+        "auxiliary"
+    } else {
+        "powers"
+    };
+    let (model, binding, features) = match name {
+        "meters" => (
+            "run_bound",
+            "startup",
+            json!({"common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}}),
+        ),
+        "scopes" | "auxiliary" => (
+            "multi_job",
+            "startup",
+            json!({"common.async_jobs":{"contract_version":1}}),
+        ),
+        _ => (
+            "multi_job",
+            "per_command",
+            json!({"common.async_jobs":{"contract_version":1}}),
+        ),
+    };
+    let content = json!({
+        "event":"tool_manifest","schema_version":2,"tool_id":name,
+        "tool_version":"fixture","worker_protocol":{
+            "compatibility_policy":"v3-only","schema_versions":[3]},
+        "execution":{"model":model,"context_binding":binding},
+        "features":features
+    })
+    .to_string();
+    let expected = ToolId::new(name).unwrap();
+    parse_manifest(&content, &expected).unwrap()
 }
 
 fn fixture_spec(scenario: &str) -> WorkerLaunchSpec {
@@ -1340,6 +1681,92 @@ fn fixture_spec(scenario: &str) -> WorkerLaunchSpec {
         env::current_exe().unwrap(),
         [OsString::from(FIXTURE_ARGUMENT), OsString::from(scenario)],
     )
+    .with_manifest(fixture_manifest(scenario))
+}
+
+fn run_extra_v3_tool_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    print_json_line(
+        &json!({"schema_version":3,"event":"ready",
+        "timestamp_utc":FIXTURE_UTC,"run_id":"extra-tool-run",
+        "features":{"common.async_jobs":{"contract_version":1}},
+        "status_url":format!("{base}/status"),
+        "command_url":format!("{base}/command"),
+        "stop_url":format!("{base}/stop")})
+        .to_string(),
+    );
+    // Explicitly new Tool identity, but no production Common parser changes.
+    {
+        let mut context = fixture_context().lock().unwrap();
+        context.ready_seen = true;
+        context.run_id = "extra-tool-run".into();
+        context.urls = json!({"status_url":format!("{base}/status"),
+            "command_url":format!("{base}/command"),
+            "stop_url":format!("{base}/stop")});
+        context.features = json!({"common.async_jobs":{"contract_version":1}});
+    }
+    let request = accept_request(&listener);
+    assert_eq!(request.path, "/command");
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["command"], "do-work");
+    write_response(
+        request.stream,
+        202,
+        &json!({
+            "schema_version":3,"run_id":"extra-tool-run",
+            "status":"accepted","command":"do-work","kind":"async_job",
+            "job_id":body["job_id"],"worker_job_id":"extra-w1","error":null
+        })
+        .to_string(),
+    );
+    print_json_line(
+        &json!({"schema_version":3,"event":"job_finished",
+            "run_id":"extra-tool-run","timestamp_utc":FIXTURE_UTC,
+            "worker_job_id":"extra-w1","job_id":body["job_id"],"command":"do-work",
+            "state":"succeeded","ok":true,"result":{"answer":42},"error":null
+        })
+        .to_string(),
+    );
+    // The orchestrator may poll read-only status before observing JSONL.
+    // Both a complete terminal snapshot and the terminal event are valid.
+    loop {
+        let request = accept_request(&listener);
+        match request.path.as_str() {
+            "/status" => write_response(
+                request.stream,
+                200,
+                &json!({
+                    "schema_version":3,
+                    "timestamp_utc":FIXTURE_UTC,
+                    "run_id":"extra-tool-run",
+                    "worker_state":"running",
+                    "fatal_error":null,
+                    "features":{"common.async_jobs":{"contract_version":1}},
+                    "status_url":format!("{base}/status"),
+                    "command_url":format!("{base}/command"),
+                    "stop_url":format!("{base}/stop"),
+                    "active_job":null,
+                    "last_job":{
+                        "timestamp_utc":FIXTURE_UTC,
+                        "worker_job_id":"extra-w1",
+                        "job_id":body["job_id"],
+                        "command":"do-work",
+                        "state":"succeeded",
+                        "ok":true,
+                        "result":{"answer":42},
+                        "error":null
+                    }
+                })
+                .to_string(),
+            ),
+            "/stop" => {
+                write_response(request.stream, 200, r#"{"ok":true}"#);
+                break;
+            }
+            other => panic!("unexpected additional v3 HTTP path: {other}"),
+        }
+    }
 }
 
 fn run_scopes_fixture(scenario: &str) {
@@ -1347,7 +1774,7 @@ fn run_scopes_fixture(scenario: &str) {
     let base = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "scopes-fixture";
     print_json_line(
-        &json!({"schema_version":2,"event":"ready","run_id":run_id,
+        &json!({"schema_version":3,"event":"ready","run_id":run_id,
         "status_url":format!("{base}/status"),"command_url":format!("{base}/command"),
         "stop_url":format!("{base}/stop")})
         .to_string(),
@@ -1355,14 +1782,14 @@ fn run_scopes_fixture(scenario: &str) {
     loop {
         let request = accept_request(&listener);
         match request.path.as_str() {
-            "/status" => write_response(request.stream, 200, &json!({"schema_version":2,
+            "/status" => write_response(request.stream, 200, &json!({"schema_version":3,
                 "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
                 "mode":if scenario == "scopes-dynamic-failed" {"live"} else {"simulate"},
                 "model":if scenario == "scopes-wrong-model" {"unknown"} else {"keysight-dsox4024a"},
                 "resource":if scenario == "scopes-dynamic-failed" {json!("USB::SCOPE")} else {json!(null)}}).to_string()),
             "/command" => {
                 let command: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-                assert_eq!(command["schema_version"], 2);
+                assert_eq!(command["schema_version"], 3);
                 assert!(command.get("context").is_none());
                 if scenario == "scopes-dynamic-failed" {
                     assert_eq!(command["command"], "measure");
@@ -1373,17 +1800,17 @@ fn run_scopes_fixture(scenario: &str) {
                     assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
                 }
                 if scenario == "scopes-rejected" {
-                    write_response(request.stream, 429, &json!({"schema_version":2,"status":"rejected",
+                    write_response(request.stream, 429, &json!({"schema_version":3,"status":"rejected",
                         "command":command["command"],"job_id":command["job_id"],"reason":"queue_full"}).to_string());
                     continue;
                 }
-                write_response(request.stream, 202, &json!({"schema_version":2,"status":"accepted",
+                write_response(request.stream, 202, &json!({"schema_version":3,"status":"accepted",
                     "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":"job-1"}).to_string());
                 if scenario == "scopes-timeout" { continue; }
                 thread::sleep(Duration::from_millis(50));
                 let failed = matches!(scenario, "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed");
                 let cancelled = scenario == "scopes-cancelled";
-                print_json_line(&json!({"schema_version":2,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
+                print_json_line(&json!({"schema_version":3,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
                     "command":command["command"],"job_id":command["job_id"],
                     "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
                     "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
@@ -1395,6 +1822,25 @@ fn run_scopes_fixture(scenario: &str) {
             other => panic!("unexpected Scopes request {other}"),
         }
     }
+}
+
+fn common_v3_accepts_additional_tool_without_parser_branch() {
+    let session = start_worker(
+        &fixture_spec("conformance-extra-tool"),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let result = session
+        .run_async_job(
+            "do-work",
+            &json!({}),
+            None,
+            "client-extra-1",
+            Duration::from_secs(3),
+        )
+        .unwrap();
+    assert_eq!(result["result"]["answer"], 42);
+    assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
 fn scopes_worker_protocol_cases() {
@@ -1452,7 +1898,15 @@ fn scopes_worker_protocol_cases() {
                 }
             }
         }
-        assert!(session.shutdown(Duration::from_secs(2)).unwrap().success());
+        let shutdown = session.shutdown(Duration::from_secs(2));
+        if scenario == "scopes-mismatch" {
+            assert!(
+                shutdown.is_err(),
+                "conflicting Job identity must not pass Worker shutdown"
+            );
+        } else {
+            assert!(shutdown.unwrap().success(), "scenario: {scenario}");
+        }
     }
 }
 
@@ -1511,7 +1965,8 @@ fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
                         "--resource",
                         "USB::SCOPE",
                     ],
-                ),
+                )
+                .with_manifest(fixture_manifest("scopes-dynamic-failed")),
             ),
         ]),
         Duration::from_secs(5),
@@ -1540,7 +1995,7 @@ fn valid_ready_starts_worker_session() {
     let session = start_worker(&fixture_spec("valid-ready"), Duration::from_secs(5)).unwrap();
 
     assert_ne!(session.process_id(), 0);
-    assert_eq!(session.ready().schema_version(), 2);
+    assert_eq!(session.ready().schema_version(), 3);
     assert_eq!(session.ready().run_id(), "run-123");
     assert_eq!(session.ready().status_url(), "http://127.0.0.1/status");
     assert_eq!(session.ready().command_url(), "http://127.0.0.1/command");
@@ -1557,10 +2012,7 @@ fn invalid_ready_protocol_is_rejected() {
             matches!(
                 (scenario, error),
                 ("malformed-json", WorkerStartError::InvalidReady(_))
-                    | (
-                        "unsupported-schema",
-                        WorkerStartError::UnsupportedSchemaVersion(3)
-                    )
+                    | ("unsupported-schema", WorkerStartError::InvalidContract(_))
             ),
             "unexpected error for {scenario}"
         );
@@ -1672,14 +2124,14 @@ fn common_worker_http_round_trip() {
     let session = start_worker(&fixture_spec("http-round-trip"), Duration::from_secs(5)).unwrap();
     let client = WorkerClient::new(session.ready());
 
-    assert_eq!(client.status().unwrap(), json!({"state": "idle"}));
+    assert_eq!(client.status().unwrap()["worker_state"], "running");
     assert_eq!(
         client
             .command(&json!({"action": "measure", "value": 7}))
             .unwrap(),
         json!({"accepted": true})
     );
-    assert_eq!(client.stop().unwrap(), Some(json!({"ok": true})));
+    assert_eq!(client.stop().unwrap().unwrap()["status"], "accepted");
 }
 
 fn non_2xx_http_response_is_rejected() {
@@ -1718,12 +2170,15 @@ fn runtime_events_are_available_after_ready() {
     let sample = session
         .recv_event(Duration::from_secs(2))
         .expect("first runtime event should be sample");
-    assert_eq!(sample, json!({"event":"sample","seq":1}));
+    assert_eq!(sample["event"], "sample");
+    assert_eq!(sample["seq"], 1);
 
     let summary = session
         .recv_event(Duration::from_secs(2))
         .expect("second runtime event should be summary");
-    assert_eq!(summary, json!({"event":"summary","count":1}));
+    assert_eq!(summary["event"], "summary");
+    assert_eq!(summary["count"], 1);
+    assert_eq!(summary["ok"], true);
 
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
@@ -2646,7 +3101,10 @@ fn three_meter_measurements_shutdown_normally() {
     );
     let run = run_simulated_workflow(
         &test_template(&workflow),
-        &HashMap::from([(ToolInstanceId::new("meters-1").unwrap(), spec)]),
+        &HashMap::from([(
+            ToolInstanceId::new("meters-1").unwrap(),
+            spec.with_manifest(fixture_manifest("meters-runtime")),
+        )]),
         Duration::from_secs(5),
         Duration::from_secs(5),
         Duration::from_secs(5),
@@ -2703,7 +3161,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
         ),
         (
             ToolInstanceId::new("meters-1").unwrap(),
-            fixture_spec("exit-before-ready"),
+            fixture_spec("exit-before-ready").with_manifest(fixture_manifest("meters-startup")),
         ),
     ]);
 

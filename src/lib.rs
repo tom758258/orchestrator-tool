@@ -4,6 +4,8 @@
 //! layers so both can reuse the same orchestration behavior.
 
 pub mod adapters;
+pub mod common_job;
+pub mod common_v3;
 pub mod config;
 pub mod data_context;
 pub mod discovery;

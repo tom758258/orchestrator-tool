@@ -12,6 +12,8 @@ use crate::{
         WorkflowExecutionError, execute_workflow_streaming_with_loop_stop_and_scopes_output,
         execute_workflow_with_loop_stop,
     },
+    manifest::WorkerCompatibility,
+    manifest_probe::probe_manifest,
     template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
@@ -217,7 +219,41 @@ fn run_workflow_internal(
 
     let mut sessions = Vec::with_capacity(referenced_specs.len());
     for (instance, spec) in referenced_specs {
-        match start_worker(spec, startup_timeout) {
+        let declared_tool = template
+            .tool_instances()
+            .iter()
+            .find(|item| item.id == instance)
+            .map(|item| item.tool.clone())
+            .ok_or_else(|| WorkflowRunError::WorkerStartup {
+                instance: instance.clone(),
+                source: WorkerStartError::InvalidContract("missing Tool instance".into()),
+            })?;
+        // Already-prepared launches carry the probed Manifest; direct public
+        // launch specifications must probe the actual executable before use.
+        let manifest_result = match spec.manifest() {
+            Some(manifest) => Ok(manifest.clone()),
+            None => probe_manifest(spec.executable(), &declared_tool)
+                .map(|probe| probe.manifest().clone())
+                .map_err(|err| {
+                    WorkerStartError::InvalidContract(format!(
+                        "Manifest preflight of selected executable failed: {err}"
+                    ))
+                }),
+        };
+        let launch_result = manifest_result.and_then(|manifest| {
+            if manifest.tool_id() != &declared_tool
+                || manifest.worker_compatibility() != WorkerCompatibility::Compatible
+            {
+                return Err(WorkerStartError::InvalidContract(format!(
+                    "{} Worker v3 Manifest incompatible",
+                    declared_tool
+                )));
+            }
+            crate::adapters::validate_existing_worker_integration(&declared_tool, &manifest)
+                .map_err(WorkerStartError::InvalidContract)?;
+            start_worker(&spec.clone().with_manifest(manifest), startup_timeout)
+        });
+        match launch_result {
             Ok(session) => sessions.push((instance, session)),
             Err(source) => {
                 let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);

@@ -1,4 +1,4 @@
-//! Scopes Common Worker v2 adapter; instrument policy stays in scopes-tool.
+//! Scopes Common Worker v3 thin adapter; instrument policy stays in scopes-tool.
 
 use crate::{
     config::Config,
@@ -18,7 +18,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -299,13 +299,14 @@ pub fn validate_session(
 }
 
 fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String> {
-    if status["schema_version"].as_u64() != Some(2)
+    if status["schema_version"].as_u64() != Some(3)
         || status["service"] != "scopes-tool"
         || status["run_id"] != session.ready().run_id()
     {
         return Err("invalid Scopes Worker status identity".into());
     }
-    if status.get("fatal_error").is_some_and(|e| !e.is_null()) || status["status"] == "error" {
+    if status.get("fatal_error").is_some_and(|e| !e.is_null()) || status["worker_state"] == "failed"
+    {
         return Err(format!(
             "Scopes Worker fatal error: {}",
             status["fatal_error"]
@@ -315,68 +316,20 @@ fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String
 }
 
 static NEXT_JOB: AtomicU64 = AtomicU64::new(0);
+
 fn run_command(
     session: &WorkerSession,
     command: &str,
     arguments: &Value,
     timeout: Duration,
 ) -> Result<Value, String> {
-    let deadline = Instant::now() + timeout;
-    let remaining = || {
-        deadline
-            .checked_duration_since(Instant::now())
-            .filter(|d| !d.is_zero())
-            .ok_or_else(|| format!("Scopes {command} timed out after {timeout:?}"))
-    };
     let job_id = format!(
         "orchestrator-scopes-{}-{}",
         std::process::id(),
         NEXT_JOB.fetch_add(1, Ordering::Relaxed)
     );
-    let request =
-        json!({"schema_version":2,"command":command,"arguments":arguments,"job_id":job_id});
-    let (http, accepted) = crate::worker_http::WorkerClient::new(session.ready())
-        .command_with_rejection_timeout(&request, remaining()?)
-        .map_err(|e| e.to_string())?;
-    if http != 202
-        || accepted["schema_version"].as_u64() != Some(2)
-        || accepted["status"] != "accepted"
-        || accepted["command"] != command
-        || accepted["job_id"] != job_id
-    {
-        return Err(format!(
-            "Scopes {command} admission failed (HTTP {http}): {accepted}"
-        ));
-    }
-    let worker_job_id = accepted["worker_job_id"]
-        .as_str()
-        .filter(|id| !id.is_empty())
-        .ok_or("Scopes acceptance has no worker_job_id")?;
-    loop {
-        let event = session
-            .recv_event(remaining()?)
-            .map_err(|e| format!("Scopes {command}: {e}"))?;
-        if event["schema_version"].as_u64() != Some(2)
-            || event["run_id"] != session.ready().run_id()
-        {
-            return Err("invalid Scopes event identity".into());
-        }
-        if event["event"] == "summary" {
-            return Err(format!(
-                "Scopes Worker exited before {command} finished: {event}"
-            ));
-        }
-        if event["event"] != "job_finished" {
-            continue;
-        }
-        if event["worker_job_id"] != worker_job_id
-            || event["job_id"] != job_id
-            || event["command"] != command
-        {
-            return Err("Scopes job_finished correlation mismatch".into());
-        }
-        return terminal_result(&event, command, arguments);
-    }
+    let terminal = session.run_async_job(command, arguments, None, &job_id, timeout)?;
+    terminal_result(&terminal, command, arguments)
 }
 
 fn terminal_result(event: &Value, command: &str, arguments: &Value) -> Result<Value, String> {

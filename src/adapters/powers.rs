@@ -4,8 +4,8 @@ use std::{
     fmt,
     path::Path,
     process::ExitStatus,
-    thread,
-    time::{Duration, Instant},
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,19 +20,16 @@ use crate::{
     run::ExecutionMode,
     tool::ToolId,
     worker::{
-        WorkerLaunchSpec, WorkerReady, WorkerSession, WorkerShutdownError, WorkerStartError,
-        start_worker,
+        WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
     worker_http::{WorkerClient, WorkerHttpError},
     workflow::ActionId,
 };
 
-const WORKER_SCHEMA_VERSION: u32 = 2;
-const SERVICE_NAME: &str = "powers-tool";
+const WORKER_SCHEMA_VERSION: u32 = 3;
 const READ_STATUS_COMMAND: &str = "read-status";
 const SIMULATION_MODEL_ID: &str = "keysight-e36312a";
 const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PowersProtectionFeatures {
@@ -236,7 +233,7 @@ pub fn run_worker_smoke(
 ) -> Result<(), PowersSmokeError> {
     let spec = simulate_worker_launch_spec(executable);
     let session = start_worker(&spec, startup_timeout).map_err(PowersSmokeError::Startup)?;
-    let operation = run_smoke_operation(session.ready(), operation_timeout);
+    let operation = run_smoke_operation(&session, operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);
 
     match (operation, shutdown) {
@@ -257,188 +254,9 @@ pub fn run_worker_smoke(
     }
 }
 
-fn run_smoke_operation(
-    ready: &WorkerReady,
-    operation_timeout: Duration,
-) -> Result<(), PowersSmokeError> {
-    let deadline = Instant::now() + operation_timeout;
-    let client = WorkerClient::new(ready);
-
-    let status = client
-        .status_with_timeout(remaining(deadline, operation_timeout)?)
-        .map_err(PowersSmokeError::Http)?;
-    validate_status_identity(&status, ready)?;
-
-    let (http_status, response) = client
-        .command_with_timeout(
-            &read_status_request(),
-            remaining(deadline, operation_timeout)?,
-        )
-        .map_err(PowersSmokeError::Http)?;
-    let worker_job_id = validate_accepted_response(http_status, response, READ_STATUS_COMMAND)?;
-
-    loop {
-        let status = client
-            .status_with_timeout(remaining(deadline, operation_timeout)?)
-            .map_err(PowersSmokeError::Http)?;
-        let status = parse_status(status, ready)?;
-
-        if let Some(last_job) = status.last_job
-            && last_job.worker_job_id == worker_job_id
-        {
-            match last_job.status.as_str() {
-                "accepted" | "queued" | "running" => {}
-                "succeeded" => {
-                    if last_job
-                        .result
-                        .is_some_and(|result| result.get("ok") == Some(&Value::Bool(true)))
-                    {
-                        return Ok(());
-                    }
-                    return Err(PowersSmokeError::InvalidResponse(
-                        "succeeded read-status job did not contain result.ok=true".to_owned(),
-                    ));
-                }
-                "failed" | "cancelled" => {
-                    return Err(PowersSmokeError::TerminalFailure {
-                        status: last_job.status,
-                        detail: diagnostic_detail(last_job.error.as_ref()),
-                    });
-                }
-                status => {
-                    return Err(PowersSmokeError::InvalidResponse(format!(
-                        "read-status job had unknown status {status:?}"
-                    )));
-                }
-            }
-        }
-
-        let wait = POLL_INTERVAL.min(remaining(deadline, operation_timeout)?);
-        thread::sleep(wait);
-    }
-}
-
-fn remaining(deadline: Instant, timeout: Duration) -> Result<Duration, PowersSmokeError> {
-    let now = Instant::now();
-    if now >= deadline {
-        return Err(PowersSmokeError::OperationTimeout(timeout));
-    }
-    Ok(deadline.saturating_duration_since(now))
-}
-
-fn read_status_request() -> Value {
-    json!({
-        "schema_version": WORKER_SCHEMA_VERSION,
-        "command": READ_STATUS_COMMAND,
-        "arguments": {
-            "channel": "all"
-        },
-        "context": {
-            "mode": "simulate",
-            "planning_model_id": SIMULATION_MODEL_ID
-        }
-    })
-}
-
-#[derive(Deserialize)]
-struct StatusResponse {
-    schema_version: u32,
-    service: String,
-    run_id: String,
-    status: String,
-    #[serde(default)]
-    fatal_error: Option<DiagnosticError>,
-    #[serde(default)]
-    last_job: Option<LastJob>,
-}
-
-#[derive(Deserialize)]
-struct LastJob {
-    worker_job_id: String,
-    status: String,
-    #[serde(default)]
-    result: Option<Value>,
-    #[serde(default)]
-    error: Option<DiagnosticError>,
-}
-
-#[derive(Deserialize)]
-struct DiagnosticError {
-    #[serde(default)]
-    code: Option<String>,
-    #[serde(default)]
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AcceptedResponse {
-    schema_version: u32,
-    status: String,
-    command: String,
-    worker_job_id: String,
-}
-
-fn validate_status_identity(value: &Value, ready: &WorkerReady) -> Result<(), PowersSmokeError> {
-    parse_status(value.clone(), ready).map(|_| ())
-}
-
-fn parse_status(value: Value, ready: &WorkerReady) -> Result<StatusResponse, PowersSmokeError> {
-    let status: StatusResponse = serde_json::from_value(value)
-        .map_err(|error| PowersSmokeError::InvalidResponse(error.to_string()))?;
-
-    if status.schema_version != WORKER_SCHEMA_VERSION {
-        return Err(PowersSmokeError::InvalidResponse(format!(
-            "status schema_version was {}, expected {WORKER_SCHEMA_VERSION}",
-            status.schema_version
-        )));
-    }
-    if status.service != SERVICE_NAME {
-        return Err(PowersSmokeError::InvalidResponse(format!(
-            "status service was {:?}, expected {SERVICE_NAME:?}",
-            status.service
-        )));
-    }
-    if status.run_id != ready.run_id() {
-        return Err(PowersSmokeError::InvalidResponse(format!(
-            "status run_id was {:?}, expected {:?}",
-            status.run_id,
-            ready.run_id()
-        )));
-    }
-    validate_worker_health(&status)?;
-
-    Ok(status)
-}
-
-fn validate_worker_health(status: &StatusResponse) -> Result<(), PowersSmokeError> {
-    let has_fatal_error = status.fatal_error.is_some();
-    if status.status != "error" && !has_fatal_error {
-        return Ok(());
-    }
-
-    let detail = diagnostic_detail(status.fatal_error.as_ref()).unwrap_or_else(|| {
-        if status.status == "error" {
-            "Worker status is error".to_owned()
-        } else {
-            "Worker status contained fatal_error".to_owned()
-        }
-    });
-    Err(PowersSmokeError::WorkerFatal(detail))
-}
-
-fn diagnostic_detail(error: Option<&DiagnosticError>) -> Option<String> {
-    let error = error?;
-    let code = error
-        .code
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let message = error
-        .message
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
+fn common_failure_detail(error: &Value) -> Option<String> {
+    let code = error["code"].as_str().filter(|s| !s.is_empty());
+    let message = error["message"].as_str().filter(|s| !s.is_empty());
     match (code, message) {
         (Some(code), Some(message)) => Some(format!("{code}: {message}")),
         (Some(code), None) => Some(code.to_owned()),
@@ -447,34 +265,57 @@ fn diagnostic_detail(error: Option<&DiagnosticError>) -> Option<String> {
     }
 }
 
-/// Validates that the Worker returned an accepted command response with a job ID.
-///
-/// `command_name` is the expected command field for diagnostic error messages;
-/// use an empty string to skip command validation (runtime actions).
-fn validate_accepted_response(
-    http_status: u16,
-    value: Value,
-    command_name: &str,
-) -> Result<String, PowersSmokeError> {
-    if http_status != 202 {
-        return Err(PowersSmokeError::InvalidResponse(format!(
-            "{command_name} returned HTTP {http_status}, expected 202"
-        )));
+fn run_smoke_operation(
+    session: &WorkerSession,
+    operation_timeout: Duration,
+) -> Result<(), PowersSmokeError> {
+    let client = WorkerClient::new(session.ready());
+    let initial = client
+        .status_with_timeout(operation_timeout)
+        .map_err(PowersSmokeError::Http)?;
+    if initial["worker_state"] == "failed" || !initial["fatal_error"].is_null() {
+        return Err(PowersSmokeError::WorkerFatal(
+            common_failure_detail(&initial["fatal_error"])
+                .unwrap_or_else(|| "Worker reported fatal status".to_owned()),
+        ));
     }
-
-    let accepted: AcceptedResponse = serde_json::from_value(value)
-        .map_err(|error| PowersSmokeError::InvalidResponse(error.to_string()))?;
-    if accepted.schema_version != WORKER_SCHEMA_VERSION
-        || accepted.status != "accepted"
-        || (!command_name.is_empty() && accepted.command != command_name)
-        || accepted.worker_job_id.is_empty()
-    {
-        return Err(PowersSmokeError::InvalidResponse(format!(
-            "{command_name} acceptance payload did not match the Powers Worker contract",
-        )));
+    let request = read_status_request();
+    let job_id = format!(
+        "orchestrator-powers-smoke-{}-{}",
+        std::process::id(),
+        NEXT_JOB_ID.fetch_add(1, Ordering::Relaxed)
+    );
+    let terminal = session
+        .run_async_job(
+            READ_STATUS_COMMAND,
+            &request["arguments"],
+            Some(request["context"].clone()),
+            &job_id,
+            operation_timeout,
+        )
+        .map_err(PowersSmokeError::InvalidResponse)?;
+    match terminal["state"].as_str() {
+        Some("succeeded") if terminal["result"]["ok"] == true => Ok(()),
+        Some("failed" | "cancelled") => Err(PowersSmokeError::TerminalFailure {
+            status: terminal["state"].as_str().unwrap_or("failed").to_owned(),
+            detail: common_failure_detail(&terminal["error"]),
+        }),
+        _ => Err(PowersSmokeError::InvalidResponse(
+            "read-status Job did not confirm successful result.ok".into(),
+        )),
     }
+}
 
-    Ok(accepted.worker_job_id)
+fn read_status_request() -> Value {
+    json!({
+        "schema_version": WORKER_SCHEMA_VERSION,
+        "command": READ_STATUS_COMMAND,
+        "arguments": { "channel": "all" },
+        "context": {
+            "mode": "simulate",
+            "planning_model_id": SIMULATION_MODEL_ID
+        }
+    })
 }
 
 /// Errors from the Powers Worker smoke diagnostic.
@@ -980,6 +821,8 @@ pub fn apply_protection_setup(
     )
 }
 
+static NEXT_JOB_ID: AtomicU64 = AtomicU64::new(0);
+
 fn run_command(
     session: &WorkerSession,
     worker_command: &str,
@@ -987,141 +830,34 @@ fn run_command(
     execution_mode: ExecutionMode,
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
-    let deadline = Instant::now() + timeout;
-    let client = WorkerClient::new(session.ready());
     let context = match execution_mode {
         ExecutionMode::Simulate => json!({
             "mode": "simulate",
             "planning_model_id": SIMULATION_MODEL_ID
         }),
         ExecutionMode::Live => {
+            // Existing Powers safety semantics stay in the thin adapter.
             arguments["confirm_output"] = json!(true);
             json!({ "mode": "live" })
         }
     };
-
-    let request = json!({
-        "schema_version": WORKER_SCHEMA_VERSION,
-        "command": worker_command,
-        "arguments": arguments,
-        "context": context
-    });
-
-    let remaining =
-        remaining_duration(deadline, timeout).ok_or(PowersActionError::Timeout(timeout))?;
-
-    let (http_status, response) = client
-        .command_with_timeout(&request, remaining)
-        .map_err(PowersActionError::Http)?;
-    let worker_job_id = validate_accepted_response(http_status, response, worker_command)
-        .map_err(|error| PowersActionError::InvalidResponse(error.to_string()))?;
-
-    run_runtime_operation(&client, session.ready(), &worker_job_id, deadline, timeout)
-}
-
-fn run_runtime_operation(
-    client: &WorkerClient,
-    ready: &WorkerReady,
-    worker_job_id: &str,
-    deadline: Instant,
-    timeout: Duration,
-) -> Result<Value, PowersActionError> {
-    loop {
-        let remaining = match remaining_duration(deadline, timeout) {
-            Some(duration) => duration,
-            None => return Err(PowersActionError::Timeout(timeout)),
-        };
-
-        let status = client
-            .status_with_timeout(remaining)
-            .map_err(PowersActionError::Http)?;
-        let parsed = parse_runtime_status(status, ready)?;
-
-        if let Some(last_job) = parsed.last_job.as_ref()
-            && last_job.worker_job_id == worker_job_id
-        {
-            match last_job.status.as_str() {
-                "accepted" | "queued" | "running" => {}
-                "succeeded" | "failed" | "cancelled" => {
-                    return terminal_result(last_job, timeout);
-                }
-                other => {
-                    return Err(PowersActionError::InvalidResponse(format!(
-                        "job had unknown status {other:?}"
-                    )));
-                }
-            }
-        }
-
-        let remaining = remaining_duration(deadline, timeout).unwrap_or(Duration::ZERO);
-        let wait = POLL_INTERVAL.min(remaining);
-        thread::sleep(wait);
-    }
-}
-
-fn terminal_result(last_job: &LastJob, _timeout: Duration) -> Result<Value, PowersActionError> {
-    match last_job.status.as_str() {
-        "succeeded" => match last_job.result.clone() {
-            Some(value) => Ok(value),
-            None => Err(PowersActionError::InvalidResponse(
-                "succeeded job missing result".to_owned(),
-            )),
-        },
-        "failed" | "cancelled" => Err(PowersActionError::WorkerFailure {
-            status: last_job.status.clone(),
-            detail: diagnostic_detail(last_job.error.as_ref()),
+    let job_id = format!(
+        "orchestrator-powers-{}-{}",
+        std::process::id(),
+        NEXT_JOB_ID.fetch_add(1, Ordering::Relaxed)
+    );
+    let terminal = session
+        .run_async_job(worker_command, &arguments, Some(context), &job_id, timeout)
+        .map_err(PowersActionError::InvalidResponse)?;
+    match terminal["state"].as_str() {
+        Some("succeeded") if terminal["ok"] == true => Ok(terminal["result"].clone()),
+        Some("failed" | "cancelled") => Err(PowersActionError::WorkerFailure {
+            status: terminal["state"].as_str().unwrap_or("failed").to_owned(),
+            detail: terminal["error"]["message"].as_str().map(str::to_owned),
         }),
-        other => Err(PowersActionError::InvalidResponse(format!(
-            "job had unknown status {other:?}"
-        ))),
-    }
-}
-
-fn parse_runtime_status(
-    value: Value,
-    ready: &WorkerReady,
-) -> Result<StatusResponse, PowersActionError> {
-    let parsed: StatusResponse = serde_json::from_value(value)
-        .map_err(|error| PowersActionError::InvalidResponse(error.to_string()))?;
-    if parsed.schema_version != WORKER_SCHEMA_VERSION {
-        return Err(PowersActionError::InvalidResponse(format!(
-            "status schema_version was {}, expected {WORKER_SCHEMA_VERSION}",
-            parsed.schema_version
-        )));
-    }
-    if parsed.service != SERVICE_NAME {
-        return Err(PowersActionError::InvalidResponse(format!(
-            "status service was {:?}, expected {SERVICE_NAME:?}",
-            parsed.service
-        )));
-    }
-    if parsed.run_id != ready.run_id() {
-        return Err(PowersActionError::InvalidResponse(format!(
-            "status run_id was {:?}, expected {:?}",
-            parsed.run_id,
-            ready.run_id()
-        )));
-    }
-    if let Some(ref fatal) = parsed.fatal_error
-        && let Some(detail) = diagnostic_detail(Some(fatal))
-    {
-        return Err(PowersActionError::WorkerFatal(detail));
-    }
-    if parsed.status == "error" {
-        return Err(PowersActionError::WorkerFatal(
-            "Worker status is error".to_owned(),
-        ));
-    }
-
-    Ok(parsed)
-}
-
-fn remaining_duration(deadline: Instant, _timeout: Duration) -> Option<Duration> {
-    let now = Instant::now();
-    if now >= deadline {
-        None
-    } else {
-        Some(deadline.saturating_duration_since(now))
+        _ => Err(PowersActionError::InvalidResponse(
+            "Common v3 Job Tracker returned invalid terminal".into(),
+        )),
     }
 }
 
@@ -1260,9 +996,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        PowersActionError, PowersSmokeError, StatusResponse, augment_protection_status_result,
-        read_status_request, simulate_worker_launch_spec, validate_arguments,
-        validate_worker_health,
+        PowersActionError, augment_protection_status_result, read_status_request,
+        simulate_worker_launch_spec, validate_arguments,
     };
 
     #[test]
@@ -1308,7 +1043,7 @@ mod tests {
         assert_eq!(
             read_status_request(),
             json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "command": "read-status",
                 "arguments": { "channel": "all" },
                 "context": {
@@ -1320,19 +1055,22 @@ mod tests {
     }
 
     #[test]
-    fn worker_error_status_fails_fast_without_fatal_detail() {
-        let status: StatusResponse = serde_json::from_value(json!({
-            "schema_version": 2,
-            "service": "powers-tool",
-            "run_id": "run-123",
-            "status": "error"
-        }))
-        .unwrap();
-
-        let error = validate_worker_health(&status).unwrap_err();
-
+    fn worker_failure_status_cannot_establish_v3_readiness() {
+        let ready = json!({
+            "schema_version":3,"timestamp_utc":"2026-10-23T12:00:00Z",
+            "run_id":"r1","worker_state":"failed",
+            "fatal_error":{"category":"worker","code":"broken",
+                "message":"broken","details":{}},
+            "features":{"common.async_jobs":{"contract_version":1}},
+            "status_url":"http://127.0.0.1:8080/status",
+            "command_url":"http://127.0.0.1:8080/command",
+            "stop_url":"http://127.0.0.1:8080/stop",
+            "active_job":null,"last_job":null
+        });
+        let origin = crate::common_v3::endpoints(&ready).unwrap();
         assert!(
-            matches!(error, PowersSmokeError::WorkerFatal(detail) if detail == "Worker status is error")
+            crate::common_v3::status(&ready, "r1", &origin, None, &ready["features"], true)
+                .is_err()
         );
     }
 

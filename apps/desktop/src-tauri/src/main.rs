@@ -1317,7 +1317,9 @@ mod tests {
         let two = capabilities("two-channel", json!([1, 2]));
         let three = capabilities("three-channel", json!([1, 2, 3]));
         let manifest = json!({"schema_version":2,"event":"tool_manifest","tool_id":"powers","tool_version":"test",
-            "worker_protocol":{"compatibility_policy":"exact","schema_versions":[2]}});
+            "worker_protocol":{"compatibility_policy":"v3-only","schema_versions":[3]},
+            "execution":{"model":"multi_job","context_binding":"per_command"},
+            "features":{"common.async_jobs":{"contract_version":1}}});
         #[cfg(windows)]
         let executable = {
             let path = dir.join("powers-tool.cmd");
@@ -2135,10 +2137,18 @@ mod regression_tests {
         tool: &str,
         worker_version: u32,
     ) -> std::path::PathBuf {
+        let is_meters = tool == "meters";
         let manifest = serde_json::json!({
             "event": "tool_manifest", "schema_version": 2, "tool_id": tool,
             "tool_version": "1.0.0", "worker_protocol": {
-                "schema_versions": [worker_version], "compatibility_policy": "v2-only"
+                "schema_versions": [worker_version], "compatibility_policy": "v3-only"
+            },
+            "execution":{"model": if is_meters {"run_bound"} else {"multi_job"},
+                "context_binding": if is_meters {"startup"} else {"per_command"}},
+            "features": if is_meters {
+                serde_json::json!({})
+            } else {
+                serde_json::json!({"common.async_jobs":{"contract_version":1}})
             }
         });
         #[cfg(windows)]
@@ -2161,8 +2171,8 @@ mod regression_tests {
     fn desktop_tool_config_set_load_reset_round_trip() {
         let dir = unique_test_dir("orchestrator-tool-desktop-config-test");
         let config_path = dir.join("orchestrator.toml");
-        let meters_exe = manifest_fixture(&dir, "meters", 2);
-        let powers_exe = manifest_fixture(&dir, "powers", 2);
+        let meters_exe = manifest_fixture(&dir, "meters", 3);
+        let powers_exe = manifest_fixture(&dir, "powers", 3);
         assert_eq!(
             load_desktop_config_from_path(&config_path)
                 .unwrap()

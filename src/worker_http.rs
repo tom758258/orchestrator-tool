@@ -2,7 +2,7 @@ use std::{error::Error, fmt, time::Duration};
 
 use serde_json::Value;
 
-use crate::worker::WorkerReady;
+use crate::{common_v3, worker::WorkerReady};
 
 /// A blocking client for Common Worker HTTP endpoints.
 pub struct WorkerClient {
@@ -10,6 +10,8 @@ pub struct WorkerClient {
     status_url: String,
     command_url: String,
     stop_url: String,
+    cancel_url: Option<String>,
+    ready: WorkerReady,
 }
 
 impl WorkerClient {
@@ -26,6 +28,8 @@ impl WorkerClient {
             status_url: ready.status_url().to_owned(),
             command_url: ready.command_url().to_owned(),
             stop_url: ready.stop_url().to_owned(),
+            cancel_url: ready.cancel_url().map(str::to_owned),
+            ready: ready.clone(),
         }
     }
 
@@ -46,7 +50,10 @@ impl WorkerClient {
             .post(&self.stop_url)
             .send_empty()
             .map_err(WorkerHttpError::Request)?;
-        optional_json_response(response)
+        let (code, value) = required_json_response_with_status(response)?;
+        common_v3::stop_accepted(&value, code, self.ready.run_id())
+            .map_err(WorkerHttpError::Contract)?;
+        Ok(Some(value))
     }
 
     pub(crate) fn stop_with_timeout(
@@ -61,7 +68,10 @@ impl WorkerClient {
             .build()
             .send_empty()
             .map_err(WorkerHttpError::Request)?;
-        optional_json_response(response)
+        let (code, value) = required_json_response_with_status(response)?;
+        common_v3::stop_accepted(&value, code, self.ready.run_id())
+            .map_err(WorkerHttpError::Contract)?;
+        Ok(Some(value))
     }
 
     pub(crate) fn status_with_timeout(&self, timeout: Duration) -> Result<Value, WorkerHttpError> {
@@ -73,7 +83,14 @@ impl WorkerClient {
             .build()
             .call()
             .map_err(WorkerHttpError::Request)?;
-        required_json_response(response)
+        if response.status().as_u16() != 200 {
+            return Err(WorkerHttpError::Contract(
+                "GET /status must return HTTP 200".into(),
+            ));
+        }
+        let status = required_json_response(response)?;
+        self.validate_status(&status)?;
+        Ok(status)
     }
 
     pub(crate) fn command_with_timeout(
@@ -112,7 +129,53 @@ impl WorkerClient {
             .read_to_string()
             .map_err(WorkerHttpError::Request)?;
         let value = serde_json::from_str(&body).map_err(WorkerHttpError::InvalidJson)?;
+        common_v3::version(&value).map_err(WorkerHttpError::Contract)?;
         Ok((status, value))
+    }
+
+    fn validate_status(&self, value: &Value) -> Result<(), WorkerHttpError> {
+        common_v3::status(
+            value,
+            self.ready.run_id(),
+            self.ready.origin(),
+            None,
+            self.ready.features(),
+            false,
+        )
+        .map_err(WorkerHttpError::Contract)
+    }
+
+    /// An accepted cancellation does not imply a cancelled job terminal.
+    pub fn cancel(
+        &self,
+        worker_job_id: &str,
+        reason: Option<&str>,
+    ) -> Result<Value, WorkerHttpError> {
+        let url = self.cancel_url.as_ref().ok_or_else(|| {
+            WorkerHttpError::Contract("Worker did not adopt common.job_cancel".into())
+        })?;
+        let mut body = serde_json::json!({"schema_version":3,"worker_job_id":worker_job_id});
+        if let Some(reason) = reason {
+            body["reason"] = Value::String(reason.to_owned());
+        }
+        let response = self
+            .agent
+            .post(url.as_str())
+            .send_json(&body)
+            .map_err(WorkerHttpError::Request)?;
+        let (code, value) = required_json_response_with_status(response)?;
+        if code != 202
+            || value["status"] != "accepted"
+            || value["run_id"] != self.ready.run_id()
+            || value["worker_job_id"] != worker_job_id
+            || !value["error"].is_null()
+        {
+            return Err(WorkerHttpError::Contract(
+                "invalid cancel acceptance envelope".into(),
+            ));
+        }
+        common_v3::version(&value).map_err(WorkerHttpError::Contract)?;
+        Ok(value)
     }
 
     fn status_response(&self) -> Result<(u16, Value), WorkerHttpError> {
@@ -121,7 +184,14 @@ impl WorkerClient {
             .get(&self.status_url)
             .call()
             .map_err(WorkerHttpError::Request)?;
-        required_json_response_with_status(response)
+        let (code, value) = required_json_response_with_status(response)?;
+        if code != 200 {
+            return Err(WorkerHttpError::Contract(
+                "GET /status must return HTTP 200".into(),
+            ));
+        }
+        self.validate_status(&value)?;
+        Ok((code, value))
     }
 
     fn command_response(&self, payload: &Value) -> Result<(u16, Value), WorkerHttpError> {
@@ -163,25 +233,13 @@ fn required_json_response_with_status(
     Ok((status, value))
 }
 
-fn optional_json_response(
-    response: ureq::http::Response<ureq::Body>,
-) -> Result<Option<Value>, WorkerHttpError> {
-    let body = response_body(response)?;
-    if body.trim().is_empty() {
-        return Ok(None);
-    }
-
-    serde_json::from_str(&body)
-        .map(Some)
-        .map_err(WorkerHttpError::InvalidJson)
-}
-
 /// Errors from Common Worker HTTP requests.
 #[derive(Debug)]
 pub enum WorkerHttpError {
     Request(ureq::Error),
     Non2xx(u16),
     InvalidJson(serde_json::Error),
+    Contract(String),
 }
 
 impl fmt::Display for WorkerHttpError {
@@ -194,6 +252,7 @@ impl fmt::Display for WorkerHttpError {
                     "Worker HTTP response had non-2xx status {status}"
                 )
             }
+            Self::Contract(message) => write!(formatter, "Worker v3 HTTP contract: {message}"),
             Self::InvalidJson(error) => {
                 write!(
                     formatter,
@@ -209,7 +268,7 @@ impl Error for WorkerHttpError {
         match self {
             Self::Request(source) => Some(source),
             Self::InvalidJson(source) => Some(source),
-            Self::Non2xx(_) => None,
+            Self::Non2xx(_) | Self::Contract(_) => None,
         }
     }
 }
