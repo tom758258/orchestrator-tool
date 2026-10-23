@@ -437,6 +437,7 @@ impl WorkerSession {
             let status = client
                 .status_with_timeout(remaining.min(Duration::from_millis(300)))
                 .map_err(|error| error.to_string())?;
+            let ready = common_v3::stream_source_ready(&status)?;
             let state = common_v3::required_string(&status["stream"], "state")?;
             let mut last = self
                 .stream_state
@@ -444,10 +445,8 @@ impl WorkerSession {
                 .map_err(|_| "poisoned stream state")?;
             common_v3::stream_transition(last.as_deref(), state)?;
             *last = Some(state.to_owned());
-            match state {
-                "active" => return Ok(()),
-                "ended" => return Err("stream ended before source readiness".into()),
-                _ => {}
+            if ready {
+                return Ok(());
             }
             drop(last);
             thread::sleep(

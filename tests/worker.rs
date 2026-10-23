@@ -396,6 +396,15 @@ fn main() {
         return;
     }
 
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--powers-real-sim-tests")
+    {
+        real_powers_simulated_workflow_uses_common_tracker();
+        println!("Real Powers Worker v3 Workflow SIM completed");
+        return;
+    }
+
     if arguments.first().is_some_and(|arg| arg == "--scopes-tests") {
         scopes_worker_protocol_cases();
         scopes_setup_failure_stops_workflow();
@@ -469,6 +478,65 @@ fn main() {
     multiple_powers_cleanup_attempts_every_session();
     two_meters_use_distinct_sessions();
     live_preflight_dynamic_worker_failure_retains_powers_cleanup();
+}
+
+fn real_powers_simulated_workflow_uses_common_tracker() {
+    let executable = std::path::PathBuf::from(
+        env::var_os("ORCHESTRATOR_TEST_POWERS_EXE")
+            .expect("Real Powers SIM executable must be explicitly supplied"),
+    );
+    let instance = ToolInstanceId::new("powers-real").unwrap();
+    let workflow = Workflow::new(vec![
+        Step::new(
+            StepId::new("set-voltage").unwrap(),
+            StepKind::ToolAction {
+                target: instance.clone(),
+                action: ActionId::new("set-voltage").unwrap(),
+                arguments: json!({"channel":1,"voltage":2.5}),
+                bindings: Default::default(),
+            },
+        ),
+        Step::new(
+            StepId::new("output-off").unwrap(),
+            StepKind::ToolAction {
+                target: instance.clone(),
+                action: ActionId::new("output-off").unwrap(),
+                arguments: json!({"channel":1}),
+                bindings: Default::default(),
+            },
+        ),
+    ])
+    .unwrap();
+    let template = Template::new(
+        "Powers Common v3 real SIM".to_owned(),
+        vec![ToolInstance {
+            display_name: None,
+            id: instance.clone(),
+            tool: ToolId::powers(),
+            setup: ToolSetup::Powers(orchestrator_tool::powers_setup::PowersSetup::default()),
+        }],
+        workflow,
+    )
+    .unwrap();
+    let launch_specs = HashMap::from([(
+        instance,
+        orchestrator_tool::adapters::powers::simulate_worker_launch_spec(executable),
+    )]);
+    let run = run_simulated_workflow(
+        &template,
+        &launch_specs,
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+    )
+    .unwrap();
+    let executions = run.step_executions();
+    assert_eq!(executions.len(), 2);
+    assert!(
+        executions
+            .iter()
+            .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
+    );
 }
 
 fn run_powers_worker_fixture() {

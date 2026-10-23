@@ -165,6 +165,67 @@ fn adopted_fields(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn async_snapshot(value: &Value, terminal: bool) -> Result<(), String> {
+    if value.is_null() {
+        return Ok(());
+    }
+    if !value.is_object() {
+        return Err("async job snapshot must be an object or null".into());
+    }
+    required_string(value, "worker_job_id")?;
+    required_string(value, "command")?;
+    timestamp(value)?;
+    if !value
+        .get("job_id")
+        .is_some_and(|job| job.is_null() || job.is_string())
+    {
+        return Err("async job snapshot missing client job_id".into());
+    }
+    let state = required_string(value, "state")?;
+    if terminal {
+        if !matches!(state, "succeeded" | "failed" | "cancelled") {
+            return Err("last_job must be a terminal snapshot".into());
+        }
+        let ok = value
+            .get("ok")
+            .and_then(Value::as_bool)
+            .ok_or("terminal snapshot missing ok")?;
+        value
+            .get("result")
+            .ok_or("terminal snapshot missing result")?;
+        let error = value
+            .get("error")
+            .ok_or("terminal snapshot missing error")?;
+        error_or_null(Some(error))?;
+        if (state == "succeeded" && (!ok || !error.is_null()))
+            || (state == "failed" && (ok || error.is_null()))
+            || (state == "cancelled" && ok)
+        {
+            return Err("terminal snapshot state/ok/error mismatch".into());
+        }
+    } else if !matches!(state, "queued" | "running") {
+        return Err("active_job must be a non-terminal snapshot".into());
+    }
+    Ok(())
+}
+
+/// Source readiness for an opted-in stream cannot be inferred from active
+/// if the Worker reports that it is stopping or failed.
+pub fn stream_source_ready(status: &Value) -> Result<bool, String> {
+    if !status.get("fatal_error").is_some_and(Value::is_null)
+        || matches!(status["worker_state"].as_str(), Some("failed" | "stopping"))
+    {
+        return Err("Worker failed or stopped before stream source readiness".into());
+    }
+    let state = required_string(&status["stream"], "state")?;
+    match state {
+        "ended" => Err("stream ended before source readiness".into()),
+        "active" => Ok(status["worker_state"] == "running"),
+        "waiting" => Ok(false),
+        _ => Err("invalid stream state".into()),
+    }
+}
+
 pub fn status(
     value: &Value,
     run_id: &str,
@@ -200,10 +261,15 @@ pub fn status(
     if observed_origin != *origin {
         return Err("HTTP Status origin changed".into());
     }
-    if features.get("common.async_jobs").is_some()
-        && (value.get("active_job").is_none() || value.get("last_job").is_none())
-    {
-        return Err("Async Worker Status missing job snapshots".into());
+    if features.get("common.async_jobs").is_some() {
+        let active = value
+            .get("active_job")
+            .ok_or("Async Worker Status missing active_job")?;
+        let last = value
+            .get("last_job")
+            .ok_or("Async Worker Status missing last_job")?;
+        async_snapshot(active, false)?;
+        async_snapshot(last, true)?;
     }
     if features.get("common.streaming").is_some() {
         // Status must retain the Ready-adopted lifecycle; it may only
@@ -326,7 +392,7 @@ pub fn command_rejected(
         || required_string(value, "run_id")? != run_id
         || value["command"] != command
         || value["job_id"] != job_id
-        || !value["worker_job_id"].is_null()
+        || !value.get("worker_job_id").is_some_and(Value::is_null)
     {
         return Err("invalid HTTP Command rejection envelope".into());
     }
@@ -446,6 +512,49 @@ mod tests {
         assert!(stream_transition(Some("active"), "ended").is_ok());
         assert!(stream_transition(Some("ended"), "active").is_err());
         assert!(stream_transition(Some("active"), "waiting").is_err());
+    }
+
+    #[test]
+    fn async_status_snapshots_must_be_complete_and_well_typed() {
+        let mut status = json!({
+            "schema_version":3,"timestamp_utc":"2026-10-23T10:00:00Z",
+            "run_id":"run","worker_state":"running","fatal_error":null,
+            "features":{"common.async_jobs":{"contract_version":1}},
+            "status_url":"http://127.0.0.1:8787/status",
+            "command_url":"http://127.0.0.1:8787/command",
+            "stop_url":"http://127.0.0.1:8787/stop",
+            "active_job":null,"last_job":null
+        });
+        let origin = endpoints(&status).unwrap();
+        let features = status["features"].clone();
+        assert!(self::status(&status, "run", &origin, None, &features, false).is_ok());
+        status["active_job"] = json!({"state":"running","worker_job_id":"w1"});
+        assert!(self::status(&status, "run", &origin, None, &features, false).is_err());
+        status["active_job"] = Value::Null;
+        status["last_job"] = json!({
+            "state":"succeeded","worker_job_id":"w1","job_id":"client",
+            "command":"read","timestamp_utc":"2026-10-23T10:00:00Z",
+            "ok":true,"result":null
+        });
+        assert!(self::status(&status, "run", &origin, None, &features, false).is_err());
+    }
+
+    #[test]
+    fn stream_source_active_does_not_override_worker_failure() {
+        let mut snapshot = json!({
+            "worker_state":"running","fatal_error":null,
+            "stream":{"state":"waiting"}
+        });
+        assert!(!stream_source_ready(&snapshot).unwrap());
+        snapshot["stream"]["state"] = json!("active");
+        assert!(stream_source_ready(&snapshot).unwrap());
+        snapshot["worker_state"] = json!("failed");
+        snapshot["fatal_error"] = json!({"category":"worker","code":"failed",
+            "message":"source failure","details":{}});
+        assert!(stream_source_ready(&snapshot).is_err());
+        snapshot["worker_state"] = json!("stopping");
+        snapshot["fatal_error"] = Value::Null;
+        assert!(stream_source_ready(&snapshot).is_err());
     }
 
     #[test]

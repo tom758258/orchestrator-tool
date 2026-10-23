@@ -84,10 +84,10 @@ impl Terminal {
             && self.state == other.state
             && self.ok == other.ok
             && self.timestamp_utc == other.timestamp_utc
-            // An extra diagnostic field outside the terminal does not change
-            // its meaning; different results or Common Error payloads do.
-            && self.result == other.result
-            && self.error == other.error
+            // Domain result consistency belongs to the thin adapter.
+            // Common errors compare category/code, not optional diagnostics.
+            && self.error["category"] == other.error["category"]
+            && self.error["code"] == other.error["code"]
     }
 }
 
@@ -252,6 +252,21 @@ impl JobTracker {
         version(value)?;
         self.check_run(value)?;
         let terminal = Terminal::from_value(value)?;
+        // An unknown client ID cannot hide a conflict with an already
+        // correlated Worker job identity.
+        if let Some(owner) = self.worker_ids.get(&terminal.worker_job_id).cloned()
+            && terminal.job_id.as_deref() != Some(owner.as_str())
+        {
+            self.jobs
+                .get_mut(&owner)
+                .ok_or("missing owner for correlated Worker job")?
+                .evidence
+                .push(format!(
+                    "terminal client job_id conflicts with known worker_job_id {}: {value}",
+                    terminal.worker_job_id
+                ));
+            return Ok(JobObservation::Conflict);
+        }
         let Some(job_id) = terminal.job_id.as_deref() else {
             return Ok(JobObservation::Ignored);
         };
@@ -383,17 +398,35 @@ mod tests {
             tracker.job("client-1").unwrap().terminal().unwrap().state,
             "succeeded"
         );
+        // Domain diagnostics are not grounds for a Common conflict.
         let mut changed_result = terminal();
         changed_result["result"]["value"] = json!(99);
         assert_eq!(
             tracker.event(&changed_result).unwrap(),
-            JobObservation::Conflict
+            JobObservation::Duplicate
         );
         assert_eq!(
             tracker.job("client-1").unwrap().terminal().unwrap().result["value"],
             42
         );
     }
+    #[test]
+    fn known_worker_job_with_wrong_client_id_is_a_conflict() {
+        let mut tracker = tracker();
+        assert_eq!(
+            tracker.accepted("client-1", "read", "worker-1").unwrap(),
+            JobObservation::Accepted
+        );
+        let mut mismatched = terminal();
+        mismatched["job_id"] = json!("unknown-client");
+        assert_eq!(
+            tracker.event(&mismatched).unwrap(),
+            JobObservation::Conflict
+        );
+        assert!(tracker.has_conflicts());
+        assert!(tracker.job("client-1").unwrap().terminal().is_none());
+    }
+
     #[test]
     fn incomplete_snapshot_and_crash_are_unconfirmed() {
         let mut tracker = tracker();

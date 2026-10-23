@@ -168,7 +168,7 @@ impl WorkerClient {
             || value["status"] != "accepted"
             || value["run_id"] != self.ready.run_id()
             || value["worker_job_id"] != worker_job_id
-            || !value["error"].is_null()
+            || !value.get("error").is_some_and(Value::is_null)
         {
             return Err(WorkerHttpError::Contract(
                 "invalid cancel acceptance envelope".into(),
