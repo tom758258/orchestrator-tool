@@ -1903,8 +1903,7 @@ fn run_stream_readiness_fixture(scenario: &str) {
     );
     match scenario {
         "meters-stream-active" => print_json_line(
-            &json!({"event":"sample","run_id":run_id,"value":12.3,"unit":"V"})
-                .to_string(),
+            &json!({"event":"sample","run_id":run_id,"value":12.3,"unit":"V"}).to_string(),
         ),
         "meters-stream-fatal" => print_json_line(
             &json!({"event":"error","run_id":run_id,"scope":"worker","fatal":true,
@@ -1912,7 +1911,7 @@ fn run_stream_readiness_fixture(scenario: &str) {
                     "message":"source failed","details":{}}})
             .to_string(),
         ),
-        "meters-stream-ended" => {},
+        "meters-stream-ended" => {}
         _ => panic!("unknown stream fixture {scenario}"),
     }
     loop {
@@ -2011,7 +2010,10 @@ fn opted_in_stream_readiness_preserves_samples_and_rejects_failure() {
             }
             assert_eq!(sample.unwrap()["value"], json!(12.3));
         } else {
-            assert!(readiness.is_err(), "{scenario} must not release source readiness");
+            assert!(
+                readiness.is_err(),
+                "{scenario} must not release source readiness"
+            );
         }
         let shutdown = session.shutdown(Duration::from_secs(3));
         if scenario == "meters-stream-fatal" {
@@ -2041,7 +2043,10 @@ fn async_job_without_terminal_is_unconfirmed() {
             let tracker = session.job_tracker().lock().unwrap();
             let job = tracker.job("client-unconfirmed").unwrap();
             assert!(job.terminal().is_none());
-            assert!(job.unconfirmed().is_some(), "{scenario} must retain Unconfirmed");
+            assert!(
+                job.unconfirmed().is_some(),
+                "{scenario} must retain Unconfirmed"
+            );
         }
         let _ = session.shutdown(Duration::from_secs(3));
     }

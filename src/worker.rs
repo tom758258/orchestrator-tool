@@ -444,7 +444,9 @@ impl WorkerSession {
                                 || !event["fatal_error"].is_null()
                                 || event["stream"]["state"] == "ended"))
                     {
-                        return Err(format!("Worker source ended or failed before active: {event}"));
+                        return Err(format!(
+                            "Worker source ended or failed before active: {event}"
+                        ));
                     }
                     self.pending_events
                         .lock()
