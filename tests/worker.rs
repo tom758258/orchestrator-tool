@@ -116,6 +116,14 @@ fn fixture_event_json(line: &str) -> String {
         if value.get("fatal_error").is_none() {
             value["fatal_error"] = json!(null);
         }
+        if state.features.get("common.async_jobs").is_some() {
+            if value.get("active_job").is_none() {
+                value["active_job"] = json!(null);
+            }
+            if value.get("last_job").is_none() {
+                value["last_job"] = json!(null);
+            }
+        }
     }
     if value["event"] == "summary" {
         state.summary_seen = true;
@@ -1902,7 +1910,7 @@ fn run_stream_readiness_fixture(scenario: &str) {
         .to_string(),
     );
     match scenario {
-        "meters-stream-active" => print_json_line(
+        "meters-stream-active" | "meters-stream-stale-status" => print_json_line(
             &json!({"event":"sample","run_id":run_id,"value":12.3,"unit":"V"}).to_string(),
         ),
         "meters-stream-fatal" => print_json_line(
@@ -1914,6 +1922,11 @@ fn run_stream_readiness_fixture(scenario: &str) {
         "meters-stream-ended" => {}
         _ => panic!("unknown stream fixture {scenario}"),
     }
+    let http_state = if scenario == "meters-stream-stale-status" {
+        "waiting"
+    } else {
+        "active"
+    };
     loop {
         let request = accept_request(&listener);
         match request.path.as_str() {
@@ -1921,7 +1934,7 @@ fn run_stream_readiness_fixture(scenario: &str) {
                 request.stream,
                 200,
                 &json!({"worker_state":"running","fatal_error":null,
-                    "stream":{"lifecycle":"run_bound","state":"active"}})
+                    "stream":{"lifecycle":"run_bound","state":http_state}})
                 .to_string(),
             ),
             "/stop" => {
@@ -1992,13 +2005,14 @@ fn run_job_unconfirmed_fixture(scenario: &str) {
 fn opted_in_stream_readiness_preserves_samples_and_rejects_failure() {
     for scenario in [
         "meters-stream-active",
+        "meters-stream-stale-status",
         "meters-stream-ended",
         "meters-stream-fatal",
     ] {
         let session = start_worker(&fixture_spec(scenario), Duration::from_secs(3)).unwrap();
         thread::sleep(Duration::from_millis(30));
         let readiness = session.wait_for_stream_active(Duration::from_secs(3));
-        if scenario == "meters-stream-active" {
+        if matches!(scenario, "meters-stream-active" | "meters-stream-stale-status") {
             readiness.unwrap();
             let mut sample = None;
             for _ in 0..4 {

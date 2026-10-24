@@ -156,6 +156,7 @@ pub struct WorkerSession {
     manifest: Option<ToolManifest>,
     jobs: Mutex<JobTracker>,
     evidence: Mutex<RunEvidence>,
+    // JSONL transitions only; HTTP Status can be a stale snapshot.
     stream_state: Mutex<Option<String>>,
 }
 
@@ -376,6 +377,9 @@ impl WorkerSession {
 
     fn record_event(&self, event: &Value) -> Result<(), String> {
         common_v3::event_envelope(event, self.ready.run_id())?;
+        if event["event"] == "status" {
+            common_v3::async_status_snapshots(event, self.ready.features())?;
+        }
         if event["event"] == "job_finished"
             && self
                 .jobs
@@ -478,19 +482,21 @@ impl WorkerSession {
                 .status_with_timeout(remaining.min(Duration::from_millis(300)))
                 .map_err(|error| error.to_string())?;
             let ready = common_v3::stream_source_ready(&status)?;
-            let state = common_v3::required_string(&status["stream"], "state")?;
-            {
-                let mut last = self
+            // JSONL transitions have a defined order, but HTTP snapshots may
+            // be stale. Never regress an active JSONL state to HTTP waiting.
+            self.observe_stream_wait_events()?;
+            let jsonl_active = {
+                let last = self
                     .stream_state
                     .lock()
                     .map_err(|_| "poisoned stream state")?;
-                common_v3::stream_transition(last.as_deref(), state)?;
-                *last = Some(state.to_owned());
-            }
-            // HTTP and JSONL have no atomic ordering; a queued ended/failure
-            // event must not be hidden by an earlier HTTP active snapshot.
-            self.observe_stream_wait_events()?;
-            if ready {
+                match last.as_deref() {
+                    Some("ended") => return Err("stream ended before source readiness".into()),
+                    Some("active") => true,
+                    _ => false,
+                }
+            };
+            if ready || (jsonl_active && status["worker_state"] == "running") {
                 return Ok(());
             }
             thread::sleep(

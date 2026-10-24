@@ -209,6 +209,21 @@ fn async_snapshot(value: &Value, terminal: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate the adopted async-job snapshots in both HTTP and JSONL Status.
+pub fn async_status_snapshots(value: &Value, features: &Value) -> Result<(), String> {
+    if features.get("common.async_jobs").is_some() {
+        let active = value
+            .get("active_job")
+            .ok_or("Async Worker Status missing active_job")?;
+        let last = value
+            .get("last_job")
+            .ok_or("Async Worker Status missing last_job")?;
+        async_snapshot(active, false)?;
+        async_snapshot(last, true)?;
+    }
+    Ok(())
+}
+
 /// Source readiness for an opted-in stream cannot be inferred from active
 /// if the Worker reports that it is stopping or failed.
 pub fn stream_source_ready(status: &Value) -> Result<bool, String> {
@@ -261,16 +276,7 @@ pub fn status(
     if observed_origin != *origin {
         return Err("HTTP Status origin changed".into());
     }
-    if features.get("common.async_jobs").is_some() {
-        let active = value
-            .get("active_job")
-            .ok_or("Async Worker Status missing active_job")?;
-        let last = value
-            .get("last_job")
-            .ok_or("Async Worker Status missing last_job")?;
-        async_snapshot(active, false)?;
-        async_snapshot(last, true)?;
-    }
+    async_status_snapshots(value, features)?;
     if features.get("common.streaming").is_some() {
         // Status must retain the Ready-adopted lifecycle; it may only
         // advance the current state of that same opted-in source.
@@ -537,6 +543,15 @@ mod tests {
             "ok":true,"result":null
         });
         assert!(self::status(&status, "run", &origin, None, &features, false).is_err());
+
+        // JSONL Status follows the same owning-layer snapshot contract.
+        status["last_job"] = Value::Null;
+        let mut event = status.clone();
+        event["event"] = json!("status");
+        assert!(event_envelope(&event, "run").is_ok());
+        assert!(async_status_snapshots(&event, &features).is_ok());
+        event.as_object_mut().unwrap().remove("active_job");
+        assert!(async_status_snapshots(&event, &features).is_err());
     }
 
     #[test]
