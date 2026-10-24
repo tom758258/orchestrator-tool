@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     error::Error,
     ffi::OsString,
     fmt,
@@ -151,6 +152,7 @@ pub struct WorkerSession {
     stdout_reader: Option<JoinHandle<io::Result<()>>>,
     stderr_reader: Option<JoinHandle<()>>,
     event_receiver: Option<Receiver<StdoutMessage>>,
+    pending_events: Mutex<VecDeque<Value>>,
     manifest: Option<ToolManifest>,
     jobs: Mutex<JobTracker>,
     evidence: Mutex<RunEvidence>,
@@ -182,6 +184,13 @@ impl WorkerSession {
 
     pub fn job_tracker(&self) -> &Mutex<JobTracker> {
         &self.jobs
+    }
+
+    fn mark_job_unconfirmed(&self, job_id: &str, reason: &str) -> Result<(), String> {
+        self.jobs
+            .lock()
+            .map_err(|_| "poisoned Job Tracker")?
+            .mark_unconfirmed(job_id, reason)
     }
 
     /// One shared async path for Powers, Scopes, and future conforming v3 Tools.
@@ -235,10 +244,6 @@ impl WorkerSession {
                         command,
                         job_id,
                     )?;
-                    self.jobs
-                        .lock()
-                        .map_err(|_| "poisoned Job Tracker")?
-                        .mark_unconfirmed(job_id, "Worker rejected job admission")?;
                     return Err(format!("Worker async command HTTP {code}: {reason}"));
                 }
                 let worker_id = common_v3::command_accepted(
@@ -281,10 +286,7 @@ impl WorkerSession {
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                self.jobs
-                    .lock()
-                    .map_err(|_| "poisoned Job Tracker")?
-                    .mark_unconfirmed(job_id, "job timed out without valid terminal")?;
+                self.mark_job_unconfirmed(job_id, "job timed out without valid terminal")?;
                 return Err(format!(
                     "unconfirmed Job {job_id}: {}",
                     lost_response.unwrap_or_else(|| "no terminal".into())
@@ -303,9 +305,11 @@ impl WorkerSession {
                     }
                 }
                 Ok(event) if event["event"] == "summary" => {
+                    self.mark_job_unconfirmed(job_id, "Worker summary before job terminal")?;
                     return Err(format!("Worker summary before Job {job_id} completion"));
                 }
                 Ok(event) if event["event"] == "error" && event["fatal"] == true => {
+                    self.mark_job_unconfirmed(job_id, "fatal Worker error before job terminal")?;
                     return Err(format!(
                         "fatal Worker error during Job {job_id}: {}",
                         event["error"]
@@ -316,14 +320,12 @@ impl WorkerSession {
                         && (event["worker_state"] == "failed"
                             || !event["fatal_error"].is_null()) =>
                 {
+                    self.mark_job_unconfirmed(job_id, "Worker failed before job terminal")?;
                     return Err(format!("Worker failed during Job {job_id}: {event}"));
                 }
                 Ok(_) | Err(WorkerEventError::Timeout(_)) => {}
                 Err(e) => {
-                    self.jobs
-                        .lock()
-                        .map_err(|_| "poisoned Job Tracker")?
-                        .mark_unconfirmed(job_id, "Worker event channel ended")?;
+                    self.mark_job_unconfirmed(job_id, "Worker event channel ended")?;
                     return Err(format!("unconfirmed Job {job_id}: {e}"));
                 }
             }
@@ -353,6 +355,10 @@ impl WorkerSession {
                         return Err("conflicting Job HTTP snapshot".into());
                     }
                     if status["worker_state"] == "failed" || !status["fatal_error"].is_null() {
+                        self.mark_job_unconfirmed(
+                            job_id,
+                            "Worker HTTP failure before job terminal",
+                        )?;
                         return Err(format!(
                             "Worker failed while waiting for Job {job_id}: {status}"
                         ));
@@ -360,7 +366,10 @@ impl WorkerSession {
                 }
                 // Transport loss is not proof the Job was never executed.
                 Err(crate::worker_http::WorkerHttpError::Request(_)) => {}
-                Err(error) => return Err(format!("invalid Worker Job status: {error}")),
+                Err(error) => {
+                    self.mark_job_unconfirmed(job_id, "invalid Worker Job status")?;
+                    return Err(format!("invalid Worker Job status: {error}"));
+                }
             }
         }
     }
@@ -421,6 +430,34 @@ impl WorkerSession {
         Ok(())
     }
 
+    /// Observe the Worker channel during source readiness without discarding
+    /// samples or domain events needed by the existing Meters adapter.
+    fn observe_stream_wait_events(&self) -> Result<(), String> {
+        for _ in 0..64 {
+            match self.recv_worker_event(Duration::from_millis(1)) {
+                Ok(event) => {
+                    if event["event"] == "summary"
+                        || (event["event"] == "error" && event["scope"] == "worker")
+                        || (event["event"] == "status"
+                            && (event["worker_state"] == "failed"
+                                || event["worker_state"] == "stopping"
+                                || !event["fatal_error"].is_null()
+                                || event["stream"]["state"] == "ended"))
+                    {
+                        return Err(format!("Worker source ended or failed before active: {event}"));
+                    }
+                    self.pending_events
+                        .lock()
+                        .map_err(|_| "poisoned pending Worker events")?
+                        .push_back(event);
+                }
+                Err(WorkerEventError::Timeout(_)) => break,
+                Err(error) => return Err(format!("Worker source readiness: {error}")),
+            }
+        }
+        Ok(())
+    }
+
     /// Only called for a runtime that explicitly adopted streaming.
     /// Read-only status polling never starts acquisition or instrument I/O.
     pub fn wait_for_stream_active(&self, timeout: Duration) -> Result<(), String> {
@@ -430,6 +467,7 @@ impl WorkerSession {
         let client = WorkerClient::new(&self.ready);
         let deadline = Instant::now() + timeout;
         loop {
+            self.observe_stream_wait_events()?;
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Err("stream source readiness timed out".into());
@@ -439,16 +477,20 @@ impl WorkerSession {
                 .map_err(|error| error.to_string())?;
             let ready = common_v3::stream_source_ready(&status)?;
             let state = common_v3::required_string(&status["stream"], "state")?;
-            let mut last = self
-                .stream_state
-                .lock()
-                .map_err(|_| "poisoned stream state")?;
-            common_v3::stream_transition(last.as_deref(), state)?;
-            *last = Some(state.to_owned());
+            {
+                let mut last = self
+                    .stream_state
+                    .lock()
+                    .map_err(|_| "poisoned stream state")?;
+                common_v3::stream_transition(last.as_deref(), state)?;
+                *last = Some(state.to_owned());
+            }
+            // HTTP and JSONL have no atomic ordering; a queued ended/failure
+            // event must not be hidden by an earlier HTTP active snapshot.
+            self.observe_stream_wait_events()?;
             if ready {
                 return Ok(());
             }
-            drop(last);
             thread::sleep(
                 Duration::from_millis(30).min(deadline.saturating_duration_since(Instant::now())),
             );
@@ -460,6 +502,18 @@ impl WorkerSession {
     /// The startup `ready` event is consumed during `start_worker` and is not
     /// returned by this method. Events are generic `serde_json::Value` objects.
     pub fn recv_event(&self, timeout: Duration) -> Result<serde_json::Value, WorkerEventError> {
+        if let Some(event) = self
+            .pending_events
+            .lock()
+            .map_err(|_| WorkerEventError::Protocol("poisoned pending Worker events".into()))?
+            .pop_front()
+        {
+            return Ok(event);
+        }
+        self.recv_worker_event(timeout)
+    }
+
+    fn recv_worker_event(&self, timeout: Duration) -> Result<Value, WorkerEventError> {
         let Some(receiver) = self.event_receiver.as_ref() else {
             return Err(WorkerEventError::Disconnected);
         };
@@ -1154,6 +1208,7 @@ pub fn start_worker(
                 stdout_reader: Some(stdout_reader),
                 stderr_reader: Some(stderr_reader),
                 event_receiver: Some(receiver),
+                pending_events: Mutex::new(VecDeque::new()),
             })
         }
         Err(WaitForReadyError::ProcessExited {

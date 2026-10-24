@@ -455,6 +455,8 @@ fn main() {
     runtime_event_receive_times_out_when_no_event();
     powers_worker_smoke_correlates_terminal_job();
     common_v3_accepts_additional_tool_without_parser_branch();
+    opted_in_stream_readiness_preserves_samples_and_rejects_failure();
+    async_job_without_terminal_is_unconfirmed();
     powers_operation_failure_preserves_nonzero_worker_exit();
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
@@ -892,6 +894,20 @@ fn run_meters_worker_fixture() {
 fn run_fixture(scenario: &OsStr) {
     if let Some(name) = scenario.to_str().filter(|name| name.starts_with("scopes-")) {
         run_scopes_fixture(name);
+        return;
+    }
+    if let Some(name) = scenario
+        .to_str()
+        .filter(|name| name.starts_with("meters-stream-"))
+    {
+        run_stream_readiness_fixture(name);
+        return;
+    }
+    if let Some(name) = scenario
+        .to_str()
+        .filter(|name| name.starts_with("job-unconfirmed-"))
+    {
+        run_job_unconfirmed_fixture(name);
         return;
     }
     match scenario.to_str().expect("fixture scenario must be UTF-8") {
@@ -1848,6 +1864,186 @@ fn run_extra_v3_tool_fixture() {
             }
             other => panic!("unexpected additional v3 HTTP path: {other}"),
         }
+    }
+}
+
+fn run_stream_readiness_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = format!("{scenario}-run");
+    let features = json!({"common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}});
+    {
+        let mut state = fixture_context().lock().unwrap();
+        state.ready_seen = true;
+        state.run_id = run_id.clone();
+        state.features = features.clone();
+        state.urls = json!({"status_url":format!("{base}/status"),
+            "command_url":format!("{base}/command"),
+            "stop_url":format!("{base}/stop")});
+    }
+    print_json_line(
+        &json!({"event":"ready","schema_version":3,"timestamp_utc":FIXTURE_UTC,
+            "run_id":run_id,"features":features,
+            "status_url":format!("{base}/status"),
+            "command_url":format!("{base}/command"),
+            "stop_url":format!("{base}/stop"),
+            "stream":{"lifecycle":"run_bound"}})
+        .to_string(),
+    );
+    let state = if scenario == "meters-stream-ended" {
+        "ended"
+    } else {
+        "active"
+    };
+    print_json_line(
+        &json!({"event":"status","run_id":run_id,
+            "worker_state":"running","fatal_error":null,
+            "stream":{"lifecycle":"run_bound","state":state}})
+        .to_string(),
+    );
+    match scenario {
+        "meters-stream-active" => print_json_line(
+            &json!({"event":"sample","run_id":run_id,"value":12.3,"unit":"V"})
+                .to_string(),
+        ),
+        "meters-stream-fatal" => print_json_line(
+            &json!({"event":"error","run_id":run_id,"scope":"worker","fatal":true,
+                "error":{"category":"worker","code":"source_failed",
+                    "message":"source failed","details":{}}})
+            .to_string(),
+        ),
+        "meters-stream-ended" => {},
+        _ => panic!("unknown stream fixture {scenario}"),
+    }
+    loop {
+        let request = accept_request(&listener);
+        match request.path.as_str() {
+            "/status" => write_response(
+                request.stream,
+                200,
+                &json!({"worker_state":"running","fatal_error":null,
+                    "stream":{"lifecycle":"run_bound","state":"active"}})
+                .to_string(),
+            ),
+            "/stop" => {
+                write_response(request.stream, 200, r#"{"ok":true}"#);
+                break;
+            }
+            other => panic!("unexpected stream readiness request {other}"),
+        }
+    }
+}
+
+fn run_job_unconfirmed_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = "job-unconfirmed-run";
+    print_json_line(
+        &json!({"event":"ready","schema_version":3,"run_id":run_id,
+            "status_url":format!("{base}/status"),
+            "command_url":format!("{base}/command"),
+            "stop_url":format!("{base}/stop")})
+        .to_string(),
+    );
+    let request = accept_request(&listener);
+    assert_eq!(request.path, "/command");
+    write_response(
+        request.stream,
+        202,
+        r#"{"status":"accepted","worker_job_id":"worker-1"}"#,
+    );
+    match scenario {
+        "job-unconfirmed-summary" => print_json_line(
+            &json!({"event":"summary","run_id":run_id,"ok":true,
+                "exit_code":0,"fatal_error":null})
+            .to_string(),
+        ),
+        "job-unconfirmed-fatal" => print_json_line(
+            &json!({"event":"error","run_id":run_id,"scope":"worker",
+                "fatal":true,"error":{"category":"worker","code":"worker_failed",
+                    "message":"Worker failed","details":{}}})
+            .to_string(),
+        ),
+        "job-unconfirmed-status" => print_json_line(
+            &json!({"event":"status","run_id":run_id,
+                "worker_state":"failed",
+                "fatal_error":{"category":"worker","code":"worker_failed",
+                    "message":"Worker failed","details":{}}})
+            .to_string(),
+        ),
+        _ => panic!("unknown unconfirmed Job fixture {scenario}"),
+    }
+    loop {
+        let request = accept_request(&listener);
+        match request.path.as_str() {
+            "/status" => write_response(
+                request.stream,
+                200,
+                r#"{"worker_state":"running","fatal_error":null}"#,
+            ),
+            "/stop" => {
+                write_response(request.stream, 200, r#"{"ok":true}"#);
+                break;
+            }
+            other => panic!("unexpected unconfirmed Job request {other}"),
+        }
+    }
+}
+
+fn opted_in_stream_readiness_preserves_samples_and_rejects_failure() {
+    for scenario in [
+        "meters-stream-active",
+        "meters-stream-ended",
+        "meters-stream-fatal",
+    ] {
+        let session = start_worker(&fixture_spec(scenario), Duration::from_secs(3)).unwrap();
+        thread::sleep(Duration::from_millis(30));
+        let readiness = session.wait_for_stream_active(Duration::from_secs(3));
+        if scenario == "meters-stream-active" {
+            readiness.unwrap();
+            let mut sample = None;
+            for _ in 0..4 {
+                let event = session.recv_event(Duration::from_secs(2)).unwrap();
+                if event["event"] == "sample" {
+                    sample = Some(event);
+                    break;
+                }
+            }
+            assert_eq!(sample.unwrap()["value"], json!(12.3));
+        } else {
+            assert!(readiness.is_err(), "{scenario} must not release source readiness");
+        }
+        let shutdown = session.shutdown(Duration::from_secs(3));
+        if scenario == "meters-stream-fatal" {
+            assert!(shutdown.is_err(), "fatal evidence must fail shutdown");
+        } else {
+            assert!(shutdown.unwrap().success());
+        }
+    }
+}
+
+fn async_job_without_terminal_is_unconfirmed() {
+    for scenario in [
+        "job-unconfirmed-summary",
+        "job-unconfirmed-fatal",
+        "job-unconfirmed-status",
+    ] {
+        let session = start_worker(&fixture_spec(scenario), Duration::from_secs(3)).unwrap();
+        let outcome = session.run_async_job(
+            "read",
+            &json!({}),
+            Some(json!({"mode":"simulate"})),
+            "client-unconfirmed",
+            Duration::from_secs(3),
+        );
+        assert!(outcome.is_err(), "{scenario} must not confirm a Job");
+        {
+            let tracker = session.job_tracker().lock().unwrap();
+            let job = tracker.job("client-unconfirmed").unwrap();
+            assert!(job.terminal().is_none());
+            assert!(job.unconfirmed().is_some(), "{scenario} must retain Unconfirmed");
+        }
+        let _ = session.shutdown(Duration::from_secs(3));
     }
 }
 
