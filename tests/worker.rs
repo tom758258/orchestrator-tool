@@ -2012,7 +2012,10 @@ fn opted_in_stream_readiness_preserves_samples_and_rejects_failure() {
         let session = start_worker(&fixture_spec(scenario), Duration::from_secs(3)).unwrap();
         thread::sleep(Duration::from_millis(30));
         let readiness = session.wait_for_stream_active(Duration::from_secs(3));
-        if matches!(scenario, "meters-stream-active" | "meters-stream-stale-status") {
+        if matches!(
+            scenario,
+            "meters-stream-active" | "meters-stream-stale-status"
+        ) {
             readiness.unwrap();
             let mut sample = None;
             for _ in 0..4 {
