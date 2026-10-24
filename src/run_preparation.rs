@@ -269,6 +269,7 @@ pub fn prepare_worker_launch_specs(
         if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
             return Err(format!("{tool} Worker protocol is incompatible"));
         }
+        crate::adapters::validate_existing_worker_integration(tool, probe.manifest())?;
 
         let spec = match (execution_mode, tool.as_str()) {
             (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
@@ -304,7 +305,12 @@ pub fn prepare_worker_launch_specs(
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
         };
-        launch_specs.insert(instance.id.clone(), spec);
+        // Carry the exact executable's validated Manifest into startup
+        // so that runtime adoption can be checked against preflight.
+        launch_specs.insert(
+            instance.id.clone(),
+            spec.with_manifest(probe.manifest().clone()),
+        );
     }
 
     Ok(launch_specs)
@@ -470,8 +476,11 @@ mod tests {
         let manifest = json!({
             "event": "tool_manifest", "schema_version": 2, "tool_id": "meters",
             "tool_version": "test", "worker_protocol": {
-                "compatibility_policy": "exact", "schema_versions": [2]
-            }
+                "compatibility_policy": "v3-only", "schema_versions": [3]
+            },
+            "execution":{"model":"run_bound","context_binding":"startup"},
+            "features":{"common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}},
+            "commands":{"software_trigger":{"kind":"control"}}
         });
         #[cfg(windows)]
         let executable = {

@@ -4,6 +4,7 @@ use std::{
     fmt,
     path::Path,
     process::ExitStatus,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -12,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
+    common_v3,
     config::Config,
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
@@ -29,11 +31,19 @@ use crate::{
     workflow::ActionId,
 };
 
-const WORKER_SCHEMA_VERSION: u32 = 2;
+const WORKER_SCHEMA_VERSION: u32 = 3;
 const SERVICE_NAME: &str = "keysight-meter";
 const SOFTWARE_TRIGGER_COMMAND: &str = "software_trigger";
 const SMOKE_JOB_ID: &str = "orchestrator-meter-smoke";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+static NEXT_CONTROL_JOB: AtomicU64 = AtomicU64::new(0);
+fn control_job_id() -> String {
+    format!(
+        "orchestrator-meter-{}-{}",
+        std::process::id(),
+        NEXT_CONTROL_JOB.fetch_add(1, Ordering::Relaxed)
+    )
+}
 
 /// Manual ranges advertised by meters-tool for one measurement.
 #[derive(Debug, Deserialize, Serialize)]
@@ -367,6 +377,9 @@ pub fn run_worker_smoke(
         ..MetersSetup::default()
     };
     let spec = simulate_worker_launch_spec(executable, Some(2), &setup);
+    let manifest = super::probe_existing_worker_integration(spec.executable(), &ToolId::meters())
+        .map_err(MetersSmokeError::InvalidResponse)?;
+    let spec = spec.with_manifest(manifest);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
     let operation = run_smoke_operation(session.ready(), operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);
@@ -407,7 +420,7 @@ fn run_smoke_operation(
             remaining(deadline, operation_timeout)?,
         )
         .map_err(MetersSmokeError::Http)?;
-    validate_accepted_response(http_status, response)?;
+    validate_accepted_response(http_status, response, ready.run_id())?;
 
     loop {
         let status = client
@@ -444,18 +457,10 @@ struct StatusResponse {
     schema_version: u32,
     service: String,
     run_id: String,
-    status: String,
     captured: Option<u64>,
     #[serde(default)]
-    fatal_error: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AcceptedResponse {
-    schema_version: u32,
-    status: String,
-    command: String,
-    job_id: String,
+    fatal_error: Option<Value>,
+    worker_state: String,
 }
 
 fn parse_status(value: Value, ready: &WorkerReady) -> Result<StatusResponse, MetersSmokeError> {
@@ -481,43 +486,30 @@ fn parse_status(value: Value, ready: &WorkerReady) -> Result<StatusResponse, Met
             ready.run_id()
         )));
     }
-    if let Some(detail) = status
-        .fatal_error
-        .as_deref()
-        .map(str::trim)
-        .filter(|detail| !detail.is_empty())
-    {
-        return Err(MetersSmokeError::WorkerFatal(detail.to_owned()));
+    if let Some(detail) = status.fatal_error.as_ref() {
+        return Err(MetersSmokeError::WorkerFatal(detail.to_string()));
     }
-    if status.status == "error" {
-        return Err(MetersSmokeError::WorkerFatal(
-            "Worker status is error".to_owned(),
-        ));
+    if status.worker_state == "failed" {
+        return Err(MetersSmokeError::WorkerFatal("Worker failed".to_owned()));
     }
 
     Ok(status)
 }
 
-fn validate_accepted_response(http_status: u16, value: Value) -> Result<(), MetersSmokeError> {
-    if http_status != 202 {
-        return Err(MetersSmokeError::InvalidResponse(format!(
-            "software_trigger returned HTTP {http_status}, expected 202"
-        )));
-    }
-
-    let accepted: AcceptedResponse = serde_json::from_value(value)
-        .map_err(|error| MetersSmokeError::InvalidResponse(error.to_string()))?;
-    if accepted.schema_version != WORKER_SCHEMA_VERSION
-        || accepted.status != "accepted"
-        || accepted.command != SOFTWARE_TRIGGER_COMMAND
-        || accepted.job_id != SMOKE_JOB_ID
-    {
-        return Err(MetersSmokeError::InvalidResponse(
-            "software_trigger acceptance payload did not match the Meters Worker contract"
-                .to_owned(),
-        ));
-    }
-
+fn validate_accepted_response(
+    http_status: u16,
+    value: Value,
+    run_id: &str,
+) -> Result<(), MetersSmokeError> {
+    common_v3::command_accepted(
+        &value,
+        http_status,
+        run_id,
+        SOFTWARE_TRIGGER_COMMAND,
+        SMOKE_JOB_ID,
+        "control",
+    )
+    .map_err(MetersSmokeError::InvalidResponse)?;
     Ok(())
 }
 
@@ -591,7 +583,7 @@ impl Error for MetersSmokeError {
 /// The default Single setup sends `software_trigger`. Custom behavior follows
 /// the configured trigger mode: Software Custom sends the trigger, while
 /// Immediate Custom and External Custom only consume Worker sample events.
-/// Software-trigger requests contain no `context` or `job_id` field.
+/// Software-trigger requests contain no `context`, and include a unique client `job_id`.
 pub fn run_action(
     session: &WorkerSession,
     action: &ActionId,
@@ -614,14 +606,24 @@ pub fn run_action_with_setup(
     }
     validate_measure_arguments(arguments)?;
 
+    // Only explicit runtime opt-in enables the optional source state.
+    // This is read-only readiness monitoring, never a new start command.
+    if session.ready().features().get("common.streaming").is_some() {
+        session
+            .wait_for_stream_active(timeout)
+            .map_err(MetersActionError::InvalidResponse)?;
+    }
+
     let client = WorkerClient::new(session.ready());
 
     if setup.trigger_mode.uses_software_trigger() {
         let command_deadline = Instant::now() + timeout;
+        let job_id = control_job_id();
         let request = json!({
             "schema_version": WORKER_SCHEMA_VERSION,
             "command": SOFTWARE_TRIGGER_COMMAND,
-            "arguments": {}
+            "arguments": {},
+            "job_id": job_id
         });
 
         let remaining =
@@ -629,7 +631,12 @@ pub fn run_action_with_setup(
         let (http_status, response) = client
             .command_with_timeout(&request, remaining)
             .map_err(MetersActionError::Http)?;
-        validate_runtime_accepted_response(http_status, response)?;
+        validate_runtime_accepted_response(
+            http_status,
+            response,
+            session.ready().run_id(),
+            &job_id,
+        )?;
     }
 
     let expected_samples = if setup.trigger_mode.is_custom() {
@@ -673,6 +680,9 @@ pub fn run_action_with_setup(
             Err(WorkerEventError::InvalidJson(error)) => {
                 return Err(MetersActionError::InvalidResponse(error.to_string()));
             }
+            Err(WorkerEventError::Protocol(message)) => {
+                return Err(MetersActionError::InvalidResponse(message));
+            }
         }
     }
 }
@@ -692,35 +702,19 @@ fn validate_measure_arguments(arguments: &Value) -> Result<(), MetersActionError
 fn validate_runtime_accepted_response(
     http_status: u16,
     value: Value,
+    run_id: &str,
+    job_id: &str,
 ) -> Result<(), MetersActionError> {
-    if http_status != 202 {
-        return Err(MetersActionError::InvalidResponse(format!(
-            "software_trigger returned HTTP {http_status}, expected 202"
-        )));
-    }
-    // Allow job_id to be null or string for runtime; only validate common fields.
-    let accepted: RuntimeAcceptedResponse = serde_json::from_value(value)
-        .map_err(|error| MetersActionError::InvalidResponse(error.to_string()))?;
-    if accepted.schema_version != WORKER_SCHEMA_VERSION
-        || accepted.status != "accepted"
-        || accepted.command != SOFTWARE_TRIGGER_COMMAND
-    {
-        return Err(MetersActionError::InvalidResponse(
-            "software_trigger acceptance payload did not match the Meters Worker contract"
-                .to_owned(),
-        ));
-    }
+    common_v3::command_accepted(
+        &value,
+        http_status,
+        run_id,
+        SOFTWARE_TRIGGER_COMMAND,
+        job_id,
+        "control",
+    )
+    .map_err(MetersActionError::InvalidResponse)?;
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct RuntimeAcceptedResponse {
-    schema_version: u32,
-    status: String,
-    command: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    job_id: Option<String>,
 }
 
 enum MetersEventDecision {
@@ -746,7 +740,11 @@ fn classify_meters_event(value: &Value, expected_run_id: &str) -> MetersEventDec
         "error" => {
             let detail = extract_meters_diagnostic(value)
                 .unwrap_or_else(|| "Meters Worker reported error".to_owned());
-            MetersEventDecision::Failure(MetersActionError::WorkerFatal(detail))
+            if value["scope"] == "worker" && value["fatal"] == true {
+                MetersEventDecision::Failure(MetersActionError::WorkerFatal(detail))
+            } else {
+                MetersEventDecision::Failure(MetersActionError::InvalidResponse(detail))
+            }
         }
         "summary" => {
             if let Some(detail) = extract_meters_diagnostic(value) {
@@ -763,6 +761,13 @@ fn classify_meters_event(value: &Value, expected_run_id: &str) -> MetersEventDec
 }
 
 fn extract_meters_diagnostic(value: &Value) -> Option<String> {
+    if let Some(message) = value["error"]["message"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(message.to_owned());
+    }
     if let Some(message) = value
         .get("message")
         .and_then(Value::as_str)
@@ -771,27 +776,24 @@ fn extract_meters_diagnostic(value: &Value) -> Option<String> {
     {
         return Some(message.to_owned());
     }
-    if let Some(fatal) = value.get("fatal_error") {
-        if let Some(text) = fatal.as_str().map(str::trim).filter(|s| !s.is_empty()) {
-            return Some(text.to_owned());
+    if let Some(fatal) = value.get("fatal_error")
+        && let Some(object) = fatal.as_object()
+    {
+        if let Some(message) = object
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(message.to_owned());
         }
-        if let Some(object) = fatal.as_object() {
-            if let Some(message) = object
-                .get("message")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                return Some(message.to_owned());
-            }
-            if let Some(code) = object
-                .get("code")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                return Some(code.to_owned());
-            }
+        if let Some(code) = object
+            .get("code")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(code.to_owned());
         }
     }
     None
@@ -1121,8 +1123,9 @@ mod tests {
     fn meters_event_error_is_worker_fatal() {
         let value = json!({
             "event": "error",
-            "message": "sensor fault",
-            "run_id": "run-123"
+            "run_id": "run-123", "scope":"worker", "fatal":true,
+            "error":{"category":"worker","code":"sensor_fault",
+                "message":"sensor fault","details":{}}
         });
         assert!(matches!(
             classify_meters_event(&value, "run-123"),
@@ -1131,7 +1134,9 @@ mod tests {
 
         let with_fatal = json!({
             "event": "error",
-            "fatal_error": "fatal sensor error",
+            "scope":"worker","fatal":true,
+            "error":{"category":"worker","code":"fatal",
+                "message":"fatal sensor error","details":{}},
             "run_id": "run-123"
         });
         assert!(matches!(
@@ -1155,7 +1160,8 @@ mod tests {
         let summary_with_fatal = json!({
             "event": "summary",
             "run_id": "run-123",
-            "fatal_error": "early termination"
+            "fatal_error": {"category":"worker","code":"early",
+                "message":"early termination","details":{}}
         });
         assert!(matches!(
             classify_meters_event(&summary_with_fatal, "run-123"),
@@ -1216,7 +1222,7 @@ mod tests {
         assert_eq!(
             software_trigger_request(),
             json!({
-                "schema_version": 2,
+                "schema_version": 3,
                 "command": "software_trigger",
                 "job_id": "orchestrator-meter-smoke"
             })

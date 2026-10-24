@@ -121,24 +121,6 @@ fn tools_worker_check(config_path: Option<&Path>, raw_tool_id: &str) -> ExitCode
         return ExitCode::FAILURE;
     }
 
-    let probe = match probe_manifest(
-        inspection
-            .resolved()
-            .path()
-            .expect("available executable has a path"),
-        &tool_id,
-    ) {
-        Ok(probe) => probe,
-        Err(error) => {
-            eprintln!("{PRODUCT_NAME}: {tool_id} manifest probe failed: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
-        eprintln!("{PRODUCT_NAME}: {tool_id} Worker protocol is incompatible");
-        return ExitCode::FAILURE;
-    }
-
     let smoke_error = match raw_tool_id {
         "meters" => meters::run_worker_smoke(
             inspection
