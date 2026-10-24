@@ -68,6 +68,10 @@ Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 
 本機 executable configuration。移除 Tool 不會變更 Template instances 或
 Workflow steps；該 Tool Type 會回到 Add 候選。
 
+每張 External Tools card 預設收合，保留 Tool 名稱與 executable 狀態。
+使用 **+ / −** 可獨立顯示或隱藏詳細資訊及 Change Path／Remove Tool 操作。
+Refresh 與切換頁籤會保留各卡片的展開／收合狀態。
+
 Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 **Missing**、
 **Not a file** 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
 Type 會出現在 Add 候選。全部未配置時顯示 **No external tools configured.**；
@@ -84,6 +88,14 @@ Tool Instance 是保存於 Template 中的 logical、具名稱的 instance。一
 Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
 setup values。Tool setup 屬於 Template；machine-specific executable paths 與
 Live Resources 不屬於 Template。
+
+每個 instance 使用獨立邊框卡片，預設展開，可用 **+ / −** 收合或展開。
+Add Tool Instance 上方的 **Tool Instance Summary** 依 Tool Type 統計 instance
+數量，包含未在本機配置的類型。未使用的類型不顯示，沒有 instance 時隱藏整個摘要。
+
+編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
+成功執行 **New Template** 或 **Open Template** 後恢復預設狀態，包含 External
+Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
 
 **Add Tool Instance** 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
@@ -160,7 +172,10 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 
 ### 5.3 Powers Protection Setup
 
-Protection Setup 為選用設定。展開 Setup 中的 Powers Tool Instance，勾選
+Protection Setup 為選用設定。在 Powers Tool Instance 內，按 **Protection Setup**
+旁的 **+** 展開預設收合的群組。Protection 欄位與整個 Device 區域（包含 Device
+Status、Protection Summary、通道操作與 Live Resource）會一起展開／收合。
+收合不會變更保護設定，也不會讀取或操作儀器。勾選
 **Use Protection Setup** 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
 新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
 或核取方塊狀態寫入 Template。powers-tool 回報的所有通道，以及 Template 已設定
@@ -241,6 +256,8 @@ Protection 都不可使用。若該型號不支援 remote clear，請從儀器 f
 ### 5.5 Scopes Setup
 
 Scopes Setup 為選用設定。新的 instance 所有欄位都是 **Unchanged**。
+**Acquisition Setup** 與 **Channel Configuration** 預設收合，可分別使用標題旁的
+**+ / −** 獨立操作。收合會保留設定，Live Resource 維持在兩個群組之外。
 Acquisition Type 可選 Normal、Average、High Resolution 或 Peak；只有選擇 Average
 時才能編輯 Average Count。各通道列提供 Input Coupling、Probe Ratio、Bandwidth
 Limit、Waveform Invert 與 Channel Units。只保存及套用明確指定的值；留白或選擇

@@ -1524,10 +1524,50 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 
-.tool-setup > fieldset + fieldset {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+.tool-setup .tool-instance-card {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.tool-instance-card > legend {
+  float: left;
+  width: 100%;
+}
+
+.tool-instance-card > legend + * {
+  clear: both;
+}
+
+.tool-instance-summary {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.tool-instance-summary h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.tool-instance-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 0;
+  text-align: center;
+}
+
+.tool-instance-counts dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.tool-instance-counts dd {
+  margin: 4px 0 0;
 }
 
 .tool-setup-toggle {

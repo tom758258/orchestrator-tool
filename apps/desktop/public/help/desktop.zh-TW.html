@@ -89,6 +89,9 @@ Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。</p>
 在 Tool card 使用 <strong>Change Path...</strong> 替換 path，或使用 <strong>Remove Tool</strong> 只移除
 本機 executable configuration。移除 Tool 不會變更 Template instances 或
 Workflow steps；該 Tool Type 會回到 Add 候選。</p>
+<p>每張 External Tools card 預設收合，保留 Tool 名稱與 executable 狀態。
+使用 <strong>+ / −</strong> 可獨立顯示或隱藏詳細資訊及 Change Path／Remove Tool 操作。
+Refresh 與切換頁籤會保留各卡片的展開／收合狀態。</p>
 <p>Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 <strong>Missing</strong>、
 <strong>Not a file</strong> 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
 Type 會出現在 Add 候選。全部未配置時顯示 <strong>No external tools configured.</strong>；
@@ -102,6 +105,12 @@ distribution 裡真正的 executable。Orchestrator Tool 不會搬移或複製 e
 Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
 setup values。Tool setup 屬於 Template；machine-specific executable paths 與
 Live Resources 不屬於 Template。</p>
+<p>每個 instance 使用獨立邊框卡片，預設展開，可用 <strong>+ / −</strong> 收合或展開。
+Add Tool Instance 上方的 <strong>Tool Instance Summary</strong> 依 Tool Type 統計 instance
+數量，包含未在本機配置的類型。未使用的類型不顯示，沒有 instance 時隱藏整個摘要。</p>
+<p>編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
+成功執行 <strong>New Template</strong> 或 <strong>Open Template</strong> 後恢復預設狀態，包含 External
+Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。</p>
 <p><strong>Add Tool Instance</strong> 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
 對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。</p>
@@ -166,7 +175,10 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 因此不需 discovery 或 saved resource 即可設定 Protection Setup。當目前 model
 不支援時，Template 中既有設定仍會顯示。</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
-<p>Protection Setup 為選用設定。展開 Setup 中的 Powers Tool Instance，勾選
+<p>Protection Setup 為選用設定。在 Powers Tool Instance 內，按 <strong>Protection Setup</strong>
+旁的 <strong>+</strong> 展開預設收合的群組。Protection 欄位與整個 Device 區域（包含 Device
+Status、Protection Summary、通道操作與 Live Resource）會一起展開／收合。
+收合不會變更保護設定，也不會讀取或操作儀器。勾選
 <strong>Use Protection Setup</strong> 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
 新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
 或核取方塊狀態寫入 Template。powers-tool 回報的所有通道，以及 Template 已設定
@@ -235,6 +247,8 @@ Protection 都不可使用。若該型號不支援 remote clear，請從儀器 f
 清除 protection latch，再使用 <strong>Refresh Status</strong>。</p>
 <h3 id="55-scopes-setup">5.5 Scopes Setup</h3>
 <p>Scopes Setup 為選用設定。新的 instance 所有欄位都是 <strong>Unchanged</strong>。
+<strong>Acquisition Setup</strong> 與 <strong>Channel Configuration</strong> 預設收合，可分別使用標題旁的
+<strong>+ / −</strong> 獨立操作。收合會保留設定，Live Resource 維持在兩個群組之外。
 Acquisition Type 可選 Normal、Average、High Resolution 或 Peak；只有選擇 Average
 時才能編輯 Average Count。各通道列提供 Input Coupling、Probe Ratio、Bandwidth
 Limit、Waveform Invert 與 Channel Units。只保存及套用明確指定的值；留白或選擇

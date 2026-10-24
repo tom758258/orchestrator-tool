@@ -102,6 +102,9 @@ picker leaves configuration unchanged. Use <strong>Change Path...</strong> on a 
 to replace its path, or <strong>Remove Tool</strong> to remove only its local executable
 configuration. Removing a Tool does not change Template instances or Workflow
 steps; the Tool Type returns to the Add candidates.</p>
+<p>Each External Tools card starts collapsed, with its Tool name and executable
+status visible. Use <strong>+ / −</strong> to show or hide details and Change Path / Remove
+Tool actions independently. Refresh and tab changes preserve the card's state.</p>
 <p>Cards show only Tool Types with configured executable paths, including paths
 that are <strong>Missing</strong>, <strong>Not a file</strong>, or have compatibility or manifest errors.
 Unconfigured Tool Types appear in the Add candidates. If none are configured,
@@ -118,6 +121,14 @@ or copy the executable or its <code>_internal</code> directory.</p>
 Template can contain multiple instances of the same Tool Type, and each
 instance has its own setup values. Tool setup is part of the Template;
 machine-specific executable paths and Live Resources are not.</p>
+<p>Each instance has its own bordered card and starts expanded. Use <strong>+ / −</strong> to
+collapse or expand it. <strong>Tool Instance Summary</strong>, above Add Tool Instance, counts
+instances by Tool Type, including types not configured locally. Unused types
+are omitted, and the summary is hidden when there are no instances.</p>
+<p>Group and card expansion states persist while editing, switching tabs, or
+collapsing an outer instance. Successful <strong>New Template</strong> or <strong>Open Template</strong>
+restores the default states, including External Tools cards. These UI states
+are not saved in the Template or local settings.</p>
 <p><strong>Add Tool Instance</strong> offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
@@ -194,7 +205,11 @@ powers-tool for the existing Powers simulator model, so Protection Setup does
 not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
-<p>Protection Setup is optional. Expand a Powers Tool Instance in Setup and select
+<p>Protection Setup is optional. Within a Powers Tool Instance, use <strong>+</strong> beside
+<strong>Protection Setup</strong> to expand the group, which starts collapsed. Protection
+fields and the entire Device area, including Device Status, Protection Summary,
+channel actions, and Live Resource, expand and collapse together. Collapsing
+does not change protection settings or read or operate the instrument. Select
 <strong>Use Protection Setup</strong> to edit supported fields. This single checkbox applies
 to the whole instance; new instances start unchecked with all fields disabled.
 Selecting it alone does not store any protection data or checkbox state in the
@@ -277,6 +292,9 @@ clear the protection latch from the instrument front panel and then use
 <strong>Refresh Status</strong>.</p>
 <h3 id="55-scopes-setup">5.5 Scopes Setup</h3>
 <p>Scopes Setup is optional. New instances start with all settings <strong>Unchanged</strong>.
+<strong>Acquisition Setup</strong> and <strong>Channel Configuration</strong> start collapsed; use each
+heading's <strong>+ / −</strong> independently. Collapsing preserves settings, and Live
+Resource remains outside both groups.
 Choose Acquisition Type (Normal, Average, High Resolution, or Peak); Average
 Count is editable only with Average. Channel rows provide Input Coupling,
 Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit

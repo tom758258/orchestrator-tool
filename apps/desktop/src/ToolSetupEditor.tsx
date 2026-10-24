@@ -382,12 +382,13 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
   )
 }
 
-function PowersSetupFields({ value, onChange, modelId, executionMode, powersExecutableKey }: {
+function PowersSetupFields({ value, onChange, modelId, executionMode, powersExecutableKey, children }: {
   value: PowersSetup
   onChange: (value: PowersSetup) => void
   modelId: string | null | undefined
   executionMode: ExecutionMode
   powersExecutableKey: string
+  children: ReactNode
 }) {
   const [enabledEmptySetup, setEnabledEmptySetup] = useState<PowersSetup | null>(null)
   const protectionEnabled = value.protection !== undefined || enabledEmptySetup === value
@@ -413,8 +414,15 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
     features.ovp_voltage || features.ocp || features.ocp_delay || features.ocp_delay_triggers.length > 0
   ))
   const displayChannels = protectionChannelNumbers(capabilities?.channels ?? [], channels)
+  const [expanded, setExpanded] = useState(false)
   return <div className="powers-protection-fields">
-    <h4 className="powers-section-heading">Protection Setup</h4>
+    <h4 className="powers-section-heading">
+      <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} Protection Setup`} onClick={() => setExpanded(!expanded)}>
+        {expanded ? '−' : '+'}
+      </button>Protection Setup
+    </h4>
+    <div hidden={!expanded}>
     <label className="powers-protection-toggle">
       <input type="checkbox" checked={protectionEnabled} onChange={event => {
         setEnabledEmptySetup(event.target.checked ? value : null)
@@ -494,6 +502,9 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
         })}</tbody>
       </table>
     </div>
+    {children}
+    {value.protection && <p className="tool-setup-hint">Protection settings are configured for this Power instance. Add a Power Protection Status step and Assert if the Workflow should fail when a protection trip is detected.</p>}
+    </div>
   </div>
 }
 
@@ -520,8 +531,16 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
   useEffect(() => { setCountDraft(null) }, [value.acquisition?.average_count])
   const unsupportedMode = acquisition.acquisition_type !== undefined && !modes.includes(acquisition.acquisition_type)
   const unsupportedCount = acquisition.average_count !== undefined && !counts.includes(acquisition.average_count)
+  const [acquisitionExpanded, setAcquisitionExpanded] = useState(false)
+  const [channelsExpanded, setChannelsExpanded] = useState(false)
   return <div className="powers-protection-fields">
-    <h4 className="powers-section-heading">Acquisition Setup</h4>
+    <h4 className="powers-section-heading">
+      <button type="button" className="action-button tool-setup-toggle" aria-expanded={acquisitionExpanded}
+        aria-label={`${acquisitionExpanded ? 'Collapse' : 'Expand'} Acquisition Setup`} onClick={() => setAcquisitionExpanded(!acquisitionExpanded)}>
+        {acquisitionExpanded ? '−' : '+'}
+      </button>Acquisition Setup
+    </h4>
+    <div hidden={!acquisitionExpanded}>
     <p className="tool-setup-hint">Only changed values are stored. Unchanged leaves the instrument setting unchanged.</p>
     {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
     {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline Scopes capabilities...</p>}
@@ -554,7 +573,14 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
         {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
       </div>
     </div>
-    <h4 className="powers-section-heading">Channel Configuration</h4>
+    </div>
+    <h4 className="powers-section-heading">
+      <button type="button" className="action-button tool-setup-toggle" aria-expanded={channelsExpanded}
+        aria-label={`${channelsExpanded ? 'Collapse' : 'Expand'} Channel Configuration`} onClick={() => setChannelsExpanded(!channelsExpanded)}>
+        {channelsExpanded ? '−' : '+'}
+      </button>Channel Configuration
+    </h4>
+    <div hidden={!channelsExpanded}>
     <div className="powers-table-scroll"><table className="powers-protection-table">
       <thead><tr><th>Channel</th><th>Input Coupling</th><th>Probe Ratio</th><th>Bandwidth Limit</th><th>Waveform Invert</th><th>Channel Units</th></tr></thead>
       <tbody>{scopesChannelNumbers(caps, value).map(channel => {
@@ -582,6 +608,7 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
         </tr>
       })}</tbody>
     </table></div>
+    </div>
   </div>
 }
 
@@ -619,8 +646,20 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
   const [selectedTool, setTool] = useState<ToolInstance['tool'] | ''>('')
   const tool = configuredToolTypes.includes(selectedTool as ToolInstance['tool'])
     ? selectedTool : configuredToolTypes[0] ?? ''
+  const instanceCounts = value.reduce<Partial<Record<ToolInstance['tool'], number>>>((counts, instance) => {
+    counts[instance.tool] = (counts[instance.tool] ?? 0) + 1
+    return counts
+  }, {})
   return <section className="tool-setup" aria-labelledby="tool-setup-title">
     <h3 id="tool-setup-title">Tool Setup</h3>
+    {value.length > 0 && <section className="tool-instance-summary" aria-labelledby="tool-instance-summary-title">
+      <h4 id="tool-instance-summary-title">Tool Instance Summary</h4>
+      <dl className="tool-instance-counts">
+        {Object.entries(instanceCounts).map(([type, count]) => <div key={type}>
+          <dt>{type[0].toUpperCase() + type.slice(1)}</dt><dd>{count}</dd>
+        </div>)}
+      </dl>
+    </section>}
     <fieldset disabled={disabled || !tool}>
       <legend>Add Tool Instance</legend>
       <div className="tool-setup-add-controls">
@@ -649,7 +688,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
     {value.map(instance => {
       const collapsed = collapsedIds.includes(instance.id)
       const referenced = steps.some(step => step.type === 'tool-action' && step.target === instance.id)
-      return <fieldset key={instance.id} disabled={disabled}>
+      return <fieldset key={instance.id} className="tool-instance-card" disabled={disabled}>
         <legend>
           <button type="button" className="action-button tool-setup-toggle"
             aria-expanded={!collapsed} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${instance.id}`}
@@ -664,7 +703,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
         {!configuredToolTypes.includes(instance.tool) && <p className="tool-setup-hint" role="status">
           {instance.tool[0].toUpperCase() + instance.tool.slice(1)} is not configured in Tools.
         </p>}
-        {collapsed ? <p className="tool-setup-hint">{setupSummary(instance)}</p> : <>
+        {collapsed && <p className="tool-setup-hint">{setupSummary(instance)}</p>}
+        {/* Keep setup fields mounted so collapsing never discards local drafts or reloads capabilities. */}
+        <div hidden={collapsed}>
           <label className="step-property-field">
             <span className="step-property-label">Display Name (optional)</span>
             <input type="text" disabled={disabled} value={instance.display_name ?? ''}
@@ -694,7 +735,12 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                   modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
                   executionMode={executionMode}
                   powersExecutableKey={powersExecutableKey}
-                  onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
+                  onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}>
+                  <div className="powers-device">
+                    <h4 className="powers-section-heading">Device</h4>
+                    {renderResource(instance)}
+                  </div>
+                </PowersSetupFields>
               : instance.tool === 'scopes'
                 ? <ScopesSetupFields value={instance.setup} onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}
                     modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
@@ -705,16 +751,11 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                     ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
-          {instance.tool === 'powers' ? <div className="powers-device">
-            <h4 className="powers-section-heading">Device</h4>
-            {renderResource(instance)}
-          </div> : renderResource(instance)}
+          {instance.tool !== 'powers' && renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
-        </>}
-        {instance.tool === 'powers' && instance.setup.protection &&
-          <p className="tool-setup-hint">Protection settings are configured for this Power instance. Add a Power Protection Status step and Assert if the Workflow should fail when a protection trip is detected.</p>}
+        </div>
       </fieldset>
     })}
   </section>

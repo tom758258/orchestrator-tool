@@ -499,7 +499,9 @@ test('display_name: all four Setup types add, edit, clear, collapse and keep IDs
     input(id).props.onBlur({ target: { value: input(id).props.value } })
     assert.equal(input(id).props.value, '儀器 Name 123')
     elements(field(id)).find(node => node.props.className?.includes('tool-setup-toggle')).props.onClick()
-    assert.equal(input(id), undefined)
+    assert.ok(elements(field(id)).some(node => node.props.hidden === true
+      && elements(node).some(child => child.type === 'input' && child.props.type === 'text')),
+    'collapsed fields remain mounted but hidden')
     assert.ok(text(field(id)).includes(`Instance ID: ${id}`))
     elements(field(id)).find(node => node.props.className?.includes('tool-setup-toggle')).props.onClick()
     assert.equal(input(id).props.value, '儀器 Name 123')

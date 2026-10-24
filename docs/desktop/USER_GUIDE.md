@@ -81,6 +81,10 @@ to replace its path, or **Remove Tool** to remove only its local executable
 configuration. Removing a Tool does not change Template instances or Workflow
 steps; the Tool Type returns to the Add candidates.
 
+Each External Tools card starts collapsed, with its Tool name and executable
+status visible. Use **+ / −** to show or hide details and Change Path / Remove
+Tool actions independently. Refresh and tab changes preserve the card's state.
+
 Cards show only Tool Types with configured executable paths, including paths
 that are **Missing**, **Not a file**, or have compatibility or manifest errors.
 Unconfigured Tool Types appear in the Add candidates. If none are configured,
@@ -100,6 +104,16 @@ A Tool Instance is a logical, named instance stored in the Template. A
 Template can contain multiple instances of the same Tool Type, and each
 instance has its own setup values. Tool setup is part of the Template;
 machine-specific executable paths and Live Resources are not.
+
+Each instance has its own bordered card and starts expanded. Use **+ / −** to
+collapse or expand it. **Tool Instance Summary**, above Add Tool Instance, counts
+instances by Tool Type, including types not configured locally. Unused types
+are omitted, and the summary is hidden when there are no instances.
+
+Group and card expansion states persist while editing, switching tabs, or
+collapsing an outer instance. Successful **New Template** or **Open Template**
+restores the default states, including External Tools cards. These UI states
+are not saved in the Template or local settings.
 
 **Add Tool Instance** offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
@@ -188,7 +202,11 @@ visible when the current model does not support them.
 
 ### 5.3 Powers Protection Setup
 
-Protection Setup is optional. Expand a Powers Tool Instance in Setup and select
+Protection Setup is optional. Within a Powers Tool Instance, use **+** beside
+**Protection Setup** to expand the group, which starts collapsed. Protection
+fields and the entire Device area, including Device Status, Protection Summary,
+channel actions, and Live Resource, expand and collapse together. Collapsing
+does not change protection settings or read or operate the instrument. Select
 **Use Protection Setup** to edit supported fields. This single checkbox applies
 to the whole instance; new instances start unchecked with all fields disabled.
 Selecting it alone does not store any protection data or checkbox state in the
@@ -283,6 +301,9 @@ clear the protection latch from the instrument front panel and then use
 ### 5.5 Scopes Setup
 
 Scopes Setup is optional. New instances start with all settings **Unchanged**.
+**Acquisition Setup** and **Channel Configuration** start collapsed; use each
+heading's **+ / −** independently. Collapsing preserves settings, and Live
+Resource remains outside both groups.
 Choose Acquisition Type (Normal, Average, High Resolution, or Peak); Average
 Count is editable only with Average. Channel rows provide Input Coupling,
 Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit

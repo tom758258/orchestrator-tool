@@ -482,6 +482,14 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
+  const [templateUiGeneration, setTemplateUiGeneration] = useState(0)
+  useEffect(() => {
+    setExpandedToolIds(current => {
+      const remaining = current.filter(id => tools.some(tool => tool.tool_id === id && tool.executable_status !== 'not-configured'))
+      return remaining.length === current.length ? current : remaining
+    })
+  }, [tools])
   const configuredTools = tools.filter(tool => tool.executable_status !== 'not-configured')
   const configuredToolTypes = configuredTools.map(tool => tool.tool_id as ToolInstance['tool'])
   const unconfiguredTools = tools.filter(tool => tool.executable_status === 'not-configured')
@@ -717,6 +725,8 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(workflowOnlyDraft(draft))
+      setTemplateUiGeneration(current => current + 1)
+      setExpandedToolIds([])
       setSaveChartsWithTemplate(false)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
@@ -984,6 +994,8 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(workflowOnlyDraft(loadedDraft))
+      setTemplateUiGeneration(current => current + 1)
+      setExpandedToolIds([])
       setSaveChartsWithTemplate(loadedDraft.output_views !== undefined)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
@@ -1768,11 +1780,20 @@ function App() {
               {configuredTools.map((tool) => (
                 <li key={tool.tool_id} className="tool-card">
                   <div className="tool-title">
-                    <span className="tool-id">{tool.tool_id}</span>
+                    <span>
+                      <button type="button" className="action-button tool-setup-toggle"
+                        aria-expanded={expandedToolIds.includes(tool.tool_id)}
+                        aria-label={`${expandedToolIds.includes(tool.tool_id) ? 'Collapse' : 'Expand'} ${tool.tool_id} details`}
+                        onClick={() => setExpandedToolIds(current => current.includes(tool.tool_id)
+                          ? current.filter(id => id !== tool.tool_id) : [...current, tool.tool_id])}>
+                        {expandedToolIds.includes(tool.tool_id) ? '−' : '+'}
+                      </button><span className="tool-id">{tool.tool_id}</span>
+                    </span>
                     <span className={`status status-${tool.executable_status}`}>
                       {EXECUTABLE_LABELS[tool.executable_status] ?? tool.executable_status}
                     </span>
                   </div>
+                  <div hidden={!expandedToolIds.includes(tool.tool_id)}>
                   <dl className="tool-details">
                     <div className="detail-row">
                       <dt className="detail-label">Executable</dt>
@@ -1831,6 +1852,7 @@ function App() {
                       Remove Tool
                     </button>
                   </div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1847,6 +1869,7 @@ function App() {
             <>
               {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
               <ToolSetupEditor
+                key={templateUiGeneration}
                 value={workflowDraft.tool_instances}
                 configuredToolTypes={configuredToolTypes}
                 executionMode={executionMode}
