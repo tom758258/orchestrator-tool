@@ -363,6 +363,17 @@ const CLEANUP_MARKER_ENV: &str = "ORCHESTRATOR_TEST_CLEANUP_MARKER";
 fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
 
+    // Diagnostic Smoke probes the very same fake executable before starting it.
+    if arguments == [OsString::from("manifest"), OsString::from("--json")] {
+        let scenario = if env::var_os(POWERS_FIXTURE_SCENARIO_ENV).is_some() {
+            "powers-smoke"
+        } else {
+            "meters-smoke"
+        };
+        println!("{}", fixture_manifest_json(scenario));
+        return;
+    }
+
     if arguments == POWERS_WORKER_ARGUMENTS.map(OsString::from) {
         run_powers_worker_fixture();
         fixture_summary();
@@ -1705,7 +1716,7 @@ fn print_json_line(line: &str) {
     stdout.flush().unwrap();
 }
 
-fn fixture_manifest(scenario: &str) -> ToolManifest {
+fn fixture_manifest_json(scenario: &str) -> serde_json::Value {
     let name = if scenario.starts_with("meters-") {
         "meters"
     } else if scenario.starts_with("scopes-") {
@@ -1732,16 +1743,19 @@ fn fixture_manifest(scenario: &str) -> ToolManifest {
             json!({"common.async_jobs":{"contract_version":1}}),
         ),
     };
-    let content = json!({
+    json!({
         "event":"tool_manifest","schema_version":2,"tool_id":name,
         "tool_version":"fixture","worker_protocol":{
             "compatibility_policy":"v3-only","schema_versions":[3]},
         "execution":{"model":model,"context_binding":binding},
         "features":features
     })
-    .to_string();
-    let expected = ToolId::new(name).unwrap();
-    parse_manifest(&content, &expected).unwrap()
+}
+
+fn fixture_manifest(scenario: &str) -> ToolManifest {
+    let document = fixture_manifest_json(scenario);
+    let expected = ToolId::new(document["tool_id"].as_str().unwrap()).unwrap();
+    parse_manifest(&document.to_string(), &expected).unwrap()
 }
 
 fn fixture_spec(scenario: &str) -> WorkerLaunchSpec {
