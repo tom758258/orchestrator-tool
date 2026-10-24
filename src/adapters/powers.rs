@@ -232,6 +232,9 @@ pub fn run_worker_smoke(
     shutdown_timeout: Duration,
 ) -> Result<(), PowersSmokeError> {
     let spec = simulate_worker_launch_spec(executable);
+    let manifest = super::probe_existing_worker_integration(spec.executable(), &ToolId::powers())
+        .map_err(PowersSmokeError::InvalidResponse)?;
+    let spec = spec.with_manifest(manifest);
     let session = start_worker(&spec, startup_timeout).map_err(PowersSmokeError::Startup)?;
     let operation = run_smoke_operation(&session, operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);

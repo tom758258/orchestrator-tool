@@ -377,6 +377,9 @@ pub fn run_worker_smoke(
         ..MetersSetup::default()
     };
     let spec = simulate_worker_launch_spec(executable, Some(2), &setup);
+    let manifest = super::probe_existing_worker_integration(spec.executable(), &ToolId::meters())
+        .map_err(MetersSmokeError::InvalidResponse)?;
+    let spec = spec.with_manifest(manifest);
     let session = start_worker(&spec, startup_timeout).map_err(MetersSmokeError::Startup)?;
     let operation = run_smoke_operation(session.ready(), operation_timeout);
     let shutdown = session.shutdown(shutdown_timeout);

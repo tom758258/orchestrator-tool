@@ -137,9 +137,9 @@ fn powers_worker_spec(
         .resolved()
         .path()
         .expect("available executable has a path");
-    match execution_mode {
+    let spec = match execution_mode {
         ExecutionMode::Simulate => {
-            Ok(orchestrator_tool::adapters::powers::simulate_worker_launch_spec(executable))
+            orchestrator_tool::adapters::powers::simulate_worker_launch_spec(executable)
         }
         ExecutionMode::Live => {
             let resource = config
@@ -147,9 +147,14 @@ fn powers_worker_spec(
                 .get(instance_id.as_str())
                 .filter(|resource| !resource.trim().is_empty())
                 .ok_or_else(|| format!("{instance_id} saved Live Resource is not configured"))?;
-            Ok(orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource))
+            orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource)
         }
-    }
+    };
+    let manifest = orchestrator_tool::adapters::probe_existing_worker_integration(
+        spec.executable(),
+        &ToolId::powers(),
+    )?;
+    Ok(spec.with_manifest(manifest))
 }
 
 fn finish_manual_powers_operation<T>(
