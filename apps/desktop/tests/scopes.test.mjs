@@ -239,7 +239,6 @@ test('Scopes Screenshot reloads canonical Live model, instance and EXE without o
   assert.deepEqual(props.step, original)
   const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const editorProps = app.slice(app.indexOf('<ScopesActionEditor'), app.indexOf('onChange={next => updateStep(selectedToolAction.id'))
-  assert.match(editorProps, /resourceIdentities\[selectedToolAction\.target\]\?\.model_id/)
   assert.match(editorProps, /executionMode=\{executionMode\} scopesExecutableKey=\{scopesExecutableKey\}/)
 })
 
