@@ -536,6 +536,7 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
   return <div className="powers-protection-fields">
     <h4 className="powers-section-heading">
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={acquisitionExpanded}
+        data-scopes-count-disclosure
         aria-label={`${acquisitionExpanded ? 'Collapse' : 'Expand'} Acquisition Setup`} onClick={() => setAcquisitionExpanded(!acquisitionExpanded)}>
         {acquisitionExpanded ? '−' : '+'}
       </button>Acquisition Setup
@@ -567,7 +568,14 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
             setCountDraft(event.target.value)
             const average_count = event.target.value === '' ? undefined : Number(event.target.value)
             if (average_count === undefined || counts.includes(average_count)) onChange(updateScopesAcquisition(value, { ...acquisition, average_count }))
-          }} onBlur={() => setCountDraft(null)} /></label>
+          }} onBlur={event => {
+            const next = event.relatedTarget
+            // Hiding this editor is UI navigation, not abandoning an incomplete count.
+            if (next && next instanceof HTMLElement && (next.matches('[role="tab"]')
+              || (next.matches('[data-scopes-count-disclosure][aria-expanded="true"]')
+                && event.currentTarget.closest('fieldset')?.contains(next)))) return
+            setCountDraft(null)
+          }} /></label>
         <p className="tool-setup-hint">Requires Acquisition Type = Average.</p>
         {counts.length > 0 && <p className="tool-setup-hint">Supported counts: {counts.length <= 16 ? counts.join(', ') : `${counts[0]}–${counts.at(-1)} (${counts.length} supported integers)`}.</p>}
         {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
@@ -691,6 +699,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
       return <fieldset key={instance.id} className="tool-instance-card" disabled={disabled}>
         <legend>
           <button type="button" className="action-button tool-setup-toggle"
+            data-scopes-count-disclosure={instance.tool === 'scopes' ? '' : undefined}
             aria-expanded={!collapsed} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${instance.id}`}
             onClick={() => setCollapsedIds(current => collapsed
               ? current.filter(id => id !== instance.id) : [...current, instance.id])}>

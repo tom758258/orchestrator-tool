@@ -157,7 +157,7 @@ test('Scopes Average Count retains gating, unchanged, validation and type-change
   assert.equal(value.acquisition.average_count, 16)
   control(render(props()), 'Average Count').props.onChange({ target: { value: '17' } })
   assert.equal(value.acquisition.average_count, 16)
-  control(render(props()), 'Average Count').props.onBlur()
+  control(render(props()), 'Average Count').props.onBlur({ relatedTarget: null })
   assert.equal(control(render(props()), 'Average Count').props.value, 16)
   control(render(props()), 'Average Count').props.onChange({ target: { value: '' } })
   assert.deepEqual(value, { acquisition: { acquisition_type: 'average' } })

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { isInaccessible } from '@testing-library/dom'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
@@ -77,6 +77,12 @@ const instance = (id: string) => within(screen.getByRole('button', {
   name: new RegExp(`^(?:Expand|Collapse) ${id}$`),
 }).closest('fieldset')!)
 const calls = () => vi.mocked(invoke).mock.calls
+function focusClick(control: HTMLElement) {
+  fireEvent.pointerDown(control)
+  act(() => control.focus()) // Native focus() dispatches blur/focusout before click, including relatedTarget.
+  fireEvent.pointerUp(control)
+  fireEvent.click(control)
+}
 async function mount() {
   render(<App />)
   await screen.findByRole('button', { name: 'Expand powers details' })
@@ -134,6 +140,74 @@ test('Setup preserves independent groups, local drafts and protection data throu
   expect(instance('powers-1').getByRole('button', { name: 'Collapse Protection Setup' })).toBeTruthy()
   expect(await savedDraft()).toEqual({ ...original, tool_instances: original.tool_instances.map(item =>
     item.id === 'powers-1' ? { ...item, display_name: 'Bench power' } : item) })
+})
+
+test.each(['Acquisition Setup', 'Scopes instance', 'Tools tab'])('Average Count survives focus transfer to %s before hiding and accepts a completed value', async target => {
+  await mount()
+  click('Expand Acquisition Setup')
+  const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
+  act(() => count.focus())
+  fireEvent.change(count, { target: { value: '1' } })
+  const control = target === 'Tools tab' ? screen.getByRole('tab', { name: 'Tools' })
+    : screen.getByRole('button', { name: target === 'Scopes instance' ? 'Collapse scopes-1' : 'Collapse Acquisition Setup' })
+  const events: string[] = []
+  count.addEventListener('blur', () => events.push('blur'), { once: true })
+  control.addEventListener('click', () => events.push('click'), { once: true })
+  focusClick(control)
+  expect(events).toEqual(['blur', 'click'])
+  expect(screen.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
+  if (target === 'Tools tab') tab('Setup')
+  else click(target === 'Scopes instance' ? 'Expand scopes-1' : 'Expand Acquisition Setup')
+  expect(count.value).toBe('1')
+  expect(await savedDraft()).toEqual(original) // An incomplete draft never becomes a formal setting.
+  act(() => count.focus())
+  fireEvent.change(count, { target: { value: '64' } })
+  act(() => count.blur())
+  expect(count.value).toBe('64')
+  const saved = await savedDraft()
+  expect(saved.tool_instances[1].setup.acquisition).toEqual({ acquisition_type: 'average', average_count: 64 })
+  expect(saved.tool_instances[1].setup).toEqual({ ...original.tool_instances[1].setup,
+    acquisition: { acquisition_type: 'average', average_count: 64 } })
+})
+
+test('Average Count ordinary blur still restores the accepted value and Acquisition Type changes clear the draft', async () => {
+  await mount()
+  click('Expand Acquisition Setup')
+  const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
+  const type = screen.getByRole('combobox', { name: 'Acquisition Type' })
+  for (const next of [type, instance('scopes-1').getByRole('textbox', { name: 'Live Resource' }),
+    screen.getByRole('button', { name: 'Expand Channel Configuration' }),
+    screen.getByRole('button', { name: 'Collapse powers-1' }), null]) {
+    act(() => count.focus())
+    fireEvent.change(count, { target: { value: '1' } })
+    act(() => { if (next) next.focus(); else count.blur() })
+    expect(count.value).toBe('16')
+  }
+  act(() => count.focus())
+  fireEvent.change(count, { target: { value: '1' } })
+  act(() => type.focus())
+  fireEvent.change(type, { target: { value: 'normal' } })
+  expect(count.disabled).toBe(true)
+  expect(count.value).toBe('')
+  fireEvent.change(type, { target: { value: 'average' } })
+  expect(count.disabled).toBe(false)
+  expect(count.value).toBe('')
+  expect((await savedDraft()).tool_instances[1].setup.acquisition).toEqual({ acquisition_type: 'average' })
+})
+
+test.each(['New Template', 'Open Template'])('%s resets a preserved Average Count draft even with the same instance ID', async action => {
+  await mount()
+  click('Expand Acquisition Setup')
+  const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
+  act(() => count.focus())
+  fireEvent.change(count, { target: { value: '1' } })
+  focusClick(screen.getByRole('button', { name: 'Collapse Acquisition Setup' }))
+  expect(count.value).toBe('1')
+  click(action)
+  await waitFor(() => expect(count.isConnected).toBe(false))
+  click('Expand Acquisition Setup')
+  expect((screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement).value).toBe('16')
+  expect(await savedDraft()).toEqual(original)
 })
 
 test('summary follows Template instances and add/remove; replacement resets even matching IDs without clearing Template data', async () => {
