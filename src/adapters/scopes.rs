@@ -237,6 +237,7 @@ pub fn live_worker_launch_spec(
     executable: impl AsRef<Path>,
     resource: &str,
     model_id: &str,
+    backend: crate::config::VisaBackend,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
@@ -251,7 +252,14 @@ pub fn live_worker_launch_spec(
             "0",
             "--format",
             "jsonl",
-        ],
+        ]
+        .into_iter()
+        .chain(
+            (backend == crate::config::VisaBackend::Py)
+                .then_some(["--visa-library", "@py"])
+                .into_iter()
+                .flatten(),
+        ),
     )
 }
 

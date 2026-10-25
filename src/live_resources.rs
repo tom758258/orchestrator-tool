@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
-    config::Config,
+    config::{Config, VisaBackend},
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
@@ -31,6 +31,7 @@ pub fn list_live_resources(
     application_dir: &Path,
     config: &Config,
     tool: &ToolId,
+    backend: VisaBackend,
 ) -> Result<Vec<LiveResourceCandidate>, String> {
     resource_field(tool)?;
     let definition = built_in_tool_definitions()
@@ -61,15 +62,25 @@ pub fn list_live_resources(
     if probe.manifest().worker_compatibility() != WorkerCompatibility::Compatible {
         return Err(format!("{tool} Worker protocol is incompatible"));
     }
-    let output = run_output_with_timeout(
-        executable,
-        ["list-resources", "--live-only", "--json"],
-        Duration::from_secs(60),
-    )
-    .map_err(|error| match error {
-        CaptureError::Io(error) => format!("{tool} resource discovery failed: {error}"),
-        CaptureError::Timeout => format!("{tool} resource discovery timed out after 60 seconds"),
-    })?;
+    let mut arguments = vec!["list-resources", "--live-only", "--json"];
+    if backend == VisaBackend::Py {
+        arguments.extend([
+            if tool == &ToolId::powers() {
+                "--backend"
+            } else {
+                "--visa-library"
+            },
+            "@py",
+        ]);
+    }
+    let output = run_output_with_timeout(executable, arguments, Duration::from_secs(60)).map_err(
+        |error| match error {
+            CaptureError::Io(error) => format!("{tool} resource discovery failed: {error}"),
+            CaptureError::Timeout => {
+                format!("{tool} resource discovery timed out after 60 seconds")
+            }
+        },
+    )?;
     if !output.status.success() {
         if tool == &ToolId::scopes() {
             let detail =
@@ -238,6 +249,85 @@ mod tests {
                 {"name": " USB0::Power Serial::INSTR ", "reachable": true}], "count": 1},
                 "warnings": [], "error": null})
         }
+    }
+
+    #[test]
+    fn discovery_uses_selected_backend_and_reports_failure_without_fallback() {
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "orchestrator-discovery-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        for tool in [ToolId::meters(), ToolId::scopes(), ToolId::powers()] {
+            let manifest = json!({"schema_version":2,"event":"tool_manifest","tool_id":tool.as_str(),"tool_version":"test",
+                "worker_protocol":{"compatibility_policy":"v3-only","schema_versions":[3]},
+                "execution":{"model":"multi_job","context_binding":"per_command"},
+                "features":{"common.async_jobs":{"contract_version":1}}});
+            let resources = if tool == ToolId::scopes() {
+                json!({"schema_version":2,"ok":true,"command":"list-resources",
+                    "result":{"live_only":true,"live_resources":[{"resource":"opaque::Exact"}]}})
+            } else {
+                response(&tool)
+            };
+            let log = dir.join("arguments.txt");
+            let fail = dir.join("fail");
+            #[cfg(windows)]
+            let executable = {
+                let path = dir.join("discovery.cmd");
+                fs::write(&path, format!("@echo off\r\nif \"%1\"==\"manifest\" goto manifest\r\necho %*>>\"{}\"\r\nif exist \"{}\" goto fail\r\necho {resources}\r\nexit /b 0\r\n:manifest\r\necho {manifest}\r\nexit /b 0\r\n:fail\r\necho backend unavailable 1>&2\r\nexit /b 1\r\n", log.display(), fail.display())).unwrap();
+                path
+            };
+            #[cfg(unix)]
+            let executable = {
+                use std::os::unix::fs::PermissionsExt;
+                let path = dir.join("discovery");
+                fs::write(&path, format!("#!/bin/sh\nif [ \"$1\" = manifest ]; then printf '%s\\n' '{manifest}'; exit 0; fi\nprintf '%s\\n' \"$*\" >> '{}'\nif [ -f '{}' ]; then echo 'backend unavailable' >&2; exit 1; fi\nprintf '%s\\n' '{resources}'\n", log.display(), fail.display())).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+                path
+            };
+            let mut config = Config::default();
+            config.set_executable_path(&tool, executable);
+            for backend in [VisaBackend::System, VisaBackend::Py] {
+                fs::write(&log, "").unwrap();
+                assert_eq!(
+                    list_live_resources(&dir, &config, &tool, backend)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+                let suffix = if backend == VisaBackend::System {
+                    ""
+                } else if tool == ToolId::powers() {
+                    " --backend @py"
+                } else {
+                    " --visa-library @py"
+                };
+                assert_eq!(
+                    fs::read_to_string(&log).unwrap().trim(),
+                    format!("list-resources --live-only --json{suffix}")
+                );
+            }
+            fs::write(&fail, "").unwrap();
+            fs::write(&log, "").unwrap();
+            assert!(
+                list_live_resources(&dir, &config, &tool, VisaBackend::Py)
+                    .unwrap_err()
+                    .contains("backend unavailable")
+            );
+            let invocations = fs::read_to_string(&log).unwrap();
+            assert_eq!(invocations.lines().count(), 1);
+            assert!(invocations.contains("@py"));
+            fs::remove_file(&fail).unwrap();
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -421,9 +511,14 @@ mod tests {
     fn unsupported_tools_are_rejected_before_inspection() {
         for tool in [ToolId::wavegen(), ToolId::new("unknown").unwrap()] {
             assert!(
-                list_live_resources(Path::new("unused"), &Config::default(), &tool)
-                    .unwrap_err()
-                    .contains("not supported")
+                list_live_resources(
+                    Path::new("unused"),
+                    &Config::default(),
+                    &tool,
+                    VisaBackend::System
+                )
+                .unwrap_err()
+                .contains("not supported")
             );
         }
     }

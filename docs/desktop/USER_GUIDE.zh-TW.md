@@ -157,6 +157,17 @@ connection state 已被即時確認。
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
 列出可用 resources、選擇 resource、**Save Resource** 或 **Clear Resource**。
 
+每個支援的 instance 都有獨立的 **VISA Backend**：**System VISA**（預設值，
+包含舊版設定）或 **PyVISA-py (@py)**。先選擇 backend，再按 **List Resources**。
+切換時會立即清空該 instance 的 resource 與 identity 草稿、discovery 結果與錯誤，
+以及舊的 Powers Device Status，不影響其他 instances。按下 **Save Resource** 前，
+已保存的本機設定維持不變；按下後才一起保存 backend、resource 與 identity。
+切換後請重新列出或手動輸入 resource，再保存；不同 backend 的地址不會自動轉換或
+比對。未保存的變更會阻擋 Live run，並使先前的 Live Preflight 結果失效。
+
+Backend 屬於本機設定，不會寫入 Template，也不影響 Simulation。若選定的 backend
+無法使用，discovery 或連線會明確報錯，不會自動改用其他 backend。
+
 Live Resource 永遠代表 machine-local real hardware。Simulation 不要求也不使用
 Live Resource，但仍可為未來的 Live run 執行 List、編輯與 Save Resource，且不會
 因此切換 Execution Mode。Desktop 不會在 local configuration 建立假的 simulator
@@ -173,8 +184,9 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 ### 5.3 Powers Protection Setup
 
 Protection Setup 為選用設定。在 Powers Tool Instance 內，按 **Protection Setup**
-旁的 **+** 展開預設收合的群組。Protection 欄位與整個 Device 區域（包含 Device
-Status、Protection Summary、通道操作與 Live Resource）會一起展開／收合。
+旁的 **+** 展開預設收合的群組。Protection 欄位在此群組內展開／收合。
+Device 是獨立區塊，包含 Device Status、Protection Summary、通道操作與
+Live Resource；收合 Protection Setup 時仍可使用。
 收合不會變更保護設定，也不會讀取或操作儀器。勾選
 **Use Protection Setup** 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
 新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
@@ -203,8 +215,9 @@ Final Safe-Off 仍會執行。Simulation 透過 powers-tool simulate/planning co
 
 執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
 非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
-resource。Live confirmation 會顯示 referenced instances 與 resources；若
-confirmation 後 resource 改變，run 會被拒絕，必須重新確認。
+resource。Live confirmation 會顯示每個 referenced instance 與 Tool Type、
+已保存的 backend 與 resource，以及可用的 last-known identity。若 confirmation 後
+backend 或 resource 改變，run 會被拒絕，必須重新確認。
 
 若 DC Current 使用 **10 A terminal**，Live confirmation 也會要求確認實體
 導線確實接在 10 A terminal。
@@ -235,8 +248,8 @@ simulated Safe-Off All 與選定 channel 的 `clear-protection`，接著直接 s
 Safe-Off、清除 protection、output 保持 OFF 與沒有 hardware I/O。不會顯示 raw JSON
 或儀器指令；沒有真實 protection latch 被改變。
 
-Live 的 Refresh Status 會使用 saved Live Resource 建立 temporary Powers
-connection。Live Resource draft 尚未保存時，必須先 Save Resource，才能使用
+Live 的 Refresh Status 會使用已保存的 backend 與 Live Resource 建立 temporary
+Powers connection。Live Resource 或 backend draft 尚未保存時，必須先 Save Resource，才能使用
 Refresh Status 或 Clear Protection。尚未保存 resource 或有未保存的 draft changes 時，
 Device Status 會提示使用者在下方的 Live Resource 區域保存。
 
@@ -603,14 +616,15 @@ Preflight failure，不會呈現成已執行 Workflow 的 failure。
 開始 Live 前，Desktop 會：
 
 - 確認 referenced Tool Instances；
-- 取得已保存的 Live Resources；
-- 拒絕尚未保存的 Live Resource draft changes；
-- 顯示列出每個 referenced instance 與 resource 的 Live confirmation；
+- 取得已保存的 Live Resources 與 backends；
+- 拒絕尚未保存的 Live Resource、backend 或 identity draft changes；
+- 顯示列出每個 referenced instance、Tool Type、backend、resource 與可用 identity 的 Live confirmation；
 - 提醒 Live mode 可能改變 Powers outputs；以及
 - 對適用的 Meters setup 額外顯示 10 A terminal warning。
 
-請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 resource
-仍與確認時完全相同。Resource 改變或重複使用會使 Live execution 被拒絕，並要求
+請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 backend
+與 resource 仍與確認時完全相同。Backend 或 resource 改變，或 resource 重複使用，
+都會使 Live execution 被拒絕，並要求
 重新確認。
 
 目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Powers 與 Scopes 的
@@ -1009,7 +1023,8 @@ executable；Desktop 不會靜默搜尋替代檔案。
 
 ### Live Resource changes are unsaved
 
-使用 **Save Resource**，再重新開始 Live，讓 confirmation 使用已保存的 value。
+使用 **Save Resource**，再重新開始 Live，讓 confirmation 使用已保存的 backend、
+resource 與 identity。切換 backend 會清空草稿，請重新列出或輸入 resource 再保存。
 
 ### Duplicate Live Resource
 

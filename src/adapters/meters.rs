@@ -338,6 +338,7 @@ pub fn live_worker_launch_spec(
     resource: &str,
     max_samples: Option<usize>,
     setup: &MetersSetup,
+    backend: crate::config::VisaBackend,
 ) -> WorkerLaunchSpec {
     WorkerLaunchSpec::new(
         executable.as_ref(),
@@ -355,7 +356,13 @@ pub fn live_worker_launch_spec(
             OsString::from("0"),
             OsString::from("--no-csv"),
         ])
-        .chain(setup_arguments(setup)),
+        .chain(setup_arguments(setup))
+        .chain(
+            (backend == crate::config::VisaBackend::Py)
+                .then_some([OsString::from("--visa-library"), OsString::from("@py")])
+                .into_iter()
+                .flatten(),
+        ),
     )
 }
 
@@ -1060,7 +1067,13 @@ mod tests {
             current_terminal: None,
             ..MetersSetup::default()
         };
-        let spec = super::live_worker_launch_spec("meters-tool.exe", resource, Some(2), &setup);
+        let spec = super::live_worker_launch_spec(
+            "meters-tool.exe",
+            resource,
+            Some(2),
+            &setup,
+            crate::config::VisaBackend::System,
+        );
         assert_eq!(spec.executable(), Path::new("meters-tool.exe"));
         assert_eq!(
             spec.arguments(),
@@ -1081,6 +1094,18 @@ mod tests {
             .into_iter()
             .chain(super::setup_arguments(&setup))
             .collect::<Vec<_>>()
+        );
+        let py = super::live_worker_launch_spec(
+            "meters-tool.exe",
+            resource,
+            Some(2),
+            &setup,
+            crate::config::VisaBackend::Py,
+        );
+        assert_eq!(&py.arguments()[..spec.arguments().len()], spec.arguments());
+        assert_eq!(
+            &py.arguments()[spec.arguments().len()..],
+            ["--visa-library", "@py"]
         );
     }
 
@@ -1250,6 +1275,7 @@ mod tests {
                     "USB0::Meter::INSTR",
                     Some(7),
                     &setup,
+                    crate::config::VisaBackend::System,
                 ),
             ] {
                 let arguments = spec.arguments();

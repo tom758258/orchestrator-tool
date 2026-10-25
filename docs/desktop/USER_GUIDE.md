@@ -185,6 +185,20 @@ Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, **Save Resource**, or
 **Clear Resource**.
 
+Each supported instance has its own **VISA Backend**: **System VISA** (the
+default, including older configurations) or **PyVISA-py (@py)**. Choose the
+backend before **List Resources**. Changing it immediately clears that
+instance's resource and identity drafts, discovery results and errors, and old
+Powers Device Status. Other instances are unaffected. The saved configuration
+stays unchanged until **Save Resource**, which saves the backend, resource and
+identity together. List resources again or enter a resource manually, then save;
+addresses from different backends are not converted or matched. Unsaved changes
+block Live runs and invalidate the previous Live Preflight result.
+
+The backend is local to this machine and is not included in Templates.
+Simulation does not use it. If the selected backend is unavailable, discovery
+or connection fails with an error; Desktop does not switch backends automatically.
+
 Live Resources always represent machine-local real hardware. Simulation does
 not require or use them, but you may list, edit, and save one for a future Live
 run without switching Execution Mode. Desktop does not create a fake simulator
@@ -204,8 +218,9 @@ visible when the current model does not support them.
 
 Protection Setup is optional. Within a Powers Tool Instance, use **+** beside
 **Protection Setup** to expand the group, which starts collapsed. Protection
-fields and the entire Device area, including Device Status, Protection Summary,
-channel actions, and Live Resource, expand and collapse together. Collapsing
+fields expand and collapse within this group. The separate Device area,
+including Device Status, Protection Summary, channel actions and Live Resource,
+remains available when Protection Setup is collapsed. Collapsing
 does not change protection settings or read or operate the instrument. Select
 **Use Protection Setup** to edit supported fields. This single checkbox applies
 to the whole instance; new instances start unchecked with all fields disabled.
@@ -238,9 +253,10 @@ followed by **Assert**.
 
 Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
-run. Live confirmation displays the referenced instances and resources. If a
-resource changes after confirmation, the run is rejected and must be
-confirmed again.
+run. Live confirmation displays each referenced instance and Tool Type, saved
+backend and resource, and available last-known identity. If the backend or
+resource changes after confirmation, the run is rejected and must be confirmed
+again.
 
 For a DC Current measurement using the **10 A terminal**, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
@@ -277,7 +293,7 @@ outputs remaining OFF, and no hardware I/O as a short operator preview. It does
 not display raw JSON or instrument commands. No real protection latch was changed.
 
 In Live, Refresh Status uses a temporary Powers connection and the saved Live
-Resource. Unsaved Live Resource changes must be saved before Refresh Status or
+Resource and backend. Unsaved Live Resource or backend changes must be saved before Refresh Status or
 Clear Protection can be used. Device Status prompts you to save the Live Resource
 in the controls below when no resource is saved or draft changes are unsaved.
 
@@ -707,15 +723,15 @@ as a Preflight failure, rather than a completed Workflow failure.
 Before starting Live, Desktop:
 
 - checks the referenced Tool Instances;
-- loads their persisted Live Resources;
-- rejects any unsaved Live Resource draft changes;
-- shows a Live confirmation listing each referenced instance and resource;
+- loads their persisted Live Resources and backends;
+- rejects unsaved Live Resource, backend or identity draft changes;
+- shows a Live confirmation listing each referenced instance, Tool Type, backend, resource and available identity;
 - warns that Live mode can change Powers outputs; and
 - adds the 10 A terminal warning for the applicable Meters setup.
 
 Confirm only after checking the displayed resources and the connected
-hardware. The run validates that the resources are still exactly the ones
-confirmed. A changed resource or duplicate resource causes Live execution to
+hardware. The run validates that both backends and resources still exactly match
+what was confirmed. A changed backend or resource, or duplicate resource, causes Live execution to
 be rejected and require a new confirmation.
 
 The currently supported Live external tools are Powers, Meters, and Scopes.
@@ -1188,7 +1204,8 @@ and save it before running Live.
 ### Live Resource changes are unsaved
 
 Use **Save Resource**, then start Live again so the confirmation uses the
-persisted value.
+persisted backend, resource and identity. Changing the backend clears the drafts;
+list or enter the resource again before saving.
 
 ### Duplicate Live Resource
 

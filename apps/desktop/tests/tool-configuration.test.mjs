@@ -204,6 +204,7 @@ async function toolsView(initial, draft = template, source, local = {}) {
       if (command === 'create_workflow_draft' || command === 'load_workflow_template') return JSON.stringify(draft)
       if (command === 'get_live_resources') return local.resources ?? {}
       if (command === 'get_live_resource_identities') return local.identities ?? {}
+      if (command === 'get_live_backends') return local.backends ?? {}
       if (command === 'save_workflow_template' || command === 'validate_workflow_draft') {
         if (command === 'validate_workflow_draft' && local.validationError) throw new Error(local.validationError)
         return args.templateJson

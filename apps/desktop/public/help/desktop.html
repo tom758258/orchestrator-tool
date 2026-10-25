@@ -191,6 +191,18 @@ is not a current connection check.</p>
 Do not expect discovery for unsupported Tool Types. Use the resource controls
 in Setup to list available resources, choose one, <strong>Save Resource</strong>, or
 <strong>Clear Resource</strong>.</p>
+<p>Each supported instance has its own <strong>VISA Backend</strong>: <strong>System VISA</strong> (the
+default, including older configurations) or <strong>PyVISA-py (@py)</strong>. Choose the
+backend before <strong>List Resources</strong>. Changing it immediately clears that
+instance's resource and identity drafts, discovery results and errors, and old
+Powers Device Status. Other instances are unaffected. The saved configuration
+stays unchanged until <strong>Save Resource</strong>, which saves the backend, resource and
+identity together. List resources again or enter a resource manually, then save;
+addresses from different backends are not converted or matched. Unsaved changes
+block Live runs and invalidate the previous Live Preflight result.</p>
+<p>The backend is local to this machine and is not included in Templates.
+Simulation does not use it. If the selected backend is unavailable, discovery
+or connection fails with an error; Desktop does not switch backends automatically.</p>
 <p>Live Resources always represent machine-local real hardware. Simulation does
 not require or use them, but you may list, edit, and save one for a future Live
 run without switching Execution Mode. Desktop does not create a fake simulator
@@ -207,8 +219,9 @@ visible when the current model does not support them.</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Protection Setup is optional. Within a Powers Tool Instance, use <strong>+</strong> beside
 <strong>Protection Setup</strong> to expand the group, which starts collapsed. Protection
-fields and the entire Device area, including Device Status, Protection Summary,
-channel actions, and Live Resource, expand and collapse together. Collapsing
+fields expand and collapse within this group. The separate Device area,
+including Device Status, Protection Summary, channel actions and Live Resource,
+remains available when Protection Setup is collapsed. Collapsing
 does not change protection settings or read or operate the instrument. Select
 <strong>Use Protection Setup</strong> to edit supported fields. This single checkbox applies
 to the whole instance; new instances start unchecked with all fields disabled.
@@ -238,9 +251,10 @@ a trip detected during execution, add a <strong>Power Protection Status</strong>
 followed by <strong>Assert</strong>.</p>
 <p>Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
-run. Live confirmation displays the referenced instances and resources. If a
-resource changes after confirmation, the run is rejected and must be
-confirmed again.</p>
+run. Live confirmation displays each referenced instance and Tool Type, saved
+backend and resource, and available last-known identity. If the backend or
+resource changes after confirmation, the run is rejected and must be confirmed
+again.</p>
 <p>For a DC Current measurement using the <strong>10 A terminal</strong>, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
 terminal.</p>
@@ -272,7 +286,7 @@ I/O</strong>. <strong>Show Plan</strong> presents the target channel, Safe-Off f
 outputs remaining OFF, and no hardware I/O as a short operator preview. It does
 not display raw JSON or instrument commands. No real protection latch was changed.</p>
 <p>In Live, Refresh Status uses a temporary Powers connection and the saved Live
-Resource. Unsaved Live Resource changes must be saved before Refresh Status or
+Resource and backend. Unsaved Live Resource or backend changes must be saved before Refresh Status or
 Clear Protection can be used. Device Status prompts you to save the Live Resource
 in the controls below when no resource is saved or draft changes are unsaved.</p>
 <p>Each channel row has a fixed Action column. <strong>Generate Clear Plan...</strong> is enabled
@@ -670,15 +684,15 @@ as a Preflight failure, rather than a completed Workflow failure.</p>
 <p>Before starting Live, Desktop:</p>
 <ul>
 <li>checks the referenced Tool Instances;</li>
-<li>loads their persisted Live Resources;</li>
-<li>rejects any unsaved Live Resource draft changes;</li>
-<li>shows a Live confirmation listing each referenced instance and resource;</li>
+<li>loads their persisted Live Resources and backends;</li>
+<li>rejects unsaved Live Resource, backend or identity draft changes;</li>
+<li>shows a Live confirmation listing each referenced instance, Tool Type, backend, resource and available identity;</li>
 <li>warns that Live mode can change Powers outputs; and</li>
 <li>adds the 10 A terminal warning for the applicable Meters setup.</li>
 </ul>
 <p>Confirm only after checking the displayed resources and the connected
-hardware. The run validates that the resources are still exactly the ones
-confirmed. A changed resource or duplicate resource causes Live execution to
+hardware. The run validates that both backends and resources still exactly match
+what was confirmed. A changed backend or resource, or duplicate resource, causes Live execution to
 be rejected and require a new confirmation.</p>
 <p>The currently supported Live external tools are Powers, Meters, and Scopes.
 Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
@@ -1080,7 +1094,8 @@ for a replacement.</p>
 and save it before running Live.</p>
 <h3 id="live-resource-changes-are-unsaved">Live Resource changes are unsaved</h3>
 <p>Use <strong>Save Resource</strong>, then start Live again so the confirmation uses the
-persisted value.</p>
+persisted backend, resource and identity. Changing the backend clears the drafts;
+list or enter the resource again before saving.</p>
 <h3 id="duplicate-live-resource">Duplicate Live Resource</h3>
 <p>Different referenced Tool Instances cannot point to the same resource in one
 Live run. Assign distinct resources.</p>

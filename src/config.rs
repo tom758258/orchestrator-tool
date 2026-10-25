@@ -14,7 +14,18 @@ use crate::{discovery::built_in_tool_definitions, tool::ToolId, tool_instance::T
 pub struct Config {
     tools: BTreeMap<String, PathBuf>,
     live_resources: BTreeMap<String, String>,
+    live_backends: BTreeMap<String, VisaBackend>,
     live_resource_identities: BTreeMap<String, ResourceIdentity>,
+}
+
+/// Machine-local VISA selection for one Tool Instance. No implicit fallback.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+pub enum VisaBackend {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "@py")]
+    Py,
 }
 
 /// Last-known device presentation metadata stored only in local configuration.
@@ -82,6 +93,7 @@ impl Config {
         for instance_id in raw
             .live_resources
             .keys()
+            .chain(raw.live_backends.keys())
             .chain(raw.live_resource_identities.keys())
         {
             ToolInstanceId::new(instance_id).map_err(|_| ConfigError::InvalidInstanceId {
@@ -92,6 +104,7 @@ impl Config {
         Ok(Self {
             tools,
             live_resources: raw.live_resources,
+            live_backends: raw.live_backends,
             live_resource_identities: raw.live_resource_identities,
         })
     }
@@ -122,6 +135,27 @@ impl Config {
         self.live_resources
             .get(instance_id.as_str())
             .map(String::as_str)
+    }
+
+    /// Returns the instance backend; old configurations default to System VISA.
+    pub fn live_backend(&self, instance_id: &ToolInstanceId) -> VisaBackend {
+        self.live_backends
+            .get(instance_id.as_str())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Changing backend invalidates the old address and identity.
+    pub fn set_live_backend(&mut self, instance_id: &ToolInstanceId, backend: VisaBackend) {
+        if self.live_backend(instance_id) != backend {
+            self.remove_live_resource(instance_id);
+        }
+        self.live_backends
+            .insert(instance_id.as_str().to_owned(), backend);
+    }
+
+    pub fn live_backends(&self) -> &BTreeMap<String, VisaBackend> {
+        &self.live_backends
     }
 
     /// Sets an opaque live resource and clears any last-known identity.
@@ -169,6 +203,7 @@ impl Config {
         let raw = RawConfig {
             tools: self.tools.clone(),
             live_resources: self.live_resources.clone(),
+            live_backends: self.live_backends.clone(),
             live_resource_identities: self.live_resource_identities.clone(),
         };
         let contents = toml::to_string(&raw).map_err(|source| ConfigError::Serialize {
@@ -197,6 +232,8 @@ struct RawConfig {
     tools: BTreeMap<String, PathBuf>,
     #[serde(default)]
     live_resources: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    live_backends: BTreeMap<String, VisaBackend>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     live_resource_identities: BTreeMap<String, ResourceIdentity>,
 }
@@ -301,7 +338,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use super::{Config, ConfigError, ResourceIdentity};
+    use super::{Config, ConfigError, ResourceIdentity, VisaBackend};
     use crate::tool::ToolId;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
@@ -355,12 +392,15 @@ mod tests {
         };
         let mut config = Config::default();
         config.set_executable_path(&ToolId::powers(), &executable);
+        config.set_live_backend(&powers_id, VisaBackend::Py);
         config.set_live_resource_with_identity(&powers_id, powers, Some(powers_identity.clone()));
         config.set_live_resource_with_identity(&meters_id, meters, Some(meters_identity.clone()));
         config.save(&path).unwrap();
         let mut loaded = Config::load(&path).unwrap();
         assert_eq!(loaded.live_resource(&powers_id), Some(powers));
         assert_eq!(loaded.live_resource(&meters_id), Some(meters));
+        assert_eq!(loaded.live_backend(&powers_id), VisaBackend::Py);
+        assert_eq!(loaded.live_backend(&meters_id), VisaBackend::System);
         assert_eq!(
             loaded.live_resource_identities().get("powers-1"),
             Some(&powers_identity)
@@ -374,6 +414,15 @@ mod tests {
             Some(executable.as_path())
         );
 
+        loaded.set_live_backend(&powers_id, VisaBackend::Py);
+        assert_eq!(
+            loaded.live_resource_identities().get("powers-1"),
+            Some(&powers_identity)
+        );
+        loaded.set_live_backend(&powers_id, VisaBackend::System);
+        assert_eq!(loaded.live_resource(&powers_id), None);
+        assert_eq!(loaded.live_resource_identities().get("powers-1"), None);
+        assert_eq!(loaded.live_resource(&meters_id), Some(meters));
         loaded.set_live_resource(&powers_id, "USB0::Replacement::INSTR");
         assert_eq!(loaded.live_resource_identities().get("powers-1"), None);
         loaded.set_live_resource_with_identity(&powers_id, powers, Some(powers_identity.clone()));
@@ -419,6 +468,7 @@ mod tests {
             Some("USB0::Legacy::INSTR")
         );
         assert!(legacy.live_resource_identities().is_empty());
+        assert_eq!(legacy.live_backend(&meters_id), VisaBackend::System);
     }
 
     #[test]
@@ -463,6 +513,10 @@ mod tests {
         for (name, contents) in [
             ("malformed.toml", "[tools\nmeters = \"meter.exe\"\n"),
             ("unknown-field.toml", "logging = true\n"),
+            (
+                "invalid-backend.toml",
+                "[live_backends]\nmeters-1 = \"auto\"\n",
+            ),
         ] {
             let config_path = test_dir.path().join(name);
             fs::write(&config_path, contents).unwrap();

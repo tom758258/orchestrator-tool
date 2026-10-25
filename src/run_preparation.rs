@@ -1,7 +1,7 @@
 //! Pre-run validation and per-instance Worker launch preparation.
 use crate::{
     adapters::{meters, powers, scopes},
-    config::Config,
+    config::{Config, VisaBackend},
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
     manifest::WorkerCompatibility,
@@ -92,6 +92,7 @@ pub fn validate_confirmed_live_resources(
     template: &Template,
     config: &Config,
     confirmed_resources: &HashMap<String, String>,
+    confirmed_backends: &HashMap<String, VisaBackend>,
 ) -> Result<(), String> {
     let instances = template.referenced_tool_instances();
     for instance in &instances {
@@ -108,9 +109,11 @@ pub fn validate_confirmed_live_resources(
         if confirmed.is_none_or(|resource| resource.trim().is_empty())
             || current.is_none_or(|resource| resource.trim().is_empty())
             || confirmed != current
+            || confirmed_backends.get(instance.id.as_str())
+                != Some(&config.live_backend(&instance.id))
         {
             return Err(format!(
-                "{} ({}) live resource changed after confirmation; confirm the live run again",
+                "{} ({}) live resource or backend changed after confirmation; confirm the live run again",
                 instance.id, instance.tool
             ));
         }
@@ -291,6 +294,7 @@ pub fn prepare_worker_launch_specs(
                     .expect("live resources were validated"),
                 meters_limit,
                 instance.meters_setup().expect("Meters setup was validated"),
+                config.live_backend(&instance.id),
             ),
             (ExecutionMode::Simulate, "scopes") => scopes::simulate_worker_launch_spec(executable),
             (ExecutionMode::Live, "scopes") => scopes::live_worker_launch_spec(
@@ -302,6 +306,7 @@ pub fn prepare_worker_launch_specs(
                     .model_id
                     .as_deref()
                     .expect("validated model"),
+                config.live_backend(&instance.id),
             ),
             _ => unreachable!("referenced workflow tools are filtered"),
         };
@@ -421,13 +426,19 @@ mod tests {
     fn confirmed_live_resources_require_exact_current_values() {
         let template = instance_template();
         let mut config = Config::default();
+        let confirmed_backends = template
+            .referenced_tool_instances()
+            .into_iter()
+            .map(|instance| (instance.id.as_str().to_owned(), VisaBackend::System))
+            .collect();
         let mut confirmed = std::collections::HashMap::new();
         for instance in template.referenced_tool_instances() {
             let resource = format!(" USB0::{}::INSTR ", instance.id);
             config.set_live_resource(&instance.id, resource.clone());
             confirmed.insert(instance.id.as_str().to_owned(), resource);
         }
-        validate_confirmed_live_resources(&template, &config, &confirmed).unwrap();
+        validate_confirmed_live_resources(&template, &config, &confirmed, &confirmed_backends)
+            .unwrap();
         for instance in template.referenced_tool_instances() {
             for value in [None, Some(""), Some(" "), Some("USB0::Other::INSTR")] {
                 let mut changed = confirmed.clone();
@@ -440,14 +451,45 @@ mod tests {
                     }
                 }
                 assert!(
-                    validate_confirmed_live_resources(&template, &config, &changed)
-                        .unwrap_err()
-                        .contains(instance.id.as_str())
+                    validate_confirmed_live_resources(
+                        &template,
+                        &config,
+                        &changed,
+                        &confirmed_backends
+                    )
+                    .unwrap_err()
+                    .contains(instance.id.as_str())
                 );
             }
             let mut changed = config.clone();
+            changed.set_live_backend(&instance.id, VisaBackend::Py);
+            changed.set_live_resource(&instance.id, config.live_resource(&instance.id).unwrap());
+            assert!(
+                validate_confirmed_live_resources(
+                    &template,
+                    &changed,
+                    &confirmed,
+                    &confirmed_backends
+                )
+                .is_err()
+            );
+            let mut missing_backend = confirmed_backends.clone();
+            missing_backend.remove(instance.id.as_str());
+            assert!(
+                validate_confirmed_live_resources(&template, &config, &confirmed, &missing_backend)
+                    .is_err()
+            );
+            let mut changed = config.clone();
             changed.remove_live_resource(&instance.id);
-            assert!(validate_confirmed_live_resources(&template, &changed, &confirmed).is_err());
+            assert!(
+                validate_confirmed_live_resources(
+                    &template,
+                    &changed,
+                    &confirmed,
+                    &confirmed_backends
+                )
+                .is_err()
+            );
         }
 
         let mut duplicate_config = Config::default();
@@ -460,9 +502,13 @@ mod tests {
             duplicate_config.set_live_resource(&instance.id, resource.clone());
             duplicate_confirmed.insert(instance.id.as_str().to_owned(), resource);
         }
-        let error =
-            validate_confirmed_live_resources(&template, &duplicate_config, &duplicate_confirmed)
-                .unwrap_err();
+        let error = validate_confirmed_live_resources(
+            &template,
+            &duplicate_config,
+            &duplicate_confirmed,
+            &confirmed_backends,
+        )
+        .unwrap_err();
         assert!(error.contains("USB0::SAME::INSTR"), "{error}");
         assert!(error.contains("meters-1"), "{error}");
         assert!(error.contains("meters-2"), "{error}");
@@ -656,8 +702,13 @@ mod tests {
         let while_template = Template::from_json_str(&while_wire.to_string()).unwrap();
         assert_eq!(while_template.referenced_tool_instances().len(), 1);
         assert!(
-            super::validate_confirmed_live_resources(&while_template, &config, &Default::default())
-                .is_err()
+            super::validate_confirmed_live_resources(
+                &while_template,
+                &config,
+                &Default::default(),
+                &Default::default()
+            )
+            .is_err()
         );
         for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
             let specs = prepare_worker_launch_specs(&while_template, mode, &dir, &config).unwrap();
@@ -674,6 +725,7 @@ mod tests {
             workflow,
         )
         .unwrap();
+        config.set_live_backend(&ToolInstanceId::new("meters-2").unwrap(), VisaBackend::Py);
         config.set_live_resource(
             &ToolInstanceId::new("meters-2").unwrap(),
             "USB0::Second::INSTR",
@@ -683,7 +735,14 @@ mod tests {
             assert_eq!(specs.len(), 2);
             for instance in multi.referenced_tool_instances() {
                 let args = specs[&instance.id].arguments();
-                assert!(args.ends_with(&super::meters::setup_arguments(
+                let py = mode == ExecutionMode::Live && instance.id.as_str() == "meters-2";
+                assert_eq!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--visa-library", "@py"]),
+                    py
+                );
+                let setup_end = args.len() - if py { 2 } else { 0 };
+                assert!(args[..setup_end].ends_with(&super::meters::setup_arguments(
                     instance.meters_setup().unwrap()
                 )));
                 assert!(args.windows(2).any(|pair| pair == ["--max-samples", "2"]));

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { allWorkflowSteps, type WorkflowStep } from './workflow'
+import type { WorkflowStep } from './workflow'
 import type { ToolInstance } from './ToolSetupEditor'
 
 type PreflightState = { key: string, status: 'checking' | 'passed' | 'failed', errors: string[] }
@@ -10,9 +10,10 @@ export function useLivePreflight(
   resources: Record<string, string>, resourceDrafts: Record<string, string>,
   identities: Record<string, object | null>, identityDrafts: Record<string, object | null>,
   powersExecutable: string, scopesExecutable: string, configBusy: boolean,
+  backends: Record<string, string>, backendDrafts: Record<string, string>,
 ) {
   const templateJson = JSON.stringify(draft)
-  const key = JSON.stringify([executionMode, templateJson, resources, resourceDrafts, identities, identityDrafts,
+  const key = JSON.stringify([executionMode, templateJson, resources, resourceDrafts, identities, identityDrafts, backends, backendDrafts,
     powersExecutable, scopesExecutable, configBusy])
   const [state, setState] = useState<PreflightState | null>(null)
   useEffect(() => {
@@ -21,18 +22,17 @@ export function useLivePreflight(
       return
     }
     let cancelled = false
-    const referenced = draft.tool_instances.filter(instance => allWorkflowSteps(draft.workflow.steps)
-      .some(step => step.type === 'tool-action' && step.target === instance.id))
-    const unsaved = referenced.filter(instance => {
+    const unsaved = draft.tool_instances.filter(instance => {
       const saved = identities[instance.id] ?? {}
       const edited = identityDrafts[instance.id] ?? {}
       return (resources[instance.id] ?? '') !== (resourceDrafts[instance.id] ?? '') ||
+        (backends[instance.id] ?? 'system') !== (backendDrafts[instance.id] ?? 'system') ||
         Object.keys({ ...saved, ...edited }).some(field =>
           (saved as Record<string, unknown>)[field] !== (edited as Record<string, unknown>)[field])
     })
     if (unsaved.length) {
       setState({ key, status: 'failed', errors: unsaved.map(instance =>
-        `${instance.tool} (${instance.id}): unsaved Live Resource or identity changes. Save Resource before running Live.`) })
+        `${instance.tool} (${instance.id}): unsaved Live Resource, backend or identity changes. Save Resource before running Live.`) })
       return
     }
     setState({ key, status: 'checking', errors: [] })

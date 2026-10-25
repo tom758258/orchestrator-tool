@@ -24,6 +24,8 @@ let tools: ReturnType<typeof toolStatus>[]
 let newDraft: WorkflowDraft
 let loadedDraft: WorkflowDraft
 let loadError: boolean
+let backends: Record<string, 'system' | '@py'>
+let identities: Record<string, { manufacturer: string | null; model: string | null; model_id: string | null; serial: string | null; identity: string | null }>
 let resources: Record<string, string>
 
 beforeEach(() => {
@@ -33,6 +35,8 @@ beforeEach(() => {
   loadedDraft = structuredClone(original)
   loadError = false
   resources = {}
+  backends = {}
+  identities = {}
   vi.mocked(confirm).mockResolvedValue(true)
   vi.mocked(open).mockResolvedValue('template.json')
   vi.mocked(save).mockResolvedValue('saved.json')
@@ -45,7 +49,9 @@ beforeEach(() => {
         return JSON.stringify(loadedDraft)
       case 'get_tool_status': return [...tools]
       case 'get_live_resources': return { ...resources }
-      case 'get_live_resource_identities': return {}
+      case 'get_live_resource_identities': return { ...identities }
+      case 'get_live_backends': return { ...backends }
+      case 'list_live_resources': return [{ resource: `USB::${params.toolId}::${params.backend}`, manufacturer: 'Vendor', model: 'Model', model_id: 'canonical-model', serial: '123', identity: 'Vendor,Model,123,1' }]
       case 'get_powers_capabilities': return { channels: [1], protection_features: {
         ovp_voltage: true, ocp: true, ocp_delay: false, ocp_delay_triggers: [],
       } }
@@ -61,7 +67,12 @@ beforeEach(() => {
       case 'clear_powers_protection': return { mode: params.executionMode, status: {
         protection_tripped: false, over_voltage_tripped: false, over_current_tripped: false, channels: [],
       } }
-      case 'set_live_resource': resources[String(params.instanceId)] = String(params.resource); return
+      case 'set_live_resource':
+        resources[String(params.instanceId)] = String(params.resource)
+        backends[String(params.instanceId)] = params.backend as 'system' | '@py'
+        if (params.identity) identities[String(params.instanceId)] = params.identity as typeof identities[string]
+        else delete identities[String(params.instanceId)]
+        return
       case 'set_tool_executable': tools = tools.map(tool => tool.tool_id === params.toolId
         ? { ...tool, path: String(params.path) } : tool); return
       case 'reset_tool_executable': tools = tools.filter(tool => tool.tool_id !== params.toolId); return
@@ -104,7 +115,7 @@ test('Setup preserves independent groups, local drafts and protection data throu
   const power = instance('powers-1')
   const scope = instance('scopes-1')
   expect(power.getByRole('button', { name: 'Expand Protection Setup' }).textContent).toBe('+')
-  expect(power.queryByRole('button', { name: 'Refresh Status' })).toBeNull()
+  expect(power.getByRole('button', { name: 'Refresh Status' })).toBeTruthy()
   expect(scope.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
   expect(scope.queryByRole('combobox', { name: 'Channel 4 Waveform Invert' })).toBeNull()
   expect(scope.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
@@ -115,7 +126,7 @@ test('Setup preserves independent groups, local drafts and protection data throu
   expect(power.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
   expect(power.getByRole('button', { name: 'Generate Clear Plan...' })).toBeTruthy()
   fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
-  expect(power.queryByRole('textbox', { name: 'Live Resource' })).toBeNull()
+  expect(power.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   fireEvent.click(scope.getByRole('button', { name: 'Expand Acquisition Setup' }))
   expect(scope.getByRole('button', { name: 'Expand Channel Configuration' }).getAttribute('aria-expanded')).toBe('false')
@@ -291,7 +302,7 @@ test('the grouped Device retains explicit status, clear and resource operations 
   fireEvent.change(power.getByRole('textbox', { name: 'Live Resource' }), { target: { value: 'USB::power' } })
   fireEvent.click(power.getByRole('button', { name: 'Save Resource' }))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('set_live_resource', {
-    instanceId: 'powers-1', resource: 'USB::power', identity: null,
+    instanceId: 'powers-1', resource: 'USB::power', identity: null, backend: 'system',
   }))
   await waitFor(() => expect((power.getByRole('button', { name: 'Save Resource' }) as HTMLButtonElement).disabled).toBe(false))
   click('Live')
@@ -306,4 +317,73 @@ test('the grouped Device retains explicit status, clear and resource operations 
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   expect((power.getByRole('checkbox', { name: 'Use Protection Setup' }) as HTMLInputElement).checked).toBe(true)
   expect(await savedDraft()).toEqual(original)
+})
+
+test('VISA backend drafts clear only their instance, save with Resource, and appear in Live confirmation', async () => {
+  newDraft.tool_instances.push({ id: 'powers-2', tool: 'powers', setup: {} })
+  newDraft.workflow.steps = ['powers-1', 'powers-2'].map((target, index) => ({
+    type: 'tool-action', id: `off-${index}`, target, action: 'output-off', arguments: { channel: 1 },
+  }))
+  resources = { 'powers-1': 'USB::saved-py', 'powers-2': 'USB::saved-system' }
+  backends = { 'powers-1': '@py' }
+  identities = { 'powers-1': { manufacturer: 'Saved Vendor', model: 'Saved Model', model_id: 'saved-model', serial: 'old-serial', identity: null } }
+  await mount()
+  const first = instance('powers-1')
+  const second = instance('powers-2')
+  expect((first.getByRole('combobox', { name: 'VISA Backend' }) as HTMLSelectElement).value).toBe('@py')
+  expect((first.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('USB::saved-py')
+  expect(first.getByText('Saved Vendor Saved Model')).toBeTruthy()
+  // Device and backend controls remain available with Protection Setup collapsed.
+  expect(first.getByRole('button', { name: 'Expand Protection Setup' })).toBeTruthy()
+  click('Live')
+  fireEvent.click(first.getByRole('button', { name: 'Refresh Status' }))
+  await waitFor(() => expect((first.getByRole('button', { name: 'Clear Protection...' }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(first.getByRole('button', { name: 'List Resources' }))
+  await first.findByRole('combobox', { name: 'Discovered Resources' })
+  fireEvent.change(first.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: 'system' } })
+  expect((first.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('')
+  expect(first.queryByText('Saved Vendor Saved Model')).toBeNull()
+  expect(first.queryByRole('combobox', { name: 'Discovered Resources' })).toBeNull()
+  expect((first.getByRole('button', { name: 'Clear Protection...' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(resources['powers-1']).toBe('USB::saved-py')
+  expect(backends['powers-1']).toBe('@py')
+  expect(calls().some(([command]) => command === 'set_live_resource')).toBe(false)
+  tab('Workflow')
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Run Live' }) as HTMLButtonElement).disabled).toBe(true))
+  expect(screen.getByText(/unsaved Live Resource, backend or identity changes/)).toBeTruthy()
+  tab('Setup')
+  fireEvent.click(first.getByRole('button', { name: 'List Resources' }))
+  const discovered = await first.findByRole('combobox', { name: 'Discovered Resources' })
+  fireEvent.change(discovered, { target: { value: 'USB::powers::system' } })
+  fireEvent.change(second.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: '@py' } })
+  expect(first.getByRole('combobox', { name: 'Discovered Resources' })).toBeTruthy()
+  fireEvent.click(second.getByRole('button', { name: 'List Resources' }))
+  await second.findByRole('combobox', { name: 'Discovered Resources' })
+  expect(second.queryByRole('option', { name: /USB::powers::system/ })).toBeNull()
+  expect(first.queryByRole('option', { name: /USB::powers::@py/ })).toBeNull()
+  fireEvent.change(second.getByRole('textbox', { name: 'Live Resource' }), { target: { value: 'manual::second' } })
+  fireEvent.click(first.getByRole('button', { name: 'Save Resource' }))
+  await waitFor(() => expect(resources['powers-1']).toBe('USB::powers::system'))
+  await waitFor(() => expect((first.getByRole('button', { name: 'Save Resource' }) as HTMLButtonElement).disabled).toBe(false))
+  expect(backends['powers-1']).toBe('system')
+  expect(identities['powers-1'].model_id).toBe('canonical-model')
+  expect((second.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('manual::second')
+  expect(backends['powers-2']).toBeUndefined()
+  fireEvent.click(second.getByRole('button', { name: 'Save Resource' }))
+  await waitFor(() => expect(backends['powers-2']).toBe('@py'))
+  tab('Workflow')
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Run Live' }) as HTMLButtonElement).disabled).toBe(false))
+  vi.mocked(confirm).mockResolvedValueOnce(false)
+  click('Run Live')
+  await waitFor(() => expect(confirm).toHaveBeenCalled())
+  const confirmation = String(vi.mocked(confirm).mock.calls.at(-1)![0])
+  expect(confirmation).toContain('powers-1 (powers)\nModel ID: canonical-model\nVendor Model\nS/N: 123\nBackend: System VISA\nUSB::powers::system')
+  expect(confirmation).toContain('powers-2 (powers)\nBackend: PyVISA-py (@py)\nmanual::second')
+  expect(calls().some(([command]) => command === 'run_workflow_live')).toBe(false)
+  tab('Tools')
+  click('Refresh')
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false))
+  tab('Setup')
+  expect((second.getByRole('combobox', { name: 'VISA Backend' }) as HTMLSelectElement).value).toBe('@py')
+  expect((second.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('manual::second')
 })

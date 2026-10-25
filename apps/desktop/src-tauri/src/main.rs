@@ -20,7 +20,7 @@ use std::{
 };
 
 use orchestrator_tool::{
-    config::{Config, ConfigError, ResourceIdentity},
+    config::{Config, ConfigError, ResourceIdentity, VisaBackend},
     discovery::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
     },
@@ -104,12 +104,18 @@ fn request_workflow_stop(state: tauri::State<'_, ActiveRun>, loop_step_id: Strin
 async fn list_live_resources(
     app: AppHandle,
     tool_id: String,
+    backend: VisaBackend,
 ) -> Result<Vec<LiveResourceCandidate>, String> {
     let tool = resolve_built_in_tool_id(&tool_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;
-        orchestrator_tool::live_resources::list_live_resources(&application_dir, &config, &tool)
+        orchestrator_tool::live_resources::list_live_resources(
+            &application_dir,
+            &config,
+            &tool,
+            backend,
+        )
     })
     .await
     .map_err(|error| error.to_string())?
@@ -119,7 +125,7 @@ fn powers_worker_spec(
     app: &AppHandle,
     instance_id: &str,
     execution_mode: ExecutionMode,
-) -> Result<WorkerLaunchSpec, String> {
+) -> Result<(WorkerLaunchSpec, VisaBackend), String> {
     let instance_id = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
     let application_dir = current_application_dir().map_err(|error| error.to_string())?;
     let config = load_desktop_config(app)?;
@@ -154,7 +160,14 @@ fn powers_worker_spec(
         spec.executable(),
         &ToolId::powers(),
     )?;
-    Ok(spec.with_manifest(manifest))
+    Ok((
+        spec.with_manifest(manifest),
+        if execution_mode == ExecutionMode::Live {
+            config.live_backend(&instance_id)
+        } else {
+            VisaBackend::System
+        },
+    ))
 }
 
 fn finish_manual_powers_operation<T>(
@@ -181,7 +194,19 @@ async fn refresh_powers_status(
 ) -> Result<orchestrator_tool::adapters::powers::PowersProtectionStatus, String> {
     state.register_manual()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let spec = powers_worker_spec(&app, &instance_id, execution_mode)?;
+        let (mut spec, backend) = powers_worker_spec(&app, &instance_id, execution_mode)?;
+        let _worker_config = if execution_mode == ExecutionMode::Live && backend == VisaBackend::Py
+        {
+            let dir = app
+                .path()
+                .app_cache_dir()
+                .map_err(|error| error.to_string())?;
+            Some(PowersWorkerConfig::prepare(
+                &dir, &mut spec, backend, false,
+            )?)
+        } else {
+            None
+        };
         let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
             .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
         let operation = orchestrator_tool::adapters::powers::normalized_protection_status_all(
@@ -225,13 +250,13 @@ async fn clear_powers_protection(
     }
     state.register_manual()?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut spec = powers_worker_spec(&app, &instance_id, execution_mode)?;
+        let (mut spec, backend) = powers_worker_spec(&app, &instance_id, execution_mode)?;
         let _authorization = if execution_mode == ExecutionMode::Live {
             let dir = app
                 .path()
                 .app_cache_dir()
                 .map_err(|error| error.to_string())?;
-            Some(PowersWriteAuthorization::prepare(&dir, &mut spec)?)
+            Some(PowersWorkerConfig::prepare(&dir, &mut spec, backend, true)?)
         } else {
             None
         };
@@ -567,6 +592,7 @@ async fn run_workflow_live(
     runs: tauri::State<'_, StoredRuns>,
     template_json: String,
     confirmed_resources: HashMap<String, String>,
+    confirmed_backends: HashMap<String, VisaBackend>,
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
     scopes_output_folder: Option<String>,
@@ -584,6 +610,7 @@ async fn run_workflow_live(
             &application_dir,
             &config,
             &confirmed_resources,
+            &confirmed_backends,
             &on_progress,
         )?;
         let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
@@ -598,7 +625,12 @@ async fn run_workflow_live(
                     let spec = launch_specs
                         .get_mut(&instance.id)
                         .expect("referenced instance was prepared");
-                    authorizations.push(PowersWriteAuthorization::prepare(&dir, spec)?);
+                    authorizations.push(PowersWorkerConfig::prepare(
+                        &dir,
+                        spec,
+                        config.live_backend(&instance.id),
+                        true,
+                    )?);
                 }
             }
             run_streaming_with_stream(
@@ -644,7 +676,7 @@ async fn run_workflow_live(
     result?
 }
 
-struct PowersWriteAuthorization(PathBuf);
+struct PowersWorkerConfig(PathBuf);
 
 #[allow(clippy::type_complexity)]
 fn begin_live_run(
@@ -653,6 +685,7 @@ fn begin_live_run(
     application_dir: &Path,
     config: &Config,
     confirmed_resources: &HashMap<String, String>,
+    confirmed_backends: &HashMap<String, VisaBackend>,
     on_progress: &Channel<WorkflowRunEventDto>,
 ) -> Result<
     (
@@ -661,7 +694,7 @@ fn begin_live_run(
     ),
     String,
 > {
-    validate_confirmed_live_resources(template, config, confirmed_resources)?;
+    validate_confirmed_live_resources(template, config, confirmed_resources, confirmed_backends)?;
     let errors = validate_live_preflight(template, application_dir, config);
     if !errors.is_empty() {
         return Err(format!("Live Preflight failed:\n{}", errors.join("\n")));
@@ -677,8 +710,13 @@ fn begin_live_run(
     Ok((stored, specs))
 }
 
-impl PowersWriteAuthorization {
-    fn prepare(dir: &Path, spec: &mut WorkerLaunchSpec) -> Result<Self, String> {
+impl PowersWorkerConfig {
+    fn prepare(
+        dir: &Path,
+        spec: &mut WorkerLaunchSpec,
+        backend: VisaBackend,
+        allow_output_writes: bool,
+    ) -> Result<Self, String> {
         use std::{
             fs::{self, OpenOptions},
             io::Write,
@@ -701,18 +739,27 @@ impl PowersWriteAuthorization {
             .open(&path)
             .map_err(|error| format!("could not create Powers write authorization: {error}"))?;
         let authorization = Self(path);
-        let written = file.write_all(br#"{"settings":{"allow_output_writes":true}}"#);
+        let mut settings = serde_json::json!({"allow_output_writes": allow_output_writes});
+        if backend == VisaBackend::Py {
+            settings["backend"] = serde_json::json!("@py");
+        }
+        let contents = serde_json::json!({"settings": settings}).to_string();
+        let written = file.write_all(contents.as_bytes());
         drop(file);
         written.map_err(|error| format!("could not write Powers authorization: {error}"))?;
         let mut arguments = spec.arguments().to_vec();
         arguments.push("--config".into());
         arguments.push(authorization.0.as_os_str().to_owned());
+        let manifest = spec.manifest().cloned();
         *spec = WorkerLaunchSpec::new(spec.executable(), arguments);
+        if let Some(manifest) = manifest {
+            *spec = spec.clone().with_manifest(manifest);
+        }
         Ok(authorization)
     }
 }
 
-impl Drop for PowersWriteAuthorization {
+impl Drop for PowersWorkerConfig {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
@@ -813,12 +860,16 @@ fn edit_desktop_live_resource(
     raw_instance_id: &str,
     resource: Option<&str>,
     identity: Option<ResourceIdentity>,
+    backend: Option<VisaBackend>,
 ) -> Result<(), String> {
     let instance_id = ToolInstanceId::new(raw_instance_id).map_err(|error| error.to_string())?;
     if resource.is_some_and(|value| value.trim().is_empty()) {
         return Err(format!("{instance_id} live resource must not be blank"));
     }
     let mut config = load_desktop_config_from_path(config_path)?;
+    if let Some(backend) = backend {
+        config.set_live_backend(&instance_id, backend);
+    }
     match resource {
         Some(value) => config.set_live_resource_with_identity(&instance_id, value, identity),
         None => {
@@ -836,6 +887,13 @@ fn get_live_resources(
 }
 
 #[tauri::command]
+fn get_live_backends(
+    app: AppHandle,
+) -> Result<std::collections::BTreeMap<String, VisaBackend>, String> {
+    Ok(load_desktop_config(&app)?.live_backends().clone())
+}
+
+#[tauri::command]
 fn get_live_resource_identities(
     app: AppHandle,
 ) -> Result<std::collections::BTreeMap<String, ResourceIdentity>, String> {
@@ -850,18 +908,20 @@ fn set_live_resource(
     instance_id: String,
     resource: String,
     identity: Option<ResourceIdentity>,
+    backend: VisaBackend,
 ) -> Result<(), String> {
     edit_desktop_live_resource(
         &desktop_config_path(&app)?,
         &instance_id,
         Some(&resource),
         identity,
+        Some(backend),
     )
 }
 
 #[tauri::command]
 fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None)
+    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None, None)
 }
 
 const PROGRESS_BATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -1235,6 +1295,7 @@ fn main() {
             run_workflow_live,
             request_workflow_stop,
             get_live_resources,
+            get_live_backends,
             get_live_resource_identities,
             set_live_resource,
             remove_live_resource,
@@ -1311,7 +1372,9 @@ mod tests {
 
     #[test]
     fn live_preflight_backend_rechecks_saved_models_before_replacing_last_run() {
-        use super::{Config, ResourceIdentity, ToolId, ToolInstanceId, begin_live_run};
+        use super::{
+            Config, ResourceIdentity, ToolId, ToolInstanceId, VisaBackend, begin_live_run,
+        };
         let dir = unique_test_dir("live-preflight");
         let marker = dir.join("invocations.txt");
         let capabilities = |model: &str, channels| {
@@ -1357,6 +1420,11 @@ mod tests {
         };
         config.set_live_resource_with_identity(&first, "USB::FIRST", identity("three-channel"));
         config.set_live_resource_with_identity(&second, "USB::SECOND", identity("two-channel"));
+        let confirmed_backends = template
+            .referenced_tool_instances()
+            .into_iter()
+            .map(|instance| (instance.id.as_str().to_owned(), VisaBackend::System))
+            .collect();
         let confirmed = config
             .live_resources()
             .iter()
@@ -1394,7 +1462,15 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let error = match begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel) {
+        let error = match begin_live_run(
+            &runs,
+            &template,
+            &dir,
+            &config,
+            &confirmed,
+            &confirmed_backends,
+            &channel,
+        ) {
             Err(error) => error,
             Ok(_) => panic!("incompatible model must be rejected"),
         };
@@ -1433,8 +1509,16 @@ mod tests {
 
         // The same confirmed resources now use the newly saved model, never the UI's old pass.
         config.set_live_resource_with_identity(&second, "USB::SECOND", identity("three-channel"));
-        let (accepted, specs) =
-            begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).unwrap();
+        let (accepted, specs) = begin_live_run(
+            &runs,
+            &template,
+            &dir,
+            &config,
+            &confirmed,
+            &confirmed_backends,
+            &channel,
+        )
+        .unwrap();
         assert_eq!(accepted.read().unwrap().run_id, id + 1);
         {
             let messages = messages.lock().unwrap();
@@ -1454,20 +1538,53 @@ mod tests {
         );
         let accepted_id = accepted.read().unwrap().run_id;
         config.set_executable_path(&ToolId::powers(), dir.join("unavailable-tool.cmd"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
+        assert!(
+            begin_live_run(
+                &runs,
+                &template,
+                &dir,
+                &config,
+                &confirmed,
+                &confirmed_backends,
+                &channel
+            )
+            .is_err()
+        );
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
         ));
         config.set_executable_path(&ToolId::powers(), &executable);
         config.set_live_resource_with_identity(&second, "USB::SECOND", identity("two-channel"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
+        assert!(
+            begin_live_run(
+                &runs,
+                &template,
+                &dir,
+                &config,
+                &confirmed,
+                &confirmed_backends,
+                &channel
+            )
+            .is_err()
+        );
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
         ));
         config.set_live_resource_with_identity(&second, "USB::CHANGED", identity("three-channel"));
-        assert!(begin_live_run(&runs, &template, &dir, &config, &confirmed, &channel).is_err());
+        assert!(
+            begin_live_run(
+                &runs,
+                &template,
+                &dir,
+                &config,
+                &confirmed,
+                &confirmed_backends,
+                &channel
+            )
+            .is_err()
+        );
         assert!(std::sync::Arc::ptr_eq(
             &runs.get(accepted_id).unwrap(),
             &accepted
@@ -1695,6 +1812,7 @@ mod regression_tests {
         reset_desktop_tool_executable, resolve_built_in_tool_id, save_chart_png,
         save_workflow_template, set_desktop_tool_executable, validate_workflow_draft,
     };
+    use orchestrator_tool::config::VisaBackend;
     use orchestrator_tool::{
         template::Template,
         tool::ToolId,
@@ -1962,8 +2080,22 @@ mod regression_tests {
         let path = dir.join("orchestrator.toml");
         let powers = " USB0::Power Serial::INSTR ";
         let meters = " TCPIP0::MeterHost::inst0::INSTR ";
-        super::edit_desktop_live_resource(&path, "powers-1", Some(powers), None).unwrap();
-        super::edit_desktop_live_resource(&path, "meters-1", Some(meters), None).unwrap();
+        super::edit_desktop_live_resource(
+            &path,
+            "powers-1",
+            Some(powers),
+            None,
+            Some(VisaBackend::Py),
+        )
+        .unwrap();
+        super::edit_desktop_live_resource(
+            &path,
+            "meters-1",
+            Some(meters),
+            None,
+            Some(VisaBackend::System),
+        )
+        .unwrap();
         let loaded = load_desktop_config_from_path(&path).unwrap();
         assert_eq!(
             loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
@@ -1975,10 +2107,22 @@ mod regression_tests {
         );
         for resource in ["", " ", "\t\r\n"] {
             assert!(
-                super::edit_desktop_live_resource(&path, "powers-1", Some(resource), None).is_err()
+                super::edit_desktop_live_resource(
+                    &path,
+                    "powers-1",
+                    Some(resource),
+                    None,
+                    Some(VisaBackend::System)
+                )
+                .is_err()
             );
         }
-        super::edit_desktop_live_resource(&path, "powers-1", None, None).unwrap();
+        assert_eq!(load_desktop_config_from_path(&path).unwrap(), loaded);
+        assert_eq!(
+            loaded.live_backend(&ToolInstanceId::new("powers-1").unwrap()),
+            VisaBackend::Py
+        );
+        super::edit_desktop_live_resource(&path, "powers-1", None, None, None).unwrap();
         assert_eq!(
             load_desktop_config_from_path(&path)
                 .unwrap()
@@ -1993,34 +2137,49 @@ mod regression_tests {
         use std::ffi::OsString;
         let dir = unique_test_dir("orchestrator-powers-authorization-test");
         let resource = " USB0::Power Serial::INSTR ";
-        let mut spec = orchestrator_tool::adapters::powers::live_worker_launch_spec(
-            "powers-tool.exe",
-            resource,
-        );
-        let authorization = super::PowersWriteAuthorization::prepare(&dir, &mut spec).unwrap();
-        let path = authorization.0.clone();
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap(),
-            json!({ "settings": { "allow_output_writes": true } })
-        );
-        assert_eq!(
-            spec.arguments(),
-            [
-                OsString::from("worker"),
-                OsString::from("--mode"),
-                OsString::from("live"),
-                OsString::from("--resource"),
-                OsString::from(resource),
-                OsString::from("--control-port"),
-                OsString::from("0"),
-                OsString::from("--artifact-mode"),
-                OsString::from("memory"),
-                OsString::from("--config"),
-                path.as_os_str().to_owned(),
-            ]
-        );
-        drop(authorization);
-        assert!(!path.exists());
+        for (backend, allow_writes) in [
+            (VisaBackend::System, true),
+            (VisaBackend::Py, true),
+            (VisaBackend::Py, false),
+        ] {
+            let mut spec = orchestrator_tool::adapters::powers::live_worker_launch_spec(
+                "powers-tool.exe",
+                resource,
+            );
+            let authorization =
+                super::PowersWorkerConfig::prepare(&dir, &mut spec, backend, allow_writes).unwrap();
+            let path = authorization.0.clone();
+            let settings =
+                serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap())
+                    .unwrap();
+            assert_eq!(settings["settings"]["allow_output_writes"], allow_writes);
+            assert_eq!(
+                settings["settings"]["backend"],
+                if backend == VisaBackend::Py {
+                    json!("@py")
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                spec.arguments(),
+                [
+                    OsString::from("worker"),
+                    OsString::from("--mode"),
+                    OsString::from("live"),
+                    OsString::from("--resource"),
+                    OsString::from(resource),
+                    OsString::from("--control-port"),
+                    OsString::from("0"),
+                    OsString::from("--artifact-mode"),
+                    OsString::from("memory"),
+                    OsString::from("--config"),
+                    path.as_os_str().to_owned(),
+                ]
+            );
+            drop(authorization);
+            assert!(!path.exists());
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
 

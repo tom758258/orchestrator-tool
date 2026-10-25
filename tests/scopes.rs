@@ -1,6 +1,6 @@
 use orchestrator_tool::{
     adapters::scopes,
-    config::{Config, ResourceIdentity},
+    config::{Config, ResourceIdentity, VisaBackend},
     run::{ExecutionMode, run_workflow_streaming_with_loop_stop_and_scopes_output},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     template::Template,
@@ -110,7 +110,8 @@ fn scopes_live_preflight_and_launch_preserve_opaque_identity() {
         validate_confirmed_live_resources(
             &template,
             &config,
-            &HashMap::from([("scope".into(), "changed".into())])
+            &HashMap::from([("scope".into(), "changed".into())]),
+            &HashMap::from([("scope".into(), VisaBackend::System)])
         )
         .is_err()
     );
@@ -118,10 +119,16 @@ fn scopes_live_preflight_and_launch_preserve_opaque_identity() {
         &template,
         &config,
         &HashMap::from([("scope".into(), resource.into())]),
+        &HashMap::from([("scope".into(), VisaBackend::System)]),
     )
     .unwrap();
-    let spec = scopes::live_worker_launch_spec("scopes.exe", resource, "unknown-model");
+    let spec =
+        scopes::live_worker_launch_spec("scopes.exe", resource, "unknown-model", VisaBackend::Py);
     let args = spec.arguments();
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--visa-library", "@py"])
+    );
     assert!(
         args.windows(2)
             .any(|pair| pair[0] == "--resource" && pair[1] == resource)

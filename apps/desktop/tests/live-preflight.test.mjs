@@ -41,7 +41,7 @@ function harness() {
     { type: 'tool-action', id: 'off', target: 'power', action: 'output-off', arguments: { channel: 1 } },
   ] } }
   const args = ['simulate', draft, { power: 'USB::1' }, { power: 'USB::1' },
-    { power: { model_id: 'model-1' } }, { power: { model_id: 'model-1' } }, 'powers.exe', 'scopes.exe', false]
+    { power: { model_id: 'model-1' } }, { power: { model_id: 'model-1' } }, 'powers.exe', 'scopes.exe', false, {}, {}]
   return {
     args, queries,
     render() { cursor = 0; const value = hook(...args); effects.splice(0).forEach(effect => effect()); return value },
@@ -111,6 +111,7 @@ test('live_preflight invalidates saved Resource, Model, executables and Template
     () => { h.args[6] = 'new-powers.exe' },
     () => { h.args[7] = 'new-scopes.exe' },
     () => { h.args[2] = h.args[3] = { power: 'USB::2' } },
+    () => { h.args[9] = h.args[10] = { power: '@py' } },
     () => { h.args[4] = h.args[5] = { power: { model_id: 'model-2' } } },
     () => { h.args[1] = { ...h.args[1], name: 'New template' } },
   ]) {
@@ -120,6 +121,12 @@ test('live_preflight invalidates saved Resource, Model, executables and Template
     assert.equal(h.render().status, 'passed')
   }
   const before = h.queries.length
+  h.args[10] = { power: 'system' }
+  assert.equal(h.render().blocked, true)
+  assert.equal(h.render().status, 'failed')
+  h.timers()
+  assert.equal(h.queries.length, before)
+  h.args[10] = h.args[9]
   h.args[3] = { power: 'UNSAVED' }
   assert.equal(h.render().blocked, true)
   assert.match(h.render().errors[0], /unsaved Live Resource/)

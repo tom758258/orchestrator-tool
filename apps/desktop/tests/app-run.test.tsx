@@ -60,7 +60,7 @@ beforeEach(() => {
     switch (command) {
       case 'create_workflow_draft': return JSON.stringify(draft)
       case 'get_tool_status': return []
-      case 'get_live_resources': case 'get_live_resource_identities': return {}
+      case 'get_live_resources': case 'get_live_resource_identities': case 'get_live_backends': return {}
       case 'get_powers_capabilities': return { channels: [1, 2] }
       case 'check_live_preflight': return preflightErrors
       case 'validate_workflow_draft': return params.templateJson

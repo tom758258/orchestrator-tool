@@ -57,6 +57,8 @@ type ResourceIdentity = {
   identity: string | null
 }
 
+type VisaBackend = 'system' | '@py'
+
 type LiveResourceCandidate = ResourceIdentity & { resource: string }
 
 type PowersProtectionStatus = {
@@ -106,18 +108,21 @@ function formatResourceCandidate(candidate: LiveResourceCandidate): string {
 function formatLiveResourceConfirmation(
   instance: ToolInstance,
   resource: string,
+  backend: VisaBackend,
   identity: ResourceIdentity | null | undefined,
 ): string {
   const lines = [`${instance.id} (${instance.tool})`]
   const name = deviceName(identity)
   const serial = identity?.serial?.trim()
+  const modelId = identity?.model_id?.trim()
+  if (modelId) lines.push(`Model ID: ${modelId}`)
   if (name) {
     lines.push(name)
   }
   if (serial) {
     lines.push(`S/N: ${serial}`)
   }
-  lines.push(resource)
+  lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'}`, resource)
   return lines.join('\n')
 }
 
@@ -506,6 +511,9 @@ function App() {
   const [resourceIdentityDrafts, setResourceIdentityDrafts] = useState<Record<string, ResourceIdentity | null>>({})
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({})
   const [savedResources, setSavedResources] = useState<Record<string, string>>({})
+  const [savedBackends, setSavedBackends] = useState<Record<string, VisaBackend>>({})
+  const [backendDrafts, setBackendDrafts] = useState<Record<string, VisaBackend>>({})
+  const discoveryRequests = useRef<Record<string, number>>({})
   const [powersStatuses, setPowersStatuses] = useState<Record<string, PowersStatusState>>({})
   const [powersOperationBusy, setPowersOperationBusy] = useState<string | null>(null)
   const [powersCapabilityChannels, setPowersCapabilityChannels] = useState<{
@@ -545,7 +553,7 @@ function App() {
   const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
   const livePreflight = useLivePreflight(executionMode, workflowDraft, savedResources, resourceDrafts,
     resourceIdentities, resourceIdentityDrafts, powersExecutableKey, scopesExecutableKey,
-    loading || draftLoading || templateIoStatus === 'loading' || toolConfigBusy !== null)
+    loading || draftLoading || templateIoStatus === 'loading' || toolConfigBusy !== null, savedBackends, backendDrafts)
   const runInFlightRef = useRef(false)
   const runGenerationRef = useRef(0)
   const [liveConfirmationPending, setLiveConfirmationPending] = useState(false)
@@ -698,10 +706,16 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      const [resources, identities] = await Promise.all([
+      const [resources, identities, backends] = await Promise.all([
         invoke<Record<string, string>>('get_live_resources'),
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
+        invoke<Record<string, VisaBackend>>('get_live_backends'),
       ])
+      for (const id of Object.keys(discoveryRequests.current)) discoveryRequests.current[id]++
+      setDiscoveredResources({})
+      setDiscoveryErrors({})
+      setSavedBackends(backends)
+      setBackendDrafts(backends)
       setResourceDrafts(resources)
       setSavedResources(resources)
       setResourceIdentities(identities)
@@ -800,6 +814,13 @@ function App() {
     setPowersStatuses(current => Object.fromEntries(
       Object.entries(current).filter(([id]) => tool_instances.some(instance => instance.id === id)),
     ))
+    for (const instance of previous) {
+      if (!tool_instances.some(next => next.id === instance.id)) {
+        discoveryRequests.current[instance.id] = (discoveryRequests.current[instance.id] ?? 0) + 1
+        setDiscoveredResources(current => ({ ...current, [instance.id]: undefined }))
+        setDiscoveryErrors(current => ({ ...current, [instance.id]: null }))
+      }
+    }
     setWorkflowChangedSinceRun(true)
     setValidationStatus('idle')
     setValidationError(null)
@@ -1071,8 +1092,6 @@ function App() {
           return
         }
         await invoke('set_tool_executable', { toolId, path: selected })
-        setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
-        setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
         await refresh()
       } catch (message) {
         setToolConfigError(String(message))
@@ -1093,8 +1112,6 @@ function App() {
       setToolConfigError(null)
       try {
         await invoke('reset_tool_executable', { toolId })
-        setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
-        setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
         await refresh()
       } catch (message) {
         setToolConfigError(String(message))
@@ -1118,15 +1135,25 @@ function App() {
     })
     try {
       await invoke(clear ? 'remove_live_resource' : 'set_live_resource', {
-        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentityDrafts[toolId] ?? null }),
+        instanceId: toolId, ...(clear ? {} : { resource: resourceDrafts[toolId] ?? '', identity: resourceIdentityDrafts[toolId] ?? null, backend: backendDrafts[toolId] ?? 'system' }),
       })
-      await refresh()
+      const [resources, identities, backends] = await Promise.all([
+        invoke<Record<string, string>>('get_live_resources'),
+        invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
+        invoke<Record<string, VisaBackend>>('get_live_backends'),
+      ])
+      setSavedResources(resources)
+      setResourceIdentities(identities)
+      setSavedBackends(backends)
+      setResourceDrafts(current => ({ ...current, [toolId]: resources[toolId] ?? '' }))
+      setResourceIdentityDrafts(current => ({ ...current, [toolId]: identities[toolId] ?? null }))
+      setBackendDrafts(current => ({ ...current, [toolId]: backends[toolId] ?? 'system' }))
     } catch (message) {
       setToolConfigError(String(message))
     } finally {
       setToolConfigBusy(null)
     }
-  }, [refresh, resourceDrafts, resourceIdentityDrafts, toolConfigBusy])
+  }, [resourceDrafts, resourceIdentityDrafts, backendDrafts, toolConfigBusy])
 
   const refreshPowersStatus = useCallback(async (instanceId: string) => {
     if (powersOperationBusy !== null) return
@@ -1191,22 +1218,30 @@ function App() {
     }
   }, [executionMode, powersOperationBusy])
 
-  const handleListResources = useCallback(async (toolId: string) => {
-    if (toolConfigBusy !== null) {
-      return
-    }
-    setToolConfigBusy(toolId)
-    setDiscoveryErrors((current) => ({ ...current, [toolId]: null }))
-    setDiscoveredResources((current) => ({ ...current, [toolId]: undefined }))
+  const handleListResources = useCallback(async (instance: ToolInstance) => {
+    if (toolConfigBusy !== null) return
+    const id = instance.id
+    const backend = backendDrafts[id] ?? 'system'
+    const request = (discoveryRequests.current[id] ?? 0) + 1
+    discoveryRequests.current[id] = request
+    setToolConfigBusy(id)
+    setDiscoveryErrors(current => ({ ...current, [id]: null }))
+    setDiscoveredResources(current => ({ ...current, [id]: undefined }))
     try {
-      const resources = await invoke<LiveResourceCandidate[]>('list_live_resources', { toolId })
-      setDiscoveredResources((current) => ({ ...current, [toolId]: resources }))
+      const resources = await invoke<LiveResourceCandidate[]>('list_live_resources', { toolId: instance.tool, backend })
+      if (discoveryRequests.current[id] === request) setDiscoveredResources(current => ({ ...current, [id]: resources }))
     } catch (message) {
-      setDiscoveryErrors((current) => ({ ...current, [toolId]: String(message) }))
+      if (discoveryRequests.current[id] === request) setDiscoveryErrors(current => ({ ...current, [id]: String(message) }))
     } finally {
       setToolConfigBusy(null)
     }
-  }, [toolConfigBusy])
+  }, [toolConfigBusy, backendDrafts])
+
+  useEffect(() => {
+    for (const id of Object.keys(discoveryRequests.current)) discoveryRequests.current[id]++
+    setDiscoveredResources({})
+    setDiscoveryErrors({})
+  }, [templateUiGeneration])
 
   useEffect(() => () => {
     if (progressChannelRef.current) progressChannelRef.current.onmessage = () => {}
@@ -1242,24 +1277,29 @@ function App() {
       const fitData = chartFitData
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
-      const [bindings, persistedIdentities] = await Promise.all([
+      const [bindings, persistedIdentities, persistedBackends] = await Promise.all([
         invoke<Record<string, string>>('get_live_resources'),
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
+        invoke<Record<string, VisaBackend>>('get_live_backends'),
       ])
       const referenced = workflowDraft.tool_instances.filter(instance =>
         allWorkflowSteps(workflowDraft.workflow.steps).some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
+      const confirmedBackends: Record<string, VisaBackend> = {}
       const resources = referenced.map(instance => {
         if (instance.tool !== 'powers' && instance.tool !== 'meters' && instance.tool !== 'scopes') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
         const draftResource = resourceDrafts[instance.id]
         const persistedResource = bindings[instance.id]
-        if ((draftResource?.trim() || persistedResource?.trim()) && draftResource !== persistedResource) {
-          throw new Error(`${instance.id} has unsaved Live Resource changes. Save Resource before running Live.`)
+        if ((draftResource ?? '') !== (persistedResource ?? '') ||
+          (backendDrafts[instance.id] ?? 'system') !== (persistedBackends[instance.id] ?? 'system')) {
+          throw new Error(`${instance.id} has unsaved Live Resource or backend changes. Save Resource before running Live.`)
         }
         const resource = bindings[instance.id]
         if (!resource?.trim()) throw new Error(`${instance.id} (${instance.tool}) live resource is not configured.`)
         confirmedResources[instance.id] = resource
-        return formatLiveResourceConfirmation(instance, resource, persistedIdentities[instance.id])
+        const backend = persistedBackends[instance.id] ?? 'system'
+        confirmedBackends[instance.id] = backend
+        return formatLiveResourceConfirmation(instance, resource, backend, persistedIdentities[instance.id])
       })
       const confirmation = [...resources, 'This workflow will run external tools in Live mode and may change power outputs.']
       for (const instance of referenced) {
@@ -1312,6 +1352,7 @@ function App() {
         streamCsv: streamOptions,
         scopesOutputFolder,
         confirmedResources,
+        confirmedBackends,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         acceptRun()
@@ -1336,7 +1377,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [livePreflight, scopesOutputFolder, resourceDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1886,7 +1927,8 @@ function App() {
                       const savedResource = savedResources[instance.id]
                       const draftResource = resourceDrafts[instance.id]
                       const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
-                        (Boolean(savedResource?.trim()) && draftResource === savedResource)
+                        (Boolean(savedResource?.trim()) && draftResource === savedResource &&
+                          (backendDrafts[instance.id] ?? 'system') === (savedBackends[instance.id] ?? 'system'))
                       const operationBusy = powersOperationBusy !== null
                       const unresolved = deviceStatus?.status?.channels.some(channel =>
                         (channel.over_voltage_tripped || channel.over_current_tripped))
@@ -1978,13 +2020,34 @@ function App() {
                       <div className="live-resource">
                         <div className="live-device">
                           <strong>Live Device</strong>
-                          {deviceName(resourceIdentities[instance.id]) && <span>{deviceName(resourceIdentities[instance.id])}</span>}
-                          {resourceIdentities[instance.id]?.serial?.trim() && <span>S/N: {resourceIdentities[instance.id]?.serial?.trim()}</span>}
+                          {deviceName(resourceIdentityDrafts[instance.id]) && <span>{deviceName(resourceIdentityDrafts[instance.id])}</span>}
+                          {resourceIdentityDrafts[instance.id]?.serial?.trim() && <span>S/N: {resourceIdentityDrafts[instance.id]?.serial?.trim()}</span>}
                           <code>{resourceDrafts[instance.id] || 'No resource configured'}</code>
                           <span className="tool-setup-hint">Last-known identity; not a connection check.</span>
                         </div>
                         <p className="tool-setup-hint">Stored locally; not included in Template. Save Resource to apply changes.</p>
                         {executionMode === 'simulate' && <p className="tool-setup-hint">Stored for Live mode. Current execution mode is Simulation.</p>}
+                        <label className="step-property-field">
+                          <span className="step-property-label">VISA Backend</span>
+                          <select value={backendDrafts[instance.id] ?? 'system'}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading || powersOperationBusy !== null}
+                            onChange={event => {
+                              const backend = event.target.value as VisaBackend
+                              if (backend === (backendDrafts[instance.id] ?? 'system')) return
+                              discoveryRequests.current[instance.id] = (discoveryRequests.current[instance.id] ?? 0) + 1
+                              setBackendDrafts(current => ({ ...current, [instance.id]: backend }))
+                              setResourceDrafts(current => ({ ...current, [instance.id]: '' }))
+                              setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
+                              setDiscoveredResources(current => ({ ...current, [instance.id]: undefined }))
+                              setDiscoveryErrors(current => ({ ...current, [instance.id]: null }))
+                              setPowersStatuses(current => {
+                                const next = { ...current }; delete next[instance.id]; return next
+                              })
+                            }}>
+                            <option value="system">System VISA</option>
+                            <option value="@py">PyVISA-py (@py)</option>
+                          </select>
+                        </label>
                         <label className="step-property-field">
                           <span className="step-property-label">Live Resource</span>
                           <input
@@ -2007,7 +2070,7 @@ function App() {
                             className="action-button"
                             type="button"
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
-                            onClick={() => void handleListResources(instance.tool)}
+                            onClick={() => void handleListResources(instance)}
                           >
                             List Resources
                           </button>
@@ -2028,15 +2091,15 @@ function App() {
                             Clear Resource
                           </button>
                         </div>
-                        {discoveryErrors[instance.tool] && (
+                        {discoveryErrors[instance.id] && (
                           <p className="error" role="alert">
-                            {discoveryErrors[instance.tool]}
+                            {discoveryErrors[instance.id]}
                           </p>
                         )}
-                        {discoveredResources[instance.tool]?.length === 0 && (
+                        {discoveredResources[instance.id]?.length === 0 && (
                           <p role="status">No live resources found.</p>
                         )}
-                        {(discoveredResources[instance.tool]?.length ?? 0) > 0 && (
+                        {(discoveredResources[instance.id]?.length ?? 0) > 0 && (
                           <label className="step-property-field discovered-resources">
                             <span className="step-property-label">Discovered Resources</span>
                             <select
@@ -2045,7 +2108,7 @@ function App() {
                               onChange={(event) => {
                                 const resource = event.target.value
                                 if (resource) {
-                                  const candidate = discoveredResources[instance.tool]?.find(item => item.resource === resource)
+                                  const candidate = discoveredResources[instance.id]?.find(item => item.resource === resource)
                                   setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
                                   setPowersStatuses(current => {
                                     const next = { ...current }
@@ -2061,7 +2124,7 @@ function App() {
                               }}
                             >
                               <option value="">Select discovered resource...</option>
-                              {discoveredResources[instance.tool]?.map((candidate, index) => (
+                              {discoveredResources[instance.id]?.map((candidate, index) => (
                                 <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
                               ))}
                             </select>
