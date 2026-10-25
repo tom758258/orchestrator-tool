@@ -175,12 +175,6 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
     .find(option => option.measurement_name === meters.measurement)
   const ranges = measurementCapabilities?.range_values
 
-  useEffect(() => {
-    if (ranges !== undefined && meters.manual_range !== null && !ranges.includes(meters.manual_range)) {
-      onChange({ ...value, meters: { ...meters, manual_range: null } })
-    }
-  }, [ranges, meters.measurement, meters.manual_range])
-
   const unit = meters.measurement === 'voltage-dc' ? 'V' : 'A'
   const hasStandardNplc = METERS_NPLC_OPTIONS.some((option) => option === meters.nplc)
   const sampleCountMax = meterCapabilities?.limits.sample_count.max ?? 1000000
@@ -316,6 +310,9 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
             <select required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
               onChange={event => onChange({ ...value, meters: { ...meters, manual_range: Number(event.target.value) } })}>
               {meters.manual_range === null && <option value="" disabled>Select a range...</option>}
+              {meters.manual_range !== null && !ranges.includes(meters.manual_range) && (
+                <option value={meters.manual_range} disabled>{formatRange(meters.manual_range, unit)} (unsupported; preserved)</option>
+              )}
               {ranges.map(range => <option key={range} value={range}>{formatRange(range, unit)}</option>)}
             </select>
           ) : (

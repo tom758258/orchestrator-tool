@@ -530,7 +530,7 @@ function App() {
   const scopesOutputVisible = !scopesOutputLocked && scopesOutputExpanded
   const powersModels = executionMode === 'simulate' ? [null]
     : [...new Set((workflowDraft?.tool_instances ?? []).flatMap(instance => {
-        const modelId = resourceIdentities[instance.id]?.model_id
+        const modelId = resourceIdentityDrafts[instance.id]?.model_id
         return instance.tool === 'powers' && modelId ? [modelId] : []
       }))].sort()
   const powersCapabilityKey = JSON.stringify([executionMode, powersExecutableKey, powersModels])
@@ -1582,7 +1582,7 @@ function App() {
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
   const selectedPowersModel = executionMode === 'simulate' ? 'simulator'
-    : selectedToolAction ? resourceIdentities[selectedToolAction.target]?.model_id : undefined
+    : selectedToolAction ? resourceIdentityDrafts[selectedToolAction.target]?.model_id : undefined
   const selectedPowersCapabilities = powersCapabilityChannels?.key === powersCapabilityKey && selectedPowersModel
     ? powersCapabilityChannels.models[selectedPowersModel] : undefined
   const selectedPowersChannels = selectedPowersCapabilities?.status === 'ready' ? selectedPowersCapabilities.channels : []
@@ -1914,7 +1914,7 @@ function App() {
                 value={workflowDraft.tool_instances}
                 configuredToolTypes={configuredToolTypes}
                 executionMode={executionMode}
-                resourceIdentities={resourceIdentities}
+                resourceIdentities={resourceIdentityDrafts}
                 metersExecutableKey={metersExecutableKey}
                 powersExecutableKey={powersExecutableKey}
                 scopesExecutableKey={scopesExecutableKey}
@@ -1933,7 +1933,7 @@ function App() {
                       const unresolved = deviceStatus?.status?.channels.some(channel =>
                         (channel.over_voltage_tripped || channel.over_current_tripped))
                       const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
-                      const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentities[instance.id]?.model_id
+                      const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentityDrafts[instance.id]?.model_id
                       const capabilityResult = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
                         ? powersCapabilityChannels.models[capabilityModel] : undefined
                       const capabilityChannels = capabilityResult?.status === 'ready' ? capabilityResult.channels : []
@@ -2378,7 +2378,7 @@ function App() {
                           updateStep(selectedToolAction.id, step => step.type === 'tool-action' ? { ...step, target } : step)
                         }}>
                           {workflowDraft.tool_instances.filter(instance => instance.tool === workflowDraft.tool_instances.find(item => item.id === selectedToolAction.target)?.tool)
-                            .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance, resourceIdentities[instance.id])}</option>)}
+                            .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance, resourceIdentityDrafts[instance.id])}</option>)}
                         </select>
                       </label>}
                       {selectedStep.type === 'for' && <>
@@ -2598,7 +2598,7 @@ function App() {
                       {selectedToolAction && selectedAction?.startsWith('scopes/') && (
                         <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
                           executionMode={executionMode} scopesExecutableKey={scopesExecutableKey}
-                          modelId={executionMode === 'live' ? resourceIdentities[selectedToolAction.target]?.model_id : undefined}
+                          modelId={executionMode === 'live' ? resourceIdentityDrafts[selectedToolAction.target]?.model_id : undefined}
                           earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           onChange={next => updateStep(selectedToolAction.id, () => next)} />

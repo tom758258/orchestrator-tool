@@ -52,14 +52,16 @@ beforeEach(() => {
       case 'get_live_resource_identities': return { ...identities }
       case 'get_live_backends': return { ...backends }
       case 'list_live_resources': return [{ resource: `USB::${params.toolId}::${params.backend}`, manufacturer: 'Vendor', model: 'Model', model_id: 'canonical-model', serial: '123', identity: 'Vendor,Model,123,1' }]
-      case 'get_powers_capabilities': return { channels: [1], protection_features: {
+      case 'get_powers_capabilities': return { channels: params.modelId === 'saved-model' ? [1, 3] : [1], protection_features: {
         ovp_voltage: true, ocp: true, ocp_delay: false, ocp_delay_triggers: [],
       } }
-      case 'get_scopes_capabilities': return { analog_channels: 2,
+      case 'get_scopes_capabilities': return { analog_channels: params.modelId === 'saved-scope' ? 4 : 2,
         acquisition_modes: ['normal', 'average'], average_counts: [4, 16, 64] }
       case 'get_meters_capabilities': return { trigger_modes: ['software'], limits: {
         sample_count: { max: 1000 }, buffer_drain_size: { max: 1000 }, trigger_count: { max: 1000 },
-      }, reading_memory_limit: 1000, measurements: [] }
+      }, reading_memory_limit: 1000, measurements: [
+        { measurement_name: 'voltage-dc', range_values: params.model === 'Saved Meter' ? [30] : [10] },
+      ] }
       case 'check_live_preflight': return []
       case 'refresh_powers_status': return { protection_tripped: params.executionMode === 'live', over_voltage_tripped: params.executionMode === 'live',
         over_current_tripped: false, channels: [{ channel: 1, output_enabled: false,
@@ -321,12 +323,20 @@ test('the grouped Device retains explicit status, clear and resource operations 
 
 test('VISA backend drafts clear only their instance, save with Resource, and appear in Live confirmation', async () => {
   newDraft.tool_instances.push({ id: 'powers-2', tool: 'powers', setup: {} })
+  newDraft.tool_instances.push({ id: 'meters-1', tool: 'meters', setup: {
+    measurement: 'voltage-dc', range_mode: 'manual', manual_range: 30, nplc: 1,
+    auto_zero: 'on', dcv_input_impedance: null, current_terminal: null,
+  } })
   newDraft.workflow.steps = ['powers-1', 'powers-2'].map((target, index) => ({
     type: 'tool-action', id: `off-${index}`, target, action: 'output-off', arguments: { channel: 1 },
   }))
+  newDraft.workflow.steps.push({ type: 'tool-action', id: 'scope-scale', target: 'scopes-1',
+    action: 'channel-scale', arguments: { channel: 4, volts_per_division: 2 } })
   resources = { 'powers-1': 'USB::saved-py', 'powers-2': 'USB::saved-system' }
   backends = { 'powers-1': '@py' }
   identities = { 'powers-1': { manufacturer: 'Saved Vendor', model: 'Saved Model', model_id: 'saved-model', serial: 'old-serial', identity: null } }
+  identities['scopes-1'] = { ...identities['powers-1'], model: 'Saved Scope', model_id: 'saved-scope' }
+  identities['meters-1'] = { ...identities['powers-1'], model: 'Saved Meter', model_id: 'saved-meter' }
   await mount()
   const first = instance('powers-1')
   const second = instance('powers-2')
@@ -336,8 +346,17 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   // Device and backend controls remain available with Protection Setup collapsed.
   expect(first.getByRole('button', { name: 'Expand Protection Setup' })).toBeTruthy()
   click('Live')
+  fireEvent.click(first.getByRole('button', { name: 'Expand Protection Setup' }))
+  await first.findByRole('combobox', { name: 'Channel 3 OCP' })
+  fireEvent.click(first.getByRole('button', { name: 'Collapse Protection Setup' }))
+  tab('Workflow')
+  const workflow = () => within(screen.getByRole('tabpanel', { name: 'Workflow' }))
+  fireEvent.click(workflow().getByRole('button', { name: 'Step 1: Power Output OFF, off-0' }))
+  expect(workflow().getByRole('option', { name: 'CH3' })).toBeTruthy()
+  expect(workflow().getByRole('option', { name: /Saved Model/ })).toBeTruthy()
+  tab('Setup')
   fireEvent.click(first.getByRole('button', { name: 'Refresh Status' }))
-  await waitFor(() => expect((first.getByRole('button', { name: 'Clear Protection...' }) as HTMLButtonElement).disabled).toBe(false))
+  await waitFor(() => expect((first.getAllByRole('button', { name: 'Clear Protection...' })[0] as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(first.getByRole('button', { name: 'List Resources' }))
   await first.findByRole('combobox', { name: 'Discovered Resources' })
   fireEvent.change(first.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: 'system' } })
@@ -348,13 +367,49 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect(resources['powers-1']).toBe('USB::saved-py')
   expect(backends['powers-1']).toBe('@py')
   expect(calls().some(([command]) => command === 'set_live_resource')).toBe(false)
+  expect(identities['powers-1'].model_id).toBe('saved-model')
+  expect(first.queryByRole('rowheader', { name: '3' })).toBeNull()
   tab('Workflow')
+  expect((workflow().getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement).disabled).toBe(true)
+  expect(workflow().queryByRole('option', { name: /Saved Model/ })).toBeNull()
   await waitFor(() => expect((screen.getByRole('button', { name: 'Run Live' }) as HTMLButtonElement).disabled).toBe(true))
   expect(screen.getByText(/unsaved Live Resource, backend or identity changes/)).toBeTruthy()
   tab('Setup')
   fireEvent.click(first.getByRole('button', { name: 'List Resources' }))
   const discovered = await first.findByRole('combobox', { name: 'Discovered Resources' })
   fireEvent.change(discovered, { target: { value: 'USB::powers::system' } })
+  await waitFor(() => expect(calls()).toContainEqual(['get_powers_capabilities', { modelId: 'canonical-model', executionMode: 'live' }]))
+  tab('Workflow')
+  await waitFor(() => expect((workflow().getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement).disabled).toBe(false))
+  expect(workflow().queryByRole('option', { name: 'CH3' })).toBeNull()
+  expect(workflow().getByRole('option', { name: /Model \[123\]/ })).toBeTruthy()
+  fireEvent.click(workflow().getByRole('button', { name: 'Step 3: Scope Channel Scale, scope-scale' }))
+  await workflow().findByRole('option', { name: 'CH4' })
+  tab('Setup')
+  const scope = instance('scopes-1')
+  fireEvent.click(scope.getByRole('button', { name: 'Expand Channel Configuration' }))
+  expect((scope.getByRole('combobox', { name: 'Channel 4 Waveform Invert' }) as HTMLSelectElement).disabled).toBe(false)
+  fireEvent.change(scope.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: '@py' } })
+  expect((scope.getByRole('combobox', { name: 'Channel 4 Waveform Invert' }) as HTMLSelectElement).disabled).toBe(true)
+  tab('Workflow')
+  expect((workflow().getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement).disabled).toBe(true)
+  expect((workflow().getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement).value).toBe('4')
+  tab('Setup')
+  const meter = instance('meters-1')
+  expect((meter.getByRole('combobox', { name: 'Manual Range (V)' }) as HTMLSelectElement).value).toBe('30')
+  fireEvent.change(meter.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: '@py' } })
+  await waitFor(() => expect(meter.getByRole('combobox', { name: 'Manual Range (V)' })
+    .querySelector('option[value="10"]')).not.toBeNull())
+  expect((meter.getByRole('combobox', { name: 'Manual Range (V)' }) as HTMLSelectElement).value).toBe('30')
+  expect(await savedDraft()).toEqual(newDraft)
+  // Restore the other instances through Discovery/Save before checking Live confirmation.
+  for (const controls of [scope, meter]) {
+    fireEvent.click(controls.getByRole('button', { name: 'List Resources' }))
+    const select = await controls.findByRole('combobox', { name: 'Discovered Resources' })
+    fireEvent.change(select, { target: { value: controls === scope ? 'USB::scopes::@py' : 'USB::meters::@py' } })
+    fireEvent.click(controls.getByRole('button', { name: 'Save Resource' }))
+    await waitFor(() => expect((controls.getByRole('button', { name: 'Save Resource' }) as HTMLButtonElement).disabled).toBe(false))
+  }
   fireEvent.change(second.getByRole('combobox', { name: 'VISA Backend' }), { target: { value: '@py' } })
   expect(first.getByRole('combobox', { name: 'Discovered Resources' })).toBeTruthy()
   fireEvent.click(second.getByRole('button', { name: 'List Resources' }))
@@ -386,4 +441,4 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   tab('Setup')
   expect((second.getByRole('combobox', { name: 'VISA Backend' }) as HTMLSelectElement).value).toBe('@py')
   expect((second.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('manual::second')
-})
+}, 15000)

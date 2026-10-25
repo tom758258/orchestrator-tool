@@ -13,7 +13,7 @@ const fields = app.slice(app.indexOf('                      {selectedToolAction 
 const handlers = app.slice(app.indexOf('  const updateToolArgument ='), app.indexOf('  const moveStep ='))
 const roundTrip = draft => workflowOnlyDraft(JSON.parse(templateDraftJson(draft, [], false)))
 const { code } = await transformWithOxc(`function properties(params) {
-  const { selectedToolAction, selectedAction, workflowDraft, executionMode, resourceIdentities,
+  const { selectedToolAction, selectedAction, workflowDraft, executionMode, resourceIdentityDrafts,
     powersCapabilityChannels, powersCapabilityKey, workflowBusy, updateStep } = params
   const selectedStep = selectedToolAction
   const earlierSteps = [], earlierVariables = []
@@ -40,7 +40,7 @@ function editor(action = 'set-output', arguments_ = { channel: 1, voltage: 0, cu
   const params = {
     selectedAction: `powers/${action}`, workflowBusy: false, executionMode: 'simulate',
     workflowDraft: { tool_instances: [{ id: 'power-1', tool: 'powers' }, { id: 'power-2', tool: 'powers' }] },
-    resourceIdentities: { 'power-1': { model_id: 'one' }, 'power-2': { model_id: 'other' } },
+    resourceIdentityDrafts: { 'power-1': { model_id: 'one' }, 'power-2': { model_id: 'other' } },
     powersCapabilityKey: 'simulation',
     powersCapabilityChannels: { key: 'simulation', models: { simulator: { status: 'ready', channels: [2, 5] } } },
     updateStep: (id, update) => { assert.equal(id, value.id); value = update(value); changes++ },
@@ -139,7 +139,7 @@ test('loading, missing Live model, failed queries and empty channels show distin
   assert.equal(state.view().channel.props.disabled, true)
   assert.match(state.view().text, /Loading/)
   state.params.executionMode = 'live'
-  state.params.resourceIdentities = {}
+  state.params.resourceIdentityDrafts = {}
   assert.match(state.view().text, /supported Live Resource/)
   assert.deepEqual(options(state.view().channel), [])
   state.params.executionMode = 'simulate'
@@ -243,7 +243,7 @@ const modelContext = app.slice(app.indexOf('  const powersModels ='), app.indexO
 const queryStart = app.lastIndexOf('  useEffect(() => {', app.indexOf('void Promise.all(powersModels.map'))
 const query = app.slice(queryStart, app.indexOf('  const outputSteps =', queryStart))
 const { code: queryCode } = await transformWithOxc(`function queryChannels(params, invoke, setPowersCapabilityChannels) {
-  const { workflowDraft, executionMode, powersExecutableKey, resourceIdentities } = params
+  const { workflowDraft, executionMode, powersExecutableKey, resourceIdentityDrafts } = params
   ${modelContext}
   let cleanup
   const useEffect = effect => { cleanup = effect() }
@@ -258,7 +258,7 @@ test('existing cache queries simulator or distinct canonical Live models and sep
     executionMode: 'live', powersExecutableKey: 'exe-a',
     workflowDraft: { tool_instances: [{ id: 'a', tool: 'powers' }, { id: 'b', tool: 'powers' },
       { id: 'c', tool: 'powers' }, { id: 'missing', tool: 'powers' }, { id: 'meter', tool: 'meters' }] },
-    resourceIdentities: { a: { model_id: 'canonical-a', model: 'Display A' },
+    resourceIdentityDrafts: { a: { model_id: 'canonical-a', model: 'Display A' },
       b: { model_id: 'canonical-b' }, c: { model_id: 'canonical-a' }, meter: { model_id: 'meter-model' } },
   }
   const calls = []
@@ -278,7 +278,7 @@ test('existing cache queries simulator or distinct canonical Live models and sep
   } })
   const keys = new Set([first.key])
   for (const next of [{ ...params, executionMode: 'simulate' }, { ...params, powersExecutableKey: 'exe-b' },
-    { ...params, resourceIdentities: { a: { model_id: 'new-model' } } }]) {
+    { ...params, resourceIdentityDrafts: { a: { model_id: 'new-model' } } }]) {
     const request = queryChannels(next, async (_, args) => {
       if (next.executionMode === 'simulate') assert.equal(args.modelId, null)
       return { channels: [8] }
@@ -292,7 +292,7 @@ test('existing cache queries simulator or distinct canonical Live models and sep
 })
 
 test('cancelled capability requests cannot overwrite the current mode or executable cache', async () => {
-  const params = { executionMode: 'simulate', powersExecutableKey: 'old-exe', resourceIdentities: {}, workflowDraft: null }
+  const params = { executionMode: 'simulate', powersExecutableKey: 'old-exe', resourceIdentityDrafts: {}, workflowDraft: null }
   let resolveOld
   let loaded
   const old = queryChannels(params, () => new Promise(resolve => { resolveOld = resolve }), next => { loaded = next })
