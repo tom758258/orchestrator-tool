@@ -379,12 +379,13 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
   )
 }
 
-function PowersSetupFields({ value, onChange, modelId, executionMode, powersExecutableKey }: {
+function PowersSetupFields({ value, onChange, modelId, executionMode, powersExecutableKey, children }: {
   value: PowersSetup
   onChange: (value: PowersSetup) => void
   modelId: string | null | undefined
   executionMode: ExecutionMode
   powersExecutableKey: string
+  children?: ReactNode
 }) {
   const [enabledEmptySetup, setEnabledEmptySetup] = useState<PowersSetup | null>(null)
   const protectionEnabled = value.protection !== undefined || enabledEmptySetup === value
@@ -499,6 +500,7 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
       </table>
     </div>
     {value.protection && <p className="tool-setup-hint">Protection settings are configured for this Power instance. Add a Power Protection Status step and Assert if the Workflow should fail when a protection trip is detected.</p>}
+    {children}
     </div>
   </div>
 }
@@ -629,7 +631,7 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey }: {
+export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, renderPowersDeviceStatus, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   configuredToolTypes: ToolInstance['tool'][]
   resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
@@ -638,6 +640,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
   powersExecutableKey: string
   scopesExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
+  renderPowersDeviceStatus: (instance: Extract<ToolInstance, { tool: 'powers' }>) => ReactNode
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
   useEffect(() => {
@@ -739,7 +742,12 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                   modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
                   executionMode={executionMode}
                   powersExecutableKey={powersExecutableKey}
-                  onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
+                  onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}>
+                  <div className="powers-device">
+                    <h4 className="powers-section-heading">Device</h4>
+                    {renderPowersDeviceStatus(instance)}
+                  </div>
+                </PowersSetupFields>
               : instance.tool === 'scopes'
                 ? <ScopesSetupFields value={instance.setup} onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}
                     modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
@@ -750,12 +758,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                     ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
-          {instance.tool === 'powers'
-            ? <div className="powers-device">
-                <h4 className="powers-section-heading">Device</h4>
-                {renderResource(instance)}
-              </div>
-            : renderResource(instance)}
+          {renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}

@@ -218,10 +218,13 @@ visible when the current model does not support them.
 
 Protection Setup is optional. Within a Powers Tool Instance, use **+** beside
 **Protection Setup** to expand the group, which starts collapsed. Protection
-fields expand and collapse within this group. The separate Device area,
-including Device Status, Protection Summary, channel actions and Live Resource,
-remains available when Protection Setup is collapsed. Collapsing
-does not change protection settings or read or operate the instrument. Select
+fields and the Device area, including Device Status, Refresh Status, Protection
+Summary, channel protection status and clear actions, and related messages and
+results, expand and collapse together. Live Device, VISA Backend, Live Resource
+and resource discovery controls and messages, and Remove Tool Instance and its
+workflow reference restriction remain visible. Collapsing preserves protection
+settings, runtime status and operation results without reading or operating the
+instrument. Select
 **Use Protection Setup** to edit supported fields. This single checkbox applies
 to the whole instance; new instances start unchecked with all fields disabled.
 Selecting it alone does not store any protection data or checkbox state in the
@@ -264,8 +267,10 @@ terminal.
 
 ### 5.4 Device Status
 
-Below Protection Setup, the **Device** area first shows **Device Status**, followed
-by **Live Device** / Live Resource controls in both Simulation and Live modes.
+Expand Protection Setup to show the **Device** area and **Device Status**.
+**Live Device** / Live Resource controls remain below it in both Simulation and
+Live modes, including when Protection Setup is collapsed. The execution mode
+badge appears in the Tool Instance heading.
 Device Status is runtime-only and is not
 saved in the Template. Opening Setup does not connect to a Worker and there is no
 background polling. A single **Protection Summary** panel groups aggregate

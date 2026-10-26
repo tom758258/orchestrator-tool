@@ -117,7 +117,13 @@ test('Setup preserves independent groups, local drafts and protection data throu
   const power = instance('powers-1')
   const scope = instance('scopes-1')
   expect(power.getByRole('button', { name: 'Expand Protection Setup' }).textContent).toBe('+')
-  expect(power.getByRole('button', { name: 'Refresh Status' })).toBeTruthy()
+  expect(power.queryByRole('heading', { name: 'Device' })).toBeNull()
+  expect(power.queryByRole('heading', { name: 'Device Status' })).toBeNull()
+  expect(power.queryByRole('button', { name: 'Refresh Status' })).toBeNull()
+  expect(power.queryByRole('region', { name: 'Protection Summary' })).toBeNull()
+  expect(power.queryByRole('button', { name: 'Generate Clear Plan...' })).toBeNull()
+  expect(power.queryByRole('table')).toBeNull()
+  expect((power.getByRole('button', { name: 'Remove Tool Instance' }) as HTMLButtonElement).disabled).toBe(false)
   expect(scope.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
   expect(scope.queryByRole('combobox', { name: 'Channel 4 Waveform Invert' })).toBeNull()
   expect(scope.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
@@ -127,9 +133,15 @@ test('Setup preserves independent groups, local drafts and protection data throu
   expect(power.getByRole('region', { name: 'Protection Summary' })).toBeTruthy()
   expect(power.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
   expect(power.getByRole('button', { name: 'Generate Clear Plan...' })).toBeTruthy()
+  const ocp = power.getByRole('combobox', { name: 'Channel 1 OCP' }) as HTMLSelectElement
+  expect(ocp.value).toBe('on')
   fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
+  expect(power.queryByRole('button', { name: 'Refresh Status' })).toBeNull()
+  expect(power.queryByRole('combobox', { name: 'Channel 1 OCP' })).toBeNull()
   expect(power.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
+  expect(power.getByRole('combobox', { name: 'Channel 1 OCP' })).toBe(ocp)
+  expect(ocp.value).toBe('on')
   fireEvent.click(scope.getByRole('button', { name: 'Expand Acquisition Setup' }))
   expect(scope.getByRole('button', { name: 'Expand Channel Configuration' }).getAttribute('aria-expanded')).toBe('false')
   const count = scope.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
@@ -292,15 +304,63 @@ test('External Tools keep status visible and independent state across refresh/ta
   }
 })
 
-test('the grouped Device retains explicit status, clear and resource operations in Simulation and Live', async () => {
+test('Protection Setup hides Device status and results while preserving resource controls and mode badges in Simulation and Live', async () => {
+  newDraft.workflow.steps = [{ type: 'tool-action', id: 'power-off', target: 'powers-1',
+    action: 'output-off', arguments: { channel: 1 } }]
   await mount()
   const power = instance('powers-1')
+  const checkResourceControls = () => {
+    expect(isInaccessible(power.getByText('Live Device'))).toBe(false)
+    expect(power.getByRole('combobox', { name: 'VISA Backend' })).toBeTruthy()
+    expect(power.getByRole('textbox', { name: 'Live Resource' })).toBeTruthy()
+    for (const name of ['List Resources', 'Save Resource', 'Clear Resource']) {
+      expect(power.getByRole('button', { name })).toBeTruthy()
+    }
+    expect((power.getByRole('button', { name: 'Remove Tool Instance' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(isInaccessible(power.getByText(/Referenced by workflow steps/))).toBe(false)
+    expect(isInaccessible(power.getByText('Last-known identity; not a connection check.'))).toBe(false)
+  }
+  const checkCollapse = (resultText: string, modeBadge: string, clearAction: string) => {
+    const heading = power.getByRole('heading', { name: 'Device Status' })
+    const summary = power.getByRole('region', { name: 'Protection Summary' })
+    const status = summary.textContent
+    const result = power.getByText(resultText)
+    const beforeToggle = calls().length
+    checkResourceControls()
+    expect(power.getAllByText(modeBadge)).toHaveLength(1)
+    fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
+    expect(power.queryByRole('heading', { name: 'Device' })).toBeNull()
+    expect(power.queryByRole('heading', { name: 'Device Status' })).toBeNull()
+    expect(power.queryByRole('region', { name: 'Protection Summary' })).toBeNull()
+    expect(power.queryByRole('button', { name: 'Refresh Status' })).toBeNull()
+    expect(power.queryByRole('button', { name: clearAction })).toBeNull()
+    expect(power.queryByRole('table')).toBeNull()
+    expect(isInaccessible(result)).toBe(true)
+    expect(heading.isConnected).toBe(true)
+    checkResourceControls()
+    expect(power.getAllByText(modeBadge)).toHaveLength(1)
+    fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
+    expect(power.getByRole('heading', { name: 'Device Status' })).toBe(heading)
+    expect(power.getByRole('region', { name: 'Protection Summary' })).toBe(summary)
+    expect(summary.textContent).toBe(status)
+    expect(isInaccessible(result)).toBe(false)
+    expect(power.getByRole('button', { name: clearAction })).toBeTruthy()
+    checkResourceControls()
+    expect(calls().slice(beforeToggle)).toEqual([])
+  }
+  checkResourceControls()
+  fireEvent.click(power.getByRole('button', { name: 'List Resources' }))
+  const discovered = await power.findByRole('combobox', { name: 'Discovered Resources' })
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   fireEvent.click(power.getByRole('button', { name: 'Refresh Status' }))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('refresh_powers_status', { instanceId: 'powers-1', executionMode: 'simulate' }))
   await waitFor(() => expect((power.getByRole('button', { name: 'Generate Clear Plan...' }) as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(power.getByRole('button', { name: 'Generate Clear Plan...' }))
   await power.findByText('PLAN GENERATED · SIMULATION')
+  checkCollapse('PLAN GENERATED · SIMULATION', 'SIMULATION · NO HARDWARE I/O', 'Generate Clear Plan...')
+  expect(power.getByRole('combobox', { name: 'Discovered Resources' })).toBe(discovered)
+  fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
+  expect(power.getByRole('combobox', { name: 'Discovered Resources' })).toBe(discovered)
   fireEvent.change(power.getByRole('textbox', { name: 'Live Resource' }), { target: { value: 'USB::power' } })
   fireEvent.click(power.getByRole('button', { name: 'Save Resource' }))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('set_live_resource', {
@@ -308,17 +368,22 @@ test('the grouped Device retains explicit status, clear and resource operations 
   }))
   await waitFor(() => expect((power.getByRole('button', { name: 'Save Resource' }) as HTMLButtonElement).disabled).toBe(false))
   click('Live')
+  checkResourceControls()
+  expect(power.queryByRole('button', { name: 'Refresh Status' })).toBeNull()
+  fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   fireEvent.click(power.getByRole('button', { name: 'Refresh Status' }))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('refresh_powers_status', { instanceId: 'powers-1', executionMode: 'live' }))
   await waitFor(() => expect((power.getByRole('button', { name: 'Clear Protection...' }) as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(power.getByRole('button', { name: 'Clear Protection...' }))
   await power.findByText('Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.')
   expect(invoke).toHaveBeenCalledWith('clear_powers_protection', { instanceId: 'powers-1', channel: 1, executionMode: 'live' })
+  checkCollapse('Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.',
+    'LIVE · REAL HARDWARE', 'Clear Protection...')
   // Saved unsupported settings survive the mode change and collapsing; no Template UI data is serialized.
   fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   expect((power.getByRole('checkbox', { name: 'Use Protection Setup' }) as HTMLInputElement).checked).toBe(true)
-  expect(await savedDraft()).toEqual(original)
+  expect(await savedDraft()).toEqual(newDraft)
 })
 
 test('VISA backend drafts clear only their instance, save with Resource, and appear in Live confirmation', async () => {
@@ -343,7 +408,7 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect((first.getByRole('combobox', { name: 'VISA Backend' }) as HTMLSelectElement).value).toBe('@py')
   expect((first.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('USB::saved-py')
   expect(first.getByText('Saved Vendor Saved Model')).toBeTruthy()
-  // Device and backend controls remain available with Protection Setup collapsed.
+  // Live Device and backend controls remain available with Protection Setup collapsed.
   expect(first.getByRole('button', { name: 'Expand Protection Setup' })).toBeTruthy()
   click('Live')
   fireEvent.click(first.getByRole('button', { name: 'Expand Protection Setup' }))
@@ -355,6 +420,7 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect(workflow().getByRole('option', { name: 'CH3' })).toBeTruthy()
   expect(workflow().getByRole('option', { name: /Saved Model/ })).toBeTruthy()
   tab('Setup')
+  fireEvent.click(first.getByRole('button', { name: 'Expand Protection Setup' }))
   fireEvent.click(first.getByRole('button', { name: 'Refresh Status' }))
   await waitFor(() => expect((first.getAllByRole('button', { name: 'Clear Protection...' })[0] as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(first.getByRole('button', { name: 'List Resources' }))

@@ -451,7 +451,7 @@ test('Setup candidates change safely while existing instances remain visible wit
   const original = structuredClone(value)
   const changes = []
   const props = { value, steps: [], disabled: false, executionMode: 'simulate', resourceIdentities: {},
-    renderResource: () => null, onChange: next => changes.push(next) }
+    renderResource: () => null, renderPowersDeviceStatus: () => null, onChange: next => changes.push(next) }
   let view = render({ ...props, configuredToolTypes: ['meters', 'powers'] })
   let select = view.find(node => node.props['aria-label'] === 'Tool type')
   assert.deepEqual(candidates(select), ['meters', 'powers'])
@@ -481,7 +481,7 @@ test('Setup candidates change safely while existing instances remain visible wit
 test('display_name: all four Setup types add, edit, clear, collapse and keep IDs and controls', async () => {
   const render = await component('ToolSetupEditor')
   const props = { value: [], steps: [], disabled: false, executionMode: 'simulate', resourceIdentities: {},
-    configuredToolTypes: ['powers', 'meters', 'scopes', 'wavegen'], renderResource: instance => instance.id,
+    configuredToolTypes: ['powers', 'meters', 'scopes', 'wavegen'], renderResource: instance => instance.id, renderPowersDeviceStatus: () => null,
     onChange: next => { props.value = next } }
   const field = id => render(props).find(node => node.type === 'fieldset' && node.key === id)
   const input = id => elements(field(id)).find(node => node.type === 'input' && node.props.type === 'text')
@@ -607,7 +607,7 @@ test('display_name: Blur only updates a changed normalized value', async () => {
   const render = await component('ToolSetupEditor')
   const changes = []
   const props = { value: [], steps: [], disabled: false, executionMode: 'simulate', resourceIdentities: {},
-    configuredToolTypes: ['powers'], renderResource: () => null, onChange: next => changes.push(next) }
+    configuredToolTypes: ['powers'], renderResource: () => null, renderPowersDeviceStatus: () => null, onChange: next => changes.push(next) }
   for (const [stored, entered, expected, count] of [
     [undefined, '', undefined, 0],
     ['Power A', 'Power A', 'Power A', 0],

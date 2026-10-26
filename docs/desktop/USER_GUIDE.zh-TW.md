@@ -184,10 +184,12 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 ### 5.3 Powers Protection Setup
 
 Protection Setup 為選用設定。在 Powers Tool Instance 內，按 **Protection Setup**
-旁的 **+** 展開預設收合的群組。Protection 欄位在此群組內展開／收合。
-Device 是獨立區塊，包含 Device Status、Protection Summary、通道操作與
-Live Resource；收合 Protection Setup 時仍可使用。
-收合不會變更保護設定，也不會讀取或操作儀器。勾選
+旁的 **+** 展開預設收合的群組。Protection 欄位與 Device 區域一起展開／收合，
+包含 Device Status、Refresh Status、Protection Summary、各通道保護狀態與
+清除操作，以及相關提示與操作結果。Live Device、VISA Backend、Live Resource、
+Resource Discovery 控制項與提示，以及 Remove Tool Instance 與其 Workflow 引用
+限制提示都保持可見。收合會保留保護設定、runtime 狀態與操作結果，
+不會讀取或操作儀器。勾選
 **Use Protection Setup** 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
 新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
 或核取方塊狀態寫入 Template。powers-tool 回報的所有通道，以及 Template 已設定
@@ -224,8 +226,9 @@ backend 或 resource 改變，run 會被拒絕，必須重新確認。
 
 ### 5.4 Device Status
 
-Protection Setup 下方的 **Device** 區域先顯示 **Device Status**，再顯示
-**Live Device** / Live Resource 控制項；Simulation 與 Live 模式的順序相同。
+展開 Protection Setup 後即可看到 **Device** 區域與 **Device Status**。
+**Live Device** / Live Resource 控制項位於下方，在 Simulation 與 Live 模式中
+都保持可見，不受 Protection Setup 收合影響。執行模式 Badge 顯示於 Tool Instance 標題。
 Device Status 只屬於 runtime，不會保存到 Template。
 開啟 Setup 不會連線 Worker，也沒有 background polling。單一 **Protection Summary**
 panel 集中顯示 aggregate Protection、OVP 與 OCP；讀取 status 前，這些值與各通道
