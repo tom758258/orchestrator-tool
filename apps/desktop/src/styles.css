@@ -2144,3 +2144,27 @@ textarea:disabled {
   background: var(--warning-surface);
   color: var(--warning);
 }
+
+.sequence-steps[data-step-container] {
+  min-height: 32px;
+  padding-bottom: 14px;
+}
+
+.sequence-body-empty {
+  list-style: none;
+  padding: 10px;
+  color: var(--muted);
+}
+
+.sequence-drop-end {
+  box-shadow: inset 0 -3px var(--accent);
+}
+
+.sequence-step-card.sequence-step-invalid {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.sequence-validation-warning {
+  color: var(--danger);
+}

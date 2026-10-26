@@ -146,8 +146,14 @@ fn validate_unique_live_resources(
 }
 
 pub(crate) fn validate_live_resources(template: &Template, config: &Config) -> Result<(), String> {
-    let instances = template.referenced_tool_instances();
-    for instance in &instances {
+    validate_live_resource_instances(&template.referenced_tool_instances(), config)
+}
+
+pub(crate) fn validate_live_resource_instances(
+    instances: &[&crate::tool_instance::ToolInstance],
+    config: &Config,
+) -> Result<(), String> {
+    for instance in instances {
         if config
             .live_resource(&instance.id)
             .is_none_or(|resource| resource.trim().is_empty())
@@ -158,7 +164,7 @@ pub(crate) fn validate_live_resources(template: &Template, config: &Config) -> R
             ));
         }
     }
-    validate_unique_live_resources(&instances, config)
+    validate_unique_live_resources(instances, config)
 }
 
 pub fn prepare_worker_launch_specs(

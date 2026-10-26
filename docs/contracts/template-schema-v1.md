@@ -440,6 +440,13 @@ A body can read earlier root outputs and earlier body siblings from the
 current iteration, as well as variables visible in its enclosing scope. A
 later root step cannot read a body StepOutput.
 
+Template validation rejects statically unavailable Variable references in InputValues,
+Calculation operands and bindings. Visibility follows the existing sequential
+scope: earlier Set Variable assignments and enclosing For bindings are available;
+body-local declarations do not escape an iteration. Inherited assignments and
+shadowed For bindings keep the runtime lifecycle described above. Validation does
+not predict values, loop counts or condition results.
+
 ## While semantics
 
 While evaluates its comparison before each iteration using current variables

@@ -435,47 +435,7 @@ impl Template {
 
         let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
         let workflow = workflow_from_wire(wire.workflow)?;
-        let instances = wire
-            .tool_instances
-            .into_iter()
-            .map(|instance| {
-                let tool =
-                    ToolId::new(&instance.tool).map_err(|source| TemplateError::InvalidToolId {
-                        value: instance.tool,
-                        source,
-                    })?;
-                let invalid_setup = || {
-                    TemplateError::Instance(format!("invalid setup for {} ({tool})", instance.id))
-                };
-                let setup = if tool == ToolId::meters() {
-                    ToolSetup::Meters(
-                        serde_json::from_value::<MetersSetup>(instance.setup)
-                            .map_err(|_| invalid_setup())?,
-                    )
-                } else if tool == ToolId::powers() {
-                    ToolSetup::Powers(
-                        serde_json::from_value::<PowersSetup>(instance.setup)
-                            .map_err(|_| invalid_setup())?,
-                    )
-                } else if tool == ToolId::scopes() {
-                    ToolSetup::Scopes(
-                        serde_json::from_value::<ScopesSetup>(instance.setup)
-                            .map_err(|_| invalid_setup())?,
-                    )
-                } else {
-                    ToolSetup::Empty(
-                        serde_json::from_value::<EmptySetup>(instance.setup)
-                            .map_err(|_| invalid_setup())?,
-                    )
-                };
-                Ok(ToolInstance {
-                    display_name: instance.display_name,
-                    id: instance.id,
-                    tool,
-                    setup,
-                })
-            })
-            .collect::<Result<Vec<_>, TemplateError>>()?;
+        let instances = instances_from_wire(wire.tool_instances)?;
         let output_views = wire.output_views;
         validate_output_views(&workflow, output_views.as_ref())?;
         let mut template = Self::new(wire.name, instances, workflow)?;
@@ -931,6 +891,65 @@ fn validate_batch_sources(
     let mut page_sources = HashMap::new();
     validate_steps(workflow.steps(), &mut sources, &mut page_sources)?;
     Ok(sources)
+}
+
+// Decode only Setup for automatic capability checks; workflow validation belongs
+// to explicit Validate/Run and the normal Template loader.
+pub(crate) fn preflight_setup(json: &str) -> Result<Template, TemplateError> {
+    #[derive(Deserialize)]
+    struct SetupWire {
+        tool_instances: Vec<ToolInstanceWire>,
+    }
+    let wire: SetupWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
+    Template::new(
+        "Live Preflight".to_owned(),
+        instances_from_wire(wire.tool_instances)?,
+        Workflow::new(Vec::new()).map_err(TemplateError::Workflow)?,
+    )
+}
+
+fn instances_from_wire(
+    instances: Vec<ToolInstanceWire>,
+) -> Result<Vec<ToolInstance>, TemplateError> {
+    instances
+        .into_iter()
+        .map(|instance| {
+            let tool =
+                ToolId::new(&instance.tool).map_err(|source| TemplateError::InvalidToolId {
+                    value: instance.tool,
+                    source,
+                })?;
+            let invalid_setup =
+                || TemplateError::Instance(format!("invalid setup for {} ({tool})", instance.id));
+            let setup = if tool == ToolId::meters() {
+                ToolSetup::Meters(
+                    serde_json::from_value::<MetersSetup>(instance.setup)
+                        .map_err(|_| invalid_setup())?,
+                )
+            } else if tool == ToolId::powers() {
+                ToolSetup::Powers(
+                    serde_json::from_value::<PowersSetup>(instance.setup)
+                        .map_err(|_| invalid_setup())?,
+                )
+            } else if tool == ToolId::scopes() {
+                ToolSetup::Scopes(
+                    serde_json::from_value::<ScopesSetup>(instance.setup)
+                        .map_err(|_| invalid_setup())?,
+                )
+            } else {
+                ToolSetup::Empty(
+                    serde_json::from_value::<EmptySetup>(instance.setup)
+                        .map_err(|_| invalid_setup())?,
+                )
+            };
+            Ok(ToolInstance {
+                display_name: instance.display_name,
+                id: instance.id,
+                tool,
+                setup,
+            })
+        })
+        .collect::<Result<Vec<_>, TemplateError>>()
 }
 
 #[derive(Debug)]
@@ -2236,6 +2255,11 @@ mod tests {
             json!({"type":"tool-action","id":"previous","target":"device",
                 "action":"inspect","arguments":{}}),
         );
+        steps.as_array_mut().unwrap().insert(
+            0,
+            json!({"type":"set-variable", "id":"declare-value",
+            "variable":"value", "value":{"source":"literal","value":1}}),
+        );
         json!({"schema_version":1,"name":"Parameter validation",
             "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
             "workflow":{"steps":steps}})
@@ -2611,19 +2635,28 @@ mod tests {
                 tool: ToolId::powers(),
                 setup: ToolSetup::Powers(PowersSetup::default()),
             }],
-            Workflow::new(vec![Step::new(
-                StepId::new("power-set-1").unwrap(),
-                StepKind::ToolAction {
-                    target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
-                    arguments: json!({ "channel": 1, "voltage": 0 }),
-                    bindings: [(
-                        "voltage".to_owned(),
-                        InputValue::Variable(VariableId::new("x").unwrap()),
-                    )]
-                    .into(),
-                },
-            )])
+            Workflow::new(vec![
+                Step::new(
+                    StepId::new("declare-x").unwrap(),
+                    StepKind::SetVariable {
+                        variable: VariableId::new("x").unwrap(),
+                        value: InputValue::Literal(json!(1)),
+                    },
+                ),
+                Step::new(
+                    StepId::new("power-set-1").unwrap(),
+                    StepKind::ToolAction {
+                        target: ToolInstanceId::new("powers-1").unwrap(),
+                        action: ActionId::new("set-voltage").unwrap(),
+                        arguments: json!({ "channel": 1, "voltage": 0 }),
+                        bindings: [(
+                            "voltage".to_owned(),
+                            InputValue::Variable(VariableId::new("x").unwrap()),
+                        )]
+                        .into(),
+                    },
+                ),
+            ])
             .unwrap(),
         )
         .unwrap();
@@ -2631,8 +2664,8 @@ mod tests {
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["schema_version"], 1);
         assert_eq!(value["tool_instances"][0]["setup"], json!({}));
-        assert_eq!(value["workflow"]["steps"][0]["action"], "set-voltage");
-        let binding = &value["workflow"]["steps"][0]["bindings"]["voltage"];
+        assert_eq!(value["workflow"]["steps"][1]["action"], "set-voltage");
+        let binding = &value["workflow"]["steps"][1]["bindings"]["voltage"];
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");
         assert_eq!(Template::from_json_str(&json).unwrap(), original);
@@ -2649,6 +2682,8 @@ mod tests {
         });
         let mut wire: Value =
             serde_json::from_str(&sample_template().to_json_string().unwrap()).unwrap();
+        wire["workflow"]["steps"][1] = json!({"type":"set-variable", "id":"declare-threshold",
+            "variable":"threshold", "value":{"source":"literal","value":1}});
         wire["workflow"]["steps"]
             .as_array_mut()
             .unwrap()
@@ -3072,6 +3107,20 @@ mod tests {
                     Default::default(),
                     Workflow::new(vec![
                         Step::new(
+                            StepId::new("declare-x").unwrap(),
+                            StepKind::SetVariable {
+                                variable: VariableId::new("x").unwrap(),
+                                value: InputValue::Literal(json!(1)),
+                            },
+                        ),
+                        Step::new(
+                            StepId::new("declare-threshold").unwrap(),
+                            StepKind::SetVariable {
+                                variable: VariableId::new("threshold").unwrap(),
+                                value: InputValue::Literal(json!(2)),
+                            },
+                        ),
+                        Step::new(
                             StepId::new("measurement").unwrap(),
                             StepKind::Output {
                                 name: "output-5".to_owned(),
@@ -3097,7 +3146,7 @@ mod tests {
                 let wire: Value = serde_json::from_str(&json).unwrap();
                 assert_eq!(wire["schema_version"], 1);
                 assert_eq!(
-                    wire["workflow"]["steps"][1]["value"],
+                    wire["workflow"]["steps"][3]["value"],
                     json!({
                         "source": "expression", "left": left_wire,
                         "operator": name, "right": right_wire,

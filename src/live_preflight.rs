@@ -21,29 +21,99 @@ pub fn validate_live_preflight(
         errors.push(error);
     }
     errors.extend(validate_with_capabilities(template, |instance| {
-        let model = config
-            .live_resource_identities()
-            .get(instance.id.as_str())
-            .and_then(|identity| identity.model_id.as_deref());
-        match instance.tool.as_str() {
-            "powers" => powers::get_capabilities_for_mode(
-                application_dir,
-                config,
-                ExecutionMode::Live,
-                model,
-            )
-            .map(Capabilities::Powers),
-            "scopes" => scopes::get_capabilities_for_mode(
-                application_dir,
-                config,
-                ExecutionMode::Live,
-                model,
-            )
-            .map(Capabilities::Scopes),
-            _ => unreachable!("only Powers and Scopes need capability checks"),
-        }
+        query_capabilities(instance, application_dir, config)
     }));
     errors
+}
+
+fn query_capabilities(
+    instance: &ToolInstance,
+    application_dir: &Path,
+    config: &Config,
+) -> Result<Capabilities, String> {
+    let model = config
+        .live_resource_identities()
+        .get(instance.id.as_str())
+        .and_then(|identity| identity.model_id.as_deref());
+    match instance.tool.as_str() {
+        "powers" => {
+            powers::get_capabilities_for_mode(application_dir, config, ExecutionMode::Live, model)
+                .map(Capabilities::Powers)
+        }
+        "scopes" => {
+            scopes::get_capabilities_for_mode(application_dir, config, ExecutionMode::Live, model)
+                .map(Capabilities::Scopes)
+        }
+        _ => unreachable!("only Powers and Scopes need capability checks"),
+    }
+}
+
+/// Automatic capability checks deliberately do not validate workflow references,
+/// loop scopes or other Template execution contracts.
+pub fn validate_live_preflight_draft(
+    json: &str,
+    application_dir: &Path,
+    config: &Config,
+) -> Result<Vec<String>, String> {
+    let setup = crate::template::preflight_setup(json).map_err(|error| error.to_string())?;
+    let wire: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    fn collect<'a>(steps: &'a [Value], actions: &mut Vec<&'a Value>) {
+        for step in steps {
+            match step["type"].as_str() {
+                Some("tool-action") => actions.push(step),
+                Some("for" | "while") => {
+                    if let Some(body) = step["steps"].as_array() {
+                        collect(body, actions);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut actions = Vec::new();
+    if let Some(steps) = wire["workflow"]["steps"].as_array() {
+        collect(steps, &mut actions);
+    }
+    let mut instances = Vec::new();
+    for action in &actions {
+        if let Some(instance) = setup
+            .tool_instances()
+            .iter()
+            .find(|instance| Some(instance.id.as_str()) == action["target"].as_str())
+            && !instances.contains(&instance)
+        {
+            instances.push(instance);
+        }
+    }
+    let mut errors = Vec::new();
+    if let Err(error) = crate::run_preparation::validate_live_resource_instances(&instances, config)
+    {
+        errors.push(error);
+    }
+    errors.extend(validate_instances_with_capabilities(
+        &instances,
+        |instance| query_capabilities(instance, application_dir, config),
+        |instance, caps, check| {
+            for action in &actions {
+                if action["target"].as_str() != Some(instance.id.as_str()) {
+                    continue;
+                }
+                check_action(
+                    action["id"].as_str().unwrap_or(""),
+                    action["action"].as_str().unwrap_or(""),
+                    &action["arguments"],
+                    action["bindings"]
+                        .as_object()
+                        .into_iter()
+                        .flat_map(|bindings| bindings.keys().map(String::as_str)),
+                    instance,
+                    caps,
+                    check,
+                );
+            }
+        },
+    ));
+    Ok(errors)
 }
 
 enum Capabilities {
@@ -55,8 +125,20 @@ fn validate_with_capabilities(
     template: &Template,
     mut query: impl FnMut(&ToolInstance) -> Result<Capabilities, String>,
 ) -> Vec<String> {
+    validate_instances_with_capabilities(
+        &template.referenced_tool_instances(),
+        &mut query,
+        |instance, caps, check| scan_actions(template.workflow().steps(), instance, caps, check),
+    )
+}
+
+fn validate_instances_with_capabilities(
+    instances: &[&ToolInstance],
+    mut query: impl FnMut(&ToolInstance) -> Result<Capabilities, String>,
+    mut scan: impl FnMut(&ToolInstance, &Capabilities, &mut CapabilityCheck<'_>),
+) -> Vec<String> {
     let mut errors = Vec::new();
-    for instance in template.referenced_tool_instances() {
+    for instance in instances {
         if !matches!(instance.tool.as_str(), "powers" | "scopes") {
             continue;
         }
@@ -84,7 +166,7 @@ fn validate_with_capabilities(
                 &mut check,
             ),
         }
-        scan_actions(template.workflow().steps(), instance, &caps, &mut check);
+        scan(instance, &caps, &mut check);
     }
     errors
 }
@@ -103,41 +185,59 @@ fn scan_actions(
                 arguments,
                 bindings,
             } if target == &instance.id => {
-                let mut fixed = arguments.clone();
-                // Check the Adapter's effective default only when no runtime binding supplies it.
-                if instance.tool.as_str() == "scopes"
-                    && action.as_str() == "screenshot"
-                    && fixed.is_object()
-                    && !bindings.contains_key("format")
-                    && fixed.get("format").is_none()
-                {
-                    fixed["format"] = Value::from(scopes::DEFAULT_SCREENSHOT_FORMAT);
-                }
-                if let Some(object) = fixed.as_object_mut() {
-                    for name in bindings.keys() {
-                        object.remove(name);
-                    }
-                }
-                check.context = format!(
-                    "{} ({}) Step {} [{}]",
-                    instance.tool,
-                    instance.id,
-                    step.id(),
-                    action
+                check_action(
+                    step.id().as_str(),
+                    action.as_str(),
+                    arguments,
+                    bindings.keys().map(String::as_str),
+                    instance,
+                    caps,
+                    check,
                 );
-                match caps {
-                    Capabilities::Powers(caps) => {
-                        powers::validate_preflight_action(action.as_str(), &fixed, caps, check)
-                    }
-                    Capabilities::Scopes(caps) => {
-                        scopes::validate_preflight_action(action.as_str(), &fixed, caps, check)
-                    }
-                }
             }
             StepKind::For { body, .. } | StepKind::While { body, .. } => {
                 scan_actions(body, instance, caps, check)
             }
             _ => {}
+        }
+    }
+}
+
+fn check_action<'a>(
+    step_id: &str,
+    action: &str,
+    arguments: &Value,
+    bindings: impl Iterator<Item = &'a str>,
+    instance: &ToolInstance,
+    caps: &Capabilities,
+    check: &mut CapabilityCheck<'_>,
+) {
+    let mut fixed = arguments.clone();
+    let bindings: Vec<_> = bindings.collect();
+    // Check the Adapter's effective default only when no runtime binding supplies it.
+    if instance.tool.as_str() == "scopes"
+        && action == "screenshot"
+        && fixed.is_object()
+        && !bindings.contains(&"format")
+        && fixed.get("format").is_none()
+    {
+        fixed["format"] = Value::from(scopes::DEFAULT_SCREENSHOT_FORMAT);
+    }
+    if let Some(object) = fixed.as_object_mut() {
+        for name in &bindings {
+            object.remove(*name);
+        }
+    }
+    check.context = format!(
+        "{} ({}) Step {} [{}]",
+        instance.tool, instance.id, step_id, action
+    );
+    match caps {
+        Capabilities::Powers(caps) => {
+            powers::validate_preflight_action(action, &fixed, caps, check)
+        }
+        Capabilities::Scopes(caps) => {
+            scopes::validate_preflight_action(action, &fixed, caps, check)
         }
     }
 }
@@ -231,6 +331,23 @@ mod tests {
                 _ => unreachable!(),
             })
         })
+    }
+
+    #[test]
+    fn automatic_preflight_leaves_workflow_scope_errors_to_explicit_validation() {
+        for value in [
+            json!({"source":"variable", "variable":"missing"}),
+            json!({"source":"step-output", "step_id":"future", "pointer":""}),
+        ] {
+            let draft = json!({"schema_version":1,"name":"Draft", "tool_instances":[],
+                "workflow":{"steps":[{"type":"output","id":"out","name":"Value","page":"Results","value":value}]}}).to_string();
+            assert!(Template::from_json_str(&draft).is_err());
+            assert!(
+                validate_live_preflight_draft(&draft, Path::new("unused"), &Config::default())
+                    .unwrap()
+                    .is_empty()
+            );
+        }
     }
 
     #[test]

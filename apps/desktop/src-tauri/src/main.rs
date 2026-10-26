@@ -24,12 +24,12 @@ use orchestrator_tool::{
     discovery::{
         ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
     },
-    live_preflight::validate_live_preflight,
+    live_preflight::{validate_live_preflight, validate_live_preflight_draft},
     live_resources::LiveResourceCandidate,
     run::{ExecutionMode, run_workflow_streaming_with_loop_stop_and_scopes_output},
     run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
     status::{ManifestStatus, inspect_built_in_tool_statuses},
-    template::Template,
+    template::{Template, TemplateError},
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
@@ -373,14 +373,12 @@ async fn check_live_preflight(
     template_json: String,
 ) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let template =
-            Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        Ok(validate_live_preflight(
-            &template,
+        validate_live_preflight_draft(
+            &template_json,
             &application_dir,
             &load_desktop_config(&app)?,
-        ))
+        )
     })
     .await
     .map_err(|error| error.to_string())?
@@ -1190,11 +1188,30 @@ fn create_workflow_draft() -> Result<String, String> {
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Serialize)]
+struct DraftValidationError {
+    message: String,
+    step_id: Option<String>,
+}
+
+impl From<TemplateError> for DraftValidationError {
+    fn from(error: TemplateError) -> Self {
+        let step_id = match &error {
+            TemplateError::Workflow(error) => error.step_id().map(ToString::to_string),
+            _ => None,
+        };
+        Self {
+            message: error.to_string(),
+            step_id,
+        }
+    }
+}
+
 #[tauri::command]
-fn validate_workflow_draft(template_json: String) -> Result<String, String> {
+fn validate_workflow_draft(template_json: String) -> Result<String, DraftValidationError> {
     Template::from_json_str(&template_json)
         .and_then(|template| template.to_json_string())
-        .map_err(|error| error.to_string())
+        .map_err(DraftValidationError::from)
 }
 
 #[tauri::command]
@@ -2197,11 +2214,21 @@ mod regression_tests {
                 { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
             ] }
         }"#;
-        assert!(
-            validate_workflow_draft(invalid.to_owned())
-                .unwrap_err()
-                .contains("invalid step ID")
-        );
+        let error = validate_workflow_draft(invalid.to_owned()).unwrap_err();
+        assert!(error.message.contains("invalid step ID"));
+        assert!(error.step_id.is_none());
+        let invalid_reference = r#"{
+            "schema_version": 1, "name": "Invalid reference", "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "output", "id": "out", "name": "Value", "page": "Results",
+                  "value": { "source": "variable", "variable": "missing" } }
+            ] }
+        }"#;
+        let error = validate_workflow_draft(invalid_reference.to_owned()).unwrap_err();
+        assert_eq!(error.step_id.as_deref(), Some("out"));
+        let wire = serde_json::to_value(error).unwrap();
+        assert_eq!(wire["step_id"], "out");
+        assert!(wire["message"].as_str().unwrap().contains("missing"));
     }
 
     #[test]

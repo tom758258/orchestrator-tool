@@ -200,6 +200,7 @@ test('an accepted Live failure replaces Last Run and retains partial results wit
 test('loop Stop follows the selected loop and completed progress releases its pending state', async () => {
   await mount()
   fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
   const channel = progressChannel()
   const progress = { type: 'progress-batch' as const, run: metadata(8, 'running'), completed_step_ids: [] as string[] }
   act(() => channel.onmessage(progress))
@@ -268,6 +269,111 @@ test('loading a template resets the execution mode without persisting desktop mo
   fireEvent.click(screen.getByRole('button', { name: 'Open Template' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Simulation' }).getAttribute('aria-pressed')).toBe('true'))
   fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
   expect(JSON.parse((runCalls()[0][1] as { templateJson: string }).templateJson)).toEqual(draft)
   await finish(1)
+})
+
+
+test.each(['Validate', 'Simulation', 'Live'])('%s presents structured validation locations and prevents invalid run dispatch', async action => {
+  await previousRun()
+  if (action === 'Live') await selectLive()
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === 'validate_workflow_draft') throw { message: 'Variable i is unavailable', step_id: 'out' }
+    return original(command, args)
+  })
+  fireEvent.click(action === 'Validate' ? screen.getByRole('button', { name: 'Validate' }) : runButton(action))
+  await screen.findByText('Validation failed: Variable i is unavailable')
+  expect(runCalls()).toHaveLength(1)
+  const card = screen.getByRole('button', { name: /Step 1.1.1:/ })
+  expect(card.getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(card)
+  expect(within(screen.getByRole('region', { name: 'Properties' })).getByRole('alert').textContent).toBe('Variable i is unavailable')
+  expect(screen.getByText('Message from run 7')).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Page name'), { target: { value: 'Moved' } })
+  expect(card.hasAttribute('aria-invalid')).toBe(false)
+  expect(screen.queryByRole('img', { name: 'Validation warning' })).toBeNull()
+})
+
+test('unlocated validation errors do not guess a card from their message', async () => {
+  await mount()
+  vi.mocked(invoke).mockRejectedValueOnce({ message: 'out has a conflicting Page', step_id: null })
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText('Validation failed: out has a conflicting Page')
+  expect(screen.queryByRole('img', { name: 'Validation warning' })).toBeNull()
+})
+
+test('Workflow shortcuts cut, paste, copy, select siblings and delete while respecting editing and busy state', async () => {
+  await mount()
+  const panel = screen.getByRole('tabpanel', { name: 'Workflow' })
+  const key = (key: string, target = panel) => fireEvent.keyDown(target, { key, ctrlKey: key !== 'Delete' })
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  key('a')
+  expect(card('outer').getAttribute('aria-pressed')).toBe('true')
+  expect(card('inner').getAttribute('aria-pressed')).toBe('false')
+  key('x')
+  expect(screen.queryByRole('button', { name: /Step .*?, outer$/ })).toBeNull()
+  key('v')
+  expect(card('outer').getAttribute('aria-pressed')).toBe('true')
+  expect(card('out')).toBeTruthy()
+  key('c')
+  key('v')
+  expect(card('outer-copy')).toBeTruthy()
+  key('Delete')
+  expect(screen.queryByRole('button', { name: /Step .*?, outer-copy$/ })).toBeNull()
+  fireEvent.click(card('out'))
+  key('a')
+  expect(card('out').getAttribute('aria-pressed')).toBe('true')
+  expect(card('outer').getAttribute('aria-pressed')).toBe('false')
+  const page = screen.getByLabelText('Page name')
+  for (const shortcut of ['x', 'a', 'Delete', 'c', 'v']) key(shortcut, page)
+  expect(card('out').getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  for (const shortcut of ['x', 'Delete', 'v']) key(shortcut)
+  expect(card('out')).toBeTruthy()
+  key('c')
+  await finish(8)
+  key('v')
+  expect(card('out-copy-2')).toBeTruthy()
+})
+
+test('Pointer dragging moves between Root and empty bodies, preserves selection and never triggers validation', async () => {
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  const editor = screen.getByRole('region', { name: 'Sequence' })
+  vi.spyOn(editor, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100, left: 0, right: 100 } as DOMRect)
+  let destination: Element | null = null
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
+  const drag = (id: string, target: Element) => {
+    destination = target
+    const handle = screen.getByRole('button', { name: `Drag ${id} to reorder` })
+    Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    vi.useFakeTimers()
+    const scrollBefore = editor.scrollTop
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 95 })
+    act(() => vi.advanceTimersByTime(100))
+    expect(editor.scrollTop).toBeGreaterThan(scrollBefore)
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 95 })
+    vi.useRealTimers()
+  }
+  const root = screen.getByRole('list', { name: 'Root steps' })
+  drag('outer', screen.getByRole('list', { name: 'Body of inner' }))
+  expect(within(root).getByRole('button', { name: /Step 1:.*outer$/ })).toBeTruthy()
+  drag('out', root)
+  const moved = screen.getByRole('button', { name: /Step 2:.*out$/ })
+  expect(moved.getAttribute('aria-pressed')).toBe('true')
+  expect(within(screen.getByRole('list', { name: 'Body of inner' })).queryByRole('button', { name: /Step / })).toBeNull()
+  drag('out', screen.getByRole('list', { name: 'Body of inner' }))
+  expect(screen.getByRole('button', { name: /Step 1.1.1:.*out$/ }).getAttribute('aria-pressed')).toBe('true')
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft')).toHaveLength(0)
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  expect((screen.getByRole('button', { name: 'Drag out to reorder' }) as HTMLButtonElement).disabled).toBe(true)
+  await finish(8)
 })

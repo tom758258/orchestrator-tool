@@ -8,7 +8,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
-import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, reorderSteps, selectStep, singleSelection, stepClipboardShortcut } from './stepEditing'
+import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
@@ -538,11 +538,41 @@ function App() {
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [validationIssue, setValidationIssue] = useState<{ step_id: string | null; message: string } | null>(null)
+  const validationGenerationRef = useRef(0)
+  const clearValidation = useCallback(() => {
+    validationGenerationRef.current++
+    setValidationIssue(null)
+    setValidationError(null)
+    setValidationStatus('idle')
+  }, [])
+  const validateTemplate = useCallback(async (templateJson: string) => {
+    const generation = ++validationGenerationRef.current
+    setValidationStatus('validating')
+    setValidationIssue(null)
+    setValidationError(null)
+    try {
+      const canonical = await invoke<string>('validate_workflow_draft', { templateJson })
+      if (generation === validationGenerationRef.current) setValidationStatus(validationStatus)
+      return canonical
+    } catch (error) {
+      const issue = typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+        ? { message: error.message, step_id: 'step_id' in error && typeof error.step_id === 'string' ? error.step_id : null }
+        : { message: String(error), step_id: null }
+      if (generation === validationGenerationRef.current) {
+        setValidationIssue(issue)
+        setValidationError(issue.message)
+        setValidationStatus('idle')
+      }
+      throw issue.message
+    }
+  }, [validationStatus])
   const [stepSelection, setStepSelection] = useState<StepSelection>(() => singleSelection(null))
   const selection = reconcileSelection(workflowDraft?.workflow.steps ?? [], stepSelection)
   const { active: selectedStepId, ids: selectedStepIds } = selection
   const setSelectedStepId = useCallback((id: string | null) => setStepSelection(singleSelection(id)), [])
   const stepClipboardRef = useRef<WorkflowStep[]>([])
+  const stepClipboardCutRef = useRef(false)
   const pastedStepIdsRef = useRef(new Set<string>())
   const stepEditingBusyRef = useRef(false)
   useEffect(() => {
@@ -793,11 +823,10 @@ function App() {
         }
       })
       setWorkflowChangedSinceRun(true)
-      setValidationStatus('idle')
-      setValidationError(null)
+      clearValidation()
       setTemplateIoMessage(null)
     },
-    [],
+    [clearValidation],
   )
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
@@ -822,10 +851,9 @@ function App() {
       }
     }
     setWorkflowChangedSinceRun(true)
-    setValidationStatus('idle')
-    setValidationError(null)
+    clearValidation()
     setTemplateIoMessage(null)
-  }, [workflowDraft])
+  }, [workflowDraft, clearValidation])
 
   const addStep = useCallback((preset: StepPresetOption) => {
     if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) {
@@ -949,23 +977,36 @@ function App() {
     [updateSteps, selection, workflowDraft],
   )
 
-  const reorderStep = useCallback((ids: string[], targetId: string, after: boolean) => {
+  const reorderStep = useCallback((ids: string[], parentId: string | null, index: number) => {
     if (stepEditingBusyRef.current || runInFlightRef.current || !workflowDraft) return
-    if (reorderSteps(workflowDraft.workflow.steps, ids, targetId, after) === workflowDraft.workflow.steps) return
-    updateSteps(steps => reorderSteps(steps, ids, targetId, after))
+    if (relocateSteps(workflowDraft.workflow.steps, ids, parentId, index) === workflowDraft.workflow.steps) return
+    updateSteps(steps => relocateSteps(steps, ids, parentId, index))
   }, [updateSteps, workflowDraft])
 
   function handleStepClipboard(event: React.KeyboardEvent<HTMLElement>) {
     const shortcut = stepClipboardShortcut(event, activeTab === 'workflow', isEditableTarget(event.target))
     if (!shortcut || event.defaultPrevented || !workflowDraft) return
-    if (shortcut === 'copy') {
-      if (!selection.ids.length) return
+    if (shortcut === 'select-all') {
+      event.preventDefault()
+      setStepSelection(selectAllSteps(workflowDraft.workflow.steps, selection))
+      return
+    }
+    if (shortcut === 'copy' || shortcut === 'cut') {
+      if (!selection.ids.length || (shortcut === 'cut' && (stepEditingBusyRef.current || runInFlightRef.current))) return
       event.preventDefault()
       stepClipboardRef.current = copySteps(workflowDraft.workflow.steps, selection)
+      stepClipboardCutRef.current = shortcut === 'cut'
+      if (shortcut === 'cut') deleteStep(selection.active!)
+    } else if (shortcut === 'delete') {
+      if (!selection.active || stepEditingBusyRef.current || runInFlightRef.current) return
+      event.preventDefault()
+      deleteStep(selection.active)
     } else {
       if (stepEditingBusyRef.current || runInFlightRef.current || !stepClipboardRef.current.length) return
       event.preventDefault()
-      const pasted = pasteSteps(workflowDraft.workflow.steps, stepClipboardRef.current, selection, pastedStepIdsRef.current)
+      const pasted = pasteSteps(workflowDraft.workflow.steps, stepClipboardRef.current, selection,
+        pastedStepIdsRef.current, stepClipboardCutRef.current)
+      stepClipboardCutRef.current = false
       for (const step of allWorkflowSteps(pasted.steps)) pastedStepIdsRef.current.add(step.id)
       updateSteps(() => pasted.steps)
       setStepSelection(pasted.selection)
@@ -980,18 +1021,15 @@ function App() {
     setValidationStatus('validating')
     setValidationError(null)
     try {
-      const canonicalJson = await invoke<string>('validate_workflow_draft', {
-        templateJson: templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate),
-      })
+      const canonicalJson = await validateTemplate(templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate))
       const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       setValidationStatus('valid')
-    } catch (message) {
-      setValidationStatus('idle')
-      setValidationError(String(message))
+    } catch {
+      // validateTemplate presents the authoritative Core error.
     }
-  }, [workflowDraft, chartPanels, saveChartsWithTemplate])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate])
 
   const handleLoadTemplate = useCallback(async () => {
     setTemplateIoStatus('loading')
@@ -1021,8 +1059,8 @@ function App() {
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
+      clearValidation()
       setValidationStatus('valid')
-      setValidationError(null)
       setRunMetadata(null)
       setLastRunExecutionMode(null)
       setExecutionPage(null)
@@ -1064,15 +1102,15 @@ function App() {
       const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
+      clearValidation()
       setValidationStatus('valid')
-      setValidationError(null)
       setTemplateIoMessage('Template saved.')
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
       setTemplateIoStatus('idle')
     }
-  }, [workflowDraft, chartPanels, saveChartsWithTemplate])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate, clearValidation])
 
   const handleBrowseToolExecutable = useCallback(
     async (toolId: string) => {
@@ -1270,6 +1308,7 @@ function App() {
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       if (livePreflight.blocked) return
+      await validateTemplate(JSON.stringify(workflowDraft))
       // Validate before any Last Run state is replaced, so an invalid threshold cannot
       // discard the previous run.
       const chartSampling = chartSamplingOptions.enabled
@@ -1377,7 +1416,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1388,6 +1427,7 @@ function App() {
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
+      await validateTemplate(JSON.stringify(workflowDraft))
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
@@ -1439,7 +1479,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -2337,6 +2377,7 @@ function App() {
                   selectedStepIds={selectedStepIds}
                   onSelectStep={(id, modifiers) => setStepSelection(current => selectStep(workflowDraft.workflow.steps, current, id, modifiers))}
                   onReorderSteps={reorderStep}
+                  validationIssue={validationIssue}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
                   runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_summaries ?? null : null}
@@ -2349,6 +2390,9 @@ function App() {
 
                 <section className="step-properties" aria-labelledby="step-properties-title">
                   <h3 id="step-properties-title">Properties</h3>
+                  {validationIssue?.step_id && selectedStepIds.includes(validationIssue.step_id) && (
+                    <p className="error" role="alert">{validationIssue.message}</p>
+                  )}
 
                   {selectedStepIds.length > 1 && (
                     <p className="step-properties-empty">{selectedStepIds.length} steps selected. Select a single step to edit its properties.</p>

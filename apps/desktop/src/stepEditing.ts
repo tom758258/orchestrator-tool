@@ -79,17 +79,51 @@ export function moveSteps(steps: WorkflowStep[], ids: readonly string[], offset:
   return replaceSiblings(steps, parentId, next)
 }
 
-export function reorderSteps(steps: WorkflowStep[], ids: readonly string[], targetId: string, after: boolean): WorkflowStep[] {
-  const container = selectedContainer(steps, ids)
-  if (!container || ids.includes(targetId) || !container.siblings.some(step => step.id === targetId)) return steps
-  const { siblings, parentId } = container
-  const boundary = siblings.findIndex(step => step.id === targetId) + (after ? 1 : 0)
-  const moving = siblings.filter(step => ids.includes(step.id))
-  const remaining = siblings.filter(step => !ids.includes(step.id))
-  const index = siblings.slice(0, boundary).filter(step => !ids.includes(step.id)).length
+export function canRelocateSteps(steps: readonly WorkflowStep[], ids: readonly string[],
+  parentId: string | null): boolean {
+  const source = selectedContainer(steps, ids)
+  if (!source) return false
+  const moving = source.siblings.filter(step => ids.includes(step.id))
+  const descendants = allWorkflowSteps(moving)
+  const parent = parentId === null ? null : allWorkflowSteps(steps).find(step => step.id === parentId)
+  if (parentId !== null && (!parent || (parent.type !== 'for' && parent.type !== 'while') ||
+    descendants.some(step => step.id === parentId))) return false
+  const depth = parentId === null ? 0 : loopPath(steps, parentId).length + 1
+  return descendants.every(step => (step.type !== 'for' && step.type !== 'while') ||
+    depth + loopPath(moving, step.id).length + 1 <= 5)
+}
+
+// The boundary is measured in the destination list before removing the source.
+export function relocateSteps(steps: WorkflowStep[], ids: readonly string[], parentId: string | null,
+  boundary: number): WorkflowStep[] {
+  if (!canRelocateSteps(steps, ids, parentId)) return steps
+  const source = selectedContainer(steps, ids)!
+  const destination = parentId === null ? steps
+    : (allWorkflowSteps(steps).find(step => step.id === parentId) as Extract<WorkflowStep, { type: 'for' | 'while' }>).steps
+  if (!Number.isInteger(boundary) || boundary < 0 || boundary > destination.length) return steps
+  const moving = source.siblings.filter(step => ids.includes(step.id))
+  const same = source.parentId === parentId
+  const index = same ? destination.slice(0, boundary).filter(step => !ids.includes(step.id)).length : boundary
+  const removed = replaceSiblings(steps, source.parentId, source.siblings.filter(step => !ids.includes(step.id)))
+  const remaining = parentId === null ? removed
+    : (allWorkflowSteps(removed).find(step => step.id === parentId) as Extract<WorkflowStep, { type: 'for' | 'while' }>).steps
   const next = [...remaining.slice(0, index), ...moving, ...remaining.slice(index)]
-  if (next.every((step, index) => step === siblings[index])) return steps
-  return replaceSiblings(steps, parentId, next)
+  if (same && next.every((step, index) => step.id === destination[index].id)) return steps
+  return replaceSiblings(removed, parentId, next)
+}
+
+export function reorderSteps(steps: WorkflowStep[], ids: readonly string[], targetId: string, after: boolean): WorkflowStep[] {
+  const container = stepContainer(steps, targetId)
+  if (!container || ids.includes(targetId)) return steps
+  return relocateSteps(steps, ids, container.parentId,
+    container.siblings.findIndex(step => step.id === targetId) + (after ? 1 : 0))
+}
+
+export function selectAllSteps(steps: readonly WorkflowStep[], selection: StepSelection): StepSelection {
+  const current = reconcileSelection(steps, selection)
+  const siblings = current.active ? stepContainer(steps, current.active)!.siblings : steps
+  const ids = siblings.map(step => step.id)
+  return { ids, active: current.active ?? ids[0] ?? null, anchor: current.anchor ?? ids[0] ?? null }
 }
 
 export function deleteSteps(steps: WorkflowStep[], ids: readonly string[]): WorkflowStep[] {
@@ -111,17 +145,18 @@ function uniqueName(base: string, used: Set<string>, suffix: (index: number) => 
 }
 
 export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowStep[], selection: StepSelection,
-  reservedIds: ReadonlySet<string> = new Set()): {
+  reservedIds: ReadonlySet<string> = new Set(), preserveIds = false): {
   steps: WorkflowStep[]; selection: StepSelection
 } {
   const current = reconcileSelection(steps, selection)
   if (!clipboard.length) return { steps, selection: current }
   const container = current.active ? stepContainer(steps, current.active)! : { siblings: steps, parentId: null }
   const usedIds = new Set([...reservedIds, ...allWorkflowSteps(steps).map(step => step.id)])
+  const keepIds = preserveIds && allWorkflowSteps(clipboard).every(step => !allWorkflowSteps(steps).some(existing => existing.id === step.id))
   const idMap = new Map<string, string>()
   for (const step of allWorkflowSteps(clipboard)) {
     const base = `${step.id}-copy`
-    idMap.set(step.id, uniqueName(base, usedIds, index => `${base}-${index + 1}`))
+    idMap.set(step.id, keepIds ? step.id : uniqueName(base, usedIds, index => `${base}-${index + 1}`))
   }
   const operand = (value: ExpressionOperandWire): ExpressionOperandWire => value.source === 'step-output'
     ? { ...value, step_id: idMap.get(value.step_id) ?? value.step_id } : value
@@ -181,9 +216,16 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
 }
 
 export function stepClipboardShortcut(event: { ctrlKey: boolean; altKey: boolean; shiftKey: boolean; key: string },
-  inWorkflow: boolean, editable: boolean): 'copy' | 'paste' | null {
-  if (!inWorkflow || editable || !event.ctrlKey || event.altKey || event.shiftKey) return null
-  return event.key.toLowerCase() === 'c' ? 'copy' : event.key.toLowerCase() === 'v' ? 'paste' : null
+  inWorkflow: boolean, editable: boolean): 'copy' | 'paste' | 'cut' | 'delete' | 'select-all' | null {
+  if (!inWorkflow || editable || event.altKey || event.shiftKey) return null
+  if (!event.ctrlKey) return event.key === 'Delete' ? 'delete' : null
+  switch (event.key.toLowerCase()) {
+    case 'c': return 'copy'
+    case 'v': return 'paste'
+    case 'x': return 'cut'
+    case 'a': return 'select-all'
+    default: return null
+  }
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

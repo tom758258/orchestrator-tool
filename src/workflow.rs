@@ -603,6 +603,7 @@ impl Workflow {
         struct Visible {
             all: HashSet<StepId>,
             outputs: HashSet<StepId>,
+            variables: HashSet<VariableId>,
         }
 
         fn validate_steps(
@@ -616,6 +617,7 @@ impl Workflow {
         ) -> Result<(), WorkflowError> {
             let mut prior = available.all.clone();
             let mut prior_outputs = available.outputs.clone();
+            let mut prior_variables = available.variables.clone();
             for step in steps {
                 if !seen.insert(step.id().clone()) {
                     return Err(WorkflowError::DuplicateStepId(step.id().clone()));
@@ -631,12 +633,27 @@ impl Workflow {
                             })
                         }
                     };
+                    let check_variable = |variable: &VariableId| {
+                        if prior_variables.contains(variable) {
+                            Ok(())
+                        } else {
+                            Err(WorkflowError::InvalidVariableReference {
+                                step_id: step.id().clone(),
+                                variable: variable.clone(),
+                            })
+                        }
+                    };
                     match input {
                         InputValue::StepOutput(r) => check(r),
+                        InputValue::Variable(variable) => check_variable(variable),
                         InputValue::Expression(e) => {
                             for o in [e.left(), e.right()] {
-                                if let ExpressionOperand::StepOutput(r) = o {
-                                    check(r)?;
+                                match o {
+                                    ExpressionOperand::StepOutput(r) => check(r)?,
+                                    ExpressionOperand::Variable(variable) => {
+                                        check_variable(variable)?
+                                    }
+                                    ExpressionOperand::Literal(_) => {}
                                 }
                             }
                             Ok(())
@@ -650,8 +667,10 @@ impl Workflow {
                             return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
                         let mut child_variables = variables.to_vec();
+                        let mut child_available_variables = prior_variables.clone();
                         if let StepKind::For { variable, .. } = step.kind() {
                             child_variables.push(variable.clone());
+                            child_available_variables.insert(variable.clone());
                         }
                         if let StepKind::While {
                             condition,
@@ -690,6 +709,7 @@ impl Workflow {
                             &Visible {
                                 all: prior.clone(),
                                 outputs: prior_outputs.clone(),
+                                variables: child_available_variables,
                             },
                             &child_path,
                             &child_variables,
@@ -707,6 +727,7 @@ impl Workflow {
                             return Err(WorkflowError::LoopVariableAssignment(step.id().clone()));
                         }
                         validate_input(value)?;
+                        prior_variables.insert(variable.clone());
                     }
                     StepKind::Output { name, value } => {
                         use crate::output_time::OutputTimeFormat;
@@ -915,7 +936,14 @@ pub enum WorkflowError {
     InvalidOutputName(StepId),
     InvalidOutputTimeFormat(StepId),
     DuplicateOutputName(String),
-    InvalidStepOutputReference { step_id: StepId, target: StepId },
+    InvalidStepOutputReference {
+        step_id: StepId,
+        target: StepId,
+    },
+    InvalidVariableReference {
+        step_id: StepId,
+        variable: VariableId,
+    },
     NestedLoop(StepId),
     NestedUnlimitedWhile(StepId),
     InvalidPage(String),
@@ -923,8 +951,41 @@ pub enum WorkflowError {
     LoopVariableAssignment(StepId),
     InvalidRange(String),
     InvalidMessageFields(StepId),
-    MessageTextTooLong { step_id: StepId, limit: usize },
-    MessageFieldNotOutput { step_id: StepId, target: StepId },
+    MessageTextTooLong {
+        step_id: StepId,
+        limit: usize,
+    },
+    MessageFieldNotOutput {
+        step_id: StepId,
+        target: StepId,
+    },
+}
+
+impl WorkflowError {
+    /// Returns a unique offending step when the error carries reliable location data.
+    pub fn step_id(&self) -> Option<&StepId> {
+        match self {
+            Self::InvalidAssertOperator(id)
+            | Self::InvalidWhileOperator(id)
+            | Self::InvalidWhileMaxIterations(id)
+            | Self::EmptyUnlimitedWhileBody(id)
+            | Self::InvalidOutputName(id)
+            | Self::InvalidOutputTimeFormat(id)
+            | Self::NestedLoop(id)
+            | Self::NestedUnlimitedWhile(id)
+            | Self::LoopVariableAssignment(id)
+            | Self::InvalidMessageFields(id)
+            | Self::InvalidStepOutputReference { step_id: id, .. }
+            | Self::InvalidVariableReference { step_id: id, .. }
+            | Self::MessageTextTooLong { step_id: id, .. }
+            | Self::MessageFieldNotOutput { step_id: id, .. } => Some(id),
+            Self::DuplicateStepId(_)
+            | Self::DuplicateOutputName(_)
+            | Self::InvalidPage(_)
+            | Self::PageScopeMismatch(_)
+            | Self::InvalidRange(_) => None,
+        }
+    }
 }
 
 impl fmt::Display for WorkflowError {
@@ -961,6 +1022,10 @@ impl fmt::Display for WorkflowError {
             Self::InvalidStepOutputReference { step_id, target } => write!(
                 formatter,
                 "step {step_id} references step {target}, but {target} is not an earlier step"
+            ),
+            Self::InvalidVariableReference { step_id, variable } => write!(
+                formatter,
+                "step {step_id} references variable {variable}, but it is not available in this scope"
             ),
             Self::DuplicateStepId(step_id) => {
                 write!(formatter, "duplicate workflow step ID {step_id}")
@@ -1436,7 +1501,14 @@ mod tests {
                 message: "Below threshold.".to_owned(),
             },
         );
-        assert!(Workflow::new(vec![prior.clone(), assertion.clone()]).is_ok());
+        let threshold = Step::new(
+            StepId::new("set-threshold").unwrap(),
+            StepKind::SetVariable {
+                variable: VariableId::new("threshold").unwrap(),
+                value: InputValue::Literal(json!(1)),
+            },
+        );
+        assert!(Workflow::new(vec![threshold, prior.clone(), assertion.clone()]).is_ok());
         for steps in [vec![assertion.clone(), prior], vec![assertion]] {
             assert!(matches!(
                 Workflow::new(steps),
@@ -1884,6 +1956,124 @@ mod tests {
             Err(WorkflowError::LoopVariableAssignment(step_id))
                 if step_id.as_str() == "set-voltage"
         ));
+    }
+
+    #[test]
+    fn variable_references_follow_sequential_and_iteration_scopes() {
+        let id = |value: &str| StepId::new(value).unwrap();
+        let variable = |value: &str| VariableId::new(value).unwrap();
+        let read = |step_id: &str, name: &str| {
+            Step::new(
+                id(step_id),
+                StepKind::SetVariable {
+                    variable: variable("result"),
+                    value: InputValue::Variable(variable(name)),
+                },
+            )
+        };
+        let set = |step_id: &str, name: &str| {
+            Step::new(
+                id(step_id),
+                StepKind::SetVariable {
+                    variable: variable(name),
+                    value: InputValue::Literal(json!(1)),
+                },
+            )
+        };
+        let for_loop = |body| {
+            Step::new(
+                id("for"),
+                StepKind::For {
+                    variable: variable("i"),
+                    range: NumericRange::new(decimal("0"), decimal("2"), decimal("1")).unwrap(),
+                    body,
+                },
+            )
+        };
+        let while_loop = |body| {
+            Step::new(
+                id("while"),
+                StepKind::While {
+                    condition: Expression::new(
+                        ExpressionOperand::Variable(variable("count")),
+                        ExpressionOperator::LessThan,
+                        ExpressionOperand::Literal(json!(3)),
+                    ),
+                    max_iterations: Some(2),
+                    body,
+                },
+            )
+        };
+        let invalid = |steps, expected_step: &str| {
+            let error = Workflow::new(steps).unwrap_err();
+            assert_eq!(error.step_id().unwrap().as_str(), expected_step);
+            assert!(matches!(
+                error,
+                WorkflowError::InvalidVariableReference { .. }
+            ));
+        };
+        invalid(vec![read("missing", "x"), set("later", "x")], "missing");
+        invalid(vec![for_loop(vec![]), read("escaped", "i")], "escaped");
+        invalid(
+            vec![for_loop(vec![set("local", "x")]), read("escaped", "x")],
+            "escaped",
+        );
+        invalid(vec![while_loop(vec![])], "while");
+        invalid(
+            vec![
+                set("count", "count"),
+                while_loop(vec![set("local", "x")]),
+                read("escaped", "x"),
+            ],
+            "escaped",
+        );
+        invalid(
+            vec![for_loop(vec![read("before-local", "x"), set("later", "x")])],
+            "before-local",
+        );
+        // Inheritance, non-adjacent assignments, ordinary updates and restored For bindings.
+        assert!(
+            Workflow::new(vec![
+                set("count", "count"),
+                set("outer-i", "i"),
+                for_loop(vec![
+                    read("read-i", "i"),
+                    while_loop(vec![read("inherited", "count"), set("update", "count")])
+                ]),
+                read("after-count", "count"),
+                read("restored-i", "i")
+            ])
+            .is_ok()
+        );
+        // A body-local assignment is visible later in that body and in nested loops.
+        assert!(
+            Workflow::new(vec![for_loop(vec![
+                set("local", "count"),
+                while_loop(vec![read("nested", "count")]),
+                read("sibling", "count")
+            ])])
+            .is_ok()
+        );
+        // Binding operands use the same scope rule as standalone values.
+        let binding = Step::new(
+            id("bound"),
+            StepKind::ToolAction {
+                target: ToolInstanceId::new("meters-1").unwrap(),
+                action: ActionId::new("measure").unwrap(),
+                arguments: json!({}),
+                bindings: [(
+                    "channel".to_owned(),
+                    InputValue::Expression(Expression::new(
+                        ExpressionOperand::Literal(json!(1)),
+                        ExpressionOperator::Add,
+                        ExpressionOperand::Variable(variable("i")),
+                    )),
+                )]
+                .into(),
+            },
+        );
+        invalid(vec![binding.clone()], "bound");
+        assert!(Workflow::new(vec![for_loop(vec![binding])]).is_ok());
     }
 
     #[test]

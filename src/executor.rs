@@ -1263,7 +1263,7 @@ mod tests {
     #[test]
     fn binding_failures_stop_execution_before_dispatch() {
         for (arguments, expected) in [
-            (json!({ "voltage": 0 }), "missing variable missing"),
+            (json!({ "voltage": 0 }), "expression division by zero"),
             (
                 json!([]),
                 "tool action arguments must be a JSON object when bindings are present",
@@ -1278,7 +1278,11 @@ mod tests {
                         arguments,
                         bindings: [(
                             "voltage".to_owned(),
-                            InputValue::Variable(VariableId::new("missing").unwrap()),
+                            InputValue::Expression(Expression::new(
+                                ExpressionOperand::Literal(json!(1)),
+                                ExpressionOperator::Divide,
+                                ExpressionOperand::Literal(json!(0)),
+                            )),
                         )]
                         .into(),
                     },
@@ -1453,7 +1457,11 @@ mod tests {
                 StepId::new("missing-output").unwrap(),
                 StepKind::Output {
                     name: "output-5".to_owned(),
-                    value: InputValue::Variable(VariableId::new("missing").unwrap()),
+                    value: InputValue::Expression(Expression::new(
+                        ExpressionOperand::Literal(json!(1)),
+                        ExpressionOperator::Divide,
+                        ExpressionOperand::Literal(json!(0)),
+                    )),
                 },
             ),
             Step::new(
@@ -1478,7 +1486,7 @@ mod tests {
         assert_eq!(
             results[0].outcome(),
             &StepOutcome::Failed {
-                message: "missing variable missing".to_owned()
+                message: "expression division by zero".to_owned()
             }
         );
     }
@@ -1623,10 +1631,6 @@ mod tests {
     #[test]
     fn assert_resolution_errors_fail_without_running_later_steps() {
         for (left, expected) in [
-            (
-                ExpressionOperand::Variable(VariableId::new("missing").unwrap()),
-                "missing variable missing",
-            ),
             (
                 ExpressionOperand::StepOutput(StepOutputReference::new(
                     StepId::new("prior").unwrap(),

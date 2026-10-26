@@ -2,12 +2,13 @@ use std::{collections::HashMap, time::Duration};
 
 use orchestrator_tool::{
     run::run_simulated_workflow,
-    template::Template,
+    template::{Template, TemplateError},
     tool::ToolId,
     tool_instance::{ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
-        ActionId, InputValue, OutputProjectionError, Step, StepId, StepKind, StepOutcome,
-        StepResult, VariableId, Workflow, WorkflowError,
+        ActionId, Expression, ExpressionOperand, ExpressionOperator, InputValue,
+        OutputProjectionError, Step, StepId, StepKind, StepOutcome, StepResult, VariableId,
+        Workflow, WorkflowError,
     },
 };
 use serde_json::json;
@@ -252,7 +253,11 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
             StepId::new("set-x").unwrap(),
             StepKind::SetVariable {
                 variable: VariableId::new("x").unwrap(),
-                value: InputValue::Variable(VariableId::new("missing").unwrap()),
+                value: InputValue::Expression(Expression::new(
+                    ExpressionOperand::Literal(json!(1)),
+                    ExpressionOperator::Divide,
+                    ExpressionOperand::Literal(json!(0)),
+                )),
             },
         ),
         output_step(
@@ -510,6 +515,11 @@ fn while_precondition_and_guard_allow_exactly_the_limit() {
     );
     let mut unresolved = while_wire(2, 3);
     unresolved["workflow"]["steps"][1]["left"]["variable"] = json!("missing");
+    assert!(matches!(Template::from_json_str(&unresolved.to_string()),
+        Err(TemplateError::Workflow(WorkflowError::InvalidVariableReference { step_id, .. }))
+            if step_id.as_str() == "repeat"));
+    // Value-dependent condition failures still use the runtime fail-fast path.
+    unresolved["workflow"]["steps"][1]["left"] = json!({"source":"literal","value":"text"});
     let (failed, _) = execute_while_wire(&unresolved);
     assert_eq!(failed.step_executions().len(), 2);
     assert!(matches!(
@@ -583,7 +593,7 @@ fn while_validation_rejects_invalid_conditions_and_guards() {
     ] {
         outer["steps"] = json!([inner]);
         let mut wire = base.clone();
-        wire["workflow"]["steps"] = json!([outer]);
+        wire["workflow"]["steps"] = json!([base["workflow"]["steps"][0], outer]);
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
     }
 }

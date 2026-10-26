@@ -326,19 +326,42 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shift 點擊時，
 會改為該處的新選取。**Properties** 只可編輯單一 step；多選時顯示選取數量。
 
-拖曳 step 旁的 handle 可在同一 list 內排序；目標上方或下方的線表示插入位置。
-拖曳已選取的 step 會一起搬動整個 selection，包括不相鄰的 steps，並保持彼此
-原本的相對順序。拖曳接近 Sequence 上下邊界時會自動捲動。不能在 root 與 loop
-body 間，或不同 body 間拖曳。**Up**／**Down** 也會將 selection 移動一個位置；
-任何選取 step 已碰到該方向邊界時會停用。對已選取 step 按 **Delete** 會刪除整個
-selection；對未選取 step 按 Delete 只刪除該 step。刪除 loop 也會刪除其 body。
+拖曳 step 旁的 handle 可排序，也可在 Root、For Body 與 While Body 間搬移。
+拖到卡片上半部或下半部可插入其前方或後方；拖到 Body 空白處可加到最後，
+空白 Body 也可接收。插入線會顯示目標位置。拖到 Root list 最後的空白處即可
+移回 Root。拖曳已選取 step 會搬移整個 selection，包括不相鄰的 steps，並保持
+原本相對順序。搬移 Loop 會保留整個 Body；ID、參數、Binding 與引用皆保留。
+Editor 禁止將 Loop 放入自己或其子孫，以及超過五層 Loop 巢狀深度；拖曳時
+不驗證執行語意。接近 Sequence 上下邊界時會自動捲動。
 
-焦點位於 Workflow editor 時，**Ctrl+C** 複製選取的 steps，**Ctrl+V** 貼到
-最後一個選取 step 後；沒有 selection 時貼到 root 最後。貼上的 steps 會成為
-新 selection。複本在這次 application session 內可重複使用；文字與表單控制項
-保留原生 clipboard 行為。Workflow busy 時仍可選取與 Copy，但 Drag、Up／Down、
-Delete 與 Paste 會停用。若後續 steps 引用先前結果，排序後可使用 **Validate**
-檢查。
+**Up**／**Down** 在同一 list 內將 selection 移動一個位置；任何選取 step 碰到
+該方向邊界時會停用。已選取 step 的 **Delete** 按鈕會刪除整個 selection；
+未選取 step 的 Delete 按鈕只刪除該 step。刪除 Loop 也會刪除其 Body。
+
+焦點位於 Workflow editor 時：
+
+- **Ctrl+C** 複製選取的 steps。
+- **Ctrl+X** 剪下選取的 steps 到應用程式內部 Clipboard。首次貼上若無 ID 衝突，
+  保留原 ID 與內部引用；後續重複貼上或首次已有 ID 衝突時，沿用 Copy／Paste
+  的 ID 重配與唯一 Output Name 規則。Output Name 或 Page 衝突也沿用既有 Paste 規則。
+- **Ctrl+V** 貼到最後一個選取 step 後；未選取時貼到 Root 最後。貼上的 steps
+  會成為新 selection。
+- **Delete** 鍵刪除目前 selection；沒有選取 step 時不動作。
+- **Ctrl+A** 全選 active step 的直接 siblings；沒有選取時全選 Root steps，
+  不會同時選取巢狀 Loop Body 內的子 steps。
+
+內部 Clipboard 在本次 application session 內保留。input、textarea、select 與
+可編輯文字保留原生快捷鍵。Workflow busy 時仍可選取與 Copy，但 Drag、Up／Down、
+Cut、Delete 與 Paste 會停用。
+
+**Validate**、**Run Simulation** 與 **Run Live** 使用相同的 Core Template 驗證。
+失敗時保留整體錯誤訊息；若錯誤能可靠定位 Step，該卡片會有紅框與警告圖示，
+選取後可在 Properties 查看原因。無法可靠定位的錯誤只顯示整體訊息。
+修改 Workflow 後會清除舊標記，下次 Validate 或 Run 才重新檢查。
+無效 Template 不會啟動 Worker。搬移後可使用 Validate 檢查引用與作用域：
+For 變數不能在 Body 外使用，除非該外層作用域原本已有該變數值。
+在 Loop 內新建的一般變數限該次迭代使用；更新繼承變數的值則會保留。
+驗證會檢出可靜態確定無法取得的變數，需要實際值才能判斷的錯誤仍由執行期處理。
 
 ### 6.1 Input values 與 data flow
 
@@ -610,7 +633,8 @@ Scopes 的 Workflow 固定參數及 Setup。**Live Preflight: Checking** 表示�
 更換 Template、修改 Workflow 參數或 Setup、保存 Resource／型號，或更換 Powers／Scopes
 executable，都會使舊結果失效並重新檢查。Resource 或 identity draft 變更必須先保存。
 For／While 內的固定值也會檢查，但不執行迴圈；被 binding 覆蓋的值仍由 Worker 在執行時
-驗證。Preflight 不會修改 Template 或自動替換成支援的通道。Simulation 不受影響。
+驗證。Preflight 不會修改 Template 或自動替換成支援的通道。自動檢查不驗證
+Workflow 引用或作用域；完整 Template 驗證只在 Validate 或 Run 執行。Simulation 不受影響。
 
 後端在啟動 Worker、建立 Powers write authorization 或替換 Last Run 前，會再次檢查
 當次已保存的設定。Preflight 拒絕執行時會保留原 Last Run、結果與 Output，並顯示為

@@ -4,7 +4,7 @@ import { stripTypeScriptTypes } from 'node:module'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import {
-  canMoveSteps, copySteps, deleteSteps, moveSteps, pasteSteps, reconcileSelection,
+  canMoveSteps, canRelocateSteps, copySteps, deleteSteps, moveSteps, pasteSteps, reconcileSelection, relocateSteps, selectAllSteps,
   reorderSteps, selectStep, singleSelection, stepClipboardShortcut,
 } from '../src/stepEditing.ts'
 import { allWorkflowSteps, loopPath } from '../src/workflow.ts'
@@ -75,15 +75,15 @@ test('Drag reorders single and non-contiguous selections before or after a sibli
   }
 })
 
-test('Nested For and While reorder stays in the exact sibling container', () => {
+test('Nested For and While reorder preserves the destination sibling container', () => {
   const steps = [loop('outer', [whileLoop('inner', ['a', 'b', 'c', 'd'].map(wait)), wait('e')]), wait('root')]
   const nested = reorderSteps(steps, ['a', 'c'], 'd', true)
   assert.deepEqual(ids(nested[0].steps[0].steps), ['b', 'd', 'a', 'c'])
   assert.deepEqual(ids(moveSteps(steps, ['b', 'd'], -1)[0].steps[0].steps), ['b', 'a', 'd', 'c'])
   assert.deepEqual(ids(reorderSteps(steps, ['e'], 'inner', false)[0].steps), ['e', 'inner'])
-  for (const [selected, target] of [[['a'], 'root'], [['root'], 'b'], [['a'], 'e'], [['a', 'e'], 'b']]) {
-    assert.equal(reorderSteps(steps, selected, target, true), steps)
-  }
+  assert.deepEqual(ids(reorderSteps(steps, ['a'], 'root', true)), ['outer', 'root', 'a'])
+  assert.deepEqual(ids(reorderSteps(steps, ['root'], 'b', true)[0].steps[0].steps), ['a', 'b', 'root', 'c', 'd'])
+  assert.equal(reorderSteps(steps, ['a', 'e'], 'b', true), steps)
   assert.equal(moveSteps(steps, ['a', 'e'], 1), steps)
 })
 
@@ -200,7 +200,12 @@ test('Clipboard shortcuts are confined to Workflow and preserve native editable 
   assert.equal(stepClipboardShortcut(event, false, false), null)
   assert.equal(stepClipboardShortcut(event, true, true), null)
   assert.equal(stepClipboardShortcut({ ...event, ctrlKey: false }, true, false), null)
-  assert.equal(stepClipboardShortcut({ ...event, key: 'x' }, true, false), null)
+  for (const [key, action] of [['x', 'cut'], ['a', 'select-all']]) {
+    assert.equal(stepClipboardShortcut({ ...event, key }, true, false), action)
+    assert.equal(stepClipboardShortcut({ ...event, key }, true, true), null)
+  }
+  assert.equal(stepClipboardShortcut({ ...event, key: 'Delete', ctrlKey: false }, true, false), 'delete')
+  assert.equal(stepClipboardShortcut({ ...event, key: 'Delete', ctrlKey: false }, false, false), null)
   const source = readFileSync(new URL('../src/stepEditing.ts', import.meta.url), 'utf8')
   class Element {
     constructor(control = false, editable = false) { this.control = control; this.isContentEditable = editable }
@@ -217,102 +222,62 @@ test('Clipboard shortcuts are confined to Workflow and preserve native editable 
   assert.equal(guard(null), false)
 })
 
-const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
-function callback(name, next, context) {
-  const start = app.indexOf(`  const ${name} = useCallback(`)
-  const declaration = app.slice(start, app.indexOf(`  const ${next} =`, start))
-  const body = declaration.slice(declaration.indexOf('\n    (') + 5, declaration.lastIndexOf('\n    },') + 6)
-  return runInNewContext(stripTypeScriptTypes('(' + body + ')'), context)
-}
 
-test('App Delete acts on the selection only for a selected row; busy mutations are blocked', () => {
-  const original = ['a', 'b', 'c', 'd'].map(wait)
-  const selected = selection('b', 'd')
-  for (const [target, expected] of [['b', ['a', 'c']], ['c', ['a', 'b', 'd']]]) {
-    let steps = original
-    let current = selected
-    const context = {
-      workflowDraft: { workflow: { steps } }, selection: selected,
-      stepEditingBusyRef: { current: false }, runInFlightRef: { current: false },
-      updateSteps: update => { steps = update(steps) },
-      setStepSelection: update => { current = update(current) }, deleteSteps, reconcileSelection,
-    }
-    const remove = callback('deleteStep', 'clearWorkflow', context)
-    remove(target)
-    assert.deepEqual(ids(steps), expected)
-    assert.deepEqual(current.ids, target === 'b' ? [] : selected.ids)
-    context.stepEditingBusyRef.current = true
-    remove('a')
-    assert.deepEqual(ids(steps), expected)
-  }
+test('Cross-level moves preserve non-contiguous order, values and complete subtrees without duplicating ancestors', () => {
+  const tool = { type: 'tool-action', id: 'tool', target: 'meter', action: 'measure',
+    arguments: { channel: 1 }, bindings: { voltage: ref('external') } }
+  const steps = [wait('external'), tool, wait('gap'), output('out', 'Results', 'Reading', ref('tool')),
+    loop('for', [whileLoop('while', [])]), wait('tail')]
+  const original = structuredClone(steps)
+  const moved = relocateSteps(steps, ['out', 'tool'], 'while', 0)
+  assert.deepEqual(ids(moved), ['external', 'gap', 'for', 'tail'])
+  assert.deepEqual(moved[2].steps[0].steps, [tool, steps[3]])
+  assert.deepEqual(reconcileSelection(moved, selection('tool', 'out')), selection('tool', 'out'))
+  const root = relocateSteps(moved, ['tool', 'out'], null, 4)
+  assert.deepEqual(ids(root), ['external', 'gap', 'for', 'tail', 'tool', 'out'])
+  assert.deepEqual(root[2].steps[0].steps, [])
+  const forBody = relocateSteps(moved, ['tool', 'out'], 'for', 0)
+  assert.deepEqual(ids(forBody[2].steps), ['tool', 'out', 'while'])
+  assert.deepEqual(forBody[2].steps[2].steps, [])
+  const withLoop = relocateSteps(steps, ['for'], null, 0)
+  assert.deepEqual(withLoop[0], steps[4])
+  assert.deepEqual(steps, original)
+  assert.equal(new Set(ids(allWorkflowSteps(root))).size, allWorkflowSteps(root).length)
 })
 
-test('App move and drag callbacks reject busy, boundary and cross-container mutations', () => {
-  const original = [wait('a'), wait('b'), wait('c'), loop('for', [wait('child')])]
-  let steps = original
-  let updates = 0
-  const context = {
-    workflowDraft: { workflow: { steps } }, selection: selection('b', 'c'),
-    stepEditingBusyRef: { current: false }, runInFlightRef: { current: false },
-    canMoveSteps, moveSteps, reorderSteps,
-    updateSteps: update => { steps = update(steps); context.workflowDraft.workflow.steps = steps; updates++ },
+test('Cross-level drops reject self, descendants, mixed selections and depth beyond five', () => {
+  const deep = loop('one', [whileLoop('two', [loop('three', [whileLoop('four', [loop('five', [])])])])])
+  const steps = [deep, loop('moving', [wait('child')])]
+  for (const parent of ['moving', 'child', 'five', 'missing']) {
+    assert.equal(canRelocateSteps(steps, ['moving'], parent), false)
+    assert.equal(relocateSteps(steps, ['moving'], parent, 0), steps)
   }
-  const move = callback('moveStep', 'reorderStep', context)
-  const start = app.indexOf('  const reorderStep = useCallback(')
-  const declaration = app.slice(start, app.indexOf('  function handleStepClipboard', start))
-  const body = declaration.slice(declaration.indexOf('useCallback(') + 'useCallback('.length, declaration.lastIndexOf('},') + 1)
-  const reorder = runInNewContext(stripTypeScriptTypes('(' + body + ')'), context)
-  reorder(['b'], 'child', true)
-  reorder(['b'], 'b', false)
-  context.selection = singleSelection('a')
-  move('a', -1)
-  assert.equal(updates, 0)
-  for (const guard of [context.stepEditingBusyRef, context.runInFlightRef]) {
-    guard.current = true
-    move('b', -1)
-    reorder(['b'], 'a', false)
-    assert.equal(updates, 0)
-    guard.current = false
-  }
-  context.selection = selection('b', 'c')
-  move('b', -1)
-  assert.deepEqual(ids(steps), ['b', 'c', 'a', 'for'])
-  reorder(['b', 'c'], 'for', true)
-  assert.deepEqual(ids(steps), ['a', 'for', 'b', 'c'])
+  assert.equal(canRelocateSteps(steps, ['one'], 'two'), false)
+  assert.equal(canRelocateSteps(steps, ['moving', 'child'], null), false)
+  assert.equal(canRelocateSteps(steps, ['moving'], 'four'), true)
+  assert.equal(canRelocateSteps(steps, ['child'], 'five'), true)
 })
 
-test('App Copy remains available while busy; Paste is guarded and selects fresh copies', () => {
-  const steps = ['a', 'b', 'c'].map(wait)
-  const context = {
-    workflowDraft: { workflow: { steps } }, selection: selection('a', 'b'), activeTab: 'workflow',
-    stepEditingBusyRef: { current: true }, runInFlightRef: { current: false },
-    stepClipboardRef: { current: [] }, pastedStepIdsRef: { current: new Set() },
-    stepClipboardShortcut, isEditableTarget: target => target === 'input', copySteps, pasteSteps, allWorkflowSteps,
-    updateSteps: update => { context.workflowDraft.workflow.steps = update(context.workflowDraft.workflow.steps) },
-    setStepSelection: next => { context.selection = next },
-  }
-  const start = app.indexOf('  function handleStepClipboard(')
-  const body = app.slice(start, app.indexOf('  const validateDraft =', start))
-  const shortcut = runInNewContext(stripTypeScriptTypes('(' + body + ')'), context)
-  const event = key => ({ key, ctrlKey: true, altKey: false, shiftKey: false, target: 'card', preventDefault() { this.prevented = true } })
-  const copy = event('c')
-  shortcut(copy)
-  assert.equal(copy.prevented, true)
-  assert.deepEqual(ids(context.stepClipboardRef.current), ['a', 'b'])
-  const busyPaste = event('v')
-  shortcut(busyPaste)
-  assert.deepEqual(ids(context.workflowDraft.workflow.steps), ['a', 'b', 'c'])
-  context.stepEditingBusyRef.current = false
-  context.runInFlightRef.current = true
-  shortcut(event('v'))
-  assert.deepEqual(ids(context.workflowDraft.workflow.steps), ['a', 'b', 'c'])
-  context.runInFlightRef.current = false
-  const nativePaste = { ...event('v'), target: 'input' }
-  shortcut(nativePaste)
-  assert.equal(nativePaste.prevented, undefined)
-  shortcut(event('v'))
-  assert.deepEqual(context.selection.ids, ['a-copy', 'b-copy'])
-  shortcut(event('v'))
-  assert.deepEqual(context.selection.ids, ['a-copy-2', 'b-copy-2'])
-  assert.deepEqual(ids(context.workflowDraft.workflow.steps), ['a', 'b', 'a-copy', 'b-copy', 'a-copy-2', 'b-copy-2', 'c'])
+test('Cut paste preserves IDs and references once, then follows copy conflict rules', () => {
+  const source = [wait('tool'), output('out', 'Results', 'Reading', ref('tool'))]
+  const clipboard = copySteps(source, selection('tool', 'out'))
+  const removed = deleteSteps(source, ['tool', 'out'])
+  const moved = pasteSteps(removed, clipboard, singleSelection(null), new Set(['tool', 'out']), true)
+  assert.deepEqual(moved.steps, source)
+  const repeated = pasteSteps(moved.steps, clipboard, moved.selection)
+  assert.deepEqual(ids(repeated.steps), ['tool', 'out', 'tool-copy', 'out-copy'])
+  assert.equal(repeated.steps[3].name, 'Reading Copy')
+  assert.deepEqual(repeated.steps[3].value, ref('tool-copy'))
+  const conflict = pasteSteps([wait('tool'), output('existing', 'Results', 'Reading')], clipboard, singleSelection(null), new Set(), true)
+  assert.deepEqual(ids(conflict.steps).slice(2), ['tool-copy', 'out-copy'])
+  assert.equal(conflict.steps[3].name, 'Reading Copy')
+  assert.deepEqual(conflict.steps[3].value, ref('tool-copy'))
+})
+
+test('Select all uses direct siblings and preserves the active step and Shift anchor', () => {
+  const steps = [wait('root'), loop('for', [wait('a'), wait('b'), whileLoop('while', [wait('c')])])]
+  assert.deepEqual(selectAllSteps(steps, singleSelection(null)), { ids: ['root', 'for'], active: 'root', anchor: 'root' })
+  assert.deepEqual(selectAllSteps(steps, selection('a', 'b')), { ids: ['a', 'b', 'while'], active: 'b', anchor: 'a' })
+  assert.deepEqual(selectAllSteps(steps, singleSelection('c')), singleSelection('c'))
+  assert.deepEqual(selectAllSteps([], singleSelection(null)), singleSelection(null))
 })

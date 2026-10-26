@@ -389,23 +389,51 @@ Multi-selection stays within one sibling list: root steps or the body of one
 For or While. Ctrl/Shift-clicking another list starts a new selection there.
 **Properties** can edit only one step; multiple selected steps show their count.
 
-Drag the handle beside a step to reorder it within its list. The line above or
-below the target shows the insertion position. Dragging a selected step moves
-the whole selection together, including non-adjacent steps, in their original
-relative order. The Sequence scrolls when dragging near its top or bottom edge.
-Steps cannot be dragged between root and loop bodies or between different bodies.
-**Up** / **Down** also move the selection one position; the operation is disabled
-when any selected step reaches that boundary. **Delete** on a selected step
-deletes the selection; Delete on an unselected step deletes only that step.
-Deleting a loop also deletes its body.
+Drag the handle beside a step to reorder it or move it between Root, For bodies,
+and While bodies. Drop on a card's upper or lower half to insert before or after
+it; drop in a body's blank area to append, including empty bodies. The insertion
+line shows the destination. Use the blank area at the end of the Root list to
+move steps back to Root. Dragging a selected step moves the whole selection,
+including non-adjacent steps, in their original relative order. Moving a loop
+keeps its whole body. IDs, parameters, bindings and references are preserved.
+The editor prevents moving a loop into itself or a descendant and prevents loop
+depth beyond five. It does not validate execution semantics during dragging.
+The Sequence scrolls when dragging near its top or bottom edge.
 
-With focus in the Workflow editor, **Ctrl+C** copies the selected steps and
-**Ctrl+V** pastes after the last selected step, or at the root end when none is
-selected. The pasted steps become the new selection. Copies remain available
-for this application session; text and form controls keep their normal clipboard
-behavior. While the Workflow is busy, selection and Copy remain available,
-but dragging, Up/Down, Delete and Paste are disabled. Use **Validate** after
-reordering if later steps depend on earlier results.
+**Up** / **Down** move the selection one position within its list; the operation
+is disabled when any selected step reaches that boundary. The **Delete** button
+on a selected step deletes the selection; on an unselected step it deletes only
+that step. Deleting a loop also deletes its body.
+
+With focus in the Workflow editor:
+
+- **Ctrl+C** copies the selected steps.
+- **Ctrl+X** cuts the selected steps to the application's internal clipboard.
+  The first paste preserves original IDs and internal references when IDs do not
+  conflict. Later pastes, or a conflicting first paste, use Copy/Paste ID remapping
+  and unique Output names. Output name or Page conflicts follow existing Paste rules.
+- **Ctrl+V** pastes after the last selected step, or at the Root end when none is
+  selected. The pasted steps become the new selection.
+- **Delete** deletes the current selection; without a selection it does nothing.
+- **Ctrl+A** selects the direct siblings of the active step, or Root steps if
+  nothing is selected. It does not also select steps inside nested loop bodies.
+
+The internal clipboard lasts for this application session. Inputs, text areas,
+selects and editable text keep their native shortcuts. While the Workflow is
+busy, selection and Copy remain available, but dragging, Up/Down, Cut, Delete
+and Paste are disabled.
+
+**Validate**, **Run Simulation**, and **Run Live** use the same Core Template
+validation. On failure, the overall error remains visible. When the error
+reliably identifies a step, its card has a red border and warning icon; select
+it to see the reason in Properties. Errors without a reliable step location
+remain overall errors. Editing the Workflow clears old validation marks; only
+the next Validate or Run checks again. Invalid Templates do not start workers.
+Use Validate after moving steps to check references and scopes: a For variable
+cannot be used outside its body unless a value already exists in that enclosing
+scope. Ordinary variables created inside a loop are local to each iteration;
+updates to inherited variables persist. Validation checks statically unavailable
+variables, while value-dependent errors remain runtime checks.
 
 ### 6.1 Input values and data flow
 
@@ -718,7 +746,9 @@ Powers/Scopes executable invalidates the previous result and triggers another
 check. Save any Resource or identity draft changes first. Fixed values inside
 For/While are checked without running the loops; values overridden by bindings
 remain subject to Worker runtime validation. Preflight never changes your
-Template or substitutes a supported channel. Simulation is unaffected.
+Template or substitutes a supported channel. This automatic check does not validate
+Workflow references or scopes; use Validate or Run for full Template validation.
+Simulation is unaffected.
 
 The backend checks the current saved settings again before starting Workers,
 creating Powers write authorization, or replacing Last Run. A rejected

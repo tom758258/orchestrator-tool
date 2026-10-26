@@ -4,8 +4,8 @@ use calamine::{Data, Reader, Xlsx};
 use orchestrator_tool::{
     executor::execute_workflow_with_loop_stop,
     run::ExecutionMode,
-    template::Template,
-    workflow::{StepOutcome, WorkflowRunEvent, WorkflowRunResult},
+    template::{Template, TemplateError},
+    workflow::{StepOutcome, WorkflowError, WorkflowRunEvent, WorkflowRunResult},
     workflow_export::{page_csv, page_datasets, pages_xlsx},
 };
 use serde_json::{Value, json};
@@ -20,13 +20,12 @@ fn for_loop(id: &str, variable: &str, stop: &str, steps: Vec<Value>) -> Value {
         "range":{"start":"1", "stop":stop, "step":"1"}, "steps":steps})
 }
 
-fn template(steps: Vec<Value>) -> Result<Template, String> {
+fn template(steps: Vec<Value>) -> Result<Template, TemplateError> {
     Template::from_json_str(
         &json!({"schema_version":1, "name":"Nested", "tool_instances":[],
         "workflow":{"steps":steps}})
         .to_string(),
     )
-    .map_err(|e| e.to_string())
 }
 
 fn fixture(fail: bool) -> Template {
@@ -104,13 +103,19 @@ fn depth_paths_and_unlimited_validation() {
     assert!(
         template(vec![for_loop("parent", "x", "1", vec![unlimited.clone()])])
             .unwrap_err()
+            .to_string()
             .contains("Unlimited")
     );
     let mut finite = unlimited.clone();
     finite["id"] = json!("finite");
     finite["max_iterations"] = json!(2);
     finite["steps"] = json!([unlimited]);
-    assert!(template(vec![finite]).unwrap_err().contains("Unlimited"));
+    assert!(
+        template(vec![finite])
+            .unwrap_err()
+            .to_string()
+            .contains("Unlimited")
+    );
     let siblings = vec![
         for_loop("y-loop", "y", "2", vec![output("b", "Shared", "y")]),
         for_loop("z-loop", "z", "2", vec![output("c", "Shared", "z")]),
@@ -118,6 +123,7 @@ fn depth_paths_and_unlimited_validation() {
     assert!(
         template(vec![for_loop("x-loop", "x", "1", siblings)])
             .unwrap_err()
+            .to_string()
             .contains("loop paths")
     );
     for name in ["../bad", "CON", "bad.", "bad/name", "", "History"] {
@@ -230,16 +236,17 @@ fn child_bindings_and_step_outputs_do_not_leak() {
             vec![output("sibling-y", "Sibling", "y")],
         ),
     ] {
-        let template = template(vec![for_loop(
+        let error = template(vec![for_loop(
             "outer",
             "x",
             "1",
             vec![child.clone(), after],
         )])
-        .unwrap();
-        let (result, _) = run(&template, None);
-        assert_eq!(count(&result, "Child"), 1);
-        assert!(result.step_executions().iter().any(|e| matches!(e.outcome(), StepOutcome::Failed { message } if message.contains("missing variable y"))));
+        .unwrap_err();
+        assert!(
+            matches!(error, TemplateError::Workflow(WorkflowError::InvalidVariableReference { variable, .. })
+            if variable.as_str() == "y")
+        );
     }
     let mut reference = output("after-ref", "Outer", "x");
     reference["value"] = json!({"source":"step-output", "step_id":"child-out", "pointer":""});
@@ -341,14 +348,18 @@ fn finite_while_nesting_preserves_inherited_updates_and_hides_child_locals() {
     "right":{"source":"literal", "value":2}, "steps":[
         for_loop("outer", "x", "1", vec![child, output("outer-count", "Outer", "counter")])
     ]});
-    let template = template(vec![
+    let mut steps = vec![
         set("init", "counter", literal(0)),
         outer,
         output("after-count", "Root", "counter"),
-        output("after-local", "Root", "local"),
-    ])
-    .unwrap();
-    let (result, _) = run(&template, None);
+    ];
+    let valid = template(steps.clone()).unwrap();
+    steps.push(output("after-local", "Root", "local"));
+    assert!(
+        matches!(template(steps), Err(TemplateError::Workflow(WorkflowError::InvalidVariableReference { step_id, .. }))
+        if step_id.as_str() == "after-local")
+    );
+    let (result, _) = run(&valid, None);
     assert_eq!(
         (
             count(&result, "Deep"),
@@ -364,6 +375,8 @@ fn finite_while_nesting_preserves_inherited_updates_and_hides_child_locals() {
             .any(|e| e.step_id().as_str() == "after-count"
                 && matches!(e.outcome(), StepOutcome::Succeeded { output } if output.as_f64() == Some(2.0)))
     );
-    assert!(matches!(result.step_executions().last().unwrap().outcome(),
-        StepOutcome::Failed { message } if message.contains("missing variable local")));
+    assert!(matches!(
+        result.step_executions().last().unwrap().outcome(),
+        StepOutcome::Succeeded { .. }
+    ));
 }
