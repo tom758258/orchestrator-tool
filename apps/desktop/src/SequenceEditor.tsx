@@ -287,7 +287,7 @@ function SequenceEditor({
                   </span>
                 </button>
               </div>
-              <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`}>
+              <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`} data-step-drop-id={step.id}>
                 <button className="action-button" type="button"
                   disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], -1)}
                   onClick={() => onMoveStep(step.id, -1)}>

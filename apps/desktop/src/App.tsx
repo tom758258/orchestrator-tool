@@ -1308,7 +1308,12 @@ function App() {
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       if (livePreflight.blocked) return
-      await validateTemplate(JSON.stringify(workflowDraft))
+      try {
+        await validateTemplate(JSON.stringify(workflowDraft))
+      } catch {
+        // validateTemplate presents this error; finally still releases the run gate.
+        return
+      }
       // Validate before any Last Run state is replaced, so an invalid threshold cannot
       // discard the previous run.
       const chartSampling = chartSamplingOptions.enabled
@@ -1427,7 +1432,12 @@ function App() {
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
-      await validateTemplate(JSON.stringify(workflowDraft))
+      try {
+        await validateTemplate(JSON.stringify(workflowDraft))
+      } catch {
+        // validateTemplate presents this error; finally still releases the run gate.
+        return
+      }
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null

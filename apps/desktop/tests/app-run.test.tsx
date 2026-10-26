@@ -5,7 +5,7 @@ import { confirm, open } from '@tauri-apps/plugin-dialog'
 import type { ComponentProps } from 'react'
 import App from '../src/App'
 import type ResultChart from '../src/ResultChart'
-import type { RunMetadataDto, WorkflowRunEventDto } from '../src/workflow'
+import type { ForStep, RunMetadataDto, WorkflowRunEventDto } from '../src/workflow'
 import type { WorkflowDraft } from '../src/templateDraft'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -286,14 +286,43 @@ test.each(['Validate', 'Simulation', 'Live'])('%s presents structured validation
   fireEvent.click(action === 'Validate' ? screen.getByRole('button', { name: 'Validate' }) : runButton(action))
   await screen.findByText('Validation failed: Variable i is unavailable')
   expect(runCalls()).toHaveLength(1)
+  expect(screen.queryByText('Run failed')).toBeNull()
+  expect(screen.queryByText('Live run did not start')).toBeNull()
+  expect(runButton(action === 'Live' ? 'Live' : 'Simulation').disabled).toBe(false)
+  expect((screen.getByRole('button', { name: 'Validate' }) as HTMLButtonElement).disabled).toBe(false)
   const card = screen.getByRole('button', { name: /Step 1.1.1:/ })
   expect(card.getAttribute('aria-invalid')).toBe('true')
+  expect(card.classList.contains('sequence-step-invalid')).toBe(true)
+  expect(screen.getByRole('img', { name: 'Validation warning' })).toBeTruthy()
   fireEvent.click(card)
   expect(within(screen.getByRole('region', { name: 'Properties' })).getByRole('alert').textContent).toBe('Variable i is unavailable')
   expect(screen.getByText('Message from run 7')).toBeTruthy()
+  tab('Output')
+  expect(snapshot().runId).toBe(7)
+  tab('Workflow')
   fireEvent.change(screen.getByLabelText('Page name'), { target: { value: 'Moved' } })
-  expect(card.hasAttribute('aria-invalid')).toBe(false)
+  expect(screen.getByRole('button', { name: /Step 1.1.1:/ }).hasAttribute('aria-invalid')).toBe(false)
   expect(screen.queryByRole('img', { name: 'Validation warning' })).toBeNull()
+  vi.mocked(invoke).mockImplementation(original)
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText('Valid')
+  await waitFor(() => expect(runButton(action === 'Live' ? 'Live' : 'Simulation').disabled).toBe(false))
+  fireEvent.click(runButton(action === 'Live' ? 'Live' : 'Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(2))
+  expect(JSON.parse((runCalls()[1][1] as { templateJson: string }).templateJson).workflow.steps[0].steps[0].steps[0].page).toBe('Moved')
+  await finish(8)
+})
+
+test.each(['Simulation', 'Live'])('%s still presents execution errors after successful validation', async mode => {
+  await mount()
+  if (mode === 'Live') await selectLive()
+  fireEvent.click(runButton(mode))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  await act(async () => run.reject('Worker could not start'))
+  expect(screen.getByText(mode === 'Live' ? 'Live run did not start' : 'Run failed')).toBeTruthy()
+  expect(screen.getByText('Worker could not start')).toBeTruthy()
+  expect(screen.queryByText(/Validation failed:/)).toBeNull()
+  expect(runButton(mode).disabled).toBe(false)
 })
 
 test('unlocated validation errors do not guess a card from their message', async () => {
@@ -340,6 +369,14 @@ test('Workflow shortcuts cut, paste, copy, select siblings and delete while resp
 })
 
 test('Pointer dragging moves between Root and empty bodies, preserves selection and never triggers validation', async () => {
+  const whileStep = { type: 'while' as const, id: 'while', left: { source: 'literal' as const, value: 1 },
+    operator: 'less-than' as const, right: { source: 'literal' as const, value: 0 }, max_iterations: 2, steps: [] }
+  const a = { type: 'wait' as const, id: 'a', duration_ms: 1 }
+  const b = { type: 'wait' as const, id: 'b', duration_ms: 2 }
+  const dragDraft = { ...draft, workflow: { steps: [...draft.workflow.steps, a, whileStep, b] } }
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => command === 'create_workflow_draft'
+    ? JSON.stringify(dragDraft) : original(command, args))
   await mount()
   vi.stubGlobal('PointerEvent', class extends MouseEvent {
     pointerId: number
@@ -349,31 +386,70 @@ test('Pointer dragging moves between Root and empty bodies, preserves selection 
   vi.spyOn(editor, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100, left: 0, right: 100 } as DOMRect)
   let destination: Element | null = null
   Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
-  const drag = (id: string, target: Element) => {
+  const drag = (id: string, target: Element, y = 95) => {
     destination = target
     const handle = screen.getByRole('button', { name: `Drag ${id} to reorder` })
     Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
     fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
     vi.useFakeTimers()
     const scrollBefore = editor.scrollTop
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 95 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: y })
     act(() => vi.advanceTimersByTime(100))
-    expect(editor.scrollTop).toBeGreaterThan(scrollBefore)
-    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 95 })
+    if (y === 95) expect(editor.scrollTop).toBeGreaterThan(scrollBefore)
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: y })
     vi.useRealTimers()
   }
   const root = screen.getByRole('list', { name: 'Root steps' })
   drag('outer', screen.getByRole('list', { name: 'Body of inner' }))
   expect(within(root).getByRole('button', { name: /Step 1:.*outer$/ })).toBeTruthy()
   drag('out', root)
-  const moved = screen.getByRole('button', { name: /Step 2:.*out$/ })
+  const moved = screen.getByRole('button', { name: /Step 5:.*out$/ })
   expect(moved.getAttribute('aria-pressed')).toBe('true')
   expect(within(screen.getByRole('list', { name: 'Body of inner' })).queryByRole('button', { name: /Step / })).toBeNull()
   drag('out', screen.getByRole('list', { name: 'Body of inner' }))
   expect(screen.getByRole('button', { name: /Step 1.1.1:.*out$/ }).getAttribute('aria-pressed')).toBe('true')
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  const ids = (list: HTMLElement) => within(list).getAllByRole('button', { name: /^Step / })
+    .filter(button => button.closest('ol') === list).map(button => button.getAttribute('aria-label')!.split(', ').at(-1))
+  const actions = screen.getByRole('group', { name: 'Actions for outer' })
+  vi.spyOn(actions, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 100 } as DOMRect)
+  for (const name of ['Up', 'Down', 'Delete']) {
+    drag('b', within(actions).getByRole('button', { name }), 25)
+    expect(ids(root)).toEqual(['b', 'outer', 'a', 'while'])
+    drag('b', root)
+    expect(ids(root)).toEqual(['outer', 'a', 'while', 'b'])
+  }
+  vi.spyOn(card('outer').parentElement!, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 100 } as DOMRect)
+  drag('b', card('outer'), 25)
+  expect(ids(root)).toEqual(['b', 'outer', 'a', 'while'])
+  drag('b', card('outer'), 75)
+  expect(ids(root)).toEqual(['outer', 'b', 'a', 'while'])
+  drag('b', root)
+  fireEvent.click(card('a'))
+  fireEvent.click(card('b'), { ctrlKey: true })
+  drag('b', screen.getByRole('list', { name: 'Body of inner' }))
+  expect(ids(screen.getByRole('list', { name: 'Body of inner' }))).toEqual(['out', 'a', 'b'])
+  drag('a', screen.getByRole('list', { name: 'Body of while' }))
+  expect(ids(screen.getByRole('list', { name: 'Body of while' }))).toEqual(['a', 'b'])
+  drag('out', screen.getByRole('list', { name: 'Body of while' }))
+  expect(ids(screen.getByRole('list', { name: 'Body of while' }))).toEqual(['a', 'b', 'out'])
+  fireEvent.click(card('a'))
+  fireEvent.click(card('b'), { ctrlKey: true })
+  drag('a', root)
+  expect(ids(root)).toEqual(['outer', 'while', 'a', 'b'])
+  expect(card('a').getAttribute('aria-pressed')).toBe('true')
+  expect(card('b').getAttribute('aria-pressed')).toBe('true')
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft')).toHaveLength(0)
   fireEvent.click(runButton('Simulation'))
   await waitFor(() => expect(runCalls()).toHaveLength(1))
+  const outer = draft.workflow.steps[0] as ForStep
+  const inner = outer.steps[0] as ForStep
+  expect(JSON.parse((runCalls()[0][1] as { templateJson: string }).templateJson)).toEqual({
+    ...draft, workflow: { steps: [
+      { ...outer, steps: [{ ...inner, steps: [] }] },
+      { ...whileStep, steps: [inner.steps[0]] }, a, b,
+    ] },
+  })
   expect((screen.getByRole('button', { name: 'Drag out to reorder' }) as HTMLButtonElement).disabled).toBe(true)
   await finish(8)
 })
