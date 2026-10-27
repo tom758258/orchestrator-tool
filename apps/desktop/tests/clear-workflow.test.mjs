@@ -16,7 +16,7 @@ const code = stripTypeScriptTypes('(' + callback + ')')
 
 function harness(approved) {
   const original = {
-    schema_version: 1,
+    schema_version: 2,
     name: 'Bench workflow',
     tool_instances: [{
       id: 'meter-1',

@@ -14,6 +14,9 @@ async function component(name, native = {}, source = fs.readFileSync(new URL(`..
     else if (path === './useLivePreflight') modules[path] = {
       useLivePreflight: () => ({ status: 'passed', blocked: false, errors: [], reject: () => {} }),
     }
+    else if (path === './useSimulationSamples') modules[path] = {
+      useSimulationSamples: () => ({ pending: false, dialog: null, request: async () => ({}) }),
+    }
     else if (fs.existsSync(new URL(`../src/${path}.ts`, import.meta.url))) {
       modules[path] = await import(`../src/${path}.ts`)
     } else modules[path] = { default: path.slice(2), ExpressionOperandEditor: 'ExpressionOperandEditor' }
@@ -256,7 +259,8 @@ test('Steps categories keep fixed order and lock only by Template instances in e
   const sections = assertCategories(app, [])
   assert.equal(categoryHeader(sections[0]).props['aria-expanded'], true)
   assert.deepEqual(categorySteps(sections[0]).map(text),
-    ['While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
+    ['Background Worker ON', 'Background Worker OFF', 'Background Capture ON', 'Background Capture OFF',
+      'While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
 
   const meters = { id: 'meters-1', tool: 'meters', setup: {} }
   app.render().find(node => node.type === 'ToolSetupEditor').props.onChange([meters])

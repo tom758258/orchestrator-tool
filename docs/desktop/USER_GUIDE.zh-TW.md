@@ -466,12 +466,15 @@ While condition 會在每次 iteration 前判斷。Iteration limit 可以是：
 在 top-level，body 不可為空，可以包含 finite nested loops，但不可再包含另一個
 Unlimited While。
 
-Simulation 目前不允許 Software Meters **Measure** 位於 Unlimited While 內，
-因為無法建立 finite sample bound。對該 Simulation workflow 設定 finite
-`max_iterations`，或在適合的情況下使用 Live。Live 的 Software Meters Measure
-可以位於 Unlimited While 內，且不會設定 finite `max-samples` limit。
+Software Meters **Measure** 位於 Unlimited While，且 Simulation 無法預先推導
+來源大小時，**Run Simulation** 會顯示 Sample 警告。每個受影響 Instance 的
+**SIM Max Samples** 預設 1,000，可輸入 1 到 1,000,000 的整數或按 Cancel。
+這是本次來源的啟動參數，不是 While 次數限制；不保存至 Template、Setup 或
+Step，也不影響 Live。每次新 Run 重新預設 1,000。來源耗盡後若流程仍要求
+Measure，該 Step 會失敗並執行 Cleanup，不會重啟 Worker。Live Software
+Measure 不會套用這個 Simulation 上限。
 
-所有 Custom trigger mode 在 Simulation 與 Live 都需要 finite maximum trigger
+所有前景 Custom trigger mode 在 Simulation 與 Live 都需要 finite maximum trigger
 count。計算時會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence
 乘上外層 For iteration counts 與 finite While `max_iterations`。Custom Measure 位於
 Unlimited While 內時會被拒絕。Trigger Count 與 Sample Count 各自沿用 meters-tool
@@ -619,7 +622,8 @@ manifest 與 Worker compatibility checks 通過。需要明確檢查 Template �
 Simulation 不需要 Live Resources，會使用 external Workers 的 simulate contract，
 不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
 powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
-Live hardware validation。前述 Unlimited While 加上 Meters Measure 的限制仍然適用。
+Live hardware validation。無法推導數量的 Simple Software 來源會顯示本次執行的
+Sample 警告；Foreground Custom Unlimited 仍不支援。
 
 ## 8. Run Live
 
@@ -673,13 +677,71 @@ runtime authorization file 只用於該次 run，並會 best-effort remove。
 會在相同 cleanup 位置透過 powers-tool 送出 simulated Safe-Off，但不宣稱真實
 outputs 已被改變。
 
+## Background Streaming
+
+在 **Tool Setup** 選擇 **Meters Immediate Custom**，再勾選 **Use this
+instance as a Background**。其他 Meters 模式、Scopes、Powers 和 Wavegen 的
+Background Streaming 會顯示 Unsupported。未綁定 Background 的 Instance
+仍可使用原有前景 Actions。綁定的 Instance 不可同時執行前景 Tool Action，
+同一 Run 內兩個 Instance 也不可共用同一個 Live Resource。
+
+每個綁定有固定 Background ID。來源可選有限 Trigger Count 或 **Native
+Infinite**；Sample Count 與 Tool 的 Overflow Risk 確認仍在 Meters Setup。
+Infinite 使用 Tool 原生無限來源，不會套用 Simulation 補值。
+**Live Monitor** 可選，預設不勾選。
+
+加入以下 Workflow Actions，再於 Step Properties 選擇 Background：
+
+- **Worker ON**：執行到該 Step 才啟動來源。「同時 Capture ON」預設不勾選；
+  勾選可保留來源啟動時的第一批 Samples。
+- **Capture ON**：在持續執行的 Worker 上建立新的獨立 Dataset。
+- **Capture OFF**：完成該 Dataset 與選配的 Streaming CSV；不停止 Worker，
+  也不自動另做 Manual Export。
+- **Worker OFF**：釋放來源。「同時 Capture OFF」預設勾選；若先前已明確
+  Capture OFF，請取消勾選。
+
+重複 ON/OFF 會造成 Step Error。有限來源自然結束時會接收尾端資料並完成
+Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker OFF 是釋放
+來源；第二次明確 OFF 才會失敗。已結束的來源不能再 Capture ON，必須先
+Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會清理尚在
+執行的 Worker，同時保留原有 Powers Safe-Off 行為。
+
+即使沒有 Workflow Output Step，仍可開啟 **Output → Background Results**。
+選擇 Background 與 Capture Dataset；**Charts** 只使用已記錄 Samples，X 軸
+可選 Elapsed Time、Timestamp 或 Sample Index。Line 最多顯示 2,000 個代表點，
+完整資料仍可透過 Output Data 與 Export 取得。保存圖表設定時使用固定的
+Background ID，不保存某次 Run 的 Dataset ID。
+
+啟用時，**Live Monitor** 顯示於 Charts 和 Summary 之間，以 Line 顯示最新
+1,000 筆 Worker Samples，Capture OFF 時也可繼續更新。它不建立 Dataset、
+Summary、CSV 或 Manual Export，也不占 Result Chart 額度。重新啟動 Worker
+會清空 Monitor。Summary 顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；
+**Output Data** 每頁 100 筆。`no_loss_detected` 代表 Tool 的證據範圍，並非零遺失保證。
+
+Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
+本次 Run 的記憶體；新 Run 或 **Clear Last Run** 會釋放，沒有 History 或 Recovery
+Store。Background Samples 不提供給 Workflow Variables、Calculation、Assert
+或 ResultRows。
+
+**CSV Export → Stream Background CSV during Capture** 與前景 CSV 獨立。
+可選 All Backgrounds 或單一 Background，並各自選擇輸出資料夾；預設
+`<application folder>/data`。每次 Capture 建立新 CSV；只使用 Monitor 不產生
+CSV。所有啟用的 CSV 目的地適用下方失敗政策，並保留部分檔案。
+
+Run 結束後，**Export Background** 可將選定或全部 Dataset 匯出為 CSV 或
+XLSX，包含失敗 Run 已收到的部分資料。超過 300,000 筆會顯示警告；XLSX
+每檔預設 300,000 筆，**Samples per XLSX file** 可調整為 1 到 1,048,575。
+較大的 Dataset 會分檔而不截斷。檔名避免覆寫 Streaming 或先前 Manual 檔案。
+Capture OFF 與 Run 結束都不會自動執行 Manual Export。
+
 ## 9. Streaming CSV
 
 Streaming CSV 在 Workflow 區域的 **CSV Export** panel 設定，和 run 完成後再做的
 manual export 不同。此區塊在程式啟動時預設收合，點擊標題可展開或收合；收合只會
 隱藏控制項，不會改變其設定值。
 
-Streaming 至少需要一個 Output。可選擇：
+前景 Streaming 至少需要一個 Output；Background Streaming 不受此限制。
+前景可選擇：
 
 - **Selected Page** — 選一個 Output Page，可選擇是否指定輸出資料夾。
   Desktop 會自動產生 timestamped CSV 檔名。Run 開始後 Selected Page 會固定。
@@ -696,7 +758,9 @@ Streaming behavior：
 - 只有 committed ResultRows 會寫入。
 - 每筆寫入的 row 都會 flush。
 - CSV write 或 flush failure 會停止後續 streaming attempts，但 Workflow execution
-  會繼續。
+  會 Failed，停止後續普通 Steps，並執行 Background 與 Powers 安全 Cleanup。
+  建立或最後 flush 失敗也適用；這與 Graceful Loop Stop 獨立，保留 committed
+  rows、已收到的 Background Samples 與部分 CSV。
 - Workflow failure 或 Graceful Stop 後，已寫入的 committed CSV data 不會被刪除。
 - Streaming 不產生 XLSX。
 - Run 進行中會鎖定 streaming settings。
@@ -1058,9 +1122,10 @@ resource 與 identity。切換 backend 會清空草稿，請重新列出或輸�
 同一次 Live run 中，不同 referenced Tool Instances 不可指向相同 resource。請
 指定不同 resources。
 
-### Simulation rejects Unlimited While with Meters Measure
+### Simulation asks for Meters sample counts
 
-設定 finite `max_iterations`，或在適合的情況下改用 Live mode。
+填寫每個 Instance 的 SIM Max Samples，或按 Cancel；這不會改變 Unlimited
+While。Foreground Custom Unlimited 仍需獨立支援。
 
 ### Manual export is unavailable
 
@@ -1070,8 +1135,8 @@ rows 作為 partial results 匯出；若選取範圍為 zero-row，仍不提供 
 
 ### Streaming CSV failed
 
-Stream write 或 flush error 會停止 CSV streaming，但不一定停止 Workflow execution。
-已由 committed rows 寫出的 CSV data 會保留。
+CSV 建立、寫入或最後 flush 失敗會使 Run Failed 並執行安全 Cleanup。
+Committed rows、已收到的 Background Samples 與部分 CSV 仍可查看及手動匯出。
 
 ### WebView2 is missing
 

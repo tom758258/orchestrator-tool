@@ -2,7 +2,7 @@
 
 This document describes the current architecture of Orchestrator Tool. It is
 an engineering reference, not an operator guide. Template and runtime
-semantics are defined in [Template Schema v1](../contracts/template-schema-v1.md).
+semantics are defined in [Template Schema v2](../contracts/template-schema-v2.md).
 
 ## Component ownership
 
@@ -247,8 +247,30 @@ into ProgressBatch messages and delivers it through a Tauri Channel, including
 a final flush before completion. Run completion returns compact metadata; it
 does not resend the full result dataset across the Tauri boundary.
 
+Background streaming is owned by a small run-scoped Core manager. Foreground
+Workers retain their pre-run startup path; Background Workers start and stop at
+explicit Workflow actions. Each background has one dispatcher consuming its
+WorkerSession and acknowledged control commands. Its bounded stdout queue
+reports overflow as failure; optional bounded monitoring does not own or limit
+the full memory Dataset. Capture and Worker lifecycles are independent, and
+natural completion requires tail, Summary, EOF, actual exit and Tool-specific
+quality checks before pending release.
+
+The current StoredRun holds the shared authoritative BackgroundStore. Tauri
+only exposes metadata, bounded row/chart/monitor queries and manual export;
+background samples never enter foreground DataContext or ResultRows. Manual
+XLSX reads bounded windows and uses the existing writer's constant-memory
+worksheet mode for export spooling. This is not a file-backed Dataset store.
+
+A shared first-failure signal connects foreground CSV observers, background
+writers and executor checkpoints. It prevents new ordinary Steps and interrupts
+Wait promptly, separately from graceful loop stopping. In-flight Tool actions
+finish within their existing timeout/cancellation contract. Every run still
+attempts background cleanup and all Powers Safe-Off operations; cleanup errors
+retain the original failure and do not erase partial results.
+
 CSV streaming and XLSX serialization are contract-level behaviors documented
-in [Template Schema v1](../contracts/template-schema-v1.md). The key
+in [Template Schema v2](../contracts/template-schema-v2.md). The key
 architecture rule is that both batch and streaming export consume committed
 ResultRow data rather than re-evaluating the Workflow or reading presentation
 state.

@@ -321,7 +321,7 @@ mod tests {
         json!({"type":"tool-action","id":"action","target":tool,"action":name,"arguments":arguments})
     }
     fn template(tool: &str, setup: Value, steps: Value) -> Template {
-        Template::from_json_str(&json!({"schema_version":1,"name":"Preflight", "tool_instances":[{"id":tool,"tool":tool,"setup":setup}],"workflow":{"steps":steps}}).to_string()).unwrap()
+        Template::from_json_str(&json!({"schema_version":2,"name":"Preflight", "tool_instances":[{"id":tool,"tool":tool,"setup":setup}],"workflow":{"steps":steps}}).to_string()).unwrap()
     }
     fn check(template: &Template) -> Vec<String> {
         validate_with_capabilities(template, |instance| {
@@ -339,7 +339,7 @@ mod tests {
             json!({"source":"variable", "variable":"missing"}),
             json!({"source":"step-output", "step_id":"future", "pointer":""}),
         ] {
-            let draft = json!({"schema_version":1,"name":"Draft", "tool_instances":[],
+            let draft = json!({"schema_version":2,"name":"Draft", "tool_instances":[],
                 "workflow":{"steps":[{"type":"output","id":"out","name":"Value","page":"Results","value":value}]}}).to_string();
             assert!(Template::from_json_str(&draft).is_err());
             assert!(
@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn live_preflight_queries_only_referenced_instances_and_keeps_their_capabilities_separate() {
-        let template = Template::from_json_str(&json!({"schema_version":1,"name":"Instances","tool_instances":[
+        let template = Template::from_json_str(&json!({"schema_version":2,"name":"Instances","tool_instances":[
             {"id":"first","tool":"powers","setup":{}},{"id":"second","tool":"powers","setup":{}},{"id":"unused","tool":"scopes","setup":{}}
         ],"workflow":{"steps":[
             {"type":"tool-action","id":"first-step","target":"first","action":"output-off","arguments":{"channel":3}},

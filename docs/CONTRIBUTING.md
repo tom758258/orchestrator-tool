@@ -118,7 +118,7 @@ durable details to focused documentation:
 
 - [Architecture Overview](architecture/overview.md)
 - [External Tool Boundary](architecture/external-tool-boundary.md)
-- [Template Schema v1](contracts/template-schema-v1.md)
+- [Template Schema v2](contracts/template-schema-v2.md)
 
 Keep English engineering documents as the canonical focused source unless a
 translation is explicitly requested. The Desktop User Guide is an

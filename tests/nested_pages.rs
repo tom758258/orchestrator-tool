@@ -22,7 +22,7 @@ fn for_loop(id: &str, variable: &str, stop: &str, steps: Vec<Value>) -> Value {
 
 fn template(steps: Vec<Value>) -> Result<Template, TemplateError> {
     Template::from_json_str(
-        &json!({"schema_version":1, "name":"Nested", "tool_instances":[],
+        &json!({"schema_version":2, "name":"Nested", "tool_instances":[],
         "workflow":{"steps":steps}})
         .to_string(),
     )

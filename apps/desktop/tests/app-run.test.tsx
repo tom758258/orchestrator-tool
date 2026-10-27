@@ -15,12 +15,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.0' }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTheme: async () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), save: vi.fn() }))
+vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() }) }))
 // Chart rendering has its own tests; observe the run snapshot passed across this boundary.
 vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof ResultChart>) =>
   <div data-testid="chart-snapshot">{JSON.stringify({ runId: props.runId, sampling: props.changeSettings, fitData: props.fitData })}</div>,
 }))
 
-const draft: WorkflowDraft = { schema_version: 1, name: 'Run test', tool_instances: [], workflow: { steps: [
+const draft: WorkflowDraft = { schema_version: 2, name: 'Run test', tool_instances: [], workflow: { steps: [
   { type: 'for', id: 'outer', variable: 'i', range: { start: '0', stop: '2', step: '1' }, steps: [
     { type: 'for', id: 'inner', variable: 'j', range: { start: '0', stop: '2', step: '1' }, steps: [
       { type: 'output', id: 'out', name: 'Voltage', page: 'Results', value: { source: 'literal', value: 10.600000000000001 } },
@@ -49,17 +50,25 @@ function deferred<T>() {
 
 let run: ReturnType<typeof deferred<RunMetadataDto>>
 let preflightErrors: string[]
+let simulationRequirements: string[]
+let currentDraft: WorkflowDraft
 
 beforeEach(() => {
   vi.clearAllMocks()
   run = deferred<RunMetadataDto>()
   preflightErrors = []
+  simulationRequirements = []
+  currentDraft = structuredClone(draft)
   vi.mocked(confirm).mockResolvedValue(true)
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     const params = args as Record<string, unknown>
     switch (command) {
-      case 'create_workflow_draft': return JSON.stringify(draft)
+      case 'create_workflow_draft': return JSON.stringify(currentDraft)
       case 'get_tool_status': return []
+      case 'get_simulation_sample_requirements': return simulationRequirements
+      case 'get_background_output': return { workers: [{ id: 'background-1', state: 'off', stream_state: 'ended', live_monitor: true, error: null }],
+        datasets: [{ id: 'capture-1', background_id: 'background-1', worker_run_id: 'worker', status: 'completed', quality: 'no_loss_detected', row_count: 300001, min: 1, max: 1, avg: 1, csv_path: null, error: null }],
+        chart: [], rows: [], monitor: [] }
       case 'get_live_resources': case 'get_live_resource_identities': case 'get_live_backends': return {}
       case 'get_powers_capabilities': return { channels: [1, 2] }
       case 'check_live_preflight': return preflightErrors
@@ -105,6 +114,49 @@ async function previousRun() {
   await screen.findByText('Message from run 7')
   run = deferred<RunMetadataDto>()
 }
+
+test('Simulation sample warning supports cancellation, per-instance overrides and fresh defaults', async () => {
+  simulationRequirements = ['meters-1', 'meters-2']
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  let dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
+  expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
+  expect(runCalls()).toHaveLength(0)
+  fireEvent.click(runButton('Simulation'))
+  dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
+  fireEvent.change(within(dialog).getByLabelText('meters-1 SIM Max Samples'), { target: { value: '5000' } })
+  fireEvent.change(within(dialog).getByLabelText('meters-2 SIM Max Samples'), { target: { value: '0' } })
+  expect((within(dialog).getByRole('button', { name: 'Run Simulation' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(within(dialog).getByLabelText('meters-2 SIM Max Samples'), { target: { value: '2000' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Run Simulation' }))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  expect(runCalls()[0][1]).toMatchObject({ simulationSamples: { 'meters-1': 5000, 'meters-2': 2000 }, templateJson: JSON.stringify(draft) })
+  await finish(19)
+  await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
+  fireEvent.click(runButton('Simulation'))
+  dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
+  expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+})
+
+test('Background-only Output queries bounded windows and separates Monitor, Dataset and export', async () => {
+  currentDraft = { schema_version: 2, name: 'Background-only', tool_instances: [],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, trigger_count: 3 }],
+    workflow: { steps: [{ type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true }] } }
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  await finish(20)
+  tab('Output')
+  const output = await screen.findByRole('region', { name: 'Background Results' })
+  await within(output).findByRole('img', { name: 'Background Dataset Line' })
+  expect(within(output).getByRole('img', { name: 'Background Live Monitor Line' })).toBeTruthy()
+  expect(within(output).getByText(/More than 300,000 samples/)).toBeTruthy()
+  expect((within(output).getByLabelText('Samples per XLSX file') as HTMLInputElement).value).toBe('300000')
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit===100)).toBe(true)
+  expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false)
+})
 
 test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snapshots options for Last Run', async mode => {
   await mount()

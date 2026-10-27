@@ -58,6 +58,12 @@ pub struct ResultRowsCsvWriter<W: Write> {
 }
 
 impl<W: Write> ResultRowsCsvWriter<W> {
+    /// Confirm the final flush while the run can still report failure.
+    pub fn finish(&mut self) -> Result<(), CsvSerializationError> {
+        self.destination
+            .flush()
+            .map_err(|e| CsvSerializationError::Csv(e.into()))
+    }
     /// Writes and flushes the declared Output header before execution begins.
     pub fn new(destination: W, names: Vec<String>) -> Result<Self, CsvSerializationError> {
         let mut writer = Self {

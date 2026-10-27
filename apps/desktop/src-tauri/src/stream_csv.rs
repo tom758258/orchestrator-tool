@@ -5,6 +5,7 @@ use std::{
 };
 
 use orchestrator_tool::{
+    run_failure::RunFailure,
     template::Template,
     workflow::{OutputPage, WorkflowRunEvent},
     workflow_csv::ResultRowsCsvWriter,
@@ -79,7 +80,6 @@ fn prepare_all_pages_with(
             Ok(writer) => writers.push(writer),
             Err(error) => {
                 drop(writers);
-                let _ = fs::remove_dir_all(&path);
                 return Err(error);
             }
         }
@@ -150,10 +150,8 @@ fn prepare(
         let (file_path, file) = create_unique_csv(&folder, &stem)
             .map_err(|e| format!("Could not create streaming CSV: {e}"))?;
         path = file_path;
-        let writer = ResultRowsCsvWriter::new(file, page.headers().to_vec()).map_err(|error| {
-            let _ = fs::remove_file(&path);
-            format!("Could not initialize streaming CSV: {error}")
-        })?;
+        let writer = ResultRowsCsvWriter::new(file, page.headers().to_vec())
+            .map_err(|error| format!("Could not initialize streaming CSV: {error}"))?;
         writers.push(PageWriter {
             page: selected.to_owned(),
             writer,
@@ -178,7 +176,7 @@ pub fn run_streaming_with_stream<T>(
     application_dir: &Path,
     on_status: impl FnMut(StreamCsvStatus),
     on_event: impl FnMut(WorkflowRunEvent),
-    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<T, String>,
+    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent), RunFailure) -> Result<T, String>,
     is_successful: impl FnOnce(&T) -> bool,
 ) -> Result<T, String> {
     run_with_stream_completion(
@@ -198,7 +196,7 @@ fn run_with_stream_completion<T>(
     application_dir: &Path,
     mut on_status: impl FnMut(StreamCsvStatus),
     mut on_event: impl FnMut(WorkflowRunEvent),
-    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<T, String>,
+    run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent), RunFailure) -> Result<T, String>,
     is_successful: impl FnOnce(&T) -> bool,
 ) -> Result<T, String> {
     let mut stream = options
@@ -207,27 +205,40 @@ fn run_with_stream_completion<T>(
     if let Some((_, status)) = &stream {
         on_status(status.clone());
     }
-    let result = run(&mut |event| {
-        if let Some((writers, status)) = &mut stream
-            && status.error.is_none()
-            && let WorkflowRunEvent::ResultRowCommitted(row) = &event
-            && let Some(writer) = writers.iter_mut().find(|writer| writer.page == row.page())
-        {
-            match writer.writer.write_row(row) {
-                Ok(()) => status.rows += 1,
-                Err(error) => {
-                    status.error = Some(error.to_string());
-                    on_status(status.clone());
+    let failure = RunFailure::default();
+    let result = run(
+        &mut |event| {
+            if let Some((writers, status)) = &mut stream
+                && status.error.is_none()
+                && let WorkflowRunEvent::ResultRowCommitted(row) = &event
+                && let Some(writer) = writers.iter_mut().find(|writer| writer.page == row.page())
+            {
+                match writer.writer.write_row(row) {
+                    Ok(()) => status.rows += 1,
+                    Err(error) => {
+                        failure.fail(format!("Foreground CSV: {error}"));
+                        status.error = Some(error.to_string());
+                        on_status(status.clone());
+                    }
                 }
             }
+            on_event(event);
+        },
+        failure.clone(),
+    );
+    if let Some((mut writers, mut status)) = stream {
+        for writer in &mut writers {
+            if let Err(error) = writer.writer.finish() {
+                failure.fail(format!("Foreground CSV final flush: {error}"));
+                status.error.get_or_insert(error.to_string());
+            }
         }
-        on_event(event);
-    });
-    if let Some((_, mut status)) = stream {
         status.finished = true;
-        status.workflow_succeeded = result.as_ref().is_ok_and(is_successful);
+        status.workflow_succeeded =
+            failure.check().is_ok() && result.as_ref().is_ok_and(is_successful);
         on_status(status);
     }
+    failure.check()?;
     result
 }
 
@@ -240,7 +251,7 @@ mod tests {
     fn template() -> Template {
         Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "test/name", "tool_instances": [],
+                "schema_version": 2, "name": "test/name", "tool_instances": [],
                 "workflow": { "steps": [{
                     "type": "output", "id": "out", "name": "value", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
@@ -266,7 +277,7 @@ mod tests {
         application_dir: &Path,
         on_status: impl FnMut(StreamCsvStatus),
         on_event: impl FnMut(WorkflowRunEvent),
-        run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent)) -> Result<bool, String>,
+        run: impl FnOnce(&mut dyn FnMut(WorkflowRunEvent), RunFailure) -> Result<bool, String>,
     ) -> Result<bool, String> {
         run_streaming_with_stream(
             template,
@@ -289,7 +300,7 @@ mod tests {
     #[test]
     fn selected_and_all_pages_route_and_flush_only_their_rows() {
         let template = Template::from_json_str(&json!({
-            "schema_version": 1, "name": "pages", "tool_instances": [],
+            "schema_version": 2, "name": "pages", "tool_instances": [],
             "workflow": {"steps": [
                 {"type":"output", "id":"a", "name":"a", "page":"Outer", "value":{"source":"literal", "value":1}},
                 {"type":"output", "id":"b", "name":"b", "page":"Inner", "value":{"source":"literal", "value":2}}
@@ -309,7 +320,7 @@ mod tests {
                 &dir,
                 |status| statuses.push(status),
                 |_| {},
-                |emit| {
+                |emit, _failure| {
                     for (page, name, value) in
                         [("Inner", "b", 2), ("Outer", "a", 1), ("Inner", "b", 3)]
                     {
@@ -371,7 +382,7 @@ mod tests {
             &dir,
             |_| {},
             |_| {},
-            |_| {
+            |_, _| {
                 started = true;
                 Ok(true)
             },
@@ -386,10 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn all_pages_prepare_failure_removes_partial_run_folder_before_execution() {
+    fn all_pages_prepare_failure_preserves_partial_csv_before_execution() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "pages", "tool_instances": [],
+                "schema_version": 2, "name": "pages", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "output", "id": "one", "name": "one", "page": "One",
                       "value": { "source": "literal", "value": 1 } },
@@ -425,7 +436,10 @@ mod tests {
             "injected header initialization failure"
         );
         assert!(!started);
-        assert!(!run_folder.exists());
+        assert_eq!(
+            fs::read_to_string(run_folder.join("One.csv")).unwrap(),
+            "one\n"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -440,7 +454,7 @@ mod tests {
             &dir,
             |status| statuses.push(status),
             |_| {},
-            |emit| {
+            |emit, _failure| {
                 assert_eq!(fs::read_to_string(&path).unwrap(), "value\n");
                 emit(row("value"));
                 assert_eq!(fs::read_to_string(&path).unwrap(), "value\n1\n");
@@ -467,7 +481,7 @@ mod tests {
             &dir,
             |status| statuses.push(status),
             |_| {},
-            |emit| {
+            |emit, _failure| {
                 emit(row("value"));
                 Ok(false)
             },
@@ -484,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_error_stops_attempts_but_preserves_execution_result() {
+    fn streaming_error_fails_the_run_and_preserves_committed_rows() {
         let dir = crate::tests::unique_test_dir("stream-error");
         let mut statuses = Vec::new();
         let mut received = 0;
@@ -494,14 +508,14 @@ mod tests {
             &dir,
             |status| statuses.push(status),
             |_| received += 1,
-            |emit| {
+            |emit, failure| {
                 emit(row("wrong"));
-                emit(row("value"));
+                assert!(failure.check().is_err());
                 Ok(true)
             },
         );
-        assert!(result.is_ok());
-        assert_eq!(received, 2);
+        assert!(result.is_err());
+        assert_eq!(received, 1);
         let status = statuses.last().unwrap();
         assert!(status.error.is_some());
         assert_eq!(status.rows, 0);
@@ -524,7 +538,7 @@ mod tests {
             &dir,
             |status| statuses.push(status),
             |_| {},
-            |emit| {
+            |emit, _failure| {
                 emit(row("value"));
                 Ok(true)
             },

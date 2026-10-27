@@ -548,13 +548,16 @@ Unlimited While is currently allowed only at the top level, must have a
 non-empty body, and may contain finite nested loops. It may not contain
 another Unlimited While.
 
-Simulation currently rejects a Software Meters **Measure** inside an Unlimited
-While because it cannot establish a finite sample bound. Use a finite
-`max_iterations` for that Simulation workflow, or use Live mode when the
-operation is appropriate. A Live Software Meters Measure inside an Unlimited
-While is allowed and does not set a finite `max-samples` limit.
+If Software Meters **Measure** is inside an Unlimited While and Simulation
+cannot determine the source size, **Run Simulation** shows a sample warning.
+Each affected instance starts at **1,000 SIM Max Samples**; enter a whole number
+from 1 to 1,000,000 or Cancel. These are source startup parameters for this run,
+not While iteration limits. They are not saved in Template, Setup or Steps and
+do not affect Live. Every new run starts with 1,000 again. If the source runs out
+while another Measure is requested, that Measure fails and cleanup runs; the
+Worker is not restarted. A Live Software Measure does not receive this SIM bound.
 
-All Custom trigger modes require a finite maximum trigger count in both
+All foreground Custom trigger modes require a finite maximum trigger count in both
 Simulation and Live. The count adds every Measure occurrence for the same Tool
 Instance and multiplies each occurrence by its enclosing For iteration counts
 and finite While `max_iterations`. A Custom Measure inside an Unlimited While
@@ -727,8 +730,8 @@ button. Simulation does not require Live Resources. It uses the external
 Workers' simulate contracts and is not intended to operate physical hardware.
 For Powers, Protection Setup and final Safe-Off are still sent to powers-tool
 for simulation or planning; this is orchestration validation, not Live hardware
-validation. The Unlimited While plus Meters Measure restriction described
-above still applies.
+validation. Indeterminate Simple Software sources show the run-only sample
+warning described above; Foreground Custom Unlimited remains unsupported.
 
 ## 8. Run Live
 
@@ -791,6 +794,68 @@ An explicit Powers `output-off` Tool Action does not replace the run-level
 cleanup. Simulation follows the same cleanup position by sending simulated
 Safe-Off through powers-tool; it does not claim that real outputs were changed.
 
+## Background Streaming
+
+In **Tool Setup**, choose **Meters Immediate Custom**, then enable **Use this
+instance as a Background**. Other Meters modes, Scopes, Powers and Wavegen show
+Unsupported for Background Streaming. Existing foreground actions remain
+available for instances not bound to a Background. A bound instance cannot also
+be used by foreground Tool actions, and two instances cannot share one Live
+resource in a run.
+
+Each binding has a stable Background ID. Select a finite Trigger Count or
+**Native Infinite**; Sample Count and the Tool's overflow risk acknowledgement
+remain in Meters Setup. Infinite uses the Tool's native source rather than a
+Simulation sample substitute. **Live Monitor** is optional and starts unchecked.
+
+Add these Workflow actions and select the Background in Step Properties:
+
+- **Worker ON** starts its source at that Step. Simultaneous Capture ON starts
+  unchecked; check it to retain the first samples from startup.
+- **Capture ON** starts a new Dataset while the Worker continues independently.
+- **Capture OFF** finishes that Dataset and its optional streaming CSV without
+  stopping the Worker or automatically exporting another file.
+- **Worker OFF** releases the source. Simultaneous Capture OFF starts checked.
+  Uncheck it if Capture was already explicitly switched OFF.
+
+Repeated ON/OFF is a Step error. A finite source automatically retains its tail
+and finishes its Dataset. The first subsequent Capture OFF acknowledges that
+automatic finish; the first Worker OFF releases the source. A second explicit
+OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
+Worker ON. Every run also cleans up remaining Workers, including on failure,
+while preserving the existing Powers Safe-Off behavior.
+
+**Output → Background Results** works even when there are no Workflow Output
+Steps. Select Background and Capture Dataset. **Charts** uses recorded samples,
+with Elapsed Time, Timestamp or Sample Index on X. The Line displays up to 2,000
+representative points; the full captured data remains available in Output Data
+and export. Saved chart settings use the Background ID, not a run's Dataset ID.
+
+When enabled, **Live Monitor** appears between Charts and Summary. It shows the
+latest 1,000 Worker samples as a Line, including while Capture is OFF. It does
+not create Datasets, summaries, CSV or manual exports, and does not consume a
+Result Chart slot. Restarting a Worker clears its Monitor. Summary shows Dataset
+count/min/max/average, status and quality; **Output Data** uses pages of 100 rows.
+`no_loss_detected` describes the Tool's evidence, not a zero-loss guarantee.
+
+Capture boundaries follow received event processing, not hardware sample time.
+Full captured samples stay in memory for the current run. A new run or **Clear
+Last Run** releases them; there is no history or recovery store. Background
+samples do not feed Workflow variables, calculations, assertions or ResultRows.
+
+**CSV Export → Stream Background CSV during Capture** is independent of
+foreground CSV. Choose All Backgrounds or one Background and its output folder.
+The default is `<application folder>/data`. Each Capture creates a new CSV;
+Monitor-only operation creates none. Every enabled CSV destination follows the
+failure policy below and keeps any partial files.
+
+After the run, **Export Background** saves the selected or all Datasets as CSV
+or XLSX, including partial data from a failed run. More than 300,000 samples
+shows a warning. XLSX defaults to 300,000 samples per file; edit **Samples per
+XLSX file** from 1 to 1,048,575. Larger Datasets split into new files without
+truncation. Export names avoid overwriting streaming or previous manual files.
+No Capture OFF or run completion automatically performs manual export.
+
 ## 9. Streaming CSV
 
 Streaming CSV is configured in the Workflow area's **CSV Export** panel. It
@@ -798,7 +863,8 @@ is different from exporting a completed run later. The panel starts collapsed
 when the application opens. Click its title to expand or collapse it; collapsing
 only hides the controls and does not change their values.
 
-Streaming requires at least one Output. Choose one of these modes:
+Foreground streaming requires at least one Output; Background streaming does
+not. Choose one of these foreground modes:
 
 - **Selected Page** — choose one Output Page and optionally choose an output
   folder. Desktop automatically creates a timestamped CSV filename. The
@@ -816,8 +882,10 @@ Streaming behavior:
 - Headers are created and flushed before workflow execution.
 - Only committed ResultRows are written.
 - Each written row is flushed.
-- A CSV write or flush failure stops further streaming attempts, but workflow
-  execution continues.
+- Any enabled CSV creation, write or final-flush failure fails the run, stops
+  further ordinary Steps and performs background and Powers safety cleanup.
+  It is independent of Graceful Loop Stop and preserves committed rows,
+  received Background samples and partial CSV files.
 - CSV data already written from committed rows remains after workflow failure
   or Graceful Stop.
 - Streaming does not produce XLSX files.
@@ -1247,10 +1315,10 @@ list or enter the resource again before saving.
 Different referenced Tool Instances cannot point to the same resource in one
 Live run. Assign distinct resources.
 
-### Simulation rejects Unlimited While with Meters Measure
+### Simulation asks for Meters sample counts
 
-Set a finite `max_iterations`, or use Live mode when that operation is
-appropriate.
+Enter the per-instance SIM Max Samples or Cancel. This does not change the
+Unlimited While. Foreground Custom Unlimited still requires separate support.
 
 ### Manual export is unavailable
 
@@ -1261,9 +1329,9 @@ zero-row selections remain unavailable.
 
 ### Streaming CSV failed
 
-A stream write or flush error stops CSV streaming but does not necessarily
-stop workflow execution. CSV data already written from committed rows remains
-available.
+A CSV creation, write or final-flush error fails the run and triggers safety
+cleanup. Committed rows, received Background samples and partial CSV files
+remain available for inspection and manual export.
 
 ### WebView2 is missing
 

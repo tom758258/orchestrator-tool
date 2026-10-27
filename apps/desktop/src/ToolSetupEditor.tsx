@@ -7,8 +7,10 @@ import type { ReactNode } from 'react'
 import type { WorkflowStep } from './App'
 import { executionModeLabel, type ExecutionMode } from './executionMode'
 import { protectionChannelNumbers, updatePowersProtectionSetting } from './powersProtectionSetup'
+import BackgroundSetup from './BackgroundSetup'
+import type { BackgroundConfig } from './workflow'
 
-// Mirrors per-instance setup serialization in Template schema v1.
+// Mirrors per-instance setup serialization in Template schema v2.
 export type MetersSetup = {
   measurement: 'voltage-dc' | 'current-dc'
   range_mode: 'auto' | 'manual'
@@ -631,7 +633,7 @@ function setupSummary(instance: ToolInstance): string {
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
-export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, renderPowersDeviceStatus, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey }: {
+export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, renderPowersDeviceStatus, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey, backgrounds = [], onBackgroundsChange }: {
   value: ToolInstance[]; steps: WorkflowStep[]; onChange: (value: ToolInstance[]) => void; disabled: boolean
   configuredToolTypes: ToolInstance['tool'][]
   resourceIdentities: Record<string, { model: string | null; model_id?: string | null } | null>
@@ -641,6 +643,8 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
   scopesExecutableKey: string
   renderResource: (instance: ToolInstance) => ReactNode
   renderPowersDeviceStatus: (instance: Extract<ToolInstance, { tool: 'powers' }>) => ReactNode
+  backgrounds?: BackgroundConfig[]
+  onBackgroundsChange?: (value: BackgroundConfig[]) => void
 }) {
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
   useEffect(() => {
@@ -759,7 +763,8 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
           {renderResource(instance)}
-          <button type="button" className="action-button action-button-danger" disabled={referenced}
+          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange} />}
+          <button type="button" className="action-button action-button-danger" disabled={referenced || backgrounds.some(background => background.tool_instance_id === instance.id)}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
         </div>

@@ -171,7 +171,7 @@ fn decimal_parts(text: &str) -> (String, i32) {
     (format!("{sign}{significant}"), exponent)
 }
 
-fn excel_number(number: &serde_json::Number) -> Option<f64> {
+pub(crate) fn excel_number(number: &serde_json::Number) -> Option<f64> {
     let value = number.as_f64()?;
     // Excel does not support subnormal numbers, infinities, or NaN.
     if !value.is_finite() || (value != 0.0 && !value.is_normal()) {

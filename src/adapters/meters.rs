@@ -305,6 +305,91 @@ fn trigger_arguments(limit: Option<usize>, setup: &MetersSetup) -> Vec<OsString>
     }
 }
 
+/// Immediate Custom is autonomous; Software and External need separate integration.
+pub fn background_worker_launch_spec(
+    executable: &Path,
+    mode: crate::run::ExecutionMode,
+    resource: Option<&str>,
+    trigger_count: Option<usize>,
+    setup: &MetersSetup,
+    backend: crate::config::VisaBackend,
+) -> WorkerLaunchSpec {
+    let spec = match mode {
+        crate::run::ExecutionMode::Simulate => {
+            simulate_worker_launch_spec(executable, Some(trigger_count.unwrap_or(1)), setup)
+        }
+        crate::run::ExecutionMode::Live => live_worker_launch_spec(
+            executable,
+            resource.expect("validated live resource"),
+            Some(trigger_count.unwrap_or(1)),
+            setup,
+            backend,
+        ),
+    };
+    let mut arguments = spec.arguments().to_vec();
+    if trigger_count.is_none() {
+        let index = arguments
+            .iter()
+            .position(|arg| arg == "--trigger-count")
+            .expect("Custom trigger count");
+        arguments.drain(index..index + 2);
+        arguments.push("--trigger-count-infinite".into());
+    }
+    arguments.push("--streaming".into());
+    WorkerLaunchSpec::new(executable, arguments)
+}
+
+pub fn validate_background_sample(sample: &Value) -> Result<(), String> {
+    if sample["value"].as_f64().is_none_or(|v| !v.is_finite())
+        || sample["captured"].as_u64().is_none()
+        || sample["unit"].as_str().is_none()
+        || sample["timestamp_utc"]
+            .as_str()
+            .is_none_or(|s| chrono::DateTime::parse_from_rfc3339(s).is_err())
+    {
+        return Err("Invalid Meters sample payload".into());
+    }
+    if sample["status"] != "ok" {
+        return Err(format!("Meters sample quality: {}", sample["status"]));
+    }
+    Ok(())
+}
+
+pub fn validate_background_summary(summary: &Value, received: usize) -> Result<(), String> {
+    if summary["ok"] != true
+        || summary["captured"].as_u64() != Some(received as u64)
+        || summary["errors"] != 0
+        || !matches!(
+            summary.get("overflow_detected"),
+            Some(Value::Null | Value::Bool(false))
+        )
+        || !matches!(
+            summary.get("final_drain_complete"),
+            Some(Value::Null | Value::Bool(true))
+        )
+        || !matches!(
+            summary["data_integrity"].as_str(),
+            Some("unknown" | "no_loss_detected")
+        )
+        || !matches!(
+            summary["overflow_monitoring"].as_str(),
+            Some("off" | "active")
+        )
+    {
+        return Err(format!(
+            "Meters termination or data quality unconfirmed: {summary}"
+        ));
+    }
+    if summary["stop_reason"] == "completed"
+        && summary["expected_readings"]
+            .as_u64()
+            .is_some_and(|count| count != received as u64)
+    {
+        return Err("Meters completed with an unexpected sample count".into());
+    }
+    Ok(())
+}
+
 /// Builds a simulate Worker launch specification from a validated setup.
 pub fn simulate_worker_launch_spec(
     executable: impl AsRef<Path>,

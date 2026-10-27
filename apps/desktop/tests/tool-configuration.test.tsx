@@ -11,7 +11,7 @@ vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTheme: async () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), save: vi.fn() }))
 
-const original: WorkflowDraft = { schema_version: 1, name: 'Setup test', tool_instances: [
+const original: WorkflowDraft = { schema_version: 2, name: 'Setup test', tool_instances: [
   { id: 'powers-1', tool: 'powers', setup: { protection: { channels: [{ channel: 1, ocp: 'on' }] } } },
   { id: 'scopes-1', tool: 'scopes', setup: { acquisition: { acquisition_type: 'average', average_count: 16 },
     channels: [{ channel: 4, invert: true }] } },

@@ -20,7 +20,7 @@ fn dataset(values: &[Value]) -> (Template, Vec<ResultRow>) {
         .collect();
     let template = Template::from_json_str(
         &json!({
-            "schema_version":1, "name":"Cell types", "tool_instances":[],
+            "schema_version":2, "name":"Cell types", "tool_instances":[],
             "workflow":{"steps":steps}
         })
         .to_string(),
@@ -153,7 +153,7 @@ fn xlsx_numbers_keep_safe_precision_and_preserve_unsafe_json_text() {
 fn xlsx_exports_all_accumulated_float_rows_as_numbers_without_rounding() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 1, "name": "Float accumulation", "tool_instances": [],
+            "schema_version": 2, "name": "Float accumulation", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "set-variable", "id": "init", "variable": "y",
                   "value": { "source": "literal", "value": 10 } },

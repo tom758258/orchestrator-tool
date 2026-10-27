@@ -1,4 +1,4 @@
-# Template Schema v1
+# Template Schema v2
 
 This document is the durable contract reference for the current Template JSON
 and the workflow semantics that are already implemented. It does not define a
@@ -6,13 +6,13 @@ future schema, migration framework, or compatibility layer.
 
 ## Version and ownership
 
-The root JSON object has schema_version 1, a template name, a tool_instances
+The root JSON object has schema_version 2, a template name, a tool_instances
 array, and a workflow object containing ordered steps. It may also contain
 optional output_views when the Desktop author explicitly chooses to save Chart
 definitions with the Template:
 
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "name": "Example",
       "tool_instances": [],
       "workflow": { "steps": [] }
@@ -21,13 +21,13 @@ definitions with the Template:
 The Template is split into:
 
 - Tool Setup: the setup definition for each logical Tool Instance.
-- Workflow Sequence: the ordered procedure executed after the referenced
-  Workers are ready.
+- Workflow Sequence: the ordered procedure. Foreground Workers start before
+  execution; Background Workers start only at Worker ON.
 - Optional Output Views: saved Chart definitions used to restore the intended
-  result presentation. Templates without output_views retain the previous v1
+  result presentation. Templates without output_views retain the v2
   wire shape.
 
-Schema v1 is parsed and serialized directly. Unsupported schema versions,
+Schema v2 is parsed and serialized directly. Unsupported schema versions,
 unknown fields, invalid IDs, invalid references, and invalid values are
 rejected. Existing previous setup/action shapes are not migrated.
 
@@ -105,6 +105,87 @@ loading state, and errors are not Template data. Workflow **Chart Options**
 (Sampling, Preserve Significant Changes, Show Significant Change Markers, and
 Fit Data) remain Desktop session options and are not saved by this opt-in.
 
+## Background ownership and actions
+
+Version 2 rejects version 1; there is no migration. Optional `backgrounds` is
+the single source of background bindings and acquisition configuration:
+
+```json
+{"backgrounds":[{"id":"background-1","tool_instance_id":"meters-1",
+  "live_monitor":false,"trigger_count":1000,"chart":{"x_axis":"elapsed"}}]}
+```
+
+IDs use the same stable identifier syntax as Steps. Background IDs and Tool
+Instance ownership must be unique; targets must exist. Only Meters with
+`setup.trigger_mode = "immediate-custom"` is supported. `trigger_count` is
+1–1,000,000, or null for native `--trigger-count-infinite`; Sample Count and
+overflow risk acknowledgement remain in Meters Setup and are validated by the
+external Tool. Scopes, Powers, Wavegen and the other Meters trigger modes are
+Unsupported as background sources. Foreground Scopes actions retain their
+existing contract. Manifest and runtime must both adopt `common.streaming`
+version 1 with `run_bound` lifecycle; JSONL alone does not opt in.
+
+An optional `chart` stores the stable binding's numeric `value` Line chart and
+`x_axis` (`elapsed`, `timestamp`, `index`). Saved foreground and background
+chart definitions together have a limit of eight. Monitor is independent of
+this limit. Desktop's Save Charts with Template option controls persistence of
+these chart definitions; runtime Dataset IDs are never saved.
+
+```json
+{"type":"background","id":"start","background_id":"background-1",
+ "action":"worker-on","capture":true}
+```
+
+`action` is `worker-on`, `worker-off`, `capture-on`, or `capture-off`.
+`capture` defaults false in serialized inputs and is only meaningful for Worker
+actions; true on Capture actions is rejected. The Desktop inserts Worker ON
+with Capture unchecked, Worker OFF with Capture checked. A Tool Instance
+bound to a Background cannot also be the target of any foreground Tool action,
+including nested actions. Live resource validation includes all bindings and
+rejects duplicate physical resources before starting Workers.
+
+Repeated explicit ON/OFF is a Step error. Worker OFF without simultaneous
+Capture OFF requires Capture already OFF; a checked simultaneous Capture OFF
+fails if Capture was already explicitly switched OFF. Natural source completion
+is separate: consume tail, Summary, EOF and actual exit, finalize any recording
+Dataset and retain pending release. The first explicit Capture OFF acknowledges
+an automatically finalized Capture; the first Worker OFF releases the runtime.
+Capture ON on an ended source is rejected. Internal cleanup is idempotent and
+does not apply these strict operator-action rules.
+
+Each successful Capture ON creates a separate memory Dataset. Boundaries are
+acknowledged dispatcher processing points, not instrument acquisition timestamps.
+Worker ON with Capture prepares the Dataset and optional CSV before launching
+the run-bound source. Samples never enter foreground ResultRows, variables,
+assertions or DataContext. Dataset status and quality are separate. Successful
+exit requires the existing Common v3 termination checks plus Meters sample
+sequence, Summary count and data-integrity checks. `ended` alone is insufficient.
+Meters may report `final_drain_complete: null` when no drain is applicable;
+false is failure, and null never replaces the other completion evidence.
+
+Frontend queries are bounded: table windows at most 1,000 rows (Desktop uses
+100), recorded charts at most 2,000 representative points with endpoints, and
+opt-in Monitor at most 1,000 recent Worker samples. Neither these query bounds
+nor the bounded 8,192-event delivery queue imposes a Dataset or While limit.
+Queue overflow fails the run explicitly. Dataset lifetime is the current run;
+Clear Last Run or a new run releases it. CSV is not an authoritative reader or
+recovery store.
+
+Simulation overrides are a run-only map keyed by instance ID. Only Simple
+Software sources with an indeterminate foreground Measure count require them;
+default 1,000, range 1–1,000,000. They do not change Template, Setup, Steps,
+While limits or Live launches. Source exhaustion fails the next Measure.
+Foreground Custom Unlimited remains unsupported.
+
+Enabled foreground/background CSV creation, write and final-flush errors signal
+a fatal run error, stop further ordinary Steps and run bounded background and
+Powers safety cleanup. This signal is independent of Graceful Loop Stop.
+Committed rows, received samples and partial CSV files survive. Capture OFF
+does not trigger manual export. Background manual CSV/XLSX reserves new names;
+XLSX defaults to 300,000 samples per file, accepts 1–1,048,575, and splits larger
+Datasets. The writer uses bounded source windows and constant-memory worksheet
+spooling for export, without creating an internal file-backed Dataset store.
+
 ## Tool Instances and setup
 
 Each Tool Instance has:
@@ -124,7 +205,7 @@ For example: `{"id": "powers-1", "display_name": "DUT Power Supply", "tool": "po
 The name affects presentation only. The `id`, Workflow Step `target`, local Live
 Resource and identity keys, and runtime instance references remain unchanged.
 Existing Templates without this field load normally and retain their original
-field shape. The schema_version remains 1. Older strict schema v1 readers may
+field shape. The schema_version remains 2. Older strict schema v2 readers may
 reject Templates containing `display_name`; no legacy export mode is provided.
 
 The Tool Type selects the setup schema; setup fields do not determine the Tool
@@ -132,7 +213,7 @@ Type. Meters uses MetersSetup. Powers uses an optional per-channel Protection
 Setup. Existing Powers instances with `"setup": {}` remain valid and serialize
 the same way. Scopes uses optional acquisition/channel settings; an empty
 Scopes setup remains valid. Wavegen continues to use an empty setup object. The
-schema_version remains 1. See [Scopes integration](scopes-integration.md) for
+schema_version remains 2. See [Scopes integration](scopes-integration.md) for
 its setup shape, selected actions, and runtime file-output boundary.
 
 For example, a Powers instance may contain:
@@ -174,7 +255,7 @@ fields are mutually constrained by the selected measurement type.
 
 Both DC Voltage and DC Current may specify `vm_comp_slope` as `pos` or `neg`.
 When omitted, Orchestrator does not pass `--vm-comp-slope`, leaving the
-instrument's VM Comp setting unchanged. Existing schema v1 Templates without
+instrument's VM Comp setting unchanged. Existing schema v2 Templates without
 this field load with no VM Comp slope specified.
 
 Manual range mode requires a manual range. Auto mode ignores any stored manual
@@ -200,7 +281,7 @@ supported. Scopes supports the nine actions documented in its integration refere
 
 ## Workflow steps
 
-Schema v1 supports these step kinds:
+Schema v2 supports these step kinds:
 
 - Assert: a comparison expression and failure message.
 - Set Variable: assign an InputValue to a variable.
@@ -277,7 +358,7 @@ must refer to an earlier step that is visible from the current lexical scope.
 
 For and While bodies are ordered step lists. Loop nesting is limited to five
 levels. There is no break, continue, boolean expression tree, or timeout
-semantics in schema v1.
+semantics in schema v2.
 
 ## Show Message semantics
 
@@ -581,8 +662,8 @@ CSV per Page.
 Headers are written and flushed before execution. Each committed row is
 appended and flushed only to its Page file on the run thread. Other Pages may
 still accumulate in memory in the selected streaming mode. Destination
-creation errors prevent execution. A write or flush error stops streaming
-while workflow execution continues. Committed files are preserved after
+creation errors prevent execution. A write or final-flush error fails the run,
+stops further ordinary Steps and triggers safety cleanup. Committed files are preserved after
 failure or graceful Stop, and writers close on every completion path.
 Streaming XLSX is not supported, and flush does not guarantee power-loss
 durability.

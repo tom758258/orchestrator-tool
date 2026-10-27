@@ -21,6 +21,8 @@ import FailureDetails from './FailureDetails'
 import WorkflowRunSummary from './WorkflowRunSummary'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
+import BackgroundOutput from './BackgroundOutput'
+import { useSimulationSamples } from './useSimulationSamples'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import type { ToolInstance } from './ToolSetupEditor'
 import { protectionChannelNumbers } from './powersProtectionSetup'
@@ -131,6 +133,7 @@ type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type StepPreset =
+  | 'background-worker-on' | 'background-worker-off' | 'background-capture-on' | 'background-capture-off'
   | `scope-${ScopesAction}`
   | 'for'
   | 'while'
@@ -161,6 +164,9 @@ const STEP_CATEGORIES = [
 ] as const
 
 const STEP_PRESETS: StepPresetOption[] = [
+  ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
+    label: `Background ${action.split('-').map(word => word === 'on' || word === 'off' ? word.toUpperCase() : word[0].toUpperCase()+word.slice(1)).join(' ')}`,
+    prefix: `background-${action}`, category: 'Workflow' })),
   ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
   { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
@@ -241,6 +247,10 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 }
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
+  if (preset.startsWith('background-')) {
+    const action = preset.slice(11) as import('./workflow').BackgroundAction
+    return { type: 'background', id, background_id: target, action, capture: action === 'worker-off' }
+  }
   if (preset.startsWith('scope-')) {
     const action = preset.slice(6) as ScopesAction
     return { type: 'tool-action', id, target, action, arguments: scopesActionArguments(action) }
@@ -305,6 +315,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
 }
 
 function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
+  if (step.type === 'background') return `Background ${step.action.replace('-', ' ').toUpperCase()}`
   if (step.type === 'while') return 'While'
   if (step.type === 'for') return `For ${step.variable} = ${step.range.start}..${step.range.stop}`
   if (step.type === 'set-variable') {
@@ -399,6 +410,11 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 }
 
 function App() {
+  const simulationSamples = useSimulationSamples()
+  const [backgroundCsvEnabled, setBackgroundCsvEnabled] = useState(false)
+  const [backgroundCsvTarget, setBackgroundCsvTarget] = useState('all')
+  const [backgroundCsvFolder, setBackgroundCsvFolder] = useState<string | null>(null)
+  const [backgroundCsvError, setBackgroundCsvError] = useState<string | null>(null)
   const [themePreference, setThemePreference] = useState(readThemePreference)
   const [applicationVersion, setApplicationVersion] = useState<string | null>(null)
   const [helpError, setHelpError] = useState<string | null>(null)
@@ -526,6 +542,11 @@ function App() {
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
   const [toolConfigError, setToolConfigError] = useState<string | null>(null)
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null)
+  useEffect(() => {
+    if (backgroundCsvTarget !== 'all' && !workflowDraft?.backgrounds?.some(background => background.id === backgroundCsvTarget)) {
+      setBackgroundCsvTarget('all')
+    }
+  }, [workflowDraft?.backgrounds, backgroundCsvTarget])
   const scopesOutputLocked = !workflowDraft?.tool_instances.some(instance => instance.tool === 'scopes')
   const scopesOutputVisible = !scopesOutputLocked && scopesOutputExpanded
   const powersModels = executionMode === 'simulate' ? [null]
@@ -861,7 +882,12 @@ function App() {
     }
     const parent = insertionLoop(workflowDraft.workflow.steps, selectedStepId)
     if (parent && (preset.value === 'for' || preset.value === 'while') && loopPath(workflowDraft.workflow.steps, parent.id).length >= 4) return
-    const target = workflowDraft.tool_instances.find(instance => instance.tool === preset.tool)?.id
+    const target = preset.value.startsWith('background-') ? workflowDraft.backgrounds?.[0]?.id
+      : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool && !workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id))?.id
+    if (preset.value.startsWith('background-') && !target) {
+      setValidationError('Configure a Background in Tool Setup before adding this action.')
+      return
+    }
     if (preset.tool && !target) {
       setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
       return
@@ -1327,6 +1353,7 @@ function App() {
         invoke<Record<string, VisaBackend>>('get_live_backends'),
       ])
       const referenced = workflowDraft.tool_instances.filter(instance =>
+        workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id) ||
         allWorkflowSteps(workflowDraft.workflow.steps).some(step => step.type === 'tool-action' && step.target === instance.id))
       const confirmedResources: Record<string, string> = {}
       const confirmedBackends: Record<string, VisaBackend> = {}
@@ -1395,6 +1422,7 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
         scopesOutputFolder,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget } : null,
         confirmedResources,
         confirmedBackends,
       })
@@ -1421,7 +1449,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1438,6 +1466,8 @@ function App() {
         // validateTemplate presents this error; finally still releases the run gate.
         return
       }
+      const sampleOverrides = await simulationSamples.request(JSON.stringify(workflowDraft))
+      if (sampleOverrides === null) return
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
@@ -1471,6 +1501,8 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
         scopesOutputFolder,
+        simulationSamples: sampleOverrides,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget } : null,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
@@ -1489,7 +1521,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages])
+  }, [validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -1502,7 +1534,7 @@ function App() {
     Number.isNaN(parseChartThresholdPercent(chartSamplingOptions.threshold))
 
   const workflowBusy =
-    choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
+    simulationSamples.pending || choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
   stepEditingBusyRef.current = workflowBusy
 
   const handleClearLastRun = useCallback(async () => {
@@ -1962,6 +1994,12 @@ function App() {
               <ToolSetupEditor
                 key={templateUiGeneration}
                 value={workflowDraft.tool_instances}
+                backgrounds={workflowDraft.backgrounds}
+                onBackgroundsChange={backgrounds => {
+                  setWorkflowDraft(current => current ? { ...current, backgrounds } : current)
+                  setWorkflowChangedSinceRun(true)
+                  clearValidation()
+                }}
                 configuredToolTypes={configuredToolTypes}
                 executionMode={executionMode}
                 resourceIdentities={resourceIdentityDrafts}
@@ -2296,6 +2334,22 @@ function App() {
                       </button>
                     </h3>
                     {streamingExpanded && <>
+                    <label><input type="checkbox" checked={backgroundCsvEnabled} disabled={workflowBusy || !workflowDraft.backgrounds?.length}
+                      onChange={event => setBackgroundCsvEnabled(event.target.checked)} /> Stream Background CSV during Capture</label>
+                    {backgroundCsvEnabled && <>
+                      <select aria-label="Background CSV selection" value={backgroundCsvTarget} disabled={workflowBusy} onChange={event => setBackgroundCsvTarget(event.target.value)}>
+                        <option value="all">All Backgrounds</option>{workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
+                      </select>
+                      <p>{backgroundCsvFolder ?? 'Default: application folder / data'}</p>
+                      <button type="button" className="action-button" disabled={workflowBusy} onClick={() => void (async () => {
+                        setChoosingStreamOutputFolder(true)
+                        try { const folder = await open({ directory: true, multiple: false, title: 'Background CSV folder' }); if (typeof folder === 'string') setBackgroundCsvFolder(folder); setBackgroundCsvError(null) }
+                        catch (reason) { setBackgroundCsvError(String(reason)) }
+                        finally { setChoosingStreamOutputFolder(false) }
+                      })()}>Select Background Folder</button>
+                      <button type="button" disabled={workflowBusy} onClick={() => setBackgroundCsvFolder(null)}>Use Default Background Folder</button>
+                      {backgroundCsvError && <p role="alert">{backgroundCsvError}</p>}
+                    </>}
                     <label className="streaming-toggle">
                       <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
                         disabled={workflowBusy || !hasWorkflowOutputs}
@@ -2435,6 +2489,15 @@ function App() {
                             .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance, resourceIdentityDrafts[instance.id])}</option>)}
                         </select>
                       </label>}
+                      {selectedStep.type === 'background' && <>
+                        <label>Background<select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
+                          {workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id} · {background.tool_instance_id}</option>)}
+                        </select></label>
+                        {(selectedStep.action === 'worker-on' || selectedStep.action === 'worker-off') && <label><input type="checkbox" checked={selectedStep.capture} disabled={workflowBusy}
+                          onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, capture: event.target.checked } : step)} />
+                          Simultaneous Capture {selectedStep.action === 'worker-on' ? 'ON' : 'OFF'}</label>}
+                        {selectedStep.action === 'worker-off' && <p>If Capture was already explicitly switched OFF, uncheck simultaneous Capture OFF. Repeated ON/OFF actions fail the step.</p>}
+                      </>}
                       {selectedStep.type === 'for' && <>
                         <label className="step-property-field">
                           <span className="step-property-label">Loop variable</span>
@@ -2884,7 +2947,7 @@ function App() {
           {stopControls}
           {stopFeedback}
           {csvStreamFeedback}
-          {!hasWorkflowOutputs && (
+          {!hasWorkflowOutputs && !workflowDraft?.backgrounds?.length && (
             <>
               <p>No workflow outputs defined.</p>
               <p>Add Output steps to the Workflow to publish final result values.</p>
@@ -2973,6 +3036,10 @@ function App() {
               </div>
             </section>
           )}
+          {runWorkflowSnapshot?.backgrounds?.length && displayedRun && <BackgroundOutput key={displayedRun.run_id} runId={displayedRun.run_id}
+            backgrounds={runWorkflowSnapshot.backgrounds} running={runStatus === 'running'} onExportingChange={setExporting} onChartChange={(id, chart) => {
+              setWorkflowDraft(current => current ? { ...current, backgrounds: current.backgrounds?.map(background => background.id === id ? { ...background, chart } : background) } : current)
+            }} />}
           <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
             onChange={event => setExportAllPages(event.target.value === 'all')}>
             <option value="current">Run Page</option><option value="all">All Run Pages</option>
@@ -2997,6 +3064,7 @@ function App() {
           )}
         </section>
       )}
+      {simulationSamples.dialog}
     </main>
   )
 }

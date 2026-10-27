@@ -415,6 +415,11 @@ impl Step {
 /// The behavior represented by a workflow step.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StepKind {
+    Background {
+        background_id: String,
+        action: crate::background::BackgroundAction,
+        capture: bool,
+    },
     Assert {
         condition: Expression,
         message: String,
@@ -813,7 +818,7 @@ impl Workflow {
                             }
                         }
                     }
-                    StepKind::Wait { .. } => {}
+                    StepKind::Wait { .. } | StepKind::Background { .. } => {}
                 }
                 // A Show Message field may only display a published Output step value.
                 if matches!(step.kind(), StepKind::Output { .. }) {

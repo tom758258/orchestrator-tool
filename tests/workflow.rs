@@ -17,7 +17,7 @@ use serde_json::json;
 fn comparison_expression_flows_through_simulated_workflow() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Comparison integration",
             "workflow": { "steps": [
@@ -72,7 +72,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
     assert_eq!(outputs[1].value(), &json!(true));
     let saved: serde_json::Value =
         serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-    assert_eq!(saved["schema_version"], 1);
+    assert_eq!(saved["schema_version"], 2);
     assert_eq!(saved["workflow"]["steps"][1]["name"], "measurement");
     assert_eq!(
         Template::from_json_str(&saved.to_string()).unwrap(),
@@ -302,7 +302,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
 // Shared wire fixture also protects While template parsing and serialization.
 fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
     json!({
-        "schema_version": 1, "name": "While counter", "tool_instances": [],
+        "schema_version": 2, "name": "While counter", "tool_instances": [],
         "workflow": { "steps": [
             { "type": "set-variable", "id": "init", "variable": "x",
               "value": { "source": "literal", "value": 0 } },

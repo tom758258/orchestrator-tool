@@ -41,6 +41,8 @@ function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'])
 
 function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
+    case 'background':
+      return `${step.background_id}${step.capture ? ' · simultaneous Capture' : ''}`
     case 'for':
       return `Step ${step.range.step} · ${step.steps.length} body steps`
     case 'while':

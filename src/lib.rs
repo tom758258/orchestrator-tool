@@ -4,6 +4,8 @@
 //! layers so both can reuse the same orchestration behavior.
 
 pub mod adapters;
+pub mod background;
+pub mod background_export;
 pub mod common_job;
 pub mod common_v3;
 pub mod config;
@@ -20,6 +22,7 @@ pub mod output_time;
 pub mod powers_setup;
 pub mod process;
 pub mod run;
+pub mod run_failure;
 pub mod run_preparation;
 pub mod scopes_setup;
 pub mod status;

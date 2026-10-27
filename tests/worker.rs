@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{self, BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
+    path::Path,
     process,
     sync::{Mutex, OnceLock},
     thread,
@@ -370,6 +371,29 @@ const CLEANUP_MARKER_ENV: &str = "ORCHESTRATOR_TEST_CLEANUP_MARKER";
 
 fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--background-fixture")
+    {
+        background_fixture(arguments[1].to_str().unwrap());
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--background-tests")
+    {
+        background_capture_and_termination_contract();
+        live_workflow_cleanup_lifecycle();
+        multiple_powers_cleanup_attempts_every_session();
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--meters-real-background-tests")
+    {
+        real_meters_background_and_unlimited_simulation();
+        return;
+    }
 
     // Diagnostic Smoke probes the very same fake executable before starting it.
     if arguments == [OsString::from("manifest"), OsString::from("--json")] {
@@ -450,6 +474,7 @@ fn main() {
     }
 
     valid_ready_starts_worker_session();
+    background_capture_and_termination_contract();
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
     worker_exit_before_ready_surfaces_stderr_diagnostic();
@@ -499,6 +524,588 @@ fn main() {
     multiple_powers_cleanup_attempts_every_session();
     two_meters_use_distinct_sessions();
     live_preflight_dynamic_worker_failure_retains_powers_cleanup();
+}
+
+fn background_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let emit = |mut value: serde_json::Value| {
+        value["schema_version"] = json!(3);
+        value["timestamp_utc"] = json!(FIXTURE_UTC);
+        value["run_id"] = json!("background-run");
+        println!("{value}");
+        io::stdout().flush().unwrap();
+    };
+    emit(
+        json!({"event":"ready","features":{"common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}},
+        "stream":{"lifecycle":"run_bound"},"status_url":format!("{base}/status"),"command_url":format!("{base}/command"),"stop_url":format!("{base}/stop")}),
+    );
+    emit(
+        json!({"event":"status","worker_state":"running","fatal_error":null,"stream":{"lifecycle":"run_bound","state":"waiting"}}),
+    );
+    emit(
+        json!({"event":"status","worker_state":"running","fatal_error":null,"stream":{"lifecycle":"run_bound","state":"active"}}),
+    );
+    let mut count = 0;
+    loop {
+        count += 1;
+        emit(
+            json!({"event":"sample","captured":count,"value":count as f64,"unit":"V","status":"ok"}),
+        );
+        if scenario != "rolling" && count == 6 {
+            break;
+        }
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut bytes = [0; 4096];
+            let _ = stream.read(&mut bytes);
+            let body = json!({"schema_version":3,"run_id":"background-run","status":"accepted","error":null}).to_string();
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+            // A final sample after Stop must still reach an active Capture.
+            count += 1;
+            emit(
+                json!({"event":"sample","captured":count,"value":count as f64,"unit":"V","status":"ok"}),
+            );
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    if scenario != "missing-ended" {
+        emit(
+            json!({"event":"status","worker_state":"stopping","fatal_error":null,"stream":{"lifecycle":"run_bound","state":"ended"}}),
+        );
+    }
+    if scenario != "missing-summary" {
+        emit(
+            json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,"captured":if scenario == "bad-count" {count+1} else {count},
+        "errors":0,"overflow_detected":null,"overflow_monitoring":"off","final_drain_complete":true,
+        "data_integrity":match scenario {"missing-quality" => json!(null), "unknown-quality" => json!("unknown"), _ => json!("no_loss_detected")}}),
+        );
+    }
+}
+
+fn background_template(steps: serde_json::Value) -> Template {
+    let setup = MetersSetup {
+        trigger_mode: MetersTriggerMode::ImmediateCustom,
+        ..MetersSetup::default()
+    };
+    Template::from_json_str(&json!({"schema_version":2,"name":"Background contract", "tool_instances":[
+        {"id":"meters-bg","tool":"meters","setup":setup}],"backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","live_monitor":true,"trigger_count":6}],
+        "workflow":{"steps":steps}}).to_string()).unwrap()
+}
+
+fn background_capture_and_termination_contract() {
+    use orchestrator_tool::{
+        background::BackgroundStore,
+        run::{RunOptions, run_workflow_streaming_controlled},
+    };
+    use std::sync::Arc;
+    let on = json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true});
+    let off = json!({"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":true});
+    for scenario in [
+        "finite",
+        "missing-ended",
+        "missing-summary",
+        "missing-quality",
+        "bad-count",
+        "rolling",
+        "monitor-only",
+    ] {
+        let steps = if scenario == "monitor-only" {
+            json!([
+                {"type":"background","id":"monitor-on","background_id":"background-1","action":"worker-on","capture":false},
+                {"type":"wait","id":"monitor-wait","duration_ms":150},
+                {"type":"background","id":"monitor-off","background_id":"background-1","action":"worker-off","capture":false},
+                {"type":"background","id":"monitor-restart","background_id":"background-1","action":"worker-on","capture":false},
+                {"type":"wait","id":"monitor-wait-again","duration_ms":150},
+                {"type":"background","id":"monitor-release","background_id":"background-1","action":"worker-off","capture":false}
+            ])
+        } else if scenario == "rolling" {
+            json!([on,
+            {"type":"wait","id":"wait-a","duration_ms":40},
+            {"type":"background","id":"capture-off","background_id":"background-1","action":"capture-off"},
+            {"type":"wait","id":"wait-gap","duration_ms":40},
+            {"type":"background","id":"capture-on","background_id":"background-1","action":"capture-on"},
+            {"type":"wait","id":"wait-b","duration_ms":40},off])
+        } else {
+            json!([on,{"type":"wait","id":"wait","duration_ms":150},off])
+        };
+        let template = background_template(steps);
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let csv_folder = env::temp_dir().join(format!(
+            "orchestrator-bg-stream-{}-{scenario}",
+            process::id()
+        ));
+        let specs = HashMap::from([(
+            ToolInstanceId::new("meters-bg").unwrap(),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", scenario],
+            )
+            .with_manifest(fixture_manifest("meters-smoke")),
+        )]);
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
+                    output_folder: csv_folder.clone(),
+                    background_id: None,
+                }),
+                ..Default::default()
+            },
+            |_| {},
+            |_| false,
+        );
+        let data = store.lock().unwrap();
+        if scenario == "monitor-only" {
+            assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{result:?}");
+            assert!(data.datasets.is_empty());
+            // The second runtime replaces, rather than appends to, the monitor buffer.
+            assert_eq!(data.monitor("background-1").len(), 6);
+            assert!(!csv_folder.exists());
+            continue;
+        }
+        assert!(!data.datasets.is_empty(), "{scenario}");
+        if matches!(scenario, "finite" | "rolling") {
+            assert!(
+                result.as_ref().is_ok_and(|r| r.succeeded()),
+                "{scenario}: {result:?}"
+            );
+            assert_eq!(
+                data.datasets.len(),
+                if scenario == "rolling" { 2 } else { 1 }
+            );
+            let metadata = data.metadata();
+            assert!(
+                metadata
+                    .iter()
+                    .all(|d| d.status == "completed" && d.quality == "no_loss_detected")
+            );
+            assert!(metadata.iter().all(|d| d.row_count > 0));
+            for metadata in &metadata {
+                let mut csv = csv::Reader::from_path(metadata.csv_path.as_ref().unwrap()).unwrap();
+                assert_eq!(csv.records().count(), metadata.row_count);
+            }
+            assert!(
+                data.monitor("background-1").len() >= metadata.iter().map(|m| m.row_count).sum()
+            );
+            if scenario == "finite" {
+                assert_eq!(metadata[0].row_count, 6);
+                assert_eq!(metadata[0].min, Some(1.0));
+                assert_eq!(metadata[0].avg, Some(3.5));
+            } else {
+                let first = data.rows(&metadata[0].id, 0, 1000).unwrap();
+                let second = data.rows(&metadata[1].id, 0, 1000).unwrap();
+                assert!(
+                    first.last().unwrap()["captured"].as_u64() < second[0]["captured"].as_u64()
+                );
+            }
+            drop(data);
+            let folder = env::temp_dir().join(format!(
+                "orchestrator-background-export-{}-{scenario}",
+                process::id()
+            ));
+            let ids = store
+                .lock()
+                .unwrap()
+                .metadata()
+                .iter()
+                .map(|m| m.id.clone())
+                .collect::<Vec<_>>();
+            use orchestrator_tool::background_export::{BackgroundExportFormat, export_datasets};
+            let csv =
+                export_datasets(&store, &ids, &folder, BackgroundExportFormat::Csv, 4).unwrap();
+            let xlsx =
+                export_datasets(&store, &ids, &folder, BackgroundExportFormat::Xlsx, 4).unwrap();
+            assert_eq!(csv.len(), ids.len());
+            if scenario == "finite" {
+                assert_eq!(fs::read_to_string(&csv[0]).unwrap().lines().count(), 7);
+                assert_eq!(xlsx.len(), 2);
+                use calamine::{Reader, Xlsx};
+                let rows = xlsx
+                    .iter()
+                    .map(|path| {
+                        let mut book: Xlsx<_> = calamine::open_workbook(path).unwrap();
+                        book.worksheet_range("Sheet1").unwrap().height() - 1
+                    })
+                    .sum::<usize>();
+                assert_eq!(rows, 6);
+                let again =
+                    export_datasets(&store, &ids, &folder, BackgroundExportFormat::Csv, 4).unwrap();
+                assert_ne!(csv, again);
+            }
+            fs::remove_dir_all(folder).unwrap();
+        } else {
+            assert!(result.is_err(), "{scenario}: {result:?}");
+            assert_eq!(data.metadata()[0].status, "failed");
+        }
+        fs::remove_dir_all(csv_folder).unwrap();
+    }
+    // Strict composite OFF and natural-end acknowledgements are public workflow semantics.
+    for (actions, ok) in [
+        (
+            json!([on,{"type":"wait","id":"wait","duration_ms":150},
+            {"type":"background","id":"ack","background_id":"background-1","action":"capture-off"},
+            {"type":"background","id":"release","background_id":"background-1","action":"worker-off","capture":false}]),
+            true,
+        ),
+        (
+            json!([on,{"type":"background","id":"again","background_id":"background-1","action":"worker-on"}]),
+            false,
+        ),
+        (
+            json!([on,{"type":"background","id":"stop-capture","background_id":"background-1","action":"capture-off"},off]),
+            false,
+        ),
+        (
+            json!([on,{"type":"background","id":"again","background_id":"background-1","action":"capture-on"}]),
+            false,
+        ),
+        (
+            json!([on,{"type":"wait","id":"wait","duration_ms":150},
+            {"type":"background","id":"ack","background_id":"background-1","action":"capture-off"},
+            {"type":"background","id":"again","background_id":"background-1","action":"capture-off"}]),
+            false,
+        ),
+        (
+            json!([on,{"type":"wait","id":"wait","duration_ms":150},off,
+            {"type":"background","id":"again","background_id":"background-1","action":"worker-off"}]),
+            false,
+        ),
+        (
+            json!([on,{"type":"wait","id":"wait","duration_ms":150},
+            {"type":"background","id":"again","background_id":"background-1","action":"capture-on"}]),
+            false,
+        ),
+    ] {
+        let template = background_template(actions);
+        let specs = HashMap::from([(
+            ToolInstanceId::new("meters-bg").unwrap(),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", "finite"],
+            )
+            .with_manifest(fixture_manifest("meters-smoke")),
+        )]);
+        let result = run_simulated_workflow(
+            &template,
+            &specs,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        );
+        assert_eq!(
+            result.as_ref().is_ok_and(|r| r
+                .step_executions()
+                .iter()
+                .all(|s| matches!(s.outcome(), StepOutcome::Succeeded { .. }))),
+            ok,
+            "{result:?}"
+        );
+    }
+
+    // Two sources must remain separate even if their worker-local Run IDs coincide.
+    {
+        use orchestrator_tool::background::{BackgroundAction, BackgroundManager};
+        let mut configs = background_template(json!([])).backgrounds().to_vec();
+        let mut second = configs[0].clone();
+        second.id = "background-2".into();
+        second.tool_instance_id = ToolInstanceId::new("meters-bg-2").unwrap();
+        second.live_monitor = false;
+        configs.push(second);
+        let specs = configs
+            .iter()
+            .zip(["finite", "unknown-quality"])
+            .map(|(config, scenario)| {
+                (
+                    config.tool_instance_id.clone(),
+                    WorkerLaunchSpec::new(
+                        env::current_exe().unwrap(),
+                        ["--background-fixture", scenario],
+                    )
+                    .with_manifest(fixture_manifest("meters-smoke")),
+                )
+            })
+            .collect();
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let failure = orchestrator_tool::run_failure::RunFailure::default();
+        let mut manager = BackgroundManager::new(
+            &configs,
+            &specs,
+            store.clone(),
+            failure.clone(),
+            None,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        );
+        for config in &configs {
+            manager
+                .action(&config.id, BackgroundAction::WorkerOn, true)
+                .unwrap();
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if store
+                .lock()
+                .unwrap()
+                .metadata()
+                .iter()
+                .all(|m| m.status == "completed")
+            {
+                break;
+            }
+            failure.check().unwrap();
+            assert!(
+                std::time::Instant::now() < deadline,
+                "captures did not finish"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        {
+            let data = store.lock().unwrap();
+            let metadata = data.metadata();
+            assert_eq!(metadata.len(), 2);
+            for (config, quality) in configs.iter().zip(["no_loss_detected", "unknown"]) {
+                let dataset = metadata
+                    .iter()
+                    .find(|m| m.background_id == config.id)
+                    .unwrap();
+                assert_eq!(dataset.row_count, 6);
+                assert_eq!(dataset.quality, quality);
+                assert_eq!(data.rows(&dataset.id, 0, 10).unwrap()[0]["captured"], 1);
+            }
+            assert_eq!(data.monitor("background-1").len(), 6);
+            assert!(data.monitor("background-2").is_empty());
+        }
+        manager.cleanup().unwrap();
+        manager.cleanup().unwrap();
+    }
+
+    // Background failures and CSV setup failures must not bypass Powers Safe-Off.
+    for (csv_failure, power_failure, workflow_failure) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        let marker = env::temp_dir().join(format!(
+            "orchestrator-bg-safe-off-{}-{csv_failure}-{power_failure}",
+            process::id()
+        ));
+        let _ = fs::remove_file(&marker);
+        let invalid_folder = marker.with_extension("file");
+        fs::write(&invalid_folder, "not a directory").unwrap();
+        // SAFETY: this subprocess fixture harness executes all cases sequentially.
+        unsafe {
+            env::set_var(CLEANUP_MARKER_ENV, &marker);
+        }
+        let mut wire: serde_json::Value =
+            serde_json::from_str(&background_template(json!([on])).to_json_string().unwrap())
+                .unwrap();
+        wire["workflow"]["steps"] = json!([
+            {"type":"tool-action","id":"set","target":"powers-1","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+            {"type":"tool-action","id":"power-on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
+            on,{"type":"wait","id":"wait","duration_ms":150},
+            {"type":"wait","id":"after-failure","duration_ms":0}
+        ]);
+        wire["tool_instances"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"powers-1","tool":"powers","setup":{}}));
+        if workflow_failure {
+            wire["workflow"]["steps"][3] = json!({"type":"assert","id":"original-failure",
+                "left":{"source":"literal","value":0},"operator":"equal","right":{"source":"literal","value":1},"message":"Original workflow failure"});
+        }
+        if power_failure {
+            wire["workflow"]["steps"].as_array_mut().unwrap().insert(2,json!({"type":"tool-action","id":"power-off","target":"powers-1","action":"output-off","arguments":{"channel":1}}));
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let specs = HashMap::from([
+            (
+                ToolInstanceId::new("meters-bg").unwrap(),
+                WorkerLaunchSpec::new(
+                    env::current_exe().unwrap(),
+                    ["--background-fixture", "missing-summary"],
+                )
+                .with_manifest(fixture_manifest("meters-smoke")),
+            ),
+            (
+                ToolInstanceId::new("powers-1").unwrap(),
+                fixture_spec(if power_failure {
+                    "live-cleanup-failure"
+                } else {
+                    "live-assert-failure"
+                }),
+            ),
+        ]);
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let mut completed = Vec::new();
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Live,
+            &specs,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                background_csv: csv_failure.then(|| {
+                    orchestrator_tool::background::BackgroundCsvOptions {
+                        output_folder: invalid_folder.clone(),
+                        background_id: None,
+                    }
+                }),
+                ..Default::default()
+            },
+            |event| {
+                if let WorkflowRunEvent::StepCompleted(step) = event {
+                    completed.push(step.step_id().as_str().to_owned());
+                }
+            },
+            |_| false,
+        );
+        // SAFETY: run cleanup reaped all fixture processes before changing the environment.
+        unsafe {
+            env::remove_var(CLEANUP_MARKER_ENV);
+        }
+        let error = result.unwrap_err().to_string();
+        assert!(csv_failure || error.contains("summary"), "{error}");
+        if workflow_failure {
+            assert!(error.contains("original-failure"), "{error}");
+        }
+        assert!(fs::read_to_string(&marker).unwrap().contains("safe-off"));
+        assert!(!completed.contains(&"after-failure".to_owned()));
+        if !csv_failure && !workflow_failure {
+            assert_eq!(store.lock().unwrap().metadata()[0].row_count, 6);
+        }
+        fs::remove_file(marker).unwrap();
+        fs::remove_file(invalid_folder).unwrap();
+    }
+}
+
+fn real_meters_background_and_unlimited_simulation() {
+    use orchestrator_tool::{
+        background::BackgroundStore,
+        run::{RunOptions, run_workflow_streaming_controlled},
+        run_preparation::prepare_worker_launch_specs_with_simulation,
+    };
+    use std::sync::Arc;
+    let executable = std::path::PathBuf::from(
+        env::var_os("ORCHESTRATOR_TEST_METERS_EXECUTABLE").expect("Supply real Meters CLI"),
+    );
+    let mut config = orchestrator_tool::config::Config::default();
+    config.set_executable_path(&ToolId::meters(), &executable);
+    for infinite in [false, true] {
+        let mut wire: serde_json::Value = serde_json::from_str(&background_template(json!([
+            {"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true},
+            {"type":"wait","id":"wait","duration_ms":100},
+            {"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":true}
+        ])).to_json_string().unwrap()).unwrap();
+        if infinite {
+            wire["backgrounds"][0]["trigger_count"] = json!(null);
+            wire["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"] = json!(true);
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let specs = prepare_worker_launch_specs_with_simulation(
+            &template,
+            ExecutionMode::Simulate,
+            Path::new("."),
+            &config,
+            &HashMap::new(),
+        )
+        .unwrap();
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(10),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                ..Default::default()
+            },
+            |_| {},
+            |_| false,
+        );
+        assert!(
+            result.as_ref().is_ok_and(|r| r.succeeded()),
+            "infinite={infinite}: {result:?}"
+        );
+        let data = store.lock().unwrap();
+        assert!(data.metadata()[0].row_count > 0);
+        assert_eq!(data.metadata()[0].status, "completed");
+        println!(
+            "Real Meters Immediate Custom infinite={infinite}: {} samples, {}",
+            data.metadata()[0].row_count,
+            data.metadata()[0].quality
+        );
+    }
+    // A source bound is a launch parameter: it never turns the While into a finite loop.
+    let setup = MetersSetup::default();
+    let template=Template::from_json_str(&json!({"schema_version":2,"name":"Unlimited SIM", "tool_instances":[{"id":"meters-1","tool":"meters","setup":setup}],
+        "workflow":{"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
+            "steps":[{"type":"tool-action","id":"measure","target":"meters-1","action":"measure","arguments":{}}]}]}}).to_string()).unwrap();
+    let specs = prepare_worker_launch_specs_with_simulation(
+        &template,
+        ExecutionMode::Simulate,
+        Path::new("."),
+        &config,
+        &HashMap::from([("meters-1".into(), 3)]),
+    )
+    .unwrap();
+    for stop_early in [true, false] {
+        let measured = std::cell::Cell::new(0);
+        let mut measure_failed = false;
+        let run = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(10),
+            Duration::from_secs(5),
+            Duration::from_secs(5),
+            None,
+            RunOptions::default(),
+            |event| {
+                if let WorkflowRunEvent::StepCompleted(step) = event
+                    && step.step_id().as_str() == "measure"
+                {
+                    match step.outcome() {
+                        StepOutcome::Succeeded { .. } => measured.set(measured.get() + 1),
+                        StepOutcome::Failed { .. } => measure_failed = true,
+                        _ => {}
+                    }
+                }
+            },
+            |_| stop_early && measured.get() >= 2,
+        );
+        assert_eq!(measured.get(), if stop_early { 2 } else { 3 });
+        if stop_early {
+            assert!(run.as_ref().is_ok_and(|r| r.succeeded()), "{run:?}");
+        } else {
+            assert!(measure_failed);
+            assert!(run.is_err() || run.as_ref().is_ok_and(|r| !r.succeeded()));
+        }
+    }
+    assert!(
+        template
+            .to_json_string()
+            .unwrap()
+            .contains("\"max_iterations\": null")
+    );
+    println!(
+        "Real Meters Software Unlimited SIM: stopped after 2 samples; exhausted after 3 samples and failed the next Measure"
+    );
 }
 
 fn real_powers_simulated_workflow_uses_common_tracker() {
@@ -2211,7 +2818,7 @@ fn scopes_worker_protocol_cases() {
 }
 
 fn scopes_setup_failure_stops_workflow() {
-    let template = Template::from_json_str(&json!({"schema_version":1,"name":"Setup failure",
+    let template = Template::from_json_str(&json!({"schema_version":2,"name":"Setup failure",
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
         "workflow":{"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
             "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
@@ -2232,7 +2839,7 @@ fn scopes_setup_failure_stops_workflow() {
 }
 
 fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
-    let template = Template::from_json_str(&json!({"schema_version":1,"name":"Dynamic Worker failure",
+    let template = Template::from_json_str(&json!({"schema_version":2,"name":"Dynamic Worker failure",
         "tool_instances":[{"id":"power","tool":"powers","setup":{}},{"id":"scope","tool":"scopes","setup":{}}],
         "workflow":{"steps":[
             {"type":"set-variable","id":"channel","variable":"channel","value":{"source":"literal","value":99}},
@@ -2631,7 +3238,7 @@ fn powers_set_voltage_step_outputs_reach_result_row() {
 fn powers_set_output_binding_reaches_worker() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "Power set output",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
             "workflow": { "steps": [
@@ -2750,7 +3357,7 @@ fn simulated_manual_powers_clear_returns_plan_without_reread() {
 
 fn powers_protection_status_asserts_untripped_result() {
     let template = Template::from_json_str(&json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "name": "Power Protection Status",
         "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
         "workflow": { "steps": [
@@ -3045,7 +3652,7 @@ fn custom_meter_template(steps: serde_json::Value) -> Template {
 fn custom_meter_template_with_mode(steps: serde_json::Value, trigger_mode: &str) -> Template {
     Template::from_json_str(
         &json!({
-            "schema_version": 1, "name": "Custom meter", "tool_instances": [{
+            "schema_version": 2, "name": "Custom meter", "tool_instances": [{
                 "id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
@@ -3142,7 +3749,7 @@ fn meters_custom_outputs_expand_rows_and_preserve_staging() {
 
     let error = Template::from_json_str(
         &json!({
-            "schema_version": 1, "name": "Two batches", "tool_instances": [{
+            "schema_version": 2, "name": "Two batches", "tool_instances": [{
                 "id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
@@ -3171,7 +3778,7 @@ fn meters_custom_outputs_expand_rows_and_preserve_staging() {
 
     let error = Template::from_json_str(
         &json!({
-            "schema_version": 1, "name": "Batch used by Assert", "tool_instances": [{
+            "schema_version": 2, "name": "Batch used by Assert", "tool_instances": [{
                 "id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
@@ -3296,7 +3903,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
 fn simulated_measurement_dataflow_exports_csv() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                 "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
                 "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
@@ -3363,7 +3970,7 @@ fn simulated_measurement_dataflow_exports_csv() {
     assert_eq!(saved, definition_before_run);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&saved).unwrap()["schema_version"],
-        1
+        2
     );
     assert_eq!(Template::from_json_str(&saved).unwrap(), template);
 }
@@ -3517,7 +4124,7 @@ fn record_event_if_requested(event: &str) {
 fn powers_protection_setup_lifecycle() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 1, "name": "Protection setup fixture",
+            "schema_version": 2, "name": "Protection setup fixture",
             "tool_instances": [{"id":"powers-1","tool":"powers","setup":{"protection":{"channels":[
                 {"channel":1,"ovp_voltage":5.5,"ocp":"on"}]}}}],
             "workflow":{"steps":[

@@ -173,6 +173,52 @@ pub fn prepare_worker_launch_specs(
     application_dir: &Path,
     config: &Config,
 ) -> Result<HashMap<ToolInstanceId, WorkerLaunchSpec>, String> {
+    prepare_worker_launch_specs_with_simulation(
+        template,
+        execution_mode,
+        application_dir,
+        config,
+        &HashMap::new(),
+    )
+}
+
+/// Instances needing a finite Simple SIM source, independent of executable discovery.
+pub fn simulation_sample_requirements(template: &Template) -> Result<Vec<String>, String> {
+    template
+        .referenced_tool_instances()
+        .into_iter()
+        .filter(|i| !template.is_background_instance(&i.id))
+        .filter(|i| {
+            i.meters_setup()
+                .is_some_and(|s| s.trigger_mode == MetersTriggerMode::Software)
+        })
+        .filter_map(
+            |i| match measure_count(template.workflow().steps(), &i.id) {
+                Ok(None) => Some(Ok(i.id.as_str().into())),
+                Ok(Some(_)) => None,
+                Err(e) => Some(Err(e)),
+            },
+        )
+        .collect()
+}
+
+pub fn prepare_worker_launch_specs_with_simulation(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    application_dir: &Path,
+    config: &Config,
+    simulation_samples: &HashMap<String, usize>,
+) -> Result<HashMap<ToolInstanceId, WorkerLaunchSpec>, String> {
+    let requirements = simulation_sample_requirements(template)?;
+    if execution_mode == ExecutionMode::Simulate {
+        for (id, count) in simulation_samples {
+            if !requirements.contains(id) || !(1..=1_000_000).contains(count) {
+                return Err(format!(
+                    "Invalid SIM Max Samples for {id}; expected 1..=1,000,000 for a required Simple Software instance"
+                ));
+            }
+        }
+    }
     let definitions = built_in_tool_definitions();
     let mut launch_specs = HashMap::new();
     let instances = template.referenced_tool_instances();
@@ -204,8 +250,14 @@ pub fn prepare_worker_launch_specs(
 
     for instance in instances {
         let tool = &instance.tool;
+        let background = template
+            .backgrounds()
+            .iter()
+            .find(|b| b.tool_instance_id == instance.id);
         let measured = measure_count(template.workflow().steps(), &instance.id)?;
-        let meters_limit = if tool.as_str() == "meters" {
+        let meters_limit = if let Some(background) = background {
+            background.trigger_count
+        } else if tool.as_str() == "meters" {
             let setup = instance.meters_setup().expect("Meters setup was validated");
             match setup.trigger_mode {
                 MetersTriggerMode::Software => measured
@@ -226,15 +278,19 @@ pub fn prepare_worker_launch_specs(
         } else {
             None
         };
-        if execution_mode == ExecutionMode::Simulate
+        let meters_limit = if execution_mode == ExecutionMode::Simulate
             && tool.as_str() == "meters"
             && meters_limit.is_none()
+            && background.is_none()
         {
-            return Err(format!(
-                "Run Simulation cannot use Meter Measure inside Unlimited While for {}; choose a finite max_iterations or Run Live",
-                instance.id
-            ));
-        }
+            Some(
+                *simulation_samples
+                    .get(instance.id.as_str())
+                    .unwrap_or(&1_000),
+            )
+        } else {
+            meters_limit
+        };
         let definition = definitions
             .iter()
             .find(|definition| definition.id() == tool)
@@ -280,41 +336,62 @@ pub fn prepare_worker_launch_specs(
         }
         crate::adapters::validate_existing_worker_integration(tool, probe.manifest())?;
 
-        let spec = match (execution_mode, tool.as_str()) {
-            (ExecutionMode::Simulate, "powers") => powers::simulate_worker_launch_spec(executable),
-            (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(
+        let spec = if let Some(background) = background {
+            if probe.manifest().feature("common.streaming").is_none() {
+                return Err(format!(
+                    "{}: Background Unsupported; Manifest has no common.streaming",
+                    instance.id
+                ));
+            }
+            meters::background_worker_launch_spec(
                 executable,
-                meters_limit,
-                instance.meters_setup().expect("Meters setup was validated"),
-            ),
-            (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
-                executable,
-                config
-                    .live_resource(&instance.id)
-                    .expect("live resources were validated"),
-            ),
-            (ExecutionMode::Live, "meters") => meters::live_worker_launch_spec(
-                executable,
-                config
-                    .live_resource(&instance.id)
-                    .expect("live resources were validated"),
-                meters_limit,
-                instance.meters_setup().expect("Meters setup was validated"),
+                execution_mode,
+                config.live_resource(&instance.id),
+                background.trigger_count,
+                instance.meters_setup().expect("validated Meters"),
                 config.live_backend(&instance.id),
-            ),
-            (ExecutionMode::Simulate, "scopes") => scopes::simulate_worker_launch_spec(executable),
-            (ExecutionMode::Live, "scopes") => scopes::live_worker_launch_spec(
-                executable,
-                config
-                    .live_resource(&instance.id)
-                    .expect("validated resource"),
-                config.live_resource_identities()[instance.id.as_str()]
-                    .model_id
-                    .as_deref()
-                    .expect("validated model"),
-                config.live_backend(&instance.id),
-            ),
-            _ => unreachable!("referenced workflow tools are filtered"),
+            )
+        } else {
+            match (execution_mode, tool.as_str()) {
+                (ExecutionMode::Simulate, "powers") => {
+                    powers::simulate_worker_launch_spec(executable)
+                }
+                (ExecutionMode::Simulate, "meters") => meters::simulate_worker_launch_spec(
+                    executable,
+                    meters_limit,
+                    instance.meters_setup().expect("Meters setup was validated"),
+                ),
+                (ExecutionMode::Live, "powers") => powers::live_worker_launch_spec(
+                    executable,
+                    config
+                        .live_resource(&instance.id)
+                        .expect("live resources were validated"),
+                ),
+                (ExecutionMode::Live, "meters") => meters::live_worker_launch_spec(
+                    executable,
+                    config
+                        .live_resource(&instance.id)
+                        .expect("live resources were validated"),
+                    meters_limit,
+                    instance.meters_setup().expect("Meters setup was validated"),
+                    config.live_backend(&instance.id),
+                ),
+                (ExecutionMode::Simulate, "scopes") => {
+                    scopes::simulate_worker_launch_spec(executable)
+                }
+                (ExecutionMode::Live, "scopes") => scopes::live_worker_launch_spec(
+                    executable,
+                    config
+                        .live_resource(&instance.id)
+                        .expect("validated resource"),
+                    config.live_resource_identities()[instance.id.as_str()]
+                        .model_id
+                        .as_deref()
+                        .expect("validated model"),
+                    config.live_backend(&instance.id),
+                ),
+                _ => unreachable!("referenced workflow tools are filtered"),
+            }
         };
         // Carry the exact executable's validated Manifest into startup
         // so that runtime adoption can be checked against preflight.
@@ -549,7 +626,7 @@ mod tests {
             path
         };
         let template = Template::from_json_str(&json!({
-            "schema_version": 1, "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
+            "schema_version": 2, "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                 "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
                 "nplc": 1.0, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
                 "current_terminal": null
@@ -768,21 +845,53 @@ mod tests {
         unlimited_loop["max_iterations"] = json!(null);
         unlimited_wire["workflow"]["steps"][0] = unlimited_loop;
         let unlimited = Template::from_json_str(&unlimited_wire.to_string()).unwrap();
-        let error = prepare_worker_launch_specs(
+        let specs = prepare_worker_launch_specs(
             &unlimited,
             ExecutionMode::Simulate,
             Path::new("unused"),
             &config,
         )
-        .unwrap_err();
-        assert!(
-            error.contains("Run Simulation") && error.contains("Unlimited While"),
-            "{error}"
+        .unwrap();
+        let target = ToolInstanceId::new("meters-1").unwrap();
+        assert_eq!(
+            simulation_sample_requirements(&unlimited).unwrap(),
+            vec!["meters-1"]
         );
         assert!(
-            error.contains("Meter Measure") && error.contains("meters-1"),
-            "{error}"
+            specs[&target]
+                .arguments()
+                .windows(2)
+                .any(|pair| pair == ["--max-samples", "1000"])
         );
+        let before = unlimited.to_json_string().unwrap();
+        let overrides = HashMap::from([("meters-1".into(), 5000)]);
+        let specs = prepare_worker_launch_specs_with_simulation(
+            &unlimited,
+            ExecutionMode::Simulate,
+            &dir,
+            &config,
+            &overrides,
+        )
+        .unwrap();
+        assert!(
+            specs[&target]
+                .arguments()
+                .windows(2)
+                .any(|pair| pair == ["--max-samples", "5000"])
+        );
+        assert_eq!(unlimited.to_json_string().unwrap(), before);
+        for count in [0, 1_000_001] {
+            assert!(
+                prepare_worker_launch_specs_with_simulation(
+                    &unlimited,
+                    ExecutionMode::Simulate,
+                    &dir,
+                    &config,
+                    &HashMap::from([("meters-1".into(), count)])
+                )
+                .is_err()
+            );
+        }
         let specs =
             prepare_worker_launch_specs(&unlimited, ExecutionMode::Live, &dir, &config).unwrap();
         let unbounded = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
@@ -844,7 +953,7 @@ mod tests {
         let executable = std::fs::canonicalize(executable).unwrap();
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "Meters simulation vertical slice",
+                "schema_version": 2, "name": "Meters simulation vertical slice",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": setup}, {"id": "powers-1", "tool": "powers", "setup": {}}],
                 "workflow": {"steps": [
                     {"type": "tool-action", "id": "measure", "target": "meters-1",
@@ -902,7 +1011,7 @@ mod tests {
     fn preparation_without_meters_does_not_require_setup() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "Wait only", "tool_instances": [],
+                "schema_version": 2, "name": "Wait only", "tool_instances": [],
                 "workflow": {"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
             })
             .to_string(),
@@ -974,7 +1083,7 @@ mod tests {
 
     fn instance_template() -> Template {
         Template::from_json_str(&json!({
-            "schema_version": 1, "name": "Instances",
+            "schema_version": 2, "name": "Instances",
             "tool_instances": [
                 {"id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto", "nplc": 1,

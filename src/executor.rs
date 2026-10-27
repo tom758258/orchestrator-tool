@@ -91,6 +91,8 @@ pub fn execute_workflow_with_loop_stop(
         &mut should_stop_after_iteration,
         true,
         None,
+        crate::run_failure::RunFailure::default(),
+        None,
     )?;
     Ok(WorkflowRunResult::new(
         execution.executions.expect("retained executions"),
@@ -140,12 +142,14 @@ pub fn execute_workflow_streaming_with_loop_stop_and_scopes_output(
         &mut should_stop_after_iteration,
         false,
         scopes_output_folder,
+        crate::run_failure::RunFailure::default(),
+        None,
     )?;
     Ok(WorkflowRunSummary::new(execution.failure))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_workflow_internal(
+pub(crate) fn execute_workflow_internal(
     template: &Template,
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
     execution_mode: ExecutionMode,
@@ -154,6 +158,8 @@ fn execute_workflow_internal(
     should_stop_after_iteration: &mut dyn FnMut(&StepId) -> bool,
     retain_results: bool,
     scopes_output_folder: Option<&Path>,
+    failure_signal: crate::run_failure::RunFailure,
+    background: Option<&mut crate::background::BackgroundManager>,
 ) -> Result<ExecutionResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
@@ -172,6 +178,8 @@ fn execute_workflow_internal(
         executions: retain_results.then(Vec::new),
         rows: retain_results.then(Vec::new),
         failure: None,
+        failure_signal,
+        background,
     };
     let _ = execution.scope(workflow.steps(), &[], None);
     Ok(ExecutionResult {
@@ -181,10 +189,10 @@ fn execute_workflow_internal(
     })
 }
 
-struct ExecutionResult {
-    executions: Option<Vec<StepExecution>>,
-    rows: Option<Vec<ResultRow>>,
-    failure: Option<String>,
+pub(crate) struct ExecutionResult {
+    pub executions: Option<Vec<StepExecution>>,
+    pub rows: Option<Vec<ResultRow>>,
+    pub failure: Option<String>,
 }
 
 #[derive(Clone)]
@@ -205,6 +213,8 @@ struct Execution<'a> {
     executions: Option<Vec<StepExecution>>,
     rows: Option<Vec<ResultRow>>,
     failure: Option<String>,
+    failure_signal: crate::run_failure::RunFailure,
+    background: Option<&'a mut crate::background::BackgroundManager>,
 }
 
 struct StagedOutput {
@@ -222,28 +232,80 @@ impl Execution<'_> {
     ) -> Result<Option<StepId>, String> {
         let mut staged = Vec::<(String, Vec<StagedOutput>)>::new();
         for step in steps {
-            let (outcome, unwind) = match step.kind() {
-                StepKind::For { .. } | StepKind::While { .. } => match self.run_loop(step, path) {
-                    Ok(target) => (
-                        StepOutcome::Succeeded {
-                            output: Value::Null,
-                        },
-                        target,
+            let (outcome, unwind) = if let Err(message) = self.failure_signal.check() {
+                (StepOutcome::Failed { message }, None)
+            } else {
+                match step.kind() {
+                    StepKind::Background {
+                        background_id,
+                        action,
+                        capture,
+                    } => {
+                        let result = self
+                            .background
+                            .as_mut()
+                            .ok_or_else(|| {
+                                "Background actions require the Run controller".to_owned()
+                            })
+                            .and_then(|manager| manager.action(background_id, *action, *capture));
+                        (
+                            match result {
+                                Ok(()) => StepOutcome::Succeeded {
+                                    output: Value::Null,
+                                },
+                                Err(message) => StepOutcome::Failed { message },
+                            },
+                            None,
+                        )
+                    }
+                    StepKind::Wait { duration_ms } => {
+                        let deadline =
+                            std::time::Instant::now() + Duration::from_millis(*duration_ms);
+                        let result = loop {
+                            if let Err(error) = self.failure_signal.check() {
+                                break Err(error);
+                            }
+                            let remaining =
+                                deadline.saturating_duration_since(std::time::Instant::now());
+                            if remaining.is_zero() {
+                                break Ok(());
+                            }
+                            thread::sleep(remaining.min(Duration::from_millis(10)));
+                        };
+                        (
+                            match result {
+                                Ok(()) => StepOutcome::Succeeded {
+                                    output: Value::Null,
+                                },
+                                Err(message) => StepOutcome::Failed { message },
+                            },
+                            None,
+                        )
+                    }
+                    StepKind::For { .. } | StepKind::While { .. } => {
+                        match self.run_loop(step, path) {
+                            Ok(target) => (
+                                StepOutcome::Succeeded {
+                                    output: Value::Null,
+                                },
+                                target,
+                            ),
+                            Err(message) => (StepOutcome::Failed { message }, None),
+                        }
+                    }
+                    _ => (
+                        execute_non_loop_step(
+                            step,
+                            self.template,
+                            &mut self.data,
+                            self.sessions,
+                            self.execution_mode,
+                            self.action_timeout,
+                            self.scopes_output_folder,
+                        ),
+                        None,
                     ),
-                    Err(message) => (StepOutcome::Failed { message }, None),
-                },
-                _ => (
-                    execute_non_loop_step(
-                        step,
-                        self.template,
-                        &mut self.data,
-                        self.sessions,
-                        self.execution_mode,
-                        self.action_timeout,
-                        self.scopes_output_folder,
-                    ),
-                    None,
-                ),
+                }
             };
             if let StepOutcome::Succeeded { output } = &outcome {
                 self.data.set_step_output(step.id().clone(), output.clone());
@@ -333,6 +395,10 @@ impl Execution<'_> {
                     rows.push(row.clone());
                 }
                 notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
+                if let Err(message) = self.failure_signal.check() {
+                    self.failure.get_or_insert(message.clone());
+                    return Err(message);
+                }
             }
         }
         // Only a fully successful scope reaches its safe point. Ancestors are checked here,
@@ -539,7 +605,7 @@ fn execute_non_loop_step(
             },
             Err(message) => StepOutcome::Failed { message },
         },
-        StepKind::For { .. } | StepKind::While { .. } => {
+        StepKind::For { .. } | StepKind::While { .. } | StepKind::Background { .. } => {
             unreachable!("loops execute through run_loop")
         }
     }
@@ -719,6 +785,61 @@ fn dispatch_tool_action(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fatal_observer_failure_preserves_commit_and_stops_next_steps() {
+        use crate::{
+            run::{RunOptions, run_workflow_streaming_controlled},
+            run_failure::RunFailure,
+        };
+        let template=crate::template::Template::from_json_str(&serde_json::json!({"schema_version":2,"name":"CSV failure", "tool_instances":[],
+            "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"1","stop":"3","step":"1"},
+                "steps":[{"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
+                {"type":"wait","id":"after","duration_ms":0}]}}).to_string()).unwrap();
+        let failure = RunFailure::default();
+        let mut events = Vec::new();
+        let mut graceful_stop_called = false;
+        let result = run_workflow_streaming_controlled(
+            &template,
+            crate::run::ExecutionMode::Simulate,
+            &Default::default(),
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(1),
+            None,
+            RunOptions {
+                failure: failure.clone(),
+                ..Default::default()
+            },
+            |event| {
+                if matches!(
+                    event,
+                    crate::workflow::WorkflowRunEvent::ResultRowCommitted(_)
+                ) {
+                    failure.fail("CSV disk unavailable");
+                }
+                events.push(event);
+            },
+            |_| {
+                graceful_stop_called = true;
+                false
+            },
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("CSV disk unavailable")
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, crate::workflow::WorkflowRunEvent::ResultRowCommitted(_)))
+                .count(),
+            1
+        );
+        assert!(!events.iter().any(|e| matches!(e,crate::workflow::WorkflowRunEvent::StepCompleted(step) if step.step_id().as_str()=="after")));
+        assert!(!graceful_stop_called);
+    }
     use std::{collections::HashMap, time::Duration};
 
     use serde_json::json;
@@ -798,7 +919,7 @@ mod tests {
         };
         let template = crate::template::Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "Stop", "tool_instances": [],
+                "schema_version": 2, "name": "Stop", "tool_instances": [],
                 "workflow": { "steps": [loop_step,
                     { "type": "wait", "id": "root-later", "duration_ms": 0 },
                     { "type": "for", "id": "later-loop", "variable": "y",
@@ -1027,7 +1148,7 @@ mod tests {
     #[test]
     fn for_restores_loop_variable_and_preserves_run_wide_mutations_in_root_row() {
         let template = crate::template::Template::from_json_str(&json!({
-            "schema_version": 1, "name": "For scope", "tool_instances": [],
+            "schema_version": 2, "name": "For scope", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "set-variable", "id": "set-x", "variable": "x",
                   "value": { "source": "literal", "value": 99 } },
@@ -1085,7 +1206,7 @@ mod tests {
     #[test]
     fn for_binds_exact_decimal_values_and_commits_ordered_iteration_rows() {
         let template = crate::template::Template::from_json_str(&json!({
-            "schema_version": 1, "name": "Decimal sweep", "tool_instances": [],
+            "schema_version": 2, "name": "Decimal sweep", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "set-variable", "id": "before", "variable": "baseline",
                   "value": { "source": "literal", "value": 42 } },
@@ -1135,7 +1256,7 @@ mod tests {
     fn failed_for_iteration_discards_only_current_staged_row_and_stops_execution() {
         let template = crate::template::Template::from_json_str(
             &json!({
-                "schema_version": 1, "name": "Failed sweep", "tool_instances": [],
+                "schema_version": 2, "name": "Failed sweep", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [

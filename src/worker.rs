@@ -8,6 +8,7 @@ use std::{
     process::{ChildStderr, ChildStdout, ExitStatus},
     sync::{
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
     },
     thread::{self, JoinHandle},
@@ -34,6 +35,7 @@ pub struct WorkerLaunchSpec {
     executable: PathBuf,
     arguments: Vec<OsString>,
     manifest: Option<ToolManifest>,
+    bounded_events: bool,
 }
 
 impl WorkerLaunchSpec {
@@ -47,6 +49,7 @@ impl WorkerLaunchSpec {
             executable: executable.into(),
             arguments: arguments.into_iter().map(Into::into).collect(),
             manifest: None,
+            bounded_events: false,
         }
     }
 
@@ -58,6 +61,12 @@ impl WorkerLaunchSpec {
 
     pub fn manifest(&self) -> Option<&ToolManifest> {
         self.manifest.as_ref()
+    }
+
+    /// Background dispatchers consume continuously; overflow is a fatal error.
+    pub fn with_bounded_events(mut self) -> Self {
+        self.bounded_events = true;
+        self
     }
 
     /// Returns the Worker executable path.
@@ -158,6 +167,8 @@ pub struct WorkerSession {
     evidence: Mutex<RunEvidence>,
     // JSONL transitions only; HTTP Status can be a stale snapshot.
     stream_state: Mutex<Option<String>>,
+    queue_overflow: Arc<AtomicBool>,
+    queue_overflow_reported: AtomicBool,
 }
 
 /// Worker-level shutdown evidence; not a persistent run-history database.
@@ -522,6 +533,19 @@ impl WorkerSession {
     }
 
     fn recv_worker_event(&self, timeout: Duration) -> Result<Value, WorkerEventError> {
+        if self.queue_overflow.load(Ordering::Acquire)
+            && !self.queue_overflow_reported.swap(true, Ordering::AcqRel)
+        {
+            let message = "Worker event queue overflow; data incomplete".to_owned();
+            self.evidence
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .protocol_errors
+                .push(message.clone());
+            // Signal immediately, then allow the sole shutdown consumer to
+            // retain events that were successfully queued before overflow.
+            return Err(WorkerEventError::Protocol(message));
+        }
         let Some(receiver) = self.event_receiver.as_ref() else {
             return Err(WorkerEventError::Disconnected);
         };
@@ -560,13 +584,22 @@ impl WorkerSession {
     }
 
     /// Requests a graceful stop and waits within the caller-provided timeout.
-    pub fn shutdown(mut self, timeout: Duration) -> Result<ExitStatus, WorkerShutdownError> {
+    pub fn shutdown(self, timeout: Duration) -> Result<ExitStatus, WorkerShutdownError> {
+        self.shutdown_with_events(timeout, |_| {})
+    }
+
+    /// The sole consumer retains samples emitted during stop and final drain.
+    pub fn shutdown_with_events(
+        mut self,
+        timeout: Duration,
+        mut on_event: impl FnMut(Value),
+    ) -> Result<ExitStatus, WorkerShutdownError> {
         if let Some(status) = self
             .process_mut()
             .try_wait()
             .map_err(WorkerShutdownError::ProcessIo)?
         {
-            return self.finish_exited_process(status, timeout);
+            return self.finish_exited_process(status, timeout, &mut on_event);
         }
 
         let deadline = Instant::now() + timeout;
@@ -585,7 +618,7 @@ impl WorkerSession {
                     .try_wait()
                     .map_err(WorkerShutdownError::ProcessIo)?
                 {
-                    return self.finish_exited_process(status, timeout);
+                    return self.finish_exited_process(status, timeout, &mut on_event);
                 }
 
                 let now = Instant::now();
@@ -604,7 +637,7 @@ impl WorkerSession {
                 .try_wait()
                 .map_err(WorkerShutdownError::ProcessIo)?
             {
-                return self.finish_exited_process(status, timeout);
+                return self.finish_exited_process(status, timeout, &mut on_event);
             }
 
             let now = Instant::now();
@@ -613,7 +646,21 @@ impl WorkerSession {
                 return Err(WorkerShutdownError::GracefulTimeout(timeout));
             }
 
-            thread::sleep(SHUTDOWN_POLL_INTERVAL.min(deadline.saturating_duration_since(now)));
+            match self
+                .recv_event(SHUTDOWN_POLL_INTERVAL.min(deadline.saturating_duration_since(now)))
+            {
+                Ok(event) => on_event(event),
+                Err(WorkerEventError::Timeout(_) | WorkerEventError::Disconnected) => {}
+                Err(error) => {
+                    let message = error.to_string();
+                    let mut evidence = self.evidence.lock().unwrap_or_else(|e| e.into_inner());
+                    if !evidence.protocol_errors.contains(&message) {
+                        evidence.protocol_errors.push(message);
+                    }
+                    drop(evidence);
+                    thread::sleep(SHUTDOWN_POLL_INTERVAL);
+                }
+            }
         }
     }
 
@@ -627,6 +674,7 @@ impl WorkerSession {
         &mut self,
         status: ExitStatus,
         timeout: Duration,
+        on_event: &mut dyn FnMut(Value),
     ) -> Result<ExitStatus, WorkerShutdownError> {
         self.process.take();
         // Process exit and stdout EOF are separate observations. Consume all
@@ -638,7 +686,8 @@ impl WorkerSession {
                 break;
             }
             match self.recv_event(remaining.min(Duration::from_millis(100))) {
-                Ok(_) | Err(WorkerEventError::Timeout(_)) => {}
+                Ok(event) => on_event(event),
+                Err(WorkerEventError::Timeout(_)) => {}
                 Err(WorkerEventError::Disconnected) => break,
                 Err(error) => {
                     self.evidence
@@ -899,10 +948,25 @@ enum StdoutMessage {
     Error(io::Error),
 }
 
-fn read_and_drain_stdout(
-    stdout: ChildStdout,
-    sender: mpsc::Sender<StdoutMessage>,
-) -> io::Result<()> {
+enum EventSender {
+    Unbounded(mpsc::Sender<StdoutMessage>),
+    Bounded(mpsc::SyncSender<StdoutMessage>, Arc<AtomicBool>),
+}
+
+impl EventSender {
+    fn send(&self, message: StdoutMessage) -> Result<(), ()> {
+        match self {
+            Self::Unbounded(sender) => sender.send(message).map_err(|_| ()),
+            Self::Bounded(sender, overflow) => sender.try_send(message).map_err(|error| {
+                if matches!(error, mpsc::TrySendError::Full(_)) {
+                    overflow.store(true, Ordering::Release);
+                }
+            }),
+        }
+    }
+}
+
+fn read_and_drain_stdout(stdout: ChildStdout, sender: EventSender) -> io::Result<()> {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
 
@@ -1174,7 +1238,17 @@ pub fn start_worker(
 ) -> Result<WorkerSession, WorkerStartError> {
     let (mut process, stdout, stderr) = spawn_with_piped_stdio(spec.executable(), spec.arguments())
         .map_err(WorkerStartError::Spawn)?;
-    let (sender, receiver) = mpsc::channel();
+    let queue_overflow = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = if spec.bounded_events {
+        let (sender, receiver) = mpsc::sync_channel(8_192);
+        (
+            EventSender::Bounded(sender, queue_overflow.clone()),
+            receiver,
+        )
+    } else {
+        let (sender, receiver) = mpsc::channel();
+        (EventSender::Unbounded(sender), receiver)
+    };
     let stdout_reader = thread::Builder::new()
         .name("worker-stdout-reader".to_owned())
         .spawn(move || read_and_drain_stdout(stdout, sender))
@@ -1211,6 +1285,8 @@ pub fn start_worker(
                 jobs: Mutex::new(tracker),
                 evidence: Mutex::new(RunEvidence::default()),
                 stream_state: Mutex::new(None),
+                queue_overflow,
+                queue_overflow_reported: AtomicBool::new(false),
                 process: Some(process),
                 ready,
                 stdout_reader: Some(stdout_reader),

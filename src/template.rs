@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Current template file format version.
-pub const TEMPLATE_SCHEMA_VERSION: u32 = 1;
+pub const TEMPLATE_SCHEMA_VERSION: u32 = 2;
 
 const MAX_SAVED_CHARTS: usize = 8;
 
@@ -208,6 +208,7 @@ struct SavedBoxPlotSettings {
 /// A persisted workflow template.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
+    backgrounds: Vec<crate::background::BackgroundConfig>,
     name: String,
     tool_instances: Vec<ToolInstance>,
     workflow: Workflow,
@@ -219,8 +220,17 @@ impl Template {
     /// Creates a template.
     pub fn new(
         name: String,
+        tool_instances: Vec<ToolInstance>,
+        workflow: Workflow,
+    ) -> Result<Self, TemplateError> {
+        Self::new_with_backgrounds(name, tool_instances, workflow, Vec::new())
+    }
+
+    pub fn new_with_backgrounds(
+        name: String,
         mut tool_instances: Vec<ToolInstance>,
         workflow: Workflow,
+        backgrounds: Vec<crate::background::BackgroundConfig>,
     ) -> Result<Self, TemplateError> {
         let mut ids = std::collections::HashSet::new();
         for instance in &mut tool_instances {
@@ -331,13 +341,16 @@ impl Template {
         validate_scopes_files(workflow.steps(), &tool_instances)?;
         validate_tool_action_parameters(workflow.steps(), &tool_instances)?;
         let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
-        Ok(Self {
+        let template = Self {
+            backgrounds,
             name,
             tool_instances,
             workflow,
             output_views: None,
             batch_sources,
-        })
+        };
+        template.validate_backgrounds()?;
+        Ok(template)
     }
 
     /// Returns the template name.
@@ -348,6 +361,14 @@ impl Template {
     /// Returns the logical tool instances.
     pub fn tool_instances(&self) -> &[ToolInstance] {
         &self.tool_instances
+    }
+
+    pub fn backgrounds(&self) -> &[crate::background::BackgroundConfig] {
+        &self.backgrounds
+    }
+
+    pub fn is_background_instance(&self, id: &ToolInstanceId) -> bool {
+        self.backgrounds.iter().any(|b| &b.tool_instance_id == id)
     }
 
     /// Returns referenced instances in first-use order.
@@ -378,6 +399,16 @@ impl Template {
             }
         }
         collect(self.workflow.steps(), self, &mut instances);
+        for background in &self.backgrounds {
+            let instance = self
+                .tool_instances
+                .iter()
+                .find(|i| i.id == background.tool_instance_id)
+                .expect("validated background instance");
+            if !instances.contains(&instance) {
+                instances.push(instance);
+            }
+        }
         instances
     }
 
@@ -438,9 +469,99 @@ impl Template {
         let instances = instances_from_wire(wire.tool_instances)?;
         let output_views = wire.output_views;
         validate_output_views(&workflow, output_views.as_ref())?;
-        let mut template = Self::new(wire.name, instances, workflow)?;
+        let mut template =
+            Self::new_with_backgrounds(wire.name, instances, workflow, wire.backgrounds)?;
         template.output_views = output_views;
+        if template
+            .backgrounds
+            .iter()
+            .filter(|b| b.chart.is_some())
+            .count()
+            + template.output_views.as_ref().map_or(0, |v| v.charts.len())
+            > MAX_SAVED_CHARTS
+        {
+            return Err(TemplateError::OutputViews(
+                "At most 8 Result Charts can be saved; Live Monitor is separate".into(),
+            ));
+        }
         Ok(template)
+    }
+
+    fn validate_backgrounds(&self) -> Result<(), TemplateError> {
+        let invalid = |message: String| TemplateError::Instance(message);
+        let mut ids = std::collections::HashSet::new();
+        let mut owners = std::collections::HashSet::new();
+        for background in &self.backgrounds {
+            StepId::new(&background.id).map_err(|e| invalid(e.to_string()))?;
+            if !ids.insert(&background.id) || !owners.insert(&background.tool_instance_id) {
+                return Err(invalid(
+                    "Duplicate Background ID or Tool Instance ownership".into(),
+                ));
+            }
+            let instance = self
+                .tool_instances
+                .iter()
+                .find(|i| i.id == background.tool_instance_id)
+                .ok_or_else(|| invalid("Unknown Background Tool Instance".into()))?;
+            if instance.meters_setup().is_none_or(|s| {
+                s.trigger_mode != crate::meters_setup::MetersTriggerMode::ImmediateCustom
+            }) {
+                return Err(invalid(format!(
+                    "{}: Background Unsupported; select Meters Immediate Custom",
+                    background.id
+                )));
+            }
+            if background
+                .trigger_count
+                .is_some_and(|count| !(1..=1_000_000).contains(&count))
+            {
+                return Err(invalid(
+                    "Background trigger count must be 1..=1,000,000 or null for native infinite"
+                        .into(),
+                ));
+            }
+        }
+        fn check(
+            steps: &[Step],
+            ids: &std::collections::HashSet<&String>,
+            owners: &std::collections::HashSet<&ToolInstanceId>,
+        ) -> Result<(), String> {
+            for step in steps {
+                match step.kind() {
+                    StepKind::Background {
+                        background_id,
+                        action,
+                        capture,
+                    } => {
+                        if !ids.contains(background_id) {
+                            return Err(format!("Unknown Background ID {background_id}"));
+                        }
+                        if *capture
+                            && matches!(
+                                action,
+                                crate::background::BackgroundAction::CaptureOn
+                                    | crate::background::BackgroundAction::CaptureOff
+                            )
+                        {
+                            return Err(
+                                "Capture combination is only valid for Worker ON/OFF".into()
+                            );
+                        }
+                    }
+                    StepKind::ToolAction { target, .. } if owners.contains(target) => {
+                        return Err(format!(
+                            "{target} cannot be used by both Foreground and Background"
+                        ));
+                    }
+                    StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                        check(body, ids, owners)?
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
+        check(self.workflow.steps(), &ids, &owners).map_err(invalid)
     }
 
     /// Saves the template to a file as pretty JSON.
@@ -880,7 +1001,7 @@ fn validate_batch_sources(
                         }
                     }
                 }
-                StepKind::Wait { .. } => {}
+                StepKind::Wait { .. } | StepKind::Background { .. } => {}
             }
         }
         Ok(())
@@ -1073,6 +1194,8 @@ struct TemplateWire {
     name: String,
     tool_instances: Vec<ToolInstanceWire>,
     workflow: WorkflowWire,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    backgrounds: Vec<crate::background::BackgroundConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_views: Option<OutputViews>,
 }
@@ -1081,6 +1204,7 @@ impl TemplateWire {
     fn from_template(template: &Template) -> Result<Self, serde_json::Error> {
         Ok(Self {
             schema_version: TEMPLATE_SCHEMA_VERSION,
+            backgrounds: template.backgrounds.clone(),
             name: template.name.clone(),
             tool_instances: template
                 .tool_instances
@@ -1127,6 +1251,13 @@ impl WorkflowWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
+    Background {
+        id: String,
+        background_id: String,
+        action: crate::background::BackgroundAction,
+        #[serde(default)]
+        capture: bool,
+    },
     While {
         id: String,
         left: ExpressionOperandWire,
@@ -1239,6 +1370,16 @@ struct NumericRangeWire {
 impl StepWire {
     fn from_step(step: &Step) -> Self {
         match step.kind() {
+            StepKind::Background {
+                background_id,
+                action,
+                capture,
+            } => Self::Background {
+                id: step.id().as_str().into(),
+                background_id: background_id.clone(),
+                action: *action,
+                capture: *capture,
+            },
             StepKind::While {
                 condition,
                 max_iterations,
@@ -1453,6 +1594,23 @@ fn workflow_from_wire(wire: WorkflowWire) -> Result<Workflow, TemplateError> {
 
 fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
     match wire {
+        StepWire::Background {
+            id,
+            background_id,
+            action,
+            capture,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::Background {
+                    background_id,
+                    action,
+                    capture,
+                },
+            ))
+        }
         StepWire::While {
             id,
             left,
@@ -1673,6 +1831,50 @@ mod tests {
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
+    #[test]
+    fn background_schema_validates_references_ownership_and_supported_sources() {
+        let setup = crate::meters_setup::MetersSetup {
+            trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom,
+            ..Default::default()
+        };
+        let wire = json!({"schema_version":2,"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
+            "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"trigger_count":null,"chart":{"x_axis":"timestamp"}}],
+            "workflow":{"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        assert_eq!(
+            Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+            template
+        );
+        assert_eq!(template.referenced_tool_instances().len(), 1);
+        for case in [
+            "old-version",
+            "duplicate",
+            "missing-target",
+            "missing-background",
+            "foreground",
+            "unsupported",
+            "count",
+            "combination",
+        ] {
+            let mut invalid = wire.clone();
+            match case {
+                "old-version" => invalid["schema_version"]=json!(1),
+                "duplicate" => invalid["backgrounds"].as_array_mut().unwrap().push(wire["backgrounds"][0].clone()),
+                "missing-target" => invalid["backgrounds"][0]["tool_instance_id"]=json!("missing"),
+                "missing-background" => invalid["workflow"]["steps"][0]["background_id"]=json!("missing"),
+                "foreground" => invalid["workflow"]["steps"].as_array_mut().unwrap().push(json!({"type":"tool-action","id":"measure","target":"meter","action":"measure","arguments":{}})),
+                "unsupported" => {invalid["tool_instances"][0]["tool"]=json!("scopes");invalid["tool_instances"][0]["setup"]=json!({});},
+                "count" => invalid["backgrounds"][0]["trigger_count"]=json!(0),
+                "combination" => invalid["workflow"]["steps"][0]["action"]=json!("capture-off"),
+                _ => unreachable!(),
+            }
+            assert!(
+                Template::from_json_str(&invalid.to_string()).is_err(),
+                "{case}"
+            );
+        }
+    }
+
     struct TestDir(PathBuf);
 
     impl TestDir {
@@ -1815,7 +2017,7 @@ mod tests {
             );
         }
         assert_eq!(saved, unnamed);
-        assert_eq!(saved["schema_version"], 1);
+        assert_eq!(saved["schema_version"], 2);
     }
 
     #[test]
@@ -1911,7 +2113,7 @@ mod tests {
 
     fn chart_template_wire() -> Value {
         json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "Chart Template",
             "tool_instances": [],
             "workflow": {"steps": [
@@ -2158,7 +2360,7 @@ mod tests {
     fn meters_actions_require_setup() {
         for action in ["measure", "unsupported"] {
             let wire = json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "name": "Missing setup",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {}}],
                 "workflow": {"steps": [{
@@ -2188,7 +2390,7 @@ mod tests {
             );
             let serialized: Value =
                 serde_json::from_str(&parsed.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 1);
+            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["tool_instances"][0]["setup"], json!({}));
             assert_eq!(
                 Template::from_json_str(&serialized.to_string()).unwrap(),
@@ -2260,7 +2462,7 @@ mod tests {
             json!({"type":"set-variable", "id":"declare-value",
             "variable":"value", "value":{"source":"literal","value":1}}),
         );
-        json!({"schema_version":1,"name":"Parameter validation",
+        json!({"schema_version":2,"name":"Parameter validation",
             "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
             "workflow":{"steps":steps}})
     }
@@ -2662,7 +2864,7 @@ mod tests {
         .unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["schema_version"], 2);
         assert_eq!(value["tool_instances"][0]["setup"], json!({}));
         assert_eq!(value["workflow"]["steps"][1]["action"], "set-voltage");
         let binding = &value["workflow"]["steps"][1]["bindings"]["voltage"];
@@ -2690,7 +2892,7 @@ mod tests {
             .push(assertion.clone());
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         let serialized: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-        assert_eq!(serialized["schema_version"], 1);
+        assert_eq!(serialized["schema_version"], 2);
         assert_eq!(serialized["workflow"]["steps"][3], assertion);
         assert!(
             matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, message }
@@ -2713,7 +2915,7 @@ mod tests {
             let template = Template::from_json_str(&wire.to_string()).unwrap();
             let serialized: Value =
                 serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 1);
+            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
             assert!(
                 matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, .. }
@@ -2732,7 +2934,7 @@ mod tests {
             let while_template = Template::from_json_str(&while_wire.to_string()).unwrap();
             let serialized: Value =
                 serde_json::from_str(&while_template.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 1);
+            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
         }
 
@@ -2780,7 +2982,7 @@ mod tests {
     #[test]
     fn duplicate_step_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Dup",
             "workflow": {
@@ -2802,7 +3004,7 @@ mod tests {
     #[test]
     fn invalid_target_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Bad tool",
             "workflow": {
@@ -2847,7 +3049,7 @@ mod tests {
             ("timestamp", InputValue::Timestamp),
         ] {
             let mut wire = json!({
-                "schema_version": 1, "name": "Time inputs", "tool_instances": [],
+                "schema_version": 2, "name": "Time inputs", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
                     { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
@@ -2876,7 +3078,7 @@ mod tests {
     #[test]
     fn show_message_round_trips_in_schema_one_without_storing_records() {
         let wire = json!({
-            "schema_version": 1, "name": "Messages", "tool_instances": [],
+            "schema_version": 2, "name": "Messages", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "output", "id": "iteration", "name": "Iteration", "page": "Results",
                   "value": { "source": "literal", "value": 3000 } },
@@ -2909,7 +3111,7 @@ mod tests {
 
         // A reference to a later step is rejected by the shared validation.
         let invalid = json!({
-            "schema_version": 1, "name": "Messages", "tool_instances": [],
+            "schema_version": 2, "name": "Messages", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "show-message", "id": "show-message-1", "target": "message-1",
                   "fields": [ { "kind": "output", "step_id": "later", "pointer": "", "newline": false } ] },
@@ -2933,7 +3135,7 @@ mod tests {
         });
         let template_wire = |output: Value| {
             json!({
-                "schema_version": 1, "name": "Required Output fields", "tool_instances": [],
+                "schema_version": 2, "name": "Required Output fields", "tool_instances": [],
                 "workflow": { "steps": [output] }
             })
         };
@@ -2983,7 +3185,7 @@ mod tests {
         let original = Template::new("Dataflow".to_owned(), Default::default(), workflow).unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["schema_version"], 2);
         let steps = &value["workflow"]["steps"];
         assert_eq!(steps[0]["type"], "set-variable");
         assert_eq!(steps[0]["value"]["source"], "literal");
@@ -2998,7 +3200,7 @@ mod tests {
     #[test]
     fn invalid_variable_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Invalid variable",
             "workflow": { "steps": [{
@@ -3051,7 +3253,7 @@ mod tests {
         .unwrap();
         let json = original.to_json_string().unwrap();
         let wire: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(wire["schema_version"], 1);
+        assert_eq!(wire["schema_version"], 2);
         assert_eq!(
             wire["workflow"]["steps"][1]["value"],
             json!({
@@ -3144,7 +3346,7 @@ mod tests {
                 .unwrap();
                 let json = original.to_json_string().unwrap();
                 let wire: Value = serde_json::from_str(&json).unwrap();
-                assert_eq!(wire["schema_version"], 1);
+                assert_eq!(wire["schema_version"], 2);
                 assert_eq!(
                     wire["workflow"]["steps"][3]["value"],
                     json!({
@@ -3261,7 +3463,7 @@ mod tests {
         let instances = vec![sample_template().tool_instances()[0].clone()];
         let template = Template::new("For".to_owned(), instances, workflow).unwrap();
         let wire: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-        assert_eq!(wire["schema_version"], 1);
+        assert_eq!(wire["schema_version"], 2);
         assert_eq!(wire["workflow"]["steps"][0]["type"], "for");
         assert_eq!(
             wire["workflow"]["steps"][0]["range"],

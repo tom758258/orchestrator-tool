@@ -8,10 +8,7 @@ use crate::{
     adapters::powers::{
         PowersActionError, apply_protection_setup, protection_status_all, safe_off_all,
     },
-    executor::{
-        WorkflowExecutionError, execute_workflow_streaming_with_loop_stop_and_scopes_output,
-        execute_workflow_with_loop_stop,
-    },
+    executor::{WorkflowExecutionError, execute_workflow_internal},
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
     template::Template,
@@ -108,6 +105,7 @@ pub fn run_workflow_with_loop_stop(
         should_stop_after_iteration,
         true,
         None,
+        RunOptions::default(),
     )? {
         RunCompletion::Full(result) => Ok(result),
         RunCompletion::Streaming(_) => unreachable!(),
@@ -151,6 +149,40 @@ pub fn run_workflow_streaming_with_loop_stop_and_scopes_output(
     on_event: impl FnMut(WorkflowRunEvent),
     should_stop_after_iteration: impl FnMut(&StepId) -> bool,
 ) -> Result<WorkflowRunSummary, WorkflowRunError> {
+    run_workflow_streaming_controlled(
+        template,
+        execution_mode,
+        launch_specs,
+        startup_timeout,
+        action_timeout,
+        shutdown_timeout,
+        scopes_output_folder,
+        RunOptions::default(),
+        on_event,
+        should_stop_after_iteration,
+    )
+}
+
+#[derive(Clone, Default)]
+pub struct RunOptions {
+    pub backgrounds: crate::background::SharedBackgroundStore,
+    pub failure: crate::run_failure::RunFailure,
+    pub background_csv: Option<crate::background::BackgroundCsvOptions>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_workflow_streaming_controlled(
+    template: &Template,
+    execution_mode: ExecutionMode,
+    launch_specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
+    startup_timeout: Duration,
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    scopes_output_folder: Option<&Path>,
+    options: RunOptions,
+    on_event: impl FnMut(WorkflowRunEvent),
+    should_stop_after_iteration: impl FnMut(&StepId) -> bool,
+) -> Result<WorkflowRunSummary, WorkflowRunError> {
     match run_workflow_internal(
         template,
         execution_mode,
@@ -162,6 +194,7 @@ pub fn run_workflow_streaming_with_loop_stop_and_scopes_output(
         should_stop_after_iteration,
         false,
         scopes_output_folder,
+        options,
     )? {
         RunCompletion::Streaming(summary) => Ok(summary),
         RunCompletion::Full(_) => unreachable!(),
@@ -197,11 +230,21 @@ fn run_workflow_internal(
     mut should_stop_after_iteration: impl FnMut(&StepId) -> bool,
     retain_results: bool,
     scopes_output_folder: Option<&Path>,
+    options: RunOptions,
 ) -> Result<RunCompletion, WorkflowRunError> {
+    if let Some(csv) = &options.background_csv
+        && let Some(id) = &csv.background_id
+        && !template.backgrounds().iter().any(|b| &b.id == id)
+    {
+        return Err(WorkflowRunError::Background(format!(
+            "Unknown CSV Background ID {id}"
+        )));
+    }
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
         .filter(|instance| matches!(instance.tool.as_str(), "powers" | "meters" | "scopes"))
+        .filter(|instance| !template.is_background_instance(&instance.id))
         .map(|instance| instance.id.clone())
         .collect::<Vec<_>>();
     let referenced_specs = referenced_instances
@@ -357,43 +400,73 @@ fn run_workflow_internal(
             None => error,
         });
     }
-    let execution = if retain_results {
-        execute_workflow_with_loop_stop(
-            template,
-            &session_refs,
-            execution_mode,
-            action_timeout,
-            &mut on_event,
-            &mut should_stop_after_iteration,
-        )
-        .map(RunCompletion::Full)
-    } else {
-        execute_workflow_streaming_with_loop_stop_and_scopes_output(
-            template,
-            &session_refs,
-            execution_mode,
-            action_timeout,
-            scopes_output_folder,
-            &mut on_event,
-            &mut should_stop_after_iteration,
-        )
-        .map(RunCompletion::Streaming)
-    };
+    let mut background = crate::background::BackgroundManager::new(
+        template.backgrounds(),
+        launch_specs,
+        options.backgrounds,
+        options.failure.clone(),
+        options.background_csv,
+        startup_timeout,
+        shutdown_timeout,
+    );
+    let execution = execute_workflow_internal(
+        template,
+        &session_refs,
+        execution_mode,
+        action_timeout,
+        &mut on_event,
+        &mut should_stop_after_iteration,
+        retain_results,
+        scopes_output_folder,
+        options.failure.clone(),
+        Some(&mut background),
+    )
+    .map(|result| {
+        if retain_results {
+            RunCompletion::Full(WorkflowRunResult::new(
+                result.executions.unwrap(),
+                result.rows.unwrap(),
+            ))
+        } else {
+            RunCompletion::Streaming(WorkflowRunSummary::new(result.failure))
+        }
+    });
     drop(session_refs);
 
+    let execution_failure = match &execution {
+        Err(error) => Some(error.to_string()),
+        Ok(results) => results.failure(),
+    };
+    let background_cleanup = background.cleanup();
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
     let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
     if let Some((instance, source)) = cleanup {
-        let prior_failure = match &execution {
-            Err(error) => Some(error.to_string()),
-            Ok(results) => results.failure(),
-        }
-        .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
+        let prior_failure = execution_failure
+            .clone()
+            .or_else(|| options.failure.check().err())
+            .or_else(|| background_cleanup.as_ref().err().cloned())
+            .or_else(|| shutdown_error.as_ref().map(ToString::to_string));
         return Err(WorkflowRunError::SafetyCleanup {
             instance,
             prior_failure,
             source,
         });
+    }
+    if let Err(error) = options.failure.check() {
+        let error = match execution_failure {
+            Some(prior) if !prior.contains(&error) => format!("{prior}; Run cleanup: {error}"),
+            _ => error,
+        };
+        return Err(WorkflowRunError::Background(match background_cleanup {
+            Ok(()) => error,
+            Err(cleanup) => format!("{error}; Background cleanup: {cleanup}"),
+        }));
+    }
+    if let Err(error) = background_cleanup {
+        return Err(WorkflowRunError::Background(match execution_failure {
+            Some(prior) => format!("{prior}; Background cleanup: {error}"),
+            None => error,
+        }));
     }
     match (execution, shutdown_error) {
         (Err(error), _) => Err(WorkflowRunError::WorkflowExecution(error)),
@@ -487,6 +560,7 @@ fn shutdown_workers(
 /// Errors produced while managing a workflow run.
 #[derive(Debug)]
 pub enum WorkflowRunError {
+    Background(String),
     ScopesSetup {
         instance: ToolInstanceId,
         detail: String,
@@ -521,6 +595,7 @@ pub enum WorkflowRunError {
 impl fmt::Display for WorkflowRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Background(message) => formatter.write_str(message),
             Self::ScopesSetup { instance, detail } => {
                 write!(formatter, "{instance} Scopes Setup failed: {detail}")
             }
@@ -566,7 +641,7 @@ impl fmt::Display for WorkflowRunError {
 impl Error for WorkflowRunError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::ProtectionSetup { .. } | Self::ScopesSetup { .. } => None,
+            Self::ProtectionSetup { .. } | Self::ScopesSetup { .. } | Self::Background(_) => None,
             Self::WorkerStartup { source, .. } => Some(source),
             Self::WorkflowExecution(source) => Some(source),
             Self::WorkerShutdown { source, .. } => Some(source),

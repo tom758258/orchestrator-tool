@@ -20,7 +20,7 @@ Powers, Scopes, and Wavegen remain separate projects and distributions.
   the CLI.
 
 The exact Template and execution contract is documented in
-[Template Schema v1](docs/contracts/template-schema-v1.md). Architecture-level
+[Template Schema v2](docs/contracts/template-schema-v2.md). Architecture-level
 process, Worker, result, chart, and export data flow is described in
 [Architecture Overview](docs/architecture/overview.md).
 
@@ -128,7 +128,7 @@ for external executable paths and Live Resources.
 
 Desktop behavior that is durable architecture or contract knowledge is kept
 in the [architecture](docs/architecture/overview.md) and
-[contract](docs/contracts/template-schema-v1.md) documents rather than
+[contract](docs/contracts/template-schema-v2.md) documents rather than
 duplicated here.
 
 ## CLI
@@ -154,7 +154,7 @@ interface.
 - [Desktop User Guide](docs/desktop/USER_GUIDE.md)
 - [Architecture Overview](docs/architecture/overview.md)
 - [External Tool Boundary](docs/architecture/external-tool-boundary.md)
-- [Template Schema v1](docs/contracts/template-schema-v1.md)
+- [Template Schema v2](docs/contracts/template-schema-v2.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Agent repository rules](AGENTS.md)
 - [Traditional Chinese entry point](README.zh-TW.md)

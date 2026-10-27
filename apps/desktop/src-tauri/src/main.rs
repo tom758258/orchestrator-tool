@@ -26,8 +26,11 @@ use orchestrator_tool::{
     },
     live_preflight::{validate_live_preflight, validate_live_preflight_draft},
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, run_workflow_streaming_with_loop_stop_and_scopes_output},
-    run_preparation::{prepare_worker_launch_specs, validate_confirmed_live_resources},
+    run::{ExecutionMode, RunOptions, run_workflow_streaming_controlled},
+    run_preparation::{
+        prepare_worker_launch_specs, prepare_worker_launch_specs_with_simulation,
+        simulation_sample_requirements, validate_confirmed_live_resources,
+    },
     status::{ManifestStatus, inspect_built_in_tool_statuses},
     template::{Template, TemplateError},
     tool::ToolId,
@@ -36,6 +39,7 @@ use orchestrator_tool::{
     workflow::{StepId, Workflow, WorkflowRunEvent},
 };
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Manager, ipc::Channel};
 
 const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -512,6 +516,7 @@ async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn run_workflow_simulation(
     app: AppHandle,
     state: tauri::State<'_, ActiveRun>,
@@ -520,6 +525,8 @@ async fn run_workflow_simulation(
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
     scopes_output_folder: Option<String>,
+    simulation_samples: Option<HashMap<String, usize>>,
+    background_csv: Option<orchestrator_tool::background::BackgroundCsvOptions>,
 ) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
     let runs = runs.inner().clone();
@@ -533,11 +540,12 @@ async fn run_workflow_simulation(
             let application_dir = current_application_dir()
                 .map_err(|error| format!("could not determine application directory: {error}"))?;
             let config = load_desktop_config(&app)?;
-            let launch_specs = prepare_worker_launch_specs(
+            let launch_specs = prepare_worker_launch_specs_with_simulation(
                 &template,
                 ExecutionMode::Simulate,
                 &application_dir,
                 &config,
+                &simulation_samples.unwrap_or_default(),
             )?;
             run_streaming_with_stream(
                 &template,
@@ -547,8 +555,13 @@ async fn run_workflow_simulation(
                     let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
                 },
                 |event| batcher.push(&event),
-                |on_event| {
-                    run_workflow_streaming_with_loop_stop_and_scopes_output(
+                |on_event, failure| {
+                    let backgrounds = stored.read().unwrap().backgrounds.clone();
+                    let background_csv = background_csv.map(|mut options| {
+                        options.output_folder = application_dir.join(options.output_folder);
+                        options
+                    });
+                    run_workflow_streaming_controlled(
                         &template,
                         ExecutionMode::Simulate,
                         &launch_specs,
@@ -556,6 +569,11 @@ async fn run_workflow_simulation(
                         RUN_ACTION_TIMEOUT,
                         RUN_SHUTDOWN_TIMEOUT,
                         scopes_output_folder.as_deref().map(Path::new),
+                        RunOptions {
+                            backgrounds,
+                            failure,
+                            background_csv,
+                        },
                         on_event,
                         |step_id| consume_loop_stop(&control, step_id),
                     )
@@ -594,6 +612,7 @@ async fn run_workflow_live(
     on_progress: Channel<WorkflowRunEventDto>,
     stream_csv: Option<StreamCsvOptions>,
     scopes_output_folder: Option<String>,
+    background_csv: Option<orchestrator_tool::background::BackgroundCsvOptions>,
 ) -> Result<RunMetadataDto, String> {
     let control = state.register()?;
     let runs = runs.inner().clone();
@@ -639,8 +658,13 @@ async fn run_workflow_live(
                     let _ = on_progress.send(WorkflowRunEventDto::CsvStream { status });
                 },
                 |event| batcher.push(&event),
-                |on_event| {
-                    run_workflow_streaming_with_loop_stop_and_scopes_output(
+                |on_event, failure| {
+                    let backgrounds = stored.read().unwrap().backgrounds.clone();
+                    let background_csv = background_csv.map(|mut options| {
+                        options.output_folder = application_dir.join(options.output_folder);
+                        options
+                    });
+                    run_workflow_streaming_controlled(
                         &template,
                         ExecutionMode::Live,
                         &launch_specs,
@@ -648,6 +672,11 @@ async fn run_workflow_live(
                         RUN_ACTION_TIMEOUT,
                         RUN_SHUTDOWN_TIMEOUT,
                         scopes_output_folder.as_deref().map(Path::new),
+                        RunOptions {
+                            backgrounds,
+                            failure,
+                            background_csv,
+                        },
                         on_event,
                         |step_id| consume_loop_stop(&control, step_id),
                     )
@@ -1042,6 +1071,85 @@ fn get_last_run_page_rows(
 }
 
 #[tauri::command]
+fn get_simulation_sample_requirements(template_json: String) -> Result<Vec<String>, String> {
+    simulation_sample_requirements(
+        &Template::from_json_str(&template_json).map_err(|e| e.to_string())?,
+    )
+}
+
+#[derive(Serialize)]
+struct BackgroundOutputDto {
+    datasets: Vec<orchestrator_tool::background::DatasetMetadata>,
+    workers: Vec<orchestrator_tool::background::BackgroundStatus>,
+    rows: Vec<Value>,
+    chart: Vec<Value>,
+    monitor: Vec<Value>,
+}
+
+#[tauri::command]
+fn get_background_output(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    background_id: String,
+    dataset_id: Option<String>,
+    offset: usize,
+    limit: usize,
+) -> Result<BackgroundOutputDto, String> {
+    state.with_current(run_id, |run| {
+        let store = run.backgrounds.lock().unwrap_or_else(|e| e.into_inner());
+        let dataset = dataset_id.as_deref().filter(|id| {
+            store
+                .datasets
+                .iter()
+                .any(|d| d.metadata.id == *id && d.metadata.background_id == background_id)
+        });
+        Ok(BackgroundOutputDto {
+            datasets: store.metadata(),
+            workers: store.workers.clone(),
+            rows: dataset
+                .map(|id| store.rows(id, offset, limit))
+                .transpose()?
+                .unwrap_or_default(),
+            chart: dataset
+                .map(|id| store.chart(id))
+                .transpose()?
+                .unwrap_or_default(),
+            monitor: store.monitor(&background_id),
+        })
+    })?
+}
+
+#[tauri::command]
+async fn export_background_datasets(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    dataset_ids: Vec<String>,
+    output_folder: String,
+    format: orchestrator_tool::background_export::BackgroundExportFormat,
+    rows_per_file: usize,
+) -> Result<Vec<String>, String> {
+    let store = state.with_current(run_id, |run| {
+        if run.metadata().status == "running" {
+            Err("Finish the run before manual export".to_owned())
+        } else {
+            Ok(run.backgrounds.clone())
+        }
+    })??;
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestrator_tool::background_export::export_datasets(
+            &store,
+            &dataset_ids,
+            Path::new(&output_folder),
+            format,
+            rows_per_file,
+        )
+        .map(|paths| paths.iter().map(|p| p.display().to_string()).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn get_last_run_executions(
     state: tauri::State<'_, StoredRuns>,
     run_id: u64,
@@ -1309,6 +1417,9 @@ fn main() {
             clear_powers_protection,
             get_meters_range_options,
             run_workflow_simulation,
+            get_simulation_sample_requirements,
+            get_background_output,
+            export_background_datasets,
             run_workflow_live,
             request_workflow_stop,
             get_live_resources,
@@ -1374,7 +1485,7 @@ mod tests {
     fn export_template() -> orchestrator_tool::template::Template {
         orchestrator_tool::template::Template::from_json_str(
             &json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "name": "export",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -1419,7 +1530,7 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             path
         };
-        let template = Template::from_json_str(&json!({"schema_version":1,"name":"Live", "tool_instances":[
+        let template = Template::from_json_str(&json!({"schema_version":2,"name":"Live", "tool_instances":[
             {"id":"first","tool":"powers","setup":{}}, {"id":"second","tool":"powers","setup":{}}
         ],"workflow":{"steps":[
             {"type":"tool-action","id":"first-off","target":"first","action":"output-off","arguments":{"channel":3}},
@@ -1760,7 +1871,7 @@ mod tests {
     fn executor_failure_exports_only_rows_committed_before_failure() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "name": "partial export",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -1861,7 +1972,7 @@ mod regression_tests {
     fn progress_template() -> Template {
         Template::from_json_str(
             &json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "name": "progress",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -2207,7 +2318,7 @@ mod regression_tests {
         assert_eq!(template.name(), "Untitled");
         assert!(template.workflow().steps().is_empty());
         let invalid = r#"{
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Invalid",
             "workflow": { "steps": [
@@ -2218,7 +2329,7 @@ mod regression_tests {
         assert!(error.message.contains("invalid step ID"));
         assert!(error.step_id.is_none());
         let invalid_reference = r#"{
-            "schema_version": 1, "name": "Invalid reference", "tool_instances": [],
+            "schema_version": 2, "name": "Invalid reference", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "output", "id": "out", "name": "Value", "page": "Results",
                   "value": { "source": "variable", "variable": "missing" } }
@@ -2236,7 +2347,7 @@ mod regression_tests {
         let dir = unique_test_dir("orchestrator-template-round-trip");
         let path = dir.join("template.json");
         let template_json = r#"{
-            "schema_version": 1,
+            "schema_version": 2,
             "tool_instances": [],
             "name": "Round Trip",
             "workflow": { "steps": [
@@ -2294,7 +2405,7 @@ mod regression_tests {
     fn referenced_tool_instances_only_selects_used_instances() {
         let template = Template::from_json_str(
             r#"{
-                "schema_version": 1,
+                "schema_version": 2,
                 "tool_instances": [
                     {"id": "meters-1", "tool": "meters", "setup": {
                         "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,

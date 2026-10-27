@@ -35,6 +35,7 @@ async function componentEditor(file, component, invoke) {
   }
   for (const [, path] of code.matchAll(/import .+? from "([^"]+)";/g)) {
     if (path === './InputValueEditor') modules[path] = 'InputValueEditor'
+    else if (path === './BackgroundSetup') modules[path] = 'BackgroundSetup'
     else if (path.startsWith('.')) modules[path] = await import(`../src/${path}.ts`)
   }
   const body = code.replace(/import (.+?) from "([^"]+)";/g, (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`)

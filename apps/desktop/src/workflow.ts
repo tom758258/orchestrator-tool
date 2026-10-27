@@ -63,7 +63,11 @@ export type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
-export type NonLoopWorkflowStep = WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
+export type BackgroundAction = 'worker-on' | 'worker-off' | 'capture-on' | 'capture-off'
+export type BackgroundStep = { type: 'background'; id: string; background_id: string; action: BackgroundAction; capture: boolean }
+export type BackgroundConfig = { id: string; tool_instance_id: string; live_monitor: boolean; trigger_count: number | null;
+  chart?: { x_axis: 'elapsed' | 'timestamp' | 'index' } }
+export type NonLoopWorkflowStep = BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {
   type: 'for'
   id: string

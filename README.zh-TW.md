@@ -21,7 +21,7 @@ Wavegen 等 external tools 仍是獨立專案與獨立 distribution。
   diagnostics。
 
 完整的 Template 與 execution contract 請見
-[Template Schema v1](docs/contracts/template-schema-v1.md)。Process、Worker、
+[Template Schema v2](docs/contracts/template-schema-v2.md)。Process、Worker、
 result、chart 與 export data flow 的 architecture-level 說明請見
 [Architecture Overview](docs/architecture/overview.md)。
 
@@ -126,7 +126,7 @@ configuration UI。
 
 Durable 的 architecture 或 contract 詳情放在
 [architecture](docs/architecture/overview.md) 與
-[contract](docs/contracts/template-schema-v1.md) 文件，不在此重複完整
+[contract](docs/contracts/template-schema-v2.md) 文件，不在此重複完整
 specification。
 
 ## CLI
@@ -151,7 +151,7 @@ simulate-mode Worker checks。CLI 不取代 Desktop Workflow interface。
 - [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)
 - [Architecture Overview](docs/architecture/overview.md)
 - [External Tool Boundary](docs/architecture/external-tool-boundary.md)
-- [Template Schema v1](docs/contracts/template-schema-v1.md)
+- [Template Schema v2](docs/contracts/template-schema-v2.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Agent repository rules](AGENTS.md)
 - [English entry point](README.md)

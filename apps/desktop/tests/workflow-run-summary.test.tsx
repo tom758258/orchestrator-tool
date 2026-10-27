@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react'
 import WorkflowRunSummary from '../src/WorkflowRunSummary'
 
 const defaults: ComponentProps<typeof WorkflowRunSummary> = {
-  workflowDraft: { schema_version: 1, name: 'Example', tool_instances: [], workflow: { steps: [] } },
+  workflowDraft: { schema_version: 2, name: 'Example', tool_instances: [], workflow: { steps: [] } },
   workflowBusy: false, toolConfigBusy: null, loading: false, chartThresholdInvalid: false,
   executionMode: 'simulate', validationStatus: 'idle', validationError: null,
   runStatus: 'idle', runningText: 'Running…', runError: null, displayedRun: null,
