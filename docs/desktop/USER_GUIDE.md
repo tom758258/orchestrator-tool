@@ -831,6 +831,12 @@ with Elapsed Time, Timestamp or Sample Index on X. The Line displays up to 2,000
 representative points; the full captured data remains available in Output Data
 and export. Saved chart settings use the Background ID, not a run's Dataset ID.
 
+Last Run charts use the Background snapshot from that run. You can change the
+X axis even after removing its binding from the current Workflow; this changes
+the display, not the captured data or run snapshot. The setting also updates the
+current Draft only while the original binding still exists. It never recreates
+a removed binding or writes the old run's settings into a replacement binding.
+
 When enabled, **Live Monitor** appears between Charts and Summary. It shows the
 latest 1,000 Worker samples as a Line, including while Capture is OFF. It does
 not create Datasets, summaries, CSV or manual exports, and does not consume a
@@ -966,15 +972,18 @@ disk and cannot be exported.
 
 ### 10.4 Charts
 
-Charts use Apache ECharts with a Canvas renderer. A chart belongs to one
-Output Page and can plot numeric Outputs from that Page. Desktop supports up
-to eight chart panels across the run's Pages.
+Charts use Apache ECharts with a Canvas renderer. A Foreground chart belongs to one
+Output Page and can plot numeric Outputs from that Page. Saved Foreground and
+Background Charts share a maximum of eight. Live Monitor and Background bindings
+without a Chart configuration do not count toward this limit.
 
 Charts are session-only by default. The Charts heading includes **Save charts
 with template**, which is off by default. Enable it when the current chart
 panels and their Chart Settings should be restored with the Template. Opening a
-Template that contains saved Charts turns the checkbox on and restores those
-panels. Turning it off does not remove the Charts from the current session; the
+Template that contains saved Foreground or Background Chart settings turns the
+checkbox on, including a Background-only Template, and restores those settings.
+Templates without saved Chart settings keep the existing session defaults.
+Turning it off does not remove the Charts from the current session; the
 next Save Template simply omits them. **Clear Last Run** keeps the chart
 configuration while this option is enabled; ordinary session-only Charts keep
 the previous clear behavior.

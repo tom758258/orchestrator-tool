@@ -317,6 +317,7 @@ export function reconcileRunChartPanels(
   panels: ChartPanel[],
   pages: { name: string; outputs: { name: string }[] }[],
   metadata: readonly RunPageMetadata[],
+  backgroundChartCount = 0,
 ): ChartPanel[] {
   let reconciled = reconcileChartPanels(panels, pages, '', null)
   const firstNumeric: string[] = metadata.find(page => page.name === pages[0]?.name)?.numeric_outputs ?? []
@@ -324,7 +325,7 @@ export function reconcileRunChartPanels(
     const current = metadata.find(item => item.name === page.name)
     reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null, current?.timestamp_outputs ?? [])
   }
-  return reconciled.length === 0 && pages[0]
+  return reconciled.length === 0 && pages[0] && backgroundChartCount < MAX_CHARTS
     ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled
 }
 

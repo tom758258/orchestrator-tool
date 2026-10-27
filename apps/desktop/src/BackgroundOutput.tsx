@@ -54,6 +54,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onChartC
   const [rowsPerFile, setRowsPerFile] = useState('300000')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [chartError, setChartError] = useState<string | null>(null)
   const [exported, setExported] = useState<string[]>([])
   useEffect(() => {
     let disposed = false
@@ -89,7 +90,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onChartC
   }
   return <section className="background-output" aria-label="Background Results">
     <h3>Background Results</h3>
-    <label>Background<select value={background} disabled={exporting} onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0) }}>
+    <label>Background<select value={background} disabled={exporting} onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0); setChartError(null) }}>
       {backgrounds.map(config => <option key={config.id} value={config.id}>{config.id} · {config.tool_instance_id}</option>)}
     </select></label>
     <p role="status">Worker: {worker?.state ?? 'off'}{worker?.stream_state ? ` · Source: ${worker.stream_state}` : ''}</p>
@@ -100,12 +101,13 @@ export default function BackgroundOutput({ runId, backgrounds, running, onChartC
     <section><h4>Charts</h4>
       <label>X axis<select value={xAxis} onChange={event => {
         const x_axis = event.target.value as XAxis
-        if (onChartChange?.(background, { x_axis }) === false) { setError('Maximum 8 charts.'); return }
-        setError(null)
+        if (onChartChange?.(background, { x_axis }) === false) { setChartError('Maximum 8 charts.'); return }
+        setChartError(null)
         setAxes(current => ({ ...current, [background]: x_axis }))
       }}>
         <option value="elapsed">Elapsed Time</option><option value="timestamp">Timestamp</option><option value="index">Sample Index</option>
       </select></label>
+      {chartError && <p role="alert">{chartError}</p>}
       {dataset ? <><p>Captured Dataset · Line · up to 2,000 representative points</p>
         <BackgroundLine samples={output?.chart ?? []} xAxis={xAxis} label="Background Dataset Line" /></> : <p>No captured Dataset selected.</p>}
     </section>

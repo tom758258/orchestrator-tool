@@ -611,6 +611,8 @@ function App() {
   const [liveStartError, setLiveStartError] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<RunStatus>('idle')
   const [runWorkflowSnapshot, setRunWorkflowSnapshot] = useState<WorkflowDraft | null>(null)
+  // Once removed, a binding cannot receive settings from the old run, even if its IDs are reused.
+  const detachedRunBackgroundIds = useRef(new Set<string>())
   const [workflowChangedSinceRun, setWorkflowChangedSinceRun] = useState(false)
   const [executionOffset, setExecutionOffset] = useState(0)
   const [runMetadata, setRunMetadata] = useState<RunMetadataDto | null>(null)
@@ -693,6 +695,7 @@ function App() {
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runMetadata : null
+  const backgroundChartCount = savedChartCount([], workflowDraft?.backgrounds)
   const runWorkspace = lastRunWorkspaceState(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata)
   const chartNumericNames = runStatus === 'running' && (runPageMetadata?.row_count ?? 0) === 0
     ? [...new Set(chartPanels.filter(panel => panel.page === runPage?.name).flatMap(chartRequiredOutputs))]
@@ -704,8 +707,9 @@ function App() {
     if (!runWorkflowSnapshot || !displayedRun || saveChartsWithTemplate) return
     setChartPanels(panels => reconcileRunChartPanels(
       panels, outputPages(runWorkflowSnapshot.workflow.steps), displayedRun.pages,
+      backgroundChartCount,
     ))
-  }, [runWorkflowSnapshot, displayedRun, saveChartsWithTemplate])
+  }, [runWorkflowSnapshot, displayedRun, saveChartsWithTemplate, backgroundChartCount])
   useEffect(() => {
     pruneChartData(chartData, chartPanels, activeTab === 'output' ? runPage?.name : undefined)
   }, [activeTab, chartData, chartPanels, runPage?.name])
@@ -1393,6 +1397,7 @@ function App() {
         if (started) return
         runIdRef.current = null
         const snapshotPages = outputPages(workflowDraft.workflow.steps)
+        detachedRunBackgroundIds.current.clear()
         setRunWorkflowSnapshot(workflowDraft)
         setLastRunExecutionMode('live')
         setRunChartSampling(chartSampling)
@@ -1480,6 +1485,7 @@ function App() {
       onProgress = new Channel<DesktopRunEvent>(event => receiveRunProgress(event, generation!))
       progressChannelRef.current = onProgress
       const snapshotPages = outputPages(workflowDraft.workflow.steps)
+      detachedRunBackgroundIds.current.clear()
       setRunWorkflowSnapshot(workflowDraft)
       setLastRunExecutionMode('simulate')
       setRunChartSampling(chartSampling)
@@ -1996,6 +2002,11 @@ function App() {
                 value={workflowDraft.tool_instances}
                 backgrounds={workflowDraft.backgrounds}
                 onBackgroundsChange={backgrounds => {
+                  for (const previous of workflowDraft.backgrounds ?? []) {
+                    if (!backgrounds.some(next => next.id === previous.id && next.tool_instance_id === previous.tool_instance_id)) {
+                      detachedRunBackgroundIds.current.add(previous.id)
+                    }
+                  }
                   setWorkflowDraft(current => current ? { ...current, backgrounds } : current)
                   setWorkflowChangedSinceRun(true)
                   clearValidation()
@@ -3004,7 +3015,7 @@ function App() {
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
                   changeSettings={runChartSampling} fitData={runChartFitData}
                   saveChartsWithTemplate={saveChartsWithTemplate}
-                  backgroundChartCount={savedChartCount([], workflowDraft?.backgrounds)}
+                  backgroundChartCount={backgroundChartCount}
                   onSaveChartsWithTemplateChange={setSaveChartsWithTemplate} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <div className="numeric-display-settings">
                   <label>Number display
@@ -3039,9 +3050,11 @@ function App() {
           )}
           {runWorkflowSnapshot?.backgrounds?.length && displayedRun && <BackgroundOutput key={displayedRun.run_id} runId={displayedRun.run_id}
             backgrounds={runWorkflowSnapshot.backgrounds} running={runStatus === 'running'} onExportingChange={setExporting} onChartChange={(id, chart) => {
-              const background = workflowDraft?.backgrounds?.find(background => background.id === id)
-              if (!background || (!background.chart && savedChartCount(chartPanels, workflowDraft?.backgrounds) >= MAX_CHARTS)) return false
-              setWorkflowDraft(current => current ? { ...current, backgrounds: current.backgrounds?.map(background => background.id === id ? { ...background, chart } : background) } : current)
+              const original = runWorkflowSnapshot.backgrounds?.find(background => background.id === id)
+              const background = workflowDraft?.backgrounds?.find(background => background.id === id && background.tool_instance_id === original?.tool_instance_id)
+              if (!background || detachedRunBackgroundIds.current.has(id)) return true
+              if (!background.chart && savedChartCount(chartPanels, workflowDraft?.backgrounds) >= MAX_CHARTS) return false
+              setWorkflowDraft(current => current ? { ...current, backgrounds: current.backgrounds?.map(item => item.id === background.id && item.tool_instance_id === background.tool_instance_id ? { ...item, chart } : item) } : current)
               return true
             }} />}
           <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}

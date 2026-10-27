@@ -712,6 +712,11 @@ Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會
 完整資料仍可透過 Output Data 與 Export 取得。保存圖表設定時使用固定的
 Background ID，不保存某次 Run 的 Dataset ID。
 
+Last Run 圖表使用該次執行的 Background 快照。即使目前 Workflow 已移除對應
+Binding，仍可切換 X 軸；這只改變顯示，不修改已記錄資料或 Run 快照。
+只有原本的 Binding 仍存在時，設定才會同時更新至目前 Draft；不會重新建立
+已移除的 Binding，也不會將舊 Run 的設定寫入替代的 Binding。
+
 啟用時，**Live Monitor** 顯示於 Charts 和 Summary 之間，以 Line 顯示最新
 1,000 筆 Worker Samples，Capture OFF 時也可繼續更新。它不建立 Dataset、
 Summary、CSV 或 Manual Export，也不占 Result Chart 額度。重新啟動 Worker
@@ -828,13 +833,15 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。
 
 ### 10.4 Charts
 
-Charts 使用 Apache ECharts 的 Canvas renderer。每個 chart 屬於一個 Output Page，
-可繪製該 Page 的 numeric Outputs。一次 run 的所有 Pages 合計最多 8 個 chart
-panels。
+Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
+可繪製該 Page 的 numeric Outputs。Saved Foreground 與 Background Charts 共用
+最多 8 張額度。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
 
 Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with template**，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
-開啟本來就含有 saved Charts 的 Template 時，checkbox 會自動勾選並還原這些 panels。
+開啟含有 saved Foreground 或 Background Chart 設定的 Template 時，checkbox
+會自動勾選並還原設定，包含只有 Background 的 Template。沒有 saved Chart
+設定的 Template 維持既有 session 預設行為。
 取消勾選不會刪除目前畫面上的 Charts，只代表下一次 Save Template 不再保存它們。
 勾選狀態下執行 **Clear Last Run** 會保留 Chart 設定；一般未勾選的 session Charts
 則維持原本清除行為。

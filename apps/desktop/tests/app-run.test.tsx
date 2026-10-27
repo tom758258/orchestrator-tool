@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Channel, invoke } from '@tauri-apps/api/core'
-import { confirm, open } from '@tauri-apps/plugin-dialog'
+import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import type { ComponentProps } from 'react'
 import App from '../src/App'
 import type ResultChart from '../src/ResultChart'
@@ -18,7 +18,12 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), s
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() }) }))
 // Chart rendering has its own tests; observe the run snapshot passed across this boundary.
 vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof ResultChart>) =>
-  <div data-testid="chart-snapshot">{JSON.stringify({ runId: props.runId, sampling: props.changeSettings, fitData: props.fitData })}</div>,
+  <>
+    <div data-testid="chart-snapshot">{JSON.stringify({ runId: props.runId, sampling: props.changeSettings, fitData: props.fitData })}</div>
+    <div data-testid="chart-panels">{JSON.stringify(props.panels)}</div>
+    <label><input type="checkbox" checked={props.saveChartsWithTemplate}
+      onChange={event => props.onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
+  </>,
 }))
 
 const draft: WorkflowDraft = { schema_version: 2, name: 'Run test', tool_instances: [], workflow: { steps: [
@@ -28,6 +33,20 @@ const draft: WorkflowDraft = { schema_version: 2, name: 'Run test', tool_instanc
     ] },
   ] },
 ] } }
+
+function backgroundDraft(count: number): WorkflowDraft {
+  return { ...structuredClone(draft), tool_instances: Array.from({ length: count }, (_, index) => ({
+    id: `meters-${index+1}`, tool: 'meters', setup: { trigger_mode: 'immediate-custom',
+      measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on',
+      dcv_input_impedance: null, current_terminal: null },
+  })), backgrounds: Array.from({ length: count }, (_, index) => ({
+    id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`, live_monitor: true,
+    trigger_count: 3, chart: { x_axis: 'elapsed' },
+  })), workflow: { steps: [
+    { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true },
+    ...structuredClone(draft.workflow.steps),
+  ] } }
+}
 
 function metadata(runId: number, status: RunMetadataDto['status'] = 'succeeded'): RunMetadataDto {
   return { run_id: runId, status, error: null, completed_successfully: status === 'succeeded', manual_exportable: true,
@@ -60,6 +79,7 @@ beforeEach(() => {
   simulationRequirements = []
   currentDraft = structuredClone(draft)
   vi.mocked(confirm).mockResolvedValue(true)
+  vi.mocked(save).mockResolvedValue('saved.json')
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     const params = args as Record<string, unknown>
     switch (command) {
@@ -73,7 +93,8 @@ beforeEach(() => {
       case 'get_powers_capabilities': return { channels: [1, 2] }
       case 'check_live_preflight': return preflightErrors
       case 'validate_workflow_draft': return params.templateJson
-      case 'load_workflow_template': return JSON.stringify(draft)
+      case 'load_workflow_template': return JSON.stringify(currentDraft)
+      case 'save_workflow_template': return params.templateJson
       case 'clear_last_run': return undefined
       case 'run_workflow_live': case 'run_workflow_simulation': return run.promise
       case 'request_workflow_stop': return true
@@ -115,6 +136,95 @@ async function previousRun() {
   run = deferred<RunMetadataDto>()
 }
 
+async function savedDraft(): Promise<WorkflowDraft> {
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Save Template' }))
+  await screen.findByText('Template saved.')
+  return JSON.parse((vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template')
+    .at(-1)![1] as { templateJson: string }).templateJson)
+}
+
+test.each([8, 7])('automatic Foreground Charts respect %i saved Background Charts through save toggles', async count => {
+  currentDraft = backgroundDraft(count)
+  await mount()
+  vi.mocked(open).mockResolvedValue('template.json')
+  fireEvent.click(screen.getByRole('button', { name: 'Open Template' }))
+  await screen.findByText('Template loaded.')
+  fireEvent.click(runButton('Simulation'))
+  await finish(21)
+  tab('Output')
+  const option = screen.getByLabelText('Save charts with template') as HTMLInputElement
+  expect(option.checked).toBe(true)
+  fireEvent.click(option)
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)).toHaveLength(count === 8 ? 0 : 1))
+  fireEvent.click(option)
+  const saved = await savedDraft()
+  expect(saved.output_views?.charts).toHaveLength(count === 8 ? 0 : 1)
+  expect(saved.backgrounds).toEqual(currentDraft.backgrounds)
+  expect((saved.output_views?.charts.length ?? 0) + saved.backgrounds!.filter(background => background.chart).length).toBe(8)
+})
+
+test('Last Run axes remain viewable after binding removal or reuse without changing another binding', async () => {
+  currentDraft = backgroundDraft(2)
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await finish(22)
+  tab('Output')
+  await screen.findByRole('region', { name: 'Background Results' })
+  const output = () => screen.getByRole('region', { name: 'Background Results' })
+  await within(output()).findByRole('img', { name: 'Background Dataset Line' })
+  const axis = () => within(output()).getByLabelText('X axis') as HTMLSelectElement
+  fireEvent.click(screen.getByLabelText('Save charts with template'))
+  fireEvent.change(axis(), { target: { value: 'timestamp' } })
+  // The still-current binding saves axis changes, including after validation replaces draft objects.
+  let saved = await savedDraft()
+  expect(saved.backgrounds?.[0].chart?.x_axis).toBe('timestamp')
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText('Valid')
+  tab('Output')
+  fireEvent.change(axis(), { target: { value: 'index' } })
+  expect((await savedDraft()).backgrounds?.[0].chart?.x_axis).toBe('index')
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, on$/ }))
+  fireEvent.keyDown(screen.getByRole('tabpanel', { name: 'Workflow' }), { key: 'Delete' })
+  tab('Setup')
+  const expandFirst = screen.queryByRole('button', { name: 'Expand meters-1' })
+  if (expandFirst) fireEvent.click(expandFirst)
+  const binding = (id: string) => within(screen.getByRole('button', { name: `Collapse ${id}` }).closest('fieldset')!)
+    .getByLabelText('Use this instance as a Background') as HTMLInputElement
+  expect(binding('meters-1').disabled).toBe(false)
+  fireEvent.click(binding('meters-1'))
+  tab('Output')
+  fireEvent.change(axis(), { target: { value: 'index' } })
+  expect(axis().value).toBe('index')
+  expect(within(output()).queryByText('Maximum 8 charts.')).toBeNull()
+  await within(output()).findByRole('img', { name: 'Background Dataset Line' })
+  expect((within(output()).getByLabelText('Background Dataset') as HTMLSelectElement).value).toBe('capture-1')
+  saved = await savedDraft()
+  expect(saved.backgrounds).toEqual([currentDraft.backgrounds![1]])
+  // Reusing the ID for another Tool Instance must not receive the old run's settings.
+  tab('Setup')
+  const expandSecond = screen.queryByRole('button', { name: 'Expand meters-2' })
+  if (expandSecond) fireEvent.click(expandSecond)
+  fireEvent.click(binding('meters-2'))
+  fireEvent.click(binding('meters-2'))
+  tab('Output')
+  fireEvent.change(axis(), { target: { value: 'elapsed' } })
+  expect(axis().value).toBe('elapsed')
+  saved = await savedDraft()
+  expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, trigger_count: 1000 }])
+  // A removed and recreated binding stays separate even when both IDs match again.
+  tab('Setup')
+  fireEvent.click(binding('meters-2'))
+  fireEvent.click(binding('meters-1'))
+  tab('Output')
+  fireEvent.change(axis(), { target: { value: 'timestamp' } })
+  expect(axis().value).toBe('timestamp')
+  expect(within(output()).queryByText('Maximum 8 charts.')).toBeNull()
+  saved = await savedDraft()
+  expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, trigger_count: 1000 }])
+  expect(runCalls()).toHaveLength(1)
+})
+
 test('Simulation sample warning supports cancellation, per-instance overrides and fresh defaults', async () => {
   simulationRequirements = ['meters-1', 'meters-2']
   await mount()
@@ -148,7 +258,7 @@ test('Background-only Output queries bounded windows and separates Monitor, Data
   await mount()
   fireEvent.click(runButton('Simulation'))
   await waitFor(() => expect(runCalls()).toHaveLength(1))
-  await finish(20)
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: metadata(20, 'running'), completed_step_ids: [] }))
   tab('Output')
   const output = await screen.findByRole('region', { name: 'Background Results' })
   await within(output).findByRole('img', { name: 'Background Dataset Line' })
@@ -156,7 +266,7 @@ test('Background-only Output queries bounded windows and separates Monitor, Data
   expect(within(output).getByText(/More than 300,000 samples/)).toBeTruthy()
   expect((within(output).getByLabelText('Samples per XLSX file') as HTMLInputElement).value).toBe('300000')
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit===100)).toBe(true)
-  expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false)
+  expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(true)
   const background = within(output).getByLabelText('Background')
   fireEvent.change(background, { target: { value: 'background-8' } })
   await waitFor(() => expect(within(output).queryByText('Maximum 8 charts.')).toBeNull())
@@ -167,9 +277,16 @@ test('Background-only Output queries bounded windows and separates Monitor, Data
   fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
   expect(within(output).getByRole('alert').textContent).toBe('Maximum 8 charts.')
   expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('elapsed')
+  const queries = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').length
+  const beforePoll = queries()
+  await waitFor(() => expect(queries()).toBeGreaterThan(beforePoll))
+  expect(within(output).getByRole('alert').textContent).toBe('Maximum 8 charts.')
   fireEvent.change(background, { target: { value: 'background-1' } })
   fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
   expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('index')
+  expect(within(output).queryByText('Maximum 8 charts.')).toBeNull()
+  await finish(20)
+  await waitFor(() => expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false))
 })
 
 test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snapshots options for Last Run', async mode => {
