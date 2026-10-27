@@ -107,6 +107,12 @@ pub struct BackgroundStore {
 
 pub type SharedBackgroundStore = Arc<Mutex<BackgroundStore>>;
 
+#[cfg(not(test))]
+type CsvDestination = File;
+// Keep fault injection private to unit tests; production continues to write File directly.
+#[cfg(test)]
+type CsvDestination = Box<dyn std::io::Write + Send>;
+
 impl BackgroundStore {
     pub fn dataset(&self, id: &str) -> Result<&Dataset, String> {
         self.datasets
@@ -419,7 +425,7 @@ struct Dispatcher {
     failure: RunFailure,
     csv: Option<BackgroundCsvOptions>,
     current: Option<usize>,
-    writer: Option<ResultRowsCsvWriter<File>>,
+    writer: Option<ResultRowsCsvWriter<CsvDestination>>,
     auto_closed: bool,
     stream_state: Option<String>,
     total: usize,
@@ -489,6 +495,8 @@ impl Dispatcher {
             let (path, file) =
                 unique_file(&options.output_folder, &format!("{}-{id}", now_ms()), "csv")?;
             metadata.csv_path = Some(path.display().to_string());
+            #[cfg(test)]
+            let file = Box::new(file) as CsvDestination;
             self.writer = Some(
                 ResultRowsCsvWriter::new(file, SAMPLE_COLUMNS.map(str::to_owned).to_vec())
                     .map_err(|e| e.to_string())?,
@@ -765,6 +773,185 @@ impl Dispatcher {
             } else {
                 thread::sleep(Duration::from_millis(5));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        run::{ExecutionMode, RunOptions, run_workflow_streaming_controlled},
+        template::Template,
+        workflow::WorkflowRunEvent,
+    };
+    use serde_json::json;
+    use std::{
+        io::{self, Write},
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    struct FailingFile {
+        file: File,
+        armed: Arc<AtomicBool>,
+        flush_failure: bool,
+    }
+    impl Write for FailingFile {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.armed.load(Ordering::Relaxed) && !self.flush_failure {
+                return Err(io::Error::other("injected CSV write failure"));
+            }
+            self.file.write(bytes)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            if self.armed.load(Ordering::Relaxed) && self.flush_failure {
+                return Err(io::Error::other("injected CSV flush failure"));
+            }
+            self.file.flush()
+        }
+    }
+
+    #[test]
+    fn csv_write_and_final_flush_failures_keep_samples_and_fail_the_workflow() {
+        for flush_failure in [false, true] {
+            let folder = std::env::temp_dir().join(format!(
+                "orchestrator-bg-csv-fault-{}-{flush_failure}",
+                std::process::id()
+            ));
+            let config = BackgroundConfig {
+                id: "background-1".into(),
+                tool_instance_id: ToolInstanceId::new("meter").unwrap(),
+                live_monitor: false,
+                trigger_count: Some(10),
+                chart: None,
+            };
+            let store = SharedBackgroundStore::default();
+            let failure = RunFailure::default();
+            store.lock().unwrap().workers.push(BackgroundStatus {
+                id: config.id.clone(),
+                state: "on".into(),
+                stream_state: Some("active".into()),
+                live_monitor: false,
+                error: None,
+                monitor: VecDeque::new(),
+            });
+            let mut dispatcher = Dispatcher {
+                config,
+                store: store.clone(),
+                failure: failure.clone(),
+                csv: Some(BackgroundCsvOptions {
+                    output_folder: folder.clone(),
+                    background_id: None,
+                }),
+                current: None,
+                writer: None,
+                auto_closed: false,
+                stream_state: Some("active".into()),
+                total: 0,
+                summary: None,
+                ended: false,
+                first_sample_ms: None,
+            };
+            dispatcher.capture_on("worker").unwrap();
+            let path = store.lock().unwrap().metadata()[0]
+                .csv_path
+                .clone()
+                .unwrap();
+            dispatcher.writer = None;
+            let armed = Arc::new(AtomicBool::new(false));
+            dispatcher.writer = Some(
+                ResultRowsCsvWriter::new(
+                    Box::new(FailingFile {
+                        file: File::create(&path).unwrap(),
+                        armed: armed.clone(),
+                        flush_failure,
+                    }) as CsvDestination,
+                    SAMPLE_COLUMNS.map(str::to_owned).to_vec(),
+                )
+                .unwrap(),
+            );
+            let sample = |captured| {
+                json!({"event":"sample", "captured":captured, "value":captured as f64, "unit":"V",
+                "status":"ok", "timestamp_utc":"2026-10-27T00:00:00Z"})
+            };
+            dispatcher.event(sample(1)).unwrap();
+            let partial = fs::read_to_string(&path).unwrap();
+            assert_eq!(
+                csv::Reader::from_reader(partial.as_bytes())
+                    .records()
+                    .count(),
+                1
+            );
+            let template = Template::from_json_str(&json!({"schema_version":2,"name":"CSV failure", "tool_instances":[],
+                "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
+                    "steps":[{"type":"output","id":"out","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
+                    {"type":"wait","id":"after-loop","duration_ms":0}]}}).to_string()).unwrap();
+            let mut committed = Vec::new();
+            let mut completed = Vec::new();
+            let mut graceful_stop_called = false;
+            let result = run_workflow_streaming_controlled(
+                &template,
+                ExecutionMode::Simulate,
+                &HashMap::new(),
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+                None,
+                RunOptions {
+                    failure: failure.clone(),
+                    ..Default::default()
+                },
+                |event| {
+                    if let WorkflowRunEvent::StepCompleted(step) = &event {
+                        completed.push(step.step_id().as_str().to_owned());
+                    }
+                    if let WorkflowRunEvent::ResultRowCommitted(row) = event {
+                        committed.push(row);
+                        armed.store(true, Ordering::Relaxed);
+                        if flush_failure {
+                            assert!(
+                                dispatcher
+                                    .capture_off()
+                                    .unwrap_err()
+                                    .contains("CSV final flush")
+                            );
+                        } else {
+                            let error = dispatcher.event(sample(2)).unwrap_err();
+                            assert!(error.contains("injected CSV write failure"));
+                            dispatcher.fail(&error);
+                            // The normal dispatcher retains valid tail data during shutdown.
+                            dispatcher.event(sample(3)).unwrap();
+                            dispatcher.finish("failed", "incomplete", Some(error));
+                        }
+                    }
+                },
+                |_| {
+                    graceful_stop_called = true;
+                    false
+                },
+            );
+            assert!(result.unwrap_err().to_string().contains(if flush_failure {
+                "CSV final flush"
+            } else {
+                "CSV:"
+            }));
+            assert_eq!(committed.len(), 1);
+            assert_eq!(completed.iter().filter(|id| *id == "out").count(), 1);
+            assert!(!completed.iter().any(|id| id == "after-loop"));
+            assert!(!graceful_stop_called);
+            let data = store.lock().unwrap();
+            let metadata = &data.metadata()[0];
+            assert_eq!(metadata.status, "failed");
+            assert!(metadata.finished_ms.is_some());
+            assert!(metadata.error.is_some());
+            assert_eq!(
+                data.rows(&metadata.id, 0, 10).unwrap().len(),
+                if flush_failure { 1 } else { 3 }
+            );
+            assert_eq!(fs::read_to_string(&path).unwrap(), partial);
+            drop(data);
+            drop(dispatcher);
+            fs::remove_dir_all(folder).unwrap();
         }
     }
 }

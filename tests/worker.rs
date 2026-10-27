@@ -888,12 +888,29 @@ fn background_capture_and_termination_contract() {
         manager.cleanup().unwrap();
     }
 
-    // Background failures and CSV setup failures must not bypass Powers Safe-Off.
-    for (csv_failure, power_failure, workflow_failure) in [
-        (false, false, false),
-        (true, false, false),
-        (false, true, false),
-        (false, false, true),
+    // CSV and Background failures must not bypass Powers Safe-Off.
+    struct FailAfterHeader<'a> {
+        bytes: &'a mut Vec<u8>,
+        wrote_header: bool,
+    }
+    impl Write for FailAfterHeader<'_> {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.wrote_header {
+                return Err(io::Error::other("injected Foreground CSV write failure"));
+            }
+            self.wrote_header = true;
+            self.bytes.write(bytes)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    for (csv_failure, power_failure, workflow_failure, foreground_csv_failure) in [
+        (false, false, false, false),
+        (true, false, false, false),
+        (false, true, false, false),
+        (false, false, true, false),
+        (false, false, false, true),
     ] {
         let marker = env::temp_dir().join(format!(
             "orchestrator-bg-safe-off-{}-{csv_failure}-{power_failure}",
@@ -926,13 +943,25 @@ fn background_capture_and_termination_contract() {
         if power_failure {
             wire["workflow"]["steps"].as_array_mut().unwrap().insert(2,json!({"type":"tool-action","id":"power-off","target":"powers-1","action":"output-off","arguments":{"channel":1}}));
         }
+        if foreground_csv_failure {
+            wire["workflow"]["steps"].as_array_mut().unwrap().insert(4, json!({"type":"for","id":"rows","variable":"i",
+                "range":{"start":"0","stop":"2","step":"1"},"steps":[{"type":"output","id":"value","name":"value","page":"Results",
+                "value":{"source":"literal","value":1}}]}));
+        }
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         let specs = HashMap::from([
             (
                 ToolInstanceId::new("meters-bg").unwrap(),
                 WorkerLaunchSpec::new(
                     env::current_exe().unwrap(),
-                    ["--background-fixture", "missing-summary"],
+                    [
+                        "--background-fixture",
+                        if foreground_csv_failure {
+                            "rolling"
+                        } else {
+                            "missing-summary"
+                        },
+                    ],
                 )
                 .with_manifest(fixture_manifest("meters-smoke")),
             ),
@@ -947,6 +976,18 @@ fn background_capture_and_termination_contract() {
         ]);
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         let mut completed = Vec::new();
+        let failure = orchestrator_tool::run_failure::RunFailure::default();
+        let mut partial_csv = Vec::new();
+        let mut csv_writer = orchestrator_tool::workflow_csv::ResultRowsCsvWriter::new(
+            FailAfterHeader {
+                bytes: &mut partial_csv,
+                wrote_header: false,
+            },
+            vec!["value".into()],
+        )
+        .unwrap();
+        let mut committed = Vec::new();
+        let mut graceful_stop_called = false;
         let result = run_workflow_streaming_controlled(
             &template,
             ExecutionMode::Live,
@@ -957,33 +998,60 @@ fn background_capture_and_termination_contract() {
             None,
             RunOptions {
                 backgrounds: store.clone(),
+                failure: failure.clone(),
                 background_csv: csv_failure.then(|| {
                     orchestrator_tool::background::BackgroundCsvOptions {
                         output_folder: invalid_folder.clone(),
                         background_id: None,
                     }
                 }),
-                ..Default::default()
             },
             |event| {
-                if let WorkflowRunEvent::StepCompleted(step) = event {
+                if let WorkflowRunEvent::StepCompleted(step) = &event {
                     completed.push(step.step_id().as_str().to_owned());
                 }
+                if foreground_csv_failure && let WorkflowRunEvent::ResultRowCommitted(row) = event {
+                    failure.fail(format!(
+                        "Foreground CSV: {}",
+                        csv_writer.write_row(&row).unwrap_err()
+                    ));
+                    committed.push(row);
+                }
             },
-            |_| false,
+            |_| {
+                graceful_stop_called = true;
+                false
+            },
         );
         // SAFETY: run cleanup reaped all fixture processes before changing the environment.
         unsafe {
             env::remove_var(CLEANUP_MARKER_ENV);
         }
         let error = result.unwrap_err().to_string();
-        assert!(csv_failure || error.contains("summary"), "{error}");
+        assert!(
+            csv_failure || foreground_csv_failure || error.contains("summary"),
+            "{error}"
+        );
+        if foreground_csv_failure {
+            assert!(
+                error.contains("injected Foreground CSV write failure"),
+                "{error}"
+            );
+            assert_eq!(committed.len(), 1);
+            assert!(!graceful_stop_called);
+            drop(csv_writer);
+            assert_eq!(partial_csv, b"value\n");
+            let data = store.lock().unwrap();
+            assert!(data.metadata()[0].row_count > 0);
+            assert_eq!(data.workers[0].state, "off");
+            assert_ne!(data.metadata()[0].status, "recording");
+        }
         if workflow_failure {
             assert!(error.contains("original-failure"), "{error}");
         }
         assert!(fs::read_to_string(&marker).unwrap().contains("safe-off"));
         assert!(!completed.contains(&"after-failure".to_owned()));
-        if !csv_failure && !workflow_failure {
+        if !csv_failure && !workflow_failure && !foreground_csv_failure {
             assert_eq!(store.lock().unwrap().metadata()[0].row_count, 6);
         }
         fs::remove_file(marker).unwrap();

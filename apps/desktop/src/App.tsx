@@ -14,12 +14,12 @@ import ResultChart from './ResultChart'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'
-import { chartRequiredOutputs, reconcileRunChartPanels, savedChartsToPanels, type ChartPanel } from './chartPanels'
+import { chartRequiredOutputs, reconcileRunChartPanels, savedChartsToPanels, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import FailureDetails from './FailureDetails'
 import WorkflowRunSummary from './WorkflowRunSummary'
-import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
+import { savedChartCount, templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
 import BackgroundOutput from './BackgroundOutput'
 import { useSimulationSamples } from './useSimulationSamples'
@@ -1081,7 +1081,7 @@ function App() {
       setWorkflowDraft(workflowOnlyDraft(loadedDraft))
       setTemplateUiGeneration(current => current + 1)
       setExpandedToolIds([])
-      setSaveChartsWithTemplate(loadedDraft.output_views !== undefined)
+      setSaveChartsWithTemplate(loadedDraft.output_views !== undefined || loadedDraft.backgrounds?.some(background => background.chart !== undefined) === true)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
@@ -3004,6 +3004,7 @@ function App() {
                   chartData={chartData} onSavingChange={setChartSaving} running={runStatus === 'running'}
                   changeSettings={runChartSampling} fitData={runChartFitData}
                   saveChartsWithTemplate={saveChartsWithTemplate}
+                  backgroundChartCount={savedChartCount([], workflowDraft?.backgrounds)}
                   onSaveChartsWithTemplateChange={setSaveChartsWithTemplate} />}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <div className="numeric-display-settings">
                   <label>Number display
@@ -3038,7 +3039,10 @@ function App() {
           )}
           {runWorkflowSnapshot?.backgrounds?.length && displayedRun && <BackgroundOutput key={displayedRun.run_id} runId={displayedRun.run_id}
             backgrounds={runWorkflowSnapshot.backgrounds} running={runStatus === 'running'} onExportingChange={setExporting} onChartChange={(id, chart) => {
+              const background = workflowDraft?.backgrounds?.find(background => background.id === id)
+              if (!background || (!background.chart && savedChartCount(chartPanels, workflowDraft?.backgrounds) >= MAX_CHARTS)) return false
               setWorkflowDraft(current => current ? { ...current, backgrounds: current.backgrounds?.map(background => background.id === id ? { ...background, chart } : background) } : current)
+              return true
             }} />}
           <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
             onChange={event => setExportAllPages(event.target.value === 'all')}>

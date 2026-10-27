@@ -66,7 +66,7 @@ test('template Chart persistence changes only the intended Last Run lifecycle bo
   const loadStart = source.indexOf('const handleLoadTemplate =')
   const loadEnd = source.indexOf('\n  const ', loadStart)
   const load = source.slice(loadStart, loadEnd)
-  assert.match(load, /setSaveChartsWithTemplate\(loadedDraft\.output_views !== undefined\)/)
+  // Chart persistence on load/save is covered by the React Template tests.
   assert.match(load, /savedChartsToPanels\(loadedDraft\.output_views\.charts\)/)
 
   const clearStart = source.indexOf('const handleClearLastRun =')

@@ -142,7 +142,8 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
 
 test('Background-only Output queries bounded windows and separates Monitor, Dataset and export', async () => {
   currentDraft = { schema_version: 2, name: 'Background-only', tool_instances: [],
-    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, trigger_count: 3 }],
+    backgrounds: Array.from({ length: 9 }, (_, index) => ({ id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`,
+      live_monitor: true, trigger_count: 3, ...(index < 7 ? { chart: { x_axis: 'elapsed' as const } } : {}) })),
     workflow: { steps: [{ type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true }] } }
   await mount()
   fireEvent.click(runButton('Simulation'))
@@ -156,6 +157,19 @@ test('Background-only Output queries bounded windows and separates Monitor, Data
   expect((within(output).getByLabelText('Samples per XLSX file') as HTMLInputElement).value).toBe('300000')
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit===100)).toBe(true)
   expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false)
+  const background = within(output).getByLabelText('Background')
+  fireEvent.change(background, { target: { value: 'background-8' } })
+  await waitFor(() => expect(within(output).queryByText('Maximum 8 charts.')).toBeNull())
+  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'timestamp' } })
+  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('timestamp')
+  fireEvent.change(background, { target: { value: 'background-9' } })
+  await waitFor(() => expect(within(output).queryByText('Maximum 8 charts.')).toBeNull())
+  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
+  expect(within(output).getByRole('alert').textContent).toBe('Maximum 8 charts.')
+  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('elapsed')
+  fireEvent.change(background, { target: { value: 'background-1' } })
+  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
+  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('index')
 })
 
 test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snapshots options for Last Run', async mode => {

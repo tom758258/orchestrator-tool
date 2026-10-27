@@ -19,6 +19,10 @@ export function workflowOnlyDraft(draft: WorkflowDraft): WorkflowDraft {
   return workflowOnly
 }
 
+export function savedChartCount(panels: readonly ChartPanel[], backgrounds: readonly BackgroundConfig[] = []): number {
+  return panels.length + backgrounds.filter(background => background.chart !== undefined).length
+}
+
 export function templateDraftJson(draft: WorkflowDraft, panels: readonly ChartPanel[], includeCharts: boolean): string {
   return JSON.stringify(includeCharts
     ? { ...draft, output_views: { charts: panels.map(chartPanelToSavedChart) } }

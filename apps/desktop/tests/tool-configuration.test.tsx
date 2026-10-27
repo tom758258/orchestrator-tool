@@ -5,6 +5,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import type { WorkflowDraft } from '../src/templateDraft'
+import type { ToolInstance } from '../src/ToolSetupEditor'
+import BackgroundSetup from '../src/BackgroundSetup'
+import type { WorkflowStep } from '../src/workflow'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }))
@@ -18,6 +21,29 @@ const original: WorkflowDraft = { schema_version: 2, name: 'Setup test', tool_in
   { id: 'wavegen-1', tool: 'wavegen', setup: {} },
 ], workflow: { steps: [] } }
 const empty: WorkflowDraft = { ...original, tool_instances: [] }
+const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
+  measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
+
+test.each(['root', 'nested', 'unreferenced'])('Background binding removal respects %s references', kind => {
+  const action: WorkflowStep = { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: false }
+  const steps: WorkflowStep[] = kind === 'root' ? [action] : kind === 'nested' ? [
+    { type: 'for', id: 'for', variable: 'i', range: { start: '0', stop: '1', step: '1' }, steps: [
+      { type: 'while', id: 'while', left: { source: 'literal', value: true }, operator: 'equal',
+        right: { source: 'literal', value: true }, max_iterations: 1, steps: [action] },
+    ] },
+  ] : []
+  const onChange = vi.fn()
+  render(<BackgroundSetup instance={backgroundMeter}
+    value={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, trigger_count: 10 }]}
+    steps={steps} onChange={onChange} />)
+  const binding = screen.getByLabelText('Use this instance as a Background') as HTMLInputElement
+  expect(binding.disabled).toBe(kind !== 'unreferenced')
+  if (kind === 'unreferenced') {
+    fireEvent.click(binding)
+    expect(onChange).toHaveBeenCalledWith([])
+  }
+  else expect(onChange).not.toHaveBeenCalled()
+})
 const toolStatus = (tool_id: string) => ({ tool_id, executable_status: 'available', compatibility: 'compatible',
   source: 'configured', path: `${tool_id}.exe`, tool_version: '1.0', worker_schema_versions: [3], reason: null })
 let tools: ReturnType<typeof toolStatus>[]
@@ -109,6 +135,15 @@ async function savedDraft() {
   const args = calls().filter(([command]) => command === 'save_workflow_template').at(-1)![1] as { templateJson: string }
   return JSON.parse(args.templateJson)
 }
+
+test('loading a Template with only Background Charts preserves their X axis on save', async () => {
+  loadedDraft = { ...empty, tool_instances: [backgroundMeter], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
+    live_monitor: true, trigger_count: 10, chart: { x_axis: 'timestamp' } }] }
+  await mount()
+  click('Open Template')
+  await screen.findByText('Template loaded.')
+  expect((await savedDraft()).backgrounds).toEqual(loadedDraft.backgrounds)
+})
 const summaryCounts = () => Array.from(screen.getByRole('region', { name: 'Tool Instance Summary' })
   .querySelectorAll('dl > div')).map(node => [node.querySelector('dt')!.textContent, node.querySelector('dd')!.textContent])
 

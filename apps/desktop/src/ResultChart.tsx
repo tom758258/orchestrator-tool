@@ -16,7 +16,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, backgroundChartCount = 0 }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -33,6 +33,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
   fitData?: boolean
   saveChartsWithTemplate: boolean
   onSaveChartsWithTemplateChange: (checked: boolean) => void
+  backgroundChartCount?: number
 }) {
   const plots = useRef(new Map<number, EChartsType>())
   const saving = useRef(false)
@@ -192,7 +193,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
   }
 
   function addChart() {
-    if (saving.current) return
+    if (saving.current || panels.length + backgroundChartCount >= MAX_CHARTS) return
     onPanelsChange(addChartPanel(panels, page, numericNames))
   }
 
@@ -206,10 +207,10 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
           Save charts with template
         </label>
         <button className="action-button" type="button" onClick={addChart}
-          disabled={savingId !== null || numericNames.length === 0 || panels.length >= MAX_CHARTS}>+ Add Chart</button>
+          disabled={savingId !== null || numericNames.length === 0 || panels.length + backgroundChartCount >= MAX_CHARTS}>+ Add Chart</button>
       </div>
     </div>
-    {panels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
+    {panels.length + backgroundChartCount >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
     {numericNames.length === 0 ? <p>No numeric Outputs are available for charts on this Page.</p>
       : localPanels.length === 0 ? <p>No charts for this Page.</p>
       : <p>Select multiple numeric Outputs to compare them on the same chart.</p>}

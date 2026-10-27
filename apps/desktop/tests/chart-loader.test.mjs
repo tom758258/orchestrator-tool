@@ -399,7 +399,7 @@ test('Waiting keeps Settings and Remove available while locking Export PNG and O
   const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)
   const base = addChartPanel([], 'A', ['V'])[0]
   let panels
-  function render(rowCount) {
+  function render(rowCount, backgroundChartCount = 0) {
     stateIndex = 0
     const nodes = []
     function visit(node) {
@@ -407,10 +407,16 @@ test('Waiting keeps Settings and Remove available while locking Export PNG and O
       else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
     }
     visit(component({ runId: 77, revision: 1, rowCount, numericNames: ['V'], timestampNames: [], outputs: [],
-      panels, onPanelsChange: value => { panels = value }, page: 'A', chartData: new Map(), running: true }))
+      panels, onPanelsChange: value => { panels = value }, page: 'A', chartData: new Map(), running: true, backgroundChartCount }))
     return nodes
   }
   const button = (nodes, label) => nodes.find(node => node.type === 'button' && node.props.children === label)
+  panels = [base]
+  assert.equal(button(render(0, 6), '+ Add Chart').props.disabled, false)
+  const full = button(render(0, 7), '+ Add Chart')
+  assert.equal(full.props.disabled, true)
+  full.props.onClick()
+  assert.deepEqual(panels, [base])
   for (const type of ['scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
     for (const rowCount of [0, 2]) {
       panels = [{ ...base, type }, { ...base, id: 1, page: 'B' }]

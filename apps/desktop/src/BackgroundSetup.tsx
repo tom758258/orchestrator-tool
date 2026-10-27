@@ -1,4 +1,4 @@
-import type { BackgroundConfig, WorkflowStep } from './workflow'
+import { allWorkflowSteps, type BackgroundConfig, type WorkflowStep } from './workflow'
 import type { ToolInstance } from './ToolSetupEditor'
 
 export default function BackgroundSetup({ instance, value, steps, onChange }: {
@@ -6,7 +6,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange }: {
 }) {
   const config = value.find(background => background.tool_instance_id === instance.id)
   const supported = instance.tool === 'meters' && instance.setup.trigger_mode === 'immediate-custom'
-  const referenced = config && steps.some(step => step.type === 'background' && step.background_id === config.id)
+  const referenced = config && allWorkflowSteps(steps).some(step => step.type === 'background' && step.background_id === config.id)
   const update = (change: Partial<BackgroundConfig>) => onChange(value.map(item => item.id === config?.id ? { ...item, ...change } : item))
   return <section className="background-setup">
     <h4>Background Streaming</h4>

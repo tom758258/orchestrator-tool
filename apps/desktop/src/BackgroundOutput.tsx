@@ -41,7 +41,7 @@ function BackgroundLine({ samples, xAxis, label }: { samples: Sample[]; xAxis: X
 }
 
 export default function BackgroundOutput({ runId, backgrounds, running, onChartChange, onExportingChange }: { runId: number; backgrounds: BackgroundConfig[]; running: boolean;
-  onChartChange?: (id: string, chart: NonNullable<BackgroundConfig['chart']>) => void; onExportingChange?: (value: boolean) => void }) {
+  onChartChange?: (id: string, chart: NonNullable<BackgroundConfig['chart']>) => boolean; onExportingChange?: (value: boolean) => void }) {
   const [background, setBackground] = useState(backgrounds[0]?.id ?? '')
   const [datasetId, setDatasetId] = useState<string | null>(null)
   const [output, setOutput] = useState<Output | null>(null)
@@ -98,7 +98,12 @@ export default function BackgroundOutput({ runId, backgrounds, running, onChartC
       <option value="">Select Dataset</option>{datasets.map(item => <option key={item.id} value={item.id}>{item.id} · {item.row_count} samples · {item.status}</option>)}
     </select></label>
     <section><h4>Charts</h4>
-      <label>X axis<select value={xAxis} onChange={event => { const x_axis = event.target.value as XAxis; setAxes(current => ({ ...current, [background]: x_axis })); onChartChange?.(background,{ x_axis }) }}>
+      <label>X axis<select value={xAxis} onChange={event => {
+        const x_axis = event.target.value as XAxis
+        if (onChartChange?.(background, { x_axis }) === false) { setError('Maximum 8 charts.'); return }
+        setError(null)
+        setAxes(current => ({ ...current, [background]: x_axis }))
+      }}>
         <option value="elapsed">Elapsed Time</option><option value="timestamp">Timestamp</option><option value="index">Sample Index</option>
       </select></label>
       {dataset ? <><p>Captured Dataset · Line · up to 2,000 representative points</p>

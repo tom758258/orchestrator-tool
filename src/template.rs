@@ -341,6 +341,7 @@ impl Template {
         validate_scopes_files(workflow.steps(), &tool_instances)?;
         validate_tool_action_parameters(workflow.steps(), &tool_instances)?;
         let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
+        validate_output_views(&workflow, None, &backgrounds)?;
         let template = Self {
             backgrounds,
             name,
@@ -468,22 +469,10 @@ impl Template {
         let workflow = workflow_from_wire(wire.workflow)?;
         let instances = instances_from_wire(wire.tool_instances)?;
         let output_views = wire.output_views;
-        validate_output_views(&workflow, output_views.as_ref())?;
+        validate_output_views(&workflow, output_views.as_ref(), &wire.backgrounds)?;
         let mut template =
             Self::new_with_backgrounds(wire.name, instances, workflow, wire.backgrounds)?;
         template.output_views = output_views;
-        if template
-            .backgrounds
-            .iter()
-            .filter(|b| b.chart.is_some())
-            .count()
-            + template.output_views.as_ref().map_or(0, |v| v.charts.len())
-            > MAX_SAVED_CHARTS
-        {
-            return Err(TemplateError::OutputViews(
-                "At most 8 Result Charts can be saved; Live Monitor is separate".into(),
-            ));
-        }
         Ok(template)
     }
 
@@ -727,15 +716,21 @@ fn validate_tool_action_parameters(
 fn validate_output_views(
     workflow: &Workflow,
     output_views: Option<&OutputViews>,
+    backgrounds: &[crate::background::BackgroundConfig],
 ) -> Result<(), TemplateError> {
+    let chart_count = output_views.map_or(0, |views| views.charts.len())
+        + backgrounds
+            .iter()
+            .filter(|background| background.chart.is_some())
+            .count();
+    if chart_count > MAX_SAVED_CHARTS {
+        return Err(TemplateError::OutputViews(format!(
+            "at most {MAX_SAVED_CHARTS} charts can be saved with a template; Live Monitor is separate"
+        )));
+    }
     let Some(output_views) = output_views else {
         return Ok(());
     };
-    if output_views.charts.len() > MAX_SAVED_CHARTS {
-        return Err(TemplateError::OutputViews(format!(
-            "at most {MAX_SAVED_CHARTS} charts can be saved with a template"
-        )));
-    }
 
     fn validate_axis(label: &str, axis: &AxisSettings) -> Result<(), TemplateError> {
         if let (Some(min), Some(max)) = (axis.min, axis.max)
@@ -2221,6 +2216,76 @@ mod tests {
             Template::from_json_str(&serialized.to_string()).unwrap(),
             template
         );
+    }
+
+    #[test]
+    fn saved_chart_limit_includes_backgrounds_but_not_monitors() {
+        for (foreground, background, valid) in [
+            (8, 0, true),
+            (5, 3, true),
+            (5, 4, false),
+            (0, 8, true),
+            (0, 9, false),
+        ] {
+            let mut wire = chart_template_wire();
+            wire["output_views"]["charts"] = json!(
+                (0..foreground)
+                    .map(|_| saved_chart_wire("line", vec!["Voltage"]))
+                    .collect::<Vec<_>>()
+            );
+            // An extra monitor-only binding must not consume a Chart slot.
+            wire["tool_instances"] = json!((0..=background).map(|index| json!({
+                "id": format!("meter-{index}"), "tool": "meters", "setup": crate::meters_setup::MetersSetup {
+                    trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom, ..Default::default()
+                }
+            })).collect::<Vec<_>>());
+            wire["backgrounds"] = json!((0..=background).map(|index| {
+                let mut config = json!({"id": format!("background-{index}"), "tool_instance_id": format!("meter-{index}"),
+                    "live_monitor": true, "trigger_count": 10});
+                if index < background { config["chart"] = json!({"x_axis":"index"}); }
+                config
+            }).collect::<Vec<_>>());
+            let result = Template::from_json_str(&wire.to_string());
+            assert_eq!(
+                result.is_ok(),
+                valid,
+                "Foreground={foreground}, Background={background}: {result:?}"
+            );
+            if let Ok(template) = result {
+                let saved: Value =
+                    serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+                assert_eq!(saved["backgrounds"], wire["backgrounds"]);
+                assert_eq!(
+                    Template::from_json_str(&saved.to_string()).unwrap(),
+                    template
+                );
+                if foreground == 0 {
+                    let mut configs = template.backgrounds().to_vec();
+                    // Construction must enforce the same contract as JSON loading.
+                    Template::new_with_backgrounds(
+                        template.name().into(),
+                        template.tool_instances().to_vec(),
+                        template.workflow().clone(),
+                        configs.clone(),
+                    )
+                    .unwrap();
+                    configs.last_mut().unwrap().chart = Some(crate::background::BackgroundChart {
+                        x_axis: crate::background::BackgroundXAxis::Elapsed,
+                    });
+                    assert!(
+                        Template::new_with_backgrounds(
+                            template.name().into(),
+                            template.tool_instances().to_vec(),
+                            template.workflow().clone(),
+                            configs
+                        )
+                        .is_err()
+                    );
+                }
+            } else {
+                assert!(matches!(result, Err(TemplateError::OutputViews(_))));
+            }
+        }
     }
 
     #[test]
