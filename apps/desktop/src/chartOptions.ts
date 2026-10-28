@@ -208,6 +208,11 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
         axisLabel: { ...visual.xAxis.axisLabel, show: xAxis.showLabels,
           formatter: (value: number) => formatScatterX(value, xTimeFormat) },
       } : {}),
+      ...(panel.source?.x_axis === 'timestamp' && panel.type !== 'bar' ? {
+        type: 'time' as const, scale: true,
+        axisLabel: { ...visual.xAxis.axisLabel, show: xAxis.showLabels,
+          formatter: (value: number) => new Date(value).toISOString() },
+      } : {}),
       ...(fullDomain && chartSupportsZoom(panel.type) && panel.zoom.enabled ? fullDomain : {}) },
     yAxis: panel.type === 'combo' && comboHasRightAxis(panel)
       ? [axisOption(panel.yAxis, 56, visual.yAxis),
@@ -215,11 +220,19 @@ export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number
       : panel.type === 'bar'
       ? { ...axisOption(yAxis, 56, visual.yAxis), type: 'category' as const,
         data: iterations ? Array.from(iterations, String) : [],
-        ...(yAxis.min === null ? {} : { min: yAxis.min - 1 }),
-        ...(yAxis.max === null ? {} : { max: yAxis.max - 1 }),
+        ...(panel.source
+          // Background points already obey source-axis bounds. Categories are
+          // positions in that bounded result, not elapsed times or timestamps.
+          ? { min: 0, max: Math.max(0, (iterations?.length ?? 0) - 1) }
+          : { ...(yAxis.min === null ? {} : { min: yAxis.min - 1 }),
+              ...(yAxis.max === null ? {} : { max: yAxis.max - 1 }) }),
         axisLabel: { ...visual.yAxis.axisLabel, show: yAxis.showLabels,
+          ...(panel.source?.x_axis === 'timestamp'
+            ? { formatter: (value: string) => new Date(Number(value)).toISOString() } : {}),
           ...(yAxis.interval === null ? {} : {
-            interval: (_index: number, value: string) => Number(value) % yAxis.interval! === 0,
+            interval: (index: number, value: string) => panel.source
+              ? index === 0 || Math.floor(Number(value) / yAxis.interval!) !== Math.floor(iterations![index - 1] / yAxis.interval!)
+              : Number(value) % yAxis.interval! === 0,
           }) } }
       : { ...axisOption(yAxis, 56, visual.yAxis),
         ...(fitData && panel.type === 'line' ? { scale: true } : {}) },

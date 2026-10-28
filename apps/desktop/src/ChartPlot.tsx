@@ -4,7 +4,7 @@ import { init, use, type EChartsType } from 'echarts/core'
 import { BarChart, BoxplotChart, LineChart, ScatterChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, LegendComponent, MarkPointComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type ChartChangeSettings, type PageChartData } from './chartData'
+import { exactHoverIndex, nearestScatterHover, prepareChartSeries, type BoundedChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { chartRequiredOutputs, chartSupportsZoom, seriesColor, type ChartPanel } from './chartPanels'
 import { chartGridBottom, chartGridLeft, chartGridRight, chartGridTop, chartPresentationOptions,
   chartZoomSliderBottom, comboRendererSeries, formatScatterX, lineRendererSeries, scatterRendererSeries } from './chartOptions'
@@ -20,7 +20,7 @@ function autoSeriesColor(name: string, numericNames: string[]): string {
     `--chart-series-${numericNames.indexOf(name) % 6 + 1}`).trim()
 }
 
-export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings, fitData, xTimeFormat }: {
+export default function ChartPlot({ panel, data, numericNames, charts, statistical, changeSettings, fitData, xTimeFormat, bounded }: {
   panel: ChartPanel
   data: PageChartData
   numericNames: string[]
@@ -29,6 +29,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
   xTimeFormat?: OutputTimeFormat
+  bounded?: BoundedChartData
 }) {
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
@@ -41,19 +42,19 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   const [zoomRange, setZoomRange] = useState<ZoomRange>(null)
   const supportsZoom = chartSupportsZoom(panel.type)
   const isStatistical = panel.type === 'histogram' || panel.type === 'boxplot'
-  const rawRowCount = useMemo(() => isStatistical ? 0 : data.commonLength(chartRequiredOutputs(panel)),
-    [data, data.version, panel, isStatistical])
-  const rawIteration = useMemo(() => data.iteration.subarray(0, rawRowCount),
-    [data, data.version, rawRowCount])
+  const rawRowCount = useMemo(() => bounded ? bounded.x.length : isStatistical ? 0 : data.commonLength(chartRequiredOutputs(panel)),
+    [data, data.version, panel, isStatistical, bounded])
+  const rawIteration = useMemo(() => bounded?.x ?? data.iteration.subarray(0, rawRowCount),
+    [data, data.version, rawRowCount, bounded])
   const rawSeries = useMemo(() => isStatistical ? [] : panel.outputs.map(name => ({
     name,
-    values: data.getSeries(name).subarray(0, rawRowCount),
-  })), [data, data.version, panel.outputs, rawRowCount, isStatistical])
+    values: bounded?.values ?? data.getSeries(name).subarray(0, rawRowCount),
+  })), [data, data.version, panel.outputs, rawRowCount, isStatistical, bounded])
   const scatterXValues = useMemo(() => panel.type !== 'scatter' || panel.scatterXOutput === null
     ? rawIteration : data.getSeries(panel.scatterXOutput).subarray(0, rawRowCount),
   [data, data.version, panel.type, panel.scatterXOutput, rawIteration, rawRowCount])
-  const rawMin = rawRowCount > 0 ? rawIteration[0] : 0
-  const rawMax = rawRowCount > 0 ? rawIteration[rawRowCount - 1] : 1
+  const rawMin = bounded?.domain?.min ?? (rawRowCount > 0 ? rawIteration[0] : 0)
+  const rawMax = bounded?.domain?.max ?? (rawRowCount > 0 ? rawIteration[rawRowCount - 1] : 1)
   const fullDomain = useMemo(() => {
     let min = panel.xAxis.min ?? rawMin
     let max = panel.xAxis.max ?? rawMax
@@ -66,9 +67,11 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   const visibleRange = supportsZoom && panel.zoom.enabled
     ? zoomRange ?? fullDomain
     : { min: panel.xAxis.min ?? rawMin, max: panel.xAxis.max ?? rawMax }
-  const display = useMemo(() => isStatistical ? [] : prepareChartSeries(panel, data,
+  const display = useMemo(() => bounded ? panel.outputs.map(name => ({ name,
+    data: Array.from(bounded.x, (x, i): [number, number] => panel.type === 'bar' ? [bounded.values[i], x] : [x, bounded.values[i]]),
+  })) : isStatistical ? [] : prepareChartSeries(panel, data,
     Math.max(1, width - chartGridLeft(panel) - chartGridRight(panel)), visibleRange, changeSettings),
-  [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical, changeSettings])
+  [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical, changeSettings, bounded])
   const statistic = useMemo(() => statistical
     ? statisticalChartSeries(panel, statistical,
       getComputedStyle(document.documentElement).getPropertyValue('--chart-series-1').trim()) : null,
@@ -87,14 +90,14 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
         case 'bar':
           return { ...series,
             data: panel.type === 'bar'
-              ? series.data.map(([value, iteration]) => [value, String(iteration)]) : series.data,
+              ? series.data.map(([value, iteration], index) => [value, bounded ? index : String(iteration)]) : series.data,
             type: 'bar' as const, large: true, largeThreshold: 2000,
             silent: panel.type === 'column', itemStyle: { color } }
         case 'scatter':
           return scatterRendererSeries(panel, series, color)
       }
     })
-  }, [display, numericNames, panel, themeRevision, statistic])
+  }, [display, numericNames, panel, themeRevision, statistic, bounded])
   // Legend must mirror the resolved series color, so both use the same Auto palette lookup.
   const legendSeriesColors = useMemo(() => Object.fromEntries(panel.outputs.map(name =>
     [name, seriesColor(panel, name, autoSeriesColor(name, numericNames))])),
@@ -145,6 +148,10 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   useEffect(() => {
     if (!supportsZoom || !panel.zoom.enabled) setZoomRange(null)
   }, [supportsZoom, panel.zoom.enabled])
+
+  useEffect(() => {
+    bounded?.onRangeChange?.(supportsZoom && panel.zoom.enabled ? zoomRange : null)
+  }, [bounded?.onRangeChange, supportsZoom, panel.zoom.enabled, zoomRange])
 
   useEffect(() => {
     if (!supportsZoom || !panel.zoom.enabled) return
@@ -213,7 +220,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     const tip = tooltip.current!
     const line = pointer.current!
     const hide = () => { tip.hidden = true; line.hidden = true }
-    if (panel.type === 'bar' || panel.type === 'histogram' || panel.type === 'boxplot') {
+    if ((!bounded && panel.type === 'bar') || panel.type === 'histogram' || panel.type === 'boxplot') {
       hide()
       return
     }
@@ -247,7 +254,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
           xUnitsPerPixel, yUnitsPerPixel, SCATTER_HOVER_RADIUS, panel.scatter.display !== 'markers')
         if (hit === null) { hide(); return }
         // Scatter hover always reports an actual raw row; line displays never interpolate a synthetic value.
-        tip.textContent = [`Iteration ${rawIteration[hit.rowIndex]}`,
+        tip.textContent = [bounded?.hoverLabels[hit.rowIndex] ?? `Iteration ${rawIteration[hit.rowIndex]}`,
           ...(panel.scatterXOutput === null ? []
             : [`X ${panel.scatterXOutput} ${formatScatterX(scatterXValues[hit.rowIndex], xTimeFormat)}`]),
           ...rawSeries.map(series => `Y ${series.name} ${series.values[hit.rowIndex]}`)].join('\n')
@@ -278,12 +285,25 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       const point = [event.offsetX, event.offsetY]
       if (rawRowCount === 0 || !chart.containPixel({ gridIndex: 0 }, point)) { hide(); return }
       const x = chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX)
-      const index = exactHoverIndex(x, rawRowCount)
+      let index = exactHoverIndex(x, rawRowCount)
+      if (bounded) {
+        if (panel.type === 'bar') {
+          const coordinates = chart.convertFromPixel({ gridIndex: 0 }, point) as number[]
+          index = Math.max(0, Math.min(rawRowCount - 1, Math.round(coordinates[1])))
+        } else {
+          index = null
+          let distance = Infinity
+          for (let i = 0; i < rawRowCount; i++) {
+            const next = Math.abs(rawIteration[i] - Number(x))
+            if (next < distance) { distance = next; index = i }
+          }
+        }
+      }
       if (index === null) { hide(); return }
       // Never use renderer points: each selected series reads the coherent raw prefix.
-      tip.textContent = [`Iteration ${rawIteration[index]}`,
+      tip.textContent = [bounded?.hoverLabels[index] ?? `Iteration ${rawIteration[index]}`,
         ...rawSeries.map(series => `${series.name} ${series.values[index]}`)].join('\n')
-      line.hidden = false
+      line.hidden = panel.type === 'bar'
       line.style.left = `${chart.convertToPixel({ xAxisIndex: 0 }, rawIteration[index])}px`
       positionTip(event.offsetX, event.offsetY)
     }
@@ -295,11 +315,11 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       zr.off('globalout', hide)
     }
   }, [panel.type, panel.scatter.display, panel.scatterXOutput, rawIteration, rawRowCount,
-    rawSeries, scatterXValues, xTimeFormat])
+    rawSeries, scatterXValues, xTimeFormat, bounded])
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
-      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${statistical ? 'statistical projection' : `${rawRowCount} raw rows per series`}`} />
+      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${statistical ? 'statistical projection' : `${rawRowCount} ${bounded ? 'displayed samples' : 'raw rows per series'}`}`} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
       top: chartGridTop(panel),
       bottom: chartGridBottom(panel),

@@ -298,7 +298,7 @@ test('Scatter hover formats the actual hit X only and retains raw Y and hit logi
     const inspect = new Function('chart', 'scatterXValues', 'rawSeries', 'rawIteration', 'panel',
       'xTimeFormat', 'tip', 'line', 'nearestScatterHover', 'formatScatterX', 'hide', 'positionTip',
       `let frame = null; let pending = { offsetX: ${x[0]}, offsetY: 12.3456789 };
-      const rawRowCount = 2; const yValues = rawSeries.map(series => series.values);
+      const rawRowCount = 2; const bounded = undefined; const yValues = rawSeries.map(series => series.values);
       const SCATTER_HOVER_RADIUS = 12; ${inspectSource}; return inspect;`)(
       chart, x, rawSeries, new Float64Array([1, 2]), { scatterXOutput: 'Time', scatter: { display: 'markers' } },
       timeFormat, tip, line, nearestScatterHover, formatScatterX, () => { hidden = true }, () => {})

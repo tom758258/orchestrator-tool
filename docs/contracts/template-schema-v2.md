@@ -93,11 +93,29 @@ template** is enabled, the Template contains:
 
 output_views is optional and is omitted when Chart persistence is not selected.
 An empty charts array is valid and preserves the selected opt-in state. At most
-eight Charts may be saved. Each Chart page must name an Output Page defined by
+eight Foreground and Background Charts may be saved in this single list. Each Foreground Chart page must name an Output Page defined by
 the Workflow, every selected Output and optional Scatter X Output must exist on
 that Page, Histogram requires exactly one selected Output, and Combo requires at
 least two. Axis ranges and positive-size/bin constraints reuse the existing
 Desktop Chart Settings rules.
+
+A Background Chart omits `page` and adds the following source to the same
+Chart settings object:
+
+```json
+"source": { "kind": "background", "background_id": "background-1",
+            "field": "value", "x_axis": "elapsed" }
+```
+
+Its `outputs` must be `["value"]`, `scatter_x_output` must be null, and
+`type` must be `line`, `scatter`, `column`, `area`, or `bar`. `x_axis` accepts
+`elapsed`, `timestamp`, or `index`. The Background ID must exist in the Template.
+Unknown fields (including runtime Dataset IDs) and the old `backgrounds[].chart`
+are rejected; there is no migration. Schema version remains 2. Save validation
+finishes before writing the file. A Chart whose Background was removed from the
+current Draft blocks saving when Chart persistence is enabled; it is neither
+removed silently nor used to recreate the binding. Last Run presentation still
+uses its own snapshot.
 
 The saved data is Chart configuration only. Runtime chart samples, calculated
 statistics, Run IDs, current zoom/pan position, open dialogs, export paths,
@@ -112,7 +130,7 @@ the single source of background bindings and acquisition configuration:
 
 ```json
 {"backgrounds":[{"id":"background-1","tool_instance_id":"meters-1",
-  "live_monitor":false,"trigger_count":1000,"chart":{"x_axis":"elapsed"}}]}
+  "live_monitor":false,"trigger_count":1000}]}
 ```
 
 IDs use the same stable identifier syntax as Steps. Background IDs and Tool
@@ -125,11 +143,10 @@ Unsupported as background sources. Foreground Scopes actions retain their
 existing contract. Manifest and runtime must both adopt `common.streaming`
 version 1 with `run_bound` lifecycle; JSONL alone does not opt in.
 
-An optional `chart` stores the stable binding's numeric `value` Line chart and
-`x_axis` (`elapsed`, `timestamp`, `index`). Saved foreground and background
-chart definitions together have a limit of eight. Monitor is independent of
-this limit. Desktop's Save Charts with Template option controls persistence of
-these chart definitions; runtime Dataset IDs are never saved.
+All Chart settings belong to `output_views.charts`, independently of bindings.
+Session-only and saved Charts share the same eight-Chart limit. Live Monitor
+has no saved Chart configuration and does not count toward this limit. Dataset
+selection and collapsed UI state are not persisted.
 
 ```json
 {"type":"background","id":"start","background_id":"background-1",
@@ -164,8 +181,17 @@ Meters may report `final_drain_complete: null` when no drain is applicable;
 false is failure, and null never replaces the other completion evidence.
 
 Frontend queries are bounded: table windows at most 1,000 rows (Desktop uses
-100), recorded charts at most 2,000 representative points with endpoints, and
-opt-in Monitor at most 1,000 recent Worker samples. Neither these query bounds
+100), recorded Charts at most 2,000 representative samples, and opt-in Monitor
+at most 1,000 recent Worker samples. Chart queries identify Run, Background and
+Dataset, accept an optional visible X range and a bounded point budget, and return
+total/visible/returned counts and sampling status. Line/Area retain bucket minima,
+maxima and endpoints; Scatter/Column/Bar use actual, evenly distributed observations.
+Zoom on Line/Area/Column requests a new visible range. Line Show All Raw Data
+returns every visible sample up to 25,000; above that it returns counts/domain and
+an explicit limit status with no points, allowing narrower Zoom without silent
+sampling. These are display limits; the Dataset and exports remain complete.
+Queries scan a fixed append-only prefix in short lock sections so ingestion can
+continue between sections. Neither these query bounds
 nor the bounded 8,192-event delivery queue imposes a Dataset or While limit.
 Queue overflow fails the run explicitly. Dataset lifetime is the current run;
 Clear Last Run or a new run releases it. CSV is not an authoritative reader or

@@ -68,6 +68,15 @@ export function createPageChartData() {
 
 export type PageChartData = ReturnType<typeof createPageChartData>
 
+// Already bounded by the owning data source; never re-sample or interpret X as Iteration.
+export type BoundedChartData = {
+  x: Float64Array
+  values: Float64Array
+  hoverLabels: string[]
+  domain: { min: number; max: number } | null
+  onRangeChange?: (range: { min: number; max: number } | null) => void
+}
+
 export function pruneChartData(
   chartData: Map<string, PageChartData>,
   panels: readonly ChartPanel[],

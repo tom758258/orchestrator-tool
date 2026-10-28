@@ -31,8 +31,13 @@ export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'rig
 export type HistogramSettings = { mode: 'auto' | 'count' | 'width'; value: number | null;
   showNormalCurve: boolean; mean: number | null; stdDev: number | null }
 
+export type BackgroundChartSource = { kind: 'background'; background_id: string; field: 'value'; x_axis: 'elapsed' | 'timestamp' | 'index' }
+export const backgroundAxisTitle = (axis: BackgroundChartSource['x_axis']) =>
+  axis === 'elapsed' ? 'Elapsed Time (s)' : axis === 'timestamp' ? 'Timestamp' : 'Sample Index'
+
 export type ChartPanel = {
   page: string
+  source?: BackgroundChartSource
   id: number
   title: string
   outputs: string[]
@@ -65,7 +70,8 @@ export type SavedAxisSettings = {
 }
 
 export type SavedChart = {
-  page: string
+  page?: string
+  source?: BackgroundChartSource
   title: string
   outputs: string[]
   type: ChartType
@@ -115,7 +121,7 @@ function savedToAxis(axis: SavedAxisSettings): AxisSettings {
 
 export function chartPanelToSavedChart(panel: ChartPanel): SavedChart {
   return {
-    page: panel.page,
+    ...(panel.source ? { source: { ...panel.source } } : { page: panel.page }),
     title: panel.title,
     outputs: [...panel.outputs],
     type: panel.type,
@@ -159,7 +165,8 @@ export function chartPanelToSavedChart(panel: ChartPanel): SavedChart {
 
 export function savedChartsToPanels(charts: readonly SavedChart[]): ChartPanel[] {
   return charts.map((chart, id) => ({
-    page: chart.page,
+    page: chart.page ?? '',
+    ...(chart.source ? { source: { ...chart.source } } : {}),
     id,
     title: chart.title,
     outputs: [...chart.outputs],
@@ -266,6 +273,7 @@ export function reconcileChartPanels(
 ): ChartPanel[] {
   let reconciled: ChartPanel[] | undefined
   panels.forEach((panel, index) => {
+    if (panel.source) { reconciled?.push(panel); return }
     const page = pages.find(page => page.name === panel.page)
     if (!page) {
       reconciled ??= panels.slice(0, index)
@@ -287,6 +295,14 @@ export function reconcileChartPanels(
 }
 
 export const MAX_CHARTS = 8
+
+export function foregroundChartNames(panels: ChartPanel[], page: { name: string; outputs: { name: string; value: { source: string } }[] },
+  metadata: RunPageMetadata | undefined, running: boolean): string[] {
+  return running && !metadata?.row_count
+    ? [...new Set(panels.filter(panel => !panel.source && panel.page === page.name).flatMap(chartRequiredOutputs))]
+      .filter(name => !page.outputs.some(output => output.name === name && output.value.source === 'timestamp'))
+    : metadata?.numeric_outputs ?? []
+}
 
 export function addChartPanel(panels: ChartPanel[], page: string, numericNames: string[]): ChartPanel[] {
   if (panels.length >= MAX_CHARTS || numericNames.length === 0) return panels
@@ -317,7 +333,6 @@ export function reconcileRunChartPanels(
   panels: ChartPanel[],
   pages: { name: string; outputs: { name: string }[] }[],
   metadata: readonly RunPageMetadata[],
-  backgroundChartCount = 0,
 ): ChartPanel[] {
   let reconciled = reconcileChartPanels(panels, pages, '', null)
   const firstNumeric: string[] = metadata.find(page => page.name === pages[0]?.name)?.numeric_outputs ?? []
@@ -325,10 +340,21 @@ export function reconcileRunChartPanels(
     const current = metadata.find(item => item.name === page.name)
     reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null, current?.timestamp_outputs ?? [])
   }
-  return reconciled.length === 0 && pages[0] && backgroundChartCount < MAX_CHARTS
+  return !reconciled.some(panel => !panel.source) && pages[0] && reconciled.length < MAX_CHARTS
     ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled
 }
 
 export function canRemoveChartPanel(panels: readonly ChartPanel[]): boolean {
   return panels.length > 1
+}
+
+export function addBackgroundChartPanel(panels: ChartPanel[], backgroundId: string): ChartPanel[] {
+  if (panels.length >= MAX_CHARTS) return panels
+  const added = addChartPanel(panels, '', ['value'])
+  const panel = added[added.length - 1]
+  return [...panels, { ...panel,
+    source: { kind: 'background', background_id: backgroundId, field: 'value', x_axis: 'elapsed' },
+    zoom: { enabled: true, showSlider: true },
+    xAxis: { ...panel.xAxis, title: backgroundAxisTitle('elapsed') },
+  }]
 }

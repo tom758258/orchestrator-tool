@@ -1,3 +1,4 @@
+import Collapsible from './Collapsible'
 import { useState } from 'react'
 import { formatElapsedTime, formatNumber } from './outputTime'
 import type { NumericDisplayFormat } from './outputTime'
@@ -21,9 +22,7 @@ export default function PageResultSummary({ summaries, outputs, numericFormat }:
 }) {
   const [selected, setSelected] = useState<string[]>(() => columns.filter(column => column.default).map(column => column.key))
   const visible = columns.filter(column => selected.includes(column.key))
-  return <section className="page-result-summary" aria-labelledby="page-result-summary-title">
-    <div className="summary-header">
-      <h4 id="page-result-summary-title">Summary</h4>
+  return <Collapsible className="page-result-summary" title="Summary" actions={
       <details className="summary-columns">
         <summary>Columns ▾</summary>
         <div>{columns.map(column => <label key={column.key}>
@@ -31,8 +30,7 @@ export default function PageResultSummary({ summaries, outputs, numericFormat }:
             setSelected(current => event.target.checked ? [...current, column.key] : current.filter(key => key !== column.key))} />
           {column.label}
         </label>)}</div>
-      </details>
-    </div>
+      </details>}>
     {summaries.length === 0 ? <p>No numeric outputs to summarize.</p> : (
       <div className="output-table-scroll">
         <table className="output-table" aria-label="Page Result Summary">
@@ -55,5 +53,5 @@ export default function PageResultSummary({ summaries, outputs, numericFormat }:
         </table>
       </div>
     )}
-  </section>
+  </Collapsible>
 }

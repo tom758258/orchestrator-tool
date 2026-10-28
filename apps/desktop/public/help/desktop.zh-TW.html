@@ -655,20 +655,33 @@ Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker O
 來源；第二次明確 OFF 才會失敗。已結束的來源不能再 Capture ON，必須先
 Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會清理尚在
 執行的 Worker，同時保留原有 Powers Safe-Off 行為。</p>
-<p>即使沒有 Workflow Output Step，仍可開啟 <strong>Output → Background Results</strong>。
-選擇 Background 與 Capture Dataset；<strong>Charts</strong> 只使用已記錄 Samples，X 軸
-可選 Elapsed Time、Timestamp 或 Sample Index。Line 最多顯示 2,000 個代表點，
-完整資料仍可透過 Output Data 與 Export 取得。保存圖表設定時使用固定的
-Background ID，不保存某次 Run 的 Dataset ID。</p>
-<p>Last Run 圖表使用該次執行的 Background 快照。即使目前 Workflow 已移除對應
-Binding，仍可切換 X 軸；這只改變顯示，不修改已記錄資料或 Run 快照。
-只有原本的 Binding 仍存在時，設定才會同時更新至目前 Draft；不會重新建立
-已移除的 Binding，也不會將舊 Run 的設定寫入替代的 Binding。</p>
-<p>啟用時，<strong>Live Monitor</strong> 顯示於 Charts 和 Summary 之間，以 Line 顯示最新
-1,000 筆 Worker Samples，Capture OFF 時也可繼續更新。它不建立 Dataset、
-Summary、CSV 或 Manual Export，也不占 Result Chart 額度。重新啟動 Worker
-會清空 Monitor。Summary 顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；
-<strong>Output Data</strong> 每頁 100 筆。<code>no_loss_detected</code> 代表 Tool 的證據範圍，並非零遺失保證。</p>
+<p><strong>Output</strong> 同頁包含 <strong>Charts</strong>、<strong>Foreground Output</strong>、<strong>Background Output</strong> 三個可收合區塊。
+只有 Background 的 Run 也能使用 Charts 與 Background Output。該次 Last Run 有
+Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏既有結果。
+Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Output Data 與匯出，
+與每張圖的選擇互相獨立。</p>
+<p>在 <strong>Charts</strong> 選擇 <strong>Chart source</strong>，按 <strong>Add Chart</strong>。所有 Foreground Page 與
+Background 圖表集中顯示。每張 Background Chart 可獨立選擇 Background、Capture Dataset、
+X axis，並使用 <strong>Settings</strong>、<strong>Export PNG</strong>、<strong>Remove</strong>；Background 圖表可全部移除至零張。
+Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。
+Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
+之後保持選擇，不因新增 Dataset 自動跳換；新 Run 會重新選取。沒有 Dataset 時顯示等待資料，
+不以 Monitor Samples 替代。</p>
+<p>Background X 軸使用實際的 Elapsed Time（秒）、Timestamp 或 Sample Index；Hover 顯示
+實際繪製 Sample。抽樣時 Line／Area 保留峰值、谷值與端點；Scatter／Column／Bar 顯示代表性觀測值。
+畫面列出 Dataset 總筆數、可視範圍筆數、繪製筆數及抽樣狀態。Line／Area／Column 的 Zoom
+會重新查詢可視範圍；Scatter／Bar 沒有 Zoom。Line 的 <strong>Settings → General → Show All Raw Data</strong>
+可完整顯示可視範圍內最多 <strong>25,000</strong> 筆 Samples；超限時不繪製資料，並提示縮小 Zoom 或關閉此選項。
+完整 Dataset 保存與 CSV／XLSX 匯出不受繪圖上限影響。</p>
+<p>Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示設定，不會重建或改寫 Draft Binding。
+若啟用 <strong>Save charts with template</strong>，而圖表引用的 Background 已不在 Draft，Template Save
+會被阻止並指出需修正的圖表。可移除該圖、選擇有效來源，或關閉保存圖表設定。</p>
+<p>Setup 啟用 <strong>Live Monitor</strong> 後，它顯示於 Charts 內，使用相同 Line 外觀、Hover 與 Zoom。
+Monitor 顯示最新 1,000 筆 Worker Samples，Capture OFF 時仍可更新；Worker OFF 後停止更新，
+新 Worker Runtime 會清空 Buffer。它沒有 Chart Settings、Add／Remove、Saved Chart、PNG、
+Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 顯示 Dataset
+筆數、最小／最大／平均值、狀態與品質；<strong>Output Data</strong> 每頁 100 筆。
+<code>no_loss_detected</code> 代表 Tool 的證據範圍，並非零遺失保證。</p>
 <p>Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
 本次 Run 的記憶體；新 Run 或 <strong>Clear Last Run</strong> 會釋放，沒有 History 或 Recovery
 Store。Background Samples 不提供給 Workflow Variables、Calculation、Assert
@@ -716,7 +729,7 @@ manual export 不同。此區塊在程式啟動時預設收合，點擊標題可
   execution results 以 latest first 顯示並可分頁瀏覽。</li>
 <li><strong>Messages</strong> — Show Message step 在執行時寫入的文字。</li>
 <li><strong>Last Run</strong> — 目前 run 的 Output Pages 與 result workspace。</li>
-<li><strong>Charts</strong> — 所選 Page 的 chart panels。</li>
+<li><strong>Charts</strong> — 集中顯示所有 Foreground／Background 圖表及已啟用的 Live Monitor。</li>
 <li><strong>Summary</strong> — 適用時顯示 numeric Count、Min、Max 與 Avg。</li>
 <li><strong>Output Data</strong> — 所選 Page 的 committed rows，以 latest first 顯示。</li>
 </ul>
@@ -732,6 +745,9 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 <p>若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
 停止後可以 manual export。</p>
 <h3 id="102-收合結果面板">10.2 收合結果面板</h3>
+<p>Charts、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
+區塊中的 Summary／Output Data 都有獨立 <code>− / +</code> 控制，預設全部展開。收合只隱藏內容，
+不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。</p>
 <p><strong>Last Run Execution Results</strong> 與 <strong>Messages</strong> 的標題右側各有 <code>+ / −</code> 控制。兩者
 預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
 資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。</p>
@@ -757,7 +773,7 @@ execution record 維持既有 compact display。Instrument-specific 的 SCPI/VIS
 Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
 <h3 id="104-charts">10.4 Charts</h3>
 <p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
-可繪製該 Page 的 numeric Outputs。Saved Foreground 與 Background Charts 共用
+可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
 最多 8 張額度。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。</p>
 <p>Charts 預設只屬於目前 session。Charts 標題列新增 <strong>Save charts with template</strong>，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
@@ -890,7 +906,7 @@ surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不�
 <p>Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
 並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
 顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection 與 Export PNG
-仍停用，Settings 與 Remove 可操作，但最後一張 Chart 不可移除。
+仍停用，Settings 與 Remove 可操作，但最後一張 Foreground Chart 不可移除；Background 可移除至零張。
 執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
 第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。
 Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels

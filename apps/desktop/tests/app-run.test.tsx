@@ -5,8 +5,10 @@ import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import type { ComponentProps } from 'react'
 import App from '../src/App'
 import type ResultChart from '../src/ResultChart'
+import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 import type { ForStep, RunMetadataDto, WorkflowRunEventDto } from '../src/workflow'
 import type { WorkflowDraft } from '../src/templateDraft'
+import type { BackgroundChartSeries, BackgroundOutputData } from '../src/backgroundChartData'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -21,10 +23,11 @@ vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof Re
   <>
     <div data-testid="chart-snapshot">{JSON.stringify({ runId: props.runId, sampling: props.changeSettings, fitData: props.fitData })}</div>
     <div data-testid="chart-panels">{JSON.stringify(props.panels)}</div>
-    <label><input type="checkbox" checked={props.saveChartsWithTemplate}
-      onChange={event => props.onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
   </>,
 }))
+
+vi.mock('../src/ChartPlot', () => ({ default: ({ panel, bounded }: { panel: { type: string }; bounded?: { values: Float64Array } }) =>
+  <div role="img" aria-label={`${panel.type} chart`}>{bounded?.values.length ?? 0} displayed samples</div> }))
 
 const draft: WorkflowDraft = { schema_version: 2, name: 'Run test', tool_instances: [], workflow: { steps: [
   { type: 'for', id: 'outer', variable: 'i', range: { start: '0', stop: '2', step: '1' }, steps: [
@@ -41,7 +44,7 @@ function backgroundDraft(count: number): WorkflowDraft {
       dcv_input_impedance: null, current_terminal: null },
   })), backgrounds: Array.from({ length: count }, (_, index) => ({
     id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`, live_monitor: true,
-    trigger_count: 3, chart: { x_axis: 'elapsed' },
+    trigger_count: 3,
   })), workflow: { steps: [
     { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true },
     ...structuredClone(draft.workflow.steps),
@@ -74,6 +77,8 @@ let currentDraft: WorkflowDraft
 
 beforeEach(() => {
   vi.clearAllMocks()
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   run = deferred<RunMetadataDto>()
   preflightErrors = []
   simulationRequirements = []
@@ -88,11 +93,19 @@ beforeEach(() => {
       case 'get_simulation_sample_requirements': return simulationRequirements
       case 'get_background_output': return { workers: [{ id: 'background-1', state: 'off', stream_state: 'ended', live_monitor: true, error: null }],
         datasets: [{ id: 'capture-1', background_id: 'background-1', worker_run_id: 'worker', status: 'completed', quality: 'no_loss_detected', row_count: 300001, min: 1, max: 1, avg: 1, csv_path: null, error: null }],
-        chart: [], rows: [], monitor: [] }
+        rows: [], monitor: [] }
       case 'get_live_resources': case 'get_live_resource_identities': case 'get_live_backends': return {}
       case 'get_powers_capabilities': return { channels: [1, 2] }
       case 'check_live_preflight': return preflightErrors
-      case 'validate_workflow_draft': return params.templateJson
+      case 'get_background_chart_series': return { total_count: 300001, visible_count: 300001, returned_count: 1,
+        sampled: true, raw_limit: 25000, raw_limit_exceeded: false, domain: { min: 0, max: 30 },
+        points: [{ x: 0.003, value: 1, sample_index: 5, timestamp_utc: '2026-10-28T00:00:00.003Z', elapsed_s: 0.003, unit: 'V' }] }
+      case 'validate_workflow_draft': {
+        const value = JSON.parse(params.templateJson as string) as WorkflowDraft
+        const invalid = value.output_views?.charts.findIndex(chart => chart.source && !value.backgrounds?.some(background => background.id === chart.source!.background_id)) ?? -1
+        if (invalid >= 0) throw new Error(`chart ${invalid + 1} references unknown Background`)
+        return params.templateJson
+      }
       case 'load_workflow_template': return JSON.stringify(currentDraft)
       case 'save_workflow_template': return params.templateJson
       case 'clear_last_run': return undefined
@@ -145,7 +158,10 @@ async function savedDraft(): Promise<WorkflowDraft> {
 }
 
 test.each([8, 7])('automatic Foreground Charts respect %i saved Background Charts through save toggles', async count => {
-  currentDraft = backgroundDraft(count)
+  currentDraft = backgroundDraft(1)
+  let panels = addBackgroundChartPanel([], 'background-1')
+  for (let i = 1; i < count; i++) panels = addBackgroundChartPanel(panels, 'background-1')
+  currentDraft.output_views = { charts: panels.map(chartPanelToSavedChart) }
   await mount()
   vi.mocked(open).mockResolvedValue('template.json')
   fireEvent.click(screen.getByRole('button', { name: 'Open Template' }))
@@ -156,34 +172,30 @@ test.each([8, 7])('automatic Foreground Charts respect %i saved Background Chart
   const option = screen.getByLabelText('Save charts with template') as HTMLInputElement
   expect(option.checked).toBe(true)
   fireEvent.click(option)
-  await waitFor(() => expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)).toHaveLength(count === 8 ? 0 : 1))
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)).toHaveLength(8))
   fireEvent.click(option)
   const saved = await savedDraft()
-  expect(saved.output_views?.charts).toHaveLength(count === 8 ? 0 : 1)
+  expect(saved.output_views?.charts).toHaveLength(8)
   expect(saved.backgrounds).toEqual(currentDraft.backgrounds)
-  expect((saved.output_views?.charts.length ?? 0) + saved.backgrounds!.filter(background => background.chart).length).toBe(8)
+  expect(saved.output_views?.charts.filter(chart => chart.source)).toHaveLength(count)
 })
 
-test('Last Run axes remain viewable after binding removal or reuse without changing another binding', async () => {
+test('Last Run Charts survive binding removal, block invalid saves and never recreate Draft bindings', async () => {
   currentDraft = backgroundDraft(2)
   await mount()
   fireEvent.click(runButton('Simulation'))
   await finish(22)
   tab('Output')
-  await screen.findByRole('region', { name: 'Background Results' })
-  const output = () => screen.getByRole('region', { name: 'Background Results' })
-  await within(output()).findByRole('img', { name: 'Background Dataset Line' })
-  const axis = () => within(output()).getByLabelText('X axis') as HTMLSelectElement
+  fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
+  fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
+  const chart = () => screen.getByRole('region', { name: 'Chart 2' })
+  const axis = () => within(chart()).getByLabelText('X axis') as HTMLSelectElement
+  await within(chart()).findByRole('img', { name: 'line chart' })
   fireEvent.click(screen.getByLabelText('Save charts with template'))
   fireEvent.change(axis(), { target: { value: 'timestamp' } })
-  // The still-current binding saves axis changes, including after validation replaces draft objects.
   let saved = await savedDraft()
-  expect(saved.backgrounds?.[0].chart?.x_axis).toBe('timestamp')
-  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
-  await screen.findByText('Valid')
-  tab('Output')
-  fireEvent.change(axis(), { target: { value: 'index' } })
-  expect((await savedDraft()).backgrounds?.[0].chart?.x_axis).toBe('index')
+  expect(saved.output_views?.charts[1].source?.x_axis).toBe('timestamp')
+  expect(saved.backgrounds).toEqual(currentDraft.backgrounds)
   fireEvent.click(screen.getByRole('button', { name: /Step .*?, on$/ }))
   fireEvent.keyDown(screen.getByRole('tabpanel', { name: 'Workflow' }), { key: 'Delete' })
   tab('Setup')
@@ -191,17 +203,22 @@ test('Last Run axes remain viewable after binding removal or reuse without chang
   if (expandFirst) fireEvent.click(expandFirst)
   const binding = (id: string) => within(screen.getByRole('button', { name: `Collapse ${id}` }).closest('fieldset')!)
     .getByLabelText('Use this instance as a Background') as HTMLInputElement
-  expect(binding('meters-1').disabled).toBe(false)
   fireEvent.click(binding('meters-1'))
   tab('Output')
   fireEvent.change(axis(), { target: { value: 'index' } })
   expect(axis().value).toBe('index')
-  expect(within(output()).queryByText('Maximum 8 charts.')).toBeNull()
-  await within(output()).findByRole('img', { name: 'Background Dataset Line' })
-  expect((within(output()).getByLabelText('Background Dataset') as HTMLSelectElement).value).toBe('capture-1')
+  await within(chart()).findByRole('img', { name: 'line chart' })
+  const writes = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').length
+  const before = writes()
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Save Template' }))
+  await screen.findByText(/Chart 2 references Background background-1/)
+  expect(writes()).toBe(before)
+  tab('Output')
+  fireEvent.click(screen.getByLabelText('Save charts with template'))
   saved = await savedDraft()
+  expect(saved.output_views).toBeUndefined()
   expect(saved.backgrounds).toEqual([currentDraft.backgrounds![1]])
-  // Reusing the ID for another Tool Instance must not receive the old run's settings.
   tab('Setup')
   const expandSecond = screen.queryByRole('button', { name: 'Expand meters-2' })
   if (expandSecond) fireEvent.click(expandSecond)
@@ -209,19 +226,10 @@ test('Last Run axes remain viewable after binding removal or reuse without chang
   fireEvent.click(binding('meters-2'))
   tab('Output')
   fireEvent.change(axis(), { target: { value: 'elapsed' } })
-  expect(axis().value).toBe('elapsed')
+  fireEvent.click(screen.getByLabelText('Save charts with template'))
   saved = await savedDraft()
   expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, trigger_count: 1000 }])
-  // A removed and recreated binding stays separate even when both IDs match again.
-  tab('Setup')
-  fireEvent.click(binding('meters-2'))
-  fireEvent.click(binding('meters-1'))
-  tab('Output')
-  fireEvent.change(axis(), { target: { value: 'timestamp' } })
-  expect(axis().value).toBe('timestamp')
-  expect(within(output()).queryByText('Maximum 8 charts.')).toBeNull()
-  saved = await savedDraft()
-  expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, trigger_count: 1000 }])
+  expect(saved.output_views?.charts[1].source?.x_axis).toBe('elapsed')
   expect(runCalls()).toHaveLength(1)
 })
 
@@ -250,43 +258,101 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 })
 
-test('Background-only Output queries bounded windows and separates Monitor, Dataset and export', async () => {
+test('Background-only Output separates Charts, Monitor and export with a shared eight-chart limit', async () => {
   currentDraft = { schema_version: 2, name: 'Background-only', tool_instances: [],
-    backgrounds: Array.from({ length: 9 }, (_, index) => ({ id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`,
-      live_monitor: true, trigger_count: 3, ...(index < 7 ? { chart: { x_axis: 'elapsed' as const } } : {}) })),
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, trigger_count: 3 }],
     workflow: { steps: [{ type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true }] } }
+  let captures = ['capture-1', 'capture-2']
+  let monitorSamples = 0
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    const result = await original(command, args)
+    if (command === 'get_background_output') {
+      const output = result as BackgroundOutputData
+      // Capture has stopped, while the Worker continues sending Monitor samples.
+      return { ...output, datasets: captures.map(id => ({ ...output.datasets[0], id })),
+        workers: [{ ...output.workers[0], state: 'on', stream_state: 'running' }],
+        monitor: Array.from({ length: ++monitorSamples }, (_, i) => ({ timestamp_utc: '2026-10-28T00:00:00Z',
+          elapsed_s: i, captured: i + 1, value: i, unit: 'V' })) }
+    }
+    if (command === 'get_background_chart_series' && (args as { query: { raw: boolean } }).query.raw) {
+      return { ...result as BackgroundChartSeries, returned_count: 0, sampled: false, raw_limit_exceeded: true, points: [] }
+    }
+    return result
+  })
   await mount()
   fireEvent.click(runButton('Simulation'))
   await waitFor(() => expect(runCalls()).toHaveLength(1))
-  act(() => progressChannel().onmessage({ type: 'progress-batch', run: metadata(20, 'running'), completed_step_ids: [] }))
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: { ...metadata(20, 'running'), pages: [] }, completed_step_ids: [] }))
   tab('Output')
-  const output = await screen.findByRole('region', { name: 'Background Results' })
-  await within(output).findByRole('img', { name: 'Background Dataset Line' })
-  expect(within(output).getByRole('img', { name: 'Background Live Monitor Line' })).toBeTruthy()
-  expect(within(output).getByText(/More than 300,000 samples/)).toBeTruthy()
+  const output = await screen.findByRole('region', { name: 'Background Output' })
+  const charts = screen.getByRole('region', { name: 'Charts' })
+  expect(within(charts).getByRole('region', { name: 'Live Monitor: background-1' })).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Foreground Output' })).toBeTruthy()
+  await within(output).findByText(/More than 300,000 samples/)
   expect((within(output).getByLabelText('Samples per XLSX file') as HTMLInputElement).value).toBe('300000')
-  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit===100)).toBe(true)
   expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(true)
-  const background = within(output).getByLabelText('Background')
-  fireEvent.change(background, { target: { value: 'background-8' } })
-  await waitFor(() => expect(within(output).queryByText('Maximum 8 charts.')).toBeNull())
-  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'timestamp' } })
-  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('timestamp')
-  fireEvent.change(background, { target: { value: 'background-9' } })
-  await waitFor(() => expect(within(output).queryByText('Maximum 8 charts.')).toBeNull())
-  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
-  expect(within(output).getByRole('alert').textContent).toBe('Maximum 8 charts.')
-  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('elapsed')
+  for (let i = 0; i < 2; i++) fireEvent.click(within(charts).getByRole('button', { name: '+ Add Chart' }))
+  const chart = (n: number) => within(screen.getByRole('region', { name: `Chart ${n}` }))
+  const dataset = (n: number) => chart(n).getByLabelText('Capture Dataset') as HTMLSelectElement
+  await waitFor(() => expect(dataset(1).value).toBe('capture-2'))
+  fireEvent.change(dataset(1), { target: { value: 'capture-1' } })
+  expect(dataset(2).value).toBe('capture-2')
+  captures.push('capture-3')
+  await chart(1).findByRole('option', { name: /capture-3/ })
+  expect(dataset(1).value).toBe('capture-1')
+  expect(dataset(2).value).toBe('capture-2')
+  tab('Workflow'); tab('Output')
+  await waitFor(() => expect(dataset(1).value).toBe('capture-1'))
+  expect(dataset(2).value).toBe('capture-2')
+  const currentCharts = () => within(screen.getByRole('region', { name: 'Charts' }))
+  for (let i = 2; i < 8; i++) fireEvent.click(currentCharts().getByRole('button', { name: '+ Add Chart' }))
+  expect(currentCharts().getByText('Charts: 8 / 8')).toBeTruthy()
+  expect((currentCharts().getByRole('button', { name: '+ Add Chart' }) as HTMLButtonElement).disabled).toBe(true)
+  await waitFor(() => expect(dataset(8).value).toBe('capture-3'))
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit <= 100)).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse Live Monitor: background-1' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse Chart 1' }))
   const queries = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').length
   const beforePoll = queries()
   await waitFor(() => expect(queries()).toBeGreaterThan(beforePoll))
-  expect(within(output).getByRole('alert').textContent).toBe('Maximum 8 charts.')
-  fireEvent.change(background, { target: { value: 'background-1' } })
-  fireEvent.change(within(output).getByLabelText('X axis'), { target: { value: 'index' } })
-  expect((within(output).getByLabelText('X axis') as HTMLSelectElement).value).toBe('index')
-  expect(within(output).queryByText('Maximum 8 charts.')).toBeNull()
-  await finish(20)
-  await waitFor(() => expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Chart 1' }))
+  expect(dataset(1).value).toBe('capture-1')
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Live Monitor: background-1' }))
+  expect(Number(within(screen.getByRole('region', { name: 'Live Monitor: background-1' })).getByRole('img').textContent!.split(' ')[0])).toBeGreaterThan(1)
+  await act(async () => run.resolve({ ...metadata(20), pages: [] }))
+  const backgroundOutput = within(screen.getByRole('region', { name: 'Background Output' }))
+  await waitFor(() => expect((backgroundOutput.getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(chart(1).getByRole('button', { name: 'Settings' }))
+  fireEvent.click(screen.getByLabelText('Show All Raw Data'))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+  await chart(1).findByText(/Show All Raw Data supports at most 25,000/)
+  expect(chart(1).getByRole('img').textContent).toBe('0 displayed samples')
+  expect((chart(1).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((chart(2).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(chart(2).getByRole('button', { name: 'Settings' }))
+  fireEvent.change(screen.getByLabelText('Chart type'), { target: { value: 'column' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+  await chart(2).findByRole('img', { name: 'column chart' })
+  // A new run selects its own latest Dataset, even with the same Chart IDs.
+  captures = ['next-run-capture']
+  run = deferred<RunMetadataDto>()
+  tab('Workflow')
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(2))
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: { ...metadata(21, 'running'), pages: [] }, completed_step_ids: [] }))
+  tab('Output')
+  await chart(2).findByText(/Waiting for run to finish/)
+  expect(chart(2).queryByRole('img')).toBeNull()
+  expect(vi.mocked(invoke).mock.calls.some(([command, args]) => command === 'get_background_chart_series'
+    && (args as { runId: number; query: { chart_type: string } }).runId === 21
+    && (args as { query: { chart_type: string } }).query.chart_type === 'column')).toBe(false)
+  await act(async () => run.resolve({ ...metadata(21), pages: [] }))
+  await chart(2).findByRole('img', { name: 'column chart' })
+  await waitFor(() => expect(dataset(1).value).toBe('next-run-capture'))
+  expect(chart(1).queryByRole('option', { name: /capture-1/ })).toBeNull()
+  for (let i = 8; i >= 1; i--) fireEvent.click(screen.getByRole('button', { name: `Remove Chart ${i}` }))
+  expect(currentCharts().getByText('Charts: 0 / 8')).toBeTruthy()
 })
 
 test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snapshots options for Last Run', async mode => {

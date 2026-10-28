@@ -9,12 +9,13 @@ type NumericKey = 'min' | 'max' | 'interval'
 type MarkerDraft = ChartSettingsDraft['markerStyles'][string]
 const settingsTabs = ['General', 'Series', 'Axes', 'Analysis', 'Export'] as const
 
-export default function ChartSettings({ panel, numericNames, scatterXNames = numericNames, outputs, running, hasRows, onApply, onClose }: {
+export default function ChartSettings({ panel, numericNames, scatterXNames = numericNames, outputs, running, hasRows, onApply, onClose, rawLimit }: {
   panel: ChartPanel
   numericNames: string[]
   scatterXNames?: string[]
   outputs: readonly OutputStep[]
   running: boolean
+  rawLimit?: number
   hasRows: boolean
   onApply: (settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>) => void
   onClose: () => void
@@ -178,7 +179,7 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
       <fieldset className="chart-settings-general">
         <legend>General</legend>
         <label className="chart-settings-field">Chart type
-          <select value={draft.type} disabled={running ? panel.type === 'line' : !hasRows} onChange={event => {
+          <select value={draft.type} disabled={running ? panel.type === 'line' : !hasRows && !panel.source} onChange={event => {
             const type = event.target.value as ChartType
             setDraft(current => {
               const titles = chartTypeAxisTitles(current, type, panel.outputs[0] ?? '')
@@ -193,9 +194,9 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
             <option value="column" disabled={running && panel.type !== 'column'}>Column</option>
             <option value="area" disabled={running && panel.type !== 'area'}>Area</option>
             <option value="bar" disabled={running && panel.type !== 'bar'}>Bar</option>
-            <option value="combo" disabled={running && panel.type !== 'combo'}>Combo</option>
-            <option value="histogram" disabled={running && panel.type !== 'histogram'}>Histogram</option>
-            <option value="boxplot" disabled={running && panel.type !== 'boxplot'}>Box &amp; Whisker</option>
+            {!panel.source && <option value="combo" disabled={running && panel.type !== 'combo'}>Combo</option>}
+            {!panel.source && <option value="histogram" disabled={running && panel.type !== 'histogram'}>Histogram</option>}
+            {!panel.source && <option value="boxplot" disabled={running && panel.type !== 'boxplot'}>Box &amp; Whisker</option>}
           </select>
         </label>
         {draft.type === 'combo' && <p className="chart-settings-help">
@@ -212,6 +213,7 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
           <p className="chart-settings-help">Displaying all raw data bypasses downsampling and may
             cause the Desktop interface to lag, especially during Live execution. Line markers
             remain separately configurable in Series.</p>
+          {panel.source && <p className="chart-settings-help">Background Line displays at most {rawLimit?.toLocaleString() ?? "25,000"} raw samples per visible range. Above this limit, narrow Zoom or turn off Show All Raw Data.</p>}
         </>}
         <label className="chart-settings-field">Chart title
           <input type="text" autoFocus value={draft.title}
@@ -275,13 +277,13 @@ export default function ChartSettings({ panel, numericNames, scatterXNames = num
       {draft.type === 'boxplot' && <p>No series options for this chart type.</p>}
       {draft.type === 'scatter' && <fieldset className="chart-settings-general">
         <legend>Scatter</legend>
-        <label className="chart-settings-field">X source
+        {!panel.source && <label className="chart-settings-field">X source
           <select value={draft.scatterXOutput ?? ''} onChange={event =>
             changeScatterXOutput(event.target.value || null)}>
             <option value="">Iteration</option>
             {scatterXNames.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
-        </label>
+        </label>}
         <label className="chart-settings-field">Display
           <select value={draft.scatter.display} onChange={event => {
             setDraft(current => ({ ...current,

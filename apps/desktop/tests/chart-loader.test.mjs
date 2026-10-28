@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 import { test } from 'node:test'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData } from '../src/chartData.ts'
-import { addChartPanel, chartRawOutputs, chartRequiredOutputs, chartSupportsLive, reconcileRunChartPanels } from '../src/chartPanels.ts'
+import { addChartPanel, chartRawOutputs, chartRequiredOutputs, chartSupportsLive, reconcileRunChartPanels, foregroundChartNames } from '../src/chartPanels.ts'
 import { statisticalRequestKey } from '../src/chartStatistics.ts'
 
 const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
@@ -63,7 +63,7 @@ test('statistical keys change with run and query parameters', () => {
 
 // Execute the component's actual loading hooks without mounting its Canvas UI.
 const loadingSource = stripTypeScriptTypes(source.slice(source.indexOf('export default function ResultChart'),
-  source.indexOf('  async function saveImage')).replace('export default ', '') +
+  source.indexOf('  return <div className=')).replace('export default ', '') +
   '\n return { requestedNames, statistical, waitingForRunData }\n}')
 
 function loadingHarness(invoke) {
@@ -230,10 +230,6 @@ test('a mixed Page only loads Line dependencies during running', async () => {
 })
 
 test('preserved panels wait through a new run ID until the first committed row starts Line loading', async () => {
-  const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const numericNamesFor = new Function('runStatus', 'runPageMetadata', 'chartPanels', 'runPage',
-    'chartRequiredOutputs', 'runOutputs', appSource.slice(appSource.indexOf('  const chartNumericNames ='),
-      appSource.indexOf('  // Numeric arrays survive')) + '\nreturn chartNumericNames')
   const calls = []
   const harness = loadingHarness(async (command, args) => {
     calls.push({ command, ...args })
@@ -246,8 +242,9 @@ test('preserved panels wait through a new run ID until the first committed row s
   const props = { runId: 1, revision: 1, rowCount: 1, page: 'A', running: false,
     numericNames: ['V', 'I', 'X'], chartData: new Map([['A', oldData]]), panels: [base] }
   const pages = [{ name: 'A', outputs: ['V', 'I', 'X'].map(name => ({ name })) }]
-  const numericNames = (metadata, running, panels) => numericNamesFor(
-    running ? 'running' : 'succeeded', metadata, panels, pages[0], chartRequiredOutputs, pages[0].outputs.map(output => ({ ...output, value: { source: 'literal' } })))
+  const numericNames = (metadata, running, panels) => foregroundChartNames(panels,
+    { ...pages[0], outputs: pages[0].outputs.map(output => ({ ...output, value: { source: 'literal' } })) }, metadata, running)
+
   try {
     await harness.update(props)
     assert.equal(calls.length, 0)
@@ -371,77 +368,29 @@ test('switching to Line and removing panels preserves current-run loading for re
   }
 })
 
-test('Waiting keeps Settings and Remove available while locking Export PNG and Outputs', async () => {
+test('non-Line panels wait for completion without exporting or loading raw data', async () => {
   const React = (await import('react')).default
   const { transformWithOxc } = await import('vite')
-  const chartDataModule = await import('../src/chartData.ts')
-  const chartPanels = await import('../src/chartPanels.ts')
-  const chartStatistics = await import('../src/chartStatistics.ts')
-  const Plot = () => null
-  const Settings = () => null
-  let settingsId = null
-  let savingId = null
-  let stateIndex = 0
-  const modules = { react: {
-    useMemo: factory => factory(), useRef: value => ({ current: value }), useEffect: () => {},
-    useState(initial) {
-      const index = stateIndex++
-      return [index === 0 ? savingId : index === 2 ? settingsId : initial,
-        value => { if (index === 2) settingsId = value }]
-    },
-  }, './ChartPlot': Plot, './ChartSettings': Settings, './chartData': chartDataModule,
-  './chartPanels': chartPanels, './chartStatistics': chartStatistics, './chartPng': { chartPng: () => {} },
-  '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
-  '@tauri-apps/plugin-dialog': { save: () => {} } }
+  const PanelView = () => null
+  const modules = { react: { useMemo: factory => factory(), useRef: value => ({ current: value }),
+    useEffect: () => {}, useState: value => [value, () => {}] },
+    './ChartPlot': () => null, './ChartPanelView': PanelView,
+    './chartData': await import('../src/chartData.ts'), './chartPanels': await import('../src/chartPanels.ts'),
+    './chartStatistics': await import('../src/chartStatistics.ts'),
+    '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') } }
   const { code } = await transformWithOxc(source, 'ResultChart.tsx', { jsx: { runtime: 'classic' } })
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
   const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)
-  const base = addChartPanel([], 'A', ['V'])[0]
-  let panels
-  function render(rowCount, backgroundChartCount = 0) {
-    stateIndex = 0
-    const nodes = []
-    function visit(node) {
-      if (Array.isArray(node)) node.forEach(visit)
-      else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
-    }
-    visit(component({ runId: 77, revision: 1, rowCount, numericNames: ['V'], timestampNames: [], outputs: [],
-      panels, onPanelsChange: value => { panels = value }, page: 'A', chartData: new Map(), running: true, backgroundChartCount }))
-    return nodes
-  }
-  const button = (nodes, label) => nodes.find(node => node.type === 'button' && node.props.children === label)
-  panels = [base]
-  assert.equal(button(render(0, 6), '+ Add Chart').props.disabled, false)
-  const full = button(render(0, 7), '+ Add Chart')
-  assert.equal(full.props.disabled, true)
-  full.props.onClick()
-  assert.deepEqual(panels, [base])
   for (const type of ['scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
-    for (const rowCount of [0, 2]) {
-      panels = [{ ...base, type }, { ...base, id: 1, page: 'B' }]
-      settingsId = null
-      const nodes = render(rowCount)
-      assert.equal(button(nodes, 'Settings').props.disabled, false)
-      assert.equal(button(nodes, 'Remove').props.disabled, false)
-      assert.equal(button(nodes, 'Export PNG').props.disabled, true)
-      assert.equal(button(nodes, '+ Add Chart').props.disabled, false)
-      assert.equal(nodes.find(node => node.type === 'fieldset').props.disabled, true)
-      assert.ok(nodes.some(node => node.props.children === 'Waiting for run to finish'))
-      assert.equal(nodes.some(node => node.type === Plot), false)
-      button(nodes, 'Settings').props.onClick()
-      const dialog = render(rowCount).find(node => node.type === Settings)
-      assert.equal(dialog.props.panel.type, type)
-      assert.equal(dialog.props.running, true)
-      assert.equal(dialog.props.hasRows, rowCount > 0)
-      savingId = 1
-      assert.equal(button(render(rowCount), 'Settings').props.disabled, true)
-      assert.equal(button(render(rowCount), 'Remove').props.disabled, true)
-      savingId = null
-      const remaining = panels[1]
-      button(render(rowCount), 'Remove').props.onClick()
-      assert.deepEqual(panels, [remaining])
-    }
+    const panel = { ...addChartPanel([], 'A', ['V'])[0], type }
+    const tree = component({ runId: 77, revision: 1, rowCount: 2, numericNames: ['V'], timestampNames: [], outputs: [],
+      panels: [panel], onPanelsChange: () => {}, page: 'A', chartData: new Map(), running: true })
+    const view = tree.props.children[0]
+    assert.equal(view.type, PanelView)
+    assert.equal(view.props.canExport, false)
+    assert.equal(view.props.running, true)
+    assert.equal(view.props.children[0].props.disabled, true)
   }
 })
 
@@ -453,6 +402,7 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
   const chartStatistics = await import('../src/chartStatistics.ts')
   const Plot = () => null
   const Settings = () => null
+  const PanelView = () => null
   let settingsId = null
   let stateIndex = 0
   const modules = { react: {
@@ -462,7 +412,7 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
       return [index === 2 ? settingsId : typeof initial === 'function' ? initial() : initial,
         value => { if (index === 2) settingsId = value }]
     },
-  }, './ChartPlot': Plot, './ChartSettings': Settings, './chartData': chartDataModule,
+  }, './ChartPlot': Plot, './ChartPanelView': PanelView, './chartData': chartDataModule,
   './chartPanels': chartPanels, './chartStatistics': chartStatistics, './chartPng': { chartPng: () => {} },
   '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
   '@tauri-apps/plugin-dialog': { save: () => {} } }
@@ -503,9 +453,7 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
   panel.type = 'line'
   panel.scatterXOutput = 'Elapsed'
   assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, undefined)
-  render().find(node => node.type === 'button' && node.props.children === 'Settings').props.onClick()
-  assert.equal(render().find(node => node.type === Settings).props.outputs, outputs)
+  assert.equal(render().find(node => node.type === PanelView).props.outputs, outputs)
   const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /numericNames=\{chartNumericNames\} page=\{runPage\.name\} outputs=\{runOutputs\}/)
   assert.match(app, /outputPageContext\(runWorkflowSnapshot\?\.workflow\.steps \?\? \[\], selectedRunPage\)/)
 })

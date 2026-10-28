@@ -2,12 +2,10 @@ import type { OutputStep } from './workflow'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
-import ChartSettings from './ChartSettings'
+import ChartPanelView from './ChartPanelView'
 import { chartLoadGroups, chartNeedsLoad, createPageChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { invoke } from '@tauri-apps/api/core'
-import { save } from '@tauri-apps/plugin-dialog'
-import { addChartPanel, canRemoveChartPanel, chartSupportsLive, chartRawOutputs, chartRequiredOutputs, MAX_CHARTS, type ChartPanel } from './chartPanels'
-import { chartPng } from './chartPng'
+import { chartSupportsLive, chartRawOutputs, chartRequiredOutputs, type ChartPanel } from './chartPanels'
 import { statisticalRequestKey, type BoxPlotDto, type HistogramDto, type StatisticalDto } from './chartStatistics'
 
 type ChartSeriesResponse = { run_id: number; page: string; start_row: number; row_count: number; series: Record<string, number[]> }
@@ -16,7 +14,7 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, backgroundChartCount = 0 }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData }: {
   runId: number | null
   revision: number
   rowCount: number
@@ -31,20 +29,13 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
   running: boolean
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
-  saveChartsWithTemplate: boolean
-  onSaveChartsWithTemplateChange: (checked: boolean) => void
-  backgroundChartCount?: number
 }) {
   const plots = useRef(new Map<number, EChartsType>())
-  const saving = useRef(false)
-  const [savingId, setSavingId] = useState<number | null>(null)
-  const [feedback, setFeedback] = useState<{ id: number; message: string } | null>(null)
-  const [settingsId, setSettingsId] = useState<number | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
   const scatterXNames = useMemo(() => [...numericNames, ...timestampNames], [numericNames, timestampNames])
   const waitingForRunData = runId === null || (running && rowCount === 0)
-  const localPanels = useMemo(() => panels.filter(panel => panel.page === page), [panels, page])
+  const localPanels = useMemo(() => panels.filter(panel => !panel.source && panel.page === page), [panels, page])
   const loadingPanels = useMemo(() => localPanels.filter(panel =>
     runId !== null && (!running || chartSupportsLive(panel.type))), [localPanels, running, runId])
   const data = useMemo(() => {
@@ -167,55 +158,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
     if (behind) setLoadGeneration(generation => generation + 1)
   }, [runId, page, requestedKey, revision, rowCount, chartData])
 
-  async function saveImage(id: number, index: number) {
-    if (saving.current) return
-    saving.current = true
-    setSavingId(id)
-    onSavingChange(true)
-    setFeedback(null)
-    try {
-      const destinationPath = await save({
-        defaultPath: 'Chart-' + (index + 1) + '.png',
-        filters: [{ name: 'PNG', extensions: ['png'] }],
-      })
-      if (!destinationPath) return
-      const panel = panels.find(panel => panel.id === id)!
-      const pngBytes = await chartPng(plots.current.get(id), panel)
-      await invoke('save_chart_png', { destinationPath, pngBytes: Array.from(pngBytes) })
-      setFeedback({ id, message: 'Chart image saved successfully.' })
-    } catch (error) {
-      setFeedback({ id, message: 'Could not save chart image: ' + String(error) })
-    } finally {
-      saving.current = false
-      setSavingId(null)
-      onSavingChange(false)
-    }
-  }
-
-  function addChart() {
-    if (saving.current || panels.length + backgroundChartCount >= MAX_CHARTS) return
-    onPanelsChange(addChartPanel(panels, page, numericNames))
-  }
-
-  return <section className="result-chart" aria-label="Charts">
-    <div className="section-header">
-      <h3>Charts</h3>
-      <div className="result-chart-header-actions">
-        <label className="result-chart-template-option">
-          <input type="checkbox" checked={saveChartsWithTemplate}
-            onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />
-          Save charts with template
-        </label>
-        <button className="action-button" type="button" onClick={addChart}
-          disabled={savingId !== null || numericNames.length === 0 || panels.length + backgroundChartCount >= MAX_CHARTS}>+ Add Chart</button>
-      </div>
-    </div>
-    {panels.length + backgroundChartCount >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
-    {numericNames.length === 0 ? <p>No numeric Outputs are available for charts on this Page.</p>
-      : localPanels.length === 0 ? <p>No charts for this Page.</p>
-      : <p>Select multiple numeric Outputs to compare them on the same chart.</p>}
-    <div className="result-charts-grid">
-      {localPanels.map((panel, index) => {
+  return <div className="result-chart-page">
+      {localPanels.map((panel) => {
         const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
@@ -229,25 +173,11 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
         const analysisReady = runId !== null && !waitingForRunData && (isStatistical ? statisticReady : panel.type === 'line' ||
           (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount))
         const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
-        return <section className={`result-chart-panel${waiting ? ' result-chart-panel-waiting' : ''}`} key={panel.id} aria-label={`Chart ${index + 1}`}>
-          <div className="section-header">
-            <h4>Chart {index + 1}</h4>
-            <div className="result-chart-panel-actions">
-              <button className="action-button" type="button" disabled={waiting || savingId !== null || selectedOutputs.length === 0 || !analysisReady || !enoughOutputs}
-                onClick={() => void saveImage(panel.id, index)}>Export PNG</button>
-              <button className="action-button" type="button" disabled={savingId !== null}
-                onClick={() => setSettingsId(panel.id)}>Settings</button>
-              <button className="action-button action-button-danger" type="button"
-                aria-label={`Remove Chart ${index + 1}`} disabled={savingId !== null || !canRemoveChartPanel(panels)}
-                onClick={() => {
-                  if (saving.current) return
-                  if (feedback?.id === panel.id) setFeedback(null)
-                  onPanelsChange(panels.filter(item => item.id !== panel.id))
-                }}>Remove</button>
-            </div>
-          </div>
-          {feedback?.id === panel.id && <p role="status">{feedback.message}</p>}
-          <fieldset className="result-chart-outputs" disabled={waiting || savingId !== null}>
+        return <ChartPanelView key={panel.id} panel={panel} panels={panels} onPanelsChange={onPanelsChange}
+          charts={plots.current} numericNames={numericNames} timestampNames={timestampNames} outputs={outputs}
+          running={running} hasRows={rowCount > 0} onSavingChange={onSavingChange}
+          canExport={!waiting && selectedOutputs.length > 0 && analysisReady && enoughOutputs}>
+          <fieldset className="result-chart-outputs" disabled={waiting}>
             <legend>Outputs</legend>
             {numericNames.map(name => <label key={name}>
               <input type={panel.type === 'histogram' ? 'radio' : 'checkbox'}
@@ -276,16 +206,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
               statistical={isStatistical ? statisticState?.response : undefined}
               changeSettings={changeSettings} fitData={fitData} xTimeFormat={xTimeFormat} />
           )}
-          {settingsId === panel.id && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={scatterXNames}
-            outputs={outputs}
-            running={running} hasRows={rowCount > 0} onClose={() => setSettingsId(null)}
-            onApply={settings => {
-              onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, ...settings,
-                outputs: settings.type === 'histogram' ? item.outputs.slice(0, 1) : item.outputs } : item))
-              setSettingsId(null)
-            }} />}
-        </section>
+        </ChartPanelView>
       })}
     </div>
-  </section>
 }

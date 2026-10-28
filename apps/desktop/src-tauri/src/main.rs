@@ -1082,7 +1082,6 @@ struct BackgroundOutputDto {
     datasets: Vec<orchestrator_tool::background::DatasetMetadata>,
     workers: Vec<orchestrator_tool::background::BackgroundStatus>,
     rows: Vec<Value>,
-    chart: Vec<Value>,
     monitor: Vec<Value>,
 }
 
@@ -1110,13 +1109,25 @@ fn get_background_output(
                 .map(|id| store.rows(id, offset, limit))
                 .transpose()?
                 .unwrap_or_default(),
-            chart: dataset
-                .map(|id| store.chart(id))
-                .transpose()?
-                .unwrap_or_default(),
             monitor: store.monitor(&background_id),
         })
     })?
+}
+
+#[tauri::command]
+async fn get_background_chart_series(
+    state: tauri::State<'_, StoredRuns>,
+    run_id: u64,
+    background_id: String,
+    dataset_id: String,
+    query: orchestrator_tool::background::BackgroundChartQuery,
+) -> Result<orchestrator_tool::background::BackgroundChartSeries, String> {
+    let store = state.with_current(run_id, |run| run.backgrounds.clone())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestrator_tool::background::query_chart(&store, &background_id, &dataset_id, &query)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1419,6 +1430,7 @@ fn main() {
             run_workflow_simulation,
             get_simulation_sample_requirements,
             get_background_output,
+            get_background_chart_series,
             export_background_datasets,
             run_workflow_live,
             request_workflow_stop,

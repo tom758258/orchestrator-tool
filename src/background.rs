@@ -20,6 +20,8 @@ use std::{
 pub const MONITOR_POINTS: usize = 1_000;
 pub const QUERY_LIMIT: usize = 1_000;
 pub const CHART_POINTS: usize = 2_000;
+pub const CHART_RAW_LIMIT: usize = 25_000;
+const CHART_SCAN_BATCH: usize = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -40,8 +42,66 @@ pub enum BackgroundXAxis {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BackgroundChart {
+pub struct BackgroundChartSource {
+    pub kind: BackgroundSourceKind,
+    pub background_id: String,
+    pub field: String,
     pub x_axis: BackgroundXAxis,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackgroundSourceKind {
+    Background,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackgroundChartType {
+    Line,
+    Scatter,
+    Column,
+    Area,
+    Bar,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChartRange {
+    pub min: f64,
+    pub max: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundChartQuery {
+    pub x_axis: BackgroundXAxis,
+    pub chart_type: BackgroundChartType,
+    pub range: Option<ChartRange>,
+    pub point_budget: usize,
+    pub raw: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BackgroundChartPoint {
+    pub x: f64,
+    pub value: f64,
+    pub sample_index: u64,
+    pub timestamp_utc: String,
+    pub elapsed_s: f64,
+    pub unit: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackgroundChartSeries {
+    pub total_count: usize,
+    pub visible_count: usize,
+    pub returned_count: usize,
+    pub sampled: bool,
+    pub raw_limit: usize,
+    pub raw_limit_exceeded: bool,
+    pub domain: Option<ChartRange>,
+    pub points: Vec<BackgroundChartPoint>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -53,8 +113,6 @@ pub struct BackgroundConfig {
     pub live_monitor: bool,
     /// Immediate Custom: null selects the Tool's native infinite trigger count.
     pub trigger_count: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chart: Option<BackgroundChart>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -103,6 +161,7 @@ pub struct BackgroundStatus {
 pub struct BackgroundStore {
     pub datasets: Vec<Dataset>,
     pub workers: Vec<BackgroundStatus>,
+    chart_query_gate: Arc<Mutex<()>>,
 }
 
 pub type SharedBackgroundStore = Arc<Mutex<BackgroundStore>>;
@@ -133,21 +192,6 @@ impl BackgroundStore {
             .cloned()
             .collect())
     }
-    pub fn chart(&self, id: &str) -> Result<Vec<Value>, String> {
-        let samples = &self.dataset(id)?.samples;
-        // Even sampling retains the endpoints and never copies a full large capture.
-        let count = samples.len().min(CHART_POINTS);
-        Ok((0..count)
-            .map(|i| {
-                samples[if count <= 1 {
-                    0
-                } else {
-                    i * (samples.len() - 1) / (count - 1)
-                }]
-                .clone()
-            })
-            .collect())
-    }
     pub fn monitor(&self, id: &str) -> Vec<Value> {
         self.workers
             .iter()
@@ -162,6 +206,171 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+/// Query a stable prefix without copying the Dataset or holding its writer lock
+/// for an entire scan. Samples are append-only during a run.
+pub fn query_chart(
+    store: &SharedBackgroundStore,
+    background_id: &str,
+    dataset_id: &str,
+    query: &BackgroundChartQuery,
+) -> Result<BackgroundChartSeries, String> {
+    if !(4..=CHART_POINTS).contains(&query.point_budget) {
+        return Err(format!(
+            "Chart point budget must be between 4 and {CHART_POINTS}"
+        ));
+    }
+    if query
+        .range
+        .is_some_and(|r| !r.min.is_finite() || !r.max.is_finite() || r.min > r.max)
+    {
+        return Err("Chart range must contain finite, ordered bounds".into());
+    }
+    if query.raw && !matches!(query.chart_type, BackgroundChartType::Line) {
+        return Err("Show All Raw Data is available for Line only".into());
+    }
+    // Multiple charts share one scan at a time, leaving the sample writer free
+    // to acquire the store between batches. This gate never guards writes.
+    let gate = store
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .chart_query_gate
+        .clone();
+    let _query = gate.lock().unwrap_or_else(|e| e.into_inner());
+    let total_count = {
+        let store = store.lock().unwrap_or_else(|e| e.into_inner());
+        let dataset = store.dataset(dataset_id)?;
+        if dataset.metadata.background_id != background_id {
+            return Err("Dataset does not belong to the selected Background".into());
+        }
+        dataset.samples.len()
+    };
+    let scan = |visit: &mut dyn FnMut(usize, &BackgroundChartPoint)| -> Result<(), String> {
+        for start in (0..total_count).step_by(CHART_SCAN_BATCH) {
+            let batch = {
+                let store = store.lock().unwrap_or_else(|e| e.into_inner());
+                let samples = &store.dataset(dataset_id)?.samples;
+                samples[start..(start + CHART_SCAN_BATCH).min(total_count)]
+                    .iter()
+                    .map(|sample| BackgroundChartPoint {
+                        x: 0.0,
+                        value: sample["value"].as_f64().unwrap_or(f64::NAN),
+                        sample_index: sample["captured"].as_u64().unwrap_or_default(),
+                        timestamp_utc: sample["timestamp_utc"].as_str().unwrap_or_default().into(),
+                        elapsed_s: sample["elapsed_s"].as_f64().unwrap_or(f64::NAN),
+                        unit: sample["unit"].as_str().unwrap_or_default().into(),
+                    })
+                    .collect::<Vec<_>>()
+            };
+            // Parse and select outside the writer lock. Copy only a bounded batch
+            // of chart fields, never the full Dataset or its JSON objects.
+            for (offset, mut point) in batch.into_iter().enumerate() {
+                point.x = match query.x_axis {
+                    BackgroundXAxis::Elapsed => Some(point.elapsed_s),
+                    BackgroundXAxis::Index => Some(point.sample_index as f64),
+                    BackgroundXAxis::Timestamp => {
+                        chrono::DateTime::parse_from_rfc3339(&point.timestamp_utc)
+                            .ok()
+                            .map(|t| t.timestamp_millis() as f64)
+                    }
+                }
+                .filter(|v| v.is_finite())
+                .ok_or("Sample has an invalid chart X value")?;
+                if !point.value.is_finite() {
+                    return Err("Sample has an invalid numeric value".into());
+                }
+                visit(start + offset, &point);
+            }
+        }
+        Ok(())
+    };
+    let visible = |x: f64| query.range.is_none_or(|r| x >= r.min && x <= r.max);
+    let mut domain: Option<ChartRange> = None;
+    let mut visible_count = 0;
+    scan(&mut |_, point| {
+        let x = point.x;
+        domain = Some(match domain {
+            Some(r) => ChartRange {
+                min: r.min.min(x),
+                max: r.max.max(x),
+            },
+            None => ChartRange { min: x, max: x },
+        });
+        if visible(x) {
+            visible_count += 1;
+        }
+    })?;
+    let raw_limit_exceeded = query.raw && visible_count > CHART_RAW_LIMIT;
+    let budget = if query.raw {
+        CHART_RAW_LIMIT
+    } else {
+        query.point_budget
+    };
+    let mut chosen: Vec<(usize, BackgroundChartPoint)> =
+        Vec::with_capacity(visible_count.min(budget));
+    if visible_count > 0 && !raw_limit_exceeded {
+        let min_max = !query.raw
+            && visible_count > budget
+            && matches!(
+                query.chart_type,
+                BackgroundChartType::Line | BackgroundChartType::Area
+            );
+        let buckets = (budget - 2) / 2;
+        type IndexedPoint = (usize, BackgroundChartPoint);
+        let mut extrema: Vec<Option<(IndexedPoint, IndexedPoint)>> = vec![None; buckets];
+        let mut ordinal = 0;
+        let mut target = 0;
+        scan(&mut |index, point| {
+            if !visible(point.x) {
+                return;
+            }
+            if visible_count <= budget {
+                chosen.push((index, point.clone()));
+            } else if min_max {
+                if ordinal == 0 || ordinal + 1 == visible_count {
+                    chosen.push((index, point.clone()));
+                } else {
+                    let bucket = (ordinal - 1) * buckets / (visible_count - 2);
+                    match &mut extrema[bucket] {
+                        None => {
+                            let entry = (index, point.clone());
+                            extrema[bucket] = Some((entry.clone(), entry));
+                        }
+                        Some((min, max)) => {
+                            if point.value < min.1.value {
+                                *min = (index, point.clone());
+                            }
+                            if point.value > max.1.value {
+                                *max = (index, point.clone());
+                            }
+                        }
+                    }
+                }
+            } else if target < budget && ordinal == target * (visible_count - 1) / (budget - 1) {
+                // Discrete charts retain actual representative observations, never aggregates.
+                chosen.push((index, point.clone()));
+                target += 1;
+            }
+            ordinal += 1;
+        })?;
+        for (min, max) in extrema.into_iter().flatten() {
+            chosen.extend([min, max]);
+        }
+        chosen.sort_unstable_by_key(|(index, _)| *index);
+        chosen.dedup_by_key(|(index, _)| *index);
+    }
+    let points: Vec<_> = chosen.into_iter().map(|(_, point)| point).collect();
+    Ok(BackgroundChartSeries {
+        total_count,
+        visible_count,
+        returned_count: points.len(),
+        sampled: !raw_limit_exceeded && points.len() < visible_count,
+        raw_limit: CHART_RAW_LIMIT,
+        raw_limit_exceeded,
+        domain,
+        points,
+    })
 }
 
 pub const SAMPLE_COLUMNS: [&str; 5] = ["timestamp_utc", "elapsed_s", "captured", "value", "unit"];
@@ -791,6 +1000,99 @@ mod tests {
         sync::atomic::{AtomicBool, Ordering},
     };
 
+    #[test]
+    fn chart_queries_bound_data_preserve_extrema_and_validate_sources() {
+        let count = CHART_RAW_LIMIT + 1;
+        let store = SharedBackgroundStore::default();
+        store.lock().unwrap().datasets.push(Dataset {
+            metadata: DatasetMetadata {
+                id: "capture".into(),
+                background_id: "background-1".into(),
+                worker_run_id: "worker".into(),
+                started_ms: 0,
+                finished_ms: None,
+                status: "recording".into(),
+                quality: "unknown".into(),
+                row_count: count,
+                min: None,
+                max: None,
+                avg: None,
+                csv_path: None,
+                error: None,
+            },
+            samples: (0..count)
+                .map(|i| {
+                    json!({"timestamp_utc":"2026-10-28T00:00:00.125Z",
+                "captured": i + 10, "elapsed_s": i as f64 * 0.003,
+                "value": if i == 17 { 100.0 } else if i == 19 { -100.0 } else { 1.0 }, "unit":"V"})
+                })
+                .collect(),
+        });
+        let mut query = BackgroundChartQuery {
+            x_axis: BackgroundXAxis::Elapsed,
+            chart_type: BackgroundChartType::Line,
+            range: None,
+            point_budget: 50,
+            raw: false,
+        };
+        for chart_type in [
+            BackgroundChartType::Line,
+            BackgroundChartType::Area,
+            BackgroundChartType::Scatter,
+            BackgroundChartType::Column,
+            BackgroundChartType::Bar,
+        ] {
+            query.chart_type = chart_type;
+            let result = query_chart(&store, "background-1", "capture", &query).unwrap();
+            assert!(result.returned_count <= 50 && result.sampled);
+            assert_eq!(result.visible_count, count);
+            assert_eq!(result.points[0].sample_index, 10);
+            assert_eq!(
+                result.points.last().unwrap().sample_index,
+                (count + 9) as u64
+            );
+            if matches!(
+                chart_type,
+                BackgroundChartType::Line | BackgroundChartType::Area
+            ) {
+                assert!(result.points.iter().any(|point| point.value == 100.0));
+                assert!(result.points.iter().any(|point| point.value == -100.0));
+            }
+        }
+        query.chart_type = BackgroundChartType::Line;
+        query.raw = true;
+        let result = query_chart(&store, "background-1", "capture", &query).unwrap();
+        assert!(result.raw_limit_exceeded && !result.sampled && result.points.is_empty());
+        query.range = Some(ChartRange {
+            min: 0.003,
+            max: 0.06,
+        });
+        let result = query_chart(&store, "background-1", "capture", &query).unwrap();
+        assert_eq!(result.returned_count, 20);
+        assert_eq!(result.points[0].x, 0.003);
+        assert!(!result.sampled && !result.raw_limit_exceeded);
+        query.x_axis = BackgroundXAxis::Index;
+        query.range = Some(ChartRange {
+            min: 11.0,
+            max: 12.0,
+        });
+        let result = query_chart(&store, "background-1", "capture", &query).unwrap();
+        assert_eq!(
+            result.points.iter().map(|p| p.x).collect::<Vec<_>>(),
+            [11.0, 12.0]
+        );
+        query.x_axis = BackgroundXAxis::Timestamp;
+        query.raw = false;
+        query.range = None;
+        let result = query_chart(&store, "background-1", "capture", &query).unwrap();
+        assert_eq!(result.points[0].x, 1_793_145_600_125.0);
+        assert!(query_chart(&store, "other", "capture", &query).is_err());
+        assert!(query_chart(&store, "background-1", "missing", &query).is_err());
+        query.point_budget = CHART_POINTS + 1;
+        assert!(query_chart(&store, "background-1", "capture", &query).is_err());
+        assert_eq!(store.lock().unwrap().datasets[0].samples.len(), count);
+    }
+
     struct FailingFile {
         file: File,
         armed: Arc<AtomicBool>,
@@ -823,7 +1125,6 @@ mod tests {
                 tool_instance_id: ToolInstanceId::new("meter").unwrap(),
                 live_monitor: false,
                 trigger_count: Some(10),
-                chart: None,
             };
             let store = SharedBackgroundStore::default();
             let failure = RunFailure::default();

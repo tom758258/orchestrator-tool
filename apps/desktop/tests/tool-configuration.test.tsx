@@ -8,6 +8,7 @@ import type { WorkflowDraft } from '../src/templateDraft'
 import type { ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
 import type { WorkflowStep } from '../src/workflow'
+import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }))
@@ -137,12 +138,16 @@ async function savedDraft() {
 }
 
 test('loading a Template with only Background Charts preserves their X axis on save', async () => {
+  const panel = addBackgroundChartPanel([], 'background-1')[0]
+  panel.source!.x_axis = 'timestamp'
   loadedDraft = { ...empty, tool_instances: [backgroundMeter], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
-    live_monitor: true, trigger_count: 10, chart: { x_axis: 'timestamp' } }] }
+    live_monitor: true, trigger_count: 10 }], output_views: { charts: [chartPanelToSavedChart(panel)] } }
   await mount()
   click('Open Template')
   await screen.findByText('Template loaded.')
-  expect((await savedDraft()).backgrounds).toEqual(loadedDraft.backgrounds)
+  const saved = await savedDraft()
+  expect(saved.backgrounds).toEqual(loadedDraft.backgrounds)
+  expect(saved.output_views).toEqual(loadedDraft.output_views)
 })
 const summaryCounts = () => Array.from(screen.getByRole('region', { name: 'Tool Instance Summary' })
   .querySelectorAll('dl > div')).map(node => [node.querySelector('dt')!.textContent, node.querySelector('dd')!.textContent])

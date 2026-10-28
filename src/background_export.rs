@@ -156,10 +156,6 @@ mod tests {
                     .len(),
                 crate::background::QUERY_LIMIT
             );
-            let chart = data.chart("background-1-capture-1").unwrap();
-            assert_eq!(chart.len(), crate::background::CHART_POINTS);
-            assert_eq!(chart[0]["captured"], 1);
-            assert_eq!(chart.last().unwrap()["captured"], count);
         }
         let folder =
             std::env::temp_dir().join(format!("orchestrator-large-export-{}", std::process::id()));

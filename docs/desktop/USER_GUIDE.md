@@ -825,22 +825,43 @@ OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.
 
-**Output → Background Results** works even when there are no Workflow Output
-Steps. Select Background and Capture Dataset. **Charts** uses recorded samples,
-with Elapsed Time, Timestamp or Sample Index on X. The Line displays up to 2,000
-representative points; the full captured data remains available in Output Data
-and export. Saved chart settings use the Background ID, not a run's Dataset ID.
+**Output** contains three expandable sections on the same page: **Charts**,
+**Foreground Output**, and **Background Output**. Background-only runs can use
+Charts and Background Output. Background Output appears only when the Last Run
+had Background bindings; changing the current Draft does not hide those results.
+Its Background and Capture Dataset selectors control its Summary, Output Data
+and export, independently of each Chart's selection.
 
-Last Run charts use the Background snapshot from that run. You can change the
-X axis even after removing its binding from the current Workflow; this changes
-the display, not the captured data or run snapshot. The setting also updates the
-current Draft only while the original binding still exists. It never recreates
-a removed binding or writes the old run's settings into a replacement binding.
+In **Charts**, choose a **Chart source**, then **Add Chart**. All Foreground Pages
+and Background Charts appear together. Each Background Chart has its own
+Background, Capture Dataset, X axis, **Settings**, **Export PNG** and **Remove**.
+Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
+Area or Bar in Settings; only Line updates during a run. Foreground retains all
+its existing chart types. Each Chart initially selects the latest available
+Dataset for its Background and then keeps that selection, even if newer Datasets
+arrive. Each new run chooses afresh. With no Dataset, the Chart waits for captured
+data and never substitutes Monitor samples.
 
-When enabled, **Live Monitor** appears between Charts and Summary. It shows the
-latest 1,000 Worker samples as a Line, including while Capture is OFF. It does
-not create Datasets, summaries, CSV or manual exports, and does not consume a
-Result Chart slot. Restarting a Worker clears its Monitor. Summary shows Dataset
+Background X uses actual Elapsed Time in seconds, Timestamp, or Sample Index.
+Hover identifies an actual displayed sample. Line/Area retain peaks, troughs and
+endpoints when sampled; Scatter/Column/Bar show representative observations.
+Counts show Dataset size, visible samples and displayed samples. Line/Area/Column
+Zoom requests detail for the visible range; Scatter/Bar have no Zoom controls.
+Line **Settings → General → Show All Raw Data** displays all visible samples up
+to **25,000**. Above this limit the Chart shows no points and asks you to narrow
+Zoom or turn the option off. Full Dataset storage and CSV/XLSX export are unchanged.
+
+Last Run Charts remain viewable and editable after removing their binding from
+the current Workflow. Display settings never recreate or modify Draft bindings.
+With **Save charts with template** enabled, a Chart referring to a Background
+missing from the Draft prevents Template Save and identifies the Chart to fix.
+Remove that Chart, select a valid source, or turn off saving Charts.
+
+When enabled in Setup, **Live Monitor** appears inside Charts, with the same Line
+appearance, Hover and Zoom. It shows the latest 1,000 Worker samples, including
+while Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
+Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
+CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
 count/min/max/average, status and quality; **Output Data** uses pages of 100 rows.
 `no_loss_detected` describes the Tool's evidence, not a zero-loss guarantee.
 
@@ -905,7 +926,7 @@ After a run, the Output area can show the following visible sections:
   shown latest first when the result list is paged.
 - **Messages** — text written by Show Message steps during the run.
 - **Last Run** — the current run's Output Pages and result workspace.
-- **Charts** — chart panels for the selected Page.
+- **Charts** — all Foreground and Background chart panels, plus enabled Live Monitors.
 - **Summary** — numeric Count, Min, Max, and Avg values when applicable.
 - **Output Data** — committed rows for the selected Page, shown latest first.
 
@@ -927,6 +948,12 @@ If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.
 
 ### 10.2 Collapsing the result panels
+
+Charts, Foreground Output and Background Output, each Chart and Live Monitor,
+and both Output sections' Summary and Output Data have independent `− / +`
+controls. All start expanded. Collapsing hides content without clearing settings,
+removing Charts, stopping Capture or pausing Monitor reception. Collapse state
+is not saved with Templates.
 
 **Last Run Execution Results** and **Messages** each have a `+ / −` control on
 the right of their heading. Both start expanded, and each collapses on its own
@@ -973,7 +1000,7 @@ disk and cannot be exported.
 ### 10.4 Charts
 
 Charts use Apache ECharts with a Canvas renderer. A Foreground chart belongs to one
-Output Page and can plot numeric Outputs from that Page. Saved Foreground and
+Output Page and can plot numeric Outputs from that Page. Session-only and saved Foreground and
 Background Charts share a maximum of eight. Live Monitor and Background bindings
 without a Chart configuration do not count toward this limit.
 
@@ -1162,7 +1189,8 @@ Chart configuration survives Page/tab changes and subsequent Simulation or
 Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
 original Page and order while running, display **Waiting for run to finish**,
 and hide the plot. Their Output selection and Export PNG remain disabled;
-Settings and Remove remain available, but the last chart cannot be removed.
+Settings and Remove remain available. The last Foreground Chart cannot be
+removed; Background Charts can all be removed.
 During execution, Chart type allows keeping the current type or switching a
 non-Line chart to Line, even before the first row arrives. Line cannot switch
 to a non-Line type until execution stops. After Apply, Line uses the current

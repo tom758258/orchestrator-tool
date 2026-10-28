@@ -164,7 +164,10 @@ struct HistogramSettings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SavedChart {
-    page: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    page: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<crate::background::BackgroundChartSource>,
     title: String,
     outputs: Vec<String>,
     #[serde(rename = "type")]
@@ -718,11 +721,7 @@ fn validate_output_views(
     output_views: Option<&OutputViews>,
     backgrounds: &[crate::background::BackgroundConfig],
 ) -> Result<(), TemplateError> {
-    let chart_count = output_views.map_or(0, |views| views.charts.len())
-        + backgrounds
-            .iter()
-            .filter(|background| background.chart.is_some())
-            .count();
+    let chart_count = output_views.map_or(0, |views| views.charts.len());
     if chart_count > MAX_SAVED_CHARTS {
         return Err(TemplateError::OutputViews(format!(
             "at most {MAX_SAVED_CHARTS} charts can be saved with a template; Live Monitor is separate"
@@ -750,54 +749,87 @@ fn validate_output_views(
 
     for (index, chart) in output_views.charts.iter().enumerate() {
         let number = index + 1;
-        let page = workflow
-            .output_pages()
-            .iter()
-            .find(|page| page.name() == chart.page)
-            .ok_or_else(|| {
-                TemplateError::OutputViews(format!(
-                    "chart {number} references unknown Output Page {:?}",
-                    chart.page
-                ))
-            })?;
-
-        if chart.outputs.is_empty() {
-            return Err(TemplateError::OutputViews(format!(
-                "chart {number} requires at least one Output"
-            )));
-        }
-        for output in &chart.outputs {
-            if page
-                .headers()
+        if let Some(source) = &chart.source {
+            if !backgrounds
                 .iter()
-                .zip(page.time_formats())
-                .any(|(name, format)| {
-                    name == output
-                        && matches!(
-                            format,
-                            Some(crate::output_time::OutputTimeFormat::Timestamp { .. })
-                        )
-                })
+                .any(|background| background.id == source.background_id)
             {
                 return Err(TemplateError::OutputViews(format!(
-                    "chart {number} Timestamp Output {output:?} may only be used as Scatter X"
+                    "chart {number} references unknown Background {:?}",
+                    source.background_id
                 )));
             }
-            if !page.headers().contains(output) {
+            if source.field != "value"
+                || chart.outputs != ["value"]
+                || chart.page.is_some()
+                || chart.scatter_x_output.is_some()
+            {
                 return Err(TemplateError::OutputViews(format!(
-                    "chart {number} references unknown Output {output:?} on Page {:?}",
+                    "chart {number} Background source requires value only, without Page or Scatter X Output"
+                )));
+            }
+            if !matches!(
+                chart.chart_type,
+                SavedChartType::Line
+                    | SavedChartType::Scatter
+                    | SavedChartType::Column
+                    | SavedChartType::Area
+                    | SavedChartType::Bar
+            ) {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} Background supports Line, XY Scatter, Column, Area and Bar only"
+                )));
+            }
+        } else {
+            let page = workflow
+                .output_pages()
+                .iter()
+                .find(|page| Some(page.name()) == chart.page.as_deref())
+                .ok_or_else(|| {
+                    TemplateError::OutputViews(format!(
+                        "chart {number} references unknown Output Page {:?}",
+                        chart.page
+                    ))
+                })?;
+
+            if chart.outputs.is_empty() {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} requires at least one Output"
+                )));
+            }
+            for output in &chart.outputs {
+                if page
+                    .headers()
+                    .iter()
+                    .zip(page.time_formats())
+                    .any(|(name, format)| {
+                        name == output
+                            && matches!(
+                                format,
+                                Some(crate::output_time::OutputTimeFormat::Timestamp { .. })
+                            )
+                    })
+                {
+                    return Err(TemplateError::OutputViews(format!(
+                        "chart {number} Timestamp Output {output:?} may only be used as Scatter X"
+                    )));
+                }
+                if !page.headers().contains(output) {
+                    return Err(TemplateError::OutputViews(format!(
+                        "chart {number} references unknown Output {output:?} on Page {:?}",
+                        chart.page
+                    )));
+                }
+            }
+            if chart.chart_type == SavedChartType::Scatter
+                && let Some(output) = &chart.scatter_x_output
+                && !page.headers().contains(output)
+            {
+                return Err(TemplateError::OutputViews(format!(
+                    "chart {number} references unknown scatter X Output {output:?} on Page {:?}",
                     chart.page
                 )));
             }
-        }
-        if chart.chart_type == SavedChartType::Scatter
-            && let Some(output) = &chart.scatter_x_output
-            && !page.headers().contains(output)
-        {
-            return Err(TemplateError::OutputViews(format!(
-                "chart {number} references unknown scatter X Output {output:?} on Page {:?}",
-                chart.page
-            )));
         }
 
         match chart.chart_type {
@@ -1833,7 +1865,7 @@ mod tests {
             ..Default::default()
         };
         let wire = json!({"schema_version":2,"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
-            "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"trigger_count":null,"chart":{"x_axis":"timestamp"}}],
+            "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"trigger_count":null}],
             "workflow":{"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         assert_eq!(
@@ -2228,23 +2260,19 @@ mod tests {
             (0, 9, false),
         ] {
             let mut wire = chart_template_wire();
+            wire["tool_instances"] = json!([{"id":"meter", "tool":"meters", "setup":crate::meters_setup::MetersSetup {
+                trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom, ..Default::default()
+            }}]);
+            wire["backgrounds"] = json!([{"id":"background-1","tool_instance_id":"meter","live_monitor":true,"trigger_count":10}]);
+            let mut background_chart = saved_chart_wire("line", vec!["value"]);
+            background_chart.as_object_mut().unwrap().remove("page");
+            background_chart["source"] = json!({"kind":"background","background_id":"background-1","field":"value","x_axis":"elapsed"});
             wire["output_views"]["charts"] = json!(
                 (0..foreground)
                     .map(|_| saved_chart_wire("line", vec!["Voltage"]))
+                    .chain((0..background).map(|_| background_chart.clone()))
                     .collect::<Vec<_>>()
             );
-            // An extra monitor-only binding must not consume a Chart slot.
-            wire["tool_instances"] = json!((0..=background).map(|index| json!({
-                "id": format!("meter-{index}"), "tool": "meters", "setup": crate::meters_setup::MetersSetup {
-                    trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom, ..Default::default()
-                }
-            })).collect::<Vec<_>>());
-            wire["backgrounds"] = json!((0..=background).map(|index| {
-                let mut config = json!({"id": format!("background-{index}"), "tool_instance_id": format!("meter-{index}"),
-                    "live_monitor": true, "trigger_count": 10});
-                if index < background { config["chart"] = json!({"x_axis":"index"}); }
-                config
-            }).collect::<Vec<_>>());
             let result = Template::from_json_str(&wire.to_string());
             assert_eq!(
                 result.is_ok(),
@@ -2254,36 +2282,40 @@ mod tests {
             if let Ok(template) = result {
                 let saved: Value =
                     serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-                assert_eq!(saved["backgrounds"], wire["backgrounds"]);
+                assert_eq!(saved["output_views"], wire["output_views"]);
                 assert_eq!(
                     Template::from_json_str(&saved.to_string()).unwrap(),
                     template
                 );
-                if foreground == 0 {
-                    let mut configs = template.backgrounds().to_vec();
-                    // Construction must enforce the same contract as JSON loading.
-                    Template::new_with_backgrounds(
-                        template.name().into(),
-                        template.tool_instances().to_vec(),
-                        template.workflow().clone(),
-                        configs.clone(),
-                    )
-                    .unwrap();
-                    configs.last_mut().unwrap().chart = Some(crate::background::BackgroundChart {
-                        x_axis: crate::background::BackgroundXAxis::Elapsed,
-                    });
-                    assert!(
-                        Template::new_with_backgrounds(
-                            template.name().into(),
-                            template.tool_instances().to_vec(),
-                            template.workflow().clone(),
-                            configs
-                        )
-                        .is_err()
-                    );
+            }
+            if foreground == 0 && background == 8 {
+                for kind in ["line", "scatter", "column", "area", "bar"] {
+                    wire["output_views"]["charts"][0]["type"] = json!(kind);
+                    assert!(Template::from_json_str(&wire.to_string()).is_ok());
                 }
-            } else {
-                assert!(matches!(result, Err(TemplateError::OutputViews(_))));
+                for (field, value) in [
+                    ("type", json!("combo")),
+                    ("type", json!("histogram")),
+                    ("type", json!("boxplot")),
+                    ("dataset_id", json!("runtime-only")),
+                    ("page", json!("Results")),
+                ] {
+                    let mut invalid = wire.clone();
+                    invalid["output_views"]["charts"][0][field] = value;
+                    assert!(Template::from_json_str(&invalid.to_string()).is_err());
+                }
+                for (field, value) in [
+                    ("background_id", "missing"),
+                    ("field", "invalid"),
+                    ("x_axis", "iteration"),
+                    ("kind", "unknown"),
+                ] {
+                    let mut invalid = wire.clone();
+                    invalid["output_views"]["charts"][0]["source"][field] = json!(value);
+                    assert!(Template::from_json_str(&invalid.to_string()).is_err());
+                }
+                wire["backgrounds"][0]["chart"] = json!({"x_axis":"elapsed"});
+                assert!(Template::from_json_str(&wire.to_string()).is_err());
             }
         }
     }

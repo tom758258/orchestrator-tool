@@ -1,26 +1,30 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { savedChartCount, templateDraftJson, workflowOnlyDraft } from '../src/templateDraft.ts'
-import { nextChartPanelId, reconcileChartPanels, addChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
+import { nextChartPanelId, reconcileChartPanels, addChartPanel, addBackgroundChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
   chartPanelToSavedChart, savedChartsToPanels, chartRequiredOutputs, chartRawOutputs, chartSupportsZoom,
   chartSupportsLive, comboSeriesSettings, lineSeriesSettings, markerStyleSettings } from '../src/chartPanels.ts'
 
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
-test('saved Foreground and Background Charts share the count and preserve Background axes only when selected', () => {
-  const backgrounds = Array.from({ length: 9 }, (_, index) => ({ id: `background-${index}`, tool_instance_id: `meter-${index}`,
-    live_monitor: true, trigger_count: 10, ...(index < 3 ? { chart: { x_axis: ['elapsed', 'timestamp', 'index'][index] } } : {}) }))
-  const panels = Array.from({ length: 5 }, (_, index) => panel(index, 'Results', ['V']))
+test('Foreground and Background Charts share one saved list and Background setup never holds Chart settings', () => {
+  const backgrounds = [{ id: 'background-1', tool_instance_id: 'meter-1', live_monitor: true, trigger_count: 10 }]
+  let panels = Array.from({ length: 5 }, (_, index) => panel(index, 'Results', ['V']))
+  for (const axis of ['elapsed', 'timestamp', 'index']) {
+    panels = addBackgroundChartPanel(panels, 'background-1')
+    panels.at(-1).source.x_axis = axis
+  }
   const draft = { schema_version: 2, name: 'Saved charts', tool_instances: [], backgrounds, workflow: { steps: [] } }
-  assert.equal(savedChartCount(panels, backgrounds), 8)
-  const restored = workflowOnlyDraft(JSON.parse(templateDraftJson(draft, panels, true)))
-  assert.deepEqual(restored.backgrounds, backgrounds)
-  assert.equal(savedChartCount([], restored.backgrounds), 3)
-  const omitted = JSON.parse(templateDraftJson(draft, panels, false))
-  assert.equal(Object.hasOwn(omitted, 'output_views'), false)
-  assert.equal(omitted.backgrounds.every(background => !Object.hasOwn(background, 'chart')), true)
-  assert.equal(savedChartCount(panels, omitted.backgrounds), 5)
-  assert.deepEqual(draft.backgrounds, backgrounds)
+  assert.equal(savedChartCount(panels), 8)
+  assert.equal(addBackgroundChartPanel(panels, 'background-1'), panels)
+  const saved = JSON.parse(templateDraftJson(draft, panels, true))
+  assert.deepEqual(savedChartsToPanels(saved.output_views.charts), panels)
+  assert.deepEqual(saved.backgrounds, backgrounds)
+  assert.deepEqual(workflowOnlyDraft(saved), draft)
+  assert.deepEqual(JSON.parse(templateDraftJson(draft, panels, false)), draft)
+  const backgroundOnly = panels.filter(panel => panel.source)
+  assert.deepEqual(reconcileChartPanels(backgroundOnly, [], '', null), backgroundOnly)
+  assert.equal(JSON.stringify(saved).includes('dataset_id'), false)
 })
 
 test('saved chart conversion preserves Chart settings without persisting runtime IDs', () => {
