@@ -17,6 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.1.0' }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTheme: async () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), save: vi.fn() }))
+vi.mock('../src/chartPng', () => ({ chartPng: async () => new Uint8Array([137, 80, 78, 71]) }))
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: () => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() }) }))
 // Chart rendering has its own tests; observe the run snapshot passed across this boundary.
 vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof ResultChart>) =>
@@ -180,7 +181,7 @@ test.each([8, 7])('automatic Foreground Charts respect %i saved Background Chart
   expect(saved.output_views?.charts.filter(chart => chart.source)).toHaveLength(count)
 })
 
-test('Last Run Charts survive binding removal, block invalid saves and never recreate Draft bindings', async () => {
+test('Last Run Charts survive binding removal, recover from invalid validation and never recreate Draft bindings', async () => {
   currentDraft = backgroundDraft(2)
   await mount()
   fireEvent.click(runButton('Simulation'))
@@ -211,8 +212,15 @@ test('Last Run Charts survive binding removal, block invalid saves and never rec
   const writes = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').length
   const before = writes()
   tab('Workflow')
+  const validations = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft').length
+  const beforeValidation = validations()
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText(/Validation failed: Chart 2 references Background background-1/)
+  expect(validations()).toBe(beforeValidation)
+  expect((screen.getByRole('button', { name: 'Validate' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(runButton('Simulation').disabled).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Save Template' }))
-  await screen.findByText(/Chart 2 references Background background-1/)
+  await screen.findByText(/Template I\/O failed: .*Chart 2 references Background background-1/)
   expect(writes()).toBe(before)
   tab('Output')
   fireEvent.click(screen.getByLabelText('Save charts with template'))
@@ -227,10 +235,57 @@ test('Last Run Charts survive binding removal, block invalid saves and never rec
   tab('Output')
   fireEvent.change(axis(), { target: { value: 'elapsed' } })
   fireEvent.click(screen.getByLabelText('Save charts with template'))
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText('Valid')
+  expect(screen.queryByText(/Validation failed:/)).toBeNull()
+  expect(runButton('Simulation').disabled).toBe(false)
   saved = await savedDraft()
   expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, trigger_count: 1000 }])
   expect(saved.output_views?.charts[1].source?.x_axis).toBe('elapsed')
   expect(runCalls()).toHaveLength(1)
+})
+
+test('overlapping chart PNG exports keep application actions busy until every export settles', async () => {
+  currentDraft = backgroundDraft(1)
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await finish(23)
+  tab('Output')
+  fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
+  for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
+  const chart = (n: number) => within(screen.getByRole('region', { name: `Chart ${n}` }))
+  for (const n of [2, 3]) await chart(n).findByRole('img', { name: 'line chart' })
+  const first = deferred<void>()
+  const second = deferred<void>()
+  const original = vi.mocked(invoke).getMockImplementation()!
+  const writes = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_chart_png')
+  vi.mocked(save).mockResolvedValueOnce('first.png').mockResolvedValueOnce('second.png')
+  vi.mocked(invoke).mockImplementation(async (command, args) => command === 'save_chart_png'
+    ? (args as { destinationPath: string }).destinationPath === 'first.png' ? first.promise : second.promise
+    : original(command, args))
+  for (const n of [2, 3]) fireEvent.click(chart(n).getByRole('button', { name: 'Export PNG' }))
+  await waitFor(() => expect(writes()).toHaveLength(2))
+  const expectBusy = (busy: boolean) => {
+    expect((screen.getByRole('button', { name: 'New Template' }) as HTMLButtonElement).disabled).toBe(busy)
+    expect((screen.getByRole('button', { name: 'Save Template' }) as HTMLButtonElement).disabled).toBe(busy)
+    expect((screen.getByRole('tab', { name: 'Workflow' }) as HTMLButtonElement).disabled).toBe(busy)
+  }
+  expectBusy(true)
+  await act(async () => first.resolve())
+  await chart(2).findByText('Chart image saved successfully.')
+  expectBusy(true)
+  expect((chart(3).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(true)
+  await act(async () => second.reject(new Error('Disk full')))
+  await chart(3).findByText(/Could not save chart image: .*Disk full/)
+  expectBusy(false)
+  const cancelled = deferred<string | null>()
+  vi.mocked(save).mockReturnValueOnce(cancelled.promise)
+  fireEvent.click(chart(3).getByRole('button', { name: 'Export PNG' }))
+  expectBusy(true)
+  await act(async () => cancelled.resolve(null))
+  expectBusy(false)
+  expect(writes()).toHaveLength(2)
 })
 
 test('Simulation sample warning supports cancellation, per-instance overrides and fresh defaults', async () => {
@@ -259,9 +314,9 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
 })
 
 test('Background-only Output separates Charts, Monitor and export with a shared eight-chart limit', async () => {
-  currentDraft = { schema_version: 2, name: 'Background-only', tool_instances: [],
-    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, trigger_count: 3 }],
-    workflow: { steps: [{ type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true }] } }
+  currentDraft = backgroundDraft(1)
+  currentDraft.name = 'Background-only'
+  currentDraft.workflow.steps = currentDraft.workflow.steps.slice(0, 1)
   let captures = ['capture-1', 'capture-2']
   let monitorSamples = 0
   const original = vi.mocked(invoke).getMockImplementation()!

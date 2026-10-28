@@ -127,23 +127,36 @@ snapshot.
 
 ## Result data and Desktop projections
 
-ResultRows are the authoritative committed data source for Desktop tables,
-charts, CSV, and XLSX export. Presentation layers may derive views, summaries,
+ResultRows are the authoritative committed foreground data source for Desktop
+tables, charts, CSV, and XLSX export. Background samples belong to the separate
+run-scoped BackgroundStore. Presentation layers may derive views, summaries,
 or page datasets, but they must not change the committed values or their
 chronological row order.
 
 The current Desktop presentation architecture has these properties:
 
-- Output Pages are independent page-local datasets. A chart workspace belongs
-  to one Last Run Page and selects numeric Outputs from that page.
-- Charts use Apache ECharts Canvas rendering. There are at most eight chart
-  panels across the run pages, and the final remaining panel cannot be
-  removed. Last Run Page tabs keep Charts, Summary, and Data views on the same
-  run snapshot. Chart panel configuration survives Page/tab changes and new
-  Simulation/Live runs subject to the existing Page/Output compatibility rules.
-  Session-only panels use Page/Output reconciliation; when no panels remain,
-  the first Page receives one default panel if it has numeric Outputs. When
-  **Save charts with template** is on, runtime run metadata does not reconcile
+- Output has three independently collapsible sections: Charts, Foreground
+  Output, and Background Output. Charts brings together charts from all Last
+  Run Pages and Background bindings, along with enabled Live Monitors.
+  Foreground Page tabs select Summary and Output Data, without filtering Charts.
+  All sections and their collapsible children start expanded; collapsing them
+  preserves mounted views and data updates. Background Output visibility follows
+  the Last Run snapshot, so editing Draft bindings does not hide existing results.
+- Output Pages remain independent page-local datasets. Each foreground chart
+  selects numeric Outputs from one Last Run Page. Each background chart selects
+  its own Background and Capture Dataset, initially the latest Dataset and then
+  fixed until explicitly changed. Dataset selection survives tabs and resets for
+  a new run; it is never Template data.
+- Charts use Apache ECharts Canvas rendering. Foreground and Background panels
+  share a limit of eight, including session-only and saved charts; Live Monitors
+  do not count toward it. The final foreground panel cannot be removed, while
+  Background panels can be removed down to zero. Chart panel configuration
+  survives Page/tab changes and new Simulation/Live runs subject to the existing
+  Page/Output compatibility rules.
+  Session-only foreground panels use Page/Output reconciliation; when none
+  remain, the first Page receives one default panel if it has numeric Outputs
+  and the shared limit allows it. When **Save charts with template** is on,
+  runtime run metadata does not reconcile
   saved Chart definitions. **Open Template** replaces the current Chart
   configuration with the Template's saved Charts and turns the checkbox on
   when output_views is present. Without output_views, no persisted Chart
@@ -159,8 +172,12 @@ The current Desktop presentation architecture has these properties:
   visibility, title, legend visibility, axis scale and display settings, X-axis zoom settings, and image
   background in Desktop session state by default. With **Save charts with
   template** enabled, these definitions/settings become optional Template
-  output_views.charts. Runtime panel IDs, actual run samples/data, calculated
-  runtime/statistical results, Run IDs, loading/error UI state, dialog state,
+  output_views.charts. Background definitions identify a stable Background ID;
+  they do not store a runtime Dataset ID or settings in backgrounds[].chart.
+  A missing Background reference blocks Validate and Save Template with a visible
+  error, without leaving the application busy. Last Run charts remain usable;
+  chart changes never recreate Draft bindings. Runtime panel IDs, actual run
+  samples/data, calculated runtime/statistical results, Run IDs, loading/error UI state, dialog state,
   and export destinations/paths are never Template data. The current interactive
   zoom/pan viewport remains transient presentation state and resets when the
   configured X-axis minimum or maximum changes; it is not saved with the
@@ -169,20 +186,31 @@ The current Desktop presentation architecture has these properties:
   session-only even when the opt-in is on. Single-chart PNG export uses a light
   or dark palette independently of the application theme, captures the current
   viewport and ECharts-rendered title, and excludes interactive DataZoom controls.
-- Live visualization remains Line only, defined by `chartSupportsLive`. While
-  running, preserved non-Line panels display Waiting without a plot; Output
+  Application actions remain busy until every active PNG export has completed,
+  failed, or been cancelled.
+- Background Charts share the same card, settings, renderer, and PNG export as
+  foreground charts. They support Line, Scatter, Column, Area, and Bar with
+  Elapsed Time, Timestamp, or Sample Index as the source axis. Core queries return
+  at most 2,000 points by default: Line/Area preserve bucket extrema and endpoints,
+  while other types select representative observations. Background Line's Show
+  All Raw Data permits at most 25,000 samples in the visible range; exceeding it
+  returns an explicit limit result instead of silently sampling. Live Monitors
+  use the existing rolling 1,000 Worker samples and shared Line renderer,
+  independently of Capture, with no chart settings, PNG export, or saved definition.
+- Live visualization for both sources remains Line only, defined by
+  `chartSupportsLive`. While running, preserved non-Line panels display Waiting without a plot; Output
   selection and Export PNG remain disabled, while Settings and Remove are
   available subject to PNG-saving and last-chart removal guards. Chart Settings
   allows retaining the current type or switching non-Line to Line, including
   before the first committed row; options and Apply enforce this rule. Line
-  cannot switch to non-Line while running. Applying Line makes the panel eligible
-  for the existing raw-series loader using the current run ID. Simulation and
-  Live share these rules through the same running flag. Only
-  Line panels contribute raw-series loader requests, and statistical requests
+  cannot switch to non-Line while running. Applying Line resumes requests for
+  that chart's source using the current run ID. Simulation and Live share these
+  rules through the same running flag. Only Line panels request chart data while
+  running, and foreground statistical requests
   remain post-run only. When running becomes false, the existing loaders and
   statistical effects automatically load the new run's committed rows. Raw
   caches remain isolated by run ID, and statistical keys include the run ID.
-  After execution stops, committed numeric
+  For foreground charts after execution stops, committed numeric
   rows can use Line, XY Scatter, Column, Area, Bar, Combo, Histogram, and Box &
   Whisker; failed runs with committed rows remain available for inspection.
   Selecting multiple Outputs compares their series
@@ -209,8 +237,8 @@ The current Desktop presentation architecture has these properties:
   Box & Whisker uses sorted samples and linearly interpolated percentiles at positions
   `(n - 1) * p`; whiskers are the outermost observed values within 1.5 IQR
   fences, and values outside the fences are outliers.
-- Line and Area decimate only the visible raw iteration range according to plot
-  pixel width, including when custom X-axis bounds narrow the view. Column
+- Foreground Line and Area decimate only the visible raw iteration range according
+  to plot pixel width, including when custom X-axis bounds narrow the view. Column
   renders raw rows in its visible iteration viewport. Scatter preserves raw XY
   pairs in original row order: Markers use ECharts large scatter rendering,
   while Lines and Lines + markers use the line renderer without sorting,
@@ -230,8 +258,8 @@ The current Desktop presentation architecture has these properties:
   onto a bounded physical scroll space so million-row Pages do not require a
   tens-of-millions-of-pixels DOM layout. Scrolling away from the newest rows
   keeps the viewed history anchored while new committed rows arrive.
-- Charts request the selected numeric Output series and any separate Scatter X
-  Output. The frontend keeps
+- Foreground charts request the selected numeric Output series and any separate
+  Scatter X Output. The frontend keeps
   shared raw Float64 series needed for exact iteration and Scatter hover and appends bounded tails;
   Line and Area renderer input remains pixel-decimated. These numeric projections do not
   replace the authoritative ResultRows.

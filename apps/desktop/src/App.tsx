@@ -478,7 +478,11 @@ function App() {
   const [scopesOutputError, setScopesOutputError] = useState<string | null>(null)
   const [streamOutputFolder, setStreamOutputFolder] = useState<string | null>(null)
   const [streamOutputFolderError, setStreamOutputFolderError] = useState<string | null>(null)
-  const [chartSaving, setChartSaving] = useState(false)
+  const [chartSaveCount, setChartSaveCount] = useState(0)
+  const chartSaving = chartSaveCount > 0
+  const handleChartSavingChange = useCallback((saving: boolean) => {
+    setChartSaveCount(count => count + (saving ? 1 : -1))
+  }, [])
   const [choosingStreamOutputFolder, setChoosingStreamOutputFolder] = useState(false)
   const [exportAllPages, setExportAllPages] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('xlsx')
@@ -1043,10 +1047,18 @@ function App() {
       return
     }
 
-    setValidationStatus('validating')
-    setValidationError(null)
+    let templateJson: string
     try {
-      const canonicalJson = await validateTemplate(templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate))
+      templateJson = templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate)
+    } catch (error) {
+      clearValidation()
+      const message = error instanceof Error ? error.message : String(error)
+      setValidationIssue({ step_id: null, message })
+      setValidationError(message)
+      return
+    }
+    try {
+      const canonicalJson = await validateTemplate(templateJson)
       const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
@@ -1054,7 +1066,7 @@ function App() {
     } catch {
       // validateTemplate presents the authoritative Core error.
     }
-  }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate, clearValidation])
 
   const handleLoadTemplate = useCallback(async () => {
     setTemplateIoStatus('loading')
@@ -2969,7 +2981,7 @@ function App() {
               {runWorkflowSnapshot && <OutputCharts key={`charts-${displayedRun?.run_id ?? 'starting'}`} runId={displayedRun?.run_id ?? null}
                 pages={runPages} metadata={displayedRun?.pages ?? []} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
                 panels={chartPanels} onPanelsChange={setChartPanels} chartData={chartData} running={runStatus === 'running'}
-                onSavingChange={setChartSaving} changeSettings={runChartSampling} fitData={runChartFitData}
+                onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}
                 saveChartsWithTemplate={saveChartsWithTemplate} onSaveChartsWithTemplateChange={setSaveChartsWithTemplate}
                 selections={backgroundChartSelections} />}
               <Collapsible title="Foreground Output">
