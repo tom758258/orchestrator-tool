@@ -12,7 +12,7 @@ const EMPTY_DATA = createPageChartData()
 type Selection = { backgroundId: string; datasetId: string }
 export type BackgroundChartSelections = Map<number, Selection>
 
-export default function BackgroundChartData({ panel, panels, onPanelsChange, runId, backgrounds, datasets,
+export default function BackgroundChartPanel({ panel, panels, onPanelsChange, runId, backgrounds, datasets,
   running, selections, onSavingChange }: {
   panel: ChartPanel; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
   runId: number; backgrounds: BackgroundConfig[]; datasets: BackgroundDataset[]; running: boolean

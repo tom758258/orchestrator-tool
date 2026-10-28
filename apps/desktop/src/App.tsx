@@ -12,7 +12,7 @@ import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, past
 import type { StepSelection } from './stepEditing'
 import OutputCharts from './OutputCharts'
 import Collapsible from './Collapsible'
-import type { BackgroundChartSelections } from './BackgroundChartData'
+import type { BackgroundChartSelections } from './BackgroundChartPanel'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
 import VirtualizedOutputTable from './VirtualizedOutputTable'
 import PageResultSummary from './PageResultSummary'

@@ -5,7 +5,7 @@ import type { BackgroundConfig, OutputStep, RunPageMetadata } from './workflow'
 import { addBackgroundChartPanel, addChartPanel, foregroundChartNames, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { createPageChartData, type ChartChangeSettings, type PageChartData } from './chartData'
 import { backgroundPlotData, type BackgroundOutputData } from './backgroundChartData'
-import BackgroundChartData, { type BackgroundChartSelections } from './BackgroundChartData'
+import BackgroundChartPanel, { type BackgroundChartSelections } from './BackgroundChartPanel'
 import ChartPlot from './ChartPlot'
 import Collapsible from './Collapsible'
 import ResultChart from './ResultChart'
@@ -100,7 +100,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, pane
         panels={panels} onPanelsChange={updatePanels} chartData={chartData} running={running}
         onSavingChange={onSavingChange} changeSettings={changeSettings} fitData={fitData} />
     })}
-    {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartData key={panel.id}
+    {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartPanel key={panel.id}
       panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds}
       datasets={output?.datasets ?? []} running={running} selections={selections} onSavingChange={onSavingChange} />)}
     {runId !== null && backgrounds.filter(background => background.live_monitor).map(background => <LiveMonitor key={background.id}
