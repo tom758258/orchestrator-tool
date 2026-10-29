@@ -824,6 +824,7 @@ function App() {
   }, [])
 
   const createDraft = useCallback(async () => {
+    validationGenerationRef.current++
     setDraftLoading(true)
     try {
       const draft = await prepareLastRunReplacement(
@@ -1115,6 +1116,7 @@ function App() {
   }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate, clearValidation, clearRunFeedback])
 
   const handleLoadTemplate = useCallback(async () => {
+    validationGenerationRef.current++
     setTemplateIoStatus('loading')
     setTemplateIoError(null)
     setTemplateIoMessage(null)
@@ -1521,6 +1523,7 @@ function App() {
 
     clearRunFeedback()
     const validationGeneration = validationGenerationRef.current + 1
+    const isPreparationCurrent = () => validationGeneration === validationGenerationRef.current
     let started = false
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
@@ -1532,8 +1535,8 @@ function App() {
         // validateTemplate presents this error; finally still releases the run gate.
         return
       }
-      const sampleOverrides = await simulationSamples.request(JSON.stringify(workflowDraft))
-      if (sampleOverrides === null || validationGeneration !== validationGenerationRef.current) return
+      const sampleOverrides = await simulationSamples.request(JSON.stringify(workflowDraft), isPreparationCurrent)
+      if (sampleOverrides === null || !isPreparationCurrent()) return
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
@@ -1833,6 +1836,7 @@ function App() {
                 aria-pressed={executionMode === mode}
                 disabled={workflowBusy}
                 onClick={() => {
+                  if (mode !== executionMode) validationGenerationRef.current++
                   setExecutionMode(mode)
                   setPowersStatuses({})
                 }}

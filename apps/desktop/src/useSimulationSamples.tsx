@@ -11,8 +11,9 @@ export function useSimulationSamples() {
     resolve.current = null
     setValues(null)
   }
-  async function request(templateJson: string): Promise<Record<string, number> | null> {
+  async function request(templateJson: string, isCurrent: () => boolean): Promise<Record<string, number> | null> {
     const instances = await invoke<string[]>('get_simulation_sample_requirements', { templateJson })
+    if (!isCurrent()) return null
     if (instances.length === 0) return {}
     setValues(Object.fromEntries(instances.map(id => [id, '1000'])))
     return new Promise(complete => { resolve.current = complete })

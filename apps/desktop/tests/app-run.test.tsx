@@ -297,11 +297,15 @@ test('overlapping chart PNG exports keep application actions busy until every ex
 })
 
 test('Simulation sample warning supports cancellation, per-instance overrides and fresh defaults', async () => {
+  currentDraft = backgroundDraft(2)
   simulationRequirements = ['meters-1', 'meters-2']
   await mount()
   fireEvent.click(runButton('Simulation'))
   let dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
   expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
+  for (const name of ['New Template', 'Open Template', 'Validate', 'Live']) {
+    expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true)
+  }
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
   expect(runCalls()).toHaveLength(0)
   fireEvent.click(runButton('Simulation'))
@@ -312,38 +316,91 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
   fireEvent.change(within(dialog).getByLabelText('meters-2 SIM Max Samples'), { target: { value: '2000' } })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Run Simulation' }))
   await waitFor(() => expect(runCalls()).toHaveLength(1))
-  expect(runCalls()[0][1]).toMatchObject({ simulationSamples: { 'meters-1': 5000, 'meters-2': 2000 }, templateJson: JSON.stringify(draft) })
-  await finish(19)
+  expect(runCalls()[0][1]).toMatchObject({ simulationSamples: { 'meters-1': 5000, 'meters-2': 2000 }, templateJson: JSON.stringify(currentDraft) })
+  const originalError = 'Original run failure'
+  await act(async () => run.resolve({ ...metadata(19, 'failed'), error: originalError }))
   await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
   fireEvent.click(runButton('Simulation'))
   dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
   expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
-  fireEvent.click(screen.getByRole('button', { name: /Step .*?, out$/ }))
   const original = vi.mocked(invoke).getMockImplementation()!
   const requests = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_simulation_sample_requirements').length
-  for (const action of ['edit', 'validate']) {
+  let lastRunId = 19
+  for (const action of ['edit', 'validate', 'validate-error', 'live', 'live-error', 'new', 'open']) {
     const requirements = deferred<string[]>()
-    vi.mocked(invoke).mockImplementation((command, args) => command === 'get_simulation_sample_requirements'
-      ? requirements.promise : original(command, args))
+    const replacement = deferred<string>()
+    let rejectValidation = false
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === 'get_simulation_sample_requirements') return requirements.promise
+      if ((action === 'new' && command === 'create_workflow_draft') || (action === 'open' && command === 'load_workflow_template')) return replacement.promise
+      if (rejectValidation && command === 'validate_workflow_draft') return Promise.reject({ message: 'Current validation error', step_id: 'out' })
+      return original(command, args)
+    })
     const before = requests()
+    const runsBefore = runCalls().length
     fireEvent.click(runButton('Simulation'))
     await waitFor(() => expect(requests()).toBe(before + 1))
     if (action === 'edit') {
+      fireEvent.click(screen.getByRole('button', { name: /Step .*?, out$/ }))
       fireEvent.change(screen.getByLabelText('Value'), { target: { value: '12' } })
-      await act(async () => requirements.resolve([]))
-    } else {
+    } else if (action.startsWith('validate')) {
+      rejectValidation = action === 'validate-error'
       fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
-      await screen.findByText('Valid')
-      await act(async () => requirements.reject('Outdated preparation error'))
+      await screen.findByText(rejectValidation ? 'Validation failed: Current validation error' : 'Valid')
+    } else if (action === 'new' || action === 'open') {
+      currentDraft = { ...structuredClone(currentDraft), name: `${action} replacement` }
+      vi.mocked(open).mockResolvedValue('replacement.json')
+      fireEvent.click(screen.getByRole('button', { name: action === 'new' ? 'New Template' : 'Open Template' }))
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+        action === 'new' ? 'create_workflow_draft' : 'load_workflow_template',
+        ...(action === 'new' ? [] : [{ path: 'replacement.json' }]),
+      ))
+    } else {
+      await selectLive()
     }
-    expect(runCalls()).toHaveLength(1)
+    if (action.endsWith('-error')) {
+      await act(async () => requirements.reject('Outdated preparation error'))
+    } else {
+      await act(async () => requirements.resolve(['meters-1']))
+    }
+    expect(screen.queryByRole('dialog', { name: 'Meters Simulation samples' })).toBeNull()
+    expect(runCalls()).toHaveLength(runsBefore)
     expect(screen.queryByText('Run failed')).toBeNull()
+    expect(screen.queryByText('Outdated preparation error')).toBeNull()
+    if (rejectValidation) expect(screen.getByText('Validation failed: Current validation error')).toBeTruthy()
+    if (action === 'new' || action === 'open') {
+      await act(async () => replacement.resolve(JSON.stringify(currentDraft)))
+      expect(invoke).toHaveBeenCalledWith('clear_last_run', { runId: lastRunId })
+      expect(runCalls()).toHaveLength(runsBefore)
+    }
     tab('Output')
-    expect(snapshot().runId).toBe(19)
+    if (action === 'new' || action === 'open') {
+      expect(screen.queryByTestId('chart-snapshot')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Clear Last Run' })).toBeNull()
+    } else {
+      expect(snapshot().runId).toBe(lastRunId)
+      await screen.findByTitle('10.6')
+      await screen.findByText(/capture-1/)
+      expect((screen.getByRole('button', { name: lastRunId === 19 ? 'Export Partial XLSX' : 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+      if (lastRunId === 19) expect(screen.getByText(originalError)).toBeTruthy()
+    }
     tab('Workflow')
+    vi.mocked(invoke).mockImplementation(original)
+    if (action.startsWith('live')) fireEvent.click(screen.getByRole('button', { name: 'Simulation' }))
+    run = deferred<RunMetadataDto>()
+    fireEvent.click(runButton('Simulation'))
+    dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
+    expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Run Simulation' }))
+    await waitFor(() => expect(runCalls()).toHaveLength(runsBefore + 1))
+    if (action === 'new' || action === 'open') {
+      expect(JSON.parse((runCalls().at(-1)![1] as { templateJson: string }).templateJson)).toEqual(currentDraft)
+    }
+    await finish(++lastRunId)
+    await screen.findByText(`Message from run ${lastRunId}`)
   }
-})
+}, 15000)
 
 test('Background-only Output separates Charts, Monitor and export with a shared eight-chart limit', async () => {
   currentDraft = backgroundDraft(1)
