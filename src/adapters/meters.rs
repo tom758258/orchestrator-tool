@@ -395,7 +395,7 @@ pub(crate) fn validate_stopped_background_summary(
     summary: &Value,
     received: usize,
     exit_code: Option<i32>,
-    trigger_count: Option<usize>,
+    expected_readings: Option<usize>,
 ) -> Result<bool, String> {
     if summary["stop_reason"] != "stop_requested" {
         validate_background_summary(summary, received)?;
@@ -427,7 +427,7 @@ pub(crate) fn validate_stopped_background_summary(
         && summary["exit_code"] == 3
         && exit_code == Some(3);
     let normal_exit = summary["ok"] == true && summary["exit_code"] == 0 && exit_code == Some(0);
-    let count_mode_matches = match trigger_count {
+    let count_mode_matches = match expected_readings {
         Some(count) => {
             summary["trigger_count_infinite"] == false
                 && summary["expected_readings"].as_u64() == Some(count as u64)

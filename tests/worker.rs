@@ -596,6 +596,10 @@ fn background_fixture(scenario: &str) {
             summary["trigger_count_infinite"] = json!(scenario == "stop-infinite");
             summary["expected_readings"] = if scenario == "stop-infinite" {
                 json!(null)
+            } else if scenario == "stop-multiple-samples" {
+                json!(1000)
+            } else if scenario == "stop-wrong-expected" {
+                json!(100)
             } else {
                 json!(30000)
             };
@@ -633,6 +637,9 @@ fn background_workflow_stop_contract() {
     for scenario in [
         "stop-finite",
         "stop-monitored",
+        "stop-multiple-samples",
+        "stop-wrong-expected",
+        "stop-wait",
         "stop-infinite",
         "stop-monitor-only",
         "stop-windows",
@@ -657,6 +664,9 @@ fn background_workflow_stop_contract() {
                 json!({"type":"background","id":"close","background_id":"background-1","action":"capture-off"}),
                 json!({"type":"background","id":"reopen","background_id":"background-1","action":"capture-on"})]);
         }
+        if scenario == "stop-wait" {
+            steps.push(json!({"type":"wait","id":"wait","duration_ms":10000}));
+        }
         steps.push(json!({"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":capture}));
         let mut wire: serde_json::Value =
             serde_json::from_str(&background_template(json!(steps)).to_json_string().unwrap())
@@ -668,6 +678,10 @@ fn background_workflow_stop_contract() {
         };
         if scenario == "stop-infinite" {
             wire["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"] = json!(true);
+        }
+        if matches!(scenario, "stop-multiple-samples" | "stop-wrong-expected") {
+            wire["backgrounds"][0]["trigger_count"] = json!(100);
+            wire["tool_instances"][0]["setup"]["sample_count"] = json!(10);
         }
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         let specs = HashMap::from([(
@@ -682,6 +696,8 @@ fn background_workflow_stop_contract() {
         let stop = WorkflowStop::default();
         let folder = env::temp_dir().join(format!("orchestrator-{}-{scenario}", process::id()));
         let mut completed = Vec::new();
+        let mut requester = None;
+        let started = Instant::now();
         let result = run_workflow_streaming_controlled(
             &template,
             ExecutionMode::Simulate,
@@ -709,17 +725,48 @@ fn background_workflow_stop_contract() {
                                 "on"
                             }
                     {
-                        stop.request();
+                        if scenario == "stop-wait" {
+                            let stop = stop.clone();
+                            let store = store.clone();
+                            let initial_rows = store.lock().unwrap().metadata()[0].row_count;
+                            // Start after Worker ON completes and let Capture receive more
+                            // samples while the executor is in Wait, then request Stop.
+                            requester = Some(thread::spawn(move || {
+                                let deadline = Instant::now() + Duration::from_secs(2);
+                                while store.lock().unwrap().metadata()[0].row_count
+                                    < initial_rows + 5
+                                {
+                                    if Instant::now() >= deadline {
+                                        stop.request();
+                                        panic!("Background samples stopped arriving during Wait");
+                                    }
+                                    thread::sleep(Duration::from_millis(2));
+                                }
+                                stop.request();
+                            }));
+                        } else {
+                            stop.request();
+                        }
+                    }
+                    if step.step_id().as_str() == "wait" {
+                        assert_eq!(step.outcome(), &StepOutcome::Cancelled);
                     }
                     completed.push(step.step_id().to_string());
                 }
             },
             |_| false,
         );
+        if let Some(requester) = requester {
+            requester.join().unwrap();
+            assert!(started.elapsed() < Duration::from_secs(5));
+            assert_eq!(completed, ["on", "wait"]);
+        }
         let valid = matches!(
             scenario,
             "stop-finite"
                 | "stop-monitored"
+                | "stop-multiple-samples"
+                | "stop-wait"
                 | "stop-infinite"
                 | "stop-monitor-only"
                 | "stop-windows"
@@ -731,6 +778,7 @@ fn background_workflow_stop_contract() {
                 "{scenario}: {result:?}"
             );
             assert!(!completed.iter().any(|id| id == "off"));
+            assert_eq!(data.workers[0].state, "off", "{scenario}");
             if !capture {
                 assert!(data.datasets.is_empty());
                 assert!(!folder.exists());
@@ -1001,12 +1049,24 @@ fn background_capture_and_termination_contract() {
     // Two sources must remain separate even if their worker-local Run IDs coincide.
     {
         use orchestrator_tool::background::{BackgroundAction, BackgroundManager};
-        let mut configs = background_template(json!([])).backgrounds().to_vec();
+        let template = background_template(json!([]));
+        let mut instances = template.tool_instances().to_vec();
+        let mut configs = template.backgrounds().to_vec();
         let mut second = configs[0].clone();
         second.id = "background-2".into();
         second.tool_instance_id = ToolInstanceId::new("meters-bg-2").unwrap();
         second.live_monitor = false;
+        let mut second_instance = instances[0].clone();
+        second_instance.id = second.tool_instance_id.clone();
+        instances.push(second_instance);
         configs.push(second);
+        let template = Template::new_with_backgrounds(
+            "Separate background sources".into(),
+            instances,
+            template.workflow().clone(),
+            configs.clone(),
+        )
+        .unwrap();
         let specs = configs
             .iter()
             .zip(["finite", "unknown-quality"])
@@ -1024,7 +1084,7 @@ fn background_capture_and_termination_contract() {
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         let failure = orchestrator_tool::run_failure::RunFailure::default();
         let mut manager = BackgroundManager::new(
-            &configs,
+            &template,
             &specs,
             store.clone(),
             failure.clone(),

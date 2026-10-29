@@ -440,7 +440,7 @@ fn run_workflow_internal(
         });
     }
     let mut background = crate::background::BackgroundManager::new(
-        template.backgrounds(),
+        template,
         launch_specs,
         options.backgrounds,
         options.failure.clone(),

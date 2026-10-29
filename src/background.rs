@@ -1,6 +1,7 @@
 //! Run-scoped streaming ownership and authoritative in-memory captures.
 use crate::{
     run_failure::RunFailure,
+    template::Template,
     tool_instance::ToolInstanceId,
     worker::{WorkerEventError, WorkerLaunchSpec, WorkerSession, start_worker},
     workflow::{ResultRow, WorkflowOutput},
@@ -417,7 +418,7 @@ struct Runtime {
 }
 
 pub struct BackgroundManager {
-    configs: Vec<BackgroundConfig>,
+    configs: Vec<(BackgroundConfig, usize)>,
     specs: HashMap<ToolInstanceId, WorkerLaunchSpec>,
     runtimes: HashMap<String, Runtime>,
     pub store: SharedBackgroundStore,
@@ -429,7 +430,7 @@ pub struct BackgroundManager {
 
 impl BackgroundManager {
     pub fn new(
-        configs: &[BackgroundConfig],
+        template: &Template,
         specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
         store: SharedBackgroundStore,
         failure: RunFailure,
@@ -437,6 +438,7 @@ impl BackgroundManager {
         startup: Duration,
         shutdown: Duration,
     ) -> Self {
+        let configs = template.backgrounds();
         {
             let mut data = store.lock().unwrap_or_else(|e| e.into_inner());
             data.workers = configs
@@ -452,7 +454,18 @@ impl BackgroundManager {
                 .collect();
         }
         Self {
-            configs: configs.to_vec(),
+            configs: configs
+                .iter()
+                .map(|config| {
+                    let setup = template
+                        .tool_instances()
+                        .iter()
+                        .find(|instance| instance.id == config.tool_instance_id)
+                        .and_then(|instance| instance.meters_setup())
+                        .expect("Background Meters setup was validated");
+                    (config.clone(), setup.sample_count)
+                })
+                .collect(),
             specs: specs.clone(),
             runtimes: HashMap::new(),
             store,
@@ -476,12 +489,20 @@ impl BackgroundManager {
                     "{id}: Worker already ON; release it before restarting"
                 ));
             }
-            let config = self
+            let (config, sample_count) = self
                 .configs
                 .iter()
-                .find(|c| c.id == id)
+                .find(|(c, _)| c.id == id)
                 .cloned()
                 .ok_or("Unknown Background ID")?;
+            let expected_readings = config
+                .trigger_count
+                .map(|count| {
+                    count
+                        .checked_mul(sample_count)
+                        .ok_or_else(|| format!("{}: expected reading count overflow", config.id))
+                })
+                .transpose()?;
             if let Some(worker) = self
                 .store
                 .lock()
@@ -516,6 +537,7 @@ impl BackgroundManager {
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
             let mut dispatcher = Dispatcher {
                 config,
+                expected_readings,
                 store: self.store.clone(),
                 failure: self.failure.clone(),
                 csv: self.csv.clone(),
@@ -634,6 +656,7 @@ impl Drop for BackgroundManager {
 
 struct Dispatcher {
     config: BackgroundConfig,
+    expected_readings: Option<usize>,
     store: SharedBackgroundStore,
     failure: RunFailure,
     csv: Option<BackgroundCsvOptions>,
@@ -871,7 +894,7 @@ impl Dispatcher {
                 summary,
                 self.total,
                 status.code(),
-                self.config.trigger_count,
+                self.expected_readings,
             )?
         } else {
             if !status.success() {
@@ -1167,6 +1190,7 @@ mod tests {
             });
             let mut dispatcher = Dispatcher {
                 config,
+                expected_readings: Some(10),
                 store: store.clone(),
                 failure: failure.clone(),
                 csv: Some(BackgroundCsvOptions {
