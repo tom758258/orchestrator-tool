@@ -383,6 +383,19 @@ these controls, above the Builder. Detailed run errors remain available there.
 Controls wrap when the window is narrow. **Clear Workflow** stays in the
 **Sequence** header.
 
+Editing Workflow steps, execution settings in Tool Setup, or Background bindings
+and setup immediately hides the previous run failure or Live startup error from
+the Workflow summary. Pressing **Validate** also hides that feedback immediately,
+even without edits. Validation shows its own result; **Valid** does not guarantee
+that a run will succeed. A new failed run shows its own error and **Technical
+details**. Selecting steps, switching tabs, and changing display options keep
+the current error feedback.
+
+These actions preserve Last Run's original status, diagnostics, Execution Results,
+committed Output rows, Background datasets, and partial export. A failed Last Run
+remains failed in **Output**. Live Preflight failures keep their separate feedback
+and mean that the Live run has not started.
+
 In **Sequence**, click a step to select it. **Ctrl+Click** adds or removes an
 individual step; **Shift+Click** selects the range from the selection anchor.
 Multi-selection stays within one sibling list: root steps or the body of one

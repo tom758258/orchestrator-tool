@@ -212,10 +212,18 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   const writes = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').length
   const before = writes()
   tab('Workflow')
+  run = deferred<RunMetadataDto>()
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(2))
+  const error = 'worker exited unexpectedly'
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: { ...metadata(23, 'failed'), error }, completed_step_ids: [] }))
+  await act(async () => run.reject(error))
+  expect(screen.getAllByText('Run failed')).toHaveLength(1)
   const validations = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft').length
   const beforeValidation = validations()
   fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
   await screen.findByText(/Validation failed: Chart 2 references Background background-1/)
+  expect(screen.queryByText('Run failed')).toBeNull()
   expect(validations()).toBe(beforeValidation)
   expect((screen.getByRole('button', { name: 'Validate' }) as HTMLButtonElement).disabled).toBe(false)
   expect(runButton('Simulation').disabled).toBe(false)
@@ -243,7 +251,7 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   saved = await savedDraft()
   expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, trigger_count: 1000 }])
   expect(saved.output_views?.charts[1].source?.x_axis).toBe('elapsed')
-  expect(runCalls()).toHaveLength(1)
+  expect(runCalls()).toHaveLength(2)
 })
 
 test('overlapping chart PNG exports keep application actions busy until every export settles', async () => {
@@ -310,7 +318,31 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
   fireEvent.click(runButton('Simulation'))
   dialog = await screen.findByRole('dialog', { name: 'Meters Simulation samples' })
   expect((within(dialog).getByLabelText('meters-1 SIM Max Samples') as HTMLInputElement).value).toBe('1000')
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' })))
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, out$/ }))
+  const original = vi.mocked(invoke).getMockImplementation()!
+  const requests = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_simulation_sample_requirements').length
+  for (const action of ['edit', 'validate']) {
+    const requirements = deferred<string[]>()
+    vi.mocked(invoke).mockImplementation((command, args) => command === 'get_simulation_sample_requirements'
+      ? requirements.promise : original(command, args))
+    const before = requests()
+    fireEvent.click(runButton('Simulation'))
+    await waitFor(() => expect(requests()).toBe(before + 1))
+    if (action === 'edit') {
+      fireEvent.change(screen.getByLabelText('Value'), { target: { value: '12' } })
+      await act(async () => requirements.resolve([]))
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+      await screen.findByText('Valid')
+      await act(async () => requirements.reject('Outdated preparation error'))
+    }
+    expect(runCalls()).toHaveLength(1)
+    expect(screen.queryByText('Run failed')).toBeNull()
+    tab('Output')
+    expect(snapshot().runId).toBe(19)
+    tab('Workflow')
+  }
 })
 
 test('Background-only Output separates Charts, Monitor and export with a shared eight-chart limit', async () => {
@@ -483,22 +515,103 @@ test('Live cancellation and backend preflight rejection preserve the previous La
   expect(runButton('Live').disabled).toBe(true)
 })
 
-test('an accepted Live failure replaces Last Run and retains partial results with raw diagnostics', async () => {
+test.each(['Simulation', 'Live'])('%s dismisses stale Summary failures while preserving Last Run and showing new failures', async mode => {
+  currentDraft = backgroundDraft(1)
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => command === 'get_live_resources'
+    ? { 'meters-1': 'USB::METER' } : original(command, args))
   await previousRun()
-  await selectLive()
-  fireEvent.click(runButton('Live'))
-  await waitFor(() => expect(runCalls()).toHaveLength(2))
-  act(() => progressChannel().onmessage({ type: 'progress-batch', run: metadata(8, 'running'), completed_step_ids: [] }))
-  await screen.findByText('Message from run 8')
+  if (mode === 'Live') await selectLive()
   const error = 'worker exited unexpectedly'
-  await act(async () => run.resolve({ ...metadata(8, 'failed'), error }))
+  let runId = 7
+  const fail = async (reject = false) => {
+    run = deferred<RunMetadataDto>()
+    await waitFor(() => expect(runButton(mode).disabled).toBe(false))
+    runId++
+    fireEvent.click(runButton(mode))
+    await waitFor(() => expect(runCalls()).toHaveLength(runId - 6))
+    const failed = { ...metadata(runId, 'failed'), error }
+    const onProgress = progressChannel().onmessage
+    act(() => onProgress({ type: 'progress-batch', run: failed, completed_step_ids: [] }))
+    await act(async () => reject ? run.reject(error) : run.resolve(failed))
+    expect(screen.getAllByText('Run failed')).toHaveLength(1)
+    expect(screen.getByText(error)).toBeTruthy()
+    expect(screen.getByText('Technical details')).toBeTruthy()
+    return onProgress
+  }
+  const preserved = async () => {
+    tab('Output')
+    expect(snapshot().runId).toBe(runId)
+    expect(screen.getByText(error)).toBeTruthy()
+    expect(screen.getByText('Run failed')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Export Partial XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+    await screen.findByTitle('10.6')
+    await screen.findByText(/capture-1/)
+    tab('Workflow')
+    expect(screen.getByText(`Message from run ${runId}`)).toBeTruthy()
+  }
+  let lateProgress = await fail()
+  await preserved()
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, out$/ }))
+  tab('Setup')
+  const expand = screen.queryByRole('button', { name: 'Expand meters-1' })
+  if (expand) fireEvent.click(expand)
+  fireEvent.change(screen.getByLabelText(/Display Name \(optional\)/), { target: { value: 'Meter' } })
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Chart Options' }))
+  fireEvent.click(screen.getByLabelText('Fit Data'))
   expect(screen.getAllByText('Run failed')).toHaveLength(1)
-  expect(screen.getByText(error)).toBeTruthy()
-  expect(screen.getByText('Technical details')).toBeTruthy()
+  // Step edits, Tool Setup and Background Setup each invalidate the Summary feedback.
+  for (const field of ['Value', 'NPLC', 'Trigger count']) {
+    if (field !== 'Value') {
+      tab('Setup')
+      const expand = screen.queryByRole('button', { name: 'Expand meters-1' })
+      if (expand) fireEvent.click(expand)
+    }
+    fireEvent.change(screen.getByLabelText(field), { target: { value: field === 'Value' ? '12' : '10' } })
+    tab('Workflow')
+    expect(screen.queryByText('Run failed')).toBeNull()
+    await preserved()
+    expect(screen.queryByText('Run failed')).toBeNull()
+    lateProgress = await fail()
+  }
+  // Validate hides both metadata-only and invoke-rejection failures before Core replies.
+  for (const outcome of ['pass', 'fail']) {
+    const validation = deferred<string>()
+    const invokeRun = vi.mocked(invoke).getMockImplementation()!
+    vi.mocked(invoke).mockImplementation((command, args) => command === 'validate_workflow_draft'
+      ? validation.promise : invokeRun(command, args))
+    fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+    expect(screen.getByRole('button', { name: 'Validating…' })).toBeTruthy()
+    expect(screen.queryByText('Run failed')).toBeNull()
+    act(() => lateProgress({ type: 'progress-batch', run: { ...metadata(runId, 'failed'), error }, completed_step_ids: [] }))
+    expect(screen.queryByText('Run failed')).toBeNull()
+    if (outcome === 'pass') {
+      const json = (vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft').at(-1)![1] as { templateJson: string }).templateJson
+      await act(async () => validation.resolve(json))
+      expect(screen.getByText('Valid')).toBeTruthy()
+    } else {
+      await act(async () => validation.reject({ message: 'Invalid template', step_id: 'out' }))
+      expect(screen.getByText('Validation failed: Invalid template')).toBeTruthy()
+    }
+    vi.mocked(invoke).mockImplementation(invokeRun)
+    expect(screen.queryByText('Run failed')).toBeNull()
+    await preserved()
+    expect(screen.queryByText('Run failed')).toBeNull()
+    if (outcome === 'pass') {
+      lateProgress = await fail(true)
+      expect(screen.getByText('Valid')).toBeTruthy()
+    }
+  }
+  fireEvent.change(screen.getByLabelText('Value'), { target: { value: '13' } })
+  run = deferred<RunMetadataDto>()
+  await waitFor(() => expect(runButton(mode).disabled).toBe(false))
+  fireEvent.click(runButton(mode))
+  await finish(++runId)
+  expect(screen.queryByText('Run failed')).toBeNull()
   tab('Output')
-  expect(snapshot().runId).toBe(8)
-  expect(screen.getByText(error)).toBeTruthy()
-  expect((screen.getByRole('button', { name: 'Export Partial XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(snapshot().runId).toBe(runId)
+  expect(screen.queryByText(error)).toBeNull()
 })
 
 test.each(['Simulation', 'Live'])('%s can stop before any loop or step progress and waits for cleanup', async mode => {
@@ -702,6 +815,17 @@ test.each(['Simulation', 'Live'])('%s still presents execution errors after succ
   expect(screen.getByText('Worker could not start')).toBeTruthy()
   expect(screen.queryByText(/Validation failed:/)).toBeNull()
   expect(runButton(mode).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  expect(screen.queryByText('Worker could not start')).toBeNull()
+  await screen.findByText('Valid')
+  run = deferred<RunMetadataDto>()
+  fireEvent.click(runButton(mode))
+  await waitFor(() => expect(runCalls()).toHaveLength(2))
+  await act(async () => run.reject('Another startup failure'))
+  expect(screen.getByText('Another startup failure')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, out$/ }))
+  fireEvent.change(screen.getByLabelText('Page name'), { target: { value: 'Moved' } })
+  expect(screen.queryByText('Another startup failure')).toBeNull()
 })
 
 test('unlocated validation errors do not guess a card from their message', async () => {

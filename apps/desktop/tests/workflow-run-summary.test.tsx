@@ -7,7 +7,7 @@ const defaults: ComponentProps<typeof WorkflowRunSummary> = {
   workflowDraft: { schema_version: 2, name: 'Example', tool_instances: [], workflow: { steps: [] } },
   workflowBusy: false, toolConfigBusy: null, loading: false, chartThresholdInvalid: false,
   executionMode: 'simulate', validationStatus: 'idle', validationError: null,
-  runStatus: 'idle', runningText: 'Running…', runError: null, displayedRun: null,
+  runStatus: 'idle', runningText: 'Running…', runError: null, displayedRun: null, showLastRunError: true,
   livePreflight: { status: 'passed', blocked: false, errors: [] }, liveStartError: null,
   validateDraft: () => {}, runSelectedMode: () => {}, stopControls: null, stopFeedback: null,
 }

@@ -656,6 +656,12 @@ function App() {
     void sendWorkflowStop()
   }
   const [runError, setRunError] = useState<string | null>(null)
+  const [showLastRunError, setShowLastRunError] = useState(false)
+  const clearRunFeedback = useCallback(() => {
+    setRunError(null)
+    setLiveStartError(null)
+    setShowLastRunError(false)
+  }, [])
   const [clearLastRunError, setClearLastRunError] = useState<string | null>(null)
   const [streamCsv, setStreamCsv] = useState(false)
   const [csvStreamStatus, setCsvStreamStatus] = useState<CsvStreamStatus | null>(null)
@@ -844,13 +850,13 @@ function App() {
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
-      setRunError(null)
+      clearRunFeedback()
     } catch (message) {
       setDraftCreationError(String(message))
     } finally {
       setDraftLoading(false)
     }
-  }, [])
+  }, [clearRunFeedback])
 
   useEffect(() => {
     let secondFrame: number | null = null
@@ -882,10 +888,11 @@ function App() {
         }
       })
       setWorkflowChangedSinceRun(true)
+      clearRunFeedback()
       clearValidation()
       setTemplateIoMessage(null)
     },
-    [clearValidation],
+    [clearValidation, clearRunFeedback],
   )
 
   const updateToolInstances = useCallback((tool_instances: ToolInstance[]) => {
@@ -910,9 +917,10 @@ function App() {
       }
     }
     setWorkflowChangedSinceRun(true)
+    clearRunFeedback()
     clearValidation()
     setTemplateIoMessage(null)
-  }, [workflowDraft, clearValidation])
+  }, [workflowDraft, clearValidation, clearRunFeedback])
 
   const addStep = useCallback((preset: StepPresetOption) => {
     if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) {
@@ -1082,6 +1090,7 @@ function App() {
       return
     }
 
+    clearRunFeedback()
     let templateJson: string
     try {
       templateJson = templateDraftJson(workflowDraft, chartPanels, saveChartsWithTemplate)
@@ -1092,8 +1101,10 @@ function App() {
       setValidationError(message)
       return
     }
+    const generation = validationGenerationRef.current + 1
     try {
       const canonicalJson = await validateTemplate(templateJson)
+      if (generation !== validationGenerationRef.current) return
       const canonicalDraft = workflowOnlyDraft(JSON.parse(canonicalJson) as WorkflowDraft)
       setWorkflowDraft(canonicalDraft)
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
@@ -1101,7 +1112,7 @@ function App() {
     } catch {
       // validateTemplate presents the authoritative Core error.
     }
-  }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate, clearValidation])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate, validateTemplate, clearValidation, clearRunFeedback])
 
   const handleLoadTemplate = useCallback(async () => {
     setTemplateIoStatus('loading')
@@ -1142,14 +1153,14 @@ function App() {
       setExecutionOffset(0)
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
-      setRunError(null)
+      clearRunFeedback()
       setTemplateIoMessage('Template loaded.')
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
       setTemplateIoStatus('idle')
     }
-  }, [])
+  }, [clearValidation, clearRunFeedback])
 
   const handleSaveTemplate = useCallback(async () => {
     if (!workflowDraft) {
@@ -1375,7 +1386,8 @@ function App() {
       return
     }
     setLiveConfirmationPending(true)
-    setLiveStartError(null)
+    clearRunFeedback()
+    const validationGeneration = validationGenerationRef.current + 1
     let started = false
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
@@ -1383,6 +1395,7 @@ function App() {
       if (livePreflight.blocked) return
       try {
         await validateTemplate(JSON.stringify(workflowDraft))
+        if (validationGeneration !== validationGenerationRef.current) return
       } catch {
         // validateTemplate presents this error; finally still releases the run gate.
         return
@@ -1429,7 +1442,7 @@ function App() {
         confirmation.join('\n\n'),
         { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
       )
-      if (!approved) {
+      if (!approved || validationGeneration !== validationGenerationRef.current) {
         return
       }
       const streamOptions = streamingOptions(
@@ -1457,6 +1470,7 @@ function App() {
         setExecutionPage(null)
         setMessagePage(null)
         setRunError(null)
+        setShowLastRunError(true)
         setClearLastRunError(null)
       }
       onProgress = new Channel<DesktopRunEvent>(event => {
@@ -1480,7 +1494,7 @@ function App() {
         setRunMetadata(results)
       }
     } catch (message) {
-      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) {
+      if (generation === null ? validationGeneration === validationGenerationRef.current : isCurrentRunGeneration(generation, runGenerationRef.current)) {
         if (started) setRunError(String(message))
         else if (String(message).startsWith('Live Preflight failed:')) livePreflight.reject(String(message))
         else setLiveStartError(String(message))
@@ -1498,25 +1512,28 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resetWorkflowStop, validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
       return
     }
 
+    clearRunFeedback()
+    const validationGeneration = validationGenerationRef.current + 1
     let started = false
     let generation: number | null = null
     let onProgress: Channel<DesktopRunEvent> | undefined
     try {
       try {
         await validateTemplate(JSON.stringify(workflowDraft))
+        if (validationGeneration !== validationGenerationRef.current) return
       } catch {
         // validateTemplate presents this error; finally still releases the run gate.
         return
       }
       const sampleOverrides = await simulationSamples.request(JSON.stringify(workflowDraft))
-      if (sampleOverrides === null) return
+      if (sampleOverrides === null || validationGeneration !== validationGenerationRef.current) return
       // Validate before any Last Run state is replaced, matching the Live path.
       const chartSampling = chartSamplingOptions.enabled
         ? chartSamplingSnapshot(chartSamplingOptions) : null
@@ -1545,6 +1562,7 @@ function App() {
       setExecutionPage(null)
       setMessagePage(null)
       setRunError(null)
+      setShowLastRunError(true)
       setClearLastRunError(null)
       const results = await invoke<RunMetadataDto>('run_workflow_simulation', {
         templateJson: JSON.stringify(workflowDraft),
@@ -1559,7 +1577,7 @@ function App() {
         setRunMetadata(results)
       }
     } catch (message) {
-      if (generation === null || isCurrentRunGeneration(generation, runGenerationRef.current)) setRunError(String(message))
+      if (generation === null ? validationGeneration === validationGenerationRef.current : isCurrentRunGeneration(generation, runGenerationRef.current)) setRunError(String(message))
     } finally {
       if (onProgress) {
         onProgress.onmessage = () => {}
@@ -1572,7 +1590,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [resetWorkflowStop, validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -1611,7 +1629,7 @@ function App() {
       setExecutionPage(null)
       setMessagePage(null)
       setExecutionOffset(0)
-      setRunError(null)
+      clearRunFeedback()
       setStopRequest(null)
       resetWorkflowStop()
       setCsvStreamStatus(null)
@@ -1621,7 +1639,7 @@ function App() {
     } catch (message) {
       setClearLastRunError('Could not clear Last Run: ' + String(message))
     }
-  }, [runWorkflowSnapshot, runMetadata, workflowBusy, saveChartsWithTemplate])
+  }, [runWorkflowSnapshot, runMetadata, workflowBusy, saveChartsWithTemplate, clearRunFeedback])
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
@@ -2050,6 +2068,7 @@ function App() {
                 onBackgroundsChange={backgrounds => {
                   setWorkflowDraft(current => current ? { ...current, backgrounds } : current)
                   setWorkflowChangedSinceRun(true)
+                  clearRunFeedback()
                   clearValidation()
                 }}
                 configuredToolTypes={configuredToolTypes}
@@ -2295,7 +2314,7 @@ function App() {
                 toolConfigBusy={toolConfigBusy} loading={loading} chartThresholdInvalid={chartThresholdInvalid}
                 executionMode={executionMode} validationStatus={validationStatus} validationError={validationError}
                 runStatus={runStatus} runningText={runningText} runError={runError}
-                displayedRun={displayedRun} livePreflight={livePreflight} liveStartError={liveStartError}
+                displayedRun={displayedRun} showLastRunError={showLastRunError} livePreflight={livePreflight} liveStartError={liveStartError}
                 validateDraft={validateDraft} runSelectedMode={runSelectedMode}
                 stopControls={stopControls} stopFeedback={stopFeedback}
               />

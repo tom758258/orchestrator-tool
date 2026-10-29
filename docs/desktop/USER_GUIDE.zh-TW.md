@@ -321,6 +321,16 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 查看詳細 run 錯誤。視窗較窄時控制項會換行。**Clear Workflow** 仍位於
 **Sequence** header。
 
+修改 Workflow steps、Tool Setup 的執行設定，或 Background Binding／Setup 時，
+Workflow summary 會立即隱藏上次 run failure 或 Live 啟動錯誤。即使沒有修改，
+按下 **Validate** 也會立即隱藏這些回饋。驗證會顯示自己的結果；**Valid** 不保證
+run 一定成功。新的 run 若失敗，仍會顯示該次錯誤與 **Technical details**。
+選取 step、切換 tab 或調整顯示選項會保留目前的錯誤回饋。
+
+這些操作會保留 Last Run 原本的狀態、診斷、Execution Results、已提交的 Output
+rows、Background datasets 與 partial export 能力。Failed Last Run 在 **Output**
+中仍維持 Failed。Live Preflight failure 維持獨立回饋，表示 Live run 尚未開始。
+
 在 **Sequence** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
 **Shift+Click** 從選取起點選取連續範圍。多選只限同一 sibling list：root
 steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shift 點擊時，

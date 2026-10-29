@@ -17,6 +17,7 @@ type Props = {
   runningText: string
   runError: string | null
   displayedRun: Pick<RunMetadataDto, 'status' | 'error'> | null
+  showLastRunError: boolean
   livePreflight: { status: string; blocked: boolean; errors: string[] }
   liveStartError: string | null
   validateDraft: () => void
@@ -28,7 +29,7 @@ type Props = {
 export default function WorkflowRunSummary({
   workflowDraft, workflowBusy, toolConfigBusy, loading, chartThresholdInvalid,
   executionMode, validationStatus, validationError, runStatus, runningText, runError,
-  displayedRun, livePreflight, liveStartError, validateDraft, runSelectedMode,
+  displayedRun, showLastRunError, livePreflight, liveStartError, validateDraft, runSelectedMode,
   stopControls, stopFeedback,
 }: Props) {
   return (
@@ -95,7 +96,7 @@ export default function WorkflowRunSummary({
           <FailureDetails message={runError} />
         </div>
       )}
-      {displayedRun?.status === 'failed' && displayedRun.error && displayedRun.error !== runError && (
+      {showLastRunError && displayedRun?.status === 'failed' && displayedRun.error && displayedRun.error !== runError && (
         <div className="error" role="alert">
           <p className="failure-run-title">Run failed</p>
           <FailureDetails message={displayedRun.error} />
