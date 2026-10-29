@@ -93,6 +93,7 @@ pub fn execute_workflow_with_loop_stop(
         None,
         crate::run_failure::RunFailure::default(),
         None,
+        crate::run::WorkflowStop::default(),
     )?;
     Ok(WorkflowRunResult::new(
         execution.executions.expect("retained executions"),
@@ -144,8 +145,12 @@ pub fn execute_workflow_streaming_with_loop_stop_and_scopes_output(
         scopes_output_folder,
         crate::run_failure::RunFailure::default(),
         None,
+        crate::run::WorkflowStop::default(),
     )?;
-    Ok(WorkflowRunSummary::new(execution.failure))
+    Ok(WorkflowRunSummary::with_stop(
+        execution.failure,
+        execution.stopped,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -160,6 +165,7 @@ pub(crate) fn execute_workflow_internal(
     scopes_output_folder: Option<&Path>,
     failure_signal: crate::run_failure::RunFailure,
     background: Option<&mut crate::background::BackgroundManager>,
+    workflow_stop: crate::run::WorkflowStop,
 ) -> Result<ExecutionResult, WorkflowExecutionError> {
     let workflow = template.workflow();
     if workflow.steps().is_empty() {
@@ -180,12 +186,17 @@ pub(crate) fn execute_workflow_internal(
         failure: None,
         failure_signal,
         background,
+        workflow_stop,
     };
-    let _ = execution.scope(workflow.steps(), &[], None);
+    let stopped = matches!(
+        execution.scope(workflow.steps(), &[], None),
+        Ok(ControlFlow::WorkflowStopped)
+    );
     Ok(ExecutionResult {
         executions: execution.executions,
         rows: execution.rows,
         failure: execution.failure,
+        stopped,
     })
 }
 
@@ -193,6 +204,7 @@ pub(crate) struct ExecutionResult {
     pub executions: Option<Vec<StepExecution>>,
     pub rows: Option<Vec<ResultRow>>,
     pub failure: Option<String>,
+    pub stopped: bool,
 }
 
 #[derive(Clone)]
@@ -215,6 +227,13 @@ struct Execution<'a> {
     failure: Option<String>,
     failure_signal: crate::run_failure::RunFailure,
     background: Option<&'a mut crate::background::BackgroundManager>,
+    workflow_stop: crate::run::WorkflowStop,
+}
+
+enum ControlFlow {
+    Continue,
+    LoopStop(StepId),
+    WorkflowStopped,
 }
 
 struct StagedOutput {
@@ -223,17 +242,20 @@ struct StagedOutput {
 }
 
 impl Execution<'_> {
-    // A stop target travels up the stack until its owning loop consumes it.
+    // Loop stops unwind to their owner; workflow stops always unwind to the root.
     fn scope(
         &mut self,
         steps: &[Step],
         path: &[StepId],
         iteration: Option<&Iteration>,
-    ) -> Result<Option<StepId>, String> {
+    ) -> Result<ControlFlow, String> {
         let mut staged = Vec::<(String, Vec<StagedOutput>)>::new();
         for step in steps {
+            if self.failure_signal.check().is_ok() && self.workflow_stop.is_requested() {
+                return Ok(ControlFlow::WorkflowStopped);
+            }
             let (outcome, unwind) = if let Err(message) = self.failure_signal.check() {
-                (StepOutcome::Failed { message }, None)
+                (StepOutcome::Failed { message }, ControlFlow::Continue)
             } else {
                 match step.kind() {
                     StepKind::Background {
@@ -255,42 +277,50 @@ impl Execution<'_> {
                                 },
                                 Err(message) => StepOutcome::Failed { message },
                             },
-                            None,
+                            ControlFlow::Continue,
                         )
                     }
                     StepKind::Wait { duration_ms } => {
                         let deadline =
                             std::time::Instant::now() + Duration::from_millis(*duration_ms);
-                        let result = loop {
+                        loop {
                             if let Err(error) = self.failure_signal.check() {
-                                break Err(error);
+                                break (
+                                    StepOutcome::Failed { message: error },
+                                    ControlFlow::Continue,
+                                );
                             }
                             let remaining =
                                 deadline.saturating_duration_since(std::time::Instant::now());
                             if remaining.is_zero() {
-                                break Ok(());
+                                break (
+                                    StepOutcome::Succeeded {
+                                        output: Value::Null,
+                                    },
+                                    ControlFlow::Continue,
+                                );
+                            }
+                            if self.workflow_stop.is_requested() {
+                                break (StepOutcome::Cancelled, ControlFlow::WorkflowStopped);
                             }
                             thread::sleep(remaining.min(Duration::from_millis(10)));
-                        };
-                        (
-                            match result {
-                                Ok(()) => StepOutcome::Succeeded {
-                                    output: Value::Null,
-                                },
-                                Err(message) => StepOutcome::Failed { message },
-                            },
-                            None,
-                        )
+                        }
                     }
                     StepKind::For { .. } | StepKind::While { .. } => {
                         match self.run_loop(step, path) {
                             Ok(target) => (
-                                StepOutcome::Succeeded {
-                                    output: Value::Null,
+                                if matches!(target, ControlFlow::WorkflowStopped) {
+                                    StepOutcome::Cancelled
+                                } else {
+                                    StepOutcome::Succeeded {
+                                        output: Value::Null,
+                                    }
                                 },
                                 target,
                             ),
-                            Err(message) => (StepOutcome::Failed { message }, None),
+                            Err(message) => {
+                                (StepOutcome::Failed { message }, ControlFlow::Continue)
+                            }
                         }
                     }
                     _ => (
@@ -303,7 +333,7 @@ impl Execution<'_> {
                             self.action_timeout,
                             self.scopes_output_folder,
                         ),
-                        None,
+                        ControlFlow::Continue,
                     ),
                 }
             };
@@ -352,7 +382,7 @@ impl Execution<'_> {
                 }
                 return Err(message);
             }
-            if unwind.is_some() {
+            if !matches!(unwind, ControlFlow::Continue) {
                 return Ok(unwind);
             }
         }
@@ -404,14 +434,14 @@ impl Execution<'_> {
         // Only a fully successful scope reaches its safe point. Ancestors are checked here,
         // so stopping one never requires finishing remaining descendant iterations.
         for id in path {
-            if (self.should_stop)(id) {
-                return Ok(Some(id.clone()));
+            if !self.workflow_stop.is_requested() && (self.should_stop)(id) {
+                return Ok(ControlFlow::LoopStop(id.clone()));
             }
         }
-        Ok(None)
+        Ok(ControlFlow::Continue)
     }
 
-    fn run_loop(&mut self, step: &Step, ancestors: &[StepId]) -> Result<Option<StepId>, String> {
+    fn run_loop(&mut self, step: &Step, ancestors: &[StepId]) -> Result<ControlFlow, String> {
         let (body, variable) = match step.kind() {
             StepKind::For { body, variable, .. } => (body, Some(variable)),
             StepKind::While { body, .. } => (body, None),
@@ -428,46 +458,52 @@ impl Execution<'_> {
                         variable, range, ..
                     } => {
                         let Some(value) = range.value_at(index) else {
-                            return Ok(None);
+                            return Ok(ControlFlow::Continue);
                         };
                         self.data
                             .set_variable(variable.clone(), decimal_to_json_value(value)?);
                         Iteration::For(ForIteration::new(step.id().clone(), index))
                     }
-                    StepKind::While {
-                        condition,
-                        max_iterations,
-                        ..
-                    } => {
+                    StepKind::While { condition, .. } => {
                         match self
                             .data
                             .resolve(&InputValue::Expression(condition.clone()))
                             .map_err(|e| e.to_string())?
                         {
-                            Value::Bool(false) => return Ok(None),
+                            Value::Bool(false) => return Ok(ControlFlow::Continue),
                             Value::Bool(true) => {}
                             _ => return Err("While condition must resolve to a boolean".to_owned()),
-                        }
-                        if max_iterations.is_some_and(|limit| index >= limit) {
-                            return Err(
-                                "While reached max_iterations while condition is still true"
-                                    .to_owned(),
-                            );
                         }
                         Iteration::While(WhileIteration::new(step.id().clone(), index))
                     }
                     _ => unreachable!(),
                 };
+                self.failure_signal.check().inspect_err(|message| {
+                    self.failure.get_or_insert(message.clone());
+                })?;
+                if self.workflow_stop.is_requested() {
+                    return Ok(ControlFlow::WorkflowStopped);
+                }
+                if let StepKind::While {
+                    max_iterations: Some(limit),
+                    ..
+                } = step.kind()
+                    && index >= *limit
+                {
+                    return Err(
+                        "While reached max_iterations while condition is still true".to_owned()
+                    );
+                }
                 clear_body_step_outputs(body, &mut self.data);
                 let inherited = self.data.variable_scope();
                 let body_result = self.scope(body, &path, Some(&occurrence));
                 self.data.leave_variable_scope(&inherited);
-                if let Some(target) = body_result? {
-                    return Ok(if target == *step.id() {
-                        None
-                    } else {
-                        Some(target)
-                    });
+                match body_result? {
+                    ControlFlow::Continue => {}
+                    ControlFlow::LoopStop(target) if target == *step.id() => {
+                        return Ok(ControlFlow::Continue);
+                    }
+                    flow => return Ok(flow),
                 }
                 index += 1;
             }
@@ -796,6 +832,7 @@ mod tests {
                 "steps":[{"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                 {"type":"wait","id":"after","duration_ms":0}]}}).to_string()).unwrap();
         let failure = RunFailure::default();
+        let stop = crate::run::WorkflowStop::default();
         let mut events = Vec::new();
         let mut graceful_stop_called = false;
         let result = run_workflow_streaming_controlled(
@@ -808,6 +845,7 @@ mod tests {
             None,
             RunOptions {
                 failure: failure.clone(),
+                workflow_stop: stop.clone(),
                 ..Default::default()
             },
             |event| {
@@ -816,6 +854,7 @@ mod tests {
                     crate::workflow::WorkflowRunEvent::ResultRowCommitted(_)
                 ) {
                     failure.fail("CSV disk unavailable");
+                    stop.request();
                 }
                 events.push(event);
             },
@@ -851,6 +890,170 @@ mod tests {
     use crate::workflow::{
         Expression, ExpressionOperator, MAX_MESSAGE_CHARS, MESSAGE_TRUNCATION_MARKER,
     };
+
+    #[test]
+    fn workflow_stop_unwinds_nested_scopes_without_committing_partial_rows() {
+        use crate::run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled};
+        let template = crate::template::Template::from_json_str(&json!({
+            "schema_version": 2, "name": "Nested stop", "tool_instances": [],
+            "workflow": {"steps": [
+                {"type":"output","id":"root-value","name":"root","page":"Root","value":{"source":"literal","value":9}},
+                {"type":"for","id":"outer","variable":"i","range":{"start":"1","stop":"3","step":"1"},"steps":[
+                    {"type":"while","id":"inner","max_iterations":3,
+                     "left":{"source":"literal","value":1},"operator":"equal","right":{"source":"literal","value":1},"steps":[
+                        {"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":42}},
+                        {"type":"show-message","id":"message","target":"message-1","fields":[{"kind":"text","text":"kept","newline":false}]},
+                        {"type":"wait","id":"body-end","duration_ms":0}
+                    ]},
+                    {"type":"wait","id":"outer-after","duration_ms":0}
+                ]},
+                {"type":"wait","id":"root-after","duration_ms":0}
+            ]}
+        }).to_string()).unwrap();
+        let stop = WorkflowStop::default();
+        let mut events = Vec::new();
+        let mut messages = 0;
+        let summary = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &Default::default(),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            None,
+            RunOptions {
+                workflow_stop: stop.clone(),
+                ..Default::default()
+            },
+            |event| {
+                if matches!(event, WorkflowRunEvent::MessageEmitted(_)) {
+                    messages += 1;
+                    if messages == 2 {
+                        stop.request();
+                    }
+                }
+                events.push(event);
+            },
+            |_| stop.is_requested(),
+        )
+        .unwrap();
+        assert!(summary.stopped());
+        assert!(!summary.succeeded());
+        assert!(summary.failure().is_none());
+        assert_eq!(messages, 2);
+        let rows = events
+            .iter()
+            .filter_map(|event| match event {
+                WorkflowRunEvent::ResultRowCommitted(row) => Some(row),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].page(), "Results");
+        let steps = events
+            .iter()
+            .filter_map(|event| match event {
+                WorkflowRunEvent::StepCompleted(step) => Some(step),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !steps
+                .iter()
+                .any(|s| matches!(s.step_id().as_str(), "outer-after" | "root-after"))
+        );
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|s| s.step_id().as_str() == "body-end")
+                .count(),
+            1
+        );
+        for id in ["inner", "outer"] {
+            assert_eq!(
+                steps
+                    .iter()
+                    .find(|s| s.step_id().as_str() == id)
+                    .unwrap()
+                    .outcome(),
+                &StepOutcome::Cancelled
+            );
+        }
+    }
+
+    #[test]
+    fn workflow_stop_handles_startup_wait_and_late_requests() {
+        use crate::run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled};
+        for timing in [
+            "before-start",
+            "during-wait",
+            "between-iterations",
+            "after-complete",
+        ] {
+            let mut wire = json!({
+                "schema_version":2,"name":"Stop boundaries","tool_instances":[],
+                "workflow":{"steps":[
+                    {"type":"wait","id":"first","duration_ms":0},
+                    {"type":"wait","id":"wait","duration_ms":if timing == "during-wait" { 30_000 } else { 0 }},
+                    {"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}
+                ]}
+            });
+            if timing == "between-iterations" {
+                wire["workflow"]["steps"] = json!([{
+                    "type":"while","id":"loop","max_iterations":1,
+                    "left":{"source":"literal","value":1},"operator":"equal","right":{"source":"literal","value":1},
+                    "steps":wire["workflow"]["steps"].clone()
+                }]);
+            }
+            let template = crate::template::Template::from_json_str(&wire.to_string()).unwrap();
+            let stop = WorkflowStop::default();
+            if timing == "before-start" {
+                stop.request();
+            }
+            let mut events = Vec::new();
+            let mut requester = None;
+            let started = std::time::Instant::now();
+            let summary = run_workflow_streaming_controlled(
+                &template, ExecutionMode::Simulate, &Default::default(),
+                Duration::from_secs(1), Duration::from_secs(1), Duration::from_secs(1), None,
+                RunOptions { workflow_stop: stop.clone(), ..Default::default() },
+                |event| {
+                    if timing == "during-wait" && matches!(&event, WorkflowRunEvent::StepCompleted(s) if s.step_id().as_str() == "first") {
+                        let stop = stop.clone();
+                        requester = Some(std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(50));
+                            stop.request();
+                        }));
+                    }
+                    if matches!(timing, "after-complete" | "between-iterations") && matches!(event, WorkflowRunEvent::ResultRowCommitted(_)) { stop.request(); }
+                    events.push(event);
+                }, |_| false,
+            ).unwrap();
+            if let Some(requester) = requester {
+                requester.join().unwrap();
+            }
+            assert!(started.elapsed() < Duration::from_secs(5));
+            assert_eq!(summary.stopped(), timing != "after-complete");
+            assert_eq!(summary.succeeded(), timing == "after-complete");
+            match timing {
+                "before-start" => assert!(events.is_empty()),
+                "during-wait" => {
+                    assert!(events.iter().any(|e| matches!(e, WorkflowRunEvent::StepCompleted(s) if s.step_id().as_str() == "wait" && s.outcome() == &StepOutcome::Cancelled)));
+                    assert!(
+                        !events
+                            .iter()
+                            .any(|e| matches!(e, WorkflowRunEvent::ResultRowCommitted(_)))
+                    );
+                }
+                _ => assert!(
+                    events
+                        .iter()
+                        .any(|e| matches!(e, WorkflowRunEvent::ResultRowCommitted(_)))
+                ),
+            }
+            assert!(!WorkflowStop::default().is_requested());
+        }
+    }
 
     #[test]
     fn streaming_execution_emits_full_runtime_values_without_retaining_a_run_result() {

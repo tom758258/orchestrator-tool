@@ -134,6 +134,7 @@ type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
 type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
+type WorkflowStopRequest = { generation: number; sent: boolean; error?: string }
 type StepPreset =
   | 'background-worker-on' | 'background-worker-off' | 'background-capture-on' | 'background-capture-off'
   | `scope-${ScopesAction}`
@@ -625,6 +626,35 @@ function App() {
   const [messagePage, setMessagePage] = useState<MessageRowsResponse | null>(null)
   const progressChannelRef = useRef<Channel<DesktopRunEvent> | null>(null)
   const [stopRequest, setStopRequest] = useState<{ loopId: string, error?: string } | null>(null)
+  const [workflowStopRequest, setWorkflowStopRequest] = useState<WorkflowStopRequest | null>(null)
+  const workflowStopRef = useRef<WorkflowStopRequest | null>(null)
+  const resetWorkflowStop = useCallback(() => {
+    workflowStopRef.current = null
+    setWorkflowStopRequest(null)
+  }, [])
+  const sendWorkflowStop = useCallback(async () => {
+    const request = workflowStopRef.current
+    const runId = runIdRef.current
+    if (!request || request.sent || request.error || runId === null || request.generation !== runGenerationRef.current) return
+    request.sent = true
+    try {
+      const accepted = await invoke<boolean>('request_global_workflow_stop', { runId })
+      if (!accepted) throw new Error('This workflow is no longer active.')
+    } catch (message) {
+      if (workflowStopRef.current !== request || request.generation !== runGenerationRef.current) return
+      const failed = { ...request, error: String(message) }
+      workflowStopRef.current = failed
+      setWorkflowStopRequest(failed)
+    }
+  }, [])
+  const workflowStopping = workflowStopRequest !== null && !workflowStopRequest.error
+  const requestWorkflowStop = () => {
+    if (runStatus !== 'running' || (workflowStopRef.current && !workflowStopRef.current.error)) return
+    const request = { generation: runGenerationRef.current, sent: false }
+    workflowStopRef.current = request
+    setWorkflowStopRequest(request)
+    void sendWorkflowStop()
+  }
   const [runError, setRunError] = useState<string | null>(null)
   const [clearLastRunError, setClearLastRunError] = useState<string | null>(null)
   const [streamCsv, setStreamCsv] = useState(false)
@@ -670,7 +700,7 @@ function App() {
       ? { kind: 'While', id: latestExecution.while_iteration.while_step_id, index: latestExecution.while_iteration.iteration_index }
       : null
   const stopping = activeLoop !== null && stopRequest?.loopId === activeLoop.id && !stopRequest.error
-  const runningText = activeLoop
+  const runningText = workflowStopping ? 'Stopping workflow… Waiting for the current operation and cleanup.' : activeLoop
     ? `${activeLoop.kind} ${activeLoop.id} · Iteration ${activeLoop.index + 1} · ${stopping ? 'Stopping…' : 'Running'}`
     : 'Running…'
   const activeAncestors = activeLoop ? loopPath(runWorkflowSteps, activeLoop.id) : []
@@ -686,16 +716,21 @@ function App() {
     }
   }
   const stopControls = <>
+    {runStatus === 'running' && <button className="action-button action-button-danger" type="button"
+      disabled={workflowStopping} onClick={requestWorkflowStop}>
+      {workflowStopping ? 'Stopping Workflow…' : 'Stop Workflow'}
+    </button>}
     {activeLoop && <>
       {activeAncestors.map(loop => <button className="action-button action-button-danger" type="button" key={loop.id}
-        disabled={stopRequest !== null && !stopRequest.error} onClick={() => void requestStop(loop.id)}>Stop {loop.id}</button>)}
-      <button className="action-button action-button-danger" type="button" onClick={() => void requestStop()} disabled={stopRequest !== null && !stopRequest.error}>
+        disabled={workflowStopping || (stopRequest !== null && !stopRequest.error)} onClick={() => void requestStop(loop.id)}>Stop {loop.id}</button>)}
+      <button className="action-button action-button-danger" type="button" onClick={() => void requestStop()} disabled={workflowStopping || (stopRequest !== null && !stopRequest.error)}>
         {stopping ? 'Stopping…' : 'Stop'}
       </button>
     </>}
   </>
   const stopFeedback = <>
-    {activeLoop && <p>Finishes the current innermost iteration, then stops the selected loop.</p>}
+    {workflowStopRequest?.error && <p className="error" role="alert">Workflow stop request failed: {workflowStopRequest.error}</p>}
+    {activeLoop && <p>Loop Stop finishes the current innermost iteration, then stops the selected loop.</p>}
     {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runMetadata : null
@@ -1330,9 +1365,10 @@ function App() {
     }
     if (runIdRef.current !== null && event.run.run_id !== runIdRef.current) return
     runIdRef.current = event.run.run_id
+    if (event.run.status === 'running') void sendWorkflowStop()
     setRunMetadata(event.run)
     setStopRequest(current => current && event.completed_step_ids.includes(current.loopId) ? null : current)
-  }, [])
+  }, [sendWorkflowStop])
 
   const runLive = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1413,6 +1449,7 @@ function App() {
         started = true
         setLiveConfirmationPending(false)
         setStopRequest(null)
+        resetWorkflowStop()
         setCsvStreamStatus(null)
         setExecutionOffset(0)
         setRunStatus('running')
@@ -1455,12 +1492,13 @@ function App() {
       }
       if (started && isCurrentRunGeneration(generation, runGenerationRef.current)) {
         setStopRequest(null)
+        resetWorkflowStop()
         setRunStatus('idle')
       }
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
+  }, [resetWorkflowStop, validateTemplate, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1499,6 +1537,7 @@ function App() {
       setSelectedRunPage(snapshotPages[0]?.name ?? 'Results')
       started = true
       setStopRequest(null)
+      resetWorkflowStop()
       setCsvStreamStatus(null)
       setExecutionOffset(0)
       setRunStatus('running')
@@ -1528,11 +1567,12 @@ function App() {
       }
       if (started && isCurrentRunGeneration(generation, runGenerationRef.current)) {
         setStopRequest(null)
+        resetWorkflowStop()
         setRunStatus('idle')
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
+  }, [resetWorkflowStop, validateTemplate, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -1573,6 +1613,7 @@ function App() {
       setExecutionOffset(0)
       setRunError(null)
       setStopRequest(null)
+      resetWorkflowStop()
       setCsvStreamStatus(null)
       setExportError(null)
       setExportMessage(null)
@@ -1590,8 +1631,8 @@ function App() {
         : csvStreamStatus.finished && <p className={csvStreamStatus.workflow_succeeded ? 'validation-success' : 'feedback-warning'}>{csvStreamStatus.workflow_succeeded
           ? 'CSV streamed successfully.'
           : csvStreamStatus.rows > 0
-            ? 'Workflow failed. Streamed CSV contains committed rows from this partial run.'
-            : 'Workflow failed. No rows were streamed.'}</p>}
+            ? `${runMetadata?.status === 'stopped' ? 'Workflow stopped.' : 'Workflow did not complete.'} Streamed CSV contains committed rows from this partial run.`
+            : `${runMetadata?.status === 'stopped' ? 'Workflow stopped.' : 'Workflow did not complete.'} No rows were streamed.`}</p>}
     </div>
   )
 
@@ -2978,6 +3019,7 @@ function App() {
               </div>
               {clearLastRunError && <p className="error" role="alert">{clearLastRunError}</p>}
               {runStatus === 'running' && <p role="status">{runningText}</p>}
+              {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
               {runWorkflowSnapshot && <OutputCharts key={`charts-${displayedRun?.run_id ?? 'starting'}`} runId={displayedRun?.run_id ?? null}
                 pages={runPages} metadata={displayedRun?.pages ?? []} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
                 panels={chartPanels} onPanelsChange={setChartPanels} chartData={chartData} running={runStatus === 'running'}

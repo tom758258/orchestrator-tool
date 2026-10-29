@@ -1,5 +1,14 @@
 use std::{
-    collections::HashMap, error::Error, fmt, path::Path, process::ExitStatus, time::Duration,
+    collections::HashMap,
+    error::Error,
+    fmt,
+    path::Path,
+    process::ExitStatus,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -163,11 +172,26 @@ pub fn run_workflow_streaming_with_loop_stop_and_scopes_output(
     )
 }
 
+/// A cooperative stop request shared with one Run. Create a fresh signal for each Run.
+#[derive(Clone, Default)]
+pub struct WorkflowStop(Arc<AtomicBool>);
+
+impl WorkflowStop {
+    pub fn request(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn is_requested(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct RunOptions {
     pub backgrounds: crate::background::SharedBackgroundStore,
     pub failure: crate::run_failure::RunFailure,
     pub background_csv: Option<crate::background::BackgroundCsvOptions>,
+    pub workflow_stop: WorkflowStop,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -262,6 +286,9 @@ fn run_workflow_internal(
 
     let mut sessions = Vec::with_capacity(referenced_specs.len());
     for (instance, spec) in referenced_specs {
+        if options.workflow_stop.is_requested() {
+            break;
+        }
         let declared_tool = template
             .tool_instances()
             .iter()
@@ -321,6 +348,9 @@ fn run_workflow_internal(
     let setup_result =
         (|| -> Result<(), WorkflowRunError> {
             for (id, session) in &sessions {
+                if options.workflow_stop.is_requested() {
+                    break;
+                }
                 if let Some(instance) = template
                     .tool_instances()
                     .iter()
@@ -333,6 +363,9 @@ fn run_workflow_internal(
                         action_timeout,
                     )
                     .and_then(|()| {
+                        if options.workflow_stop.is_requested() {
+                            return Ok(());
+                        }
                         crate::adapters::scopes::apply_setup(
                             session,
                             instance
@@ -362,6 +395,9 @@ fn run_workflow_internal(
                         detail: format!("pre-run Safe-Off failed: {source}"),
                     }
                 })?;
+                if options.workflow_stop.is_requested() {
+                    break;
+                }
                 let tripped = protection_status_all(session, execution_mode, action_timeout)
                     .map_err(|source| WorkflowRunError::ProtectionSetup {
                         instance: id.clone(),
@@ -375,6 +411,9 @@ fn run_workflow_internal(
                     });
                 }
                 for record in &protection.channels {
+                    if options.workflow_stop.is_requested() {
+                        break;
+                    }
                     apply_protection_setup(session, record, execution_mode, action_timeout)
                         .map_err(|source| WorkflowRunError::ProtectionSetup {
                             instance: id.clone(),
@@ -420,6 +459,7 @@ fn run_workflow_internal(
         scopes_output_folder,
         options.failure.clone(),
         Some(&mut background),
+        options.workflow_stop,
     )
     .map(|result| {
         if retain_results {
@@ -428,7 +468,10 @@ fn run_workflow_internal(
                 result.rows.unwrap(),
             ))
         } else {
-            RunCompletion::Streaming(WorkflowRunSummary::new(result.failure))
+            RunCompletion::Streaming(WorkflowRunSummary::with_stop(
+                result.failure,
+                result.stopped,
+            ))
         }
     });
     drop(session_refs);
@@ -437,7 +480,8 @@ fn run_workflow_internal(
         Err(error) => Some(error.to_string()),
         Ok(results) => results.failure(),
     };
-    let background_cleanup = background.cleanup();
+    let stopped = matches!(&execution, Ok(RunCompletion::Streaming(summary)) if summary.stopped());
+    let background_cleanup = background.cleanup_after_workflow(stopped);
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
     let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
     if let Some((instance, source)) = cleanup {

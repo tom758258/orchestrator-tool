@@ -376,7 +376,7 @@ check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
 
-**Validate**, **Run Simulation / Run Live**, and active loop **Stop** controls
+**Validate**, **Run Simulation / Run Live**, **Stop Workflow**, and active loop **Stop** controls
 appear at the top-right of the Workflow summary, beside **Template** and
 **Steps**. Validation, running, Stop, and run failure feedback appears below
 these controls, above the Builder. Detailed run errors remain available there.
@@ -569,19 +569,42 @@ planned acquisition when the session starts, so readings for later planned
 Measure occurrences may already have been acquired even if the Workflow exits
 early; unconsumed readings are discarded when the Worker is cleaned up.
 
-### 6.4 Graceful Stop
+### 6.4 Stop Workflow and loop Stop
 
-During an active run, Stop targets a loop selected by the operator. It is a
-graceful loop stop, not an immediate termination of the current step:
+**Stop Workflow** is available whenever Simulation or Live shows Running,
+including startup and workflows without loops. It stops the entire workflow:
+
+1. A running Wait ends early. Other actions, Worker startup, and Tool setup
+   finish their current operation or reach their existing timeout.
+2. No subsequent ordinary step or loop iteration starts. Already committed
+   rows, messages, and received Background samples are retained; uncommitted
+   rows from an unfinished scope are discarded.
+3. Background Workers finish their bounded shutdown and final sample drain,
+   followed by Powers Safe-Off and Foreground Worker shutdown. The display stays
+   **Stopping Workflow…** until cleanup finishes. A failed stop request displays
+   an error and allows retry.
+
+An effective early stop with successful cleanup ends as **Run stopped**, distinct
+from success and failure. A real action, data integrity, CSV, or cleanup error
+still makes the run fail. A request arriving after the workflow has naturally
+finished does not change its successful result. Stop is not Pause or Resume.
+
+Background Dataset completeness and data quality are separate from the run
+status. An active finite Capture that ends below its target is **incomplete**;
+an active infinite Capture is also incomplete when stopped. Actual samples and
+partial CSV files remain available. Quality follows the Worker evidence, and
+previously completed Captures are not made incomplete by a later intentional
+shortfall. Stopping a Worker without an active Capture creates no Dataset.
+Missing termination evidence, sample gaps, overflow, and CSV errors remain failures.
+
+The separate **Stop** / **Stop <Loop ID>** controls keep their graceful loop behavior:
 
 1. The active innermost iteration continues until its successful commit point.
 2. The selected loop then unwinds.
 3. A parent loop or the root workflow can continue after that unwind.
 
-If the current iteration fails, the failure takes precedence over the Stop
-request. Stop is not Pause, Resume, or Hard Cancel, and Stop by itself does
-not automatically mark the entire run as cancelled. The final run status is
-still subject to the normal workflow success rules.
+An iteration failure takes precedence over loop Stop. Loop Stop alone does not
+mark the whole run Stopped; its final status follows normal workflow success rules.
 
 ### 6.5 Output Pages
 
@@ -914,7 +937,7 @@ Streaming behavior:
   It is independent of Graceful Loop Stop and preserves committed rows,
   received Background samples and partial CSV files.
 - CSV data already written from committed rows remains after workflow failure
-  or Graceful Stop.
+  or Stop Workflow / loop Stop.
 - Streaming does not produce XLSX files.
 - Streaming settings are locked while the run is active.
 
@@ -1274,8 +1297,9 @@ Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
 unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.
 
-Graceful Stop is not itself a failure or cancellation. After execution stops,
-any rows already committed before a failure or incomplete termination remain
+Loop Stop is not itself a failure. Stop Workflow produces a stopped run when
+cleanup succeeds. After execution stops, rows already committed before a
+failure or incomplete termination remain
 eligible for manual export. Rows still staged by a failed or stopped owning
 scope are not exported.
 

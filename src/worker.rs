@@ -590,16 +590,38 @@ impl WorkerSession {
 
     /// The sole consumer retains samples emitted during stop and final drain.
     pub fn shutdown_with_events(
+        self,
+        timeout: Duration,
+        on_event: impl FnMut(Value),
+    ) -> Result<ExitStatus, WorkerShutdownError> {
+        self.shutdown_events(timeout, on_event, false)
+            .map(|(status, _)| status)
+    }
+
+    // Background adapters may classify a nonzero exit only after all common
+    // protocol, fatal-error, EOF and summary evidence has also been checked.
+    pub(crate) fn shutdown_background_with_events(
+        self,
+        timeout: Duration,
+        on_event: impl FnMut(Value),
+    ) -> Result<(ExitStatus, bool), WorkerShutdownError> {
+        self.shutdown_events(timeout, on_event, true)
+    }
+
+    fn shutdown_events(
         mut self,
         timeout: Duration,
         mut on_event: impl FnMut(Value),
-    ) -> Result<ExitStatus, WorkerShutdownError> {
+        check_nonzero_evidence: bool,
+    ) -> Result<(ExitStatus, bool), WorkerShutdownError> {
         if let Some(status) = self
             .process_mut()
             .try_wait()
             .map_err(WorkerShutdownError::ProcessIo)?
         {
-            return self.finish_exited_process(status, timeout, &mut on_event);
+            return self
+                .finish_exited_process(status, timeout, &mut on_event, check_nonzero_evidence)
+                .map(|status| (status, false));
         }
 
         let deadline = Instant::now() + timeout;
@@ -618,7 +640,14 @@ impl WorkerSession {
                     .try_wait()
                     .map_err(WorkerShutdownError::ProcessIo)?
                 {
-                    return self.finish_exited_process(status, timeout, &mut on_event);
+                    return self
+                        .finish_exited_process(
+                            status,
+                            timeout,
+                            &mut on_event,
+                            check_nonzero_evidence,
+                        )
+                        .map(|status| (status, false));
                 }
 
                 let now = Instant::now();
@@ -637,7 +666,9 @@ impl WorkerSession {
                 .try_wait()
                 .map_err(WorkerShutdownError::ProcessIo)?
             {
-                return self.finish_exited_process(status, timeout, &mut on_event);
+                return self
+                    .finish_exited_process(status, timeout, &mut on_event, check_nonzero_evidence)
+                    .map(|status| (status, true));
             }
 
             let now = Instant::now();
@@ -675,6 +706,7 @@ impl WorkerSession {
         status: ExitStatus,
         timeout: Duration,
         on_event: &mut dyn FnMut(Value),
+        check_nonzero_evidence: bool,
     ) -> Result<ExitStatus, WorkerShutdownError> {
         self.process.take();
         // Process exit and stdout EOF are separate observations. Consume all
@@ -705,7 +737,7 @@ impl WorkerSession {
         // A non-zero actual process exit is independently conclusive failure.
         // Return the real exit status so callers preserve its numeric evidence;
         // summary validation below is required before declaring exit 0 successful.
-        if !status.success() {
+        if !status.success() && !check_nonzero_evidence {
             return Ok(status);
         }
         let evidence = self.evidence.lock().unwrap_or_else(|e| e.into_inner());
@@ -740,7 +772,7 @@ impl WorkerSession {
             .summary
             .as_ref()
             .ok_or_else(|| WorkerShutdownError::Contract("Worker summary missing".into()))?;
-        if summary["ok"] != true || !summary["fatal_error"].is_null() {
+        if (status.success() && summary["ok"] != true) || !summary["fatal_error"].is_null() {
             return Err(WorkerShutdownError::Contract(format!(
                 "Worker summary reported failure: {summary}"
             )));

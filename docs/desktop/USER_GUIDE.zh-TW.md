@@ -315,7 +315,7 @@ Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編�
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
-**Validate**、**Run Simulation / Run Live** 與 active loop 的 **Stop** 控制項
+**Validate**、**Run Simulation / Run Live**、**Stop Workflow** 與 active loop 的 **Stop** 控制項
 位於 Workflow summary 右上方，與 **Template**、**Steps** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
 查看詳細 run 錯誤。視窗較窄時控制項會換行。**Clear Workflow** 仍位於
@@ -484,18 +484,38 @@ triggers。Immediate Custom 不同：Worker session 啟動時就會開始完整�
 acquisition，因此 Workflow 即使提早結束，後續 planned Measure 所對應的 readings
 也可能已經取得；尚未被 Measure 消費的 readings 會在 Worker cleanup 時捨棄。
 
-### 6.4 Graceful Stop
+### 6.4 Stop Workflow 與迴圈 Stop
 
-Run 進行中，operator 可選擇要停止的 loop，再按 Stop。這是 graceful loop stop，
-不是立即終止目前 step：
+Simulation 或 Live 顯示 Running 時，即可按 **Stop Workflow**，包含啟動期間
+及沒有迴圈的 Workflow。此操作會停止整個 Workflow：
 
-1. Active innermost iteration 會執行到 successful commit point。
-2. 之後 unwind 指定的 loop。
-3. Parent loop 或 root workflow 可以在 unwind 後繼續執行。
+1. 正在執行的 Wait 會提早結束。其他動作、Worker 啟動與 Tool Setup 會完成
+   目前操作，或等到既有 Timeout。
+2. 不再開始後續一般 Step 或迴圈迭代。已提交的資料列、訊息及已接收的
+   Background Samples 會保留；未完成區塊中尚未提交的資料列會捨棄。
+3. Background Worker 先在既有時限內收尾並接收最後的 Samples，再執行
+   Powers Safe-Off 與 Foreground Worker 關閉。清理完成前持續顯示
+   **Stopping Workflow…**。停止請求若失敗，畫面會顯示錯誤並允許重試。
 
-若目前 iteration failure，failure 優先於 Stop request。Stop 不是 Pause、Resume
-或 Hard Cancel，也不會單獨把整個 run 自動標成 cancelled。最終 run status 仍依
-一般 Workflow success rules 決定。
+實際提早停止且清理成功時，結果為 **Run stopped**，與成功、失敗分開呈現。
+真正的動作、資料完整性、CSV 或清理錯誤仍會使 Run 失敗。若 Workflow 已自然
+完成，晚到的停止請求不會改變成功結果。Stop 不提供暫停或繼續執行功能。
+
+Background Dataset 的完整性與品質，分別依實際資料及 Worker 證據判定。
+停止時仍在進行的有限筆數 Capture 若未達目標，會標為 **incomplete**；
+無限筆數 Capture 停止時也會標為 incomplete。真實 Samples 與部分 CSV 均會保留。
+先前已完成的 Capture 不會因後續刻意提早停止而被改為 incomplete。
+沒有啟用 Capture 的 Worker 停止時不會建立 Dataset。缺少終止證據、Sample
+缺漏、Overflow 與 CSV 錯誤仍屬失敗。
+
+獨立的 **Stop** / **Stop <Loop ID>** 控制項維持原有的迴圈停止行為：
+
+1. 目前最內層迭代會繼續執行到成功提交資料的時點。
+2. 接著退出指定的迴圈。
+3. 父層迴圈或根層 Workflow 可繼續執行。
+
+迭代失敗優先於迴圈 Stop。迴圈 Stop 本身不會將整個 Run 標為 Stopped；
+最終狀態仍依一般 Workflow 成功規則判定。
 
 ### 6.5 Output Pages
 
@@ -781,7 +801,7 @@ Streaming behavior：
   會 Failed，停止後續普通 Steps，並執行 Background 與 Powers 安全 Cleanup。
   建立或最後 flush 失敗也適用；這與 Graceful Loop Stop 獨立，保留 committed
   rows、已收到的 Background Samples 與部分 CSV。
-- Workflow failure 或 Graceful Stop 後，已寫入的 committed CSV data 不會被刪除。
+- Workflow failure、Stop Workflow 或迴圈 Stop 後，已寫入的 committed CSV data 不會被刪除。
 - Streaming 不產生 XLSX。
 - Run 進行中會鎖定 streaming settings。
 
@@ -1075,7 +1095,8 @@ Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。�
 或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV
 files。
 
-Graceful Stop 本身不是 failure 或 cancellation。Execution 停止後，failure 或
+迴圈 Stop 本身不是 failure。Stop Workflow 在清理成功後會產生 Stopped 結果。
+Execution 停止後，failure 或
 incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged
 狀態、尚未通過 owning scope commit point 的 rows 不會被匯出。
 

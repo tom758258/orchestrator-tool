@@ -282,6 +282,7 @@ pub struct StoredRun {
 enum RunStatus {
     Running,
     Succeeded,
+    Stopped,
     Failed(String),
 }
 
@@ -466,13 +467,18 @@ impl StoredRun {
         self.status = RunStatus::Succeeded;
     }
 
+    pub fn stop(&mut self) {
+        self.status = RunStatus::Stopped;
+    }
+
     pub fn fail(&mut self, message: impl Into<String>) {
         let message = message.into();
         self.status = RunStatus::Failed(bounded_text(&message));
     }
 
     pub fn completed_successfully(&self) -> bool {
-        self.all_executions_succeeded
+        !matches!(self.status, RunStatus::Stopped | RunStatus::Failed(_))
+            && self.all_executions_succeeded
             && self
                 .template
                 .workflow()
@@ -489,6 +495,7 @@ impl StoredRun {
         let (status, error) = match &self.status {
             RunStatus::Running => ("running", None),
             RunStatus::Succeeded => ("succeeded", None),
+            RunStatus::Stopped => ("stopped", None),
             RunStatus::Failed(message) => ("failed", Some(message.clone())),
         };
         RunMetadataDto {
@@ -1776,6 +1783,12 @@ mod tests {
         assert!(complete.completed_successfully());
         assert!(complete.manual_exportable());
         assert!(complete.metadata().completed_successfully);
+
+        complete.stop();
+        assert!(!complete.completed_successfully());
+        assert!(complete.manual_exportable());
+        assert_eq!(complete.metadata().status, "stopped");
+        assert!(complete.metadata().error.is_none());
     }
 
     #[test]

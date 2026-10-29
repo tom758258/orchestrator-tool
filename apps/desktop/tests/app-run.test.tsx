@@ -111,7 +111,7 @@ beforeEach(() => {
       case 'save_workflow_template': return params.templateJson
       case 'clear_last_run': return undefined
       case 'run_workflow_live': case 'run_workflow_simulation': return run.promise
-      case 'request_workflow_stop': return true
+      case 'request_workflow_stop': case 'request_global_workflow_stop': return true
       case 'get_last_run_executions': return { run_id: params.runId, offset: 0, total_executions: 1, executions: [metadata(Number(params.runId)).latest_execution] }
       case 'get_last_run_messages': return { run_id: params.runId, target: params.target, revision: 1, total_messages: 1, offset: 0, messages: [`Message from run ${params.runId}`] }
       case 'get_last_run_page_rows': return { run_id: params.runId, page: 'Results', revision: 1, total_rows: 1, offset: 0,
@@ -499,6 +499,81 @@ test('an accepted Live failure replaces Last Run and retains partial results wit
   expect(snapshot().runId).toBe(8)
   expect(screen.getByText(error)).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Export Partial XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test.each(['Simulation', 'Live'])('%s can stop before any loop or step progress and waits for cleanup', async mode => {
+  currentDraft.workflow.steps = [{ type: 'wait', id: 'wait', duration_ms: 30000 }]
+  await mount()
+  if (mode === 'Live') await selectLive()
+  fireEvent.click(runButton(mode))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  const channel = progressChannel()
+  const initial = { ...metadata(8, 'running'), execution_count: 0, latest_execution: null, pages: [], messages: [] }
+  const progress = { type: 'progress-batch' as const, run: initial, completed_step_ids: [] as string[] }
+  if (mode === 'Live') act(() => channel.onmessage(progress))
+  fireEvent.click(await screen.findByRole('button', { name: 'Stop Workflow' }))
+  const stopCalls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'request_global_workflow_stop')
+  if (mode === 'Simulation') expect(stopCalls()).toHaveLength(0)
+  act(() => channel.onmessage(progress))
+  await waitFor(() => expect(stopCalls()).toEqual([['request_global_workflow_stop', { runId: 8 }]]))
+  act(() => channel.onmessage(progress))
+  expect(stopCalls()).toHaveLength(1)
+  expect((screen.getByRole('button', { name: 'Stopping Workflow…' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(runButton(mode).disabled).toBe(true)
+  await act(async () => run.resolve({ ...initial, status: 'stopped', manual_exportable: true }))
+  await screen.findByText('Run stopped')
+  expect(screen.queryByText('Run failed')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Stopping Workflow…' })).toBeNull()
+  expect(runButton(mode).disabled).toBe(false)
+})
+
+test.each(['reject', 'not-accepted'])('global stop can retry a %s request and retains stopped output', async failure => {
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: metadata(8, 'running'), completed_step_ids: [] }))
+  const original = vi.mocked(invoke).getMockImplementation()!
+  let attempts = 0
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === 'request_global_workflow_stop' && ++attempts === 1) {
+      if (failure === 'reject') throw new Error('Transport unavailable')
+      return false
+    }
+    return original(command, args)
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Stop Workflow' }))
+  await screen.findByText(/Workflow stop request failed:/)
+  fireEvent.click(screen.getByRole('button', { name: 'Stop Workflow' }))
+  await waitFor(() => expect(attempts).toBe(2))
+  await act(async () => run.resolve(metadata(8, 'stopped')))
+  await screen.findByText('Run stopped')
+  expect(screen.getByText('Message from run 8')).toBeTruthy()
+  tab('Output')
+  expect(snapshot().runId).toBe(8)
+  expect((screen.getByRole('button', { name: 'Export Partial XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('late global stop replies and progress cannot affect the next run', async () => {
+  await mount()
+  const reply = deferred<boolean>()
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => command === 'request_global_workflow_stop' ? reply.promise : original(command, args))
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  const previous = progressChannel()
+  act(() => previous.onmessage({ type: 'progress-batch', run: metadata(8, 'running'), completed_step_ids: [] }))
+  fireEvent.click(screen.getByRole('button', { name: 'Stop Workflow' }))
+  await finish(8)
+  run = deferred<RunMetadataDto>()
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(2))
+  await act(async () => reply.resolve(false))
+  act(() => previous.onmessage({ type: 'progress-batch', run: metadata(8, 'running'), completed_step_ids: [] }))
+  act(() => progressChannel().onmessage({ type: 'progress-batch', run: metadata(9, 'running'), completed_step_ids: [] }))
+  expect(screen.queryByText(/Workflow stop request failed:/)).toBeNull()
+  expect((screen.getByRole('button', { name: 'Stop Workflow' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'request_global_workflow_stop')).toHaveLength(1)
+  await finish(9)
 })
 
 test('loop Stop follows the selected loop and completed progress releases its pending state', async () => {

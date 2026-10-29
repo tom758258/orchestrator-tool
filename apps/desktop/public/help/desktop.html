@@ -359,7 +359,7 @@ properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.</p>
-<p><strong>Validate</strong>, <strong>Run Simulation / Run Live</strong>, and active loop <strong>Stop</strong> controls
+<p><strong>Validate</strong>, <strong>Run Simulation / Run Live</strong>, <strong>Stop Workflow</strong>, and active loop <strong>Stop</strong> controls
 appear at the top-right of the Workflow summary, beside <strong>Template</strong> and
 <strong>Steps</strong>. Validation, running, Stop, and run failure feedback appears below
 these controls, above the Builder. Detailed run errors remain available there.
@@ -527,18 +527,39 @@ triggers unused. Immediate Custom is different: the Worker starts the complete
 planned acquisition when the session starts, so readings for later planned
 Measure occurrences may already have been acquired even if the Workflow exits
 early; unconsumed readings are discarded when the Worker is cleaned up.</p>
-<h3 id="64-graceful-stop">6.4 Graceful Stop</h3>
-<p>During an active run, Stop targets a loop selected by the operator. It is a
-graceful loop stop, not an immediate termination of the current step:</p>
+<h3 id="64-stop-workflow-and-loop-stop">6.4 Stop Workflow and loop Stop</h3>
+<p><strong>Stop Workflow</strong> is available whenever Simulation or Live shows Running,
+including startup and workflows without loops. It stops the entire workflow:</p>
+<ol>
+<li>A running Wait ends early. Other actions, Worker startup, and Tool setup
+   finish their current operation or reach their existing timeout.</li>
+<li>No subsequent ordinary step or loop iteration starts. Already committed
+   rows, messages, and received Background samples are retained; uncommitted
+   rows from an unfinished scope are discarded.</li>
+<li>Background Workers finish their bounded shutdown and final sample drain,
+   followed by Powers Safe-Off and Foreground Worker shutdown. The display stays
+   <strong>Stopping Workflow…</strong> until cleanup finishes. A failed stop request displays
+   an error and allows retry.</li>
+</ol>
+<p>An effective early stop with successful cleanup ends as <strong>Run stopped</strong>, distinct
+from success and failure. A real action, data integrity, CSV, or cleanup error
+still makes the run fail. A request arriving after the workflow has naturally
+finished does not change its successful result. Stop is not Pause or Resume.</p>
+<p>Background Dataset completeness and data quality are separate from the run
+status. An active finite Capture that ends below its target is <strong>incomplete</strong>;
+an active infinite Capture is also incomplete when stopped. Actual samples and
+partial CSV files remain available. Quality follows the Worker evidence, and
+previously completed Captures are not made incomplete by a later intentional
+shortfall. Stopping a Worker without an active Capture creates no Dataset.
+Missing termination evidence, sample gaps, overflow, and CSV errors remain failures.</p>
+<p>The separate <strong>Stop</strong> / <strong>Stop <Loop ID></strong> controls keep their graceful loop behavior:</p>
 <ol>
 <li>The active innermost iteration continues until its successful commit point.</li>
 <li>The selected loop then unwinds.</li>
 <li>A parent loop or the root workflow can continue after that unwind.</li>
 </ol>
-<p>If the current iteration fails, the failure takes precedence over the Stop
-request. Stop is not Pause, Resume, or Hard Cancel, and Stop by itself does
-not automatically mark the entire run as cancelled. The final run status is
-still subject to the normal workflow success rules.</p>
+<p>An iteration failure takes precedence over loop Stop. Loop Stop alone does not
+mark the whole run Stopped; its final status follows normal workflow success rules.</p>
 <h3 id="65-output-pages">6.5 Output Pages</h3>
 <p>An Output step has a name and a Page. Outputs on the same Page form columns in
 one dataset. Different Pages are independent datasets, and a nested loop can
@@ -851,7 +872,7 @@ folder:</p>
   It is independent of Graceful Loop Stop and preserves committed rows,
   received Background samples and partial CSV files.</li>
 <li>CSV data already written from committed rows remains after workflow failure
-  or Graceful Stop.</li>
+  or Stop Workflow / loop Stop.</li>
 <li>Streaming does not produce XLSX files.</li>
 <li>Streaming settings are locked while the run is active.</li>
 </ul>
@@ -1164,8 +1185,9 @@ Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
 Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
 unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.</p>
-<p>Graceful Stop is not itself a failure or cancellation. After execution stops,
-any rows already committed before a failure or incomplete termination remain
+<p>Loop Stop is not itself a failure. Stop Workflow produces a stopped run when
+cleanup succeeds. After execution stops, rows already committed before a
+failure or incomplete termination remain
 eligible for manual export. Rows still staged by a failed or stopped owning
 scope are not exported.</p>
 <h2 id="12-templates-and-local-machine-settings">12. Templates and local machine settings</h2>

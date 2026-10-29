@@ -383,6 +383,7 @@ fn main() {
         .is_some_and(|arg| arg == "--background-tests")
     {
         background_capture_and_termination_contract();
+        background_workflow_stop_contract();
         live_workflow_cleanup_lifecycle();
         multiple_powers_cleanup_attempts_every_session();
         return;
@@ -475,6 +476,7 @@ fn main() {
 
     valid_ready_starts_worker_session();
     background_capture_and_termination_contract();
+    background_workflow_stop_contract();
     invalid_ready_protocol_is_rejected();
     worker_exit_before_ready_returns_early();
     worker_exit_before_ready_surfaces_stderr_diagnostic();
@@ -547,13 +549,15 @@ fn background_fixture(scenario: &str) {
     emit(
         json!({"event":"status","worker_state":"running","fatal_error":null,"stream":{"lifecycle":"run_bound","state":"active"}}),
     );
+    let controlled = scenario.starts_with("stop-");
+    let monitored = controlled && scenario != "stop-finite" && scenario != "stop-infinite";
     let mut count = 0;
     loop {
         count += 1;
         emit(
             json!({"event":"sample","captured":count,"value":count as f64,"unit":"V","status":"ok"}),
         );
-        if scenario != "rolling" && count == 6 {
+        if !controlled && scenario != "rolling" && count == 6 {
             break;
         }
         if let Ok((mut stream, _)) = listener.accept() {
@@ -562,6 +566,9 @@ fn background_fixture(scenario: &str) {
             let body = json!({"schema_version":3,"run_id":"background-run","status":"accepted","error":null}).to_string();
             write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
             // A final sample after Stop must still reach an active Capture.
+            if scenario == "stop-gap" {
+                count += 1;
+            }
             count += 1;
             emit(
                 json!({"event":"sample","captured":count,"value":count as f64,"unit":"V","status":"ok"}),
@@ -570,17 +577,39 @@ fn background_fixture(scenario: &str) {
         }
         thread::sleep(Duration::from_millis(5));
     }
-    if scenario != "missing-ended" {
+    if !scenario.ends_with("missing-ended") {
         emit(
             json!({"event":"status","worker_state":"stopping","fatal_error":null,"stream":{"lifecycle":"run_bound","state":"ended"}}),
         );
     }
-    if scenario != "missing-summary" {
-        emit(
-            json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,"captured":if scenario == "bad-count" {count+1} else {count},
-        "errors":0,"overflow_detected":null,"overflow_monitoring":"off","final_drain_complete":true,
-        "data_integrity":match scenario {"missing-quality" => json!(null), "unknown-quality" => json!("unknown"), _ => json!("no_loss_detected")}}),
-        );
+    if scenario == "stop-bad-json" {
+        println!("invalid JSON");
+    }
+    if !scenario.ends_with("missing-summary") {
+        let mut summary = json!({"event":"summary","ok":!monitored,"exit_code":if monitored {3} else {0},"fatal_error":null,
+            "captured":if scenario.ends_with("bad-count") {count+1} else {count},
+            "errors":0,"overflow_detected":if monitored {json!(false)} else {json!(null)},
+            "overflow_monitoring":if monitored {"active"} else {"off"},"final_drain_complete":true,
+            "data_integrity":match scenario {"missing-quality" => json!(null), "unknown-quality" => json!("unknown"), "stop-infinite" => json!("unknown"), _ if controlled => json!("incomplete"), _ => json!("no_loss_detected")}});
+        if controlled {
+            summary["stop_reason"] = json!("stop_requested");
+            summary["trigger_count_infinite"] = json!(scenario == "stop-infinite");
+            summary["expected_readings"] = if scenario == "stop-infinite" {
+                json!(null)
+            } else {
+                json!(30000)
+            };
+        }
+        match scenario {
+            "stop-overflow" => summary["overflow_detected"] = json!(true),
+            "stop-drain" => summary["final_drain_complete"] = json!(false),
+            "stop-fatal" => summary["fatal_error"] = json!("instrument failure"),
+            _ => {}
+        }
+        emit(summary);
+    }
+    if monitored {
+        process::exit(if scenario == "stop-exit" { 2 } else { 3 });
     }
 }
 
@@ -592,6 +621,164 @@ fn background_template(steps: serde_json::Value) -> Template {
     Template::from_json_str(&json!({"schema_version":2,"name":"Background contract", "tool_instances":[
         {"id":"meters-bg","tool":"meters","setup":setup}],"backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","live_monitor":true,"trigger_count":6}],
         "workflow":{"steps":steps}}).to_string()).unwrap()
+}
+
+fn background_workflow_stop_contract() {
+    use orchestrator_tool::{
+        background::BackgroundStore,
+        run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled},
+        workflow::WorkflowRunEvent,
+    };
+    use std::sync::Arc;
+    for scenario in [
+        "stop-finite",
+        "stop-monitored",
+        "stop-infinite",
+        "stop-monitor-only",
+        "stop-windows",
+        "stop-explicit-off",
+        "stop-missing-ended",
+        "stop-missing-summary",
+        "stop-bad-count",
+        "stop-gap",
+        "stop-overflow",
+        "stop-drain",
+        "stop-fatal",
+        "stop-bad-json",
+        "stop-exit",
+    ] {
+        let capture = scenario != "stop-monitor-only";
+        let explicit_off = scenario == "stop-explicit-off";
+        let mut steps = vec![
+            json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":capture}),
+        ];
+        if scenario == "stop-windows" {
+            steps.extend([
+                json!({"type":"background","id":"close","background_id":"background-1","action":"capture-off"}),
+                json!({"type":"background","id":"reopen","background_id":"background-1","action":"capture-on"})]);
+        }
+        steps.push(json!({"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":capture}));
+        let mut wire: serde_json::Value =
+            serde_json::from_str(&background_template(json!(steps)).to_json_string().unwrap())
+                .unwrap();
+        wire["backgrounds"][0]["trigger_count"] = if scenario == "stop-infinite" {
+            json!(null)
+        } else {
+            json!(30000)
+        };
+        if scenario == "stop-infinite" {
+            wire["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"] = json!(true);
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let specs = HashMap::from([(
+            ToolInstanceId::new("meters-bg").unwrap(),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", scenario],
+            )
+            .with_manifest(fixture_manifest("meters-smoke")),
+        )]);
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let stop = WorkflowStop::default();
+        let folder = env::temp_dir().join(format!("orchestrator-{}-{scenario}", process::id()));
+        let mut completed = Vec::new();
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                workflow_stop: stop.clone(),
+                background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
+                    output_folder: folder.clone(),
+                    background_id: None,
+                }),
+                ..Default::default()
+            },
+            |event| {
+                if let WorkflowRunEvent::StepCompleted(step) = event {
+                    if !explicit_off
+                        && step.step_id().as_str()
+                            == if scenario == "stop-windows" {
+                                "reopen"
+                            } else {
+                                "on"
+                            }
+                    {
+                        stop.request();
+                    }
+                    completed.push(step.step_id().to_string());
+                }
+            },
+            |_| false,
+        );
+        let valid = matches!(
+            scenario,
+            "stop-finite"
+                | "stop-monitored"
+                | "stop-infinite"
+                | "stop-monitor-only"
+                | "stop-windows"
+        );
+        let data = store.lock().unwrap();
+        if valid {
+            assert!(
+                result.as_ref().is_ok_and(|r| r.stopped() && !r.succeeded()),
+                "{scenario}: {result:?}"
+            );
+            assert!(!completed.iter().any(|id| id == "off"));
+            if !capture {
+                assert!(data.datasets.is_empty());
+                assert!(!folder.exists());
+                continue;
+            }
+            let metadata = data.metadata();
+            let active = metadata.last().unwrap();
+            assert_eq!(active.status, "incomplete", "{scenario}");
+            assert_eq!(
+                active.quality,
+                if scenario == "stop-infinite" {
+                    "unknown"
+                } else {
+                    "incomplete"
+                }
+            );
+            assert!(active.row_count > 0 && active.row_count < 30000);
+            // The final drain sample is retained in both the dataset and streamed CSV.
+            let rows = data.rows(&active.id, 0, active.row_count).unwrap();
+            assert_eq!(
+                rows.last().unwrap()["captured"].as_u64().unwrap() as usize,
+                data.monitor("background-1").len()
+            );
+            for item in &metadata {
+                assert_eq!(
+                    csv::Reader::from_path(item.csv_path.as_ref().unwrap())
+                        .unwrap()
+                        .records()
+                        .count(),
+                    item.row_count
+                );
+            }
+            if scenario == "stop-windows" {
+                assert_eq!(metadata.len(), 2);
+                assert_eq!(metadata[0].status, "completed");
+                assert_eq!(metadata[0].quality, "unknown");
+            }
+        } else {
+            assert!(result.is_err(), "{scenario}: {result:?}");
+            assert_eq!(
+                data.metadata().last().unwrap().status,
+                "failed",
+                "{scenario}"
+            );
+        }
+        drop(data);
+        fs::remove_dir_all(folder).unwrap();
+    }
 }
 
 fn background_capture_and_termination_contract() {
@@ -1005,6 +1192,7 @@ fn background_capture_and_termination_contract() {
                         background_id: None,
                     }
                 }),
+                ..Default::default()
             },
             |event| {
                 if let WorkflowRunEvent::StepCompleted(step) = &event {
@@ -1734,6 +1922,10 @@ fn run_fixture(scenario: &OsStr) {
         | "simulate-protection-trip"
         | "simulate-protection-set-failure"
         | "live-success"
+        | "live-stop-success"
+        | "live-stop-step-failure"
+        | "live-stop-cleanup-failure"
+        | "live-stop-startup"
         | "live-assert-failure"
         | "live-step-failure"
         | "live-cleanup-failure"
@@ -1998,11 +2190,15 @@ fn run_powers_workflow_fixture(scenario: &str) {
     );
     let step_failed = matches!(
         scenario,
-        "simulate-step-failure" | "live-step-failure" | "live-both-failed"
+        "simulate-step-failure"
+            | "live-step-failure"
+            | "live-both-failed"
+            | "live-stop-step-failure"
     );
     let cleanup_failed = matches!(
         scenario,
         "live-cleanup-failure"
+            | "live-stop-cleanup-failure"
             | "live-both-failed"
             | "live-multi-cleanup-failure"
             | "live-protection-set-and-cleanup-failure"
@@ -2010,6 +2206,10 @@ fn run_powers_workflow_fixture(scenario: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "powers-workflow-runtime-run";
+    if scenario == "live-stop-startup" {
+        record_event_if_requested("starting");
+        thread::sleep(Duration::from_millis(100));
+    }
     print_json_line(
         &json!({
             "event": "ready",
@@ -2041,12 +2241,12 @@ fn run_powers_workflow_fixture(scenario: &str) {
             "job-protection",
         )];
     }
-    if step_failed || scenario == "live-assert-failure" {
+    if step_failed || scenario == "live-assert-failure" || scenario.starts_with("live-stop-") {
         commands.truncate(2);
     }
     if matches!(
         scenario,
-        "live-startup-failure" | "live-multi-cleanup-failure"
+        "live-startup-failure" | "live-multi-cleanup-failure" | "live-stop-startup"
     ) {
         commands.clear();
     }
@@ -2097,6 +2297,9 @@ fn run_powers_workflow_fixture(scenario: &str) {
             })
         );
         record_event_if_requested(command);
+        if scenario.starts_with("live-stop-") && command == "output-on" {
+            thread::sleep(Duration::from_millis(100));
+        }
         write_response(
             request.stream,
             202,
@@ -4512,6 +4715,108 @@ fn live_workflow_cleanup_lifecycle() {
                 }
                 assert!(events.ends_with("safe-off\nstop\n"), "{events}");
             }
+        }
+    }
+    // Stop during an in-flight action/startup must await its result and still perform safety cleanup.
+    for scenario in [
+        "live-stop-success",
+        "live-stop-step-failure",
+        "live-stop-cleanup-failure",
+        "live-stop-startup",
+    ] {
+        use orchestrator_tool::run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled};
+        let marker = env::temp_dir().join(format!("orchestrator-{}-{scenario}", process::id()));
+        let _ = fs::remove_file(&marker);
+        // SAFETY: all cases and child sessions in this harness run sequentially.
+        unsafe {
+            env::set_var(CLEANUP_MARKER_ENV, &marker);
+        }
+        let template = Template::from_json_str(&json!({"schema_version":2,"name":"Stop cleanup",
+            "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"steps":[
+                {"type":"tool-action","id":"set","target":"powers-1","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+                {"type":"tool-action","id":"on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
+                {"type":"wait","id":"after","duration_ms":0}
+            ]}}).to_string()).unwrap();
+        let stop = WorkflowStop::default();
+        let requester = {
+            let stop = stop.clone();
+            let marker = marker.clone();
+            thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let expected = if scenario == "live-stop-startup" {
+                    "starting"
+                } else {
+                    "output-on"
+                };
+                while !fs::read_to_string(&marker)
+                    .unwrap_or_default()
+                    .contains(expected)
+                {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "fixture never reached {expected}"
+                    );
+                    thread::sleep(Duration::from_millis(2));
+                }
+                stop.request();
+            })
+        };
+        let mut steps = Vec::new();
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Live,
+            &HashMap::from([(
+                ToolInstanceId::new("powers-1").unwrap(),
+                fixture_spec(scenario),
+            )]),
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            None,
+            RunOptions {
+                workflow_stop: stop,
+                ..Default::default()
+            },
+            |event| {
+                if let orchestrator_tool::workflow::WorkflowRunEvent::StepCompleted(step) = event {
+                    steps.push(step);
+                }
+            },
+            |_| false,
+        );
+        requester.join().unwrap();
+        // SAFETY: the run has reaped its child process.
+        unsafe {
+            env::remove_var(CLEANUP_MARKER_ENV);
+        }
+        let events = fs::read_to_string(&marker).unwrap();
+        fs::remove_file(marker).unwrap();
+        assert!(!steps.iter().any(|s| s.step_id().as_str() == "after"));
+        if scenario == "live-stop-startup" {
+            assert!(steps.is_empty());
+            assert_eq!(events, "starting\nsafe-off\nstop\n");
+        } else {
+            assert_eq!(steps.len(), 2);
+            assert_eq!(events, "set\noutput-on\nsafe-off\nstop\n");
+        }
+        match scenario {
+            "live-stop-step-failure" => {
+                let summary = result.unwrap();
+                assert!(!summary.stopped());
+                assert!(
+                    summary
+                        .failure()
+                        .unwrap()
+                        .contains("fixture action failure")
+                );
+            }
+            "live-stop-cleanup-failure" => assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("fixture cleanup failure")
+            ),
+            _ => assert!(result.unwrap().stopped()),
         }
     }
 }

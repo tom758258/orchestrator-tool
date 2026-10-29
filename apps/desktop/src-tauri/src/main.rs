@@ -26,7 +26,7 @@ use orchestrator_tool::{
     },
     live_preflight::{validate_live_preflight, validate_live_preflight_draft},
     live_resources::LiveResourceCandidate,
-    run::{ExecutionMode, RunOptions, run_workflow_streaming_controlled},
+    run::{ExecutionMode, RunOptions, WorkflowStop, run_workflow_streaming_controlled},
     run_preparation::{
         prepare_worker_launch_specs, prepare_worker_launch_specs_with_simulation,
         simulation_sample_requirements, validate_confirmed_live_resources,
@@ -47,8 +47,15 @@ const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
 
+#[derive(Default)]
+struct WorkflowControl {
+    loop_stop: Mutex<Option<String>>,
+    run_id: Mutex<Option<u64>>,
+    workflow_stop: WorkflowStop,
+}
+
 enum ActiveOperation {
-    Workflow(Arc<Mutex<Option<String>>>),
+    Workflow(Arc<WorkflowControl>),
     ManualOperation,
 }
 
@@ -56,12 +63,12 @@ enum ActiveOperation {
 struct ActiveRun(Mutex<Option<ActiveOperation>>);
 
 impl ActiveRun {
-    fn register(&self) -> Result<Arc<Mutex<Option<String>>>, String> {
+    fn register(&self) -> Result<Arc<WorkflowControl>, String> {
         let mut active = self.0.lock().unwrap();
         if active.is_some() {
             return Err("Another external operation is already active".to_owned());
         }
-        let control = Arc::new(Mutex::new(None));
+        let control = Arc::new(WorkflowControl::default());
         *active = Some(ActiveOperation::Workflow(control.clone()));
         Ok(control)
     }
@@ -84,9 +91,26 @@ impl ActiveRun {
         let Some(ActiveOperation::Workflow(control)) = active.as_ref() else {
             return false;
         };
-        *control.lock().unwrap() = Some(loop_step_id);
+        *control.loop_stop.lock().unwrap() = Some(loop_step_id);
         true
     }
+
+    fn request_global(&self, run_id: u64) -> bool {
+        let active = self.0.lock().unwrap();
+        let Some(ActiveOperation::Workflow(control)) = active.as_ref() else {
+            return false;
+        };
+        if *control.run_id.lock().unwrap() != Some(run_id) {
+            return false;
+        }
+        control.workflow_stop.request();
+        true
+    }
+}
+
+#[tauri::command]
+fn request_global_workflow_stop(state: tauri::State<'_, ActiveRun>, run_id: u64) -> bool {
+    state.request_global(run_id)
 }
 
 fn consume_loop_stop(control: &Mutex<Option<String>>, step_id: &StepId) -> bool {
@@ -535,6 +559,11 @@ async fn run_workflow_simulation(
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let stored = runs.begin(template.clone());
+        *control.run_id.lock().unwrap() = Some(stored.read().unwrap().run_id);
+        let _ = on_progress.send(WorkflowRunEventDto::ProgressBatch {
+            run: Box::new(stored.read().unwrap().metadata()),
+            completed_step_ids: Vec::new(),
+        });
         let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
         let outcome = (|| {
             let application_dir = current_application_dir()
@@ -573,9 +602,10 @@ async fn run_workflow_simulation(
                             backgrounds,
                             failure,
                             background_csv,
+                            workflow_stop: control.workflow_stop.clone(),
                         },
                         on_event,
-                        |step_id| consume_loop_stop(&control, step_id),
+                        |step_id| consume_loop_stop(&control.loop_stop, step_id),
                     )
                     .map_err(|error| error.to_string())
                 },
@@ -584,6 +614,7 @@ async fn run_workflow_simulation(
         })();
         match outcome {
             Ok(summary) if summary.succeeded() => stored.write().unwrap().succeed(),
+            Ok(summary) if summary.stopped() => stored.write().unwrap().stop(),
             Ok(summary) => stored
                 .write()
                 .unwrap()
@@ -629,6 +660,7 @@ async fn run_workflow_live(
             &confirmed_resources,
             &confirmed_backends,
             &on_progress,
+            &control,
         )?;
         let mut batcher = DesktopProgressBatcher::new(&on_progress, stored.clone());
         let outcome = (|| {
@@ -676,9 +708,10 @@ async fn run_workflow_live(
                             backgrounds,
                             failure,
                             background_csv,
+                            workflow_stop: control.workflow_stop.clone(),
                         },
                         on_event,
-                        |step_id| consume_loop_stop(&control, step_id),
+                        |step_id| consume_loop_stop(&control.loop_stop, step_id),
                     )
                     .map_err(|error| error.to_string())
                 },
@@ -687,6 +720,7 @@ async fn run_workflow_live(
         })();
         match outcome {
             Ok(summary) if summary.succeeded() => stored.write().unwrap().succeed(),
+            Ok(summary) if summary.stopped() => stored.write().unwrap().stop(),
             Ok(summary) => stored
                 .write()
                 .unwrap()
@@ -705,7 +739,7 @@ async fn run_workflow_live(
 
 struct PowersWorkerConfig(PathBuf);
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn begin_live_run(
     runs: &StoredRuns,
     template: &Template,
@@ -714,6 +748,7 @@ fn begin_live_run(
     confirmed_resources: &HashMap<String, String>,
     confirmed_backends: &HashMap<String, VisaBackend>,
     on_progress: &Channel<WorkflowRunEventDto>,
+    control: &WorkflowControl,
 ) -> Result<
     (
         Arc<RwLock<StoredRun>>,
@@ -729,6 +764,7 @@ fn begin_live_run(
     let specs =
         prepare_worker_launch_specs(template, ExecutionMode::Live, application_dir, config)?;
     let stored = runs.begin(template.clone());
+    *control.run_id.lock().unwrap() = Some(stored.read().unwrap().run_id);
     // Notify Desktop before authorization, Worker startup, or the first Step completes.
     let _ = on_progress.send(WorkflowRunEventDto::ProgressBatch {
         run: Box::new(stored.read().unwrap().metadata()),
@@ -1434,6 +1470,7 @@ fn main() {
             export_background_datasets,
             run_workflow_live,
             request_workflow_stop,
+            request_global_workflow_stop,
             get_live_resources,
             get_live_backends,
             get_live_resource_identities,
@@ -1610,6 +1647,7 @@ mod tests {
             &confirmed,
             &confirmed_backends,
             &channel,
+            &super::WorkflowControl::default(),
         ) {
             Err(error) => error,
             Ok(_) => panic!("incompatible model must be rejected"),
@@ -1657,6 +1695,7 @@ mod tests {
             &confirmed,
             &confirmed_backends,
             &channel,
+            &super::WorkflowControl::default(),
         )
         .unwrap();
         assert_eq!(accepted.read().unwrap().run_id, id + 1);
@@ -1686,7 +1725,8 @@ mod tests {
                 &config,
                 &confirmed,
                 &confirmed_backends,
-                &channel
+                &channel,
+                &super::WorkflowControl::default(),
             )
             .is_err()
         );
@@ -1704,7 +1744,8 @@ mod tests {
                 &config,
                 &confirmed,
                 &confirmed_backends,
-                &channel
+                &channel,
+                &super::WorkflowControl::default(),
             )
             .is_err()
         );
@@ -1721,7 +1762,8 @@ mod tests {
                 &config,
                 &confirmed,
                 &confirmed_backends,
-                &channel
+                &channel,
+                &super::WorkflowControl::default(),
             )
             .is_err()
         );
@@ -1805,33 +1847,39 @@ mod tests {
     }
 
     #[test]
-    fn failed_stored_run_with_committed_rows_exports_csv_and_xlsx() {
-        let runs = StoredRuns::default();
-        let stored = runs.begin(export_template());
-        stored
-            .write()
-            .unwrap()
-            .append_event(&WorkflowRunEvent::ResultRowCommitted(
-                ResultRow::new(
-                    vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
-                    None,
-                )
-                .with_page("Results"),
-            ));
-        stored.write().unwrap().fail("workflow failed");
+    fn partial_stored_run_with_committed_rows_exports_csv_and_xlsx() {
+        for stopped in [false, true] {
+            let runs = StoredRuns::default();
+            let stored = runs.begin(export_template());
+            stored
+                .write()
+                .unwrap()
+                .append_event(&WorkflowRunEvent::ResultRowCommitted(
+                    ResultRow::new(
+                        vec![WorkflowOutput::new("Voltage".to_owned(), json!(1))],
+                        None,
+                    )
+                    .with_page("Results"),
+                ));
+            if stopped {
+                stored.write().unwrap().stop();
+            } else {
+                stored.write().unwrap().fail("workflow failed");
+            }
 
-        let dir = unique_test_dir("stored-export-failed");
-        let csv = dir.join("results.csv");
-        let xlsx = dir.join("results.xlsx");
-        let guard = stored.read().unwrap();
-        assert!(guard.manual_exportable());
-        export_stored_run_pages(&guard, &csv.display().to_string(), Some("Results"), "csv")
-            .unwrap();
-        export_stored_run_pages(&guard, &xlsx.display().to_string(), Some("Results"), "xlsx")
-            .unwrap();
-        assert_eq!(std::fs::read_to_string(&csv).unwrap(), "Voltage\n1\n");
-        assert!(std::fs::metadata(&xlsx).unwrap().len() > 0);
-        std::fs::remove_dir_all(dir).unwrap();
+            let dir = unique_test_dir("stored-export-failed");
+            let csv = dir.join("results.csv");
+            let xlsx = dir.join("results.xlsx");
+            let guard = stored.read().unwrap();
+            assert!(guard.manual_exportable());
+            export_stored_run_pages(&guard, &csv.display().to_string(), Some("Results"), "csv")
+                .unwrap();
+            export_stored_run_pages(&guard, &xlsx.display().to_string(), Some("Results"), "xlsx")
+                .unwrap();
+            assert_eq!(std::fs::read_to_string(&csv).unwrap(), "Voltage\n1\n");
+            assert!(std::fs::metadata(&xlsx).unwrap().len() > 0);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]
@@ -2026,21 +2074,32 @@ mod regression_tests {
         let a = StepId::new("loop-a").unwrap();
         let b = StepId::new("loop-b").unwrap();
         assert!(!state.request(a.to_string()));
+        assert!(!state.request_global(7));
         let control = state.register().unwrap();
+        assert!(!state.request_global(7));
+        *control.run_id.lock().unwrap() = Some(7);
+        assert!(!state.request_global(8));
+        assert!(state.request_global(7));
+        assert!(state.request_global(7));
+        assert!(control.workflow_stop.is_requested());
         assert!(state.register().is_err());
         assert!(state.register_manual().is_err());
         assert!(state.request(a.to_string()));
-        assert!(!super::consume_loop_stop(&control, &b));
-        assert!(super::consume_loop_stop(&control, &a));
-        assert!(!super::consume_loop_stop(&control, &a));
+        assert!(!super::consume_loop_stop(&control.loop_stop, &b));
+        assert!(super::consume_loop_stop(&control.loop_stop, &a));
+        assert!(!super::consume_loop_stop(&control.loop_stop, &a));
         state.clear();
         assert!(!state.request(b.to_string()));
         state.register_manual().unwrap();
+        assert!(!state.request_global(7));
         assert!(state.register().is_err());
         assert!(state.register_manual().is_err());
         assert!(!state.request(b.to_string()));
         state.clear();
-        assert!(state.register().is_ok());
+        let next = state.register().unwrap();
+        *next.run_id.lock().unwrap() = Some(8);
+        assert!(!state.request_global(7));
+        assert!(!next.workflow_stop.is_requested());
     }
 
     #[test]

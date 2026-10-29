@@ -180,6 +180,18 @@ sequence, Summary count and data-integrity checks. `ended` alone is insufficient
 Meters may report `final_drain_complete: null` when no drain is applicable;
 false is failure, and null never replaces the other completion evidence.
 
+Only cleanup after an effective global Workflow Stop may classify an intentional
+finite shortfall as stopped: the Worker must accept the stop, report
+`stop_reason: stop_requested`, match the configured expected count and actual
+received count, and pass the existing sequence, fatal-error, protocol, ended,
+EOF and final-drain checks. This includes Meters' monitored shortfall result
+(`ok: false`, summary and actual exit code 3, integrity `incomplete`) when there
+is no overflow or other error. Ordinary Worker OFF keeps its strict validation.
+The active Capture is incomplete for a finite shortfall or infinite stop;
+infinite mode requires a null expected count. Dataset quality retains the
+reported evidence, prior completed Captures are not downgraded by an intentional
+shortfall, and cleanup without an active Capture creates no Dataset.
+
 Frontend queries are bounded: table windows at most 1,000 rows (Desktop uses
 100), recorded Charts at most 2,000 representative samples, and opt-in Monitor
 at most 1,000 recent Worker samples. Chart queries identify Run, Background and
@@ -676,6 +688,16 @@ steps do not execute. Graceful Stop finishes the active innermost iteration
 through its successful commit point, unwinds to the selected loop, and can
 allow parent/root steps to continue. Iteration failure takes precedence over
 Stop. It is not a hard cancel.
+
+Global Workflow Stop is a separate per-run runtime request and adds no Template
+fields. It interrupts Wait, waits for other in-flight actions or startup/setup
+operations to finish or time out, and prevents subsequent ordinary steps or
+iterations. It unwinds to the root, retaining committed rows and messages while
+discarding unfinished scopes' staged rows. Interrupted Wait and loop aggregates
+use Cancelled; steps never started emit no execution record. An effective stop
+with successful cleanup produces a Stopped run whose success predicate is false.
+Real execution, CSV, data integrity, or cleanup failures still take precedence;
+a late request after natural completion does not turn success into Stopped.
 
 ## CSV streaming and export contract
 

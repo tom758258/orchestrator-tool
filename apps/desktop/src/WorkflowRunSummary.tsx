@@ -75,6 +75,7 @@ export default function WorkflowRunSummary({
         <p>Live run did not start</p><FailureDetails message={liveStartError} />
       </div>}
       {runStatus === 'running' && <p role="status">{runningText}</p>}
+      {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
 
       {validationStatus === 'valid' && (
         <p className="validation-success" role="status">

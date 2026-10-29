@@ -409,7 +409,7 @@ pub(crate) fn unique_file(
 
 enum Command {
     Action(BackgroundAction, bool, mpsc::SyncSender<Result<(), String>>),
-    Cleanup(mpsc::SyncSender<Result<(), String>>),
+    Cleanup(bool, mpsc::SyncSender<Result<(), String>>),
 }
 struct Runtime {
     sender: mpsc::SyncSender<Command>,
@@ -600,10 +600,14 @@ impl BackgroundManager {
 
     /// Internal cleanup is idempotent, and attempts every background after failure.
     pub fn cleanup(&mut self) -> Result<(), String> {
+        self.cleanup_after_workflow(false)
+    }
+
+    pub(crate) fn cleanup_after_workflow(&mut self, stopped: bool) -> Result<(), String> {
         let mut errors = Vec::new();
         for (id, runtime) in self.runtimes.drain() {
             let (tx, rx) = mpsc::sync_channel(1);
-            if runtime.sender.send(Command::Cleanup(tx)).is_ok() {
+            if runtime.sender.send(Command::Cleanup(stopped, tx)).is_ok() {
                 match rx.recv_timeout(self.shutdown + Duration::from_secs(1)) {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => errors.push(format!("{id}: {e}")),
@@ -836,11 +840,16 @@ impl Dispatcher {
         }
         Ok(())
     }
-    fn stop(&mut self, session: WorkerSession, shutdown: Duration) -> Result<(), String> {
+    fn stop(
+        &mut self,
+        session: WorkerSession,
+        shutdown: Duration,
+        stopped: bool,
+    ) -> Result<bool, String> {
         let worker_run_id = session.ready().run_id().to_owned();
         let mut event_error = None;
         let result = session
-            .shutdown_with_events(shutdown, |event| {
+            .shutdown_background_with_events(shutdown, |event| {
                 if let Err(error) = self.event(event) {
                     event_error.get_or_insert(error);
                 }
@@ -849,17 +858,28 @@ impl Dispatcher {
         if let Some(error) = event_error {
             return Err(error);
         }
-        let status = result?;
-        if !status.success() {
-            return Err(format!("Background Worker exit {status}"));
-        }
+        let (status, stop_accepted) = result?;
         if self.stream_state.as_deref() != Some("ended") {
             return Err("Background ended evidence missing".into());
         }
-        crate::adapters::meters::validate_background_summary(
-            self.summary.as_ref().ok_or("Meters summary missing")?,
-            self.total,
-        )?;
+        let summary = self.summary.as_ref().ok_or("Meters summary missing")?;
+        if stopped && !stop_accepted && summary["stop_reason"] == "stop_requested" {
+            return Err("Background stopped without accepting this workflow's stop request".into());
+        }
+        let incomplete = if stopped && stop_accepted {
+            crate::adapters::meters::validate_stopped_background_summary(
+                summary,
+                self.total,
+                status.code(),
+                self.config.trigger_count,
+            )?
+        } else {
+            if !status.success() {
+                return Err(format!("Background Worker exit {status}"));
+            }
+            crate::adapters::meters::validate_background_summary(summary, self.total)?;
+            false
+        };
         let quality = self.summary.as_ref().unwrap()["data_integrity"]
             .as_str()
             .unwrap_or("unknown");
@@ -872,11 +892,12 @@ impl Dispatcher {
             if dataset.metadata.worker_run_id == worker_run_id
                 && dataset.metadata.background_id == self.config.id
                 && dataset.metadata.status != "failed"
+                && !(incomplete && dataset.metadata.status == "completed")
             {
                 dataset.metadata.quality = quality.into();
             }
         }
-        Ok(())
+        Ok(incomplete)
     }
     fn run(
         &mut self,
@@ -899,7 +920,7 @@ impl Dispatcher {
                                 Err("Capture is ON; switch it OFF before Worker OFF".into())
                             } else {
                                 if let Some(session) = session.take()
-                                    && let Err(e) = self.stop(session, shutdown)
+                                    && let Err(e) = self.stop(session, shutdown, false)
                                 {
                                     self.fail(&e);
                                     self.finish("failed", "incomplete", Some(e.clone()));
@@ -920,24 +941,32 @@ impl Dispatcher {
                         return;
                     }
                 }
-                Ok(Command::Cleanup(reply)) => {
+                Ok(Command::Cleanup(stopped, reply)) => {
                     let result = session
                         .take()
-                        .map(|s| self.stop(s, shutdown))
-                        .unwrap_or(Ok(()));
+                        .map(|s| self.stop(s, shutdown, stopped))
+                        .unwrap_or(Ok(false));
                     if let Err(e) = &result {
                         self.fail(e);
                         self.finish("failed", "incomplete", Some(e.clone()));
                     } else {
-                        self.finish("completed", "no_loss_detected", None);
+                        self.finish(
+                            if result == Ok(true) {
+                                "incomplete"
+                            } else {
+                                "completed"
+                            },
+                            "no_loss_detected",
+                            None,
+                        );
                         self.state("off", None);
                     }
-                    let _ = reply.send(result);
+                    let _ = reply.send(result.map(|_| ()));
                     return;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     if let Some(session) = session.take() {
-                        let _ = self.stop(session, shutdown);
+                        let _ = self.stop(session, shutdown, false);
                     }
                     self.finish("incomplete", "unknown", None);
                     return;
@@ -950,17 +979,17 @@ impl Dispatcher {
                         if let Err(error) = self.event(event) {
                             self.fail(&error);
                             if let Some(s) = session.take() {
-                                let _ = self.stop(s, shutdown);
+                                let _ = self.stop(s, shutdown, false);
                             }
                             self.finish("failed", "incomplete", Some(error));
                         }
                     }
                     Err(WorkerEventError::Timeout(_)) => {}
                     Err(WorkerEventError::Disconnected) => {
-                        let result = self.stop(session.take().unwrap(), shutdown);
+                        let result = self.stop(session.take().unwrap(), shutdown, false);
                         self.ended = true;
                         match result {
-                            Ok(()) => {
+                            Ok(_) => {
                                 self.auto_closed = self.current.is_some();
                                 self.finish("completed", "no_loss_detected", None);
                                 self.state("pending-release", None);
@@ -974,7 +1003,7 @@ impl Dispatcher {
                     Err(error) => {
                         self.fail(&error.to_string());
                         if let Some(s) = session.take() {
-                            let _ = self.stop(s, shutdown);
+                            let _ = self.stop(s, shutdown, false);
                         }
                         self.finish("failed", "incomplete", Some(error.to_string()));
                     }

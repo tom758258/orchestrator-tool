@@ -1134,15 +1134,24 @@ impl WorkflowRunResult {
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorkflowRunSummary {
     failure: Option<String>,
+    stopped: bool,
 }
 
 impl WorkflowRunSummary {
     pub fn new(failure: Option<String>) -> Self {
-        Self { failure }
+        Self::with_stop(failure, false)
+    }
+
+    pub(crate) fn with_stop(failure: Option<String>, stopped: bool) -> Self {
+        Self { failure, stopped }
+    }
+
+    pub fn stopped(&self) -> bool {
+        self.stopped && self.failure.is_none()
     }
 
     pub fn succeeded(&self) -> bool {
-        self.failure.is_none()
+        self.failure.is_none() && !self.stopped
     }
 
     pub fn failure(&self) -> Option<&str> {

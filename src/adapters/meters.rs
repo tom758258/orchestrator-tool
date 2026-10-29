@@ -390,6 +390,73 @@ pub fn validate_background_summary(summary: &Value, received: usize) -> Result<(
     Ok(())
 }
 
+/// Classifies only a Run-confirmed user stop; ordinary Worker OFF remains strict.
+pub(crate) fn validate_stopped_background_summary(
+    summary: &Value,
+    received: usize,
+    exit_code: Option<i32>,
+    trigger_count: Option<usize>,
+) -> Result<bool, String> {
+    if summary["stop_reason"] != "stop_requested" {
+        validate_background_summary(summary, received)?;
+        if exit_code != Some(0) {
+            return Err("Meters completed with an unsuccessful process exit".into());
+        }
+        return Ok(false);
+    }
+    let finite_shortfall = summary["trigger_count_infinite"] == false
+        && summary["expected_readings"]
+            .as_u64()
+            .is_some_and(|n| n > received as u64);
+    let infinite = summary["trigger_count_infinite"] == true
+        && summary.get("expected_readings") == Some(&Value::Null);
+    let finite_complete = summary["trigger_count_infinite"] == false
+        && summary["expected_readings"].as_u64() == Some(received as u64);
+    let monitoring_ok = match summary["overflow_monitoring"].as_str() {
+        Some("active") => summary["overflow_detected"] == false,
+        Some("off") => matches!(
+            summary.get("overflow_detected"),
+            Some(Value::Null | Value::Bool(false))
+        ),
+        _ => false,
+    };
+    let expected_shortfall_failure = finite_shortfall
+        && summary["data_integrity"] == "incomplete"
+        && summary["overflow_monitoring"] == "active"
+        && summary["ok"] == false
+        && summary["exit_code"] == 3
+        && exit_code == Some(3);
+    let normal_exit = summary["ok"] == true && summary["exit_code"] == 0 && exit_code == Some(0);
+    let count_mode_matches = match trigger_count {
+        Some(count) => {
+            summary["trigger_count_infinite"] == false
+                && summary["expected_readings"].as_u64() == Some(count as u64)
+        }
+        None => infinite,
+    };
+    if !count_mode_matches
+        || !(finite_shortfall || infinite || finite_complete)
+        || summary["captured"].as_u64() != Some(received as u64)
+        || summary["errors"] != 0
+        || summary.get("fatal_error") != Some(&Value::Null)
+        || !monitoring_ok
+        || !matches!(
+            summary.get("final_drain_complete"),
+            Some(Value::Null | Value::Bool(true))
+        )
+        || !(normal_exit || expected_shortfall_failure)
+        || !(matches!(
+            summary["data_integrity"].as_str(),
+            Some("unknown" | "no_loss_detected")
+        ) || (finite_shortfall && summary["data_integrity"] == "incomplete"))
+    {
+        return Err(format!(
+            "Meters controlled stop evidence unconfirmed: {summary}"
+        ));
+    }
+    Ok(finite_shortfall || infinite)
+}
+
 /// Builds a simulate Worker launch specification from a validated setup.
 pub fn simulate_worker_launch_spec(
     executable: impl AsRef<Path>,

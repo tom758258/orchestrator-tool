@@ -121,7 +121,7 @@ export type StepSummaryDto = Pick<StepExecutionDto, 'step_id' | 'status' | 'outp
 }
 export type RunMetadataDto = {
   run_id: number
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'stopped' | 'failed'
   error: string | null
   completed_successfully: boolean
   manual_exportable: boolean
