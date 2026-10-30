@@ -554,6 +554,11 @@ fn software_background_fixture(scenario: &str) {
     let mut triggers = 0;
     let batch = if scenario == "timer-simple" { 1 } else { 3 };
     let mut stopped = false;
+    let stopping_case = scenario.starts_with("timer-stopping");
+    let infinite = matches!(scenario, "timer-stopping" | "timer-ended");
+    let mut stopping = false;
+    let mut ended_at: Option<Instant> = None;
+    let mut status_count = 0;
     while captured < if batch == 1 { 6 } else { 4 * batch } {
         if !active && scenario != "timer-inactive" && started.elapsed() >= Duration::from_millis(60)
         {
@@ -568,6 +573,8 @@ fn software_background_fixture(scenario: &str) {
             let rejected = !stop && scenario == "timer-reject";
             if !stop {
                 assert!(active, "trigger before Active");
+                assert!(!stopping, "trigger after Worker reported stopping");
+                assert!(ended_at.is_none(), "trigger after stream ended");
                 assert_eq!(pending, 0, "overlapping trigger before complete batch");
                 if let Some(at) = completed_at {
                     assert!(
@@ -608,27 +615,69 @@ fn software_background_fixture(scenario: &str) {
             }
             emit(sample);
             pending -= 1;
+            if stopping_case && captured == 1 {
+                stopping = true;
+                emit(
+                    json!({"event":"status","worker_state":"stopping","fatal_error":null,
+                    "stream":{"lifecycle":"run_bound","state":"active"}}),
+                );
+            }
             next_sample = Instant::now() + Duration::from_millis(40);
             if pending == 0 {
                 completed_at = Some(Instant::now());
+                if scenario == "timer-ended" {
+                    status("ended");
+                    ended_at = Some(Instant::now());
+                }
             }
+        }
+        if stopping {
+            // A later active/running update must not reopen the trigger gate;
+            // the rest of the already accepted batch must still be retained.
+            status("active");
+        }
+        if ended_at.is_some_and(|at| at.elapsed() >= Duration::from_millis(100)) {
+            break;
         }
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "timer fixture did not stop"
         );
-        thread::sleep(Duration::from_millis(2));
+        if scenario == "timer-status-stream" && captured == batch && triggers == 1 {
+            // Keep the pipe busy with a bounded burst, checking HTTP between
+            // writes. The second trigger must arrive before the burst ends.
+            for _ in 0..32 {
+                emit(
+                    json!({"event":"status","worker_state":"running","fatal_error":null,
+                    "stream":{"lifecycle":"run_bound","state":"active"},
+                    "detail":"x".repeat(8_192)}),
+                );
+                status_count += 1;
+            }
+            assert!(
+                status_count < 4_096,
+                "timer waited for the status stream to stop"
+            );
+        } else {
+            thread::sleep(Duration::from_millis(2));
+        }
     }
     status("ended");
     emit(
         json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,
         "captured":captured,"errors":0,"overflow_detected":null,"overflow_monitoring":"off",
-        "final_drain_complete":null,"data_integrity":"unknown","trigger_count_infinite":false,
-        "expected_readings": if batch == 1 {json!(null)} else {json!(12)},
+        "final_drain_complete":null,"data_integrity":"unknown","trigger_count_infinite":infinite,
+        "expected_readings": if batch == 1 || infinite {json!(null)} else {json!(12)},
         "stop_reason":if stopped {"stop_requested"} else if batch == 1 {"max_samples_reached"} else {"completed"}}),
     );
-    if !stopped {
+    if stopping_case || scenario == "timer-ended" {
+        assert_eq!(triggers, 1);
+        assert_eq!(captured, batch);
+    } else if !stopped {
         assert_eq!(triggers, if batch == 1 { 6 } else { 4 });
+    }
+    if scenario == "timer-status-stream" {
+        assert!(status_count > 0);
     }
 }
 
@@ -641,6 +690,10 @@ fn software_background_timer_contract() {
     for scenario in [
         "timer-simple",
         "timer-custom",
+        "timer-status-stream",
+        "timer-ended",
+        "timer-stopping",
+        "timer-stopping-short",
         "timer-reject",
         "timer-timeout",
         "timer-inactive",
@@ -665,6 +718,20 @@ fn software_background_timer_contract() {
         wire["backgrounds"][0]["limit_count"] =
             json!(if scenario == "timer-simple" { 6 } else { 4 });
         wire["backgrounds"][0]["timer_interval_ms"] = json!(25);
+        if matches!(
+            scenario,
+            "timer-ended" | "timer-stopping" | "timer-stopping-short"
+        ) {
+            wire["workflow"]["steps"] = json!([
+                {"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true},
+                {"type":"wait","id":"finish","duration_ms":400},
+                {"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":true}
+            ]);
+            if scenario != "timer-stopping-short" {
+                wire["backgrounds"][0]["limit_count"] = json!(null);
+                wire["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"] = json!(true);
+            }
+        }
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         let specs = HashMap::from([(
             ToolInstanceId::new("meters-bg").unwrap(),
@@ -699,7 +766,10 @@ fn software_background_timer_contract() {
             |_| false,
         );
         let data = store.lock().unwrap();
-        if matches!(scenario, "timer-simple" | "timer-custom") {
+        if matches!(
+            scenario,
+            "timer-simple" | "timer-custom" | "timer-status-stream"
+        ) {
             assert!(
                 result.as_ref().is_ok_and(|r| r.succeeded()),
                 "{scenario}: {result:?}"
@@ -714,6 +784,27 @@ fn software_background_timer_contract() {
                 data.monitor("background-1").len(),
                 if scenario == "timer-simple" { 6 } else { 12 }
             );
+        } else if matches!(
+            scenario,
+            "timer-ended" | "timer-stopping" | "timer-stopping-short"
+        ) {
+            if scenario == "timer-stopping-short" {
+                let error = result.unwrap_err().to_string();
+                assert!(
+                    error.contains("ended before the configured sample count"),
+                    "{error}"
+                );
+                assert_eq!(data.metadata()[0].status, "failed");
+            } else {
+                assert!(
+                    result.as_ref().is_ok_and(|r| r.succeeded()),
+                    "{scenario}: {result:?}"
+                );
+                assert_eq!(data.workers[0].state, "off");
+                assert_eq!(data.metadata()[0].status, "completed");
+            }
+            assert_eq!(data.metadata()[0].row_count, 3);
+            assert_eq!(data.monitor("background-1").len(), 3);
         } else if scenario == "timer-stop" {
             assert!(result.as_ref().is_ok_and(|r| r.stopped()), "{result:?}");
             assert_eq!(data.metadata()[0].status, "incomplete");
@@ -722,6 +813,7 @@ fn software_background_timer_contract() {
             assert!(result.is_err(), "{scenario}: {result:?}");
             assert!(data.workers[0].error.is_some(), "{scenario}");
         }
+        println!("{scenario}: passed");
     }
 }
 

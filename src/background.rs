@@ -891,6 +891,11 @@ impl Dispatcher {
         match event["event"].as_str().unwrap_or("") {
             "status" => {
                 self.stream_state = event["stream"]["state"].as_str().map(str::to_owned);
+                if event["worker_state"] == "stopping"
+                    && let Some(timer) = &mut self.timer
+                {
+                    timer.stopping = true;
+                }
                 self.state("on", None);
                 if event["worker_state"] == "failed" || !event["fatal_error"].is_null() {
                     return Err(format!("Worker failed: {event}"));
@@ -1044,6 +1049,7 @@ impl Dispatcher {
             || self.failure.check().is_err()
             || self.ended
             || self.stream_state.as_deref() == Some("ended")
+            || self.summary.is_some()
         {
             return Ok(());
         }
@@ -1153,8 +1159,13 @@ impl Dispatcher {
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
-            if let Some(active) = &session {
-                // Drain queued events before sending another trigger, including ended evidence.
+            // Observe queued stop/end evidence before triggering, but yield after a
+            // bounded batch so continuous status events cannot starve the timer.
+            let mut idle = false;
+            for _ in 0..64 {
+                let Some(active) = &session else {
+                    break;
+                };
                 match active.recv_event(Duration::from_millis(1)) {
                     Ok(event) => {
                         if let Err(error) =
@@ -1168,14 +1179,8 @@ impl Dispatcher {
                         }
                     }
                     Err(WorkerEventError::Timeout(_)) => {
-                        if let Err(error) = self.tick(active, true) {
-                            self.fail(&error);
-                            if let Some(s) = session.take() {
-                                let _ = self.stop(s, shutdown, false);
-                            }
-                            self.finish("failed", "incomplete", Some(error));
-                        }
-                        thread::sleep(Duration::from_millis(5));
+                        idle = true;
+                        break;
                     }
                     Err(WorkerEventError::Disconnected) => {
                         let result = self.stop(session.take().unwrap(), shutdown, false);
@@ -1200,7 +1205,17 @@ impl Dispatcher {
                         self.finish("failed", "incomplete", Some(error.to_string()));
                     }
                 }
-            } else {
+            }
+            if let Some(active) = &session
+                && let Err(error) = self.tick(active, true)
+            {
+                self.fail(&error);
+                if let Some(s) = session.take() {
+                    let _ = self.stop(s, shutdown, false);
+                }
+                self.finish("failed", "incomplete", Some(error));
+            }
+            if idle || session.is_none() {
                 thread::sleep(Duration::from_millis(5));
             }
         }
