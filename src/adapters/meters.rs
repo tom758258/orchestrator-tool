@@ -263,80 +263,86 @@ pub fn setup_arguments(setup: &MetersSetup) -> Vec<OsString> {
 }
 
 fn trigger_arguments(limit: Option<usize>, setup: &MetersSetup) -> Vec<OsString> {
-    match setup.trigger_mode {
-        MetersTriggerMode::Software => {
-            [OsString::from("--trigger-mode"), OsString::from("software")]
-                .into_iter()
-                .chain(limit.into_iter().flat_map(|limit| {
-                    [
-                        OsString::from("--max-samples"),
-                        OsString::from(limit.to_string()),
-                    ]
-                }))
-                .collect()
+    let mode = match setup.trigger_mode {
+        MetersTriggerMode::Software => "software",
+        MetersTriggerMode::Immediate => "immediate",
+        MetersTriggerMode::External => "external",
+        MetersTriggerMode::SoftwareCustom => "software-custom",
+        MetersTriggerMode::ImmediateCustom => "immediate-custom",
+        MetersTriggerMode::ExternalCustom => "external-custom",
+    };
+    let mut arguments = vec!["--trigger-mode".into(), mode.into()];
+    if setup.trigger_mode.is_custom() {
+        match limit {
+            Some(count) => arguments.extend(["--trigger-count".into(), count.to_string().into()]),
+            None => arguments.push("--trigger-count-infinite".into()),
         }
-        mode => {
-            let trigger_count = limit.expect("Custom Meters mode requires a planned trigger count");
-            let mode = match mode {
-                MetersTriggerMode::SoftwareCustom => "software-custom",
-                MetersTriggerMode::ImmediateCustom => "immediate-custom",
-                MetersTriggerMode::ExternalCustom => "external-custom",
-                MetersTriggerMode::Software => unreachable!(),
-            };
-            let mut arguments = vec![
-                OsString::from("--trigger-mode"),
-                OsString::from(mode),
-                OsString::from("--trigger-count"),
-                OsString::from(trigger_count.to_string()),
-                OsString::from("--sample-count"),
-                OsString::from(setup.sample_count.to_string()),
-            ];
-            if let Some(size) = setup.buffer_drain_size {
-                arguments.extend([
-                    OsString::from("--buffer-drain-size"),
-                    OsString::from(size.to_string()),
-                ]);
-            }
-            if setup.allow_buffer_overflow_risk {
-                arguments.push(OsString::from("--allow-buffer-overflow-risk"));
-            }
-            arguments
+        arguments.extend([
+            "--sample-count".into(),
+            setup.sample_count.to_string().into(),
+        ]);
+        if let Some(size) = setup.buffer_drain_size {
+            arguments.extend(["--buffer-drain-size".into(), size.to_string().into()]);
+        }
+        if setup.allow_buffer_overflow_risk {
+            arguments.push("--allow-buffer-overflow-risk".into());
+        }
+    } else if let Some(count) = limit {
+        arguments.extend(["--max-samples".into(), count.to_string().into()]);
+    }
+    if setup.trigger_mode.is_external() {
+        if let Some(slope) = setup.hw_trigger_slope {
+            arguments.extend([
+                "--hw-trigger-slope".into(),
+                match slope {
+                    VmCompSlope::Pos => "pos",
+                    VmCompSlope::Neg => "neg",
+                }
+                .into(),
+            ]);
+        }
+        if let Some(delay) = setup.hw_trigger_delay_s {
+            arguments.extend(["--hw-trigger-delay-s".into(), delay.to_string().into()]);
         }
     }
+    arguments
 }
 
-/// Immediate Custom is autonomous; Software and External need separate integration.
+/// Builds a native finite or infinite streaming source for any Meters mode.
 pub fn background_worker_launch_spec(
     executable: &Path,
     mode: crate::run::ExecutionMode,
     resource: Option<&str>,
-    trigger_count: Option<usize>,
+    limit_count: Option<usize>,
     setup: &MetersSetup,
     backend: crate::config::VisaBackend,
 ) -> WorkerLaunchSpec {
     let spec = match mode {
         crate::run::ExecutionMode::Simulate => {
-            simulate_worker_launch_spec(executable, Some(trigger_count.unwrap_or(1)), setup)
+            simulate_worker_launch_spec(executable, limit_count, setup)
         }
         crate::run::ExecutionMode::Live => live_worker_launch_spec(
             executable,
             resource.expect("validated live resource"),
-            Some(trigger_count.unwrap_or(1)),
+            limit_count,
             setup,
             backend,
         ),
     };
     let mut arguments = spec.arguments().to_vec();
-    if trigger_count.is_none() {
-        let index = arguments
-            .iter()
-            .position(|arg| arg == "--trigger-count")
-            .expect("Custom trigger count");
-        arguments.drain(index..index + 2);
-        arguments.push("--trigger-count-infinite".into());
-    }
     arguments.push("--streaming".into());
     WorkerLaunchSpec::new(executable, arguments)
+}
+
+/// Sends only the control request. The caller remains the sole event consumer.
+pub(crate) fn trigger_background(session: &WorkerSession, timeout: Duration) -> Result<(), String> {
+    let job_id = control_job_id();
+    let (code, value) = WorkerClient::new(session.ready()).command_with_rejection_timeout(
+        &json!({"schema_version": 3, "command": SOFTWARE_TRIGGER_COMMAND, "arguments": {}, "job_id": job_id}),
+        timeout,
+    ).map_err(|e| e.to_string())?;
+    validate_runtime_accepted_response(code, value, session.ready().run_id(), &job_id)
+        .map_err(|e| e.to_string())
 }
 
 pub fn validate_background_sample(sample: &Value) -> Result<(), String> {
@@ -396,7 +402,29 @@ pub(crate) fn validate_stopped_background_summary(
     received: usize,
     exit_code: Option<i32>,
     expected_readings: Option<usize>,
+    custom: bool,
 ) -> Result<bool, String> {
+    if !custom {
+        validate_background_summary(summary, received)?;
+        if exit_code != Some(0)
+            || summary["exit_code"] != 0
+            || summary.get("fatal_error") != Some(&Value::Null)
+            || summary["trigger_count_infinite"] != false
+            || summary.get("expected_readings") != Some(&Value::Null)
+            || expected_readings.is_some_and(|count| received > count)
+        {
+            return Err(format!(
+                "Meters Simple stop evidence unconfirmed: {summary}"
+            ));
+        }
+        return match summary["stop_reason"].as_str() {
+            Some("stop_requested") => Ok(expected_readings.is_none_or(|count| received < count)),
+            Some("max_samples_reached") if expected_readings == Some(received) => Ok(false),
+            _ => Err(format!(
+                "Meters Simple completion evidence unconfirmed: {summary}"
+            )),
+        };
+    }
     if summary["stop_reason"] != "stop_requested" {
         validate_background_summary(summary, received)?;
         if exit_code != Some(0) {
@@ -739,9 +767,7 @@ impl Error for MetersSmokeError {
 
 /// Runs a single runtime Meters action on an already-started Worker session.
 ///
-/// The default Single setup sends `software_trigger`. Custom behavior follows
-/// the configured trigger mode: Software Custom sends the trigger, while
-/// Immediate Custom and External Custom only consume Worker sample events.
+/// Single sends `software_trigger` and returns one sample.
 /// Software-trigger requests contain no `context`, and include a unique client `job_id`.
 pub fn run_action(
     session: &WorkerSession,
@@ -764,6 +790,11 @@ pub fn run_action_with_setup(
         return Err(MetersActionError::UnsupportedAction(action.clone()));
     }
     validate_measure_arguments(arguments)?;
+    if setup.trigger_mode != MetersTriggerMode::Software {
+        return Err(MetersActionError::InvalidArguments(
+            "Foreground Meters requires Single; use Background for other modes".into(),
+        ));
+    }
 
     // Only explicit runtime opt-in enables the optional source state.
     // This is read-only readiness monitoring, never a new start command.
@@ -775,36 +806,23 @@ pub fn run_action_with_setup(
 
     let client = WorkerClient::new(session.ready());
 
-    if setup.trigger_mode.uses_software_trigger() {
-        let command_deadline = Instant::now() + timeout;
-        let job_id = control_job_id();
-        let request = json!({
-            "schema_version": WORKER_SCHEMA_VERSION,
-            "command": SOFTWARE_TRIGGER_COMMAND,
-            "arguments": {},
-            "job_id": job_id
-        });
+    let command_deadline = Instant::now() + timeout;
+    let job_id = control_job_id();
+    let request = json!({
+        "schema_version": WORKER_SCHEMA_VERSION,
+        "command": SOFTWARE_TRIGGER_COMMAND,
+        "arguments": {},
+        "job_id": job_id
+    });
 
-        let remaining =
-            remaining_duration(command_deadline).ok_or(MetersActionError::Timeout(timeout))?;
-        let (http_status, response) = client
-            .command_with_timeout(&request, remaining)
-            .map_err(MetersActionError::Http)?;
-        validate_runtime_accepted_response(
-            http_status,
-            response,
-            session.ready().run_id(),
-            &job_id,
-        )?;
-    }
+    let remaining =
+        remaining_duration(command_deadline).ok_or(MetersActionError::Timeout(timeout))?;
+    let (http_status, response) = client
+        .command_with_timeout(&request, remaining)
+        .map_err(MetersActionError::Http)?;
+    validate_runtime_accepted_response(http_status, response, session.ready().run_id(), &job_id)?;
 
-    let expected_samples = if setup.trigger_mode.is_custom() {
-        setup.sample_count
-    } else {
-        1
-    };
-    let mut sample_deadline = Instant::now() + timeout;
-    let mut samples = Vec::with_capacity(expected_samples);
+    let sample_deadline = Instant::now() + timeout;
     loop {
         let Some(remaining) = remaining_duration(sample_deadline) else {
             return Err(MetersActionError::Timeout(timeout));
@@ -812,19 +830,7 @@ pub fn run_action_with_setup(
         match session.recv_event(remaining) {
             Ok(value) => match classify_meters_event(&value, session.ready().run_id()) {
                 MetersEventDecision::Continue => {}
-                MetersEventDecision::Success(sample) => {
-                    samples.push(sample);
-                    if samples.len() == expected_samples {
-                        return Ok(if setup.trigger_mode.is_custom() {
-                            Value::Array(samples)
-                        } else {
-                            samples.pop().unwrap()
-                        });
-                    }
-                    if setup.trigger_mode.is_custom() {
-                        sample_deadline = Instant::now() + timeout;
-                    }
-                }
+                MetersEventDecision::Success(sample) => return Ok(sample),
                 MetersEventDecision::Failure(error) => return Err(error),
             },
             Err(WorkerEventError::Timeout(_)) => {
@@ -1407,8 +1413,11 @@ mod tests {
     }
 
     #[test]
-    fn meters_custom_launch_modes_use_batch_contract_without_max_samples() {
+    fn background_launches_keep_simple_and_custom_parameters_separate() {
         for (trigger_mode, cli_mode) in [
+            (MetersTriggerMode::Software, "software"),
+            (MetersTriggerMode::Immediate, "immediate"),
+            (MetersTriggerMode::External, "external"),
             (MetersTriggerMode::SoftwareCustom, "software-custom"),
             (MetersTriggerMode::ImmediateCustom, "immediate-custom"),
             (MetersTriggerMode::ExternalCustom, "external-custom"),
@@ -1418,33 +1427,65 @@ mod tests {
                 sample_count: 3,
                 buffer_drain_size: Some(50),
                 allow_buffer_overflow_risk: true,
-                ..MetersSetup::default()
+                hw_trigger_slope: Some(VmCompSlope::Neg),
+                hw_trigger_delay_s: Some(0.25),
+                ..Default::default()
             };
-            for spec in [
-                simulate_worker_launch_spec(Path::new("meters-tool.exe"), Some(7), &setup),
-                super::live_worker_launch_spec(
-                    "meters-tool.exe",
-                    "USB0::Meter::INSTR",
-                    Some(7),
-                    &setup,
-                    crate::config::VisaBackend::System,
-                ),
-            ] {
-                let arguments = spec.arguments();
-                for pair in [
-                    ["--trigger-mode", cli_mode],
-                    ["--trigger-count", "7"],
-                    ["--sample-count", "3"],
-                    ["--buffer-drain-size", "50"],
+            for limit in [Some(7), None] {
+                for mode in [
+                    crate::run::ExecutionMode::Simulate,
+                    crate::run::ExecutionMode::Live,
                 ] {
-                    assert!(arguments.windows(2).any(|window| window == pair));
+                    let spec = super::background_worker_launch_spec(
+                        Path::new("meters-tool.exe"),
+                        mode,
+                        Some("USB0::Meter::INSTR"),
+                        limit,
+                        &setup,
+                        crate::config::VisaBackend::System,
+                    );
+                    let args = spec.arguments();
+                    let has = |flag: &str| args.iter().any(|arg| arg == flag);
+                    assert!(
+                        args.windows(2)
+                            .any(|pair| pair == ["--trigger-mode", cli_mode])
+                    );
+                    assert!(has("--streaming") && has("--status-format"));
+                    assert_eq!(
+                        has("--max-samples"),
+                        !trigger_mode.is_custom() && limit.is_some()
+                    );
+                    assert_eq!(
+                        has("--trigger-count"),
+                        trigger_mode.is_custom() && limit.is_some()
+                    );
+                    assert_eq!(
+                        has("--trigger-count-infinite"),
+                        trigger_mode.is_custom() && limit.is_none()
+                    );
+                    assert_eq!(has("--sample-count"), trigger_mode.is_custom());
+                    assert_eq!(has("--buffer-drain-size"), trigger_mode.is_custom());
+                    assert_eq!(
+                        has("--allow-buffer-overflow-risk"),
+                        trigger_mode.is_custom()
+                    );
+                    assert_eq!(has("--hw-trigger-slope"), trigger_mode.is_external());
+                    assert_eq!(has("--hw-trigger-delay-s"), trigger_mode.is_external());
+                    for (flag, expected) in [
+                        ("--max-samples", "7"),
+                        ("--trigger-count", "7"),
+                        ("--sample-count", "3"),
+                        ("--buffer-drain-size", "50"),
+                        ("--hw-trigger-slope", "neg"),
+                        ("--hw-trigger-delay-s", "0.25"),
+                        ("--status-format", "jsonl"),
+                    ] {
+                        if has(flag) {
+                            assert!(args.windows(2).any(|pair| pair == [flag, expected]));
+                        }
+                    }
+                    assert!(!has("--timer-interval-s"));
                 }
-                assert!(
-                    arguments
-                        .iter()
-                        .any(|argument| argument == "--allow-buffer-overflow-risk")
-                );
-                assert!(!arguments.iter().any(|argument| argument == "--max-samples"));
             }
         }
     }

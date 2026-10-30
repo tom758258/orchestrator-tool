@@ -1,9 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    error::Error,
-    fmt, fs, io,
-    path::Path,
-};
+use std::{collections::BTreeMap, error::Error, fmt, fs, io, path::Path};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -216,7 +211,6 @@ pub struct Template {
     tool_instances: Vec<ToolInstance>,
     workflow: Workflow,
     output_views: Option<OutputViews>,
-    batch_sources: HashMap<StepId, StepId>,
 }
 
 impl Template {
@@ -343,7 +337,6 @@ impl Template {
         }
         validate_scopes_files(workflow.steps(), &tool_instances)?;
         validate_tool_action_parameters(workflow.steps(), &tool_instances)?;
-        let batch_sources = validate_batch_sources(&workflow, &tool_instances)?;
         validate_output_views(&workflow, None, &backgrounds)?;
         let template = Self {
             backgrounds,
@@ -351,7 +344,6 @@ impl Template {
             tool_instances,
             workflow,
             output_views: None,
-            batch_sources,
         };
         template.validate_backgrounds()?;
         Ok(template)
@@ -421,35 +413,6 @@ impl Template {
         &self.workflow
     }
 
-    pub(crate) fn batch_source_for_step(&self, step_id: &StepId) -> Option<&StepId> {
-        self.batch_sources.get(step_id)
-    }
-
-    pub(crate) fn batch_size(&self, source: &StepId) -> Option<usize> {
-        fn find<'a>(steps: &'a [Step], id: &StepId) -> Option<&'a Step> {
-            for step in steps {
-                if step.id() == id {
-                    return Some(step);
-                }
-                if let StepKind::For { body, .. } | StepKind::While { body, .. } = step.kind()
-                    && let Some(found) = find(body, id)
-                {
-                    return Some(found);
-                }
-            }
-            None
-        }
-        let step = find(self.workflow.steps(), source)?;
-        let StepKind::ToolAction { target, .. } = step.kind() else {
-            return None;
-        };
-        self.tool_instances
-            .iter()
-            .find(|instance| &instance.id == target)?
-            .meters_setup()
-            .map(|setup| setup.sample_count)
-    }
-
     /// Serializes the template to pretty JSON.
     pub fn to_json_string(&self) -> Result<String, TemplateError> {
         let wire = TemplateWire::from_template(self).map_err(TemplateError::Json)?;
@@ -495,28 +458,57 @@ impl Template {
                 .iter()
                 .find(|i| i.id == background.tool_instance_id)
                 .ok_or_else(|| invalid("Unknown Background Tool Instance".into()))?;
-            if instance.meters_setup().is_none_or(|s| {
-                s.trigger_mode != crate::meters_setup::MetersTriggerMode::ImmediateCustom
-            }) {
-                return Err(invalid(format!(
-                    "{}: Background Unsupported; select Meters Immediate Custom",
-                    background.id
-                )));
-            }
+            let setup = instance
+                .meters_setup()
+                .ok_or_else(|| invalid("Background requires Meters".into()))?;
             if background
-                .trigger_count
+                .limit_count
                 .is_some_and(|count| !(1..=1_000_000).contains(&count))
             {
                 return Err(invalid(
-                    "Background trigger count must be 1..=1,000,000 or null for native infinite"
+                    "Background count must be 1..=1,000,000 or null for infinite acquisition"
                         .into(),
                 ));
+            }
+            if setup.trigger_mode.uses_software_trigger() {
+                if background
+                    .timer_interval_ms
+                    .is_none_or(|interval| interval == 0)
+                    || background.timer_interval_ms.is_some_and(|interval| {
+                        std::time::Instant::now()
+                            .checked_add(std::time::Duration::from_millis(interval))
+                            .is_none()
+                    })
+                {
+                    return Err(invalid(
+                        "Software Background requires a positive, representable Timer Interval"
+                            .into(),
+                    ));
+                }
+            } else if background.timer_interval_ms.is_some() {
+                return Err(invalid(
+                    "Timer Interval applies only to Software Background modes".into(),
+                ));
+            }
+            if setup.trigger_mode.is_custom() {
+                if background.limit_count.is_none() && !setup.allow_buffer_overflow_risk {
+                    return Err(invalid(
+                        "Infinite Custom requires explicit Allow Buffer Overflow Risk confirmation"
+                            .into(),
+                    ));
+                }
+                if let Some(count) = background.limit_count {
+                    count.checked_mul(setup.sample_count).ok_or_else(|| {
+                        invalid("Background expected reading count overflow".into())
+                    })?;
+                }
             }
         }
         fn check(
             steps: &[Step],
             ids: &std::collections::HashSet<&String>,
             owners: &std::collections::HashSet<&ToolInstanceId>,
+            instances: &[ToolInstance],
         ) -> Result<(), String> {
             for step in steps {
                 match step.kind() {
@@ -545,15 +537,29 @@ impl Template {
                             "{target} cannot be used by both Foreground and Background"
                         ));
                     }
+                    StepKind::ToolAction { target, action, .. } if action.as_str() == "measure" => {
+                        if instances
+                            .iter()
+                            .find(|i| &i.id == target)
+                            .and_then(|i| i.meters_setup())
+                            .is_some_and(|s| {
+                                s.trigger_mode != crate::meters_setup::MetersTriggerMode::Software
+                            })
+                        {
+                            return Err(format!(
+                                "{target}: Foreground Meters requires Single; use Background for other modes"
+                            ));
+                        }
+                    }
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
-                        check(body, ids, owners)?
+                        check(body, ids, owners, instances)?
                     }
                     _ => {}
                 }
             }
             Ok(())
         }
-        check(self.workflow.steps(), &ids, &owners).map_err(invalid)
+        check(self.workflow.steps(), &ids, &owners, &self.tool_instances).map_err(invalid)
     }
 
     /// Saves the template to a file as pretty JSON.
@@ -900,145 +906,6 @@ fn validate_output_views(
         }
     }
     Ok(())
-}
-
-fn validate_batch_sources(
-    workflow: &Workflow,
-    instances: &[ToolInstance],
-) -> Result<HashMap<StepId, StepId>, TemplateError> {
-    fn collect_custom_measures(
-        steps: &[Step],
-        instances: &[ToolInstance],
-        sources: &mut HashMap<StepId, StepId>,
-    ) {
-        for step in steps {
-            match step.kind() {
-                StepKind::ToolAction { target, action, .. }
-                    if action.as_str() == "measure"
-                        && instances.iter().any(|instance| {
-                            &instance.id == target
-                                && instance
-                                    .meters_setup()
-                                    .is_some_and(|setup| setup.trigger_mode.is_custom())
-                        }) =>
-                {
-                    sources.insert(step.id().clone(), step.id().clone());
-                }
-                StepKind::For { body, .. } | StepKind::While { body, .. } => {
-                    collect_custom_measures(body, instances, sources)
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn input_source(
-        input: &InputValue,
-        sources: &HashMap<StepId, StepId>,
-    ) -> Result<Option<StepId>, String> {
-        let reference_source =
-            |reference: &StepOutputReference| Ok(sources.get(reference.step_id()).cloned());
-        match input {
-            InputValue::StepOutput(reference) => reference_source(reference),
-            InputValue::Expression(expression) => {
-                let operand_source = |operand: &ExpressionOperand| match operand {
-                    ExpressionOperand::StepOutput(reference) => reference_source(reference),
-                    _ => Ok(None),
-                };
-                let left = operand_source(expression.left())?;
-                let right = operand_source(expression.right())?;
-                match (&left, &right) {
-                    (Some(left), Some(right)) if left != right => {
-                        Err("an expression cannot combine two independent batch sources".to_owned())
-                    }
-                    _ => Ok(left.or(right)),
-                }
-            }
-            _ => Ok(None),
-        }
-    }
-
-    fn reject_batch(
-        input: &InputValue,
-        sources: &HashMap<StepId, StepId>,
-        context: &str,
-    ) -> Result<(), TemplateError> {
-        if input_source(input, sources)
-            .map_err(TemplateError::Instance)?
-            .is_some()
-        {
-            return Err(TemplateError::Instance(format!(
-                "batch-dependent value cannot be used by {context}; Custom Meters batches are supported only by Output steps"
-            )));
-        }
-        Ok(())
-    }
-
-    fn validate_steps(
-        steps: &[Step],
-        sources: &mut HashMap<StepId, StepId>,
-        page_sources: &mut HashMap<String, StepId>,
-    ) -> Result<(), TemplateError> {
-        for step in steps {
-            match step.kind() {
-                StepKind::Output { value, .. } => {
-                    if let Some(source) =
-                        input_source(value, sources).map_err(TemplateError::Instance)?
-                    {
-                        if let Some(existing) = page_sources.get(step.output_page())
-                            && existing != &source
-                        {
-                            return Err(TemplateError::Instance(format!(
-                                "Output Page {:?} depends on more than one independent batch source",
-                                step.output_page()
-                            )));
-                        }
-                        page_sources.insert(step.output_page().to_owned(), source.clone());
-                        sources.insert(step.id().clone(), source);
-                    }
-                }
-                StepKind::Assert { condition, .. } | StepKind::While { condition, .. } => {
-                    reject_batch(
-                        &InputValue::Expression(condition.clone()),
-                        sources,
-                        &format!("step {}", step.id()),
-                    )?;
-                    if let StepKind::While { body, .. } = step.kind() {
-                        validate_steps(body, sources, page_sources)?;
-                    }
-                }
-                StepKind::SetVariable { value, .. } => {
-                    reject_batch(value, sources, &format!("step {}", step.id()))?;
-                }
-                StepKind::ToolAction { bindings, .. } => {
-                    for input in bindings.values() {
-                        reject_batch(input, sources, &format!("step {}", step.id()))?;
-                    }
-                }
-                StepKind::For { body, .. } => validate_steps(body, sources, page_sources)?,
-                StepKind::ShowMessage { fields, .. } => {
-                    // Show Message renders one scalar, so batch-dependent values are rejected.
-                    for field in fields {
-                        if let MessageFieldKind::Output(reference) = field.kind() {
-                            reject_batch(
-                                &InputValue::StepOutput(reference.clone()),
-                                sources,
-                                &format!("step {}", step.id()),
-                            )?;
-                        }
-                    }
-                }
-                StepKind::Wait { .. } | StepKind::Background { .. } => {}
-            }
-        }
-        Ok(())
-    }
-
-    let mut sources = HashMap::new();
-    collect_custom_measures(workflow.steps(), instances, &mut sources);
-    let mut page_sources = HashMap::new();
-    validate_steps(workflow.steps(), &mut sources, &mut page_sources)?;
-    Ok(sources)
 }
 
 // Decode only Setup for automatic capability checks; workflow validation belongs
@@ -1862,10 +1729,11 @@ mod tests {
     fn background_schema_validates_references_ownership_and_supported_sources() {
         let setup = crate::meters_setup::MetersSetup {
             trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom,
+            allow_buffer_overflow_risk: true,
             ..Default::default()
         };
         let wire = json!({"schema_version":2,"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
-            "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"trigger_count":null}],
+            "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"limit_count":null}],
             "workflow":{"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         assert_eq!(
@@ -1873,6 +1741,37 @@ mod tests {
             template
         );
         assert_eq!(template.referenced_tool_instances().len(), 1);
+        for mode in [
+            "software",
+            "immediate",
+            "external",
+            "software-custom",
+            "immediate-custom",
+            "external-custom",
+        ] {
+            for limit in [json!(3), Value::Null] {
+                let mut valid = wire.clone();
+                valid["tool_instances"][0]["setup"]["trigger_mode"] = json!(mode);
+                valid["backgrounds"][0]["limit_count"] = limit;
+                if mode.starts_with("software") {
+                    valid["backgrounds"][0]["timer_interval_ms"] = json!(1000);
+                }
+                let loaded = Template::from_json_str(&valid.to_string()).unwrap();
+                assert_eq!(
+                    Template::from_json_str(&loaded.to_json_string().unwrap()).unwrap(),
+                    loaded
+                );
+                if mode.starts_with("software") {
+                    for interval in [Value::Null, json!(0)] {
+                        valid["backgrounds"][0]["timer_interval_ms"] = interval;
+                        assert!(Template::from_json_str(&valid.to_string()).is_err());
+                    }
+                } else {
+                    valid["backgrounds"][0]["timer_interval_ms"] = json!(1000);
+                    assert!(Template::from_json_str(&valid.to_string()).is_err());
+                }
+            }
+        }
         for case in [
             "old-version",
             "duplicate",
@@ -1882,16 +1781,20 @@ mod tests {
             "unsupported",
             "count",
             "combination",
+            "risk",
+            "old-count",
         ] {
             let mut invalid = wire.clone();
             match case {
+                "risk" => invalid["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"]=json!(false),
+                "old-count" => invalid["backgrounds"][0]["trigger_count"]=json!(3),
                 "old-version" => invalid["schema_version"]=json!(1),
                 "duplicate" => invalid["backgrounds"].as_array_mut().unwrap().push(wire["backgrounds"][0].clone()),
                 "missing-target" => invalid["backgrounds"][0]["tool_instance_id"]=json!("missing"),
                 "missing-background" => invalid["workflow"]["steps"][0]["background_id"]=json!("missing"),
                 "foreground" => invalid["workflow"]["steps"].as_array_mut().unwrap().push(json!({"type":"tool-action","id":"measure","target":"meter","action":"measure","arguments":{}})),
                 "unsupported" => {invalid["tool_instances"][0]["tool"]=json!("scopes");invalid["tool_instances"][0]["setup"]=json!({});},
-                "count" => invalid["backgrounds"][0]["trigger_count"]=json!(0),
+                "count" => invalid["backgrounds"][0]["limit_count"]=json!(0),
                 "combination" => invalid["workflow"]["steps"][0]["action"]=json!("capture-off"),
                 _ => unreachable!(),
             }
@@ -2263,7 +2166,7 @@ mod tests {
             wire["tool_instances"] = json!([{"id":"meter", "tool":"meters", "setup":crate::meters_setup::MetersSetup {
                 trigger_mode: crate::meters_setup::MetersTriggerMode::ImmediateCustom, ..Default::default()
             }}]);
-            wire["backgrounds"] = json!([{"id":"background-1","tool_instance_id":"meter","live_monitor":true,"trigger_count":10}]);
+            wire["backgrounds"] = json!([{"id":"background-1","tool_instance_id":"meter","live_monitor":true,"limit_count":10}]);
             let mut background_chart = saved_chart_wire("line", vec!["value"]);
             background_chart.as_object_mut().unwrap().remove("page");
             background_chart["source"] = json!({"kind":"background","background_id":"background-1","field":"value","x_axis":"elapsed"});

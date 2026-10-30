@@ -20,6 +20,10 @@ pub struct MetersSetup {
     pub vm_comp_slope: Option<VmCompSlope>,
     #[serde(default, skip_serializing_if = "MetersTriggerMode::is_software")]
     pub trigger_mode: MetersTriggerMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hw_trigger_slope: Option<VmCompSlope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hw_trigger_delay_s: Option<f64>,
     #[serde(
         default = "default_sample_count",
         skip_serializing_if = "is_default_sample_count"
@@ -43,6 +47,8 @@ impl Default for MetersSetup {
             current_terminal: None,
             vm_comp_slope: None,
             trigger_mode: MetersTriggerMode::Software,
+            hw_trigger_slope: None,
+            hw_trigger_delay_s: None,
             sample_count: 1,
             buffer_drain_size: None,
             allow_buffer_overflow_risk: false,
@@ -66,6 +72,13 @@ impl MetersSetup {
     /// Checks setup consistency and current terminal values; range and NPLC support are validated by meters-tool.
     /// Auto range does not require or validate a manual range value.
     pub fn validate(&self) -> Result<(), MetersSetupError> {
+        if self.trigger_mode.is_external()
+            && self
+                .hw_trigger_delay_s
+                .is_some_and(|delay| !delay.is_finite() || delay < 0.0)
+        {
+            return Err(MetersSetupError::InvalidHardwareTriggerDelay);
+        }
         if self.trigger_mode.is_custom() {
             if !(1..=1_000_000).contains(&self.sample_count) {
                 return Err(MetersSetupError::InvalidSampleCount);
@@ -105,11 +118,15 @@ pub enum MetersSetupError {
     InvalidCurrentTerminal,
     InvalidSampleCount,
     InvalidBufferDrainSize,
+    InvalidHardwareTriggerDelay,
 }
 
 impl fmt::Display for MetersSetupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::InvalidHardwareTriggerDelay => {
+                "hardware trigger delay must be a finite, non-negative number"
+            }
             Self::InvalidCurrentTerminal => "current terminal must be 3 or 10",
             Self::MissingManualRange => "manual range mode requires a manual range value",
             Self::InvalidSampleCount => "custom sample count must be between 1 and 1000000",
@@ -132,12 +149,17 @@ impl Error for MetersSetupError {}
 pub enum MetersTriggerMode {
     #[default]
     Software,
+    Immediate,
+    External,
     SoftwareCustom,
     ImmediateCustom,
     ExternalCustom,
 }
 
 impl MetersTriggerMode {
+    pub fn is_external(&self) -> bool {
+        matches!(self, Self::External | Self::ExternalCustom)
+    }
     fn is_software(&self) -> bool {
         *self == Self::Software
     }

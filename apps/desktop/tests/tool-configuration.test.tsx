@@ -7,7 +7,7 @@ import App from '../src/App'
 import type { WorkflowDraft } from '../src/templateDraft'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
-import type { WorkflowStep } from '../src/workflow'
+import type { BackgroundConfig, WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
@@ -35,7 +35,7 @@ test.each(['root', 'nested', 'unreferenced'])('Background binding removal respec
   ] : []
   const onChange = vi.fn()
   render(<BackgroundSetup instance={backgroundMeter}
-    value={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, trigger_count: 10 }]}
+    value={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 10 }]}
     steps={steps} onChange={onChange} />)
   const binding = screen.getByLabelText('Use this instance as a Background') as HTMLInputElement
   expect(binding.disabled).toBe(kind !== 'unreferenced')
@@ -145,10 +145,11 @@ test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow 
   vi.mocked(invoke).mockReturnValueOnce(new Promise(resolve => { resolveCapabilities = resolve }))
   let value: ToolInstance[] = [{ ...backgroundMeter,
     setup: { ...backgroundMeter.setup, sample_count: 5_000, buffer_drain_size: 100, allow_buffer_overflow_risk: false } }]
-  const measure: WorkflowStep = { type: 'tool-action', id: 'measure', target: 'meters-1', action: 'measure', arguments: {} }
-  let steps: WorkflowStep[] = [measure]
+  const steps: WorkflowStep[] = []
+  let limit: number | null = 1
   const onChange = vi.fn((next: ToolInstance[]) => { value = next })
   const view = () => <ToolSetupEditor value={value} steps={steps} onChange={onChange} disabled={false}
+    backgrounds={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: limit }]}
     configuredToolTypes={['meters']} resourceIdentities={{}} executionMode={executionMode}
     metersExecutableKey="meters.exe" powersExecutableKey="" scopesExecutableKey=""
     renderResource={() => null} renderPowersDeviceStatus={() => null} />
@@ -181,7 +182,7 @@ test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow 
   toggleRisk(true)
   warning()
 
-  steps = [{ type: 'for', id: 'loop', variable: 'i', range: { start: '1', stop: '4', step: '1' }, steps: [measure] }]
+  limit = 4
   rerender(view())
   expect(warning().getByText(/20,000 planned \/ 10,000 capacity/)).toBeTruthy()
   toggleRisk(false)
@@ -193,25 +194,67 @@ test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow 
   toggleRisk(true)
   expect(warning().getByText(/20,000 planned \/ 10,000 capacity/)).toBeTruthy()
 
-  for (const unknown of [
-    { type: 'for', id: 'unknown', variable: 'i', range: { start: '1', stop: 'limit', step: '1' }, steps: [measure] },
-    { type: 'while', id: 'unbounded', left: { source: 'literal', value: true }, operator: 'equal',
-      right: { source: 'literal', value: true }, max_iterations: null, steps: [measure] },
-  ] satisfies WorkflowStep[]) {
-    steps = [unknown]
-    rerender(view())
-    expect(warning().queryByText(/planned \/ .* capacity/)).toBeNull()
-  }
+  limit = null
+  rerender(view())
+  expect(warning().queryByText(/planned \/ .* capacity/)).toBeNull()
   expect(onChange).toHaveBeenCalledTimes(5) // Only explicit checkbox changes edit Setup.
   for (const allowRisk of [false, true]) {
     value = [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software', allow_buffer_overflow_risk: allowRisk } }]
     rerender(view())
     expect(screen.queryByRole('status')).toBeNull() // Single hides even a stored Custom acknowledgement.
     expect(screen.queryByRole('alert')).toBeNull()
-    expect((screen.getByRole('checkbox', { name: 'Allow Buffer Overflow Risk' }) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.queryByRole('checkbox', { name: 'Allow Buffer Overflow Risk' })).toBeNull()
   }
   expect(onChange).toHaveBeenCalledTimes(5)
   expect(calls()).toEqual([['get_meters_capabilities', { executionMode }]])
+})
+
+test('Meters role controls six Background modes without deleting existing steps', async () => {
+  vi.mocked(invoke).mockResolvedValue({ model: '34461A', trigger_modes: ['software', 'immediate', 'external', 'software-custom', 'immediate-custom', 'external-custom'],
+    limits: { sample_count: { max: 1000000 }, buffer_drain_size: { max: 10000 }, trigger_count: { max: 1000000 } },
+    reading_memory_limit: 10000, measurements: [] })
+  let instances: ToolInstance[] = [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }]
+  let backgrounds: BackgroundConfig[] = []
+  const steps: WorkflowStep[] = [{ type: 'tool-action', id: 'measure', target: 'meters-1', action: 'measure', arguments: {} }]
+  const originalSteps = structuredClone(steps)
+  const view = () => <ToolSetupEditor value={instances} steps={steps} backgrounds={backgrounds}
+    onChange={value => { instances = value }} onBackgroundsChange={value => { backgrounds = value }} disabled={false}
+    configuredToolTypes={['meters']} resourceIdentities={{}} executionMode="simulate" metersExecutableKey="meters"
+    powersExecutableKey="" scopesExecutableKey="" renderResource={() => null} renderPowersDeviceStatus={() => null} />
+  const { rerender } = render(view())
+  const modes = () => screen.getByLabelText('Trigger Mode') as HTMLSelectElement
+  await waitFor(() => expect(modes().options[0].disabled).toBe(false))
+  expect([...modes().options].map(option => option.textContent)).toEqual(['Single'])
+  fireEvent.click(screen.getByLabelText('Use this instance as a Background'))
+  rerender(view())
+  expect(modes().options.length).toBe(6)
+  expect(backgrounds[0]).toMatchObject({ limit_count: 1000, timer_interval_ms: 1000 })
+  expect(screen.getByLabelText('Max Samples')).toBeTruthy()
+  expect(screen.getByText(/still has Foreground actions/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Timer Interval (ms)'), { target: { value: '250' } })
+  rerender(view())
+  fireEvent.change(modes(), { target: { value: 'software-custom' } })
+  rerender(view())
+  expect(backgrounds[0].timer_interval_ms).toBe(250)
+  expect(screen.getByLabelText('Trigger Count')).toBeTruthy()
+  expect(screen.getByLabelText('Sample Count')).toBeTruthy()
+  fireEvent.change(modes(), { target: { value: 'external' } })
+  rerender(view())
+  expect(backgrounds[0].timer_interval_ms).toBeUndefined()
+  expect(screen.queryByLabelText('Timer Interval (ms)')).toBeNull()
+  fireEvent.change(screen.getByLabelText('Hardware Trigger Slope'), { target: { value: 'neg' } })
+  rerender(view())
+  fireEvent.change(screen.getByLabelText('Hardware Trigger Delay (s)'), { target: { value: '0.25' } })
+  rerender(view())
+  expect(instances[0].setup).toMatchObject({ hw_trigger_slope: 'neg', hw_trigger_delay_s: 0.25 })
+  fireEvent.click(screen.getByLabelText('Use this instance as a Background'))
+  rerender(view())
+  expect(screen.getByText(/Foreground Meters requires Single/)).toBeTruthy()
+  fireEvent.change(modes(), { target: { value: 'software' } })
+  rerender(view())
+  expect(modes().value).toBe('software')
+  expect(backgrounds).toEqual([])
+  expect(steps).toEqual(originalSteps)
 })
 
 test('loading a Template with Background Charts and accepted overflow risk preserves setup and X axis on save', async () => {
@@ -219,7 +262,7 @@ test('loading a Template with Background Charts and accepted overflow risk prese
   panel.source!.x_axis = 'timestamp'
   loadedDraft = { ...empty, tool_instances: [{ ...backgroundMeter,
     setup: { ...backgroundMeter.setup, allow_buffer_overflow_risk: true } }], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
-    live_monitor: true, trigger_count: 10 }], output_views: { charts: [chartPanelToSavedChart(panel)] } }
+    live_monitor: true, limit_count: 10 }], output_views: { charts: [chartPanelToSavedChart(panel)] } }
   await mount()
   click('Open Template')
   await screen.findByText('Template loaded.')

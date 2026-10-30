@@ -147,19 +147,18 @@ For a Meters Tool Instance, the current Setup controls:
 - NPLC: the currently exposed standard choices are `0.02`, `0.2`, `1`, `10`,
   and `100`.
 - Auto Zero: **On**, **Off**, or **Once**.
-- Trigger Mode: **Single** (stored as `software`), **Software Custom**,
-  **Immediate Custom**, or **External Custom**. Unsupported modes are disabled
-  when the selected model capability is available.
-- Single sends one software trigger for each Measure and returns one reading.
-  Software Custom sends a software trigger and returns one batch. Immediate
-  Custom and External Custom do not send a software trigger from Measure; they
-  return the next ordered batch produced by the Meter Worker.
-- All Custom modes expose **Sample Count**, optional **Buffer Drain Size**, and
-  **Allow Buffer Overflow Risk**. Trigger Count is derived from the Workflow
-  and is not editable. When capabilities are available, the UI shows the
-  selected model's reading-memory limit. Planned readings above that limit
-  show **Reading memory exceeded** and require Allow Buffer Overflow Risk
-  to proceed.
+- Choose whether to **Use this instance as a Background** before selecting its mode.
+  Foreground uses **Single**: each Measure triggers and returns one reading.
+- Background offers **Software**, **Immediate**, **External**, **Software Custom**,
+  **Immediate Custom**, and **External Custom**. Unsupported model modes are disabled
+  when model capabilities are available.
+- Background Custom modes expose **Sample Count**, optional **Buffer Drain Size**,
+  and **Allow Buffer Overflow Risk**. Set **Trigger Count** under Background;
+  Simple modes instead use **Max Samples**. Known reading-memory limits are shown.
+  Planned readings above capacity show **Reading memory exceeded** and require
+  explicit acceptance of the overflow risk.
+- External modes expose optional **Hardware Trigger Slope** and **Hardware Trigger
+  Delay (s)**. Leave them unspecified to use the tool defaults.
 - For DC Voltage, DCV Input Impedance: **Not specified**, **Default**,
   **10 MΩ**, or **Auto**.
 - For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
@@ -594,17 +593,8 @@ do not affect Live. Every new run starts with 1,000 again. If the source runs ou
 while another Measure is requested, that Measure fails and cleanup runs; the
 Worker is not restarted. A Live Software Measure does not receive this SIM bound.
 
-All foreground Custom trigger modes require a finite maximum trigger count in both
-Simulation and Live. The count adds every Measure occurrence for the same Tool
-Instance and multiplies each occurrence by its enclosing For iteration counts
-and finite While `max_iterations`. A Custom Measure inside an Unlimited While
-is rejected. Trigger Count and Sample Count each follow meters-tool's current
-1-to-1,000,000 limits; Orchestrator does not add a separate one-million
-total-reading limit. For Software Custom and External Custom, a While that exits early can leave planned
-triggers unused. Immediate Custom is different: the Worker starts the complete
-planned acquisition when the session starts, so readings for later planned
-Measure occurrences may already have been acquired even if the Workflow exits
-early; unconsumed readings are discarded when the Worker is cleaned up.
+Foreground Meters uses Single in both Simulation and Live. To collect batches
+or use Immediate or External triggering, enable Background for that instance.
 
 ### 6.4 Stop Workflow and loop Stop
 
@@ -654,17 +644,10 @@ cannot be shared by different lexical loop paths. Page names also have to be
 valid as CSV filename stems and Excel worksheet names, so the same naming
 restrictions apply to both export formats.
 
-A Custom Meters Measure produces one batch per Measure step. An
-Output that directly references that step, or a Calculation that references
-it, is resolved once per sample. Its Page expands the logical row to the batch
-size, while scalar Outputs on that Page are copied to every expanded row.
-Several Outputs may use the same Measure batch, but one Page cannot combine
-two independent Measure batches. Batch-dependent values are not supported by
-Assert, Set Variable, While conditions, or Tool Action bindings.
-
-Expansion is Page-local and remains staged until the owning scope or iteration
-succeeds. CSV streaming, manual CSV/XLSX export, and Charts consume the
-resulting committed rows without another expansion pass.
+Each foreground Meters Measure supplies one sample. Outputs, calculations,
+variables and assertions may use that sample normally. Output rows are committed
+only when their owning scope or iteration succeeds; a later failure discards
+uncommitted rows. Background samples are recorded separately in Capture Datasets.
 
 ### 6.6 Show Message
 
@@ -683,7 +666,7 @@ not an Output Page, so it never adds columns to your data, CSV, or charts.
   the current loop scope are offered. Validation also requires a real Output
   step, so a reference to an earlier Wait, Set Variable, or Show Message step is
   rejected and is never redirected to a different step. A Show Message Output
-  must be a single value; a Custom Meters batch is not supported. If a
+  must be a single value. If a
   referenced value is not a single number, piece of text, Boolean, or null, the
   step fails with a clear error instead of writing a partial message.
 - **Newline** adds a line break after that field. Every message ends with a
@@ -791,7 +774,7 @@ Workers' simulate contracts and is not intended to operate physical hardware.
 For Powers, Protection Setup and final Safe-Off are still sent to powers-tool
 for simulation or planning; this is orchestration validation, not Live hardware
 validation. Indeterminate Simple Software sources show the run-only sample
-warning described above; Foreground Custom Unlimited remains unsupported.
+warning described above. Custom modes are available only in Background.
 
 ## 8. Run Live
 
@@ -856,21 +839,35 @@ Safe-Off through powers-tool; it does not claim that real outputs were changed.
 
 ## Background Streaming
 
-In **Tool Setup**, choose **Meters Immediate Custom**, then enable **Use this
-instance as a Background**. Other Meters modes, Scopes, Powers and Wavegen show
-Unsupported for Background Streaming. Existing foreground actions remain
-available for instances not bound to a Background. A bound instance cannot also
-be used by foreground Tool actions, and two instances cannot share one Live
+In **Tool Setup**, enable **Use this instance as a Background**, then choose any
+of the six Meters modes. Scopes, Powers and Wavegen do not support Background.
+A Background instance cannot also be used by foreground Tool actions. Existing
+steps are retained when switching roles; resolve the displayed conflict before
+running. Turning off Background while another mode is selected requires choosing
+Single before using foreground Measure. Two instances cannot share one Live
 resource in a run.
 
-Each binding has a stable Background ID. Select a finite Trigger Count or
-**Native Infinite**; Sample Count and the Tool's overflow risk acknowledgement
-remain in Meters Setup. Infinite uses the Tool's native source rather than a
-Simulation sample substitute. **Live Monitor** is optional and starts unchecked.
-The Allow Risk warning in **5.1 Meters Setup** also applies to Background
-sources. A finite source that loses samples may keep waiting instead of
-finishing naturally; use the existing Stop controls as needed and check the
-captured counts and integrity results.
+Choose **Finite** or **Infinite**. Finite Simple modes use **Max Samples**; finite
+Custom modes use **Trigger Count**, with **Sample Count** readings per trigger.
+Infinite Custom requires explicit **Allow Buffer Overflow Risk**. Infinite
+Background acquisition has no hidden Simulation sample limit.
+
+**Software** and **Software Custom** require **Timer Interval (ms)**, initially
+**1000**. The first trigger is sent when the source is ready. After one reading
+or a complete Custom batch arrives, Orchestrator waits the selected interval
+before the next trigger. This is a delay between completed measurements, not a
+fixed sampling frequency. Capture OFF leaves triggering and optional Live Monitor
+running. Worker OFF, Stop Workflow, source completion or failure stops triggering.
+A rejected trigger or measurement timeout fails the run and preserves available data.
+
+**External** and **External Custom** use the connected trigger signal in Live.
+Simulation generates virtual triggers on supported models, including 34461A;
+34460A does not support External. Slope and delay settings are passed to the tool.
+Simulation does not verify physical trigger timing.
+
+**Live Monitor** is optional and starts unchecked. The Allow Risk warning in
+**5.1 Meters Setup** applies to Custom Background sources. Lost readings cannot
+be recovered by Stop; check captured counts and data quality after stopping.
 
 Add these Workflow actions and select the Background in Step Properties:
 
@@ -880,7 +877,9 @@ Add these Workflow actions and select the Background in Step Properties:
 - **Capture OFF** finishes that Dataset and its optional streaming CSV without
   stopping the Worker or automatically exporting another file.
 - **Worker OFF** releases the source. Simultaneous Capture OFF starts checked.
-  Uncheck it if Capture was already explicitly switched OFF.
+  Uncheck it if Capture was already explicitly switched OFF. Stopping a finite
+  source before its configured count is reached fails the run; use **Stop Workflow**
+  to end the run early and retain a partial Dataset.
 
 Repeated ON/OFF is a Step error. A finite source automatically retains its tail
 and finishes its Dataset. The first subsequent Capture OFF acknowledges that
@@ -1073,7 +1072,10 @@ with template**, which is off by default. Enable it when the current chart
 panels and their Chart Settings should be restored with the Template. Opening a
 Template that contains saved Foreground or Background Chart settings turns the
 checkbox on, including a Background-only Template, and restores those settings.
-Templates without saved Chart settings keep the existing session defaults.
+Templates without saved Chart settings start with zero Charts. Choose a source
+and **+ Add Chart** to create one. Deleting all Charts keeps the count at zero
+through Run, Validate, Page changes and Save/Load. Saved valid settings still
+load normally. Live Monitor works independently and uses no Chart slot.
 Turning it off does not remove the Charts from the current session; the
 next Save Template simply omits them. **Clear Last Run** keeps the chart
 configuration while this option is enabled; ordinary session-only Charts keep
@@ -1253,8 +1255,8 @@ Chart configuration survives Page/tab changes and subsequent Simulation or
 Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
 original Page and order while running, display **Waiting for run to finish**,
 and hide the plot. Their Output selection and Export PNG remain disabled;
-Settings and Remove remain available. The last Foreground Chart cannot be
-removed; Background Charts can all be removed.
+Settings and Remove remain available. Every Chart can be removed, including
+the final Foreground or Background Chart.
 During execution, Chart type allows keeping the current type or switching a
 non-Line chart to Line, even before the first row arrives. Line cannot switch
 to a non-Line type until execution stops. After Apply, Line uses the current
@@ -1420,7 +1422,7 @@ Live run. Assign distinct resources.
 ### Simulation asks for Meters sample counts
 
 Enter the per-instance SIM Max Samples or Cancel. This does not change the
-Unlimited While. Foreground Custom Unlimited still requires separate support.
+Unlimited While. Custom modes are available only in Background.
 
 ### Manual export is unavailable
 

@@ -236,11 +236,6 @@ enum ControlFlow {
     WorkflowStopped,
 }
 
-struct StagedOutput {
-    output: WorkflowOutput,
-    batch_source: Option<StepId>,
-}
-
 impl Execution<'_> {
     // Loop stops unwind to their owner; workflow stops always unwind to the root.
     fn scope(
@@ -249,7 +244,7 @@ impl Execution<'_> {
         path: &[StepId],
         iteration: Option<&Iteration>,
     ) -> Result<ControlFlow, String> {
-        let mut staged = Vec::<(String, Vec<StagedOutput>)>::new();
+        let mut staged = Vec::<(String, Vec<WorkflowOutput>)>::new();
         for step in steps {
             if self.failure_signal.check().is_ok() && self.workflow_stop.is_requested() {
                 return Ok(ControlFlow::WorkflowStopped);
@@ -354,10 +349,9 @@ impl Execution<'_> {
                             staged.push((step.output_page().to_owned(), Vec::new()));
                             staged.len() - 1
                         });
-                    staged[index].1.push(StagedOutput {
-                        output: WorkflowOutput::new(name.clone(), output.clone()),
-                        batch_source: self.template.batch_source_for_step(step.id()).cloned(),
-                    });
+                    staged[index]
+                        .1
+                        .push(WorkflowOutput::new(name.clone(), output.clone()));
                 }
             }
             let failure = match &outcome {
@@ -391,44 +385,19 @@ impl Execution<'_> {
             staged.push(("Results".to_owned(), Vec::new()));
         }
         for (page, outputs) in staged {
-            let batch_source = outputs
-                .iter()
-                .find_map(|output| output.batch_source.as_ref());
-            let row_count = batch_source
-                .and_then(|source| self.template.batch_size(source))
-                .unwrap_or(1);
-            for index in 0..row_count {
-                let row_outputs = outputs
-                    .iter()
-                    .map(|staged| {
-                        let value = if staged.batch_source.is_some() {
-                            staged
-                                .output
-                                .value()
-                                .as_array()
-                                .and_then(|values| values.get(index))
-                                .cloned()
-                                .expect("validated batch Output has one value per sample")
-                        } else {
-                            staged.output.value().clone()
-                        };
-                        WorkflowOutput::new(staged.output.name().to_owned(), value)
-                    })
-                    .collect();
-                let row = match iteration {
-                    Some(Iteration::For(i)) => ResultRow::new(row_outputs, Some(i.clone())),
-                    Some(Iteration::While(i)) => ResultRow::in_while(row_outputs, i.clone()),
-                    None => ResultRow::new(row_outputs, None),
-                }
-                .with_page(page.clone());
-                if let Some(rows) = &mut self.rows {
-                    rows.push(row.clone());
-                }
-                notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
-                if let Err(message) = self.failure_signal.check() {
-                    self.failure.get_or_insert(message.clone());
-                    return Err(message);
-                }
+            let row = match iteration {
+                Some(Iteration::For(i)) => ResultRow::new(outputs, Some(i.clone())),
+                Some(Iteration::While(i)) => ResultRow::in_while(outputs, i.clone()),
+                None => ResultRow::new(outputs, None),
+            }
+            .with_page(page.clone());
+            if let Some(rows) = &mut self.rows {
+                rows.push(row.clone());
+            }
+            notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
+            if let Err(message) = self.failure_signal.check() {
+                self.failure.get_or_insert(message.clone());
+                return Err(message);
             }
         }
         // Only a fully successful scope reaches its safe point. Ancestors are checked here,
@@ -577,38 +546,12 @@ fn execute_non_loop_step(
                 message: error.to_string(),
             },
         },
-        StepKind::Output { value, .. } => {
-            if let Some(source) = template.batch_source_for_step(step.id()) {
-                let count = template
-                    .batch_size(source)
-                    .expect("validated batch source has a sample count");
-                let mut values = Vec::with_capacity(count);
-                for index in 0..count {
-                    match data_context.resolve_batch_value(
-                        value,
-                        &|step_id| template.batch_source_for_step(step_id) == Some(source),
-                        index,
-                    ) {
-                        Ok(value) => values.push(value),
-                        Err(error) => {
-                            return StepOutcome::Failed {
-                                message: error.to_string(),
-                            };
-                        }
-                    }
-                }
-                StepOutcome::Succeeded {
-                    output: Value::Array(values),
-                }
-            } else {
-                match data_context.resolve(value) {
-                    Ok(output) => StepOutcome::Succeeded { output },
-                    Err(error) => StepOutcome::Failed {
-                        message: error.to_string(),
-                    },
-                }
-            }
-        }
+        StepKind::Output { value, .. } => match data_context.resolve(value) {
+            Ok(output) => StepOutcome::Succeeded { output },
+            Err(error) => StepOutcome::Failed {
+                message: error.to_string(),
+            },
+        },
         StepKind::Wait { duration_ms } => {
             if *duration_ms > 0 {
                 thread::sleep(Duration::from_millis(*duration_ms));

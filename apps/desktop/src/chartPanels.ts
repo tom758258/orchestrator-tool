@@ -335,17 +335,15 @@ export function reconcileRunChartPanels(
   metadata: readonly RunPageMetadata[],
 ): ChartPanel[] {
   let reconciled = reconcileChartPanels(panels, pages, '', null)
-  const firstNumeric: string[] = metadata.find(page => page.name === pages[0]?.name)?.numeric_outputs ?? []
   for (const page of pages) {
     const current = metadata.find(item => item.name === page.name)
     reconciled = reconcileChartPanels(reconciled, pages, page.name, current?.row_count ? current.numeric_outputs : null, current?.timestamp_outputs ?? [])
   }
-  return !reconciled.some(panel => !panel.source) && pages[0] && reconciled.length < MAX_CHARTS
-    ? addChartPanel(reconciled, pages[0].name, firstNumeric) : reconciled
+  return reconciled
 }
 
 export function canRemoveChartPanel(panels: readonly ChartPanel[]): boolean {
-  return panels.length > 1
+  return panels.length > 0
 }
 
 export function addBackgroundChartPanel(panels: ChartPanel[], backgroundId: string): ChartPanel[] {

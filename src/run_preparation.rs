@@ -16,8 +16,6 @@ use crate::{
 };
 use std::{collections::HashMap, path::Path};
 
-const METERS_MAX_TRIGGER_COUNT: usize = 1_000_000;
-
 fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize>, String> {
     steps.iter().try_fold(Some(0usize), |total, step| {
         let count = match step.kind() {
@@ -57,34 +55,6 @@ fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize
             _ => Ok(None),
         }
     })
-}
-
-fn custom_expected_readings(
-    trigger_count: usize,
-    sample_count: usize,
-    instance: &ToolInstanceId,
-) -> Result<usize, String> {
-    trigger_count
-        .checked_mul(sample_count)
-        .ok_or_else(|| format!("Custom Meter {instance} expected reading count overflow"))
-}
-
-fn custom_trigger_count(
-    measured: Option<usize>,
-    instance: &ToolInstanceId,
-) -> Result<usize, String> {
-    match measured {
-        None => Err(format!(
-            "Custom Meter {instance} cannot be used inside an Unlimited While loop. Set a finite Max Iterations value."
-        )),
-        Some(0) => Err(format!(
-            "Custom Meter {instance} requires at least one Measure action"
-        )),
-        Some(count) if count > METERS_MAX_TRIGGER_COUNT => Err(format!(
-            "Custom Meter {instance} requires {count} triggers, exceeding the meters-tool maximum of {METERS_MAX_TRIGGER_COUNT}"
-        )),
-        Some(count) => Ok(count),
-    }
 }
 
 /// Checks that every selected resource still matches the operator confirmation.
@@ -256,25 +226,15 @@ pub fn prepare_worker_launch_specs_with_simulation(
             .find(|b| b.tool_instance_id == instance.id);
         let measured = measure_count(template.workflow().steps(), &instance.id)?;
         let meters_limit = if let Some(background) = background {
-            background.trigger_count
+            background.limit_count
         } else if tool.as_str() == "meters" {
-            let setup = instance.meters_setup().expect("Meters setup was validated");
-            match setup.trigger_mode {
-                MetersTriggerMode::Software => measured
-                    .map(|count| {
-                        count
-                            .checked_add(1)
-                            .ok_or_else(|| "meter sample reserve count overflow".to_owned())
-                    })
-                    .transpose()?,
-                MetersTriggerMode::SoftwareCustom
-                | MetersTriggerMode::ImmediateCustom
-                | MetersTriggerMode::ExternalCustom => {
-                    let trigger_count = custom_trigger_count(measured, &instance.id)?;
-                    custom_expected_readings(trigger_count, setup.sample_count, &instance.id)?;
-                    Some(trigger_count)
-                }
-            }
+            measured
+                .map(|count| {
+                    count
+                        .checked_add(1)
+                        .ok_or_else(|| "meter sample reserve count overflow".to_owned())
+                })
+                .transpose()?
         } else {
             None
         };
@@ -347,7 +307,7 @@ pub fn prepare_worker_launch_specs_with_simulation(
                 executable,
                 execution_mode,
                 config.live_resource(&instance.id),
-                background.trigger_count,
+                background.limit_count,
                 instance.meters_setup().expect("validated Meters"),
                 config.live_backend(&instance.id),
             )
@@ -483,26 +443,6 @@ mod tests {
             )
             .unwrap_err()
             .contains("overflow")
-        );
-        assert_eq!(
-            custom_trigger_count(Some(1_000_000), &target).unwrap(),
-            1_000_000
-        );
-        assert!(
-            custom_trigger_count(Some(1_000_001), &target)
-                .unwrap_err()
-                .contains("maximum")
-        );
-        assert!(
-            custom_trigger_count(None, &target)
-                .unwrap_err()
-                .contains("Unlimited While")
-        );
-        assert_eq!(custom_expected_readings(2, 5, &target).unwrap(), 10);
-        assert!(
-            custom_expected_readings(usize::MAX, 2, &target)
-                .unwrap_err()
-                .contains("expected reading count overflow")
         );
     }
     #[test]
@@ -730,48 +670,28 @@ mod tests {
             );
         }
 
-        for (trigger_mode, cli_mode) in [
-            (
-                crate::meters_setup::MetersTriggerMode::SoftwareCustom,
-                "software-custom",
-            ),
-            (
-                crate::meters_setup::MetersTriggerMode::ImmediateCustom,
-                "immediate-custom",
-            ),
-            (
-                crate::meters_setup::MetersTriggerMode::ExternalCustom,
-                "external-custom",
-            ),
+        for trigger_mode in [
+            MetersTriggerMode::SoftwareCustom,
+            MetersTriggerMode::ImmediateCustom,
+            MetersTriggerMode::ExternalCustom,
+            MetersTriggerMode::Immediate,
+            MetersTriggerMode::External,
         ] {
-            let mut custom_instances = for_template.tool_instances().to_vec();
-            let custom_setup = match &mut custom_instances[0].setup {
-                ToolSetup::Meters(setup) => setup,
-                _ => unreachable!(),
+            let mut instances = for_template.tool_instances().to_vec();
+            let ToolSetup::Meters(setup) = &mut instances[0].setup else {
+                unreachable!()
             };
-            custom_setup.trigger_mode = trigger_mode;
-            custom_setup.sample_count = 3;
-            let custom_template = Template::new(
-                "Custom trigger planning".to_owned(),
-                custom_instances,
-                for_template.workflow().clone(),
-            )
-            .unwrap();
-            for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-                let specs =
-                    prepare_worker_launch_specs(&custom_template, mode, &dir, &config).unwrap();
-                let args = specs[&ToolInstanceId::new("meters-1").unwrap()].arguments();
-                assert!(
-                    args.windows(2)
-                        .any(|pair| pair == ["--trigger-mode", cli_mode])
-                );
-                assert!(
-                    args.windows(2)
-                        .any(|pair| pair == ["--trigger-count", "11"])
-                );
-                assert!(args.windows(2).any(|pair| pair == ["--sample-count", "3"]));
-                assert!(!args.iter().any(|arg| arg == "--max-samples"));
-            }
+            setup.trigger_mode = trigger_mode;
+            assert!(
+                Template::new(
+                    "Foreground".into(),
+                    instances,
+                    for_template.workflow().clone()
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("requires Single")
+            );
         }
 
         let mut while_wire: serde_json::Value =

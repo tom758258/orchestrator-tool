@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub const MONITOR_POINTS: usize = 1_000;
@@ -112,8 +112,10 @@ pub struct BackgroundConfig {
     pub tool_instance_id: ToolInstanceId,
     #[serde(default)]
     pub live_monitor: bool,
-    /// Immediate Custom: null selects the Tool's native infinite trigger count.
-    pub trigger_count: Option<usize>,
+    /// Simple sample limit or Custom trigger limit; null selects native infinite acquisition.
+    pub limit_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timer_interval_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -418,7 +420,7 @@ struct Runtime {
 }
 
 pub struct BackgroundManager {
-    configs: Vec<(BackgroundConfig, usize)>,
+    configs: Vec<(BackgroundConfig, crate::meters_setup::MetersSetup)>,
     specs: HashMap<ToolInstanceId, WorkerLaunchSpec>,
     runtimes: HashMap<String, Runtime>,
     pub store: SharedBackgroundStore,
@@ -426,9 +428,12 @@ pub struct BackgroundManager {
     csv: Option<BackgroundCsvOptions>,
     startup: Duration,
     shutdown: Duration,
+    action_timeout: Duration,
+    workflow_stop: crate::run::WorkflowStop,
 }
 
 impl BackgroundManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         template: &Template,
         specs: &HashMap<ToolInstanceId, WorkerLaunchSpec>,
@@ -437,6 +442,8 @@ impl BackgroundManager {
         csv: Option<BackgroundCsvOptions>,
         startup: Duration,
         shutdown: Duration,
+        action_timeout: Duration,
+        workflow_stop: crate::run::WorkflowStop,
     ) -> Self {
         let configs = template.backgrounds();
         {
@@ -463,7 +470,7 @@ impl BackgroundManager {
                         .find(|instance| instance.id == config.tool_instance_id)
                         .and_then(|instance| instance.meters_setup())
                         .expect("Background Meters setup was validated");
-                    (config.clone(), setup.sample_count)
+                    (config.clone(), setup.clone())
                 })
                 .collect(),
             specs: specs.clone(),
@@ -473,6 +480,8 @@ impl BackgroundManager {
             csv,
             startup,
             shutdown,
+            action_timeout,
+            workflow_stop,
         }
     }
 
@@ -489,14 +498,19 @@ impl BackgroundManager {
                     "{id}: Worker already ON; release it before restarting"
                 ));
             }
-            let (config, sample_count) = self
+            let (config, setup) = self
                 .configs
                 .iter()
                 .find(|(c, _)| c.id == id)
                 .cloned()
                 .ok_or("Unknown Background ID")?;
+            let sample_count = if setup.trigger_mode.is_custom() {
+                setup.sample_count
+            } else {
+                1
+            };
             let expected_readings = config
-                .trigger_count
+                .limit_count
                 .map(|count| {
                     count
                         .checked_mul(sample_count)
@@ -536,8 +550,11 @@ impl BackgroundManager {
             let (sender, receiver) = mpsc::sync_channel(1);
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
             let mut dispatcher = Dispatcher {
-                config,
+                config: config.clone(),
                 expected_readings,
+                custom: setup.trigger_mode.is_custom(),
+                timer: config_timer(&config, sample_count, self.startup, self.action_timeout)?,
+                workflow_stop: self.workflow_stop.clone(),
                 store: self.store.clone(),
                 failure: self.failure.clone(),
                 csv: self.csv.clone(),
@@ -608,7 +625,7 @@ impl BackgroundManager {
             .send(Command::Action(action, capture, tx))
             .map_err(|e| e.to_string())?;
         let result = rx
-            .recv_timeout(self.shutdown + Duration::from_secs(1))
+            .recv_timeout(self.action_timeout + self.shutdown + Duration::from_secs(1))
             .map_err(|e| e.to_string())?;
         if action == BackgroundAction::WorkerOff && result.is_ok() {
             let runtime = self.runtimes.remove(id).unwrap();
@@ -630,7 +647,8 @@ impl BackgroundManager {
         for (id, runtime) in self.runtimes.drain() {
             let (tx, rx) = mpsc::sync_channel(1);
             if runtime.sender.send(Command::Cleanup(stopped, tx)).is_ok() {
-                match rx.recv_timeout(self.shutdown + Duration::from_secs(1)) {
+                match rx.recv_timeout(self.action_timeout + self.shutdown + Duration::from_secs(1))
+                {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => errors.push(format!("{id}: {e}")),
                     Err(e) => errors.push(format!("{id}: {e}")),
@@ -654,9 +672,82 @@ impl Drop for BackgroundManager {
     }
 }
 
+/// One in-flight measurement; only validated source samples advance it.
+struct SoftwareTimer {
+    interval: Duration,
+    batch_size: usize,
+    batch_timeout: Duration,
+    control_timeout: Duration,
+    next_at: Instant,
+    pending: Option<(usize, Instant)>,
+    ready_deadline: Instant,
+    end_deadline: Option<Instant>,
+    stopping: bool,
+}
+
+fn config_timer(
+    config: &BackgroundConfig,
+    batch_size: usize,
+    startup: Duration,
+    action: Duration,
+) -> Result<Option<SoftwareTimer>, String> {
+    config
+        .timer_interval_ms
+        .map(|interval| {
+            let now = Instant::now();
+            let batch_timeout = u32::try_from(batch_size)
+                .ok()
+                .and_then(|n| action.checked_mul(n))
+                .filter(|timeout| now.checked_add(*timeout).is_some())
+                .ok_or("Software measurement timeout is too large")?;
+            Ok(SoftwareTimer {
+                interval: Duration::from_millis(interval),
+                batch_size,
+                batch_timeout,
+                control_timeout: action,
+                next_at: now,
+                pending: None,
+                ready_deadline: now
+                    .checked_add(startup)
+                    .ok_or("Software startup timeout is too large")?,
+                end_deadline: None,
+                stopping: false,
+            })
+        })
+        .transpose()
+}
+
+impl SoftwareTimer {
+    fn sample(&mut self, now: Instant) -> Result<(), String> {
+        if self.stopping {
+            return Ok(());
+        }
+        let (remaining, deadline) = self
+            .pending
+            .as_mut()
+            .ok_or("Software sample received without an outstanding trigger")?;
+        if now >= *deadline {
+            return Err(
+                "Software Background timed out waiting for the complete measurement".into(),
+            );
+        }
+        *remaining -= 1;
+        if *remaining == 0 {
+            self.pending = None;
+            self.next_at = now
+                .checked_add(self.interval)
+                .ok_or("Timer Interval is too large")?;
+        }
+        Ok(())
+    }
+}
+
 struct Dispatcher {
     config: BackgroundConfig,
     expected_readings: Option<usize>,
+    custom: bool,
+    timer: Option<SoftwareTimer>,
+    workflow_stop: crate::run::WorkflowStop,
     store: SharedBackgroundStore,
     failure: RunFailure,
     csv: Option<BackgroundCsvOptions>,
@@ -678,8 +769,11 @@ impl Dispatcher {
             .iter_mut()
             .find(|w| w.id == self.config.id)
             .unwrap();
-        worker.state = state.into();
         worker.stream_state = self.stream_state.clone();
+        if worker.error.is_some() && error.is_none() {
+            return;
+        }
+        worker.state = state.into();
         worker.error = error;
     }
     fn fail(&mut self, error: &str) {
@@ -854,9 +948,18 @@ impl Dispatcher {
                             .into(),
                     );
                 }
+                if self
+                    .expected_readings
+                    .is_some_and(|count| self.total > count)
+                {
+                    return Err("Meters produced more samples than configured".into());
+                }
+                if let Some(timer) = &mut self.timer {
+                    timer.sample(Instant::now())?;
+                }
             }
             "summary" => self.summary = Some(event),
-            "error" if event["fatal"] == true => {
+            "error" => {
                 return Err(format!("Worker fatal error: {event}"));
             }
             _ => {}
@@ -869,6 +972,9 @@ impl Dispatcher {
         shutdown: Duration,
         stopped: bool,
     ) -> Result<bool, String> {
+        if let Some(timer) = &mut self.timer {
+            timer.stopping = true;
+        }
         let worker_run_id = session.ready().run_id().to_owned();
         let mut event_error = None;
         let result = session
@@ -895,12 +1001,19 @@ impl Dispatcher {
                 self.total,
                 status.code(),
                 self.expected_readings,
+                self.custom,
             )?
         } else {
             if !status.success() {
                 return Err(format!("Background Worker exit {status}"));
             }
             crate::adapters::meters::validate_background_summary(summary, self.total)?;
+            if self
+                .expected_readings
+                .is_some_and(|count| count != self.total)
+            {
+                return Err("Meters ended before the configured sample count; use Stop Workflow to retain partial data".into());
+            }
             false
         };
         let quality = self.summary.as_ref().unwrap()["data_integrity"]
@@ -922,6 +1035,50 @@ impl Dispatcher {
         }
         Ok(incomplete)
     }
+    fn tick(&mut self, session: &WorkerSession, allow_trigger: bool) -> Result<(), String> {
+        let Some(timer) = &mut self.timer else {
+            return Ok(());
+        };
+        if timer.stopping
+            || self.workflow_stop.is_requested()
+            || self.failure.check().is_err()
+            || self.ended
+            || self.stream_state.as_deref() == Some("ended")
+        {
+            return Ok(());
+        }
+        let now = Instant::now();
+        if self.stream_state.as_deref() != Some("active") {
+            return if now >= timer.ready_deadline {
+                Err("Software Background timed out waiting to become active".into())
+            } else {
+                Ok(())
+            };
+        }
+        if let Some((_, deadline)) = timer.pending {
+            return if now >= deadline {
+                Err("Software Background timed out waiting for the complete measurement".into())
+            } else {
+                Ok(())
+            };
+        }
+        if self.expected_readings == Some(self.total) {
+            let deadline = timer
+                .end_deadline
+                .get_or_insert(now + timer.control_timeout);
+            return if now >= *deadline {
+                Err("Software Background timed out waiting for source completion".into())
+            } else {
+                Ok(())
+            };
+        }
+        if allow_trigger && now >= timer.next_at {
+            crate::adapters::meters::trigger_background(session, timer.control_timeout)?;
+            timer.pending = Some((timer.batch_size, Instant::now() + timer.batch_timeout));
+        }
+        Ok(())
+    }
+
     fn run(
         &mut self,
         session: WorkerSession,
@@ -997,9 +1154,12 @@ impl Dispatcher {
                 Err(mpsc::TryRecvError::Empty) => {}
             }
             if let Some(active) = &session {
-                match active.recv_event(Duration::from_millis(5)) {
+                // Drain queued events before sending another trigger, including ended evidence.
+                match active.recv_event(Duration::from_millis(1)) {
                     Ok(event) => {
-                        if let Err(error) = self.event(event) {
+                        if let Err(error) =
+                            self.event(event).and_then(|()| self.tick(active, false))
+                        {
                             self.fail(&error);
                             if let Some(s) = session.take() {
                                 let _ = self.stop(s, shutdown, false);
@@ -1007,7 +1167,16 @@ impl Dispatcher {
                             self.finish("failed", "incomplete", Some(error));
                         }
                     }
-                    Err(WorkerEventError::Timeout(_)) => {}
+                    Err(WorkerEventError::Timeout(_)) => {
+                        if let Err(error) = self.tick(active, true) {
+                            self.fail(&error);
+                            if let Some(s) = session.take() {
+                                let _ = self.stop(s, shutdown, false);
+                            }
+                            self.finish("failed", "incomplete", Some(error));
+                        }
+                        thread::sleep(Duration::from_millis(5));
+                    }
                     Err(WorkerEventError::Disconnected) => {
                         let result = self.stop(session.take().unwrap(), shutdown, false);
                         self.ended = true;
@@ -1176,7 +1345,8 @@ mod tests {
                 id: "background-1".into(),
                 tool_instance_id: ToolInstanceId::new("meter").unwrap(),
                 live_monitor: false,
-                trigger_count: Some(10),
+                limit_count: Some(10),
+                timer_interval_ms: None,
             };
             let store = SharedBackgroundStore::default();
             let failure = RunFailure::default();
@@ -1191,6 +1361,9 @@ mod tests {
             let mut dispatcher = Dispatcher {
                 config,
                 expected_readings: Some(10),
+                custom: true,
+                timer: None,
+                workflow_stop: crate::run::WorkflowStop::default(),
                 store: store.clone(),
                 failure: failure.clone(),
                 csv: Some(BackgroundCsvOptions {

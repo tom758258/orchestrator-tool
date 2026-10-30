@@ -8,7 +8,7 @@ import { nextChartPanelId, reconcileChartPanels, addChartPanel, addBackgroundCha
 const panel = (id, page, outputs) => ({ ...addChartPanel([], page, outputs)[0], id, outputs })
 
 test('Foreground and Background Charts share one saved list and Background setup never holds Chart settings', () => {
-  const backgrounds = [{ id: 'background-1', tool_instance_id: 'meter-1', live_monitor: true, trigger_count: 10 }]
+  const backgrounds = [{ id: 'background-1', tool_instance_id: 'meter-1', live_monitor: true, limit_count: 10 }]
   let panels = Array.from({ length: 5 }, (_, index) => panel(index, 'Results', ['V']))
   for (const axis of ['elapsed', 'timestamp', 'index']) {
     panels = addBackgroundChartPanel(panels, 'background-1')
@@ -136,24 +136,14 @@ test('multiple Charts per Page share a session-wide maximum of eight', () => {
   }
 })
 
-test('new Last Run defaults to exactly one Chart on its first Page', () => {
+test('new Last Run keeps zero Charts until explicitly added', () => {
   const panels = reconcileRunChartPanels([], pages, metadata)
-  assert.deepEqual(panels, [{ id: 0, page: 'A', title: '', outputs: ['V'], type: 'line',
-    scatterXOutput: null, scatter: { display: 'markers', markerSize: 4, lineWidth: 2 },
-    line: { series: {} }, markerStyles: {}, seriesColors: {},
-    showLegend: true, legendPosition: 'top',
-    imageBackground: 'light', showAllRawData: false,
-    zoom: { enabled: false, showSlider: true },
-    xAxis: { title: 'Iteration', min: null, max: null, interval: null,
-      showLabels: true, showTicks: true, showMajorGrid: false },
-    yAxis: { title: '', min: null, max: null, interval: null,
-      showLabels: true, showTicks: true, showMajorGrid: true },
-    combo: { series: {}, rightAxis: { title: '', min: null, max: null, interval: null,
-      showLabels: true, showTicks: true, showMajorGrid: false } },
-    histogram: { mode: 'auto', value: null, showNormalCurve: false, mean: null, stdDev: null }, boxPlot: { showOutliers: true } }])
+  assert.deepEqual(panels, [])
   assert.equal(reconcileRunChartPanels(panels, pages, metadata), panels)
   const onlySecond = addChartPanel([], 'B', ['I'])
   assert.equal(reconcileRunChartPanels(onlySecond, pages, metadata), onlySecond)
+  const background = addBackgroundChartPanel([], 'background-1')
+  assert.deepEqual(reconcileRunChartPanels(background, pages, metadata), background)
 })
 
 test('advanced chart dependencies and defaults preserve the raw loading boundary', () => {
@@ -232,12 +222,13 @@ test('new Last Run reconciles every owned Page and preserves unaffected panel id
   assert.equal(result[1].xAxis.title, 'Custom')
   assert.equal(reconcileRunChartPanels(result, pages, changed), result)
   const stale = [panels[2]]
-  assert.equal(reconcileRunChartPanels(stale, pages, metadata)[0].page, 'A')
+  assert.deepEqual(reconcileRunChartPanels(stale, pages, metadata), [])
 })
 
-test('the final Chart panel cannot be removed but either of two panels can be', () => {
+test('any Chart panel can be removed, including the final one', () => {
   const one = addChartPanel([], 'A', ['V'])
-  assert.equal(canRemoveChartPanel(one), false)
+  assert.equal(canRemoveChartPanel([]), false)
+  assert.equal(canRemoveChartPanel(one), true)
   assert.equal(canRemoveChartPanel([...one, { ...one[0], id: 1, page: 'B' }]), true)
 })
 

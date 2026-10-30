@@ -130,22 +130,44 @@ the single source of background bindings and acquisition configuration:
 
 ```json
 {"backgrounds":[{"id":"background-1","tool_instance_id":"meters-1",
-  "live_monitor":false,"trigger_count":1000}]}
+  "live_monitor":false,"limit_count":1000,"timer_interval_ms":1000}]}
 ```
 
 IDs use the same stable identifier syntax as Steps. Background IDs and Tool
-Instance ownership must be unique; targets must exist. Only Meters with
-`setup.trigger_mode = "immediate-custom"` is supported. `trigger_count` is
-1–1,000,000, or null for native `--trigger-count-infinite`; Sample Count and
-overflow risk acknowledgement remain in Meters Setup and are validated by the
-external Tool. Scopes, Powers, Wavegen and the other Meters trigger modes are
-Unsupported as background sources. Foreground Scopes actions retain their
-existing contract. Manifest and runtime must both adopt `common.streaming`
-version 1 with `run_bound` lifecycle; JSONL alone does not opt in.
+Instance ownership must be unique; targets must exist and use Meters. All six
+`trigger_mode` values are supported: `software`, `immediate`, `external`,
+`software-custom`, `immediate-custom`, and `external-custom`.
+
+`limit_count` is 1–1,000,000 or null for native infinite acquisition. For Simple
+modes it maps to `--max-samples`; null omits that argument. For Custom modes it
+maps to `--trigger-count`; null uses `--trigger-count-infinite` and requires
+explicit `allow_buffer_overflow_risk: true`. Custom modes also pass
+`--sample-count` and optional buffer parameters. Simple expected readings equal
+`limit_count`; Custom expected readings are the checked product of `limit_count`
+and `sample_count`. Infinite sources have no fixed expected total. The old
+`trigger_count` configuration field is rejected without migration.
+
+Software and Software Custom require a positive `timer_interval_ms` (Desktop
+initially uses 1000). Other modes reject a non-null Timer Interval. The sole
+Background dispatcher waits for the current Worker's active stream, sends one
+software trigger, and waits for one valid sample (Simple) or the complete
+`sample_count` batch (Custom). HTTP acceptance alone is insufficient. The next
+interval starts after that measurement completes, using monotonic time. Capture
+OFF does not pause triggering. Source completion, Worker OFF, Stop Workflow and
+failure stop scheduling. Startup, command admission and measurement completion
+are bounded; a batch receives the existing action timeout multiplied by its
+sample count, to allow buffered batches to complete without imposing a short
+fixed limit. HTTP uses the existing action timeout.
+
+Scopes, Powers and Wavegen remain unsupported as background sources. Foreground
+Scopes actions retain their existing contract. Manifest and runtime must both
+adopt `common.streaming` version 1 with `run_bound` lifecycle; JSONL alone does
+not opt in.
 
 All Chart settings belong to `output_views.charts`, independently of bindings.
-Session-only and saved Charts share the same eight-Chart limit. Live Monitor
-has no saved Chart configuration and does not count toward this limit. Dataset
+Session-only and saved Charts share a limit of zero to eight. An empty list is
+valid; reconciliation never creates a Chart, and the final Chart may be removed.
+Live Monitor has no saved Chart configuration and does not count toward this limit. Dataset
 selection and collapsed UI state are not persisted.
 
 ```json
@@ -186,7 +208,12 @@ finite shortfall as stopped: the Worker must accept the stop, report
 received count, and pass the existing sequence, fatal-error, protocol, ended,
 EOF and final-drain checks. This includes Meters' monitored shortfall result
 (`ok: false`, summary and actual exit code 3, integrity `incomplete`) when there
-is no overflow or other error. Ordinary Worker OFF keeps its strict validation.
+is no overflow or other error. Simple summaries always report
+`expected_readings: null` and `trigger_count_infinite: false`; Orchestrator uses
+its configured `limit_count` to distinguish a finite shortfall from full
+completion, and requires a successful process exit for a controlled Simple stop.
+Ordinary Worker OFF keeps its strict validation: a finite source with fewer
+samples than configured fails even when the Tool reports a successful stop.
 The active Capture is incomplete for a finite shortfall or infinite stop;
 infinite mode requires a null expected count. Dataset quality retains the
 reported evidence, prior completed Captures are not downgraded by an intentional
@@ -213,7 +240,7 @@ Simulation overrides are a run-only map keyed by instance ID. Only Simple
 Software sources with an indeterminate foreground Measure count require them;
 default 1,000, range 1–1,000,000. They do not change Template, Setup, Steps,
 While limits or Live launches. Source exhaustion fails the next Measure.
-Foreground Custom Unlimited remains unsupported.
+Foreground Meters supports only Single; Background infinite acquisition does not use this SIM bound.
 
 Enabled foreground/background CSV creation, write and final-flush errors signal
 a fatal run error, stop further ordinary Steps and run bounded background and
@@ -298,21 +325,21 @@ this field load with no VM Comp slope specified.
 
 Manual range mode requires a manual range. Auto mode ignores any stored manual
 range and does not emit a range startup argument. Meters trigger mode defaults
-to `software`, presented by Desktop as **Single**, and may also be
-`software-custom`, `immediate-custom`, or `external-custom`. Single sends
-one software trigger and resolves one reading per Measure. Software Custom sends
-one software trigger and resolves one batch per Measure. Immediate Custom and
-External Custom do not send a software trigger from Measure; they consume the
-next ordered batch produced by the already-running Worker.
+to `software`. Foreground Measure permits only this mode, presented as **Single**,
+and returns one reading. Every other mode requires Background use; direct JSON
+Templates containing a foreground Measure in another mode are rejected.
 
-All Custom modes require `sample_count` from 1 through 1,000,000, may specify
-`buffer_drain_size`, and may opt into the external tool's
-buffer-overflow-risk override. Trigger Count is not Template input: run
-preparation derives it from the maximum number of Measure occurrences for that
-Tool Instance. Orchestrator does not impose a separate one-million total-reading
-limit; meters-tool remains authoritative for per-field limits, model trigger
-support, reading-memory capacity, and overflow-risk validation. Meter
-measurement remains a runtime action; it does not configure the session.
+Background supports all six modes described above. Custom modes require
+`sample_count` from 1 through 1,000,000, may specify `buffer_drain_size`, and may
+explicitly accept the external tool's buffer-overflow risk. Count is configured
+in `backgrounds`, not derived from foreground Measure occurrences. The external
+tool remains authoritative for model capabilities, reading-memory capacity and
+instrument-specific limits.
+
+External modes optionally accept `hw_trigger_slope` (`pos` or `neg`) and
+`hw_trigger_delay_s` (a finite non-negative number), forwarded as
+`--hw-trigger-slope` and `--hw-trigger-delay-s`. Omission uses the Tool defaults;
+other modes do not forward these fields. The Tool validates its hardware limits.
 
 Declaring a Wavegen instance does not imply that its runtime actions are
 supported. Scopes supports the nine actions documented in its integration reference.
@@ -442,8 +469,8 @@ defaults to `false`. For example:
   flagged last field never produces a blank line.
 - An `output` entry must resolve to a single scalar. A string, number, boolean,
   or `null` is displayed as text; an array or object fails the step with an
-  explicit error and emits no message. Custom Meters batches are rejected when
-  the template is validated.
+  explicit error and emits no message. Background samples are not foreground
+  Step Outputs.
 - One produced message is bounded to 4096 Unicode characters so a long scalar
   Output cannot grow the buffer without limit. A longer record is cut on a
   character boundary, marked with `…[truncated]`, and still ends with exactly one
@@ -638,34 +665,11 @@ Inner rows when all iterations succeed.
 ResultRow outputs reuse WorkflowOutput values and use the Page's Output names
 as columns. Iteration metadata is not a Workflow Output column.
 
-A Custom Meters Measure is a batch source. One Measure action resolves exactly
-`sample_count` ordered samples for that occurrence. Software Custom first
-sends one software trigger request; Immediate Custom and External Custom only
-consume samples already produced or wait for the next samples to arrive. An
-Output that directly references that batch, or an expression that depends on
-it, is resolved once per sample. The owning Page therefore expands one logical
-row into `sample_count` physical committed ResultRows; scalar Outputs on that
-Page are broadcast to each physical row.
-
-Several Outputs on one Page may depend on the same batch source and remain
-index-aligned. A Page cannot combine two independent Custom Measure sources.
-Batch-dependent values are rejected for Assert, Set Variable, While conditions,
-and Tool Action bindings. Expansion is Page-local and remains staged until the
-owning scope or iteration succeeds, so a later failure discards the staged
-batch rows.
-
-Custom Trigger Count is planned per Meters Tool Instance from the maximum
-possible Measure occurrences: root occurrence counts once, For counts multiply
-by exact iteration counts, finite While counts multiply by `max_iterations`,
-nested counts multiply, and separate Measure occurrences add. An Unlimited
-While that can reach a Custom Measure is invalid. Trigger Count is capped at
-the meters-tool maximum of 1,000,000. Run preparation checked-multiplies
-Trigger Count by `sample_count` only for arithmetic overflow; model reading
-memory and overflow-risk policy are validated by meters-tool. For Software Custom and External Custom, a finite While that exits early or a
-graceful Stop may leave planned triggers unused. Immediate Custom starts the
-complete planned acquisition when its Worker session starts, so readings for
-later planned Measure occurrences may already exist even if execution exits
-early; any unconsumed readings are discarded during Worker cleanup.
+Foreground Meters Measure returns one scalar sample object. Output references
+and expressions resolve normally; there is no foreground Custom batch source or
+per-sample Page row expansion. Background Custom samples remain in their own
+Datasets and cannot become foreground variables or Outputs. Shared row batching
+for CSV delivery and export is independent of Meters acquisition batches.
 
 ## Execution occurrence metadata
 

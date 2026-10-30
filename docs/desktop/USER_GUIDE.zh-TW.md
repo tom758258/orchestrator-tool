@@ -123,17 +123,16 @@ Wavegen 即使尚未支援 runtime actions，仍可保存名稱。
   文字值。
 - NPLC：目前 UI 暴露的標準選項為 `0.02`、`0.2`、`1`、`10` 與 `100`。
 - Auto Zero：**On**、**Off** 或 **Once**。
-- Trigger Mode：**Single**（Template 仍存為 `software`）、**Software Custom**、
-  **Immediate Custom** 或 **External Custom**。取得選定型號的 capability 後，不支援
-  的模式會 disabled。
-- Single 的每次 Measure 會送出一次 software trigger 並回傳一筆讀值；Software
-  Custom 會送出 software trigger 並回傳一批資料；Immediate Custom 與 External
-  Custom 的 Measure 不會送 software trigger，而是取回 Meter Worker 已產生或接下來
-  到達的下一批 ordered samples。
-- 所有 Custom 模式都會顯示 **Sample Count**、可選的 **Buffer Drain Size**，以及
-  **Allow Buffer Overflow Risk**。Trigger Count 由 Workflow 計算，不能編輯。UI 會
-  在取得能力資料後顯示目前型號的讀值記憶體容量。預期筆數超限時會顯示
-  **Reading memory exceeded**，必須勾選 Allow Buffer Overflow Risk 才能繼續。
+- 先選擇是否 **Use this instance as a Background**。前景只使用 **Single**，
+  每次 Measure 觸發一次量測並取得一筆讀值。
+- 背景可選 **Software**、**Immediate**、**External**、**Software Custom**、
+  **Immediate Custom** 與 **External Custom**。取得型號能力後，不支援的模式無法選取。
+- 背景 Custom 模式提供 **Sample Count**、可選的 **Buffer Drain Size** 與
+  **Allow Buffer Overflow Risk**。在 Background 設定 **Trigger Count**；
+  Simple 模式則設定 **Max Samples**。已知的讀值記憶體容量會顯示於畫面。
+  預期筆數超過容量時會顯示 **Reading memory exceeded**，須明確接受溢位風險。
+- External 模式另提供可選的 **Hardware Trigger Slope** 與 **Hardware Trigger
+  Delay (s)**；未指定時沿用工具預設值。
 - DC Voltage 的 DCV Input Impedance：**Not specified**、**Default**、
   **10 MΩ** 或 **Auto**。
 - DC Current 的 Current Terminal：**Not specified**、**3 A terminal** 或
@@ -501,15 +500,8 @@ Step，也不影響 Live。每次新 Run 重新預設 1,000。來源耗盡後若
 Measure，該 Step 會失敗並執行 Cleanup，不會重啟 Worker。Live Software
 Measure 不會套用這個 Simulation 上限。
 
-所有前景 Custom trigger mode 在 Simulation 與 Live 都需要 finite maximum trigger
-count。計算時會加總同一 Tool Instance 的每個 Measure occurrence，並將各 occurrence
-乘上外層 For iteration counts 與 finite While `max_iterations`。Custom Measure 位於
-Unlimited While 內時會被拒絕。Trigger Count 與 Sample Count 各自沿用 meters-tool
-目前的 1 到 1,000,000 限制；Orchestrator 不另外加入「總讀值最多 100 萬」的限制。
-Software Custom 與 External Custom 在 While 提早結束時可能留下未使用的 planned
-triggers。Immediate Custom 不同：Worker session 啟動時就會開始完整的 planned
-acquisition，因此 Workflow 即使提早結束，後續 planned Measure 所對應的 readings
-也可能已經取得；尚未被 Measure 消費的 readings 會在 Worker cleanup 時捨棄。
+前景 Meters 在 Simulation 與 Live 都只使用 Single。若要每次取得一批讀值，
+或使用 Immediate、External 觸發，請將該 Instance 設為 Background。
 
 ### 6.4 Stop Workflow 與迴圈 Stop
 
@@ -553,16 +545,9 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 共用同名 Page。Page name 同時要符合 CSV filename stem 與 Excel worksheet name
 限制，因此兩種 export format 會套用相同的命名限制。
 
-Custom Meters Measure 的每個 Measure step 會產生一個 batch。Output 直接
-引用該 step，或 Calculation 引用該 step 時，會逐一解析每個 sample。該 Page 的
-logical row 會依 batch size 展開，同 Page 的 scalar Outputs 會複製到每個 expanded
-row。多個 Outputs 可以使用同一個 Measure batch，但同一 Page 不可組合兩個獨立的
-Measure batches。Assert、Set Variable、While condition 與 Tool Action binding 不
-支援 batch-dependent values。
-
-Expansion 只影響所屬 Page，且會維持 staged 狀態直到 owning scope 或 iteration
-成功。CSV streaming、manual CSV/XLSX export 與 Charts 直接使用展開後的 committed
-rows，不會再做第二次 expansion。
+前景每次 Meters Measure 提供一筆讀值，可供 Output、Calculation、Set Variable
+與 Assert 正常引用。只有所屬流程區段或迴圈次數成功結束，才會保存該次 Output 列；
+後續步驟失敗時，尚未保存的列會捨棄。背景讀值獨立記錄於 Capture Dataset。
 
 ### 6.6 Show Message
 
@@ -580,7 +565,7 @@ rows，不會再做第二次 expansion。
 - **Output** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
   目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
   Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
-  其他 step。Show Message 的 Output 必須是單一數值，不支援 Custom Meters batch。若參考
+  其他 step。Show Message 的 Output 必須是單一數值。若參考
   的值不是單一數字、文字、Boolean 或 null，該 step 會明確報錯，不會寫出部分訊息。
 - **Newline** 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。
@@ -670,7 +655,7 @@ Simulation 不需要 Live Resources，會使用 external Workers 的 simulate co
 不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
 powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
 Live hardware validation。無法推導數量的 Simple Software 來源會顯示本次執行的
-Sample 警告；Foreground Custom Unlimited 仍不支援。
+Sample 警告；Custom 模式僅供 Background 使用。
 
 ## 8. Run Live
 
@@ -726,19 +711,29 @@ outputs 已被改變。
 
 ## Background Streaming
 
-在 **Tool Setup** 選擇 **Meters Immediate Custom**，再勾選 **Use this
-instance as a Background**。其他 Meters 模式、Scopes、Powers 和 Wavegen 的
-Background Streaming 會顯示 Unsupported。未綁定 Background 的 Instance
-仍可使用原有前景 Actions。綁定的 Instance 不可同時執行前景 Tool Action，
-同一 Run 內兩個 Instance 也不可共用同一個 Live Resource。
+在 **Tool Setup** 先勾選 **Use this instance as a Background**，再選擇六種
+Meters 模式之一。Scopes、Powers 和 Wavegen 尚不支援 Background。
+背景 Instance 不可同時供前景 Tool Action 使用。切換用途時會保留既有步驟，
+請在執行前處理畫面提示的衝突；取消 Background 後，須選擇 Single 才能用於
+前景 Measure。同一次執行中的兩個 Instance 不可共用同一個 Live Resource。
 
-每個綁定有固定 Background ID。來源可選有限 Trigger Count 或 **Native
-Infinite**；Sample Count 與 Tool 的 Overflow Risk 確認仍在 Meters Setup。
-Infinite 使用 Tool 原生無限來源，不會套用 Simulation 補值。
-**Live Monitor** 可選，預設不勾選。
-**5.1 Meters Setup** 的 Allow Risk 警告也適用於 Background 來源。有限來源
-若遺失 Samples，可能持續等待而無法自然結束；請依需要使用既有 Stop 控制，
-並核對實際擷取筆數與完整性結果。
+來源可選 **Finite** 或 **Infinite**。有限 Simple 模式設定 **Max Samples**；
+有限 Custom 模式設定 **Trigger Count**，每次觸發取得 **Sample Count** 筆。
+無限 Custom 必須明確勾選 **Allow Buffer Overflow Risk**。背景無限擷取
+不會套用隱藏的 Simulation 筆數上限。
+
+**Software** 與 **Software Custom** 必填 **Timer Interval (ms)**，預設
+**1000**。來源就緒後送出第一次觸發；收到一筆讀值或完整一批 Custom 讀值後，
+等待指定間隔才送出下一次。這是完成量測後的等待時間，不保證固定取樣頻率。
+Capture OFF 後仍持續觸發，也可繼續更新 Live Monitor。Worker OFF、Stop Workflow、
+來源完成或失敗時停止觸發。觸發遭拒或量測逾時會使執行失敗，並保留已取得的資料。
+
+**External** 與 **External Custom** 在 Live 使用接入的實體觸發訊號；
+Simulation 會對支援的型號自動產生虛擬觸發，例如 34461A。34460A 不支援 External。
+Slope 與 Delay 設定會交給工具處理；Simulation 不驗證實體觸發時序。
+
+**Live Monitor** 可選，預設不勾選。**5.1 Meters Setup** 的 Allow Risk 警告
+適用於背景 Custom 模式。Stop 無法恢復遺失的讀值；停止後請核對擷取筆數與資料品質。
 
 加入以下 Workflow Actions，再於 Step Properties 選擇 Background：
 
@@ -748,7 +743,8 @@ Infinite 使用 Tool 原生無限來源，不會套用 Simulation 補值。
 - **Capture OFF**：完成該 Dataset 與選配的 Streaming CSV；不停止 Worker，
   也不自動另做 Manual Export。
 - **Worker OFF**：釋放來源。「同時 Capture OFF」預設勾選；若先前已明確
-  Capture OFF，請取消勾選。
+  Capture OFF，請取消勾選。有限來源尚未達到設定筆數就執行 Worker OFF，
+  會使執行失敗；若要提早結束並保留部分資料，請使用 **Stop Workflow**。
 
 重複 ON/OFF 會造成 Step Error。有限來源自然結束時會接收尾端資料並完成
 Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker OFF 是釋放
@@ -910,7 +906,9 @@ Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
 開啟含有 saved Foreground 或 Background Chart 設定的 Template 時，checkbox
 會自動勾選並還原設定，包含只有 Background 的 Template。沒有 saved Chart
-設定的 Template 維持既有 session 預設行為。
+設定的 Template 從零張圖開始。選擇來源並按 **+ Add Chart** 才建立圖表。
+刪除所有圖表後，執行、Validate、切換 Page、儲存與載入都不會自動補回。
+已保存的有效圖表設定照常載入；Live Monitor 獨立運作，不占用圖表額度。
 取消勾選不會刪除目前畫面上的 Charts，只代表下一次 Save Template 不再保存它們。
 勾選狀態下執行 **Clear Last Run** 會保留 Chart 設定；一般未勾選的 session Charts
 則維持原本清除行為。
@@ -1056,7 +1054,7 @@ surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不�
 Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
 並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
 顯示 **Waiting for run to finish** 並隱藏 plot；Output selection 與 Export PNG
-仍停用，Settings 與 Remove 可操作，但最後一張 Foreground Chart 不可移除；Background 可移除至零張。
+仍停用，Settings 與 Remove 可操作，每張圖都可移除，包含最後一張 Foreground 或 Background Chart。
 執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
 第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。
 Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels
@@ -1202,7 +1200,7 @@ resource 與 identity。切換 backend 會清空草稿，請重新列出或輸�
 ### Simulation asks for Meters sample counts
 
 填寫每個 Instance 的 SIM Max Samples，或按 Cancel；這不會改變 Unlimited
-While。Foreground Custom Unlimited 仍需獨立支援。
+While。Custom 模式僅供 Background 使用。
 
 ### Manual export is unavailable
 

@@ -447,6 +447,8 @@ fn run_workflow_internal(
         options.background_csv,
         startup_timeout,
         shutdown_timeout,
+        action_timeout,
+        options.workflow_stop.clone(),
     );
     let execution = execute_workflow_internal(
         template,

@@ -5,7 +5,8 @@ import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import type { ComponentProps } from 'react'
 import App from '../src/App'
 import type ResultChart from '../src/ResultChart'
-import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
+import ChartPanelView from '../src/ChartPanelView'
+import { addChartPanel, addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 import type { ForStep, RunMetadataDto, WorkflowRunEventDto } from '../src/workflow'
 import type { WorkflowDraft } from '../src/templateDraft'
 import type { BackgroundChartSeries, BackgroundOutputData } from '../src/backgroundChartData'
@@ -45,7 +46,7 @@ function backgroundDraft(count: number): WorkflowDraft {
       dcv_input_impedance: null, current_terminal: null },
   })), backgrounds: Array.from({ length: count }, (_, index) => ({
     id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`, live_monitor: true,
-    trigger_count: 3,
+    limit_count: 3,
   })), workflow: { steps: [
     { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true },
     ...structuredClone(draft.workflow.steps),
@@ -158,7 +159,7 @@ async function savedDraft(): Promise<WorkflowDraft> {
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
 
-test.each([8, 7])('automatic Foreground Charts respect %i saved Background Charts through save toggles', async count => {
+test.each([8, 7])('Run preserves %i saved Background Charts without adding a Foreground Chart', async count => {
   currentDraft = backgroundDraft(1)
   let panels = addBackgroundChartPanel([], 'background-1')
   for (let i = 1; i < count; i++) panels = addBackgroundChartPanel(panels, 'background-1')
@@ -173,10 +174,10 @@ test.each([8, 7])('automatic Foreground Charts respect %i saved Background Chart
   const option = screen.getByLabelText('Save charts with template') as HTMLInputElement
   expect(option.checked).toBe(true)
   fireEvent.click(option)
-  await waitFor(() => expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)).toHaveLength(8))
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)).toHaveLength(count))
   fireEvent.click(option)
   const saved = await savedDraft()
-  expect(saved.output_views?.charts).toHaveLength(8)
+  expect(saved.output_views?.charts).toHaveLength(count)
   expect(saved.backgrounds).toEqual(currentDraft.backgrounds)
   expect(saved.output_views?.charts.filter(chart => chart.source)).toHaveLength(count)
 })
@@ -189,13 +190,13 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   tab('Output')
   fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
   fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
-  const chart = () => screen.getByRole('region', { name: 'Chart 2' })
+  const chart = () => screen.getByRole('region', { name: 'Chart 1' })
   const axis = () => within(chart()).getByLabelText('X axis') as HTMLSelectElement
   await within(chart()).findByRole('img', { name: 'line chart' })
   fireEvent.click(screen.getByLabelText('Save charts with template'))
   fireEvent.change(axis(), { target: { value: 'timestamp' } })
   let saved = await savedDraft()
-  expect(saved.output_views?.charts[1].source?.x_axis).toBe('timestamp')
+  expect(saved.output_views?.charts[0].source?.x_axis).toBe('timestamp')
   expect(saved.backgrounds).toEqual(currentDraft.backgrounds)
   fireEvent.click(screen.getByRole('button', { name: /Step .*?, on$/ }))
   fireEvent.keyDown(screen.getByRole('tabpanel', { name: 'Workflow' }), { key: 'Delete' })
@@ -222,13 +223,13 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   const validations = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft').length
   const beforeValidation = validations()
   fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
-  await screen.findByText(/Validation failed: Chart 2 references Background background-1/)
+  await screen.findByText(/Validation failed: Chart 1 references Background background-1/)
   expect(screen.queryByText('Run failed')).toBeNull()
   expect(validations()).toBe(beforeValidation)
   expect((screen.getByRole('button', { name: 'Validate' }) as HTMLButtonElement).disabled).toBe(false)
   expect(runButton('Simulation').disabled).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Save Template' }))
-  await screen.findByText(/Template I\/O failed: .*Chart 2 references Background background-1/)
+  await screen.findByText(/Template I\/O failed: .*Chart 1 references Background background-1/)
   expect(writes()).toBe(before)
   tab('Output')
   fireEvent.click(screen.getByLabelText('Save charts with template'))
@@ -249,8 +250,8 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   expect(screen.queryByText(/Validation failed:/)).toBeNull()
   expect(runButton('Simulation').disabled).toBe(false)
   saved = await savedDraft()
-  expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, trigger_count: 1000 }])
-  expect(saved.output_views?.charts[1].source?.x_axis).toBe('elapsed')
+  expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, limit_count: 1000 }])
+  expect(saved.output_views?.charts[0].source?.x_axis).toBe('elapsed')
   expect(runCalls()).toHaveLength(2)
 })
 
@@ -263,7 +264,7 @@ test('overlapping chart PNG exports keep application actions busy until every ex
   fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
   for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
   const chart = (n: number) => within(screen.getByRole('region', { name: `Chart ${n}` }))
-  for (const n of [2, 3]) await chart(n).findByRole('img', { name: 'line chart' })
+  for (const n of [1, 2]) await chart(n).findByRole('img', { name: 'line chart' })
   const first = deferred<void>()
   const second = deferred<void>()
   const original = vi.mocked(invoke).getMockImplementation()!
@@ -272,7 +273,7 @@ test('overlapping chart PNG exports keep application actions busy until every ex
   vi.mocked(invoke).mockImplementation(async (command, args) => command === 'save_chart_png'
     ? (args as { destinationPath: string }).destinationPath === 'first.png' ? first.promise : second.promise
     : original(command, args))
-  for (const n of [2, 3]) fireEvent.click(chart(n).getByRole('button', { name: 'Export PNG' }))
+  for (const n of [1, 2]) fireEvent.click(chart(n).getByRole('button', { name: 'Export PNG' }))
   await waitFor(() => expect(writes()).toHaveLength(2))
   const expectBusy = (busy: boolean) => {
     expect((screen.getByRole('button', { name: 'New Template' }) as HTMLButtonElement).disabled).toBe(busy)
@@ -281,15 +282,15 @@ test('overlapping chart PNG exports keep application actions busy until every ex
   }
   expectBusy(true)
   await act(async () => first.resolve())
-  await chart(2).findByText('Chart image saved successfully.')
+  await chart(1).findByText('Chart image saved successfully.')
   expectBusy(true)
-  expect((chart(3).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((chart(2).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(true)
   await act(async () => second.reject(new Error('Disk full')))
-  await chart(3).findByText(/Could not save chart image: .*Disk full/)
+  await chart(2).findByText(/Could not save chart image: .*Disk full/)
   expectBusy(false)
   const cancelled = deferred<string | null>()
   vi.mocked(save).mockReturnValueOnce(cancelled.promise)
-  fireEvent.click(chart(3).getByRole('button', { name: 'Export PNG' }))
+  fireEvent.click(chart(2).getByRole('button', { name: 'Export PNG' }))
   expectBusy(true)
   await act(async () => cancelled.resolve(null))
   expectBusy(false)
@@ -619,7 +620,7 @@ test.each(['Simulation', 'Live'])('%s dismisses stale Summary failures while pre
   fireEvent.click(screen.getByLabelText('Fit Data'))
   expect(screen.getAllByText('Run failed')).toHaveLength(1)
   // Step edits, Tool Setup and Background Setup each invalidate the Summary feedback.
-  for (const field of ['Value', 'NPLC', 'Trigger count']) {
+  for (const field of ['Value', 'NPLC', 'Trigger Count']) {
     if (field !== 'Value') {
       tab('Setup')
       const expand = screen.queryByRole('button', { name: 'Expand meters-1' })
@@ -1012,4 +1013,15 @@ test('Pointer dragging moves between Root and empty bodies, preserves selection 
   })
   expect((screen.getByRole('button', { name: 'Drag out to reorder' }) as HTMLButtonElement).disabled).toBe(true)
   await finish(8)
+})
+
+
+test('the final Foreground Chart can be removed without any result rows', () => {
+  const panels = addChartPanel([], 'Results', ['Voltage'])
+  const onPanelsChange = vi.fn()
+  render(<ChartPanelView panel={panels[0]} panels={panels} onPanelsChange={onPanelsChange}
+    charts={new Map()} numericNames={['Voltage']} running={false} hasRows={false}
+    canExport={false} onSavingChange={() => {}}>{null}</ChartPanelView>)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Chart 1' }))
+  expect(onPanelsChange).toHaveBeenCalledWith([])
 })

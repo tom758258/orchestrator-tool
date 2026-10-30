@@ -20,7 +20,9 @@ export type MetersSetup = {
   dcv_input_impedance: 'default' | 'ten-megohm' | 'auto' | null
   current_terminal: number | null
   vm_comp_slope?: 'pos' | 'neg' | null
-  trigger_mode?: 'software' | 'software-custom' | 'immediate-custom' | 'external-custom'
+  trigger_mode?: 'software' | 'immediate' | 'external' | 'software-custom' | 'immediate-custom' | 'external-custom'
+  hw_trigger_slope?: 'pos' | 'neg' | null
+  hw_trigger_delay_s?: number | null
   sample_count?: number
   buffer_drain_size?: number | null
   allow_buffer_overflow_risk?: boolean
@@ -70,64 +72,7 @@ type MetersCapabilities = {
 }
 
 function isCustomTriggerMode(mode: NonNullable<MetersSetup['trigger_mode']>): boolean {
-  return mode !== 'software'
-}
-
-function parseDecimal(value: string): { coefficient: bigint; scale: number } | null {
-  const match = value.trim().match(/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/)
-  if (!match) return null
-  const fraction = match[3] ?? ''
-  const exponent = Number(match[4] ?? '0')
-  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 28) return null
-  let coefficient = BigInt(`${match[2]}${fraction}`)
-  if (match[1] === '-') coefficient = -coefficient
-  let scale = fraction.length - exponent
-  if (scale < 0) {
-    coefficient *= 10n ** BigInt(-scale)
-    scale = 0
-  }
-  return { coefficient, scale }
-}
-
-function rangeIterationCount(range: { start: string; stop: string; step: string }): bigint | null {
-  const start = parseDecimal(range.start)
-  const stop = parseDecimal(range.stop)
-  const step = parseDecimal(range.step)
-  if (!start || !stop || !step) return null
-  const scale = Math.max(start.scale, stop.scale, step.scale)
-  const scaled = (value: { coefficient: bigint; scale: number }) =>
-    value.coefficient * 10n ** BigInt(scale - value.scale)
-  const a = scaled(start)
-  const b = scaled(stop)
-  const delta = scaled(step)
-  if (delta === 0n) return null
-  if ((b > a && delta < 0n) || (b < a && delta > 0n)) return null
-  const span = b >= a ? b - a : a - b
-  const magnitude = delta >= 0n ? delta : -delta
-  return span / magnitude + 1n
-}
-
-function plannedMeterMeasureCount(steps: readonly WorkflowStep[], target: string): bigint | null {
-  let total = 0n
-  for (const step of steps) {
-    if (step.type === 'tool-action' && step.target === target && step.action === 'measure') {
-      total += 1n
-    } else if (step.type === 'for') {
-      const body = plannedMeterMeasureCount(step.steps, target)
-      const iterations = rangeIterationCount(step.range)
-      if (body === null || iterations === null) return null
-      total += body * iterations
-    } else if (step.type === 'while') {
-      const body = plannedMeterMeasureCount(step.steps, target)
-      if (body === null) return null
-      if (body === 0n) continue
-      if (step.max_iterations === null
-        || !Number.isSafeInteger(step.max_iterations)
-        || step.max_iterations < 0) return null
-      total += body * BigInt(step.max_iterations)
-    }
-  }
-  return total
+  return mode.endsWith('-custom')
 }
 
 function formatInteger(value: bigint | number): string {
@@ -141,13 +86,13 @@ function formatRange(value: number, unit: string): string {
   return `${Number((value / 10 ** exponent).toPrecision(12))} ${prefix[exponent]}${unit}`
 }
 
-function MetersSetupFields({ value, onChange, model, executionMode, metersExecutableKey, plannedTriggerCount }: {
+function MetersSetupFields({ value, onChange, model, executionMode, metersExecutableKey, background }: {
   value: { meters: MetersSetup }
   onChange: (value: { meters: MetersSetup }) => void
   model?: string | null
   executionMode: ExecutionMode
   metersExecutableKey: string
-  plannedTriggerCount: bigint | null
+  background?: BackgroundConfig
 }) {
   const [capabilities, setCapabilities] = useState<{
     requestedModel: string | null | undefined
@@ -182,6 +127,9 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
   const sampleCountMax = meterCapabilities?.limits.sample_count.max ?? 1000000
   const bufferDrainMax = meterCapabilities?.limits.buffer_drain_size.max ?? 10000
   const sampleCount = meters.sample_count ?? 1
+  const plannedTriggerCount = background?.limit_count != null && Number.isSafeInteger(background.limit_count)
+    ? BigInt(background.limit_count) : null
+  const externalMode = triggerMode === 'external' || triggerMode === 'external-custom'
   const expectedReadings = plannedTriggerCount !== null
     && Number.isInteger(sampleCount) && sampleCount >= 0
     ? plannedTriggerCount * BigInt(sampleCount)
@@ -194,7 +142,9 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
     || meterCapabilities.trigger_modes.includes(triggerMode)
 
   const triggerOptions: { value: NonNullable<MetersSetup['trigger_mode']>; label: string }[] = [
-    { value: 'software', label: 'Single' },
+    { value: 'software', label: background ? 'Software' : 'Single' },
+    { value: 'immediate', label: 'Immediate' },
+    { value: 'external', label: 'External' },
     { value: 'software-custom', label: 'Software Custom' },
     { value: 'immediate-custom', label: 'Immediate Custom' },
     { value: 'external-custom', label: 'External Custom' },
@@ -206,58 +156,66 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
       <div className="meters-setup-fields">
         <label className="step-property-field meters-setup-trigger-mode">
           <span className="step-property-label">Trigger Mode</span>
-          <select value={triggerMode} onChange={(event) => {
+          <select aria-label="Trigger Mode" value={triggerMode} onChange={(event) => {
             const trigger_mode = event.target.value as NonNullable<MetersSetup['trigger_mode']>
             onChange({
               ...value,
-              meters: trigger_mode === 'software'
-                ? {
-                    ...meters,
-                    trigger_mode,
-                    sample_count: 1,
-                    buffer_drain_size: null,
-                    allow_buffer_overflow_risk: false,
-                  }
-                : { ...meters, trigger_mode },
+              meters: { ...meters, trigger_mode },
             })
           }}>
-            {triggerOptions.map(option => {
+            {triggerOptions.filter(option => background || option.value === 'software').map(option => {
               const supported = meterCapabilities === null || meterCapabilities.trigger_modes.includes(option.value)
               return <option key={option.value} value={option.value} disabled={!supported}>
                 {option.label}{supported ? '' : ` (unsupported by ${meterCapabilities?.model})`}
               </option>
             })}
+            {!background && triggerMode !== 'software' && <option value={triggerMode} disabled>{triggerMode} (requires Background)</option>}
           </select>
+          {!background && triggerMode !== 'software' && <>
+            <span role="alert">Foreground Meters requires Single. Select Single or enable Background before running.</span>
+          </>}
           {!selectedModeSupported && (
             <span className="tool-setup-hint">The selected model does not support this trigger mode.</span>
           )}
         </label>
 
-        <label className="step-property-field">
+        {externalMode && background && <>
+          <label className="step-property-field"><span className="step-property-label">Hardware Trigger Slope</span>
+            <select value={meters.hw_trigger_slope ?? ''} onChange={event => onChange({ ...value, meters: {
+              ...meters, hw_trigger_slope: event.target.value === '' ? null : event.target.value as 'pos' | 'neg',
+            } })}><option value="">Tool default</option><option value="pos">Positive</option><option value="neg">Negative</option></select>
+          </label>
+          <label className="step-property-field"><span className="step-property-label">Hardware Trigger Delay (s)</span>
+            <input type="number" min={0} step="any" value={meters.hw_trigger_delay_s ?? ''} onChange={event => onChange({ ...value, meters: {
+              ...meters, hw_trigger_delay_s: event.target.value === '' ? null : Number(event.target.value),
+            } })} />
+          </label>
+        </>}
+        {background && customMode && <><label className="step-property-field">
           <span className="step-property-label">Sample Count</span>
-          <input type="number" required disabled={!customMode} min={1} max={sampleCountMax} step={1} value={sampleCount}
+          <input type="number" required min={1} max={sampleCountMax} step={1} value={sampleCount}
             onChange={event => onChange({ ...value, meters: { ...meters, sample_count: Number(event.target.value) } })} />
         </label>
         <label className="step-property-field">
           <span className="step-property-label">Buffer Drain Size (optional)</span>
-          <input type="number" disabled={!customMode} min={1} max={bufferDrainMax} step={1} value={meters.buffer_drain_size ?? ''}
+          <input type="number" min={1} max={bufferDrainMax} step={1} value={meters.buffer_drain_size ?? ''}
             onChange={event => onChange({ ...value, meters: {
               ...meters, buffer_drain_size: event.target.value === '' ? null : Number(event.target.value),
             } })} />
         </label>
         <label className="step-property-field step-property-checkbox meters-setup-overflow-risk">
-          <input type="checkbox" disabled={!customMode} checked={meters.allow_buffer_overflow_risk ?? false}
+          <input type="checkbox" checked={meters.allow_buffer_overflow_risk ?? false}
             onChange={event => onChange({ ...value, meters: { ...meters, allow_buffer_overflow_risk: event.target.checked } })} />
           <span>Allow Buffer Overflow Risk</span>
-        </label>
+        </label></>}
 
-        {customMode && <>
+        {background && customMode && <>
           {meterCapabilities && (
             <p className="meters-setup-summary">
               {meterCapabilities.model} · Memory {formatInteger(meterCapabilities.reading_memory_limit)} · Planned triggers {plannedTriggerCount === null
                 ? 'unbounded'
                 : formatInteger(plannedTriggerCount)}
-              {plannedTriggerCount === null && '. Custom mode requires finite loop bounds.'}
+              {plannedTriggerCount === null && '. Infinite acquisition requires Allow Buffer Overflow Risk.'}
             </p>
           )}
           {triggerCountOverflow && meterCapabilities && plannedTriggerCount !== null && (
@@ -274,7 +232,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
                   )}
                   <span>You accept possible unrecoverable data loss if acquisition outpaces draining, even below capacity. Lower NPLC can increase this risk.</span>
                   <span>If samples are lost, a finite Custom acquisition may keep waiting after its planned triggers finish. The Worker may still respond to existing Stop controls; Stop cannot recover lost data.</span>
-                  <span><code>summary.ok=true</code> or exit code 0 does not guarantee completeness. Check Captured, Expected Readings, Stop Reason and Data Integrity.</span>
+                  <span>A successful finish does not guarantee complete data. Check the captured count, expected count, stop reason and data quality.</span>
                   <span>Allow Risk does not ensure overflow monitoring is active. Without monitoring, overflow may go undetected.</span>
                 </div>
               : memoryOverflow && meterCapabilities && expectedReadings !== null && <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
@@ -623,7 +581,7 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
   </div>
 }
 
-function setupSummary(instance: ToolInstance): string {
+function setupSummary(instance: ToolInstance, background?: BackgroundConfig): string {
   const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
   if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? 'Protection Setup' : 'No protection settings configured'}`
   if (instance.tool === 'scopes') return `${type} · ${instance.setup.acquisition ? 'Acquisition Setup' : 'Acquisition Unchanged'} · ${instance.setup.channels?.length ?? 0} configured channels`
@@ -633,7 +591,7 @@ function setupSummary(instance: ToolInstance): string {
   const range = meters.range_mode === 'auto' ? 'Auto Range'
     : meters.manual_range !== null && Number.isFinite(meters.manual_range)
       ? `Manual ${meters.manual_range} ${voltage ? 'V' : 'A'}` : 'Manual Range'
-  const trigger = ({ software: 'Single', 'software-custom': 'Software Custom', 'immediate-custom': 'Immediate Custom', 'external-custom': 'External Custom' } as const)[meters.trigger_mode ?? 'software']
+  const trigger = ({ software: background ? 'Software' : 'Single', immediate: 'Immediate', external: 'External', 'software-custom': 'Software Custom', 'immediate-custom': 'Immediate Custom', 'external-custom': 'External Custom' } as const)[meters.trigger_mode ?? 'software']
   return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
@@ -701,6 +659,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
     {!tool && <p className="tool-setup-hint">Configure an external tool in Tools before adding a Tool Instance.</p>}
     {value.map(instance => {
       const collapsed = collapsedIds.includes(instance.id)
+      const background = backgrounds.find(item => item.tool_instance_id === instance.id)
       const referenced = steps.some(step => step.type === 'tool-action' && step.target === instance.id)
       return <fieldset key={instance.id} className="tool-instance-card" disabled={disabled}>
         <legend>
@@ -718,7 +677,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
         {!configuredToolTypes.includes(instance.tool) && <p className="tool-setup-hint" role="status">
           {instance.tool[0].toUpperCase() + instance.tool.slice(1)} is not configured in Tools.
         </p>}
-        {collapsed && <p className="tool-setup-hint">{setupSummary(instance)}</p>}
+        {collapsed && <p className="tool-setup-hint">{setupSummary(instance, background)}</p>}
         {/* Keep setup fields mounted so collapsing never discards local drafts or reloads capabilities. */}
         <div hidden={collapsed}>
           <label className="step-property-field">
@@ -738,13 +697,21 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
             <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>
           </label>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
+          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange} />}
           {instance.tool === 'meters'
             ? <MetersSetupFields metersExecutableKey={metersExecutableKey}
                 model={executionMode === 'live' ? resourceIdentities[instance.id]?.model : undefined}
                 executionMode={executionMode}
-                plannedTriggerCount={plannedMeterMeasureCount(steps, instance.id)}
+                background={background}
                 value={{ meters: instance.setup }}
-                onChange={({ meters }) => onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))} />
+                onChange={({ meters }) => {
+                  onChange(value.map(item => item.id === instance.id ? { ...instance, setup: meters } : item))
+                  if (background && meters.trigger_mode !== instance.setup.trigger_mode) {
+                    const software = meters.trigger_mode === 'software' || meters.trigger_mode === 'software-custom'
+                    onBackgroundsChange?.(backgrounds.map(item => item.id === background.id
+                      ? { ...item, timer_interval_ms: software ? item.timer_interval_ms ?? 1000 : undefined } : item))
+                  }
+                }} />
             : instance.tool === 'powers'
               ? <PowersSetupFields value={instance.setup}
                   modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
@@ -767,7 +734,6 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
           {renderResource(instance)}
-          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange} />}
           <button type="button" className="action-button action-button-danger" disabled={referenced || backgrounds.some(background => background.tool_instance_id === instance.id)}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
           {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}

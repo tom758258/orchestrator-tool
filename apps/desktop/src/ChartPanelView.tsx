@@ -36,7 +36,7 @@ export default function ChartPanelView({ panel, panels, onPanelsChange, charts, 
     <button className="action-button" type="button" disabled={saving || !canExport} onClick={() => void saveImage()}>Export PNG</button>
     <button className="action-button" type="button" disabled={saving} onClick={() => setSettings(true)}>Settings</button>
     <button className="action-button action-button-danger" type="button" aria-label={`Remove Chart ${number}`}
-      disabled={saving || (!panel.source && panels.filter(item => !item.source).length <= 1)}
+      disabled={saving}
       onClick={() => onPanelsChange(panels.filter(item => item.id !== panel.id))}>Remove</button>
   </div>}>
     <p>{panel.source ? `Background: ${panel.source.background_id} · Value` : `Foreground: ${panel.page}`}</p>

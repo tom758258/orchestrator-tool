@@ -149,13 +149,12 @@ The current Desktop presentation architecture has these properties:
   a new run; it is never Template data.
 - Charts use Apache ECharts Canvas rendering. Foreground and Background panels
   share a limit of eight, including session-only and saved charts; Live Monitors
-  do not count toward it. The final foreground panel cannot be removed, while
-  Background panels can be removed down to zero. Chart panel configuration
-  survives Page/tab changes and new Simulation/Live runs subject to the existing
+  do not count toward it. Both foreground and Background panels can be removed
+  down to zero. Chart panel configuration survives Page/tab changes and new Simulation/Live runs subject to the existing
   Page/Output compatibility rules.
-  Session-only foreground panels use Page/Output reconciliation; when none
-  remain, the first Page receives one default panel if it has numeric Outputs
-  and the shared limit allows it. When **Save charts with template** is on,
+  Session-only foreground panels use Page/Output reconciliation without creating
+  panels. New configurations start empty; charts are added explicitly.
+  When **Save charts with template** is on,
   runtime run metadata does not reconcile
   saved Chart definitions. **Open Template** replaces the current Chart
   configuration with the Template's saved Charts and turns the checkbox on
@@ -282,7 +281,12 @@ WorkerSession and acknowledged control commands. Its bounded stdout queue
 reports overflow as failure; optional bounded monitoring does not own or limit
 the full memory Dataset. Capture and Worker lifecycles are independent, and
 natural completion requires tail, Summary, EOF, actual exit and Tool-specific
-quality checks before pending release.
+quality checks before pending release. All six Meters modes use this path.
+Software modes schedule one trigger at a time in that same dispatcher, waiting
+for the complete measurement before starting the configured delay. The timer
+uses all validated source samples independently of Capture. Run stop and failure
+signals suppress new triggers. Foreground Meters remains Single only; its scalar
+Output path has no batch expansion.
 
 The current StoredRun holds the shared authoritative BackgroundStore. Tauri
 only exposes metadata, bounded row/chart/monitor queries and manual export;

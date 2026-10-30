@@ -76,37 +76,14 @@ impl DataContext {
     /// An empty JSON Pointer selects the complete step output.
     /// Arithmetic and ordering expressions require JSON numbers and use f64 operations.
     pub fn resolve(&self, input: &InputValue) -> Result<Value, ResolveError> {
-        self.resolve_with(input, &|_| false, 0)
-    }
-
-    pub(crate) fn resolve_batch_value(
-        &self,
-        input: &InputValue,
-        is_batch_step: &dyn Fn(&StepId) -> bool,
-        index: usize,
-    ) -> Result<Value, ResolveError> {
-        self.resolve_with(input, is_batch_step, index)
-    }
-
-    fn resolve_with(
-        &self,
-        input: &InputValue,
-        is_batch_step: &dyn Fn(&StepId) -> bool,
-        index: usize,
-    ) -> Result<Value, ResolveError> {
         match input {
             InputValue::ElapsedTime => Ok(elapsed_value(self.execution_start.elapsed())),
             InputValue::Timestamp => Ok(timestamp_value(SystemTime::now().into())),
             InputValue::Expression(expression) => {
-                let left =
-                    self.resolve_expression_operand(expression.left(), is_batch_step, index)?;
+                let left = self.resolve_expression_operand(expression.left())?;
                 match expression.operator() {
                     ExpressionOperator::Equal | ExpressionOperator::NotEqual => {
-                        let right = self.resolve_expression_operand(
-                            expression.right(),
-                            is_batch_step,
-                            index,
-                        )?;
+                        let right = self.resolve_expression_operand(expression.right())?;
                         return Ok(Value::Bool(match expression.operator() {
                             ExpressionOperator::Equal => left == right,
                             ExpressionOperator::NotEqual => left != right,
@@ -117,7 +94,7 @@ impl DataContext {
                 }
                 let left = left.as_f64().ok_or(ResolveError::InvalidNumericOperand)?;
                 let right = self
-                    .resolve_expression_operand(expression.right(), is_batch_step, index)?
+                    .resolve_expression_operand(expression.right())?
                     .as_f64()
                     .ok_or(ResolveError::InvalidNumericOperand)?;
                 let result = match expression.operator() {
@@ -151,20 +128,6 @@ impl DataContext {
                 let output = self
                     .step_output(reference.step_id())
                     .ok_or_else(|| ResolveError::MissingStepOutput(reference.step_id().clone()))?;
-                let output = if is_batch_step(reference.step_id()) {
-                    output
-                        .as_array()
-                        .ok_or_else(|| {
-                            ResolveError::InvalidBatchOutput(reference.step_id().clone())
-                        })?
-                        .get(index)
-                        .ok_or_else(|| ResolveError::MissingBatchItem {
-                            step_id: reference.step_id().clone(),
-                            index,
-                        })?
-                } else {
-                    output
-                };
                 output.pointer(reference.pointer()).cloned().ok_or_else(|| {
                     ResolveError::MissingStepOutputPath {
                         step_id: reference.step_id().clone(),
@@ -178,15 +141,13 @@ impl DataContext {
     fn resolve_expression_operand(
         &self,
         operand: &ExpressionOperand,
-        is_batch_step: &dyn Fn(&StepId) -> bool,
-        index: usize,
     ) -> Result<Value, ResolveError> {
         let input = match operand {
             ExpressionOperand::Literal(value) => InputValue::Literal(value.clone()),
             ExpressionOperand::Variable(variable_id) => InputValue::Variable(variable_id.clone()),
             ExpressionOperand::StepOutput(reference) => InputValue::StepOutput(reference.clone()),
         };
-        self.resolve_with(&input, is_batch_step, index)
+        self.resolve(&input)
     }
 }
 
@@ -212,8 +173,6 @@ pub enum ResolveError {
     MissingVariable(VariableId),
     MissingStepOutput(StepId),
     MissingStepOutputPath { step_id: StepId, pointer: String },
-    InvalidBatchOutput(StepId),
-    MissingBatchItem { step_id: StepId, index: usize },
 }
 
 impl fmt::Display for ResolveError {
@@ -236,18 +195,6 @@ impl fmt::Display for ResolveError {
                 write!(
                     formatter,
                     "missing step output target for step {step_id} at JSON Pointer {pointer:?}"
-                )
-            }
-            Self::InvalidBatchOutput(step_id) => {
-                write!(
-                    formatter,
-                    "batch source step {step_id} did not produce a batch"
-                )
-            }
-            Self::MissingBatchItem { step_id, index } => {
-                write!(
-                    formatter,
-                    "batch source step {step_id} has no sample at index {index}"
                 )
             }
         }
