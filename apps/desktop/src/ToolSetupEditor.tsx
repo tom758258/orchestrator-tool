@@ -266,19 +266,23 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
               <span>{formatInteger(plannedTriggerCount)} planned / {formatInteger(meterCapabilities.limits.trigger_count.max)} maximum.</span>
             </div>
           )}
-          {memoryOverflow && meterCapabilities && expectedReadings !== null && (
-            meters.allow_buffer_overflow_risk
+          {meters.allow_buffer_overflow_risk
               ? <div className="meters-setup-feedback meters-setup-feedback-warning" role="status">
-                  <strong>Buffer overflow risk allowed</strong>
-                  <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity.</span>
-                  <span>Continuous draining must keep up; lower NPLC increases data-loss risk.</span>
+                  <strong>High Buffer Overflow Risk Accepted</strong>
+                  {memoryOverflow && meterCapabilities && expectedReadings !== null && (
+                    <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity. Timely draining may still preserve all readings.</span>
+                  )}
+                  <span>You accept possible unrecoverable data loss if acquisition outpaces draining, even below capacity. Lower NPLC can increase this risk.</span>
+                  <span>If samples are lost, a finite Custom acquisition may keep waiting after its planned triggers finish. The Worker may still respond to existing Stop controls; Stop cannot recover lost data.</span>
+                  <span><code>summary.ok=true</code> or exit code 0 does not guarantee completeness. Check Captured, Expected Readings, Stop Reason and Data Integrity.</span>
+                  <span>Allow Risk does not ensure overflow monitoring is active. Without monitoring, overflow may go undetected.</span>
                 </div>
-              : <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
+              : memoryOverflow && meterCapabilities && expectedReadings !== null && <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
                   <strong>Reading memory exceeded</strong>
                   <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity.</span>
                   <span>Enable “Allow Buffer Overflow Risk” to proceed.</span>
                 </div>
-          )}
+          }
         </>}
 
         <label className="step-property-field">

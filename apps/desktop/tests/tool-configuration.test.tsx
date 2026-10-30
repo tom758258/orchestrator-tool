@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import type { WorkflowDraft } from '../src/templateDraft'
-import type { ToolInstance } from '../src/ToolSetupEditor'
+import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
 import type { WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
@@ -137,17 +137,95 @@ async function savedDraft() {
   return JSON.parse(args.templateJson)
 }
 
-test('loading a Template with only Background Charts preserves their X axis on save', async () => {
+test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow Risk and known capacity in %s', async executionMode => {
+  const capabilities = { model: 'Test Meter', trigger_modes: ['software', 'immediate-custom'], limits: {
+    sample_count: { max: 1_000_000 }, buffer_drain_size: { max: 10_000 }, trigger_count: { max: 1_000_000 },
+  }, reading_memory_limit: 10_000, measurements: [] }
+  let resolveCapabilities!: (value: typeof capabilities) => void
+  vi.mocked(invoke).mockReturnValueOnce(new Promise(resolve => { resolveCapabilities = resolve }))
+  let value: ToolInstance[] = [{ ...backgroundMeter,
+    setup: { ...backgroundMeter.setup, sample_count: 5_000, buffer_drain_size: 100, allow_buffer_overflow_risk: false } }]
+  const measure: WorkflowStep = { type: 'tool-action', id: 'measure', target: 'meters-1', action: 'measure', arguments: {} }
+  let steps: WorkflowStep[] = [measure]
+  const onChange = vi.fn((next: ToolInstance[]) => { value = next })
+  const view = () => <ToolSetupEditor value={value} steps={steps} onChange={onChange} disabled={false}
+    configuredToolTypes={['meters']} resourceIdentities={{}} executionMode={executionMode}
+    metersExecutableKey="meters.exe" powersExecutableKey="" scopesExecutableKey=""
+    renderResource={() => null} renderPowersDeviceStatus={() => null} />
+  const { rerender } = render(view())
+  const warning = () => {
+    const status = screen.getByRole('status')
+    expect(within(status).getByText('High Buffer Overflow Risk Accepted')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    return within(status)
+  }
+  const toggleRisk = (enabled: boolean) => {
+    const before = structuredClone(value)
+    const edits = onChange.mock.calls.length
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Allow Buffer Overflow Risk' }))
+    expect(onChange).toHaveBeenCalledTimes(edits + 1)
+    expect(value).toEqual([{ ...before[0], setup: { ...before[0].setup, allow_buffer_overflow_risk: enabled } }])
+    rerender(view())
+  }
+
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(onChange).not.toHaveBeenCalled()
+  toggleRisk(true)
+  expect(warning().queryByText(/planned \/ .* capacity/)).toBeNull() // Capabilities are still pending.
+  await act(async () => { resolveCapabilities(capabilities) })
+  await screen.findByText(/Test Meter · Memory 10,000/)
+  expect(warning().queryByText(/planned \/ .* capacity/)).toBeNull() // 5,000 is below capacity.
+  toggleRisk(false)
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+  toggleRisk(true)
+  warning()
+
+  steps = [{ type: 'for', id: 'loop', variable: 'i', range: { start: '1', stop: '4', step: '1' }, steps: [measure] }]
+  rerender(view())
+  expect(warning().getByText(/20,000 planned \/ 10,000 capacity/)).toBeTruthy()
+  toggleRisk(false)
+  expect(screen.queryByRole('status')).toBeNull()
+  const blocking = within(screen.getByRole('alert'))
+  expect(blocking.getByText('Reading memory exceeded')).toBeTruthy()
+  expect(blocking.getByText('20,000 planned / 10,000 capacity.')).toBeTruthy()
+  expect(blocking.getByText(/Enable “Allow Buffer Overflow Risk” to proceed/)).toBeTruthy()
+  toggleRisk(true)
+  expect(warning().getByText(/20,000 planned \/ 10,000 capacity/)).toBeTruthy()
+
+  for (const unknown of [
+    { type: 'for', id: 'unknown', variable: 'i', range: { start: '1', stop: 'limit', step: '1' }, steps: [measure] },
+    { type: 'while', id: 'unbounded', left: { source: 'literal', value: true }, operator: 'equal',
+      right: { source: 'literal', value: true }, max_iterations: null, steps: [measure] },
+  ] satisfies WorkflowStep[]) {
+    steps = [unknown]
+    rerender(view())
+    expect(warning().queryByText(/planned \/ .* capacity/)).toBeNull()
+  }
+  expect(onChange).toHaveBeenCalledTimes(5) // Only explicit checkbox changes edit Setup.
+  for (const allowRisk of [false, true]) {
+    value = [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software', allow_buffer_overflow_risk: allowRisk } }]
+    rerender(view())
+    expect(screen.queryByRole('status')).toBeNull() // Single hides even a stored Custom acknowledgement.
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect((screen.getByRole('checkbox', { name: 'Allow Buffer Overflow Risk' }) as HTMLInputElement).disabled).toBe(true)
+  }
+  expect(onChange).toHaveBeenCalledTimes(5)
+  expect(calls()).toEqual([['get_meters_capabilities', { executionMode }]])
+})
+
+test('loading a Template with Background Charts and accepted overflow risk preserves setup and X axis on save', async () => {
   const panel = addBackgroundChartPanel([], 'background-1')[0]
   panel.source!.x_axis = 'timestamp'
-  loadedDraft = { ...empty, tool_instances: [backgroundMeter], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
+  loadedDraft = { ...empty, tool_instances: [{ ...backgroundMeter,
+    setup: { ...backgroundMeter.setup, allow_buffer_overflow_risk: true } }], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
     live_monitor: true, trigger_count: 10 }], output_views: { charts: [chartPanelToSavedChart(panel)] } }
   await mount()
   click('Open Template')
   await screen.findByText('Template loaded.')
+  expect(instance('meters-1').getByText('High Buffer Overflow Risk Accepted')).toBeTruthy()
   const saved = await savedDraft()
-  expect(saved.backgrounds).toEqual(loadedDraft.backgrounds)
-  expect(saved.output_views).toEqual(loadedDraft.output_views)
+  expect(saved).toEqual(loadedDraft)
 })
 const summaryCounts = () => Array.from(screen.getByRole('region', { name: 'Tool Instance Summary' })
   .querySelectorAll('dl > div')).map(node => [node.querySelector('dt')!.textContent, node.querySelector('dd')!.textContent])

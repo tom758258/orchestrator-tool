@@ -166,9 +166,10 @@ spinner buttons are hidden.</p>
   return the next ordered batch produced by the Meter Worker.</li>
 <li>All Custom modes expose <strong>Sample Count</strong>, optional <strong>Buffer Drain Size</strong>, and
   <strong>Allow Buffer Overflow Risk</strong>. Trigger Count is derived from the Workflow
-  and is not editable. The UI shows the selected model's reading-memory limit
-  and warns when the planned acquisition exceeds it. Lower NPLC increases
-  acquisition rate and therefore increases buffer-drain risk.</li>
+  and is not editable. When capabilities are available, the UI shows the
+  selected model's reading-memory limit. Planned readings above that limit
+  show <strong>Reading memory exceeded</strong> and require Allow Buffer Overflow Risk
+  to proceed.</li>
 <li>For DC Voltage, DCV Input Impedance: <strong>Not specified</strong>, <strong>Default</strong>,
   <strong>10 MΩ</strong>, or <strong>Auto</strong>.</li>
 <li>For DC Current, Current Terminal: <strong>Not specified</strong>, <strong>3 A terminal</strong>, or
@@ -182,6 +183,26 @@ meters-tool remains authoritative for the actual model capability and numeric
 limits. Desktop does not replace its capability database. In Simulation,
 capability choices come from the meter simulator profile rather than a saved
 Live meter identity. Live uses the saved identity when available.</p>
+<p>In a Custom mode, selecting <strong>Allow Buffer Overflow Risk</strong> explicitly accepts
+possible unrecoverable data loss. <strong>High Buffer Overflow Risk Accepted</strong> appears
+whenever it is selected, even below the memory limit or before capabilities are
+available. Samples can be lost whenever acquisition outpaces the Worker's
+draining of reading memory; lower NPLC can increase that risk. Conversely,
+planned readings above capacity may still be captured completely if draining
+keeps up. Exceeding the planned capacity alone does not confirm overflow.</p>
+<p>If a finite Custom acquisition loses samples, the Worker may keep waiting for
+missing samples after all planned triggers finish and may not finish naturally.
+This does not necessarily mean it has stopped responding: it may still accept
+existing Workflow or Worker Stop controls. Use those controls to end the
+operation as appropriate; Stop cannot recover lost data. These warnings apply
+in both Simulation and Live. The waiting behavior has been reproduced in
+Simulation; the same behavior has not been confirmed on physical instruments.</p>
+<p>Neither <code>summary.ok=true</code> nor process exit code 0 guarantees that all expected
+readings were captured. Check <strong>Captured</strong>, <strong>Expected Readings</strong>, <strong>Stop Reason</strong>
+and <strong>Data Integrity</strong> together. Allow Risk does not ensure overflow monitoring
+is active, and Meters Setup has no separate monitoring control. Without
+monitoring results, absence of a detected overflow is not evidence of no data
+loss.</p>
 <h3 id="52-live-resources">5.2 Live Resources</h3>
 <p>A Live Resource is bound to a Tool Instance and is stored in the machine-local
 Desktop configuration. It is not carried in a Template. Optional last-known
@@ -789,7 +810,11 @@ resource in a run.</p>
 <p>Each binding has a stable Background ID. Select a finite Trigger Count or
 <strong>Native Infinite</strong>; Sample Count and the Tool's overflow risk acknowledgement
 remain in Meters Setup. Infinite uses the Tool's native source rather than a
-Simulation sample substitute. <strong>Live Monitor</strong> is optional and starts unchecked.</p>
+Simulation sample substitute. <strong>Live Monitor</strong> is optional and starts unchecked.
+The Allow Risk warning in <strong>5.1 Meters Setup</strong> also applies to Background
+sources. A finite source that loses samples may keep waiting instead of
+finishing naturally; use the existing Stop controls as needed and check the
+captured counts and integrity results.</p>
 <p>Add these Workflow actions and select the Background in Step Properties:</p>
 <ul>
 <li><strong>Worker ON</strong> starts its source at that Step. Simultaneous Capture ON starts

@@ -156,9 +156,10 @@ For a Meters Tool Instance, the current Setup controls:
   return the next ordered batch produced by the Meter Worker.
 - All Custom modes expose **Sample Count**, optional **Buffer Drain Size**, and
   **Allow Buffer Overflow Risk**. Trigger Count is derived from the Workflow
-  and is not editable. The UI shows the selected model's reading-memory limit
-  and warns when the planned acquisition exceeds it. Lower NPLC increases
-  acquisition rate and therefore increases buffer-drain risk.
+  and is not editable. When capabilities are available, the UI shows the
+  selected model's reading-memory limit. Planned readings above that limit
+  show **Reading memory exceeded** and require Allow Buffer Overflow Risk
+  to proceed.
 - For DC Voltage, DCV Input Impedance: **Not specified**, **Default**,
   **10 MΩ**, or **Auto**.
 - For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
@@ -172,6 +173,29 @@ meters-tool remains authoritative for the actual model capability and numeric
 limits. Desktop does not replace its capability database. In Simulation,
 capability choices come from the meter simulator profile rather than a saved
 Live meter identity. Live uses the saved identity when available.
+
+In a Custom mode, selecting **Allow Buffer Overflow Risk** explicitly accepts
+possible unrecoverable data loss. **High Buffer Overflow Risk Accepted** appears
+whenever it is selected, even below the memory limit or before capabilities are
+available. Samples can be lost whenever acquisition outpaces the Worker's
+draining of reading memory; lower NPLC can increase that risk. Conversely,
+planned readings above capacity may still be captured completely if draining
+keeps up. Exceeding the planned capacity alone does not confirm overflow.
+
+If a finite Custom acquisition loses samples, the Worker may keep waiting for
+missing samples after all planned triggers finish and may not finish naturally.
+This does not necessarily mean it has stopped responding: it may still accept
+existing Workflow or Worker Stop controls. Use those controls to end the
+operation as appropriate; Stop cannot recover lost data. These warnings apply
+in both Simulation and Live. The waiting behavior has been reproduced in
+Simulation; the same behavior has not been confirmed on physical instruments.
+
+Neither `summary.ok=true` nor process exit code 0 guarantees that all expected
+readings were captured. Check **Captured**, **Expected Readings**, **Stop Reason**
+and **Data Integrity** together. Allow Risk does not ensure overflow monitoring
+is active, and Meters Setup has no separate monitoring control. Without
+monitoring results, absence of a detected overflow is not evidence of no data
+loss.
 
 ### 5.2 Live Resources
 
@@ -843,6 +867,10 @@ Each binding has a stable Background ID. Select a finite Trigger Count or
 **Native Infinite**; Sample Count and the Tool's overflow risk acknowledgement
 remain in Meters Setup. Infinite uses the Tool's native source rather than a
 Simulation sample substitute. **Live Monitor** is optional and starts unchecked.
+The Allow Risk warning in **5.1 Meters Setup** also applies to Background
+sources. A finite source that loses samples may keep waiting instead of
+finishing naturally; use the existing Stop controls as needed and check the
+captured counts and integrity results.
 
 Add these Workflow actions and select the Background in Step Properties:
 

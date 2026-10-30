@@ -142,8 +142,8 @@ Wavegen 即使尚未支援 runtime actions，仍可保存名稱。</p>
   到達的下一批 ordered samples。</li>
 <li>所有 Custom 模式都會顯示 <strong>Sample Count</strong>、可選的 <strong>Buffer Drain Size</strong>，以及
   <strong>Allow Buffer Overflow Risk</strong>。Trigger Count 由 Workflow 計算，不能編輯。UI 會
-  顯示目前型號的 reading memory，當 planned acquisition 超過記憶體時提出警告；
-  NPLC 越低 acquisition rate 越高，buffer drain 跟不上的風險也越高。</li>
+  在取得能力資料後顯示目前型號的讀值記憶體容量。預期筆數超限時會顯示
+  <strong>Reading memory exceeded</strong>，必須勾選 Allow Buffer Overflow Risk 才能繼續。</li>
 <li>DC Voltage 的 DCV Input Impedance：<strong>Not specified</strong>、<strong>Default</strong>、
   <strong>10 MΩ</strong> 或 <strong>Auto</strong>。</li>
 <li>DC Current 的 Current Terminal：<strong>Not specified</strong>、<strong>3 A terminal</strong> 或
@@ -155,6 +155,20 @@ Wavegen 即使尚未支援 runtime actions，仍可保存名稱。</p>
 limits 仍由 external meters-tool 最終驗證；Desktop 不會重新建立它的
 capability database。Simulation 會使用 meter simulator profile 的 capability，
 不會受已保存的 Live meter identity 影響；Live 才使用已保存的 identity。</p>
+<p>在 Custom 模式勾選 <strong>Allow Buffer Overflow Risk</strong>，表示明確接受可能無法恢復的
+資料遺失。勾選後即會顯示 <strong>High Buffer Overflow Risk Accepted</strong>，即使預期筆數
+未超限或尚未取得能力資料也一樣。只要擷取速度超過 Worker 排空讀值記憶體的速度，
+就可能遺失 Samples；較低 NPLC 可能提高此風險。反之，即使預期筆數超過容量，
+只要及時排空，仍可能完整取得資料。預期超限本身不代表已發生 Overflow。</p>
+<p>有限 Custom 擷取若遺失 Samples，即使所有預定 Trigger 已完成，Worker 仍可能
+持續等待不足的 Samples，無法自然結束。這不一定代表程式已無法回應：Worker
+仍可能接受既有 Workflow 或 Worker Stop 控制。請依需要使用這些控制結束作業；
+Stop 無法恢復已遺失的資料。這些警告適用於 Simulation 與 Live。持續等待的現象
+已在 Simulation 重現，尚未確認實體儀器是否有相同行為。</p>
+<p><code>summary.ok=true</code> 或 Process Exit Code 0 都不保證取得全部預期讀值。請一起核對
+<strong>Captured</strong>、<strong>Expected Readings</strong>、<strong>Stop Reason</strong> 與 <strong>Data Integrity</strong>。
+Allow Risk 不保證已啟用 Overflow Monitoring，Meters Setup 也沒有獨立的監測
+控制項。沒有監測結果時，未偵測到 Overflow 不能作為沒有資料遺失的證據。</p>
 <h3 id="52-live-resources">5.2 Live Resources</h3>
 <p>Live Resource 綁定到 Tool Instance，並保存於 machine-local Desktop
 configuration，不會隨 Template 攜帶。可選的 last-known identity information
@@ -665,7 +679,10 @@ Background Streaming 會顯示 Unsupported。未綁定 Background 的 Instance
 <p>每個綁定有固定 Background ID。來源可選有限 Trigger Count 或 <strong>Native
 Infinite</strong>；Sample Count 與 Tool 的 Overflow Risk 確認仍在 Meters Setup。
 Infinite 使用 Tool 原生無限來源，不會套用 Simulation 補值。
-<strong>Live Monitor</strong> 可選，預設不勾選。</p>
+<strong>Live Monitor</strong> 可選，預設不勾選。
+<strong>5.1 Meters Setup</strong> 的 Allow Risk 警告也適用於 Background 來源。有限來源
+若遺失 Samples，可能持續等待而無法自然結束；請依需要使用既有 Stop 控制，
+並核對實際擷取筆數與完整性結果。</p>
 <p>加入以下 Workflow Actions，再於 Step Properties 選擇 Background：</p>
 <ul>
 <li><strong>Worker ON</strong>：執行到該 Step 才啟動來源。「同時 Capture ON」預設不勾選；
