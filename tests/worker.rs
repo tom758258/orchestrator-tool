@@ -3026,6 +3026,12 @@ fn accept_request(listener: &TcpListener) -> TestRequest {
 }
 
 fn read_request(stream: TcpStream) -> TestRequest {
+    // Background fixtures accept from a nonblocking listener. On Windows the
+    // accepted socket can also be nonblocking, but this parser reads synchronously.
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request_line = String::new();
     reader.read_line(&mut request_line).unwrap();
