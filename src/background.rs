@@ -328,7 +328,10 @@ pub fn query_chart(
                             x: 0.0,
                             value: reading["value"].as_f64().unwrap_or(f64::NAN),
                             sample_index: sample["captured"].as_u64().unwrap_or_default(),
-                            timestamp_utc: sample["timestamp_utc"].as_str().unwrap_or_default().into(),
+                            timestamp_utc: sample["timestamp_utc"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .into(),
                             elapsed_s: sample["elapsed_s"].as_f64().unwrap_or(f64::NAN),
                             unit: reading["unit"].as_str().unwrap_or_default().into(),
                         })
@@ -452,7 +455,11 @@ pub fn sample_columns(fields: &[String], mode: ScopesExportMode) -> Vec<String> 
     if fields.is_empty() {
         return SAMPLE_COLUMNS.iter().map(|name| (*name).into()).collect();
     }
-    let mut columns = vec!["timestamp_utc".into(), "elapsed_s".into(), "captured".into()];
+    let mut columns = vec![
+        "timestamp_utc".into(),
+        "elapsed_s".into(),
+        "captured".into(),
+    ];
     for field in fields {
         columns.push(field.clone());
         columns.push(format!("{field}_unit"));
@@ -466,7 +473,10 @@ pub fn sample_columns(fields: &[String], mode: ScopesExportMode) -> Vec<String> 
 
 pub fn sample_cells(sample: &Value, fields: &[String], mode: ScopesExportMode) -> Vec<Value> {
     if fields.is_empty() {
-        return SAMPLE_COLUMNS.iter().map(|name| sample[*name].clone()).collect();
+        return SAMPLE_COLUMNS
+            .iter()
+            .map(|name| sample[*name].clone())
+            .collect();
     }
     let mut cells = vec![
         sample["timestamp_utc"].clone(),
@@ -589,7 +599,10 @@ impl BackgroundManager {
                         BackgroundSetup::Meters(meters.clone())
                     } else {
                         BackgroundSetup::Scopes(
-                            instance.scopes_setup().expect("validated Scopes Background").clone(),
+                            instance
+                                .scopes_setup()
+                                .expect("validated Scopes Background")
+                                .clone(),
                         )
                     };
                     (config.clone(), setup)
@@ -628,7 +641,9 @@ impl BackgroundManager {
                 .ok_or("Unknown Background ID")?;
             let scopes = matches!(&setup, BackgroundSetup::Scopes(_));
             let sample_count = match &setup {
-                BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom() => meters.sample_count,
+                BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom() => {
+                    meters.sample_count
+                }
                 _ => 1,
             };
             let expected_readings = config
@@ -660,10 +675,18 @@ impl BackgroundManager {
                 Some(manifest) => manifest.clone(),
                 None => crate::adapters::probe_existing_worker_integration(
                     spec.executable(),
-                    if scopes { &crate::tool::ToolId::scopes() } else { &crate::tool::ToolId::meters() },
+                    if scopes {
+                        &crate::tool::ToolId::scopes()
+                    } else {
+                        &crate::tool::ToolId::meters()
+                    },
                 )?,
             };
-            let expected_tool = if scopes { crate::tool::ToolId::scopes() } else { crate::tool::ToolId::meters() };
+            let expected_tool = if scopes {
+                crate::tool::ToolId::scopes()
+            } else {
+                crate::tool::ToolId::meters()
+            };
             if manifest.tool_id() != &expected_tool
                 || manifest.feature("common.streaming").is_none()
             {
@@ -708,10 +731,18 @@ impl BackgroundManager {
                         let session = start_worker(&spec.with_bounded_events(), startup)
                             .map_err(|e| e.to_string())?;
                         let adoption = &session.ready().features()["common.streaming"];
-                        let expected_lifecycle = if scopes { "deferred_start" } else { "run_bound" };
+                        let expected_lifecycle = if scopes {
+                            "deferred_start"
+                        } else {
+                            "run_bound"
+                        };
                         if adoption["contract_version"] != 1
                             || adoption["lifecycles"] != json!([expected_lifecycle])
-                            || session.ready().stream().and_then(|s| s["lifecycle"].as_str()) != Some(expected_lifecycle)
+                            || session
+                                .ready()
+                                .stream()
+                                .and_then(|s| s["lifecycle"].as_str())
+                                != Some(expected_lifecycle)
                         {
                             let _ = session.shutdown(shutdown);
                             return Err("Unsupported Background streaming lifecycle".into());
@@ -723,16 +754,27 @@ impl BackgroundManager {
                                 crate::run::ExecutionMode::Live
                             };
                             let result = crate::adapters::scopes::validate_session(
-                                &session, mode, &spec, action_timeout,
-                            )
-                            .and_then(|()| crate::adapters::scopes::apply_setup(&session, scopes_setup, action_timeout))
-                            .and_then(|()| crate::adapters::scopes::start_background_stream(
                                 &session,
-                                &dispatcher.config.scopes_measurements,
-                                dispatcher.config.limit_count,
-                                dispatcher.config.scopes_interval_seconds.unwrap_or(1.0),
-                                startup,
-                            ));
+                                mode,
+                                &spec,
+                                action_timeout,
+                            )
+                            .and_then(|()| {
+                                crate::adapters::scopes::apply_setup(
+                                    &session,
+                                    scopes_setup,
+                                    action_timeout,
+                                )
+                            })
+                            .and_then(|()| {
+                                crate::adapters::scopes::start_background_stream(
+                                    &session,
+                                    &dispatcher.config.scopes_measurements,
+                                    dispatcher.config.limit_count,
+                                    dispatcher.config.scopes_interval_seconds.unwrap_or(1.0),
+                                    startup,
+                                )
+                            });
                             if let Err(error) = result {
                                 let _ = session.shutdown(shutdown);
                                 return Err(error);
@@ -964,7 +1006,12 @@ impl Dispatcher {
             status: "recording".into(),
             quality: "unknown".into(),
             row_count: 0,
-            fields: self.config.scopes_measurements.iter().map(|item| item.id.clone()).collect(),
+            fields: self
+                .config
+                .scopes_measurements
+                .iter()
+                .map(|item| item.id.clone())
+                .collect(),
             field_stats: BTreeMap::new(),
             min: None,
             max: None,
@@ -988,7 +1035,7 @@ impl Dispatcher {
                     file,
                     sample_columns(&metadata.fields, options.scopes_format),
                 )
-                    .map_err(|e| e.to_string())?,
+                .map_err(|e| e.to_string())?,
             );
         }
         self.current = Some(data.datasets.len());
@@ -1003,10 +1050,12 @@ impl Dispatcher {
         let quality = if quality == "no_loss_detected" {
             self.summary
                 .as_ref()
-                .and_then(|s| if self.scopes {
-                    s["stream_summary"]["data_integrity"].as_str()
-                } else {
-                    s["data_integrity"].as_str()
+                .and_then(|s| {
+                    if self.scopes {
+                        s["stream_summary"]["data_integrity"].as_str()
+                    } else {
+                        s["data_integrity"].as_str()
+                    }
                 })
                 .unwrap_or("unknown")
         } else {
@@ -1070,7 +1119,8 @@ impl Dispatcher {
                 }
                 if self.scopes {
                     crate::adapters::scopes::validate_background_sample(
-                        &event, &self.config.scopes_measurements,
+                        &event,
+                        &self.config.scopes_measurements,
                     )?;
                     event["captured"] = event["index"].clone();
                     event["elapsed_s"] = event["elapsed_seconds"].clone();
@@ -1110,7 +1160,8 @@ impl Dispatcher {
                                 let result = &event["values"][field];
                                 let stats = m.field_stats.entry(field.clone()).or_default();
                                 if result["valid"] == true {
-                                    let value = result["value"].as_f64().expect("validated Scopes Sample");
+                                    let value =
+                                        result["value"].as_f64().expect("validated Scopes Sample");
                                     stats.valid += 1;
                                     stats.min = Some(stats.min.map_or(value, |v| v.min(value)));
                                     stats.max = Some(stats.max.map_or(value, |v| v.max(value)));
@@ -1125,9 +1176,10 @@ impl Dispatcher {
                             let value = event["value"].as_f64().unwrap();
                             m.min = Some(m.min.map_or(value, |v| v.min(value)));
                             m.max = Some(m.max.map_or(value, |v| v.max(value)));
-                            m.avg = Some(m.avg.map_or(value, |avg| {
-                                avg + (value - avg) / m.row_count as f64
-                            }));
+                            m.avg = Some(
+                                m.avg
+                                    .map_or(value, |avg| avg + (value - avg) / m.row_count as f64),
+                            );
                         }
                         dataset.samples.push(event.clone());
                     }
@@ -1136,8 +1188,15 @@ impl Dispatcher {
                     writer
                         .write_row(&sample_row(
                             &event,
-                            &self.config.scopes_measurements.iter().map(|m| m.id.clone()).collect::<Vec<_>>(),
-                            self.csv.as_ref().map_or(ScopesExportMode::ValuesOnly, |o| o.scopes_format),
+                            &self
+                                .config
+                                .scopes_measurements
+                                .iter()
+                                .map(|m| m.id.clone())
+                                .collect::<Vec<_>>(),
+                            self.csv
+                                .as_ref()
+                                .map_or(ScopesExportMode::ValuesOnly, |o| o.scopes_format),
                         ))
                         .map_err(|e| format!("Background CSV: {e}"))?;
                 }
@@ -1191,7 +1250,11 @@ impl Dispatcher {
             return Err("Background ended evidence missing".into());
         }
         let summary = self.summary.as_ref().ok_or("Background summary missing")?;
-        let source_summary = if self.scopes { &summary["stream_summary"] } else { summary };
+        let source_summary = if self.scopes {
+            &summary["stream_summary"]
+        } else {
+            summary
+        };
         if stopped && !stop_accepted && source_summary["stop_reason"] == "stop_requested" {
             return Err("Background stopped without accepting this workflow's stop request".into());
         }
@@ -1199,12 +1262,16 @@ impl Dispatcher {
             let completed = source_summary["completed_cycles"].as_u64();
             if completed != Some(self.total as u64)
                 || source_summary["expected_cycles"] != json!(self.expected_readings)
-                || !matches!(source_summary["data_integrity"].as_str(),
-                    Some("incomplete" | "no_loss_detected" | "unknown"))
+                || !matches!(
+                    source_summary["data_integrity"].as_str(),
+                    Some("incomplete" | "no_loss_detected" | "unknown")
+                )
             {
                 return Err("Scopes stream summary does not match received cycles".into());
             }
-            let shortfall = self.expected_readings.is_some_and(|count| self.total != count);
+            let shortfall = self
+                .expected_readings
+                .is_some_and(|count| self.total != count);
             let failed = !status.success() || source_summary["stop_reason"] == "error";
             if failed && !(stopped && stop_accepted) {
                 return Err(format!("Scopes Background failed or exited {status}"));
@@ -1241,7 +1308,8 @@ impl Dispatcher {
             self.summary.as_ref().unwrap()["stream_summary"]["data_integrity"].as_str()
         } else {
             self.summary.as_ref().unwrap()["data_integrity"].as_str()
-        }.unwrap_or("unknown");
+        }
+        .unwrap_or("unknown");
         for dataset in &mut self
             .store
             .lock()
@@ -1583,6 +1651,8 @@ mod tests {
                 live_monitor: false,
                 limit_count: Some(10),
                 timer_interval_ms: None,
+                scopes_measurements: Vec::new(),
+                scopes_interval_seconds: None,
             };
             let store = SharedBackgroundStore::default();
             let failure = RunFailure::default();

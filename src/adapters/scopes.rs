@@ -304,7 +304,9 @@ pub fn start_background_stream(
         || !result["worker_job_id"].is_null()
         || !result["error"].is_null()
     {
-        return Err(format!("Scopes source start rejected or invalid: HTTP {code}: {result}"));
+        return Err(format!(
+            "Scopes source start rejected or invalid: HTTP {code}: {result}"
+        ));
     }
     session.wait_for_deferred_stream_start(timeout)
 }
@@ -514,7 +516,9 @@ pub fn validate_background_sample(
     if sample["schema_version"].as_u64() != Some(3)
         || sample["event"] != "sample"
         || sample["index"].as_u64().is_none_or(|n| n == 0)
-        || sample["elapsed_seconds"].as_f64().is_none_or(|n| !n.is_finite() || n < 0.0)
+        || sample["elapsed_seconds"]
+            .as_f64()
+            .is_none_or(|n| !n.is_finite() || n < 0.0)
         || sample["timestamp_utc"].as_str().is_none()
     {
         return Err("Invalid Scopes measurement cycle envelope".into());
@@ -526,7 +530,8 @@ pub fn validate_background_sample(
         return Err("Scopes sample measurement field count mismatch".into());
     }
     for measurement in measurements {
-        let reading = values.get(&measurement.id)
+        let reading = values
+            .get(&measurement.id)
             .ok_or_else(|| format!("Scopes sample missing measurement {}", measurement.id))?;
         let valid = reading["valid"]
             .as_bool()

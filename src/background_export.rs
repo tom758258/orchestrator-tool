@@ -1,6 +1,8 @@
 //! Manual exports borrow bounded windows from the authoritative memory store.
 use crate::{
-    background::{ScopesExportMode, SharedBackgroundStore, sample_columns, sample_cells, unique_file},
+    background::{
+        ScopesExportMode, SharedBackgroundStore, sample_cells, sample_columns, unique_file,
+    },
     workflow::{ResultRow, WorkflowOutput},
     workflow_csv::{ResultRowsCsvWriter, export_cell},
 };
@@ -25,7 +27,12 @@ pub fn export_datasets(
     rows_per_file: usize,
 ) -> Result<Vec<PathBuf>, String> {
     export_datasets_with_scopes_mode(
-        store, dataset_ids, folder, format, rows_per_file, ScopesExportMode::ValuesOnly,
+        store,
+        dataset_ids,
+        folder,
+        format,
+        rows_per_file,
+        ScopesExportMode::ValuesOnly,
     )
 }
 
@@ -79,9 +86,8 @@ pub fn export_datasets_with_scopes_mode(
             )?;
             match format {
                 BackgroundExportFormat::Csv => {
-                    let mut writer =
-                        ResultRowsCsvWriter::new(file, columns.clone())
-                            .map_err(|e| e.to_string())?;
+                    let mut writer = ResultRowsCsvWriter::new(file, columns.clone())
+                        .map_err(|e| e.to_string())?;
                     for offset in (start..end).step_by(1_000) {
                         for sample in store.lock().unwrap_or_else(|e| e.into_inner()).rows(
                             id,
@@ -118,7 +124,11 @@ pub fn export_datasets_with_scopes_mode(
                         )?;
                         for (index, sample) in samples.iter().enumerate() {
                             let row = (offset - start + index + 1) as u32;
-                            for (column, value) in sample_cells(sample, &metadata.fields, scopes_mode).iter().enumerate() {
+                            for (column, value) in
+                                sample_cells(sample, &metadata.fields, scopes_mode)
+                                    .iter()
+                                    .enumerate()
+                            {
                                 match value {
                                     serde_json::Value::Number(number)
                                         if crate::workflow_export::excel_number(number)

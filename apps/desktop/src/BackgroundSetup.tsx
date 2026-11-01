@@ -5,9 +5,9 @@ import type { ToolInstance } from './ToolSetupEditor'
 import type { ExecutionMode } from './executionMode'
 import type { ScopesCapabilities } from './scopesSetup'
 
-export default function BackgroundSetup({ instance, value, steps, onChange, executionMode, modelId, scopesExecutableKey }: {
+export default function BackgroundSetup({ instance, value, steps, onChange, executionMode = 'simulate', modelId, scopesExecutableKey = '' }: {
   instance: ToolInstance; value: BackgroundConfig[]; steps: WorkflowStep[]; onChange: (value: BackgroundConfig[]) => void
-  executionMode: ExecutionMode; modelId?: string | null; scopesExecutableKey: string
+  executionMode?: ExecutionMode; modelId?: string | null; scopesExecutableKey?: string
 }) {
   const config = value.find(background => background.tool_instance_id === instance.id)
   const supported = instance.tool === 'meters' || instance.tool === 'scopes'

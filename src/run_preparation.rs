@@ -317,7 +317,9 @@ pub fn prepare_worker_launch_specs_with_simulation(
                     ExecutionMode::Simulate => scopes::simulate_worker_launch_spec(executable),
                     ExecutionMode::Live => scopes::live_worker_launch_spec(
                         executable,
-                        config.live_resource(&instance.id).expect("validated resource"),
+                        config
+                            .live_resource(&instance.id)
+                            .expect("validated resource"),
                         config.live_resource_identities()[instance.id.as_str()]
                             .model_id
                             .as_deref()

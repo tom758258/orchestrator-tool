@@ -476,47 +476,53 @@ impl Template {
                 if !background.scopes_measurements.is_empty()
                     || background.scopes_interval_seconds.is_some()
                 {
-                    return Err(invalid("Scopes fields are not valid for Meters Background".into()));
-                }
-            if setup.trigger_mode.uses_software_trigger() {
-                if background
-                    .timer_interval_ms
-                    .is_none_or(|interval| interval == 0)
-                    || background.timer_interval_ms.is_some_and(|interval| {
-                        std::time::Instant::now()
-                            .checked_add(std::time::Duration::from_millis(interval))
-                            .is_none()
-                    })
-                {
                     return Err(invalid(
-                        "Software Background requires a positive, representable Timer Interval"
-                            .into(),
+                        "Scopes fields are not valid for Meters Background".into(),
                     ));
                 }
-            } else if background.timer_interval_ms.is_some() {
-                return Err(invalid(
-                    "Timer Interval applies only to Software Background modes".into(),
-                ));
-            }
-            if setup.trigger_mode.is_custom() {
-                if background.limit_count.is_none() && !setup.allow_buffer_overflow_risk {
+                if setup.trigger_mode.uses_software_trigger() {
+                    if background
+                        .timer_interval_ms
+                        .is_none_or(|interval| interval == 0)
+                        || background.timer_interval_ms.is_some_and(|interval| {
+                            std::time::Instant::now()
+                                .checked_add(std::time::Duration::from_millis(interval))
+                                .is_none()
+                        })
+                    {
+                        return Err(invalid(
+                            "Software Background requires a positive, representable Timer Interval"
+                                .into(),
+                        ));
+                    }
+                } else if background.timer_interval_ms.is_some() {
                     return Err(invalid(
+                        "Timer Interval applies only to Software Background modes".into(),
+                    ));
+                }
+                if setup.trigger_mode.is_custom() {
+                    if background.limit_count.is_none() && !setup.allow_buffer_overflow_risk {
+                        return Err(invalid(
                         "Infinite Custom requires explicit Allow Buffer Overflow Risk confirmation"
                             .into(),
                     ));
+                    }
+                    if let Some(count) = background.limit_count {
+                        count.checked_mul(setup.sample_count).ok_or_else(|| {
+                            invalid("Background expected reading count overflow".into())
+                        })?;
+                    }
                 }
-                if let Some(count) = background.limit_count {
-                    count.checked_mul(setup.sample_count).ok_or_else(|| {
-                        invalid("Background expected reading count overflow".into())
-                    })?;
-                }
-            }
             } else {
                 if background.timer_interval_ms.is_some() {
-                    return Err(invalid("Meters Timer cannot be used by Scopes Background".into()));
+                    return Err(invalid(
+                        "Meters Timer cannot be used by Scopes Background".into(),
+                    ));
                 }
                 if background.scopes_measurements.is_empty() {
-                    return Err(invalid("Scopes Background needs at least one Measurement".into()));
+                    return Err(invalid(
+                        "Scopes Background needs at least one Measurement".into(),
+                    ));
                 }
                 let interval = background.scopes_interval_seconds.unwrap_or(1.0);
                 if !interval.is_finite() || interval < 0.0 || interval > 86400.0 {
@@ -525,7 +531,10 @@ impl Template {
                 let mut names = std::collections::HashSet::new();
                 for measurement in &background.scopes_measurements {
                     if measurement.id.is_empty()
-                        || !measurement.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        || !measurement
+                            .id
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_')
                         || measurement.id == "value"
                         || !names.insert(&measurement.id)
                         || measurement.channel == 0
@@ -534,7 +543,9 @@ impl Template {
                         || measurement.time_s.is_some_and(|v| !v.is_finite())
                         || measurement.level.is_some_and(|v| !v.is_finite())
                     {
-                        return Err(invalid("Invalid Scopes Background Measurement configuration".into()));
+                        return Err(invalid(
+                            "Invalid Scopes Background Measurement configuration".into(),
+                        ));
                     }
                 }
             }
@@ -794,14 +805,19 @@ fn validate_output_views(
             let background = backgrounds
                 .iter()
                 .find(|background| background.id == source.background_id)
-                .ok_or_else(|| TemplateError::OutputViews(format!(
-                    "chart {number} references unknown Background {:?}",
-                    source.background_id
-                )))?;
+                .ok_or_else(|| {
+                    TemplateError::OutputViews(format!(
+                        "chart {number} references unknown Background {:?}",
+                        source.background_id
+                    ))
+                })?;
             let valid_field = if background.scopes_measurements.is_empty() {
                 source.field == "value"
             } else {
-                background.scopes_measurements.iter().any(|m| m.id == source.field)
+                background
+                    .scopes_measurements
+                    .iter()
+                    .any(|m| m.id == source.field)
             };
             if !valid_field
                 || chart.outputs != ["value"]
