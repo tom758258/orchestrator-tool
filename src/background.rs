@@ -671,21 +671,17 @@ impl BackgroundManager {
                 .get(&config.tool_instance_id)
                 .cloned()
                 .ok_or("Missing Background launch specification")?;
-            let manifest = match spec.manifest() {
-                Some(manifest) => manifest.clone(),
-                None => crate::adapters::probe_existing_worker_integration(
-                    spec.executable(),
-                    if scopes {
-                        &crate::tool::ToolId::scopes()
-                    } else {
-                        &crate::tool::ToolId::meters()
-                    },
-                )?,
-            };
             let expected_tool = if scopes {
                 crate::tool::ToolId::scopes()
             } else {
                 crate::tool::ToolId::meters()
+            };
+            let manifest = match spec.manifest() {
+                Some(manifest) => manifest.clone(),
+                None => crate::adapters::probe_existing_worker_integration(
+                    spec.executable(),
+                    &expected_tool,
+                )?,
             };
             if manifest.tool_id() != &expected_tool
                 || manifest.feature("common.streaming").is_none()
@@ -728,7 +724,7 @@ impl BackgroundManager {
                         if capture {
                             dispatcher.capture_on("")?;
                         }
-                        let session = start_worker(&spec.with_bounded_events(), startup)
+                        let session = start_worker(&spec.clone().with_bounded_events(), startup)
                             .map_err(|e| e.to_string())?;
                         let adoption = &session.ready().features()["common.streaming"];
                         let expected_lifecycle = if scopes {
