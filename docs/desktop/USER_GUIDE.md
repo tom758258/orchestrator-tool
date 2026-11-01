@@ -839,15 +839,26 @@ Safe-Off through powers-tool; it does not claim that real outputs were changed.
 
 ## Background Streaming
 
-In **Tool Setup**, enable **Use this instance as a Background**, then choose any
-of the six Meters modes. Scopes, Powers and Wavegen do not support Background.
+In **Tool Setup**, enable **Use this instance as a Background** for a Meters
+or Scopes Tool Instance. Meters offers six acquisition modes. Scopes Background
+captures read-only numeric Measure cycles, not screenshots or waveforms.
+Powers and Wavegen do not support Background.
 A Background instance cannot also be used by foreground Tool actions. Existing
 steps are retained when switching roles; resolve the displayed conflict before
 running. Turning off Background while another mode is selected requires choosing
 Single before using foreground Measure. Two instances cannot share one Live
 resource in a run.
 
-Choose **Finite** or **Infinite**. Finite Simple modes use **Max Samples**; finite
+Choose **Finite** or **Infinite**. For Scopes, Finite **Cycles** counts
+complete measurement cycles, each containing all selected Channel/Item pairs;
+Infinite continues until Worker OFF or Stop Workflow. Set **Measure interval
+(seconds)** (default 1) as the wait **after** a complete cycle, not a precise
+sample rate. In **Measurements**, add or remove rows and select each **Channel**
+and **Item** from the Scopes capabilities. Each row has an internal stable
+Measurement ID. Individual measurements in a cycle are read sequentially.
+Scopes validates supported items and channel/model parameters when starting.
+
+For Meters, Finite Simple modes use **Max Samples**; finite
 Custom modes use **Trigger Count**, with **Sample Count** readings per trigger.
 Infinite Custom requires explicit **Allow Buffer Overflow Risk**. Infinite
 Background acquisition has no hidden Simulation sample limit.
@@ -865,13 +876,17 @@ Simulation generates virtual triggers on supported models, including 34461A;
 34460A does not support External. Slope and delay settings are passed to the tool.
 Simulation does not verify physical trigger timing.
 
-**Live Monitor** is optional and starts unchecked. The Allow Risk warning in
+**Live Monitor** is optional and starts unchecked. For Scopes, the Monitor has a
+**Measurement** selector and plots one numeric field at a time, independently
+of Capture; an invalid reading is not plotted as zero. The Allow Risk warning in
 **5.1 Meters Setup** applies to Custom Background sources. Lost readings cannot
 be recovered by Stop; check captured counts and data quality after stopping.
 
 Add these Workflow actions and select the Background in Step Properties:
 
-- **Worker ON** starts its source at that Step. Simultaneous Capture ON starts
+- **Worker ON** starts its source at that Step. For Scopes, it launches the
+  streaming Worker, applies existing Scopes Setup while the stream waits, then
+  starts Measure Streaming after Setup succeeds. Simultaneous Capture ON starts
   unchecked; check it to retain the first samples from startup.
 - **Capture ON** starts a new Dataset while the Worker continues independently.
 - **Capture OFF** finishes that Dataset and its optional streaming CSV without
@@ -898,6 +913,9 @@ and export, independently of each Chart's selection.
 In **Charts**, choose a **Chart source**, then **Add Chart**. All Foreground Pages
 and Background Charts appear together. Each Background Chart has its own
 Background, Capture Dataset, X axis, **Settings**, **Export PNG** and **Remove**.
+Scopes Charts additionally select one **Measurement** field per Chart; use
+multiple Charts to plot different measurements rather than combining different
+units on one axis.
 Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
 Area or Bar in Settings; only Line updates during a run. Foreground retains all
 its existing chart types. Each Chart initially selects the latest available
@@ -925,7 +943,10 @@ appearance, Hover and Zoom. It shows the latest 1,000 Worker samples, including
 while Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
 Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
 CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
-count/min/max/average, status and quality; **Output Data** uses pages of 100 rows.
+count/min/max/average, status and quality for Meters. For Scopes, it shows
+valid/invalid counts and min/max/average **per Measurement field**. The Scopes
+Output Data table displays the selected fields and leaves invalid values blank,
+with the reason available on hover. **Output Data** uses pages of 100 rows.
 `no_loss_detected` describes the Tool's evidence, not a zero-loss guarantee.
 
 Capture boundaries follow received event processing, not hardware sample time.
@@ -935,13 +956,20 @@ samples do not feed Workflow variables, calculations, assertions or ResultRows.
 
 **CSV Export → Stream Background CSV during Capture** is independent of
 foreground CSV. Choose All Backgrounds or one Background and its output folder.
-The default is `<application folder>/data`. Each Capture creates a new CSV;
+The default is `<application folder>/data`. For Scopes, **Scopes CSV columns**
+selects **Values + units** or **Values + units + validity + reason** before
+Run; the latter includes per-Measurement quality fields. Both formats retain
+blank values for invalid measurements rather than writing zero. Meters retains
+its existing five-column CSV. Each Capture creates a new CSV;
 Monitor-only operation creates none. Every enabled CSV destination follows the
 failure policy below and keeps any partial files.
 
 After the run, **Export Background** saves the selected or all Datasets as CSV
-or XLSX, including partial data from a failed run. More than 300,000 samples
-shows a warning. XLSX defaults to 300,000 samples per file; edit **Samples per
+or XLSX, including partial data from a failed run. When a Scopes Dataset is
+present, **Scopes export columns** lets each manual export choose the same
+two formats independently of the format used during streaming; captured memory
+data always retains `value`, `unit`, `valid` and `reason`. More than
+300,000 samples shows a warning. XLSX defaults to 300,000 samples per file; edit **Samples per
 XLSX file** from 1 to 1,048,575. Larger Datasets split into new files without
 truncation. Export names avoid overwriting streaming or previous manual files.
 No Capture OFF or run completion automatically performs manual export.

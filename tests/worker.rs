@@ -853,11 +853,29 @@ fn background_fixture(scenario: &str) {
         if !controlled && scenario != "rolling" && count == 6 {
             break;
         }
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut bytes = [0; 4096];
-            let _ = stream.read(&mut bytes);
+        if let Ok((stream, _)) = listener.accept() {
+            // The listener is nonblocking. Fully read the accepted request on a
+            // blocking socket before responding; closing with unread request
+            // bytes can reset the connection and lose Stop acceptance on Windows.
+            let request = read_request(stream);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("POST", "/stop"),
+                "{scenario}: unexpected Background fixture HTTP request"
+            );
             let body = json!({"schema_version":3,"run_id":"background-run","status":"accepted","error":null}).to_string();
-            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+            // Do not use write_response: it rewrites run_id using the separate
+            // v3 Job fixture context, which this Background fixture does not use.
+            let mut stream = request.stream;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            stream.flush().unwrap();
+            drop(stream);
             // A final sample after Stop must still reach an active Capture.
             if scenario == "stop-gap" {
                 count += 1;
@@ -1005,6 +1023,7 @@ fn background_workflow_stop_contract() {
                 background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
                     output_folder: folder.clone(),
                     background_id: None,
+                    scopes_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1194,6 +1213,7 @@ fn background_capture_and_termination_contract() {
                 background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
                     output_folder: csv_folder.clone(),
                     background_id: None,
+                    scopes_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1556,6 +1576,7 @@ fn background_capture_and_termination_contract() {
                     orchestrator_tool::background::BackgroundCsvOptions {
                         output_folder: invalid_folder.clone(),
                         background_id: None,
+                        scopes_format: Default::default(),
                     }
                 }),
                 ..Default::default()
@@ -1690,6 +1711,7 @@ fn real_meters_background_and_unlimited_simulation() {
                     background_csv: capture_gap.then(|| BackgroundCsvOptions {
                         output_folder: csv_folder.clone(),
                         background_id: None,
+                        scopes_format: Default::default(),
                     }),
                     ..Default::default()
                 },
@@ -3022,6 +3044,12 @@ fn accept_request(listener: &TcpListener) -> TestRequest {
 }
 
 fn read_request(stream: TcpStream) -> TestRequest {
+    // Background fixtures accept from a nonblocking listener. On Windows the
+    // accepted socket can also be nonblocking, but this parser reads synchronously.
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request_line = String::new();
     reader.read_line(&mut request_line).unwrap();

@@ -516,6 +516,43 @@ impl WorkerSession {
         }
     }
 
+    /// Deferred sources may finish immediately (for example Count=1).
+    /// Observe the first ordered JSONL 'active' transition, not a possibly
+    /// already-ended HTTP snapshot, and preserve every event for the dispatcher.
+    pub fn wait_for_deferred_stream_start(&self, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("deferred stream source start timed out".into());
+            }
+            let event = match self.recv_worker_event(remaining.min(Duration::from_millis(300))) {
+                Ok(event) => event,
+                Err(WorkerEventError::Timeout(_)) => continue,
+                Err(error) => return Err(format!("deferred stream source start: {error}")),
+            };
+            let active = event["event"] == "status"
+                && event["worker_state"] == "running"
+                && event["stream"]["state"] == "active";
+            let failed = (event["event"] == "status"
+                && (event["worker_state"] == "failed"
+                    || event["stream"]["state"] == "ended"
+                    || !event["fatal_error"].is_null()))
+                || event["event"] == "error"
+                || event["event"] == "summary";
+            self.pending_events
+                .lock()
+                .map_err(|_| "poisoned pending Worker events")?
+                .push_back(event.clone());
+            if active {
+                return Ok(());
+            }
+            if failed {
+                return Err(format!("deferred stream did not become active: {event}"));
+            }
+        }
+    }
+
     /// Receives the next runtime JSON event from the Worker with a bounded timeout.
     ///
     /// The startup `ready` event is consumed during `start_worker` and is not
@@ -625,8 +662,43 @@ impl WorkerSession {
         }
 
         let deadline = Instant::now() + timeout;
-        let now = Instant::now();
 
+        // stdout EOF is evidence that the Worker is naturally terminating.
+        // The OS exit status can lag behind EOF (notably on Windows). Avoid
+        // sending /stop to an already-closed HTTP endpoint: doing so can use
+        // the entire shutdown budget before try_wait observes the exit.
+        let stdout_eof = self
+            .evidence
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .eof;
+        if stdout_eof {
+            loop {
+                if let Some(status) = self
+                    .process_mut()
+                    .try_wait()
+                    .map_err(WorkerShutdownError::ProcessIo)?
+                {
+                    return self
+                        .finish_exited_process(
+                            status,
+                            timeout,
+                            &mut on_event,
+                            check_nonzero_evidence,
+                        )
+                        .map(|status| (status, false));
+                }
+
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    self.force_cleanup()?;
+                    return Err(WorkerShutdownError::GracefulTimeout(timeout));
+                }
+                thread::sleep(SHUTDOWN_POLL_INTERVAL.min(remaining));
+            }
+        }
+
+        let now = Instant::now();
         if now >= deadline {
             self.force_cleanup()?;
             return Err(WorkerShutdownError::GracefulTimeout(timeout));

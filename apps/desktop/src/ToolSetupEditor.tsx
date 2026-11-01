@@ -697,7 +697,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
             <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>
           </label>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
-          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange} />}
+          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange}
+            executionMode={executionMode} modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : null}
+            scopesExecutableKey={scopesExecutableKey} />}
           {instance.tool === 'meters'
             ? <MetersSetupFields metersExecutableKey={metersExecutableKey}
                 model={executionMode === 'live' ? resourceIdentities[instance.id]?.model : undefined}

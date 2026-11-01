@@ -263,6 +263,54 @@ pub fn live_worker_launch_spec(
     )
 }
 
+/// Scopes background opts into the existing Worker Stream without changing
+/// the foreground worker launch arguments.
+pub fn background_worker_launch_spec(spec: &WorkerLaunchSpec) -> WorkerLaunchSpec {
+    WorkerLaunchSpec::new(
+        spec.executable(),
+        spec.arguments()
+            .iter()
+            .cloned()
+            .chain(std::iter::once(OsString::from("--streaming"))),
+    )
+}
+
+/// Start the Scopes-specific deferred source after all setup jobs have completed.
+/// HTTP acceptance is not evidence that the source is active.
+pub fn start_background_stream(
+    session: &WorkerSession,
+    measurements: &[crate::background::ScopesMeasurement],
+    count: Option<usize>,
+    interval_seconds: f64,
+    timeout: Duration,
+) -> Result<(), String> {
+    let (code, result) = crate::worker_http::WorkerClient::new(session.ready())
+        .command_with_rejection_timeout(
+            &json!({
+                "schema_version": 3,
+                "command": "measure-stream-start",
+                "arguments": {
+                    "measurements": measurements,
+                    "count": count,
+                    "interval_seconds": interval_seconds
+                }
+            }),
+            timeout,
+        )
+        .map_err(|e| e.to_string())?;
+    if code != 202
+        || result["kind"] != "control"
+        || result["run_id"] != session.ready().run_id()
+        || !result["worker_job_id"].is_null()
+        || !result["error"].is_null()
+    {
+        return Err(format!(
+            "Scopes source start rejected or invalid: HTTP {code}: {result}"
+        ));
+    }
+    session.wait_for_deferred_stream_start(timeout)
+}
+
 pub fn validate_session(
     session: &WorkerSession,
     mode: ExecutionMode,
@@ -456,6 +504,51 @@ pub fn apply_setup(
                     .unwrap_or_else(|| "acquisition".into())
             )
         })?;
+    }
+    Ok(())
+}
+
+/// Validate a complete cycle without interpreting instrument-specific items.
+pub fn validate_background_sample(
+    sample: &Value,
+    measurements: &[crate::background::ScopesMeasurement],
+) -> Result<(), String> {
+    if sample["schema_version"].as_u64() != Some(3)
+        || sample["event"] != "sample"
+        || sample["index"].as_u64().is_none_or(|n| n == 0)
+        || sample["elapsed_seconds"]
+            .as_f64()
+            .is_none_or(|n| !n.is_finite() || n < 0.0)
+        || sample["timestamp_utc"].as_str().is_none()
+    {
+        return Err("Invalid Scopes measurement cycle envelope".into());
+    }
+    let values = sample["values"]
+        .as_object()
+        .ok_or("Scopes sample has no values map")?;
+    if values.len() != measurements.len() {
+        return Err("Scopes sample measurement field count mismatch".into());
+    }
+    for measurement in measurements {
+        let reading = values
+            .get(&measurement.id)
+            .ok_or_else(|| format!("Scopes sample missing measurement {}", measurement.id))?;
+        let valid = reading["valid"]
+            .as_bool()
+            .ok_or("Scopes sample measurement lacks valid flag")?;
+        if !reading["unit"].is_string() && !reading["unit"].is_null() {
+            return Err("Scopes sample measurement has invalid unit".into());
+        }
+        if !reading["reason"].is_string() && !reading["reason"].is_null() {
+            return Err("Scopes sample measurement has invalid reason".into());
+        }
+        if valid {
+            if reading["value"].as_f64().is_none_or(|v| !v.is_finite()) {
+                return Err("Scopes sample valid measurement must be a finite number".into());
+            }
+        } else if !reading["value"].is_null() {
+            return Err("Scopes sample invalid measurement must have null value".into());
+        }
     }
     Ok(())
 }

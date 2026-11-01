@@ -1174,6 +1174,7 @@ async fn export_background_datasets(
     output_folder: String,
     format: orchestrator_tool::background_export::BackgroundExportFormat,
     rows_per_file: usize,
+    scopes_mode: Option<orchestrator_tool::background::ScopesExportMode>,
 ) -> Result<Vec<String>, String> {
     let store = state.with_current(run_id, |run| {
         if run.metadata().status == "running" {
@@ -1183,12 +1184,13 @@ async fn export_background_datasets(
         }
     })??;
     tauri::async_runtime::spawn_blocking(move || {
-        orchestrator_tool::background_export::export_datasets(
+        orchestrator_tool::background_export::export_datasets_with_scopes_mode(
             &store,
             &dataset_ids,
             Path::new(&output_folder),
             format,
             rows_per_file,
+            scopes_mode.unwrap_or_default(),
         )
         .map(|paths| paths.iter().map(|p| p.display().to_string()).collect())
     })

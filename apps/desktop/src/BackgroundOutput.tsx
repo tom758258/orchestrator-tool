@@ -12,6 +12,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
   const [output, setOutput] = useState<Output | null>(null)
   const [offset, setOffset] = useState(0)
   const [format, setFormat] = useState<'csv' | 'xlsx'>('xlsx')
+  const [scopesMode, setScopesMode] = useState<'values-only' | 'values-quality'>('values-only')
   const [all, setAll] = useState(false)
   const [rowsPerFile, setRowsPerFile] = useState('300000')
   const [exporting, setExporting] = useState(false)
@@ -35,6 +36,8 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
   }, [runId, background, datasetId, offset, running])
   const datasets = output?.datasets.filter(dataset => dataset.background_id === background) ?? []
   const dataset = datasets.find(item => item.id === datasetId)
+  const fields = dataset?.fields ?? []
+  const hasScopesDataset = (output?.datasets ?? []).some(item => (item.fields?.length ?? 0) > 0)
   const worker = output?.workers.find(item => item.id === background)
   const selected = all ? output?.datasets.filter(item => item.status !== 'recording') ?? [] : dataset ? [dataset] : []
   const large = selected.some(item => item.row_count > 300000)
@@ -45,7 +48,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
       const folder = await open({ directory: true, multiple: false, title: 'Export Background datasets' })
       if (typeof folder !== 'string') return
       setExported(await invoke<string[]>('export_background_datasets', { runId, datasetIds: selected.map(item => item.id),
-        outputFolder: folder, format, rowsPerFile: format === 'csv' ? 300000 : Number(rowsPerFile) }))
+        outputFolder: folder, format, scopesMode, rowsPerFile: format === 'csv' ? 300000 : Number(rowsPerFile) }))
     } catch (reason) { setError(String(reason)) }
     finally { setExporting(false); onExportingChange?.(false) }
   }
@@ -60,17 +63,36 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
     </select></label>
     {dataset && <>
       <Collapsible title="Summary"><p>{dataset.row_count} samples · {dataset.status} · Quality: {dataset.quality}</p>
-        <dl><dt>Minimum</dt><dd>{dataset.min ?? '—'}</dd><dt>Maximum</dt><dd>{dataset.max ?? '—'}</dd><dt>Average</dt><dd>{dataset.avg ?? '—'}</dd></dl>
+        {fields.length ? <dl>{fields.map(field => {
+          const stats = dataset.field_stats?.[field]
+          return <div key={field}><dt>{field} · Valid {stats?.valid ?? 0} · Invalid {stats?.invalid ?? 0}</dt>
+            <dd>Min {stats?.min ?? '—'} · Max {stats?.max ?? '—'} · Avg {stats?.avg ?? '—'}</dd></div>
+        })}</dl> : <dl><dt>Minimum</dt><dd>{dataset.min ?? '—'}</dd><dt>Maximum</dt><dd>{dataset.max ?? '—'}</dd><dt>Average</dt><dd>{dataset.avg ?? '—'}</dd></dl>}
         {dataset.csv_path && <p>Streaming CSV: {dataset.csv_path}</p>}{dataset.error && <p role="alert">{dataset.error}</p>}
       </Collapsible>
       <Collapsible title="Output Data"><p>{dataset.row_count} samples · rows {offset+1}–{Math.min(offset+100,dataset.row_count)}</p>
-        <div className="output-table-scroll"><table><thead><tr><th>Timestamp</th><th>Elapsed (s)</th><th>Sample</th><th>Value</th><th>Unit</th></tr></thead>
-          <tbody>{output?.rows.map((sample,index) => <tr key={offset+index}><td>{sample.timestamp_utc}</td><td>{sample.elapsed_s}</td><td>{sample.captured}</td><td>{sample.value}</td><td>{sample.unit}</td></tr>)}</tbody>
+        <div className="output-table-scroll"><table><thead><tr><th>Timestamp</th><th>Elapsed (s)</th><th>Sample</th>
+          {fields.length ? fields.map(field => <th key={field}>{field}</th>) : <><th>Value</th><th>Unit</th></>}
+          </tr></thead>
+          <tbody>{output?.rows.map((sample,index) => <tr key={offset+index}>
+            <td>{sample.timestamp_utc}</td><td>{sample.elapsed_s}</td><td>{sample.captured}</td>
+            {fields.length ? fields.map(field => {
+              const reading = sample.values?.[field]
+              return <td key={field} title={reading?.valid === false ? reading.reason ?? 'Invalid measurement' : reading?.unit ?? ''}>
+                {reading?.valid && reading.value != null ? reading.value : '—'}{reading?.unit ? ' ' + reading.unit : ''}
+              </td>
+            }) : <><td>{sample.value}</td><td>{sample.unit}</td></>}
+          </tr>)}</tbody>
         </table></div>
         <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0,offset-100))}>Previous</button>
         <button type="button" disabled={offset+100 >= dataset.row_count} onClick={() => setOffset(offset+100)}>Next</button>
       </Collapsible>
     </>}
+    {hasScopesDataset && <label>Scopes export columns<select aria-label="Scopes export columns" value={scopesMode}
+      onChange={event => setScopesMode(event.target.value as 'values-only' | 'values-quality')}>
+      <option value="values-only">Values + units</option>
+      <option value="values-quality">Values + units + validity + reason</option>
+    </select></label>}
     <label>Export datasets<select value={all ? 'all' : 'selected'} onChange={event => setAll(event.target.value === 'all')}>
       <option value="selected">Selected Dataset</option><option value="all">All Datasets</option></select></label>
     <label>Background export format<select value={format} onChange={event => setFormat(event.target.value as 'csv' | 'xlsx')}><option value="csv">CSV</option><option value="xlsx">XLSX</option></select></label>

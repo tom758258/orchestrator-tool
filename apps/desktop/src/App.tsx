@@ -415,6 +415,7 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 function App() {
   const simulationSamples = useSimulationSamples()
   const [backgroundCsvEnabled, setBackgroundCsvEnabled] = useState(false)
+  const [backgroundCsvMode, setBackgroundCsvMode] = useState<'values-only' | 'values-quality'>('values-only')
   const [backgroundCsvTarget, setBackgroundCsvTarget] = useState('all')
   const [backgroundCsvFolder, setBackgroundCsvFolder] = useState<string | null>(null)
   const [backgroundCsvError, setBackgroundCsvError] = useState<string | null>(null)
@@ -1486,7 +1487,7 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
         scopesOutputFolder,
-        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget } : null,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode } : null,
         confirmedResources,
         confirmedBackends,
       })
@@ -1514,7 +1515,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1573,7 +1574,7 @@ function App() {
         streamCsv: streamOptions,
         scopesOutputFolder,
         simulationSamples: sampleOverrides,
-        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget } : null,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode } : null,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
@@ -1593,7 +1594,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, scopesOutputFolder])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, scopesOutputFolder])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -2415,6 +2416,11 @@ function App() {
                       <select aria-label="Background CSV selection" value={backgroundCsvTarget} disabled={workflowBusy} onChange={event => setBackgroundCsvTarget(event.target.value)}>
                         <option value="all">All Backgrounds</option>{workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
                       </select>
+                      <label>Scopes CSV columns<select aria-label="Scopes Streaming CSV columns" value={backgroundCsvMode}
+                        disabled={workflowBusy} onChange={event => setBackgroundCsvMode(event.target.value as 'values-only' | 'values-quality')}>
+                        <option value="values-only">Values + units</option>
+                        <option value="values-quality">Values + units + validity + reason</option>
+                      </select></label>
                       <p>{backgroundCsvFolder ?? 'Default: application folder / data'}</p>
                       <button type="button" className="action-button" disabled={workflowBusy} onClick={() => void (async () => {
                         setChoosingStreamOutputFolder(true)

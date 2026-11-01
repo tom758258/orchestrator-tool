@@ -65,7 +65,16 @@ export type ToolActionStep = {
 
 export type BackgroundAction = 'worker-on' | 'worker-off' | 'capture-on' | 'capture-off'
 export type BackgroundStep = { type: 'background'; id: string; background_id: string; action: BackgroundAction; capture: boolean }
-export type BackgroundConfig = { id: string; tool_instance_id: string; live_monitor: boolean; limit_count: number | null; timer_interval_ms?: number | null }
+export type ScopesMeasurement = {
+  id: string; channel: number; item: string
+  reference_channel?: number; time_s?: number; level?: number; slope?: string; occurrence?: number
+}
+export type BackgroundConfig = {
+  id: string; tool_instance_id: string; live_monitor: boolean; limit_count: number | null
+  timer_interval_ms?: number | null
+  scopes_measurements?: ScopesMeasurement[]
+  scopes_interval_seconds?: number | null
+}
 export type NonLoopWorkflowStep = BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {
   type: 'for'
