@@ -1005,6 +1005,7 @@ fn background_workflow_stop_contract() {
                 background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
                     output_folder: folder.clone(),
                     background_id: None,
+                    scopes_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1194,6 +1195,7 @@ fn background_capture_and_termination_contract() {
                 background_csv: Some(orchestrator_tool::background::BackgroundCsvOptions {
                     output_folder: csv_folder.clone(),
                     background_id: None,
+                    scopes_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1556,6 +1558,7 @@ fn background_capture_and_termination_contract() {
                     orchestrator_tool::background::BackgroundCsvOptions {
                         output_folder: invalid_folder.clone(),
                         background_id: None,
+                        scopes_format: Default::default(),
                     }
                 }),
                 ..Default::default()
@@ -1690,6 +1693,7 @@ fn real_meters_background_and_unlimited_simulation() {
                     background_csv: capture_gap.then(|| BackgroundCsvOptions {
                         output_folder: csv_folder.clone(),
                         background_id: None,
+                        scopes_format: Default::default(),
                     }),
                     ..Default::default()
                 },

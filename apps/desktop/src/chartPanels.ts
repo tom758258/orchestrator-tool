@@ -31,7 +31,7 @@ export type ComboSeriesSettings = { kind: 'line' | 'column'; axis: 'left' | 'rig
 export type HistogramSettings = { mode: 'auto' | 'count' | 'width'; value: number | null;
   showNormalCurve: boolean; mean: number | null; stdDev: number | null }
 
-export type BackgroundChartSource = { kind: 'background'; background_id: string; field: 'value'; x_axis: 'elapsed' | 'timestamp' | 'index' }
+export type BackgroundChartSource = { kind: 'background'; background_id: string; field: string; x_axis: 'elapsed' | 'timestamp' | 'index' }
 export const backgroundAxisTitle = (axis: BackgroundChartSource['x_axis']) =>
   axis === 'elapsed' ? 'Elapsed Time (s)' : axis === 'timestamp' ? 'Timestamp' : 'Sample Index'
 
@@ -346,12 +346,12 @@ export function canRemoveChartPanel(panels: readonly ChartPanel[]): boolean {
   return panels.length > 0
 }
 
-export function addBackgroundChartPanel(panels: ChartPanel[], backgroundId: string): ChartPanel[] {
+export function addBackgroundChartPanel(panels: ChartPanel[], backgroundId: string, field = 'value'): ChartPanel[] {
   if (panels.length >= MAX_CHARTS) return panels
   const added = addChartPanel(panels, '', ['value'])
   const panel = added[added.length - 1]
   return [...panels, { ...panel,
-    source: { kind: 'background', background_id: backgroundId, field: 'value', x_axis: 'elapsed' },
+    source: { kind: 'background', background_id: backgroundId, field, x_axis: 'elapsed' },
     zoom: { enabled: true, showSlider: true },
     xAxis: { ...panel.xAxis, title: backgroundAxisTitle('elapsed') },
   }]

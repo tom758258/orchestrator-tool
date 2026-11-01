@@ -8,7 +8,8 @@ use crate::{
     workflow_csv::ResultRowsCsvWriter,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self, File, OpenOptions},
@@ -66,6 +67,10 @@ pub enum BackgroundChartType {
     Bar,
 }
 
+fn default_value_field() -> String {
+    "value".into()
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChartRange {
@@ -76,6 +81,8 @@ pub struct ChartRange {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackgroundChartQuery {
+    #[serde(default = "default_value_field")]
+    pub field: String,
     pub x_axis: BackgroundXAxis,
     pub chart_type: BackgroundChartType,
     pub range: Option<ChartRange>,
@@ -116,6 +123,36 @@ pub struct BackgroundConfig {
     pub limit_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timer_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes_measurements: Vec<ScopesMeasurement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scopes_interval_seconds: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScopesMeasurement {
+    pub id: String,
+    pub channel: u32,
+    pub item: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_channel: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_s: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScopesExportMode {
+    #[default]
+    ValuesOnly,
+    ValuesQuality,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -124,6 +161,17 @@ pub struct BackgroundCsvOptions {
     pub output_folder: PathBuf,
     /// None selects every configured background.
     pub background_id: Option<String>,
+    #[serde(default)]
+    pub scopes_format: ScopesExportMode,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct FieldStatistics {
+    pub valid: usize,
+    pub invalid: usize,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub avg: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -136,6 +184,10 @@ pub struct DatasetMetadata {
     pub status: String,
     pub quality: String,
     pub row_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub field_stats: BTreeMap<String, FieldStatistics>,
     pub min: Option<f64>,
     pub max: Option<f64>,
     pub avg: Option<f64>,
@@ -247,6 +299,13 @@ pub fn query_chart(
         if dataset.metadata.background_id != background_id {
             return Err("Dataset does not belong to the selected Background".into());
         }
+        if !dataset.metadata.fields.is_empty() {
+            if !dataset.metadata.fields.contains(&query.field) {
+                return Err("Unknown Scopes Measurement Field".into());
+            }
+        } else if query.field != "value" {
+            return Err("Meters charts require field value".into());
+        }
         dataset.samples.len()
     };
     let scan = |visit: &mut dyn FnMut(usize, &BackgroundChartPoint)| -> Result<(), String> {
@@ -256,19 +315,29 @@ pub fn query_chart(
                 let samples = &store.dataset(dataset_id)?.samples;
                 samples[start..(start + CHART_SCAN_BATCH).min(total_count)]
                     .iter()
-                    .map(|sample| BackgroundChartPoint {
-                        x: 0.0,
-                        value: sample["value"].as_f64().unwrap_or(f64::NAN),
-                        sample_index: sample["captured"].as_u64().unwrap_or_default(),
-                        timestamp_utc: sample["timestamp_utc"].as_str().unwrap_or_default().into(),
-                        elapsed_s: sample["elapsed_s"].as_f64().unwrap_or(f64::NAN),
-                        unit: sample["unit"].as_str().unwrap_or_default().into(),
+                    .filter_map(|sample| {
+                        let reading = if query.field == "value" {
+                            sample
+                        } else {
+                            &sample["values"][&query.field]
+                        };
+                        if reading.get("valid") == Some(&Value::Bool(false)) {
+                            return None;
+                        }
+                        Some(BackgroundChartPoint {
+                            x: 0.0,
+                            value: reading["value"].as_f64().unwrap_or(f64::NAN),
+                            sample_index: sample["captured"].as_u64().unwrap_or_default(),
+                            timestamp_utc: sample["timestamp_utc"].as_str().unwrap_or_default().into(),
+                            elapsed_s: sample["elapsed_s"].as_f64().unwrap_or(f64::NAN),
+                            unit: reading["unit"].as_str().unwrap_or_default().into(),
+                        })
                     })
                     .collect::<Vec<_>>()
             };
             // Parse and select outside the writer lock. Copy only a bounded batch
             // of chart fields, never the full Dataset or its JSON objects.
-            for (offset, mut point) in batch.into_iter().enumerate() {
+            for mut point in batch {
                 point.x = match query.x_axis {
                     BackgroundXAxis::Elapsed => Some(point.elapsed_s),
                     BackgroundXAxis::Index => Some(point.sample_index as f64),
@@ -283,7 +352,7 @@ pub fn query_chart(
                 if !point.value.is_finite() {
                     return Err("Sample has an invalid numeric value".into());
                 }
-                visit(start + offset, &point);
+                visit(point.sample_index.saturating_sub(1) as usize, &point);
             }
         }
         Ok(())
@@ -377,11 +446,52 @@ pub fn query_chart(
 }
 
 pub const SAMPLE_COLUMNS: [&str; 5] = ["timestamp_utc", "elapsed_s", "captured", "value", "unit"];
-fn sample_row(value: &Value) -> ResultRow {
+
+/// One projection for both streaming and manual CSV/XLSX.
+pub fn sample_columns(fields: &[String], mode: ScopesExportMode) -> Vec<String> {
+    if fields.is_empty() {
+        return SAMPLE_COLUMNS.iter().map(|name| (*name).into()).collect();
+    }
+    let mut columns = vec!["timestamp_utc".into(), "elapsed_s".into(), "captured".into()];
+    for field in fields {
+        columns.push(field.clone());
+        columns.push(format!("{field}_unit"));
+        if mode == ScopesExportMode::ValuesQuality {
+            columns.push(format!("{field}_valid"));
+            columns.push(format!("{field}_reason"));
+        }
+    }
+    columns
+}
+
+pub fn sample_cells(sample: &Value, fields: &[String], mode: ScopesExportMode) -> Vec<Value> {
+    if fields.is_empty() {
+        return SAMPLE_COLUMNS.iter().map(|name| sample[*name].clone()).collect();
+    }
+    let mut cells = vec![
+        sample["timestamp_utc"].clone(),
+        sample["elapsed_s"].clone(),
+        sample["captured"].clone(),
+    ];
+    for id in fields {
+        let reading = &sample["values"][id];
+        cells.push(reading["value"].clone());
+        cells.push(reading["unit"].clone());
+        if mode == ScopesExportMode::ValuesQuality {
+            cells.push(reading["valid"].clone());
+            cells.push(reading["reason"].clone());
+        }
+    }
+    cells
+}
+
+fn sample_row(value: &Value, fields: &[String], mode: ScopesExportMode) -> ResultRow {
+    let cells = sample_cells(value, fields, mode);
     ResultRow::new(
-        SAMPLE_COLUMNS
-            .iter()
-            .map(|name| WorkflowOutput::new((*name).into(), value[*name].clone()))
+        sample_columns(fields, mode)
+            .into_iter()
+            .zip(cells)
+            .map(|(name, value)| WorkflowOutput::new(name, value))
             .collect(),
         None,
     )
@@ -419,8 +529,14 @@ struct Runtime {
     thread: JoinHandle<()>,
 }
 
+#[derive(Clone)]
+enum BackgroundSetup {
+    Meters(crate::meters_setup::MetersSetup),
+    Scopes(crate::scopes_setup::ScopesSetup),
+}
+
 pub struct BackgroundManager {
-    configs: Vec<(BackgroundConfig, crate::meters_setup::MetersSetup)>,
+    configs: Vec<(BackgroundConfig, BackgroundSetup)>,
     specs: HashMap<ToolInstanceId, WorkerLaunchSpec>,
     runtimes: HashMap<String, Runtime>,
     pub store: SharedBackgroundStore,
@@ -464,13 +580,19 @@ impl BackgroundManager {
             configs: configs
                 .iter()
                 .map(|config| {
-                    let setup = template
+                    let instance = template
                         .tool_instances()
                         .iter()
                         .find(|instance| instance.id == config.tool_instance_id)
-                        .and_then(|instance| instance.meters_setup())
-                        .expect("Background Meters setup was validated");
-                    (config.clone(), setup.clone())
+                        .expect("Background Tool Instance was validated");
+                    let setup = if let Some(meters) = instance.meters_setup() {
+                        BackgroundSetup::Meters(meters.clone())
+                    } else {
+                        BackgroundSetup::Scopes(
+                            instance.scopes_setup().expect("validated Scopes Background").clone(),
+                        )
+                    };
+                    (config.clone(), setup)
                 })
                 .collect(),
             specs: specs.clone(),
@@ -504,10 +626,10 @@ impl BackgroundManager {
                 .find(|(c, _)| c.id == id)
                 .cloned()
                 .ok_or("Unknown Background ID")?;
-            let sample_count = if setup.trigger_mode.is_custom() {
-                setup.sample_count
-            } else {
-                1
+            let scopes = matches!(&setup, BackgroundSetup::Scopes(_));
+            let sample_count = match &setup {
+                BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom() => meters.sample_count,
+                _ => 1,
             };
             let expected_readings = config
                 .limit_count
@@ -538,10 +660,11 @@ impl BackgroundManager {
                 Some(manifest) => manifest.clone(),
                 None => crate::adapters::probe_existing_worker_integration(
                     spec.executable(),
-                    &crate::tool::ToolId::meters(),
+                    if scopes { &crate::tool::ToolId::scopes() } else { &crate::tool::ToolId::meters() },
                 )?,
             };
-            if manifest.tool_id() != &crate::tool::ToolId::meters()
+            let expected_tool = if scopes { crate::tool::ToolId::scopes() } else { crate::tool::ToolId::meters() };
+            if manifest.tool_id() != &expected_tool
                 || manifest.feature("common.streaming").is_none()
             {
                 return Err("Background Unsupported by selected Worker Manifest".into());
@@ -552,8 +675,13 @@ impl BackgroundManager {
             let mut dispatcher = Dispatcher {
                 config: config.clone(),
                 expected_readings,
-                custom: setup.trigger_mode.is_custom(),
-                timer: config_timer(&config, sample_count, self.startup, self.action_timeout)?,
+                custom: matches!(&setup, BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom()),
+                scopes,
+                timer: if scopes {
+                    None
+                } else {
+                    config_timer(&config, sample_count, self.startup, self.action_timeout)?
+                },
                 workflow_stop: self.workflow_stop.clone(),
                 store: self.store.clone(),
                 failure: self.failure.clone(),
@@ -568,6 +696,7 @@ impl BackgroundManager {
                 first_sample_ms: None,
             };
             let startup = self.startup;
+            let action_timeout = self.action_timeout;
             let shutdown = self.shutdown;
             let thread = thread::Builder::new()
                 .name(format!("background-{id}"))
@@ -579,11 +708,35 @@ impl BackgroundManager {
                         let session = start_worker(&spec.with_bounded_events(), startup)
                             .map_err(|e| e.to_string())?;
                         let adoption = &session.ready().features()["common.streaming"];
+                        let expected_lifecycle = if scopes { "deferred_start" } else { "run_bound" };
                         if adoption["contract_version"] != 1
-                            || adoption["lifecycles"] != serde_json::json!(["run_bound"])
+                            || adoption["lifecycles"] != json!([expected_lifecycle])
+                            || session.ready().stream().and_then(|s| s["lifecycle"].as_str()) != Some(expected_lifecycle)
                         {
                             let _ = session.shutdown(shutdown);
                             return Err("Unsupported Background streaming lifecycle".into());
+                        }
+                        if let BackgroundSetup::Scopes(scopes_setup) = &setup {
+                            let mode = if spec.arguments().iter().any(|arg| arg == "--simulate") {
+                                crate::run::ExecutionMode::Simulate
+                            } else {
+                                crate::run::ExecutionMode::Live
+                            };
+                            let result = crate::adapters::scopes::validate_session(
+                                &session, mode, &spec, action_timeout,
+                            )
+                            .and_then(|()| crate::adapters::scopes::apply_setup(&session, scopes_setup, action_timeout))
+                            .and_then(|()| crate::adapters::scopes::start_background_stream(
+                                &session,
+                                &dispatcher.config.scopes_measurements,
+                                dispatcher.config.limit_count,
+                                dispatcher.config.scopes_interval_seconds.unwrap_or(1.0),
+                                startup,
+                            ));
+                            if let Err(error) = result {
+                                let _ = session.shutdown(shutdown);
+                                return Err(error);
+                            }
                         }
                         if let Some(index) = dispatcher.current {
                             dispatcher
@@ -746,6 +899,7 @@ struct Dispatcher {
     config: BackgroundConfig,
     expected_readings: Option<usize>,
     custom: bool,
+    scopes: bool,
     timer: Option<SoftwareTimer>,
     workflow_stop: crate::run::WorkflowStop,
     store: SharedBackgroundStore,
@@ -810,6 +964,8 @@ impl Dispatcher {
             status: "recording".into(),
             quality: "unknown".into(),
             row_count: 0,
+            fields: self.config.scopes_measurements.iter().map(|item| item.id.clone()).collect(),
+            field_stats: BTreeMap::new(),
             min: None,
             max: None,
             avg: None,
@@ -828,7 +984,10 @@ impl Dispatcher {
             #[cfg(test)]
             let file = Box::new(file) as CsvDestination;
             self.writer = Some(
-                ResultRowsCsvWriter::new(file, SAMPLE_COLUMNS.map(str::to_owned).to_vec())
+                ResultRowsCsvWriter::new(
+                    file,
+                    sample_columns(&metadata.fields, options.scopes_format),
+                )
                     .map_err(|e| e.to_string())?,
             );
         }
@@ -844,7 +1003,11 @@ impl Dispatcher {
         let quality = if quality == "no_loss_detected" {
             self.summary
                 .as_ref()
-                .and_then(|s| s["data_integrity"].as_str())
+                .and_then(|s| if self.scopes {
+                    s["stream_summary"]["data_integrity"].as_str()
+                } else {
+                    s["data_integrity"].as_str()
+                })
                 .unwrap_or("unknown")
         } else {
             quality
@@ -905,14 +1068,24 @@ impl Dispatcher {
                 if self.stream_state.as_deref() != Some("active") {
                     return Err("Sample outside active stream".into());
                 }
-                crate::adapters::meters::validate_background_sample(&event)?;
+                if self.scopes {
+                    crate::adapters::scopes::validate_background_sample(
+                        &event, &self.config.scopes_measurements,
+                    )?;
+                    event["captured"] = event["index"].clone();
+                    event["elapsed_s"] = event["elapsed_seconds"].clone();
+                } else {
+                    crate::adapters::meters::validate_background_sample(&event)?;
+                }
                 let sequence_error = event["captured"].as_u64() != Some((self.total + 1) as u64);
                 let timestamp =
                     chrono::DateTime::parse_from_rfc3339(event["timestamp_utc"].as_str().unwrap())
                         .map_err(|e| e.to_string())?
                         .timestamp_millis();
-                let first = *self.first_sample_ms.get_or_insert(timestamp);
-                event["elapsed_s"] = serde_json::json!((timestamp - first) as f64 / 1000.0);
+                if !self.scopes {
+                    let first = *self.first_sample_ms.get_or_insert(timestamp);
+                    event["elapsed_s"] = json!((timestamp - first) as f64 / 1000.0);
+                }
                 self.total += 1;
                 {
                     let mut data = self.store.lock().unwrap_or_else(|e| e.into_inner());
@@ -930,26 +1103,47 @@ impl Dispatcher {
                     }
                     if let Some(index) = self.current {
                         let dataset = &mut data.datasets[index];
-                        let value = event["value"].as_f64().unwrap();
                         let m = &mut dataset.metadata;
                         m.row_count += 1;
-                        m.min = Some(m.min.map_or(value, |v| v.min(value)));
-                        m.max = Some(m.max.map_or(value, |v| v.max(value)));
-                        m.avg = Some(
-                            m.avg
-                                .map_or(value, |avg| avg + (value - avg) / m.row_count as f64),
-                        );
+                        if self.scopes {
+                            for field in &m.fields {
+                                let result = &event["values"][field];
+                                let stats = m.field_stats.entry(field.clone()).or_default();
+                                if result["valid"] == true {
+                                    let value = result["value"].as_f64().expect("validated Scopes Sample");
+                                    stats.valid += 1;
+                                    stats.min = Some(stats.min.map_or(value, |v| v.min(value)));
+                                    stats.max = Some(stats.max.map_or(value, |v| v.max(value)));
+                                    stats.avg = Some(stats.avg.map_or(value, |avg| {
+                                        avg + (value - avg) / stats.valid as f64
+                                    }));
+                                } else {
+                                    stats.invalid += 1;
+                                }
+                            }
+                        } else {
+                            let value = event["value"].as_f64().unwrap();
+                            m.min = Some(m.min.map_or(value, |v| v.min(value)));
+                            m.max = Some(m.max.map_or(value, |v| v.max(value)));
+                            m.avg = Some(m.avg.map_or(value, |avg| {
+                                avg + (value - avg) / m.row_count as f64
+                            }));
+                        }
                         dataset.samples.push(event.clone());
                     }
                 }
                 if let Some(writer) = &mut self.writer {
                     writer
-                        .write_row(&sample_row(&event))
+                        .write_row(&sample_row(
+                            &event,
+                            &self.config.scopes_measurements.iter().map(|m| m.id.clone()).collect::<Vec<_>>(),
+                            self.csv.as_ref().map_or(ScopesExportMode::ValuesOnly, |o| o.scopes_format),
+                        ))
                         .map_err(|e| format!("Background CSV: {e}"))?;
                 }
                 if sequence_error {
                     return Err(
-                        "Meters captured sequence gap or duplicate; received values retained"
+                        "Background sample sequence gap or duplicate; received values retained"
                             .into(),
                     );
                 }
@@ -957,7 +1151,7 @@ impl Dispatcher {
                     .expected_readings
                     .is_some_and(|count| self.total > count)
                 {
-                    return Err("Meters produced more samples than configured".into());
+                    return Err("Background produced more samples than configured".into());
                 }
                 if let Some(timer) = &mut self.timer {
                     timer.sample(Instant::now())?;
@@ -996,11 +1190,33 @@ impl Dispatcher {
         if self.stream_state.as_deref() != Some("ended") {
             return Err("Background ended evidence missing".into());
         }
-        let summary = self.summary.as_ref().ok_or("Meters summary missing")?;
-        if stopped && !stop_accepted && summary["stop_reason"] == "stop_requested" {
+        let summary = self.summary.as_ref().ok_or("Background summary missing")?;
+        let source_summary = if self.scopes { &summary["stream_summary"] } else { summary };
+        if stopped && !stop_accepted && source_summary["stop_reason"] == "stop_requested" {
             return Err("Background stopped without accepting this workflow's stop request".into());
         }
-        let incomplete = if stopped && stop_accepted {
+        let incomplete = if self.scopes {
+            let completed = source_summary["completed_cycles"].as_u64();
+            if completed != Some(self.total as u64)
+                || source_summary["expected_cycles"] != json!(self.expected_readings)
+                || !matches!(source_summary["data_integrity"].as_str(),
+                    Some("incomplete" | "no_loss_detected" | "unknown"))
+            {
+                return Err("Scopes stream summary does not match received cycles".into());
+            }
+            let shortfall = self.expected_readings.is_some_and(|count| self.total != count);
+            let failed = !status.success() || source_summary["stop_reason"] == "error";
+            if failed && !(stopped && stop_accepted) {
+                return Err(format!("Scopes Background failed or exited {status}"));
+            }
+            if shortfall && !stopped {
+                return Err("Scopes Background ended before finite count".into());
+            }
+            if source_summary["data_integrity"] == "incomplete" && !stopped {
+                return Err("Scopes Background stream is incomplete".into());
+            }
+            shortfall
+        } else if stopped && stop_accepted {
             crate::adapters::meters::validate_stopped_background_summary(
                 summary,
                 self.total,
@@ -1021,9 +1237,11 @@ impl Dispatcher {
             }
             false
         };
-        let quality = self.summary.as_ref().unwrap()["data_integrity"]
-            .as_str()
-            .unwrap_or("unknown");
+        let quality = if self.scopes {
+            self.summary.as_ref().unwrap()["stream_summary"]["data_integrity"].as_str()
+        } else {
+            self.summary.as_ref().unwrap()["data_integrity"].as_str()
+        }.unwrap_or("unknown");
         for dataset in &mut self
             .store
             .lock()
@@ -1250,6 +1468,8 @@ mod tests {
                 status: "recording".into(),
                 quality: "unknown".into(),
                 row_count: count,
+                fields: Vec::new(),
+                field_stats: BTreeMap::new(),
                 min: None,
                 max: None,
                 avg: None,
@@ -1265,6 +1485,7 @@ mod tests {
                 .collect(),
         });
         let mut query = BackgroundChartQuery {
+            field: "value".into(),
             x_axis: BackgroundXAxis::Elapsed,
             chart_type: BackgroundChartType::Line,
             range: None,
@@ -1377,6 +1598,7 @@ mod tests {
                 config,
                 expected_readings: Some(10),
                 custom: true,
+                scopes: false,
                 timer: None,
                 workflow_stop: crate::run::WorkflowStop::default(),
                 store: store.clone(),
@@ -1384,6 +1606,7 @@ mod tests {
                 csv: Some(BackgroundCsvOptions {
                     output_folder: folder.clone(),
                     background_id: None,
+                    scopes_format: ScopesExportMode::ValuesOnly,
                 }),
                 current: None,
                 writer: None,

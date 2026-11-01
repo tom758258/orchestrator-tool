@@ -516,6 +516,43 @@ impl WorkerSession {
         }
     }
 
+    /// Deferred sources may finish immediately (for example Count=1).
+    /// Observe the first ordered JSONL 'active' transition, not a possibly
+    /// already-ended HTTP snapshot, and preserve every event for the dispatcher.
+    pub fn wait_for_deferred_stream_start(&self, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err("deferred stream source start timed out".into());
+            }
+            let event = match self.recv_worker_event(remaining.min(Duration::from_millis(300))) {
+                Ok(event) => event,
+                Err(WorkerEventError::Timeout(_)) => continue,
+                Err(error) => return Err(format!("deferred stream source start: {error}")),
+            };
+            let active = event["event"] == "status"
+                && event["worker_state"] == "running"
+                && event["stream"]["state"] == "active";
+            let failed = (event["event"] == "status"
+                && (event["worker_state"] == "failed"
+                    || event["stream"]["state"] == "ended"
+                    || !event["fatal_error"].is_null()))
+                || event["event"] == "error"
+                || event["event"] == "summary";
+            self.pending_events
+                .lock()
+                .map_err(|_| "poisoned pending Worker events")?
+                .push_back(event.clone());
+            if active {
+                return Ok(());
+            }
+            if failed {
+                return Err(format!("deferred stream did not become active: {event}"));
+            }
+        }
+    }
+
     /// Receives the next runtime JSON event from the Worker with a bounded timeout.
     ///
     /// The startup `ready` event is consumed during `start_worker` and is not

@@ -303,14 +303,32 @@ pub fn prepare_worker_launch_specs_with_simulation(
                     instance.id
                 ));
             }
-            meters::background_worker_launch_spec(
-                executable,
-                execution_mode,
-                config.live_resource(&instance.id),
-                background.limit_count,
-                instance.meters_setup().expect("validated Meters"),
-                config.live_backend(&instance.id),
-            )
+            if tool.as_str() == "meters" {
+                meters::background_worker_launch_spec(
+                    executable,
+                    execution_mode,
+                    config.live_resource(&instance.id),
+                    background.limit_count,
+                    instance.meters_setup().expect("validated Meters"),
+                    config.live_backend(&instance.id),
+                )
+            } else if tool.as_str() == "scopes" {
+                let ordinary = match execution_mode {
+                    ExecutionMode::Simulate => scopes::simulate_worker_launch_spec(executable),
+                    ExecutionMode::Live => scopes::live_worker_launch_spec(
+                        executable,
+                        config.live_resource(&instance.id).expect("validated resource"),
+                        config.live_resource_identities()[instance.id.as_str()]
+                            .model_id
+                            .as_deref()
+                            .expect("validated model"),
+                        config.live_backend(&instance.id),
+                    ),
+                };
+                scopes::background_worker_launch_spec(&ordinary)
+            } else {
+                return Err(format!("{}: unsupported Background Tool", instance.id));
+            }
         } else {
             match (execution_mode, tool.as_str()) {
                 (ExecutionMode::Simulate, "powers") => {

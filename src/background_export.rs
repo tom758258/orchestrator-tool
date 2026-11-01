@@ -1,6 +1,6 @@
 //! Manual exports borrow bounded windows from the authoritative memory store.
 use crate::{
-    background::{SAMPLE_COLUMNS, SharedBackgroundStore, unique_file},
+    background::{ScopesExportMode, SharedBackgroundStore, sample_columns, sample_cells, unique_file},
     workflow::{ResultRow, WorkflowOutput},
     workflow_csv::{ResultRowsCsvWriter, export_cell},
 };
@@ -24,6 +24,19 @@ pub fn export_datasets(
     format: BackgroundExportFormat,
     rows_per_file: usize,
 ) -> Result<Vec<PathBuf>, String> {
+    export_datasets_with_scopes_mode(
+        store, dataset_ids, folder, format, rows_per_file, ScopesExportMode::ValuesOnly,
+    )
+}
+
+pub fn export_datasets_with_scopes_mode(
+    store: &SharedBackgroundStore,
+    dataset_ids: &[String],
+    folder: &Path,
+    format: BackgroundExportFormat,
+    rows_per_file: usize,
+    scopes_mode: ScopesExportMode,
+) -> Result<Vec<PathBuf>, String> {
     if matches!(format, BackgroundExportFormat::Xlsx)
         && (rows_per_file == 0 || rows_per_file > EXCEL_DATA_ROWS)
     {
@@ -39,6 +52,10 @@ pub fn export_datasets(
             .clone();
         if metadata.status == "recording" {
             return Err("Switch Capture OFF before manual export".into());
+        }
+        let columns = sample_columns(&metadata.fields, scopes_mode);
+        if columns.len() > 16_384 {
+            return Err("Scopes Background exceeds XLSX column limit".into());
         }
         let chunks = match format {
             BackgroundExportFormat::Csv => 1,
@@ -63,7 +80,7 @@ pub fn export_datasets(
             match format {
                 BackgroundExportFormat::Csv => {
                     let mut writer =
-                        ResultRowsCsvWriter::new(file, SAMPLE_COLUMNS.map(str::to_owned).to_vec())
+                        ResultRowsCsvWriter::new(file, columns.clone())
                             .map_err(|e| e.to_string())?;
                     for offset in (start..end).step_by(1_000) {
                         for sample in store.lock().unwrap_or_else(|e| e.into_inner()).rows(
@@ -72,11 +89,11 @@ pub fn export_datasets(
                             (end - offset).min(1_000),
                         )? {
                             let row = ResultRow::new(
-                                SAMPLE_COLUMNS
+                                columns
                                     .iter()
-                                    .map(|name| {
-                                        WorkflowOutput::new((*name).into(), sample[*name].clone())
-                                    })
+                                    .cloned()
+                                    .zip(sample_cells(&sample, &metadata.fields, scopes_mode))
+                                    .map(|(name, value)| WorkflowOutput::new(name, value))
                                     .collect(),
                                 None,
                             );
@@ -88,9 +105,9 @@ pub fn export_datasets(
                 BackgroundExportFormat::Xlsx => {
                     let mut workbook = rust_xlsxwriter::Workbook::new();
                     let sheet = workbook.add_worksheet_with_constant_memory();
-                    for (column, name) in SAMPLE_COLUMNS.iter().enumerate() {
+                    for (column, name) in columns.iter().enumerate() {
                         sheet
-                            .write_string(0, column as u16, *name)
+                            .write_string(0, column as u16, name)
                             .map_err(|e| e.to_string())?;
                     }
                     for offset in (start..end).step_by(1_000) {
@@ -101,8 +118,7 @@ pub fn export_datasets(
                         )?;
                         for (index, sample) in samples.iter().enumerate() {
                             let row = (offset - start + index + 1) as u32;
-                            for (column, name) in SAMPLE_COLUMNS.iter().enumerate() {
-                                let value = &sample[*name];
+                            for (column, value) in sample_cells(sample, &metadata.fields, scopes_mode).iter().enumerate() {
                                 match value {
                                     serde_json::Value::Number(number)
                                         if crate::workflow_export::excel_number(number)
@@ -144,7 +160,7 @@ mod tests {
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         store.lock().unwrap().datasets.push(Dataset {
             metadata:DatasetMetadata {id:"background-1-capture-1".into(),background_id:"background-1".into(),worker_run_id:"worker".into(),
-                started_ms:0,finished_ms:Some(1),status:"completed".into(),quality:"no_loss_detected".into(),row_count:count,
+                started_ms:0,finished_ms:Some(1),status:"completed".into(),quality:"no_loss_detected".into(),row_count:count,fields:Vec::new(),field_stats:Default::default(),
                 min:None,max:None,avg:None,csv_path:None,error:None},
             samples:(1..=count).map(|i| json!({"timestamp_utc":"2026-10-27T00:00:00Z","captured":i,"elapsed_s":i as f64/1000.0,"value":10.600000000000001_f64,"unit":"V"})).collect(),
         });

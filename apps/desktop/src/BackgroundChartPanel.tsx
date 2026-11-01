@@ -29,6 +29,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
   const [series, setSeries] = useState<BackgroundChartSeries | null>(null)
   const [error, setError] = useState<string | null>(null)
   const available = datasets.filter(dataset => dataset.background_id === source.background_id)
+  const fields = backgrounds.find(background => background.id === source.background_id)?.scopes_measurements ?? []
   const waiting = running && panel.type !== 'line'
   const onRangeChange = useCallback((next: { min: number; max: number } | null) => {
     setRange(current => current?.min === next?.min && current?.max === next?.max ? current : next)
@@ -58,7 +59,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
         if (cancelled) return
         const request = invoke<BackgroundChartSeries>('get_background_chart_series', {
           runId, backgroundId: source.background_id, datasetId,
-          query: { x_axis: source.x_axis, chart_type: panel.type, point_budget: 2000,
+          query: { field: source.field, x_axis: source.x_axis, chart_type: panel.type, point_budget: 2000,
             raw: panel.type === 'line' && panel.showAllRawData,
             range: minimum === null && maximum === null ? null : { min: minimum ?? -Number.MAX_VALUE, max: maximum ?? Number.MAX_VALUE } },
         })
@@ -71,7 +72,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
     }
     void query()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [runId, source.background_id, source.x_axis, datasetId, panel.type, panel.showAllRawData, minimum, maximum, running, waiting])
+  }, [runId, source.background_id, source.field, source.x_axis, datasetId, panel.type, panel.showAllRawData, minimum, maximum, running, waiting])
   const bounded = useMemo(() => ({ ...backgroundPlotData(series?.points ?? [], series?.domain ?? null), onRangeChange }), [series, onRangeChange])
   return <ChartPanelView panel={panel} panels={panels} onPanelsChange={onPanelsChange} charts={charts.current}
     numericNames={['value']} running={running} hasRows={(series?.total_count ?? 0) > 0}
@@ -81,11 +82,20 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
     <label>Background<select value={source.background_id} onChange={event => {
       if (event.target.value === source.background_id) return
       selectDataset(null)
-      onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, source: { ...source, background_id: event.target.value } } : item))
+      onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, source: { ...source, background_id: event.target.value,
+        field: backgrounds.find(background => background.id === event.target.value)?.scopes_measurements?.[0]?.id ?? 'value' } } : item))
     }}>
       {!backgrounds.some(background => background.id === source.background_id) && <option value={source.background_id}>{source.background_id} (unavailable in this run)</option>}
       {backgrounds.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
     </select></label>
+    {fields.length > 0 && <label>Measurement<select aria-label="Background Chart Measurement" value={source.field}
+      onChange={event => {
+        setRange(null); setSeries(null)
+        onPanelsChange(panels.map(item => item.id === panel.id
+          ? { ...item, source: { ...source, field: event.target.value } } : item))
+      }}>
+      {fields.map(field => <option key={field.id} value={field.id}>{field.id}</option>)}
+    </select></label>}
     <label>Capture Dataset<select value={datasetId ?? ''} onChange={event => selectDataset(event.target.value || null)}>
       <option value="">Waiting for captured data</option>
       {available.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.id} · {dataset.row_count} samples</option>)}
@@ -106,7 +116,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
         {series && <p>{series.total_count.toLocaleString()} dataset samples · {series.visible_count.toLocaleString()} in visible range · {series.returned_count.toLocaleString()} displayed{series.sampled ? ' · Representative samples' : series.raw_limit_exceeded ? '' : ' · All samples in range'}</p>}
         {series?.raw_limit_exceeded && <p role="alert">This range contains {series.visible_count.toLocaleString()} samples; Show All Raw Data supports at most {series.raw_limit.toLocaleString()}. Narrow Zoom or turn off Show All Raw Data.</p>}
         {!series && !error && <p role="status">Preparing chart data...</p>}
-        <ChartPlot key={`${runId}:${source.background_id}:${datasetId}:${source.x_axis}`} panel={panel} data={EMPTY_DATA}
+        <ChartPlot key={`${runId}:${source.background_id}:${source.field}:${datasetId}:${source.x_axis}`} panel={panel} data={EMPTY_DATA}
           numericNames={['value']} charts={charts.current} bounded={bounded} />
       </>}
   </ChartPanelView>

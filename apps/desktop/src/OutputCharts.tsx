@@ -4,7 +4,7 @@ import type { EChartsType } from 'echarts/core'
 import type { BackgroundConfig, OutputStep, RunPageMetadata } from './workflow'
 import { addBackgroundChartPanel, addChartPanel, foregroundChartNames, MAX_CHARTS, type ChartPanel } from './chartPanels'
 import { createPageChartData, type ChartChangeSettings, type PageChartData } from './chartData'
-import { backgroundPlotData, type BackgroundOutputData } from './backgroundChartData'
+import { backgroundPlotData, type BackgroundOutputData, type BackgroundChartPoint } from './backgroundChartData'
 import BackgroundChartPanel, { type BackgroundChartSelections } from './BackgroundChartPanel'
 import ChartPlot from './ChartPlot'
 import Collapsible from './Collapsible'
@@ -34,16 +34,29 @@ function useBackgroundOutput(runId: number | null, backgroundId: string | undefi
 function LiveMonitor({ runId, background, running }: { runId: number; background: BackgroundConfig; running: boolean }) {
   const { output, error } = useBackgroundOutput(runId, background.id, running)
   const charts = useRef(new Map<number, EChartsType>())
-  const panel = useMemo(() => addBackgroundChartPanel([], background.id)[0], [background.id])
+  const fields = background.scopes_measurements ?? []
+  const [field, setField] = useState(fields[0]?.id ?? 'value')
+  const panel = useMemo(() => addBackgroundChartPanel([], background.id, field)[0], [background.id, field])
   const empty = useMemo(createPageChartData, [])
   const samples = output?.monitor ?? []
   const bounded = useMemo(() => {
-    const points = samples.map(sample => ({ ...sample, x: sample.elapsed_s, sample_index: sample.captured }))
+    const points: BackgroundChartPoint[] = samples.flatMap(sample => {
+      const reading = field === 'value' ? null : sample.values?.[field]
+      if (field !== 'value' && (!reading || !reading.valid || reading.value === null)) return []
+      const value = reading?.value ?? sample.value
+      if (typeof value !== 'number' || !Number.isFinite(value)) return []
+      return [{ x: sample.elapsed_s, value, sample_index: sample.captured,
+        timestamp_utc: sample.timestamp_utc, elapsed_s: sample.elapsed_s, unit: reading?.unit ?? sample.unit ?? '' }]
+    })
     const x = points.map(point => point.x)
     return backgroundPlotData(points, x.length ? { min: Math.min(...x), max: Math.max(...x) } : null)
-  }, [output])
+  }, [output, field])
   return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
     <p>Latest 1,000 Worker samples · independent of Capture</p>
+    {fields.length > 0 && <label>Measurement<select aria-label={'Live Monitor Measurement ' + background.id} value={field}
+      onChange={event => setField(event.target.value)}>
+      {fields.map(measurement => <option key={measurement.id} value={measurement.id}>{measurement.id}</option>)}
+    </select></label>}
     {error && <p role="alert">{error}</p>}
     <ChartPlot panel={panel} data={empty} numericNames={['value']} charts={charts.current} bounded={bounded} />
   </Collapsible>
@@ -81,7 +94,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, pane
     <button className="action-button" type="button" disabled={!selected || panels.length >= MAX_CHARTS || ('names' in selected && selected.names.length === 0)}
       onClick={() => {
         if (!selected) return
-        updatePanels('background' in selected ? addBackgroundChartPanel(panels, selected.background.id)
+        updatePanels('background' in selected ? addBackgroundChartPanel(panels, selected.background.id, selected.background.scopes_measurements?.[0]?.id ?? 'value')
           : addChartPanel(panels, selected.page.name, selected.names))
       }}>+ Add Chart</button>
   </div>}>
