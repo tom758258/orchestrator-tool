@@ -680,7 +680,12 @@ impl WorkerSession {
                     .map_err(WorkerShutdownError::ProcessIo)?
                 {
                     return self
-                        .finish_exited_process(status, timeout, &mut on_event, check_nonzero_evidence)
+                        .finish_exited_process(
+                            status,
+                            timeout,
+                            &mut on_event,
+                            check_nonzero_evidence,
+                        )
                         .map(|status| (status, false));
                 }
 
