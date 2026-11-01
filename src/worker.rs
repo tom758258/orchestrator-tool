@@ -662,8 +662,38 @@ impl WorkerSession {
         }
 
         let deadline = Instant::now() + timeout;
-        let now = Instant::now();
 
+        // stdout EOF is evidence that the Worker is naturally terminating.
+        // The OS exit status can lag behind EOF (notably on Windows). Avoid
+        // sending /stop to an already-closed HTTP endpoint: doing so can use
+        // the entire shutdown budget before try_wait observes the exit.
+        let stdout_eof = self
+            .evidence
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .eof;
+        if stdout_eof {
+            loop {
+                if let Some(status) = self
+                    .process_mut()
+                    .try_wait()
+                    .map_err(WorkerShutdownError::ProcessIo)?
+                {
+                    return self
+                        .finish_exited_process(status, timeout, &mut on_event, check_nonzero_evidence)
+                        .map(|status| (status, false));
+                }
+
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    self.force_cleanup()?;
+                    return Err(WorkerShutdownError::GracefulTimeout(timeout));
+                }
+                thread::sleep(SHUTDOWN_POLL_INTERVAL.min(remaining));
+            }
+        }
+
+        let now = Instant::now();
         if now >= deadline {
             self.force_cleanup()?;
             return Err(WorkerShutdownError::GracefulTimeout(timeout));
