@@ -711,13 +711,23 @@ outputs 已被改變。
 
 ## Background Streaming
 
-在 **Tool Setup** 先勾選 **Use this instance as a Background**，再選擇六種
-Meters 模式之一。Scopes、Powers 和 Wavegen 尚不支援 Background。
+在 **Tool Setup** 中，Meters 或 Scopes Instance 都可勾選
+**Use this instance as a Background**。Meters 提供六種背景量測模式；
+Scopes Background 支援唯讀的數值 Measure Cycle，不包含 Screenshot 或
+Waveform Capture。Powers 和 Wavegen 仍不支援 Background。
 背景 Instance 不可同時供前景 Tool Action 使用。切換用途時會保留既有步驟，
 請在執行前處理畫面提示的衝突；取消 Background 後，須選擇 Single 才能用於
 前景 Measure。同一次執行中的兩個 Instance 不可共用同一個 Live Resource。
 
-來源可選 **Finite** 或 **Infinite**。有限 Simple 模式設定 **Max Samples**；
+來源可選 **Finite** 或 **Infinite**。Scopes 的 Finite **Cycles** 是完整量測
+Cycle 數量，每個 Cycle 可包含多個 Channel／Item 組合；Infinite 持續執行，
+直到 Worker OFF 或 Stop Workflow。**Measure interval (seconds)** 預設 1 秒，
+代表每個完整 Cycle 結束後的等待時間，不保證固定採樣率。在
+**Measurements** 新增或移除量測項目，依 Scopes capabilities 為每個項目
+選擇 **Channel** 與 **Item**；每項有內部穩定 ID。Cycle 內的項目依序讀取，
+不是同時量測。最終機型／項目／參數支援由 Scopes Tool 驗證。
+
+Meters 的有限 Simple 模式設定 **Max Samples**；
 有限 Custom 模式設定 **Trigger Count**，每次觸發取得 **Sample Count** 筆。
 無限 Custom 必須明確勾選 **Allow Buffer Overflow Risk**。背景無限擷取
 不會套用隱藏的 Simulation 筆數上限。
@@ -732,13 +742,16 @@ Capture OFF 後仍持續觸發，也可繼續更新 Live Monitor。Worker OFF、
 Simulation 會對支援的型號自動產生虛擬觸發，例如 34461A。34460A 不支援 External。
 Slope 與 Delay 設定會交給工具處理；Simulation 不驗證實體觸發時序。
 
-**Live Monitor** 可選，預設不勾選。**5.1 Meters Setup** 的 Allow Risk 警告
+**Live Monitor** 可選，預設不勾選。Scopes Monitor 可用 **Measurement**
+選擇單一數值欄位繪圖，且獨立於 Capture；無效讀值不會當成 0 繪製。
+**5.1 Meters Setup** 的 Allow Risk 警告
 適用於背景 Custom 模式。Stop 無法恢復遺失的讀值；停止後請核對擷取筆數與資料品質。
 
 加入以下 Workflow Actions，再於 Step Properties 選擇 Background：
 
-- **Worker ON**：執行到該 Step 才啟動來源。「同時 Capture ON」預設不勾選；
-  勾選可保留來源啟動時的第一批 Samples。
+- **Worker ON**：執行到該 Step 才啟動來源。Scopes 會先啟動等待狀態的
+  Streaming Worker、完成現有 Scopes Setup，再開始 Measure Streaming。
+  「同時 Capture ON」預設不勾選；勾選可保留來源啟動時的第一批 Samples。
 - **Capture ON**：在持續執行的 Worker 上建立新的獨立 Dataset。
 - **Capture OFF**：完成該 Dataset 與選配的 Streaming CSV；不停止 Worker，
   也不自動另做 Manual Export。
@@ -760,7 +773,9 @@ Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Out
 
 在 **Charts** 選擇 **Chart source**，按 **Add Chart**。所有 Foreground Page 與
 Background 圖表集中顯示。每張 Background Chart 可獨立選擇 Background、Capture Dataset、
-X axis，並使用 **Settings**、**Export PNG**、**Remove**；Background 圖表可全部移除至零張。
+X axis，並使用 **Settings**、**Export PNG**、**Remove**；Scopes Chart 另可選擇單一
+**Measurement** 欄位，每張圖只繪製一個項目。若要比較不同項目，請使用多張 Chart，
+不要把不同單位混用同一條 Y 軸。Background 圖表可全部移除至零張。
 Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。
 Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
 之後保持選擇，不因新增 Dataset 自動跳換；新 Run 會重新選取。沒有 Dataset 時顯示等待資料，
@@ -780,8 +795,11 @@ Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示�
 Setup 啟用 **Live Monitor** 後，它顯示於 Charts 內，使用相同 Line 外觀、Hover 與 Zoom。
 Monitor 顯示最新 1,000 筆 Worker Samples，Capture OFF 時仍可更新；Worker OFF 後停止更新，
 新 Worker Runtime 會清空 Buffer。它沒有 Chart Settings、Add／Remove、Saved Chart、PNG、
-Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 顯示 Dataset
-筆數、最小／最大／平均值、狀態與品質；**Output Data** 每頁 100 筆。
+Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 對 Meters
+顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；Scopes 則依 **Measurement**
+分別顯示有效／無效數量與有效值的最小／最大／平均值。Scopes 的 Output Data 會顯示
+選定的多個量測欄位，無效值留空，並可將滑鼠移到欄位上查看無效原因。
+**Output Data** 每頁 100 筆。
 `no_loss_detected` 代表 Tool 的證據範圍，並非零遺失保證。
 
 Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
@@ -791,11 +809,17 @@ Store。Background Samples 不提供給 Workflow Variables、Calculation、Asser
 
 **CSV Export → Stream Background CSV during Capture** 與前景 CSV 獨立。
 可選 All Backgrounds 或單一 Background，並各自選擇輸出資料夾；預設
-`<application folder>/data`。每次 Capture 建立新 CSV；只使用 Monitor 不產生
-CSV。所有啟用的 CSV 目的地適用下方失敗政策，並保留部分檔案。
+`<application folder>/data`。Scopes 的 **Scopes CSV columns** 可在 Run 前選擇
+**Values + units**（精簡）或 **Values + units + validity + reason**（含品質），
+後者會額外輸出每個 Measurement 的有效性及無效原因。兩種模式都不會把無效值
+寫成 0；Meters 原本的五欄 CSV 不變。每次 Capture 建立新 CSV；
+只使用 Monitor 不產生 CSV。所有啟用的 CSV 目的地適用下方失敗政策，並保留部分檔案。
 
 Run 結束後，**Export Background** 可將選定或全部 Dataset 匯出為 CSV 或
-XLSX，包含失敗 Run 已收到的部分資料。超過 300,000 筆會顯示警告；XLSX
+XLSX，包含失敗 Run 已收到的部分資料。若選取 Scopes Dataset，可用
+**Scopes export columns** 在每次手動匯出時獨立選擇精簡或含品質格式，
+不必與 Streaming CSV 使用同一種格式；記憶體中的 Dataset 始終保留
+`value`、`unit`、`valid` 與 `reason`。超過 300,000 筆會顯示警告；XLSX
 每檔預設 300,000 筆，**Samples per XLSX file** 可調整為 1 到 1,048,575。
 較大的 Dataset 會分檔而不截斷。檔名避免覆寫 Streaming 或先前 Manual 檔案。
 Capture OFF 與 Run 結束都不會自動執行 Manual Export。

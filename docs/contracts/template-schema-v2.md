@@ -110,6 +110,9 @@ Chart settings object:
 Its `outputs` must be `["value"]`, `scatter_x_output` must be null, and
 `type` must be `line`, `scatter`, `column`, `area`, or `bar`. `x_axis` accepts
 `elapsed`, `timestamp`, or `index`. The Background ID must exist in the Template.
+For Meters, `field` is `value`; for Scopes, `field` is one of that
+Background's configured `scopes_measurements[].id` values. Each Background
+Chart displays one field; different units are not combined on a single axis.
 Unknown fields (including runtime Dataset IDs) and the old `backgrounds[].chart`
 are rejected; there is no migration. Schema version remains 2. Save validation
 finishes before writing the file. A Chart whose Background was removed from the
@@ -134,14 +137,16 @@ the single source of background bindings and acquisition configuration:
 ```
 
 IDs use the same stable identifier syntax as Steps. Background IDs and Tool
-Instance ownership must be unique; targets must exist and use Meters. All six
-`trigger_mode` values are supported: `software`, `immediate`, `external`,
+Instance ownership must be unique; targets must exist and use Meters or Scopes.
+Meters supports all six `trigger_mode` values: `software`, `immediate`, `external`,
 `software-custom`, `immediate-custom`, and `external-custom`.
 
 `limit_count` is 1–1,000,000 or null for native infinite acquisition. For Simple
 modes it maps to `--max-samples`; null omits that argument. For Custom modes it
 maps to `--trigger-count`; null uses `--trigger-count-infinite` and requires
-explicit `allow_buffer_overflow_risk: true`. Custom modes also pass
+explicit `allow_buffer_overflow_risk: true`. For Scopes, `limit_count` means the
+number of complete multi-measurement cycles; null means native infinite streaming.
+Custom modes also pass
 `--sample-count` and optional buffer parameters. Simple expected readings equal
 `limit_count`; Custom expected readings are the checked product of `limit_count`
 and `sample_count`. Infinite sources have no fixed expected total. The old
@@ -159,10 +164,33 @@ are bounded; a batch receives the existing action timeout multiplied by its
 sample count, to allow buffered batches to complete without imposing a short
 fixed limit. HTTP uses the existing action timeout.
 
-Scopes, Powers and Wavegen remain unsupported as background sources. Foreground
-Scopes actions retain their existing contract. Manifest and runtime must both
-adopt `common.streaming` version 1 with `run_bound` lifecycle; JSONL alone does
-not opt in.
+Scopes is also a Background source; Powers and Wavegen remain unsupported.
+A Scopes binding requires a nonempty `scopes_measurements` list, with distinct
+stable IDs, positive Channel numbers, nonempty Items and optional
+`reference_channel`, `time_s`, `level`, `slope`, `occurrence` fields.
+Measurement IDs contain ASCII letters, digits and underscores; the reserved
+ID `value` is rejected. Scopes-specific `scopes_interval_seconds` is optional
+(default 1.0), finite, nonnegative and at most 86400. This is the delay
+**after** each completed Cycle, not a guaranteed acquisition rate. Meters rejects
+these Scopes-only settings; Scopes rejects the Meters `timer_interval_ms`.
+
+```json
+{"backgrounds":[{"id":"scope-background","tool_instance_id":"scopes-1",
+  "live_monitor":true,"limit_count":null,
+  "scopes_measurements":[{"id":"ch1_frequency","channel":1,"item":"frequency"},
+                         {"id":"ch2_vpp","channel":2,"item":"vpp"}],
+  "scopes_interval_seconds":1.0}]}
+```
+
+The Scopes Manifest advertises optional `common.streaming` version 1 with
+`deferred_start`. The opted-in Worker uses `--streaming`; after Ready and
+`waiting`, Orchestrator validates the session, completes Scopes Setup Async
+Jobs, sends one Tool-specific `measure-stream-start` command and observes the
+later `active` event. HTTP 202 is acceptance, not a completed source start.
+The source owns one session after starting and will not accept further ordinary
+Jobs. Finite natural `ended` is not a process exit; Worker OFF sends `/stop`
+and verifies Summary, EOF and actual exit. Foreground Scopes actions and the
+Meters `run_bound` lifecycle remain separate. JSONL alone does not opt in.
 
 All Chart settings belong to `output_views.charts`, independently of bindings.
 Session-only and saved Charts share a limit of zero to eight. An empty list is
@@ -195,10 +223,13 @@ does not apply these strict operator-action rules.
 Each successful Capture ON creates a separate memory Dataset. Boundaries are
 acknowledged dispatcher processing points, not instrument acquisition timestamps.
 Worker ON with Capture prepares the Dataset and optional CSV before launching
-the run-bound source. Samples never enter foreground ResultRows, variables,
-assertions or DataContext. Dataset status and quality are separate. Successful
-exit requires the existing Common v3 termination checks plus Meters sample
-sequence, Summary count and data-integrity checks. `ended` alone is insufficient.
+the Background source. For Scopes, recording is ready before source Start and
+each sample is one Cycle containing multiple independent measurements. Samples
+never enter foreground ResultRows, variables, assertions or DataContext. Dataset status and quality are separate. Successful
+exit requires Common v3 termination checks and the appropriate Tool-specific
+sample sequence, Summary counts and data-integrity checks. Scopes uses
+`index` for its Cycle sequence and `stream_summary` for final evidence;
+`ended` alone is insufficient.
 Meters may report `final_drain_complete: null` when no drain is applicable;
 false is failure, and null never replaces the other completion evidence.
 
@@ -218,6 +249,20 @@ The active Capture is incomplete for a finite shortfall or infinite stop;
 infinite mode requires a null expected count. Dataset quality retains the
 reported evidence, prior completed Captures are not downgraded by an intentional
 shortfall, and cleanup without an active Capture creates no Dataset.
+
+Scopes Samples preserve per-Measurement `value`, `unit`, `valid` and
+`reason`; a null invalid value is never coerced to zero. Each Dataset stores
+its fixed ordered Measurement field IDs and per-field valid/invalid counts,
+min/max/average of valid readings. Meters keeps its scalar `value` dataset
+and five-column CSV unchanged. Scopes Background Charts and the opt-in Live
+Monitor choose one configured Measurement field at a time.
+
+Scopes streaming CSV selects `scopes_format` before Run:
+`values-only` (default) writes timestamp, elapsed time, Cycle index and
+Measurement values with units; `values-quality` additionally writes
+per-Measurement validity and invalid reason. Manual CSV/XLSX can choose either
+mode on each export from the same complete memory Dataset. Empty invalid values
+remain empty instead of becoming zero. Capture OFF does not stop the source.
 
 Frontend queries are bounded: table windows at most 1,000 rows (Desktop uses
 100), recorded Charts at most 2,000 representative samples, and opt-in Monitor
