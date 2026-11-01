@@ -853,11 +853,18 @@ fn background_fixture(scenario: &str) {
         if !controlled && scenario != "rolling" && count == 6 {
             break;
         }
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut bytes = [0; 4096];
-            let _ = stream.read(&mut bytes);
+        if let Ok((stream, _)) = listener.accept() {
+            // The listener is nonblocking. Fully read the accepted request on a
+            // blocking socket before responding; closing with unread request
+            // bytes can reset the connection and lose Stop acceptance on Windows.
+            let request = read_request(stream);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("POST", "/stop"),
+                "{scenario}: unexpected Background fixture HTTP request"
+            );
             let body = json!({"schema_version":3,"run_id":"background-run","status":"accepted","error":null}).to_string();
-            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+            write_response(request.stream, 200, &body);
             // A final sample after Stop must still reach an active Capture.
             if scenario == "stop-gap" {
                 count += 1;
