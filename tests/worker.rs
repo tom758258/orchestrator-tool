@@ -475,6 +475,7 @@ fn main() {
     }
 
     valid_ready_starts_worker_session();
+    serial_background_rx_contract();
     software_background_timer_contract();
     background_capture_and_termination_contract();
     background_workflow_stop_contract();
@@ -817,7 +818,184 @@ fn software_background_timer_contract() {
     }
 }
 
+/// A small RX-only fixture: real WorkerSession and BackgroundManager paths,
+/// without a physical port or an extra Serial protocol abstraction.
+fn serial_background_fixture(scenario: &str) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let emit = |mut event: serde_json::Value| {
+        event["schema_version"] = json!(3);
+        event["timestamp_utc"] = json!(FIXTURE_UTC);
+        event["run_id"] = json!("serial-run");
+        println!("{event}");
+        io::stdout().flush().unwrap();
+    };
+    emit(json!({
+        "event":"ready","features":{
+            "common.async_jobs":{"contract_version":1},
+            "common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}
+        },
+        "stream":{"lifecycle":"run_bound"},
+        "status_url":format!("{base}/status"),
+        "command_url":format!("{base}/command"),
+        "stop_url":format!("{base}/stop")
+    }));
+    emit(
+        json!({"event":"status","worker_state":"running","fatal_error":null,
+        "active_job":null,"last_job":null,
+        "stream":{"lifecycle":"run_bound","state":"active"}}),
+    );
+    let pieces = ["5a4b3d", "3c", "6874"];
+    let mut count: usize = 0;
+    loop {
+        if count < 50 {
+            let hex = pieces[count % pieces.len()];
+            emit(json!({
+                "event":"rx",
+                "rx_hex": if scenario == "serial-invalid" && count == 0 {
+                    "invalid"
+                } else { hex },
+                "rx_bytes": hex.len() / 2
+            }));
+            count += 1;
+        }
+        if let Ok((stream, _)) = listener.accept() {
+            let request = read_request(stream);
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("POST", "/stop")
+            );
+            let body = json!({"schema_version":3,"run_id":"serial-run",
+                "status":"accepted","error":null})
+            .to_string();
+            let mut stream = request.stream;
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body).unwrap();
+            stream.flush().unwrap();
+            drop(stream);
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    emit(
+        json!({"event":"status","worker_state":"stopping","fatal_error":null,
+        "active_job":null,"last_job":null,
+        "stream":{"lifecycle":"run_bound","state":"ended"}}),
+    );
+    emit(
+        json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,
+        "accepted":0,"succeeded":0,"failed":0}),
+    );
+}
+
+fn serial_background_rx_contract() {
+    use orchestrator_tool::{
+        background::BackgroundStore,
+        run::{RunOptions, run_workflow_streaming_controlled},
+    };
+    use std::sync::Arc;
+
+    for scenario in ["serial-ok", "serial-invalid"] {
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version":2, "name":"Serial Background RX",
+                "tool_instances":[{"id":"serial-bg","tool":"serial",
+                    "setup":{"baud":115200}}],
+                "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
+                    "live_monitor":true,"limit_count":null}],
+                "workflow":{"steps":[
+                    {"type":"background","id":"on","background_id":"background-1",
+                        "action":"worker-on","capture":true},
+                    {"type":"wait","id":"collect","duration_ms":240},
+                    {"type":"background","id":"off","background_id":"background-1",
+                        "action":"worker-off","capture":true}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let specs = HashMap::from([(
+            ToolInstanceId::new("serial-bg").unwrap(),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", scenario],
+            )
+            .with_manifest(fixture_manifest("serial-smoke")),
+        )]);
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                ..Default::default()
+            },
+            |_| {},
+            |_| false,
+        );
+        let data = store.lock().unwrap();
+        if scenario == "serial-invalid" {
+            assert!(result.is_err(), "invalid RX must fail the workflow");
+            assert_eq!(data.metadata()[0].status, "failed");
+            continue;
+        }
+        assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{result:?}");
+        let metadata = data.metadata();
+        assert_eq!(metadata.len(), 1);
+        assert!(metadata.iter().all(|m| m.tool_kind == "serial"
+            && m.status == "completed"
+            && m.quality == "unknown"
+            && m.row_count > 0));
+        for item in metadata {
+            let rows = data.rows(&item.id, 0, 1000).unwrap();
+            assert_eq!(rows.len(), item.row_count);
+            assert_eq!(
+                item.rx_bytes,
+                rows.iter()
+                    .map(|row| row["rx_bytes"].as_u64().unwrap() as usize)
+                    .sum::<usize>()
+            );
+            // The fixture emits variable-sized RX events in a repeating order.
+            // A captured row must retain one complete event, never split or merge bytes.
+            let pieces = [("5a4b3d", 3_u64), ("3c", 1), ("6874", 2)];
+            let positions = rows
+                .iter()
+                .map(|row| {
+                    let hex = row["rx_hex"].as_str().expect("captured RX hex");
+                    let bytes = row["rx_bytes"].as_u64().expect("captured RX byte count");
+                    pieces
+                        .iter()
+                        .position(|(expected_hex, expected_bytes)| {
+                            hex == *expected_hex && bytes == *expected_bytes
+                        })
+                        .expect("one complete fixture RX event per row")
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                positions.len() >= 3,
+                "must capture variable-length RX events"
+            );
+            assert!(
+                positions
+                    .windows(2)
+                    .all(|pair| pair[1] == (pair[0] + 1) % pieces.len()),
+                "captured RX events must preserve fixture order"
+            );
+        }
+    }
+}
+
 fn background_fixture(scenario: &str) {
+    if scenario.starts_with("serial-") {
+        serial_background_fixture(scenario);
+        return;
+    }
     if scenario.starts_with("timer-") {
         software_background_fixture(scenario);
         return;
@@ -1024,6 +1202,7 @@ fn background_workflow_stop_contract() {
                     output_folder: folder.clone(),
                     background_id: None,
                     scopes_format: Default::default(),
+                    serial_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1214,6 +1393,7 @@ fn background_capture_and_termination_contract() {
                     output_folder: csv_folder.clone(),
                     background_id: None,
                     scopes_format: Default::default(),
+                    serial_format: Default::default(),
                 }),
                 ..Default::default()
             },
@@ -1577,6 +1757,7 @@ fn background_capture_and_termination_contract() {
                         output_folder: invalid_folder.clone(),
                         background_id: None,
                         scopes_format: Default::default(),
+                        serial_format: Default::default(),
                     }
                 }),
                 ..Default::default()
@@ -1712,6 +1893,7 @@ fn real_meters_background_and_unlimited_simulation() {
                         output_folder: csv_folder.clone(),
                         background_id: None,
                         scopes_format: Default::default(),
+                        serial_format: Default::default(),
                     }),
                     ..Default::default()
                 },
@@ -3120,7 +3302,9 @@ fn print_json_line(line: &str) {
 }
 
 fn fixture_manifest_json(scenario: &str) -> serde_json::Value {
-    let name = if scenario.starts_with("meters-") {
+    let name = if scenario.starts_with("serial-") {
+        "serial"
+    } else if scenario.starts_with("meters-") {
         "meters"
     } else if scenario.starts_with("scopes-") {
         "scopes"
@@ -3134,6 +3318,12 @@ fn fixture_manifest_json(scenario: &str) -> serde_json::Value {
             "run_bound",
             "startup",
             json!({"common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}}),
+        ),
+        "serial" => (
+            "multi_job",
+            "startup",
+            json!({"common.async_jobs":{"contract_version":1},
+                "common.streaming":{"contract_version":1,"lifecycles":["run_bound"]}}),
         ),
         "scopes" | "auxiliary" => (
             "multi_job",

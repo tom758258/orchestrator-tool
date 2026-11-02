@@ -9,6 +9,7 @@ import BackgroundChartPanel, { type BackgroundChartSelections } from './Backgrou
 import ChartPlot from './ChartPlot'
 import Collapsible from './Collapsible'
 import ResultChart from './ResultChart'
+import { serialContinuousView, type SerialDataFormat } from './serialDisplay'
 
 function useBackgroundOutput(runId: number | null, backgroundId: string | undefined, running: boolean) {
   const [output, setOutput] = useState<BackgroundOutputData | null>(null)
@@ -29,6 +30,22 @@ function useBackgroundOutput(runId: number | null, backgroundId: string | undefi
     return () => { cancelled = true; clearTimeout(timer) }
   }, [runId, backgroundId, running])
   return { output, error }
+}
+
+function SerialLiveMonitor({ runId, background, running }: {
+  runId: number; background: BackgroundConfig; running: boolean
+}) {
+  const { output, error } = useBackgroundOutput(runId, background.id, running)
+  const [mode, setMode] = useState<SerialDataFormat>('hex')
+  const display = useMemo(() => serialContinuousView(output?.monitor ?? [], mode), [output, mode])
+  return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
+    <p>Continuous Serial RX · latest bounded bytes · independent of Capture</p>
+    <label>Display<select aria-label={`Serial Live Monitor Display ${background.id}`} value={mode}
+      onChange={event => setMode(event.target.value as SerialDataFormat)}>
+      <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>
+    {error && <p role="alert">{error}</p>}
+    <pre className="serial-live-monitor" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{display}</pre>
+  </Collapsible>
 }
 
 function LiveMonitor({ runId, background, running }: { runId: number; background: BackgroundConfig; running: boolean }) {
@@ -62,10 +79,10 @@ function LiveMonitor({ runId, background, running }: { runId: number; background
   </Collapsible>
 }
 
-export default function OutputCharts({ runId, pages, metadata, backgrounds, panels, onPanelsChange, chartData, running,
+export default function OutputCharts({ runId, pages, metadata, backgrounds, toolKinds, panels, onPanelsChange, chartData, running,
   onSavingChange, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, selections }: {
   runId: number | null; pages: { name: string; outputs: OutputStep[] }[]; metadata: RunPageMetadata[]
-  backgrounds: BackgroundConfig[]; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
+  backgrounds: BackgroundConfig[]; toolKinds: Record<string, string>; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
   chartData: Map<string, PageChartData>; running: boolean; onSavingChange: (saving: boolean) => void
   changeSettings?: ChartChangeSettings | null; fitData?: boolean
   saveChartsWithTemplate: boolean; onSaveChartsWithTemplateChange: (checked: boolean) => void
@@ -82,7 +99,8 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, pane
   const sources = [
     ...pages.map(page => ({ key: `page:${page.name}`, label: `Foreground: ${page.name}`, page,
       names: metadata.find(item => item.name === page.name)?.numeric_outputs ?? [] })),
-    ...backgrounds.map(background => ({ key: `background:${background.id}`, label: `Background: ${background.id}`, background })),
+    ...backgrounds.filter(background => toolKinds[background.tool_instance_id] !== 'serial')
+      .map(background => ({ key: `background:${background.id}`, label: `Background: ${background.id}`, background })),
   ]
   const selected = sources.find(source => source.key === selectedSource) ?? sources[0]
   return <Collapsible title="Charts" className="result-chart" actions={<div className="result-chart-header-actions">
@@ -116,8 +134,10 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, pane
     {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartPanel key={panel.id}
       panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds}
       datasets={output?.datasets ?? []} running={running} selections={selections} onSavingChange={onSavingChange} />)}
-    {runId !== null && backgrounds.filter(background => background.live_monitor).map(background => <LiveMonitor key={background.id}
-      runId={runId} background={background} running={running} />)}
+    {runId !== null && backgrounds.filter(background => background.live_monitor).map(background =>
+      toolKinds[background.tool_instance_id] === 'serial'
+        ? <SerialLiveMonitor key={background.id} runId={runId} background={background} running={running} />
+        : <LiveMonitor key={background.id} runId={runId} background={background} running={running} />)}
     </div>
   </Collapsible>
 }

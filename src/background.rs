@@ -20,6 +20,7 @@ use std::{
 };
 
 pub const MONITOR_POINTS: usize = 1_000;
+pub const SERIAL_MONITOR_BYTES: usize = 64 * 1024;
 pub const QUERY_LIMIT: usize = 1_000;
 pub const CHART_POINTS: usize = 2_000;
 pub const CHART_RAW_LIMIT: usize = 25_000;
@@ -163,6 +164,8 @@ pub struct BackgroundCsvOptions {
     pub background_id: Option<String>,
     #[serde(default)]
     pub scopes_format: ScopesExportMode,
+    #[serde(default)]
+    pub serial_format: crate::serial_text::SerialDataFormat,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -184,6 +187,8 @@ pub struct DatasetMetadata {
     pub status: String,
     pub quality: String,
     pub row_count: usize,
+    pub tool_kind: String,
+    pub rx_bytes: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -296,6 +301,9 @@ pub fn query_chart(
     let total_count = {
         let store = store.lock().unwrap_or_else(|e| e.into_inner());
         let dataset = store.dataset(dataset_id)?;
+        if dataset.metadata.tool_kind == "serial" {
+            return Err("Serial RX data is not a numeric Chart source".into());
+        }
         if dataset.metadata.background_id != background_id {
             return Err("Dataset does not belong to the selected Background".into());
         }
@@ -451,6 +459,28 @@ pub fn query_chart(
 pub const SAMPLE_COLUMNS: [&str; 5] = ["timestamp_utc", "elapsed_s", "captured", "value", "unit"];
 
 /// One projection for both streaming and manual CSV/XLSX.
+pub const SERIAL_COLUMNS: [&str; 5] =
+    ["timestamp_utc", "elapsed_s", "captured", "data", "rx_bytes"];
+pub fn serial_columns() -> Vec<String> {
+    SERIAL_COLUMNS
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+fn serial_sample_row(
+    sample: &Value,
+    format: crate::serial_text::SerialDataFormat,
+    decoder: &mut crate::serial_text::SerialTextDecoder,
+) -> Result<ResultRow, String> {
+    Ok(ResultRow::new(
+        serial_columns()
+            .into_iter()
+            .zip(crate::serial_text::serial_cells(sample, format, decoder)?)
+            .map(|(name, value)| WorkflowOutput::new(name, value))
+            .collect(),
+        None,
+    ))
+}
 pub fn sample_columns(fields: &[String], mode: ScopesExportMode) -> Vec<String> {
     if fields.is_empty() {
         return SAMPLE_COLUMNS.iter().map(|name| (*name).into()).collect();
@@ -543,6 +573,7 @@ struct Runtime {
 enum BackgroundSetup {
     Meters(crate::meters_setup::MetersSetup),
     Scopes(crate::scopes_setup::ScopesSetup),
+    Serial,
 }
 
 pub struct BackgroundManager {
@@ -597,6 +628,8 @@ impl BackgroundManager {
                         .expect("Background Tool Instance was validated");
                     let setup = if let Some(meters) = instance.meters_setup() {
                         BackgroundSetup::Meters(meters.clone())
+                    } else if instance.serial_setup().is_some() {
+                        BackgroundSetup::Serial
                     } else {
                         BackgroundSetup::Scopes(
                             instance
@@ -640,6 +673,7 @@ impl BackgroundManager {
                 .cloned()
                 .ok_or("Unknown Background ID")?;
             let scopes = matches!(&setup, BackgroundSetup::Scopes(_));
+            let serial = matches!(&setup, BackgroundSetup::Serial);
             let sample_count = match &setup {
                 BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom() => {
                     meters.sample_count
@@ -673,6 +707,8 @@ impl BackgroundManager {
                 .ok_or("Missing Background launch specification")?;
             let expected_tool = if scopes {
                 crate::tool::ToolId::scopes()
+            } else if serial {
+                crate::tool::ToolId::serial()
             } else {
                 crate::tool::ToolId::meters()
             };
@@ -696,7 +732,8 @@ impl BackgroundManager {
                 expected_readings,
                 custom: matches!(&setup, BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom()),
                 scopes,
-                timer: if scopes {
+                serial,
+                timer: if scopes || serial {
                     None
                 } else {
                     config_timer(&config, sample_count, self.startup, self.action_timeout)?
@@ -707,6 +744,7 @@ impl BackgroundManager {
                 csv: self.csv.clone(),
                 current: None,
                 writer: None,
+                serial_decoder: Default::default(),
                 auto_closed: false,
                 stream_state: None,
                 total: 0,
@@ -938,6 +976,7 @@ struct Dispatcher {
     expected_readings: Option<usize>,
     custom: bool,
     scopes: bool,
+    serial: bool,
     timer: Option<SoftwareTimer>,
     workflow_stop: crate::run::WorkflowStop,
     store: SharedBackgroundStore,
@@ -945,6 +984,7 @@ struct Dispatcher {
     csv: Option<BackgroundCsvOptions>,
     current: Option<usize>,
     writer: Option<ResultRowsCsvWriter<CsvDestination>>,
+    serial_decoder: crate::serial_text::SerialTextDecoder,
     auto_closed: bool,
     stream_state: Option<String>,
     total: usize,
@@ -985,6 +1025,7 @@ impl Dispatcher {
         self.state("failed", Some(error.into()));
     }
     fn capture_on(&mut self, worker_run_id: &str) -> Result<(), String> {
+        self.serial_decoder = Default::default();
         if self.ended || self.stream_state.as_deref() == Some("ended") {
             return Err("Cannot Capture ON an ended stream; release Worker first".into());
         }
@@ -1002,6 +1043,15 @@ impl Dispatcher {
             status: "recording".into(),
             quality: "unknown".into(),
             row_count: 0,
+            tool_kind: if self.serial {
+                "serial"
+            } else if self.scopes {
+                "scopes"
+            } else {
+                "meters"
+            }
+            .into(),
+            rx_bytes: 0,
             fields: self
                 .config
                 .scopes_measurements
@@ -1029,7 +1079,11 @@ impl Dispatcher {
             self.writer = Some(
                 ResultRowsCsvWriter::new(
                     file,
-                    sample_columns(&metadata.fields, options.scopes_format),
+                    if self.serial {
+                        serial_columns()
+                    } else {
+                        sample_columns(&metadata.fields, options.scopes_format)
+                    },
                 )
                 .map_err(|e| e.to_string())?,
             );
@@ -1109,7 +1163,12 @@ impl Dispatcher {
                     return Err(format!("Worker failed: {event}"));
                 }
             }
+            "rx" if self.serial => return self.serial_rx(event),
+            "rx" => return Err("Serial RX event from a non-Serial worker".into()),
             "sample" => {
+                if self.serial {
+                    return Err("Serial worker emitted numeric sample".into());
+                }
                 if self.stream_state.as_deref() != Some("active") {
                     return Err("Sample outside active stream".into());
                 }
@@ -1220,6 +1279,77 @@ impl Dispatcher {
         }
         Ok(())
     }
+    fn serial_rx(&mut self, mut event: Value) -> Result<(), String> {
+        if self.stream_state.as_deref() != Some("active") {
+            return Err("Serial RX outside active stream".into());
+        }
+        let size = crate::adapters::serial::validate_rx(&event)?;
+        let stamp = chrono::DateTime::parse_from_rfc3339(
+            event["timestamp_utc"]
+                .as_str()
+                .ok_or("Serial RX timestamp missing")?,
+        )
+        .map_err(|e| e.to_string())?
+        .timestamp_millis();
+        let first = *self.first_sample_ms.get_or_insert(stamp);
+        self.total += 1;
+        event["captured"] = json!(self.total);
+        event["elapsed_s"] = json!((stamp - first) as f64 / 1000.0);
+        {
+            let mut data = self.store.lock().unwrap_or_else(|e| e.into_inner());
+            if self.config.live_monitor {
+                let monitor = &mut data
+                    .workers
+                    .iter_mut()
+                    .find(|w| w.id == self.config.id)
+                    .expect("registered background")
+                    .monitor;
+                let mut view = event.clone();
+                let hex = view["rx_hex"].as_str().expect("validated RX hex");
+                if hex.len() > SERIAL_MONITOR_BYTES * 2 {
+                    view["rx_hex"] = json!(&hex[hex.len() - SERIAL_MONITOR_BYTES * 2..]);
+                    view["rx_bytes"] = json!(SERIAL_MONITOR_BYTES);
+                }
+                monitor.push_back(view);
+                let mut monitored: usize = monitor
+                    .iter()
+                    .map(|s| s["rx_bytes"].as_u64().unwrap_or(0) as usize)
+                    .sum();
+                while monitor.len() > MONITOR_POINTS || monitored > SERIAL_MONITOR_BYTES {
+                    if let Some(old) = monitor.pop_front() {
+                        monitored = monitored
+                            .saturating_sub(old["rx_bytes"].as_u64().unwrap_or(0) as usize);
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if let Some(index) = self.current {
+                let dataset = &mut data.datasets[index];
+                dataset.metadata.row_count += 1;
+                dataset.metadata.rx_bytes = dataset
+                    .metadata
+                    .rx_bytes
+                    .checked_add(size)
+                    .ok_or("Serial RX dataset byte count overflow")?;
+                dataset.samples.push(event.clone());
+            }
+        }
+        if let Some(writer) = &mut self.writer {
+            let format = self
+                .csv
+                .as_ref()
+                .map_or(crate::serial_text::SerialDataFormat::Hex, |options| {
+                    options.serial_format
+                });
+            let row = serial_sample_row(&event, format, &mut self.serial_decoder)?;
+            writer
+                .write_row(&row)
+                .map_err(|e| format!("Background CSV: {e}"))?;
+        }
+        Ok(())
+    }
+
     fn stop(
         &mut self,
         session: WorkerSession,
@@ -1254,7 +1384,10 @@ impl Dispatcher {
         if stopped && !stop_accepted && source_summary["stop_reason"] == "stop_requested" {
             return Err("Background stopped without accepting this workflow's stop request".into());
         }
-        let incomplete = if self.scopes {
+        let incomplete = if self.serial {
+            crate::adapters::serial::validate_stop_summary(summary, status.success())?;
+            false
+        } else if self.scopes {
             let completed = source_summary["completed_cycles"].as_u64();
             if completed != Some(self.total as u64)
                 || source_summary["expected_cycles"] != json!(self.expected_readings)
@@ -1300,7 +1433,9 @@ impl Dispatcher {
             }
             false
         };
-        let quality = if self.scopes {
+        let quality = if self.serial {
+            Some("unknown")
+        } else if self.scopes {
             self.summary.as_ref().unwrap()["stream_summary"]["data_integrity"].as_str()
         } else {
             self.summary.as_ref().unwrap()["data_integrity"].as_str()
@@ -1396,7 +1531,12 @@ impl Dispatcher {
                                     return;
                                 }
                                 self.auto_closed = false;
-                                self.finish("completed", "no_loss_detected", None);
+                                let quality = if self.serial {
+                                    "unknown"
+                                } else {
+                                    "no_loss_detected"
+                                };
+                                self.finish("completed", quality, None);
                                 self.state("off", None);
                                 self.failure.check()
                             }
@@ -1418,13 +1558,18 @@ impl Dispatcher {
                         self.fail(e);
                         self.finish("failed", "incomplete", Some(e.clone()));
                     } else {
+                        let quality = if self.serial {
+                            "unknown"
+                        } else {
+                            "no_loss_detected"
+                        };
                         self.finish(
                             if result == Ok(true) {
                                 "incomplete"
                             } else {
                                 "completed"
                             },
-                            "no_loss_detected",
+                            quality,
                             None,
                         );
                         self.state("off", None);
@@ -1470,7 +1615,12 @@ impl Dispatcher {
                         match result {
                             Ok(_) => {
                                 self.auto_closed = self.current.is_some();
-                                self.finish("completed", "no_loss_detected", None);
+                                let quality = if self.serial {
+                                    "unknown"
+                                } else {
+                                    "no_loss_detected"
+                                };
+                                self.finish("completed", quality, None);
                                 self.state("pending-release", None);
                             }
                             Err(e) => {
@@ -1532,6 +1682,8 @@ mod tests {
                 status: "recording".into(),
                 quality: "unknown".into(),
                 row_count: count,
+                tool_kind: "meters".into(),
+                rx_bytes: 0,
                 fields: Vec::new(),
                 field_stats: BTreeMap::new(),
                 min: None,
@@ -1665,6 +1817,7 @@ mod tests {
                 expected_readings: Some(10),
                 custom: true,
                 scopes: false,
+                serial: false,
                 timer: None,
                 workflow_stop: crate::run::WorkflowStop::default(),
                 store: store.clone(),
@@ -1673,9 +1826,11 @@ mod tests {
                     output_folder: folder.clone(),
                     background_id: None,
                     scopes_format: ScopesExportMode::ValuesOnly,
+                    serial_format: Default::default(),
                 }),
                 current: None,
                 writer: None,
+                serial_decoder: Default::default(),
                 auto_closed: false,
                 stream_state: Some("active".into()),
                 total: 0,

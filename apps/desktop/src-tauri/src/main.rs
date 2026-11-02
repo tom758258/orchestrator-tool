@@ -1119,6 +1119,7 @@ struct BackgroundOutputDto {
     workers: Vec<orchestrator_tool::background::BackgroundStatus>,
     rows: Vec<Value>,
     monitor: Vec<Value>,
+    text_prefix_hex: String,
 }
 
 #[tauri::command]
@@ -1146,6 +1147,25 @@ fn get_background_output(
                 .transpose()?
                 .unwrap_or_default(),
             monitor: store.monitor(&background_id),
+            text_prefix_hex: dataset
+                .map(|id| {
+                    let start = offset.saturating_sub(3);
+                    // Prefix only the bytes before the requested window.
+                    // At offset 0, no prefix is allowed.
+                    let tail = store.rows(id, start, offset - start)?;
+                    let mut hex = String::new();
+                    for sample in tail {
+                        if let Some(fragment) = sample["rx_hex"].as_str() {
+                            hex.push_str(fragment);
+                        }
+                    }
+                    if hex.len() > 6 {
+                        hex = hex[hex.len() - 6..].to_owned();
+                    }
+                    Ok::<_, String>(hex)
+                })
+                .transpose()?
+                .unwrap_or_default(),
         })
     })?
 }
@@ -1166,6 +1186,8 @@ async fn get_background_chart_series(
     .map_err(|e| e.to_string())?
 }
 
+// Keep the existing flat Tauri IPC contract, adding only Serial display mode.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn export_background_datasets(
     state: tauri::State<'_, StoredRuns>,
@@ -1175,6 +1197,7 @@ async fn export_background_datasets(
     format: orchestrator_tool::background_export::BackgroundExportFormat,
     rows_per_file: usize,
     scopes_mode: Option<orchestrator_tool::background::ScopesExportMode>,
+    serial_format: Option<orchestrator_tool::serial_text::SerialDataFormat>,
 ) -> Result<Vec<String>, String> {
     let store = state.with_current(run_id, |run| {
         if run.metadata().status == "running" {
@@ -1184,13 +1207,14 @@ async fn export_background_datasets(
         }
     })??;
     tauri::async_runtime::spawn_blocking(move || {
-        orchestrator_tool::background_export::export_datasets_with_scopes_mode(
+        orchestrator_tool::background_export::export_datasets_with_serial_format(
             &store,
             &dataset_ids,
             Path::new(&output_folder),
             format,
             rows_per_file,
             scopes_mode.unwrap_or_default(),
+            serial_format.unwrap_or_default(),
         )
         .map(|paths| paths.iter().map(|p| p.display().to_string()).collect())
     })

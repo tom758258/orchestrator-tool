@@ -1,6 +1,6 @@
 //! Pre-run validation and per-instance Worker launch preparation.
 use crate::{
-    adapters::{meters, powers, scopes},
+    adapters::{meters, powers, scopes, serial},
     config::{Config, VisaBackend},
     discovery::{ExecutableStatus, built_in_tool_definitions},
     inspection::inspect_tool,
@@ -66,7 +66,10 @@ pub fn validate_confirmed_live_resources(
 ) -> Result<(), String> {
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes") {
+        if !matches!(
+            instance.tool.as_str(),
+            "powers" | "meters" | "scopes" | "serial"
+        ) {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -104,13 +107,19 @@ fn validate_unique_live_resources(
         if resource_key.is_empty() {
             continue;
         }
-        if let Some(previous_instance) = assigned_resources.get(resource_key) {
+        // Windows COM port names are case-insensitive; preserve VISA comparison as-is.
+        let identity = if instance.tool == ToolId::serial() {
+            resource_key.to_ascii_uppercase()
+        } else {
+            resource_key.to_owned()
+        };
+        if let Some(previous_instance) = assigned_resources.get(&identity) {
             return Err(format!(
                 "live resource {resource_key:?} is assigned to both {previous_instance} and {}",
                 instance.id
             ));
         }
-        assigned_resources.insert(resource_key.to_owned(), instance.id.as_str().to_owned());
+        assigned_resources.insert(identity, instance.id.as_str().to_owned());
     }
     Ok(())
 }
@@ -193,7 +202,10 @@ pub fn prepare_worker_launch_specs_with_simulation(
     let mut launch_specs = HashMap::new();
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes") {
+        if !matches!(
+            instance.tool.as_str(),
+            "powers" | "meters" | "scopes" | "serial"
+        ) {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -328,6 +340,13 @@ pub fn prepare_worker_launch_specs_with_simulation(
                     ),
                 };
                 scopes::background_worker_launch_spec(&ordinary)
+            } else if tool == &ToolId::serial() {
+                serial::background_worker_launch_spec(
+                    executable,
+                    execution_mode,
+                    config.live_resource(&instance.id),
+                    instance.serial_setup().expect("validated Serial Setup"),
+                )?
             } else {
                 return Err(format!("{}: unsupported Background Tool", instance.id));
             }
@@ -370,6 +389,12 @@ pub fn prepare_worker_launch_specs_with_simulation(
                         .expect("validated model"),
                     config.live_backend(&instance.id),
                 ),
+                (_, "serial") => {
+                    return Err(format!(
+                        "{}: Serial Foreground is not supported in this phase",
+                        instance.id
+                    ));
+                }
                 _ => unreachable!("referenced workflow tools are filtered"),
             }
         };
@@ -555,6 +580,142 @@ mod tests {
         assert!(error.contains("USB0::SAME::INSTR"), "{error}");
         assert!(error.contains("meters-1"), "{error}");
         assert!(error.contains("meters-2"), "{error}");
+    }
+
+    #[test]
+    fn serial_live_com_ports_are_case_insensitive_without_changing_visa_matching() {
+        use crate::tool_instance::ToolInstance;
+        let serial = |id: &str| ToolInstance {
+            id: ToolInstanceId::new(id).unwrap(),
+            display_name: None,
+            tool: ToolId::serial(),
+            setup: ToolSetup::Serial(Default::default()),
+        };
+        let first = serial("serial-1");
+        let second = serial("serial-2");
+        let mut config = Config::default();
+        config.set_live_resource(&first.id, "COM4");
+        config.set_live_resource(&second.id, "com4");
+        let error = validate_unique_live_resources(&[&first, &second], &config).unwrap_err();
+        assert!(
+            error.contains("serial-1") && error.contains("serial-2"),
+            "{error}"
+        );
+        config.set_live_resource(&second.id, "COM5");
+        validate_unique_live_resources(&[&first, &second], &config).unwrap();
+    }
+
+    // Optional real serial-tool binary; excluded from default cargo test.
+    // ORCHESTRATOR_TEST_SERIAL_EXECUTABLE=/path/to/serial-tool
+    // cargo test --locked --lib serial_real_worker_rx_only_simulation -- --ignored
+    #[test]
+    #[ignore = "requires external serial-tool; autonomous RX SIM, no physical device"]
+    fn serial_real_worker_rx_only_simulation() {
+        use crate::{
+            background::BackgroundStore,
+            run::{RunOptions, run_workflow_streaming_controlled},
+        };
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration;
+
+        let executable = std::fs::canonicalize(
+            std::env::var_os("ORCHESTRATOR_TEST_SERIAL_EXECUTABLE")
+                .expect("Set ORCHESTRATOR_TEST_SERIAL_EXECUTABLE to real serial-tool binary"),
+        )
+        .unwrap();
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version": 2,
+                "name": "Serial real RX-only SIM",
+                "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200}}],
+                "backgrounds": [{"id":"background-1","tool_instance_id":"serial-bg",
+                    "live_monitor":true,"limit_count":null}],
+                "workflow": {"steps": [
+                    {"type":"background","id":"on","background_id":"background-1",
+                        "action":"worker-on","capture":true},
+                    {"type":"wait","id":"capture-first","duration_ms":450},
+                    {"type":"background","id":"capture-off","background_id":"background-1",
+                        "action":"capture-off"},
+                    {"type":"wait","id":"monitor-only","duration_ms":350},
+                    {"type":"background","id":"capture-again","background_id":"background-1",
+                        "action":"capture-on"},
+                    {"type":"wait","id":"capture-second","duration_ms":450},
+                    {"type":"background","id":"off","background_id":"background-1",
+                        "action":"worker-off","capture":true}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::serial(), &executable);
+        let mut specs = prepare_worker_launch_specs(
+            &template,
+            ExecutionMode::Simulate,
+            executable.parent().unwrap(),
+            &config,
+        )
+        .unwrap();
+        let id = ToolInstanceId::new("serial-bg").unwrap();
+        let original = specs.remove(&id).unwrap();
+        let mut args = original.arguments().to_vec();
+        let profile = args
+            .iter()
+            .position(|arg| arg == "--simulation-profile-id")
+            .expect("real Serial SIM launch must declare profile")
+            + 1;
+        assert_eq!(args[profile], std::ffi::OsStr::new("loopback-v1"));
+        args[profile] = "periodic-rx-v1".into();
+        specs.insert(
+            id,
+            WorkerLaunchSpec::new(&executable, args)
+                .with_manifest(original.manifest().unwrap().clone()),
+        );
+
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let result = run_workflow_streaming_controlled(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                ..Default::default()
+            },
+            |_| {},
+            |_| false,
+        );
+        assert!(
+            result.as_ref().is_ok_and(|run| run.succeeded()),
+            "{result:?}"
+        );
+        let data = store.lock().unwrap();
+        let metadata = data.metadata();
+        assert_eq!(metadata.len(), 2);
+        assert!(metadata.iter().all(|m| m.tool_kind == "serial"
+            && m.status == "completed"
+            && m.quality == "unknown"
+            && m.row_count > 0));
+        let recorded = metadata.iter().map(|m| m.row_count).sum::<usize>();
+        assert!(
+            data.monitor("background-1").len() > recorded,
+            "Continuous RX monitor must advance during Capture OFF"
+        );
+        for item in metadata {
+            let rows = data.rows(&item.id, 0, 1_000).unwrap();
+            assert_eq!(rows.len(), item.row_count);
+            assert_eq!(item.rx_bytes, rows.len() * 4);
+            assert!(rows.iter().all(|row| row["rx_bytes"] == 4
+                && row["rx_hex"].as_str().is_some_and(|hex| hex.len() == 8)));
+            let counters: Vec<u32> = rows
+                .iter()
+                .map(|row| u32::from_str_radix(row["rx_hex"].as_str().unwrap(), 16).unwrap())
+                .collect();
+            assert!(counters.windows(2).all(|pair| pair[0] < pair[1]));
+        }
     }
 
     #[test]

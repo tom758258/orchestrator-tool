@@ -7,6 +7,7 @@ use crate::{
     meters_setup::{MetersSetup, MetersSetupError},
     powers_setup::{PowersSetup, PowersSetupError},
     scopes_setup::{ScopesSetup, ScopesSetupError},
+    serial_setup::SerialSetup,
     tool::{InvalidToolId, ToolId},
     tool_instance::{EmptySetup, ToolInstance, ToolInstanceId, ToolSetup},
     workflow::{
@@ -268,8 +269,16 @@ impl Template {
                             source,
                         })?
                 }
+                ToolSetup::Serial(setup) if instance.tool == ToolId::serial() => {
+                    setup.validate().map_err(|error| {
+                        TemplateError::Instance(format!("{} Serial setup: {error}", instance.id))
+                    })?;
+                }
                 ToolSetup::Empty(_)
-                    if instance.tool != ToolId::meters() && instance.tool != ToolId::powers() => {}
+                    if !matches!(
+                        instance.tool.as_str(),
+                        "meters" | "powers" | "scopes" | "serial"
+                    ) => {}
                 _ => {
                     return Err(TemplateError::Instance(format!(
                         "invalid setup for {} ({})",
@@ -438,6 +447,29 @@ impl Template {
         validate_output_views(&workflow, output_views.as_ref(), &wire.backgrounds)?;
         let mut template =
             Self::new_with_backgrounds(wire.name, instances, workflow, wire.backgrounds)?;
+        if let Some(views) = &output_views {
+            for (index, chart) in views.charts.iter().enumerate() {
+                if let Some(source) = &chart.source {
+                    let serial = template
+                        .backgrounds
+                        .iter()
+                        .find(|background| background.id == source.background_id)
+                        .and_then(|background| {
+                            template
+                                .tool_instances
+                                .iter()
+                                .find(|instance| instance.id == background.tool_instance_id)
+                        })
+                        .is_some_and(|instance| instance.tool == ToolId::serial());
+                    if serial {
+                        return Err(TemplateError::OutputViews(format!(
+                            "chart {} cannot use Serial RX as a numeric source",
+                            index + 1
+                        )));
+                    }
+                }
+            }
+        }
         template.output_views = output_views;
         Ok(template)
     }
@@ -460,8 +492,21 @@ impl Template {
                 .ok_or_else(|| invalid("Unknown Background Tool Instance".into()))?;
             let meters_setup = instance.meters_setup();
             let scopes_setup = instance.scopes_setup();
-            if meters_setup.is_none() && scopes_setup.is_none() {
-                return Err(invalid("Background requires Meters or Scopes".into()));
+            let serial_setup = instance.serial_setup();
+            if meters_setup.is_none() && scopes_setup.is_none() && serial_setup.is_none() {
+                return Err(invalid(
+                    "Background requires Meters, Scopes or Serial".into(),
+                ));
+            }
+            if serial_setup.is_some() {
+                if background.limit_count.is_some()
+                    || background.timer_interval_ms.is_some()
+                    || !background.scopes_measurements.is_empty()
+                    || background.scopes_interval_seconds.is_some()
+                {
+                    return Err(invalid("Serial Background is native infinite RX; count, timer and Scopes fields are not allowed".into()));
+                }
+                continue;
             }
             if background
                 .limit_count
@@ -581,6 +626,15 @@ impl Template {
                     StepKind::ToolAction { target, .. } if owners.contains(target) => {
                         return Err(format!(
                             "{target} cannot be used by both Foreground and Background"
+                        ));
+                    }
+                    StepKind::ToolAction { target, .. }
+                        if instances
+                            .iter()
+                            .any(|i| &i.id == target && i.tool == ToolId::serial()) =>
+                    {
+                        return Err(format!(
+                            "{target}: Serial Foreground is not supported in this phase"
                         ));
                     }
                     StepKind::ToolAction { target, action, .. } if action.as_str() == "measure" => {
@@ -1003,6 +1057,11 @@ fn instances_from_wire(
             } else if tool == ToolId::scopes() {
                 ToolSetup::Scopes(
                     serde_json::from_value::<ScopesSetup>(instance.setup)
+                        .map_err(|_| invalid_setup())?,
+                )
+            } else if tool == ToolId::serial() {
+                ToolSetup::Serial(
+                    serde_json::from_value::<SerialSetup>(instance.setup)
                         .map_err(|_| invalid_setup())?,
                 )
             } else {

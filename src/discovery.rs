@@ -38,6 +38,7 @@ pub fn built_in_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(ToolId::powers(), "powers-tool.exe"),
         ToolDefinition::new(ToolId::scopes(), "scopes-tool.exe"),
         ToolDefinition::new(ToolId::wavegen(), "wavegen-tool.exe"),
+        ToolDefinition::new(ToolId::serial(), "serial-tool.exe"),
     ]
 }
 
@@ -181,6 +182,7 @@ mod tests {
                 ("powers", "powers-tool.exe"),
                 ("scopes", "scopes-tool.exe"),
                 ("wavegen", "wavegen-tool.exe"),
+                ("serial", "serial-tool.exe"),
             ]
         );
     }
