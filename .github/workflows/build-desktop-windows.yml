@@ -1,4 +1,4 @@
-name: Build Windows Desktop
+name: Build Windows CLI and Desktop
 
 on:
   workflow_dispatch:
@@ -23,31 +23,33 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Install desktop dependencies
-        working-directory: apps/desktop
-        run: npm ci
+      - name: Build CLI and Tauri Desktop without installer
+        shell: pwsh
+        run: .\build-all.ps1
 
-      - name: Build Tauri release EXE without installer
-        working-directory: apps/desktop
-        run: npm run tauri build -- --no-bundle
-
-      - name: Verify EXE and record short commit SHA
+      - name: Verify EXEs and record short commit SHA
         id: artifact
         shell: pwsh
         run: |
-          $exe = "apps/desktop/src-tauri/target/release/Orchestrator Tool.exe"
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-            throw "Expected Windows EXE not found: $exe"
+          foreach ($name in @("Orchestrator Tool.exe", "orchestrator-tool.exe")) {
+            $exe = Join-Path "dist/windows-x64" $name
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw "Expected Windows EXE not found: $exe"
+            }
+            $file = Get-Item -LiteralPath $exe
+            if ($file.Length -le 0) {
+              throw "Expected Windows EXE is empty: $exe"
+            }
+            $file | Select-Object FullName, Length
           }
           $shortSha = (git rev-parse --short=7 HEAD).Trim()
           "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
-          Get-Item -LiteralPath $exe | Select-Object FullName, Length
 
-      - name: Upload Windows EXE
+      - name: Upload Windows EXEs
         uses: actions/upload-artifact@v4
         with:
           name: orchestrator-tool-windows-x64-${{ steps.artifact.outputs.short_sha }}
-          path: apps/desktop/src-tauri/target/release/Orchestrator Tool.exe
+          path: dist/windows-x64/*.exe
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
