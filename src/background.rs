@@ -1531,7 +1531,11 @@ impl Dispatcher {
                                     return;
                                 }
                                 self.auto_closed = false;
-                                let quality = if self.serial { "unknown" } else { "no_loss_detected" };
+                                let quality = if self.serial {
+                                    "unknown"
+                                } else {
+                                    "no_loss_detected"
+                                };
                                 self.finish("completed", quality, None);
                                 self.state("off", None);
                                 self.failure.check()
@@ -1554,7 +1558,11 @@ impl Dispatcher {
                         self.fail(e);
                         self.finish("failed", "incomplete", Some(e.clone()));
                     } else {
-                        let quality = if self.serial { "unknown" } else { "no_loss_detected" };
+                        let quality = if self.serial {
+                            "unknown"
+                        } else {
+                            "no_loss_detected"
+                        };
                         self.finish(
                             if result == Ok(true) {
                                 "incomplete"
@@ -1607,7 +1615,11 @@ impl Dispatcher {
                         match result {
                             Ok(_) => {
                                 self.auto_closed = self.current.is_some();
-                                let quality = if self.serial { "unknown" } else { "no_loss_detected" };
+                                let quality = if self.serial {
+                                    "unknown"
+                                } else {
+                                    "no_loss_detected"
+                                };
                                 self.finish("completed", quality, None);
                                 self.state("pending-release", None);
                             }

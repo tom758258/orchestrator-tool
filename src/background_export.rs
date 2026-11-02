@@ -296,8 +296,13 @@ mod tests {
         assert_eq!(&rows[0][3], "00 FF");
         assert_eq!(&rows[2][3], "0A 68");
         let xlsx = export_datasets(
-            &store, &ids, &folder, BackgroundExportFormat::Xlsx, DEFAULT_XLSX_ROWS
-        ).unwrap();
+            &store,
+            &ids,
+            &folder,
+            BackgroundExportFormat::Xlsx,
+            DEFAULT_XLSX_ROWS,
+        )
+        .unwrap();
         let mut book: Xlsx<_> = calamine::open_workbook(&xlsx[0]).unwrap();
         let sheet = book.worksheet_range("Sheet1").unwrap();
         assert_eq!(sheet.height(), 4);

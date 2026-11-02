@@ -82,13 +82,9 @@ mod tests {
         let executable = std::path::Path::new("serial-tool.exe");
         let sim = background_worker_launch_spec(executable, ExecutionMode::Simulate, None, &setup)
             .unwrap();
-        let live = background_worker_launch_spec(
-            executable,
-            ExecutionMode::Live,
-            Some("COM4"),
-            &setup,
-        )
-        .unwrap();
+        let live =
+            background_worker_launch_spec(executable, ExecutionMode::Live, Some("COM4"), &setup)
+                .unwrap();
         let as_args = |spec: &WorkerLaunchSpec| {
             spec.arguments()
                 .iter()
@@ -97,13 +93,12 @@ mod tests {
         };
         let sim = as_args(&sim);
         let live = as_args(&live);
-        assert!(sim
-            .windows(2)
-            .any(|p| p[0] == "--simulation-profile-id" && p[1] == "loopback-v1"));
+        assert!(
+            sim.windows(2)
+                .any(|p| p[0] == "--simulation-profile-id" && p[1] == "loopback-v1")
+        );
         assert!(!sim.iter().any(|p| p == "--port"));
-        assert!(live
-            .windows(2)
-            .any(|p| p[0] == "--port" && p[1] == "COM4"));
+        assert!(live.windows(2).any(|p| p[0] == "--port" && p[1] == "COM4"));
         assert!(!live.iter().any(|p| p == "--simulation-profile-id"));
         assert!(sim.contains(&"--streaming".to_owned()));
         assert!(live.contains(&"--streaming".to_owned()));

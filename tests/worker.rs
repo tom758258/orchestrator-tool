@@ -841,8 +841,10 @@ fn serial_background_fixture(scenario: &str) {
         "command_url":format!("{base}/command"),
         "stop_url":format!("{base}/stop")
     }));
-    emit(json!({"event":"status","worker_state":"running","fatal_error":null,
-        "stream":{"lifecycle":"run_bound","state":"active"}}));
+    emit(
+        json!({"event":"status","worker_state":"running","fatal_error":null,
+        "stream":{"lifecycle":"run_bound","state":"active"}}),
+    );
     let pieces = ["5a4b3d", "3c", "6874"];
     let mut count: usize = 0;
     loop {
@@ -859,9 +861,13 @@ fn serial_background_fixture(scenario: &str) {
         }
         if let Ok((stream, _)) = listener.accept() {
             let request = read_request(stream);
-            assert_eq!((request.method.as_str(), request.path.as_str()), ("POST", "/stop"));
+            assert_eq!(
+                (request.method.as_str(), request.path.as_str()),
+                ("POST", "/stop")
+            );
             let body = json!({"schema_version":3,"run_id":"serial-run",
-                "status":"accepted","error":null}).to_string();
+                "status":"accepted","error":null})
+            .to_string();
             let mut stream = request.stream;
             write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(), body).unwrap();
@@ -871,10 +877,14 @@ fn serial_background_fixture(scenario: &str) {
         }
         thread::sleep(Duration::from_millis(15));
     }
-    emit(json!({"event":"status","worker_state":"stopping","fatal_error":null,
-        "stream":{"lifecycle":"run_bound","state":"ended"}}));
-    emit(json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,
-        "accepted":0,"succeeded":0,"failed":0}));
+    emit(
+        json!({"event":"status","worker_state":"stopping","fatal_error":null,
+        "stream":{"lifecycle":"run_bound","state":"ended"}}),
+    );
+    emit(
+        json!({"event":"summary","ok":true,"exit_code":0,"fatal_error":null,
+        "accepted":0,"succeeded":0,"failed":0}),
+    );
 }
 
 fn serial_background_rx_contract() {
@@ -885,31 +895,37 @@ fn serial_background_rx_contract() {
     use std::sync::Arc;
 
     for scenario in ["serial-ok", "serial-invalid"] {
-        let template = Template::from_json_str(&json!({
-            "schema_version":2, "name":"Serial Background RX",
-            "tool_instances":[{"id":"serial-bg","tool":"serial",
-                "setup":{"baud":115200}}],
-            "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
-                "live_monitor":true,"limit_count":null}],
-            "workflow":{"steps":[
-                {"type":"background","id":"on","background_id":"background-1",
-                    "action":"worker-on","capture":true},
-                {"type":"wait","id":"collect","duration_ms":120},
-                {"type":"background","id":"first-off","background_id":"background-1",
-                    "action":"capture-off"},
-                {"type":"wait","id":"monitor-only","duration_ms":120},
-                {"type":"background","id":"second-on","background_id":"background-1",
-                    "action":"capture-on"},
-                {"type":"wait","id":"collect-more","duration_ms":120},
-                {"type":"background","id":"off","background_id":"background-1",
-                    "action":"worker-off","capture":true}
-            ]}
-        }).to_string()).unwrap();
+        let template = Template::from_json_str(
+            &json!({
+                "schema_version":2, "name":"Serial Background RX",
+                "tool_instances":[{"id":"serial-bg","tool":"serial",
+                    "setup":{"baud":115200}}],
+                "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
+                    "live_monitor":true,"limit_count":null}],
+                "workflow":{"steps":[
+                    {"type":"background","id":"on","background_id":"background-1",
+                        "action":"worker-on","capture":true},
+                    {"type":"wait","id":"collect","duration_ms":120},
+                    {"type":"background","id":"first-off","background_id":"background-1",
+                        "action":"capture-off"},
+                    {"type":"wait","id":"monitor-only","duration_ms":120},
+                    {"type":"background","id":"second-on","background_id":"background-1",
+                        "action":"capture-on"},
+                    {"type":"wait","id":"collect-more","duration_ms":120},
+                    {"type":"background","id":"off","background_id":"background-1",
+                        "action":"worker-off","capture":true}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
         let specs = HashMap::from([(
             ToolInstanceId::new("serial-bg").unwrap(),
-            WorkerLaunchSpec::new(env::current_exe().unwrap(),
-                ["--background-fixture", scenario])
-                .with_manifest(fixture_manifest("serial-smoke")),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", scenario],
+            )
+            .with_manifest(fixture_manifest("serial-smoke")),
         )]);
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         let result = run_workflow_streaming_controlled(
@@ -920,7 +936,10 @@ fn serial_background_rx_contract() {
             Duration::from_secs(3),
             Duration::from_secs(3),
             None,
-            RunOptions { backgrounds: store.clone(), ..Default::default() },
+            RunOptions {
+                backgrounds: store.clone(),
+                ..Default::default()
+            },
             |_| {},
             |_| false,
         );
@@ -934,17 +953,23 @@ fn serial_background_rx_contract() {
         let metadata = data.metadata();
         assert_eq!(metadata.len(), 2);
         assert!(metadata.iter().all(|m| m.tool_kind == "serial"
-            && m.status == "completed" && m.quality == "unknown"
+            && m.status == "completed"
+            && m.quality == "unknown"
             && m.row_count > 0));
         let total_rows = metadata.iter().map(|m| m.row_count).sum::<usize>();
-        assert!(data.monitor("background-1").len() > total_rows,
-            "Capture OFF must not stop Serial Live Monitor");
+        assert!(
+            data.monitor("background-1").len() > total_rows,
+            "Capture OFF must not stop Serial Live Monitor"
+        );
         for item in metadata {
             let rows = data.rows(&item.id, 0, 1000).unwrap();
             assert_eq!(rows.len(), item.row_count);
-            assert_eq!(item.rx_bytes,
-                rows.iter().map(|row| row["rx_bytes"].as_u64().unwrap() as usize)
-                    .sum::<usize>());
+            assert_eq!(
+                item.rx_bytes,
+                rows.iter()
+                    .map(|row| row["rx_bytes"].as_u64().unwrap() as usize)
+                    .sum::<usize>()
+            );
             assert!(rows.iter().all(|row| row["rx_hex"].as_str().unwrap().len()
                 == row["rx_bytes"].as_u64().unwrap() as usize * 2));
         }
