@@ -25,6 +25,8 @@ pub mod run;
 pub mod run_failure;
 pub mod run_preparation;
 pub mod scopes_setup;
+pub mod serial_setup;
+pub mod serial_text;
 pub mod status;
 pub mod template;
 pub mod tool;

@@ -1147,17 +1147,22 @@ fn get_background_output(
                 .transpose()?
                 .unwrap_or_default(),
             monitor: store.monitor(&background_id),
-            text_prefix_hex: dataset.map(|id| {
-                let tail = store.rows(id, offset.saturating_sub(3), 3)?;
-                let mut hex = String::new();
-                for sample in tail {
-                    if let Some(fragment) = sample["rx_hex"].as_str() {
-                        hex.push_str(fragment);
+            text_prefix_hex: dataset
+                .map(|id| {
+                    let tail = store.rows(id, offset.saturating_sub(3), 3)?;
+                    let mut hex = String::new();
+                    for sample in tail {
+                        if let Some(fragment) = sample["rx_hex"].as_str() {
+                            hex.push_str(fragment);
+                        }
                     }
-                }
-                if hex.len() > 6 { hex = hex[hex.len() - 6..].to_owned(); }
-                Ok::<_, String>(hex)
-            }).transpose()?.unwrap_or_default(),
+                    if hex.len() > 6 {
+                        hex = hex[hex.len() - 6..].to_owned();
+                    }
+                    Ok::<_, String>(hex)
+                })
+                .transpose()?
+                .unwrap_or_default(),
         })
     })?
 }

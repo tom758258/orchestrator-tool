@@ -36,6 +36,11 @@ impl ToolId {
         Self("wavegen".to_owned())
     }
 
+    /// Returns the canonical ID for the serial tool.
+    pub fn serial() -> Self {
+        Self("serial".to_owned())
+    }
+
     /// Returns the tool ID as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
