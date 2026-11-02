@@ -335,7 +335,10 @@ mod tests {
         .unwrap();
         let mut text_book: Xlsx<_> = calamine::open_workbook(&text_xlsx[0]).unwrap();
         let text_sheet = text_book.worksheet_range("Sheet1").unwrap();
-        assert_eq!(text_sheet.get((1, 3)), Some(&Data::String("\\u{0}�".into())));
+        assert_eq!(
+            text_sheet.get((1, 3)),
+            Some(&Data::String("\\u{0}�".into()))
+        );
 
         // All selected datasets must be valid for BIN before creating any file.
         {

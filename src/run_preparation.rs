@@ -582,7 +582,6 @@ mod tests {
         assert!(error.contains("meters-2"), "{error}");
     }
 
-
     #[test]
     fn serial_live_com_ports_are_case_insensitive_without_changing_visa_matching() {
         use crate::tool_instance::ToolInstance;
@@ -598,7 +597,10 @@ mod tests {
         config.set_live_resource(&first.id, "COM4");
         config.set_live_resource(&second.id, "com4");
         let error = validate_unique_live_resources(&[&first, &second], &config).unwrap_err();
-        assert!(error.contains("serial-1") && error.contains("serial-2"), "{error}");
+        assert!(
+            error.contains("serial-1") && error.contains("serial-2"),
+            "{error}"
+        );
         config.set_live_resource(&second.id, "COM5");
         validate_unique_live_resources(&[&first, &second], &config).unwrap();
     }
@@ -693,12 +695,10 @@ mod tests {
         let data = store.lock().unwrap();
         let metadata = data.metadata();
         assert_eq!(metadata.len(), 2);
-        assert!(
-            metadata.iter().all(|m| m.tool_kind == "serial"
-                && m.status == "completed"
-                && m.quality == "unknown"
-                && m.row_count > 0)
-        );
+        assert!(metadata.iter().all(|m| m.tool_kind == "serial"
+            && m.status == "completed"
+            && m.quality == "unknown"
+            && m.row_count > 0));
         let recorded = metadata.iter().map(|m| m.row_count).sum::<usize>();
         assert!(
             data.monitor("background-1").len() > recorded,
@@ -708,10 +708,8 @@ mod tests {
             let rows = data.rows(&item.id, 0, 1_000).unwrap();
             assert_eq!(rows.len(), item.row_count);
             assert_eq!(item.rx_bytes, rows.len() * 4);
-            assert!(
-                rows.iter().all(|row| row["rx_bytes"] == 4
-                    && row["rx_hex"].as_str().is_some_and(|hex| hex.len() == 8))
-            );
+            assert!(rows.iter().all(|row| row["rx_bytes"] == 4
+                && row["rx_hex"].as_str().is_some_and(|hex| hex.len() == 8)));
             let counters: Vec<u32> = rows
                 .iter()
                 .map(|row| u32::from_str_radix(row["rx_hex"].as_str().unwrap(), 16).unwrap())

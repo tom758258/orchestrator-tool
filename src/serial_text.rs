@@ -115,7 +115,10 @@ mod tests {
         assert_eq!(spaced_hex("00ff0d0a"), "00 FF 0D 0A");
         assert_eq!(raw_bytes("00ff0d0a").unwrap(), [0, 255, 13, 10]);
         let mut controls = SerialTextDecoder::default();
-        assert_eq!(controls.decode("00097fc280").unwrap(), "\\u{0}\\t\\u{7F}\\u{80}");
+        assert_eq!(
+            controls.decode("00097fc280").unwrap(),
+            "\\u{0}\\t\\u{7F}\\u{80}"
+        );
         assert_eq!(controls.decode("0d0a").unwrap(), "\\r\\n");
         let mut unfinished = SerialTextDecoder::default();
         assert_eq!(unfinished.decode("e4").unwrap(), "");
