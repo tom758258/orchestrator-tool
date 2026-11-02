@@ -843,6 +843,7 @@ fn serial_background_fixture(scenario: &str) {
     }));
     emit(
         json!({"event":"status","worker_state":"running","fatal_error":null,
+        "active_job":null,"last_job":null,
         "stream":{"lifecycle":"run_bound","state":"active"}}),
     );
     let pieces = ["5a4b3d", "3c", "6874"];
@@ -879,6 +880,7 @@ fn serial_background_fixture(scenario: &str) {
     }
     emit(
         json!({"event":"status","worker_state":"stopping","fatal_error":null,
+        "active_job":null,"last_job":null,
         "stream":{"lifecycle":"run_bound","state":"ended"}}),
     );
     emit(
