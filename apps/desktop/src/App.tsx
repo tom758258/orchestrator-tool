@@ -126,7 +126,8 @@ function formatLiveResourceConfirmation(
   if (serial) {
     lines.push(`S/N: ${serial}`)
   }
-  lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'}`, resource)
+  if (instance.tool === 'serial') lines.push(`COM Port: ${resource}`)
+  else lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'`, resource)
   return lines.join('\n')
 }
 
@@ -416,6 +417,7 @@ function App() {
   const simulationSamples = useSimulationSamples()
   const [backgroundCsvEnabled, setBackgroundCsvEnabled] = useState(false)
   const [backgroundCsvMode, setBackgroundCsvMode] = useState<'values-only' | 'values-quality'>('values-only')
+  const [serialCsvMode, setSerialCsvMode] = useState<'hex' | 'text'>('hex')
   const [backgroundCsvTarget, setBackgroundCsvTarget] = useState('all')
   const [backgroundCsvFolder, setBackgroundCsvFolder] = useState<string | null>(null)
   const [backgroundCsvError, setBackgroundCsvError] = useState<string | null>(null)
@@ -1421,7 +1423,7 @@ function App() {
       const confirmedResources: Record<string, string> = {}
       const confirmedBackends: Record<string, VisaBackend> = {}
       const resources = referenced.map(instance => {
-        if (instance.tool !== 'powers' && instance.tool !== 'meters' && instance.tool !== 'scopes') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
+        if (instance.tool !== 'powers' && instance.tool !== 'meters' && instance.tool !== 'scopes' && instance.tool !== 'serial') throw new Error(`Unsupported tool ${instance.tool} for instance ${instance.id}.`)
         const draftResource = resourceDrafts[instance.id]
         const persistedResource = bindings[instance.id]
         if ((draftResource ?? '') !== (persistedResource ?? '') ||
@@ -1487,7 +1489,7 @@ function App() {
         onProgress,
         streamCsv: streamOptions,
         scopesOutputFolder,
-        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode } : null,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode, serial_format: serialCsvMode } : null,
         confirmedResources,
         confirmedBackends,
       })
@@ -1515,7 +1517,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, serialCsvMode])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1574,7 +1576,7 @@ function App() {
         streamCsv: streamOptions,
         scopesOutputFolder,
         simulationSamples: sampleOverrides,
-        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode } : null,
+        backgroundCsv: backgroundCsvEnabled && workflowDraft.backgrounds?.length ? { output_folder: backgroundCsvFolder ?? 'data', background_id: backgroundCsvTarget === 'all' ? null : backgroundCsvTarget, scopes_format: backgroundCsvMode, serial_format: serialCsvMode } : null,
       })
       if (isCurrentRunGeneration(generation, runGenerationRef.current)) {
         runIdRef.current = results.run_id
@@ -1594,7 +1596,7 @@ function App() {
       }
       releaseRunGate(runInFlightRef)
     }
-  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, scopesOutputFolder])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, simulationSamples, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, serialCsvMode, scopesOutputFolder])
 
   const runSelectedMode = useCallback(() => {
     const command = workflowRunCommand(executionMode)
@@ -2180,7 +2182,7 @@ function App() {
                 }}
                 renderResource={instance => (
                   <>
-                    {(instance.tool === 'powers' || instance.tool === 'meters' || instance.tool === 'scopes') && (
+                    {(instance.tool === 'powers' || instance.tool === 'meters' || instance.tool === 'scopes' || instance.tool === 'serial') && (
                       <div className="live-resource">
                         <div className="live-device">
                           <strong>Live Device</strong>
@@ -2191,7 +2193,7 @@ function App() {
                         </div>
                         <p className="tool-setup-hint">Stored locally; not included in Template. Save Resource to apply changes.</p>
                         {executionMode === 'simulate' && <p className="tool-setup-hint">Stored for Live mode. Current execution mode is Simulation.</p>}
-                        <label className="step-property-field">
+                        {instance.tool !== 'serial' && <label className="step-property-field">
                           <span className="step-property-label">VISA Backend</span>
                           <select value={backendDrafts[instance.id] ?? 'system'}
                             disabled={toolConfigBusy !== null || workflowBusy || loading || powersOperationBusy !== null}
@@ -2211,9 +2213,9 @@ function App() {
                             <option value="system">System VISA</option>
                             <option value="@py">PyVISA-py (@py)</option>
                           </select>
-                        </label>
+                        </label>}
                         <label className="step-property-field">
-                          <span className="step-property-label">Live Resource</span>
+                          <span className="step-property-label">{instance.tool === 'serial' ? 'COM Port' : 'Live Resource'}</span>
                           <input
                             type="text"
                             value={resourceDrafts[instance.id] ?? ''}
@@ -2236,7 +2238,7 @@ function App() {
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleListResources(instance)}
                           >
-                            List Resources
+                            {instance.tool === 'serial' ? 'List Ports' : 'List Resources'}
                           </button>
                           <button
                             className="action-button"
@@ -2421,6 +2423,11 @@ function App() {
                         <option value="values-only">Values + units</option>
                         <option value="values-quality">Values + units + validity + reason</option>
                       </select></label>
+                        <label>Serial Streaming CSV Data<select aria-label="Serial Streaming CSV Data"
+                          value={serialCsvMode} disabled={workflowBusy}
+                          onChange={event => setSerialCsvMode(event.target.value as 'hex' | 'text')}>
+                          <option value="hex">Hex</option><option value="text">Text (UTF-8)</option>
+                        </select></label>
                       <p>{backgroundCsvFolder ?? 'Default: application folder / data'}</p>
                       <button type="button" className="action-button" disabled={workflowBusy} onClick={() => void (async () => {
                         setChoosingStreamOutputFolder(true)
@@ -3051,6 +3058,7 @@ function App() {
               {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
               {runWorkflowSnapshot && <OutputCharts key={`charts-${displayedRun?.run_id ?? 'starting'}`} runId={displayedRun?.run_id ?? null}
                 pages={runPages} metadata={displayedRun?.pages ?? []} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
+                toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
                 panels={chartPanels} onPanelsChange={setChartPanels} chartData={chartData} running={runStatus === 'running'}
                 onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}
                 saveChartsWithTemplate={saveChartsWithTemplate} onSaveChartsWithTemplateChange={setSaveChartsWithTemplate}

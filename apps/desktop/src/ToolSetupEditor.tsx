@@ -28,11 +28,16 @@ export type MetersSetup = {
   allow_buffer_overflow_risk?: boolean
 }
 
+export type SerialSetup = {
+  baud: number; data_bits: number; parity: 'none' | 'odd' | 'even'; stop_bits: number
+  flow_control: 'none' | 'software' | 'hardware'; timeout_ms: number
+}
 export type ToolInstance = { display_name?: string } & (
   | { id: string; tool: 'meters'; setup: MetersSetup }
   | { id: string; tool: 'powers'; setup: PowersSetup }
   | { id: string; tool: 'scopes'; setup: ScopesSetup }
   | { id: string; tool: 'wavegen'; setup: Record<string, never> }
+ | { id: string; tool: 'serial'; setup: SerialSetup }
 )
 
 export type PowersProtectionChannel = {
@@ -581,8 +586,31 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
   </div>
 }
 
+function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: (v: SerialSetup) => void }) {
+  const update = (change: Partial<SerialSetup>) => onChange({ ...value, ...change })
+  return <div className="serial-setup-fields">
+    <label className="step-property-field"><span className="step-property-label">Baud Rate</span>
+      <input type="number" min={1} step={1} value={value.baud} onChange={e => update({ baud: Number(e.target.value) })} /></label>
+    <label className="step-property-field"><span className="step-property-label">Data Bits</span>
+      <select value={value.data_bits} onChange={e => update({ data_bits: Number(e.target.value) })}>
+        {[5, 6, 7, 8].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
+    <label className="step-property-field"><span className="step-property-label">Parity</span>
+      <select value={value.parity} onChange={e => update({ parity: e.target.value as SerialSetup['parity'] })}>
+        <option value="none">None</option><option value="odd">Odd</option><option value="even">Even</option></select></label>
+    <label className="step-property-field"><span className="step-property-label">Stop Bits</span>
+      <select value={value.stop_bits} onChange={e => update({ stop_bits: Number(e.target.value) })}>
+        <option value={1}>1</option><option value={2}>2</option></select></label>
+    <label className="step-property-field"><span className="step-property-label">Flow Control</span>
+      <select value={value.flow_control} onChange={e => update({ flow_control: e.target.value as SerialSetup['flow_control'] })}>
+        <option value="none">None</option><option value="software">Software</option><option value="hardware">Hardware</option></select></label>
+    <label className="step-property-field"><span className="step-property-label">Timeout (ms)</span>
+      <input type="number" min={0} step={1} value={value.timeout_ms} onChange={e => update({ timeout_ms: Number(e.target.value) })} /></label>
+  </div>
+}
+
 function setupSummary(instance: ToolInstance, background?: BackgroundConfig): string {
   const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
+  if (instance.tool === 'serial') return `Serial · ${instance.setup.baud} baud · ${instance.setup.data_bits} bits`
   if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? 'Protection Setup' : 'No protection settings configured'}`
   if (instance.tool === 'scopes') return `${type} · ${instance.setup.acquisition ? 'Acquisition Setup' : 'Acquisition Unchanged'} · ${instance.setup.channels?.length ?? 0} configured channels`
   if (instance.tool !== 'meters') return `${type} · No additional setup`
@@ -650,7 +678,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
               vm_comp_slope: null,
               trigger_mode: 'software', sample_count: 1, buffer_drain_size: null,
               allow_buffer_overflow_risk: false } }
-          : { id, tool, setup: {} }
+          : tool === 'serial'
+            ? { id, tool, setup: { baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000 } }
+            : { id, tool, setup: {} }
         setCollapsedIds(current => current.filter(collapsedId => collapsedId !== id))
         onChange([...value, instance])
       }}>Add Tool Instance</button>
@@ -729,6 +759,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                 ? <ScopesSetupFields value={instance.setup} onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}
                     modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : undefined}
                     executionMode={executionMode} scopesExecutableKey={scopesExecutableKey} />
+              : instance.tool === 'serial'
+                ? <SerialSetupFields value={instance.setup} onChange={setup =>
+                    onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
               : <>
                   <p>No additional setup</p>
                   <p className="tool-setup-hint">{executionMode === 'simulate'

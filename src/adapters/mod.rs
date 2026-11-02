@@ -3,6 +3,7 @@
 pub mod meters;
 pub mod powers;
 pub mod scopes;
+pub mod serial;
 
 /// Current domain adapter requirements, separate from the Common v3 parser.
 /// A new Tool registers its own thin adapter; no Common parser branch changes.
@@ -14,6 +15,7 @@ pub fn validate_existing_worker_integration(
         "meters" => ("run_bound", "startup", false),
         "powers" => ("multi_job", "per_command", true),
         "scopes" => ("multi_job", "startup", true),
+        "serial" => ("multi_job", "startup", true),
         other => return Err(format!("no existing domain adapter for {other}")),
     };
     if manifest.execution_model() != Some(model) || manifest.context_binding() != Some(binding) {
@@ -24,6 +26,16 @@ pub fn validate_existing_worker_integration(
     }
     if async_jobs && manifest.feature("common.async_jobs").is_none() {
         return Err(format!("{} requires common.async_jobs version 1", tool));
+    }
+    if tool.as_str() == "serial" {
+        if manifest.feature("common.streaming").is_none() {
+            return Err("Serial Background requires common.streaming".into());
+        }
+        for command in ["send", "send-file", "receive", "query", "run-sequence"] {
+            if manifest.command_kind(command) != Some("async_job") {
+                return Err(format!("Serial {command} must be an async_job"));
+            }
+        }
     }
     if tool.as_str() == "meters"
         && manifest

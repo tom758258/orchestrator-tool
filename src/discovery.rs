@@ -181,6 +181,7 @@ mod tests {
                 ("powers", "powers-tool.exe"),
                 ("scopes", "scopes-tool.exe"),
                 ("wavegen", "wavegen-tool.exe"),
+            ("serial", "serial-tool.exe"),
             ]
         );
     }

@@ -80,6 +80,7 @@ mod tests {
             (ToolId::powers(), "powers"),
             (ToolId::scopes(), "scopes"),
             (ToolId::wavegen(), "wavegen"),
+            (ToolId::serial(), "serial"),
         ] {
             assert_eq!(ToolId::new(expected).unwrap(), tool_id);
         }

@@ -1,13 +1,14 @@
 //! Manual exports borrow bounded windows from the authoritative memory store.
 use crate::{
     background::{
-        ScopesExportMode, SharedBackgroundStore, sample_cells, sample_columns, unique_file,
+        ScopesExportMode, SharedBackgroundStore, sample_cells, sample_columns, serial_columns, unique_file,
     },
     workflow::{ResultRow, WorkflowOutput},
     workflow_csv::{ResultRowsCsvWriter, export_cell},
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, io::Write};
+use crate::serial_text::{SerialDataFormat, SerialTextDecoder, raw_bytes, serial_cells};
 
 pub const DEFAULT_XLSX_ROWS: usize = 300_000;
 pub const EXCEL_DATA_ROWS: usize = 1_048_575;
@@ -17,6 +18,7 @@ pub const EXCEL_DATA_ROWS: usize = 1_048_575;
 pub enum BackgroundExportFormat {
     Csv,
     Xlsx,
+    Bin,
 }
 
 pub fn export_datasets(
@@ -44,6 +46,33 @@ pub fn export_datasets_with_scopes_mode(
     rows_per_file: usize,
     scopes_mode: ScopesExportMode,
 ) -> Result<Vec<PathBuf>, String> {
+    export_datasets_with_serial_format(
+        store, dataset_ids, folder, format, rows_per_file, scopes_mode, SerialDataFormat::Hex
+    )
+}
+
+pub fn export_datasets_with_serial_format(
+    store: &SharedBackgroundStore,
+    dataset_ids: &[String],
+    folder: &Path,
+    format: BackgroundExportFormat,
+    rows_per_file: usize,
+    scopes_mode: ScopesExportMode,
+    serial_mode: SerialDataFormat,
+) -> Result<Vec<PathBuf>, String> {
+    if matches!(format, BackgroundExportFormat::Bin) {
+        // Validate all selections before creating any files.
+        for id in dataset_ids {
+            let data = store.lock().unwrap_or_else(|e| e.into_inner());
+            let meta = &data.dataset(id)?.metadata;
+            if meta.tool_kind != "serial" {
+                return Err("BIN export is only supported for Serial RX datasets".into());
+            }
+            if meta.status == "recording" {
+                return Err("Switch Capture OFF before manual export".into());
+            }
+        }
+    }
     if matches!(format, BackgroundExportFormat::Xlsx)
         && (rows_per_file == 0 || rows_per_file > EXCEL_DATA_ROWS)
     {
@@ -60,17 +89,20 @@ pub fn export_datasets_with_scopes_mode(
         if metadata.status == "recording" {
             return Err("Switch Capture OFF before manual export".into());
         }
-        let columns = sample_columns(&metadata.fields, scopes_mode);
+        let columns = if metadata.tool_kind == "serial" {
+            serial_columns()
+        } else { sample_columns(&metadata.fields, scopes_mode) };
+        let mut serial_decoder = SerialTextDecoder::default();
         if columns.len() > 16_384 {
             return Err("Scopes Background exceeds XLSX column limit".into());
         }
         let chunks = match format {
-            BackgroundExportFormat::Csv => 1,
+            BackgroundExportFormat::Csv | BackgroundExportFormat::Bin => 1,
             BackgroundExportFormat::Xlsx => metadata.row_count.max(1).div_ceil(rows_per_file),
         };
         for part in 0..chunks {
             let (start, end) = match format {
-                BackgroundExportFormat::Csv => (0, metadata.row_count),
+                BackgroundExportFormat::Csv | BackgroundExportFormat::Bin => (0, metadata.row_count),
                 BackgroundExportFormat::Xlsx => (
                     part * rows_per_file,
                     ((part + 1) * rows_per_file).min(metadata.row_count),
@@ -82,6 +114,7 @@ pub fn export_datasets_with_scopes_mode(
                 match format {
                     BackgroundExportFormat::Csv => "csv",
                     BackgroundExportFormat::Xlsx => "xlsx",
+                    BackgroundExportFormat::Bin => "bin",
                 },
             )?;
             match format {
@@ -94,11 +127,16 @@ pub fn export_datasets_with_scopes_mode(
                             offset,
                             (end - offset).min(1_000),
                         )? {
+                            let cells = if metadata.tool_kind == "serial" {
+                                serial_cells(&sample, serial_mode, &mut serial_decoder)?
+                            } else {
+                                sample_cells(&sample, &metadata.fields, scopes_mode)
+                            };
                             let row = ResultRow::new(
                                 columns
                                     .iter()
                                     .cloned()
-                                    .zip(sample_cells(&sample, &metadata.fields, scopes_mode))
+                                    .zip(cells)
                                     .map(|(name, value)| WorkflowOutput::new(name, value))
                                     .collect(),
                                 None,
@@ -124,11 +162,10 @@ pub fn export_datasets_with_scopes_mode(
                         )?;
                         for (index, sample) in samples.iter().enumerate() {
                             let row = (offset - start + index + 1) as u32;
-                            for (column, value) in
-                                sample_cells(sample, &metadata.fields, scopes_mode)
-                                    .iter()
-                                    .enumerate()
-                            {
+                            let cells = if metadata.tool_kind == "serial" {
+                                serial_cells(sample, serial_mode, &mut serial_decoder)?
+                            } else { sample_cells(sample, &metadata.fields, scopes_mode) };
+                            for (column, value) in cells.iter().enumerate() {
                                 match value {
                                     serde_json::Value::Number(number)
                                         if crate::workflow_export::excel_number(number)
@@ -148,6 +185,18 @@ pub fn export_datasets_with_scopes_mode(
                     }
                     workbook.save_to_writer(file).map_err(|e| e.to_string())?;
                 }
+                BackgroundExportFormat::Bin => {
+                    let mut file = file;
+                    for offset in (start..end).step_by(1_000) {
+                        for sample in store.lock().unwrap_or_else(|e| e.into_inner()).rows(
+                            id, offset, (end - offset).min(1_000),
+                        )? {
+                            let bytes = raw_bytes(sample["rx_hex"].as_str().ok_or("Missing Serial RX hex")?)?;
+                            file.write_all(&bytes).map_err(|e| e.to_string())?;
+                        }
+                    }
+                    file.flush().map_err(|e| e.to_string())?;
+                }
             }
             paths.push(path);
         }
@@ -164,13 +213,49 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
+    fn serial_bin_and_csv_preserve_event_rows_and_raw_bytes() {
+        let folder = std::env::temp_dir().join(format!(
+            "orchestrator-serial-export-{}-{:?}",
+            std::process::id(), std::thread::current().id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let events = [("00ff", 2), ("0d", 1), ("0a68", 2)];
+        store.lock().unwrap().datasets.push(Dataset {
+            metadata: DatasetMetadata {
+                id: "serial-capture".into(), background_id: "background-1".into(),
+                worker_run_id: "run".into(), started_ms: 0, finished_ms: Some(1),
+                status: "completed".into(), quality: "unknown".into(),
+                row_count: events.len(), tool_kind: "serial".into(), rx_bytes: 5,
+                fields: Vec::new(), field_stats: Default::default(),
+                min: None, max: None, avg: None, csv_path: None, error: None,
+            },
+            samples: events.iter().enumerate().map(|(i, (hex, bytes))|
+                json!({"timestamp_utc":"2026-11-02T00:00:00Z",
+                    "elapsed_s":i as f64, "captured":i+1,
+                    "rx_hex":hex, "rx_bytes":bytes})).collect(),
+        });
+        let ids = vec!["serial-capture".to_owned()];
+        let bin = export_datasets(&store, &ids, &folder,
+            BackgroundExportFormat::Bin, DEFAULT_XLSX_ROWS).unwrap();
+        assert_eq!(std::fs::read(&bin[0]).unwrap(), [0, 255, 13, 10, 104]);
+        let csv = export_datasets(&store, &ids, &folder,
+            BackgroundExportFormat::Csv, DEFAULT_XLSX_ROWS).unwrap();
+        let mut reader = csv::Reader::from_path(&csv[0]).unwrap();
+        let rows = reader.records().map(|r| r.unwrap()).collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(&rows[0][3], "00 FF");
+        assert_eq!(&rows[2][3], "0A 68");
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
     #[ignore = "large manual export contract; run explicitly without instruments"]
     fn large_xlsx_splits_at_default_and_preserves_all_rows() {
         let count = DEFAULT_XLSX_ROWS + 1;
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         store.lock().unwrap().datasets.push(Dataset {
             metadata:DatasetMetadata {id:"background-1-capture-1".into(),background_id:"background-1".into(),worker_run_id:"worker".into(),
-                started_ms:0,finished_ms:Some(1),status:"completed".into(),quality:"no_loss_detected".into(),row_count:count,fields:Vec::new(),field_stats:Default::default(),
+                started_ms:0,finished_ms:Some(1),status:"completed".into(),quality:"no_loss_detected".into(),row_count:count,tool_kind:"meters".into(),rx_bytes:0,fields:Vec::new(),field_stats:Default::default(),
                 min:None,max:None,avg:None,csv_path:None,error:None},
             samples:(1..=count).map(|i| json!({"timestamp_utc":"2026-10-27T00:00:00Z","captured":i,"elapsed_s":i as f64/1000.0,"value":10.600000000000001_f64,"unit":"V"})).collect(),
         });

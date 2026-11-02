@@ -5,7 +5,8 @@ use std::{error::Error, fmt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    meters_setup::MetersSetup, powers_setup::PowersSetup, scopes_setup::ScopesSetup, tool::ToolId,
+    meters_setup::MetersSetup, powers_setup::PowersSetup, scopes_setup::ScopesSetup,
+    serial_setup::SerialSetup, tool::ToolId,
 };
 
 /// A logical instance ID, unique within a template.
@@ -53,6 +54,7 @@ pub enum ToolSetup {
     Meters(MetersSetup),
     Powers(PowersSetup),
     Scopes(ScopesSetup),
+    Serial(SerialSetup),
     Empty(EmptySetup),
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -76,15 +78,18 @@ impl ToolInstance {
     pub fn meters_setup(&self) -> Option<&MetersSetup> {
         match &self.setup {
             ToolSetup::Meters(setup) => Some(setup),
-            ToolSetup::Powers(_) | ToolSetup::Scopes(_) | ToolSetup::Empty(_) => None,
+            _ => None,
         }
     }
 
     pub fn powers_setup(&self) -> Option<&PowersSetup> {
         match &self.setup {
             ToolSetup::Powers(setup) => Some(setup),
-            ToolSetup::Meters(_) | ToolSetup::Scopes(_) | ToolSetup::Empty(_) => None,
+            _ => None,
         }
+    }
+    pub fn serial_setup(&self) -> Option<&SerialSetup> {
+        match &self.setup { ToolSetup::Serial(setup) => Some(setup), _ => None }
     }
     pub fn scopes_setup(&self) -> Option<&ScopesSetup> {
         match &self.setup {
