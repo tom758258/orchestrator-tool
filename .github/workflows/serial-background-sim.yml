@@ -1,0 +1,44 @@
+name: Serial Background RX Real Worker SIM
+
+on:
+  pull_request:
+    paths:
+      - 'src/adapters/serial.rs'
+      - 'src/serial_text.rs'
+      - 'src/run_preparation.rs'
+      - 'src/background.rs'
+      - 'src/background_export.rs'
+      - 'apps/desktop/src/serialDisplay.ts'
+      - '.github/workflows/serial-background-sim.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  serial-rx-simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Orchestrator
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned Serial Tool
+        uses: actions/checkout@v4
+        with:
+          repository: tom758258/serial-tool
+          ref: 3d2d6c59fec03f6c118705387cc783e894a7613e
+          path: .ci/serial-tool
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Serial Tool Linux dependency
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libudev-dev
+
+      - name: Build real Serial Tool Worker
+        run: cargo build --locked --manifest-path .ci/serial-tool/Cargo.toml -p serial-tool-cli --bin serial-tool
+
+      - name: Test Orchestrator + real Serial Worker RX-only
+        env:
+          ORCHESTRATOR_TEST_SERIAL_EXECUTABLE: ${{ github.workspace }}/.ci/serial-tool/target/debug/serial-tool
+        run: cargo test --locked --lib serial_real_worker_rx_only_simulation -- --ignored

@@ -42,7 +42,9 @@ fn escape_controls(s: &str) -> String {
             '\r' => output.push_str("\\r"),
             '\n' => output.push_str("\\n"),
             '\t' => output.push_str("\\t"),
-            _ if ch.is_control() => output.push_str(&format!("\\u{{{:04X}}}", ch as u32)),
+            _ if (ch as u32) < 0x20 || (0x7f..=0x9f).contains(&(ch as u32)) => {
+                output.push_str(&format!("\\u{{{:X}}}", ch as u32));
+            }
             _ => output.push(ch),
         }
     }
@@ -112,5 +114,11 @@ mod tests {
         assert_eq!(decoder.decode("ad").unwrap(), "中");
         assert_eq!(spaced_hex("00ff0d0a"), "00 FF 0D 0A");
         assert_eq!(raw_bytes("00ff0d0a").unwrap(), [0, 255, 13, 10]);
+        let mut controls = SerialTextDecoder::default();
+        assert_eq!(controls.decode("00097fc280").unwrap(), "\\u{0}\\t\\u{7F}\\u{80}");
+        assert_eq!(controls.decode("0d0a").unwrap(), "\\r\\n");
+        let mut unfinished = SerialTextDecoder::default();
+        assert_eq!(unfinished.decode("e4").unwrap(), "");
+        assert_eq!(unfinished.decode("b8ad").unwrap(), "中");
     }
 }

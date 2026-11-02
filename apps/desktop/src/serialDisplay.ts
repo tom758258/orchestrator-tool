@@ -12,13 +12,16 @@ export function serialHex(hex: string): string {
   return (hex.toUpperCase().match(/.{1,2}/g) ?? []).join(' ')
 }
 
-export function escapeSerialText(value: string): string {
+export function escapeSerialText(value: string, continuous = false): string {
   return [...value].map(ch => {
+    if (continuous && ch === '\r') return ''
+    if (continuous && ch === '\n') return '\n'
     if (ch === '\r') return '\\r'
     if (ch === '\n') return '\\n'
     if (ch === '\t') return '\\t'
     const code = ch.codePointAt(0) ?? 0
-    return (code < 32 || code === 127) ? '\\u{' + code.toString(16).toUpperCase().padStart(4, '0') + '}' : ch
+    return (code < 32 || (code >= 0x7F && code <= 0x9F))
+      ? '\\u{' + code.toString(16).toUpperCase() + '}' : ch
   }).join('')
 }
 
@@ -32,5 +35,6 @@ export function serialEventViews(events: SerialEvent[], mode: SerialDataFormat, 
 export function serialContinuousView(events: SerialEvent[], mode: SerialDataFormat): string {
   if (mode === 'hex') return serialHex(events.map(event => event.rx_hex ?? '').join(''))
   const decoder = new TextDecoder('utf-8', { fatal: false })
-  return escapeSerialText(decoder.decode(serialBytes(events.map(event => event.rx_hex ?? '').join(''))))
+  // Keep trailing partial UTF-8 pending, just like the Serial Tool continuous RX stream.
+  return escapeSerialText(decoder.decode(serialBytes(events.map(event => event.rx_hex ?? '').join('')), { stream: true }), true)
 }
