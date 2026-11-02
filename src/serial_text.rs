@@ -13,11 +13,13 @@ pub struct SerialTextDecoder {
 }
 
 pub fn raw_bytes(hex: &str) -> Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("Serial hex has an odd number of digits".into());
     }
-    hex.as_bytes()
-        .chunks_exact(2)
+    let bytes = hex.as_bytes();
+    let (pairs, _) = bytes.as_chunks::<2>();
+    pairs
+        .iter()
         .map(|pair| {
             let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
             u8::from_str_radix(pair, 16).map_err(|e| e.to_string())

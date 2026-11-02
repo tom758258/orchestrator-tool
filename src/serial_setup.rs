@@ -70,11 +70,15 @@ mod tests {
     #[test]
     fn defaults_and_invalid_settings() {
         assert!(SerialSetup::default().validate().is_ok());
-        let mut setup = SerialSetup::default();
-        setup.baud = 0;
-        assert!(setup.validate().is_err());
-        setup = SerialSetup::default();
-        setup.parity = "mark".into();
-        assert!(setup.validate().is_err());
+        let invalid_baud = SerialSetup {
+            baud: 0,
+            ..Default::default()
+        };
+        assert!(invalid_baud.validate().is_err());
+        let invalid_parity = SerialSetup {
+            parity: "mark".into(),
+            ..Default::default()
+        };
+        assert!(invalid_parity.validate().is_err());
     }
 }

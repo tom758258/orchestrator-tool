@@ -573,7 +573,7 @@ struct Runtime {
 enum BackgroundSetup {
     Meters(crate::meters_setup::MetersSetup),
     Scopes(crate::scopes_setup::ScopesSetup),
-    Serial(crate::serial_setup::SerialSetup),
+    Serial,
 }
 
 pub struct BackgroundManager {
@@ -628,8 +628,8 @@ impl BackgroundManager {
                         .expect("Background Tool Instance was validated");
                     let setup = if let Some(meters) = instance.meters_setup() {
                         BackgroundSetup::Meters(meters.clone())
-                    } else if let Some(serial) = instance.serial_setup() {
-                        BackgroundSetup::Serial(serial.clone())
+                    } else if instance.serial_setup().is_some() {
+                        BackgroundSetup::Serial
                     } else {
                         BackgroundSetup::Scopes(
                             instance
@@ -673,7 +673,7 @@ impl BackgroundManager {
                 .cloned()
                 .ok_or("Unknown Background ID")?;
             let scopes = matches!(&setup, BackgroundSetup::Scopes(_));
-            let serial = matches!(&setup, BackgroundSetup::Serial(_));
+            let serial = matches!(&setup, BackgroundSetup::Serial);
             let sample_count = match &setup {
                 BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom() => {
                     meters.sample_count
