@@ -1183,6 +1183,8 @@ async fn get_background_chart_series(
     .map_err(|e| e.to_string())?
 }
 
+// Keep the existing flat Tauri IPC contract, adding only Serial display mode.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn export_background_datasets(
     state: tauri::State<'_, StoredRuns>,

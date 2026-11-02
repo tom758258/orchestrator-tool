@@ -16,16 +16,21 @@ pub fn raw_bytes(hex: &str) -> Result<Vec<u8>, String> {
     if hex.len() % 2 != 0 {
         return Err("Serial hex has an odd number of digits".into());
     }
-    hex.as_bytes().chunks_exact(2).map(|pair| {
-        let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
-        u8::from_str_radix(pair, 16).map_err(|e| e.to_string())
-    }).collect()
+    hex.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let pair = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
+            u8::from_str_radix(pair, 16).map_err(|e| e.to_string())
+        })
+        .collect()
 }
 
 pub fn spaced_hex(hex: &str) -> String {
-    hex.as_bytes().chunks(2)
+    hex.as_bytes()
+        .chunks(2)
         .map(|c| std::str::from_utf8(c).unwrap_or("?").to_uppercase())
-        .collect::<Vec<_>>().join(" ")
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn escape_controls(s: &str) -> String {
@@ -50,11 +55,15 @@ impl SerialTextDecoder {
         let mut cursor = 0;
         while cursor < bytes.len() {
             match std::str::from_utf8(&bytes[cursor..]) {
-                Ok(s) => { output.push_str(&escape_controls(s)); break; }
+                Ok(s) => {
+                    output.push_str(&escape_controls(s));
+                    break;
+                }
                 Err(error) => {
                     let valid_end = cursor + error.valid_up_to();
                     output.push_str(&escape_controls(
-                        std::str::from_utf8(&bytes[cursor..valid_end]).expect("valid prefix")));
+                        std::str::from_utf8(&bytes[cursor..valid_end]).expect("valid prefix"),
+                    ));
                     cursor = valid_end;
                     if let Some(length) = error.error_len() {
                         output.push('�');
@@ -70,16 +79,24 @@ impl SerialTextDecoder {
     }
 }
 
-pub fn serial_cells(sample: &serde_json::Value, mode: SerialDataFormat,
-    decoder: &mut SerialTextDecoder) -> Result<Vec<serde_json::Value>, String> {
+pub fn serial_cells(
+    sample: &serde_json::Value,
+    mode: SerialDataFormat,
+    decoder: &mut SerialTextDecoder,
+) -> Result<Vec<serde_json::Value>, String> {
     use serde_json::json;
     let hex = sample["rx_hex"].as_str().ok_or("Missing Serial RX hex")?;
     let data = match mode {
         SerialDataFormat::Hex => spaced_hex(hex),
         SerialDataFormat::Text => decoder.decode(hex)?,
     };
-    Ok(vec![sample["timestamp_utc"].clone(), sample["elapsed_s"].clone(),
-        sample["captured"].clone(), json!(data), sample["rx_bytes"].clone()])
+    Ok(vec![
+        sample["timestamp_utc"].clone(),
+        sample["elapsed_s"].clone(),
+        sample["captured"].clone(),
+        json!(data),
+        sample["rx_bytes"].clone(),
+    ])
 }
 
 #[cfg(test)]

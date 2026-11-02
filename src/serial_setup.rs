@@ -17,26 +17,46 @@ pub struct SerialSetup {
     pub timeout_ms: u64,
 }
 
-fn default_data_bits() -> u8 { 8 }
-fn default_parity() -> String { "none".into() }
-fn default_stop_bits() -> u8 { 1 }
-fn default_timeout() -> u64 { 1000 }
+fn default_data_bits() -> u8 {
+    8
+}
+fn default_parity() -> String {
+    "none".into()
+}
+fn default_stop_bits() -> u8 {
+    1
+}
+fn default_timeout() -> u64 {
+    1000
+}
 
 impl Default for SerialSetup {
     fn default() -> Self {
-        Self { baud: 115_200, data_bits: 8, parity: default_parity(),
-            stop_bits: 1, flow_control: default_parity(), timeout_ms: 1000 }
+        Self {
+            baud: 115_200,
+            data_bits: 8,
+            parity: default_parity(),
+            stop_bits: 1,
+            flow_control: default_parity(),
+            timeout_ms: 1000,
+        }
     }
 }
 
 impl SerialSetup {
     pub fn validate(&self) -> Result<(), String> {
-        if self.baud == 0 { return Err("Serial baud must be positive".into()); }
-        if !(5..=8).contains(&self.data_bits) { return Err("Serial data_bits must be 5..=8".into()); }
+        if self.baud == 0 {
+            return Err("Serial baud must be positive".into());
+        }
+        if !(5..=8).contains(&self.data_bits) {
+            return Err("Serial data_bits must be 5..=8".into());
+        }
         if !matches!(self.parity.as_str(), "none" | "odd" | "even") {
             return Err("Serial parity must be none, odd or even".into());
         }
-        if !(1..=2).contains(&self.stop_bits) { return Err("Serial stop_bits must be 1 or 2".into()); }
+        if !(1..=2).contains(&self.stop_bits) {
+            return Err("Serial stop_bits must be 1 or 2".into());
+        }
         if !matches!(self.flow_control.as_str(), "none" | "software" | "hardware") {
             return Err("Serial flow_control must be none, software or hardware".into());
         }

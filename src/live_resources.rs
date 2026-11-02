@@ -136,9 +136,9 @@ fn list_serial_ports(
         Duration::from_secs(30),
     )
     .map_err(|e| match e {
-            CaptureError::Io(error) => format!("Serial port discovery failed: {error}"),
-            CaptureError::Timeout => "Serial port discovery timed out".to_owned(),
-        })?;
+        CaptureError::Io(error) => format!("Serial port discovery failed: {error}"),
+        CaptureError::Timeout => "Serial port discovery timed out".to_owned(),
+    })?;
     if !bytes.status.success() {
         return Err(format!("Serial port discovery exited {}", bytes.status));
     }
