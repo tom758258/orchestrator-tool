@@ -977,9 +977,14 @@ fn serial_background_rx_contract() {
                         .expect("one complete fixture RX event per row")
                 })
                 .collect::<Vec<_>>();
-            assert!(positions.len() >= 3, "must capture variable-length RX events");
             assert!(
-                positions.windows(2).all(|pair| pair[1] == (pair[0] + 1) % pieces.len()),
+                positions.len() >= 3,
+                "must capture variable-length RX events"
+            );
+            assert!(
+                positions
+                    .windows(2)
+                    .all(|pair| pair[1] == (pair[0] + 1) % pieces.len()),
                 "captured RX events must preserve fixture order"
             );
         }
