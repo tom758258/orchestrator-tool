@@ -127,7 +127,7 @@ function formatLiveResourceConfirmation(
     lines.push(`S/N: ${serial}`)
   }
   if (instance.tool === 'serial') lines.push(`COM Port: ${resource}`)
-  else lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'`, resource)
+  else lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'}`, resource)
   return lines.join('\n')
 }
 

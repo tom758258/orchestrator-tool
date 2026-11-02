@@ -66,7 +66,10 @@ pub fn validate_confirmed_live_resources(
 ) -> Result<(), String> {
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes" | "serial") {
+        if !matches!(
+            instance.tool.as_str(),
+            "powers" | "meters" | "scopes" | "serial"
+        ) {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -193,7 +196,10 @@ pub fn prepare_worker_launch_specs_with_simulation(
     let mut launch_specs = HashMap::new();
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(instance.tool.as_str(), "powers" | "meters" | "scopes" | "serial") {
+        if !matches!(
+            instance.tool.as_str(),
+            "powers" | "meters" | "scopes" | "serial"
+        ) {
             return Err(format!(
                 "unsupported tool {} for instance {}",
                 instance.tool, instance.id
@@ -330,7 +336,9 @@ pub fn prepare_worker_launch_specs_with_simulation(
                 scopes::background_worker_launch_spec(&ordinary)
             } else if tool == &ToolId::serial() {
                 serial::background_worker_launch_spec(
-                    executable, execution_mode, config.live_resource(&instance.id),
+                    executable,
+                    execution_mode,
+                    config.live_resource(&instance.id),
                     instance.serial_setup().expect("validated Serial Setup"),
                 )?
             } else {
@@ -375,9 +383,12 @@ pub fn prepare_worker_launch_specs_with_simulation(
                         .expect("validated model"),
                     config.live_backend(&instance.id),
                 ),
-                (_, "serial") => return Err(format!(
-                    "{}: Serial Foreground is not supported in this phase", instance.id
-                )),
+                (_, "serial") => {
+                    return Err(format!(
+                        "{}: Serial Foreground is not supported in this phase",
+                        instance.id
+                    ));
+                }
                 _ => unreachable!("referenced workflow tools are filtered"),
             }
         };

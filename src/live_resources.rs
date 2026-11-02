@@ -113,17 +113,29 @@ pub fn list_live_resources(
     parse_resources(tool, &output.stdout)
 }
 
-fn list_serial_ports(application_dir: &Path, config: &Config) -> Result<Vec<LiveResourceCandidate>, String> {
-    let definition = built_in_tool_definitions().into_iter()
-        .find(|d| d.id() == &ToolId::serial()).expect("Serial is registered");
+fn list_serial_ports(
+    application_dir: &Path,
+    config: &Config,
+) -> Result<Vec<LiveResourceCandidate>, String> {
+    let definition = built_in_tool_definitions()
+        .into_iter()
+        .find(|d| d.id() == &ToolId::serial())
+        .expect("Serial is registered");
     let inspection = inspect_tool(application_dir, config, &definition)
         .map_err(|error| format!("Serial executable inspection failed: {error}"))?;
     if inspection.status() != ExecutableStatus::Available {
         return Err("Serial executable is not configured or unavailable".into());
     }
-    let executable = inspection.resolved().path().ok_or("Serial executable is unavailable")?;
-    let bytes = run_output_with_timeout(executable, ["list-ports", "--json"], Duration::from_secs(30))
-        .map_err(|e| format!("Serial port discovery failed: {e}"))?;
+    let executable = inspection
+        .resolved()
+        .path()
+        .ok_or("Serial executable is unavailable")?;
+    let bytes = run_output_with_timeout(
+        executable,
+        ["list-ports", "--json"],
+        Duration::from_secs(30),
+    )
+    .map_err(|e| format!("Serial port discovery failed: {e}"))?;
     if !bytes.status.success() {
         return Err(format!("Serial port discovery exited {}", bytes.status));
     }
@@ -132,19 +144,26 @@ fn list_serial_ports(application_dir: &Path, config: &Config) -> Result<Vec<Live
     if json["event"] != "list-ports" || json["schema_version"] != 2 || json["ok"] != true {
         return Err("Serial list-ports returned an incompatible result".into());
     }
-    let ports = json["ports"].as_array().ok_or("Serial list-ports has no port array")?;
-    ports.iter().map(|p| {
-        let port = p["port"].as_str().filter(|v| !v.trim().is_empty())
-            .ok_or("Serial list-ports returned an invalid port")?;
-        Ok(LiveResourceCandidate {
-            resource: port.to_owned(),
-            manufacturer: p["manufacturer"].as_str().map(str::to_owned),
-            model: p["product"].as_str().map(str::to_owned),
-            model_id: None,
-            serial: p["serial_number"].as_str().map(str::to_owned),
-            identity: p["type"].as_str().map(str::to_owned),
+    let ports = json["ports"]
+        .as_array()
+        .ok_or("Serial list-ports has no port array")?;
+    ports
+        .iter()
+        .map(|p| {
+            let port = p["port"]
+                .as_str()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or("Serial list-ports returned an invalid port")?;
+            Ok(LiveResourceCandidate {
+                resource: port.to_owned(),
+                manufacturer: p["manufacturer"].as_str().map(str::to_owned),
+                model: p["product"].as_str().map(str::to_owned),
+                model_id: None,
+                serial: p["serial_number"].as_str().map(str::to_owned),
+                identity: p["type"].as_str().map(str::to_owned),
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn resource_field(tool: &ToolId) -> Result<&'static str, String> {

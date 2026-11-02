@@ -89,7 +89,10 @@ impl ToolInstance {
         }
     }
     pub fn serial_setup(&self) -> Option<&SerialSetup> {
-        match &self.setup { ToolSetup::Serial(setup) => Some(setup), _ => None }
+        match &self.setup {
+            ToolSetup::Serial(setup) => Some(setup),
+            _ => None,
+        }
     }
     pub fn scopes_setup(&self) -> Option<&ScopesSetup> {
         match &self.setup {

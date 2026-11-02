@@ -1579,7 +1579,7 @@ fn background_capture_and_termination_contract() {
                         output_folder: invalid_folder.clone(),
                         background_id: None,
                         scopes_format: Default::default(),
-                    serial_format: Default::default(),
+                        serial_format: Default::default(),
                     }
                 }),
                 ..Default::default()
@@ -1715,7 +1715,7 @@ fn real_meters_background_and_unlimited_simulation() {
                         output_folder: csv_folder.clone(),
                         background_id: None,
                         scopes_format: Default::default(),
-                    serial_format: Default::default(),
+                        serial_format: Default::default(),
                     }),
                     ..Default::default()
                 },

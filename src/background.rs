@@ -459,15 +459,27 @@ pub fn query_chart(
 pub const SAMPLE_COLUMNS: [&str; 5] = ["timestamp_utc", "elapsed_s", "captured", "value", "unit"];
 
 /// One projection for both streaming and manual CSV/XLSX.
-pub const SERIAL_COLUMNS: [&str; 5] = ["timestamp_utc", "elapsed_s", "captured", "data", "rx_bytes"];
+pub const SERIAL_COLUMNS: [&str; 5] =
+    ["timestamp_utc", "elapsed_s", "captured", "data", "rx_bytes"];
 pub fn serial_columns() -> Vec<String> {
-    SERIAL_COLUMNS.iter().map(|name| (*name).to_owned()).collect()
+    SERIAL_COLUMNS
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect()
 }
-fn serial_sample_row(sample: &Value, format: crate::serial_text::SerialDataFormat,
-    decoder: &mut crate::serial_text::SerialTextDecoder) -> Result<ResultRow, String> {
+fn serial_sample_row(
+    sample: &Value,
+    format: crate::serial_text::SerialDataFormat,
+    decoder: &mut crate::serial_text::SerialTextDecoder,
+) -> Result<ResultRow, String> {
     Ok(ResultRow::new(
-        serial_columns().into_iter().zip(crate::serial_text::serial_cells(sample, format, decoder)?)
-            .map(|(name, value)| WorkflowOutput::new(name, value)).collect(), None))
+        serial_columns()
+            .into_iter()
+            .zip(crate::serial_text::serial_cells(sample, format, decoder)?)
+            .map(|(name, value)| WorkflowOutput::new(name, value))
+            .collect(),
+        None,
+    ))
 }
 pub fn sample_columns(fields: &[String], mode: ScopesExportMode) -> Vec<String> {
     if fields.is_empty() {
@@ -620,7 +632,10 @@ impl BackgroundManager {
                         BackgroundSetup::Serial(serial.clone())
                     } else {
                         BackgroundSetup::Scopes(
-                            instance.scopes_setup().expect("validated Scopes Background").clone(),
+                            instance
+                                .scopes_setup()
+                                .expect("validated Scopes Background")
+                                .clone(),
                         )
                     };
                     (config.clone(), setup)
@@ -1028,7 +1043,14 @@ impl Dispatcher {
             status: "recording".into(),
             quality: "unknown".into(),
             row_count: 0,
-            tool_kind: if self.serial { "serial" } else if self.scopes { "scopes" } else { "meters" }.into(),
+            tool_kind: if self.serial {
+                "serial"
+            } else if self.scopes {
+                "scopes"
+            } else {
+                "meters"
+            }
+            .into(),
             rx_bytes: 0,
             fields: self
                 .config
@@ -1057,8 +1079,11 @@ impl Dispatcher {
             self.writer = Some(
                 ResultRowsCsvWriter::new(
                     file,
-                    if self.serial { serial_columns() }
-                    else { sample_columns(&metadata.fields, options.scopes_format) },
+                    if self.serial {
+                        serial_columns()
+                    } else {
+                        sample_columns(&metadata.fields, options.scopes_format)
+                    },
                 )
                 .map_err(|e| e.to_string())?,
             );
@@ -1141,7 +1166,9 @@ impl Dispatcher {
             "rx" if self.serial => return self.serial_rx(event),
             "rx" => return Err("Serial RX event from a non-Serial worker".into()),
             "sample" => {
-                if self.serial { return Err("Serial worker emitted numeric sample".into()); }
+                if self.serial {
+                    return Err("Serial worker emitted numeric sample".into());
+                }
                 if self.stream_state.as_deref() != Some("active") {
                     return Err("Sample outside active stream".into());
                 }
@@ -1258,8 +1285,12 @@ impl Dispatcher {
         }
         let size = crate::adapters::serial::validate_rx(&event)?;
         let stamp = chrono::DateTime::parse_from_rfc3339(
-            event["timestamp_utc"].as_str().ok_or("Serial RX timestamp missing")?
-        ).map_err(|e| e.to_string())?.timestamp_millis();
+            event["timestamp_utc"]
+                .as_str()
+                .ok_or("Serial RX timestamp missing")?,
+        )
+        .map_err(|e| e.to_string())?
+        .timestamp_millis();
         let first = *self.first_sample_ms.get_or_insert(stamp);
         self.total += 1;
         event["captured"] = json!(self.total);
@@ -1267,8 +1298,12 @@ impl Dispatcher {
         {
             let mut data = self.store.lock().unwrap_or_else(|e| e.into_inner());
             if self.config.live_monitor {
-                let monitor = &mut data.workers.iter_mut()
-                    .find(|w| w.id == self.config.id).expect("registered background").monitor;
+                let monitor = &mut data
+                    .workers
+                    .iter_mut()
+                    .find(|w| w.id == self.config.id)
+                    .expect("registered background")
+                    .monitor;
                 let mut view = event.clone();
                 let hex = view["rx_hex"].as_str().expect("validated RX hex");
                 if hex.len() > SERIAL_MONITOR_BYTES * 2 {
@@ -1276,30 +1311,41 @@ impl Dispatcher {
                     view["rx_bytes"] = json!(SERIAL_MONITOR_BYTES);
                 }
                 monitor.push_back(view);
-                let mut monitored: usize = monitor.iter().map(|s| {
-                    s["rx_bytes"].as_u64().unwrap_or(0) as usize
-                }).sum();
+                let mut monitored: usize = monitor
+                    .iter()
+                    .map(|s| s["rx_bytes"].as_u64().unwrap_or(0) as usize)
+                    .sum();
                 while monitor.len() > MONITOR_POINTS || monitored > SERIAL_MONITOR_BYTES {
                     if let Some(old) = monitor.pop_front() {
-                        monitored = monitored.saturating_sub(
-                            old["rx_bytes"].as_u64().unwrap_or(0) as usize
-                        );
-                    } else { break; }
+                        monitored = monitored
+                            .saturating_sub(old["rx_bytes"].as_u64().unwrap_or(0) as usize);
+                    } else {
+                        break;
+                    }
                 }
             }
             if let Some(index) = self.current {
                 let dataset = &mut data.datasets[index];
                 dataset.metadata.row_count += 1;
-                dataset.metadata.rx_bytes = dataset.metadata.rx_bytes
-                    .checked_add(size).ok_or("Serial RX dataset byte count overflow")?;
+                dataset.metadata.rx_bytes = dataset
+                    .metadata
+                    .rx_bytes
+                    .checked_add(size)
+                    .ok_or("Serial RX dataset byte count overflow")?;
                 dataset.samples.push(event.clone());
             }
         }
         if let Some(writer) = &mut self.writer {
-            let format = self.csv.as_ref().map_or(
-                crate::serial_text::SerialDataFormat::Hex, |options| options.serial_format);
+            let format = self
+                .csv
+                .as_ref()
+                .map_or(crate::serial_text::SerialDataFormat::Hex, |options| {
+                    options.serial_format
+                });
             let row = serial_sample_row(&event, format, &mut self.serial_decoder)?;
-            writer.write_row(&row).map_err(|e| format!("Background CSV: {e}"))?;
+            writer
+                .write_row(&row)
+                .map_err(|e| format!("Background CSV: {e}"))?;
         }
         Ok(())
     }
@@ -1756,7 +1802,7 @@ mod tests {
                 expected_readings: Some(10),
                 custom: true,
                 scopes: false,
-            serial: false,
+                serial: false,
                 timer: None,
                 workflow_stop: crate::run::WorkflowStop::default(),
                 store: store.clone(),
@@ -1765,7 +1811,7 @@ mod tests {
                     output_folder: folder.clone(),
                     background_id: None,
                     scopes_format: ScopesExportMode::ValuesOnly,
-            serial_format: Default::default(),
+                    serial_format: Default::default(),
                 }),
                 current: None,
                 writer: None,

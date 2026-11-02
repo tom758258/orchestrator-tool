@@ -1,16 +1,27 @@
 //! Serial RX-only Background adapter. The serial-tool owns the COM session.
-use std::{path::Path, ffi::OsString};
-use serde_json::Value;
 use crate::{run::ExecutionMode, serial_setup::SerialSetup, worker::WorkerLaunchSpec};
+use serde_json::Value;
+use std::{ffi::OsString, path::Path};
 
 pub fn background_worker_launch_spec(
-    executable: &Path, mode: ExecutionMode, port: Option<&str>, setup: &SerialSetup
+    executable: &Path,
+    mode: ExecutionMode,
+    port: Option<&str>,
+    setup: &SerialSetup,
 ) -> Result<WorkerLaunchSpec, String> {
     setup.validate()?;
     let mut args: Vec<OsString> = vec!["worker".into(), "--mode".into()];
-    args.push(match mode { ExecutionMode::Simulate => "simulate", ExecutionMode::Live => "live" }.into());
+    args.push(
+        match mode {
+            ExecutionMode::Simulate => "simulate",
+            ExecutionMode::Live => "live",
+        }
+        .into(),
+    );
     if mode == ExecutionMode::Live {
-        let port = port.filter(|p| !p.trim().is_empty()).ok_or("Serial Live COM Port is required")?;
+        let port = port
+            .filter(|p| !p.trim().is_empty())
+            .ok_or("Serial Live COM Port is required")?;
         args.extend(["--port".into(), port.into()]);
     } else {
         args.extend(["--simulation-profile-id".into(), "loopback-v1".into()]);
@@ -41,15 +52,20 @@ pub fn validate_rx(event: &Value) -> Result<usize, String> {
     if event["rx_bytes"].as_u64() != Some(size as u64) {
         return Err("Serial RX byte count mismatch".into());
     }
-    let timestamp = event["timestamp_utc"].as_str().ok_or("Serial RX timestamp is missing")?;
+    let timestamp = event["timestamp_utc"]
+        .as_str()
+        .ok_or("Serial RX timestamp is missing")?;
     chrono::DateTime::parse_from_rfc3339(timestamp)
         .map_err(|_| "Invalid Serial RX timestamp".to_owned())?;
     Ok(size)
 }
 
 pub fn validate_stop_summary(summary: &Value, exit_success: bool) -> Result<(), String> {
-    if !exit_success || summary["event"] != "summary" || summary["ok"] != true
-        || summary["exit_code"] != 0 || !summary["fatal_error"].is_null()
+    if !exit_success
+        || summary["event"] != "summary"
+        || summary["ok"] != true
+        || summary["exit_code"] != 0
+        || !summary["fatal_error"].is_null()
     {
         return Err("Serial Background Worker failed during shutdown".into());
     }
@@ -62,9 +78,15 @@ mod tests {
     use serde_json::json;
     #[test]
     fn validate_serial_rx_bytes_not_sample_numbers() {
-        assert_eq!(validate_rx(&json!({"event":"rx","schema_version":3,
-            "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"00ff0d0a","rx_bytes":4})), Ok(4));
-        assert!(validate_rx(&json!({"event":"rx","schema_version":3,
-            "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"0","rx_bytes":1})).is_err());
+        assert_eq!(
+            validate_rx(&json!({"event":"rx","schema_version":3,
+            "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"00ff0d0a","rx_bytes":4})),
+            Ok(4)
+        );
+        assert!(
+            validate_rx(&json!({"event":"rx","schema_version":3,
+            "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"0","rx_bytes":1}))
+            .is_err()
+        );
     }
 }

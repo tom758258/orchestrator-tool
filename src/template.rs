@@ -270,11 +270,15 @@ impl Template {
                         })?
                 }
                 ToolSetup::Serial(setup) if instance.tool == ToolId::serial() => {
-                    setup.validate().map_err(|error|
-                        TemplateError::Instance(format!("{} Serial setup: {error}", instance.id)))?;
+                    setup.validate().map_err(|error| {
+                        TemplateError::Instance(format!("{} Serial setup: {error}", instance.id))
+                    })?;
                 }
                 ToolSetup::Empty(_)
-                    if !matches!(instance.tool.as_str(), "meters" | "powers" | "scopes" | "serial") => {}
+                    if !matches!(
+                        instance.tool.as_str(),
+                        "meters" | "powers" | "scopes" | "serial"
+                    ) => {}
                 _ => {
                     return Err(TemplateError::Instance(format!(
                         "invalid setup for {} ({})",
@@ -446,14 +450,22 @@ impl Template {
         if let Some(views) = &output_views {
             for (index, chart) in views.charts.iter().enumerate() {
                 if let Some(source) = &chart.source {
-                    let serial = template.backgrounds.iter()
+                    let serial = template
+                        .backgrounds
+                        .iter()
                         .find(|background| background.id == source.background_id)
-                        .and_then(|background| template.tool_instances.iter()
-                            .find(|instance| instance.id == background.tool_instance_id))
+                        .and_then(|background| {
+                            template
+                                .tool_instances
+                                .iter()
+                                .find(|instance| instance.id == background.tool_instance_id)
+                        })
                         .is_some_and(|instance| instance.tool == ToolId::serial());
                     if serial {
-                        return Err(TemplateError::OutputViews(
-                            format!("chart {} cannot use Serial RX as a numeric source", index + 1)));
+                        return Err(TemplateError::OutputViews(format!(
+                            "chart {} cannot use Serial RX as a numeric source",
+                            index + 1
+                        )));
                     }
                 }
             }
@@ -482,7 +494,9 @@ impl Template {
             let scopes_setup = instance.scopes_setup();
             let serial_setup = instance.serial_setup();
             if meters_setup.is_none() && scopes_setup.is_none() && serial_setup.is_none() {
-                return Err(invalid("Background requires Meters, Scopes or Serial".into()));
+                return Err(invalid(
+                    "Background requires Meters, Scopes or Serial".into(),
+                ));
             }
             if serial_setup.is_some() {
                 if background.limit_count.is_some()
@@ -615,9 +629,13 @@ impl Template {
                         ));
                     }
                     StepKind::ToolAction { target, .. }
-                        if instances.iter().any(|i| &i.id == target && i.tool == ToolId::serial()) =>
+                        if instances
+                            .iter()
+                            .any(|i| &i.id == target && i.tool == ToolId::serial()) =>
                     {
-                        return Err(format!("{target}: Serial Foreground is not supported in this phase"));
+                        return Err(format!(
+                            "{target}: Serial Foreground is not supported in this phase"
+                        ));
                     }
                     StepKind::ToolAction { target, action, .. } if action.as_str() == "measure" => {
                         if instances
