@@ -1108,6 +1108,11 @@ Runtime 後重新啟動 application。若 availability check 通過後仍出現 
   確認 Live。</li>
 <li>External tools 仍負責 instrument-specific limits 與 safety behavior。</li>
 </ul>
+<h2 id="16-serial-background-rx">16. Serial Background RX</h2>
+<p>在 Tools 註冊 <code>serial-tool.exe</code>，再到 Setup 新增 Serial Tool Instance、設定串列埠參數，勾選 Use this instance as a Background。Simulation 使用 <code>loopback-v1</code>；在沒有 TX 的情況下不會自行產生 RX。Live 必須選擇並保存 COM Port，執行前仍須明確確認。</p>
+<p>Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分段建立獨立 Dataset，不會停止來源。每個 RX Event 在 Output Data 形成一列，同一列包含該次收到的所有 Bytes；接收分段不代表通訊封包。選用的 RX-only Live Monitor 在 Capture OFF 時仍可繼續更新。</p>
+<p>Hex 與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。</p>
+<p>本階段 Serial 不提供 Numeric Charts 或 Foreground Commands。Worker 停止時仍核對 Stream 終止、Summary、EOF 和 Process Exit；若沒有更強的無遺失證據，Serial 資料品質保持 unknown，Worker／CSV 錯誤仍會使 Run Failed。</p>
   </main>
   <script>
     (() => {

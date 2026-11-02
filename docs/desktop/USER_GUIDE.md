@@ -1484,3 +1484,13 @@ WebView2 is installed and up to date.
   connection before confirming Live.
 - External tools remain responsible for instrument-specific limits and safety
   behavior.
+
+## 16. Serial Background RX
+
+Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Use this instance as a Background. Simulation uses `loopback-v1` and produces no unsolicited RX without TX. Live uses a saved COM Port and requires explicit confirmation.
+
+Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.
+
+Choose Hex or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.
+
+Serial does not offer numeric Charts or Foreground commands in this phase. Worker shutdown validates stream termination, summary, EOF and exit status. Serial data quality remains unknown without stronger loss evidence; actual Worker and CSV errors still fail the run.

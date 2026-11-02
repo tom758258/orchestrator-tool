@@ -134,11 +134,12 @@ mod tests {
 
         let statuses = inspect_built_in_tool_statuses(&app_dir, &config);
 
-        assert_eq!(statuses.len(), 4);
+        assert_eq!(statuses.len(), 5);
         assert_eq!(statuses[0].tool_id().as_str(), "meters");
         assert_eq!(statuses[1].tool_id().as_str(), "powers");
         assert_eq!(statuses[2].tool_id().as_str(), "scopes");
         assert_eq!(statuses[3].tool_id().as_str(), "wavegen");
+        assert_eq!(statuses[4].tool_id().as_str(), "serial");
 
         let meters = &statuses[0];
         assert!(meters.executable().is_ok());

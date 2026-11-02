@@ -137,7 +137,7 @@ the single source of background bindings and acquisition configuration:
 ```
 
 IDs use the same stable identifier syntax as Steps. Background IDs and Tool
-Instance ownership must be unique; targets must exist and use Meters or Scopes.
+Instance ownership must be unique; targets must exist and use Meters, Scopes or Serial.
 Meters supports all six `trigger_mode` values: `software`, `immediate`, `external`,
 `software-custom`, `immediate-custom`, and `external-custom`.
 
@@ -809,3 +809,9 @@ remain eligible for manual export as partial results. Rows still staged by a
 failed or stopped owning scope are not exported. Graceful Stop does not by
 itself mark a run as failed or cancelled. Already committed streaming CSV data
 is preserved after workflow failure or graceful Stop.
+
+## Serial Background RX-only (schema v2)
+
+A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or a FIFO.
+
+Simulation starts the existing `loopback-v1` profile; Live requires a separately saved and confirmed COM Port. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source or a Foreground Tool Action in this phase.

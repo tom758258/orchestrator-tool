@@ -158,6 +158,11 @@ mod tests {
                     ExecutablePathSource::NotConfigured,
                     ExecutableStatus::NotConfigured
                 ),
+                (
+                    "serial",
+                    ExecutablePathSource::NotConfigured,
+                    ExecutableStatus::NotConfigured
+                ),
             ]
         );
         assert_eq!(

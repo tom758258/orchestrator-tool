@@ -183,7 +183,6 @@ mod tests {
                 ("scopes", "scopes-tool.exe"),
                 ("wavegen", "wavegen-tool.exe"),
                 ("serial", "serial-tool.exe"),
-                ("serial", "serial-tool.exe"),
             ]
         );
     }

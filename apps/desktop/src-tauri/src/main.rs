@@ -1149,7 +1149,10 @@ fn get_background_output(
             monitor: store.monitor(&background_id),
             text_prefix_hex: dataset
                 .map(|id| {
-                    let tail = store.rows(id, offset.saturating_sub(3), 3)?;
+                    let start = offset.saturating_sub(3);
+                    // Prefix only the bytes before the requested window.
+                    // At offset 0, no prefix is allowed.
+                    let tail = store.rows(id, start, offset - start)?;
                     let mut hex = String::new();
                     for sample in tail {
                         if let Some(fragment) = sample["rx_hex"].as_str() {

@@ -79,7 +79,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
       <Collapsible title="Output Data"><p>{dataset.row_count} {serial ? 'RX events' : 'samples'} · rows {offset+1}–{Math.min(offset+100,dataset.row_count)}</p>
         {serial && <label>Serial Data View<select aria-label="Serial Data View" value={serialMode} onChange={e => setSerialMode(e.target.value as SerialDataFormat)}>
           <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>}
-        <div className="output-table-scroll"><table><thead><tr><th>Timestamp</th><th>Elapsed (s)</th><th>Sample</th>
+        <div className="output-table-scroll"><table><thead><tr><th>Timestamp</th><th>Elapsed (s)</th><th>{serial ? 'RX Event' : 'Sample'}</th>
           {serial ? <><th>Data</th><th>Bytes</th></> : fields.length ? fields.map(field => <th key={field}>{field}</th>) : <><th>Value</th><th>Unit</th></>}
           </tr></thead>
           <tbody>{output?.rows.map((sample,index) => <tr key={offset+index}>

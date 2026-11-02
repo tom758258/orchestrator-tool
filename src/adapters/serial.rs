@@ -45,7 +45,7 @@ pub fn validate_rx(event: &Value) -> Result<usize, String> {
         return Err("Invalid Serial RX event schema".into());
     }
     let hex = event["rx_hex"].as_str().ok_or("Serial RX hex is missing")?;
-    if hex.len() % 2 != 0 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("Invalid Serial RX hex".into());
     }
     let size = hex.len() / 2;
@@ -76,6 +76,42 @@ pub fn validate_stop_summary(summary: &Value, exit_success: bool) -> Result<(), 
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn background_startup_matches_serial_worker_contract() {
+        let setup = SerialSetup::default();
+        let executable = std::path::Path::new("serial-tool.exe");
+        let sim = background_worker_launch_spec(executable, ExecutionMode::Simulate, None, &setup)
+            .unwrap();
+        let live = background_worker_launch_spec(
+            executable,
+            ExecutionMode::Live,
+            Some("COM4"),
+            &setup,
+        )
+        .unwrap();
+        let as_args = |spec: &WorkerLaunchSpec| {
+            spec.arguments()
+                .iter()
+                .map(|part| part.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        let sim = as_args(&sim);
+        let live = as_args(&live);
+        assert!(sim
+            .windows(2)
+            .any(|p| p[0] == "--simulation-profile-id" && p[1] == "loopback-v1"));
+        assert!(!sim.iter().any(|p| p == "--port"));
+        assert!(live
+            .windows(2)
+            .any(|p| p[0] == "--port" && p[1] == "COM4"));
+        assert!(!live.iter().any(|p| p == "--simulation-profile-id"));
+        assert!(sim.contains(&"--streaming".to_owned()));
+        assert!(live.contains(&"--streaming".to_owned()));
+        assert!(
+            background_worker_launch_spec(executable, ExecutionMode::Live, None, &setup).is_err()
+        );
+    }
+
     #[test]
     fn validate_serial_rx_bytes_not_sample_numbers() {
         assert_eq!(
