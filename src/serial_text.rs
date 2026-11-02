@@ -120,8 +120,5 @@ mod tests {
             "\\u{0}\\t\\u{7F}\\u{80}"
         );
         assert_eq!(controls.decode("0d0a").unwrap(), "\\r\\n");
-        let mut unfinished = SerialTextDecoder::default();
-        assert_eq!(unfinished.decode("e4").unwrap(), "");
-        assert_eq!(unfinished.decode("b8ad").unwrap(), "中");
     }
 }

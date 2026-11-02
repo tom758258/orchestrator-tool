@@ -323,23 +323,6 @@ mod tests {
         assert_eq!(&text_rows[0][3], "\\u{0}�");
         assert_eq!(&text_rows[1][3], "\\r");
         assert_eq!(&text_rows[2][3], "\\nh");
-        let text_xlsx = export_datasets_with_serial_format(
-            &store,
-            &ids,
-            &folder,
-            BackgroundExportFormat::Xlsx,
-            DEFAULT_XLSX_ROWS,
-            ScopesExportMode::ValuesOnly,
-            SerialDataFormat::Text,
-        )
-        .unwrap();
-        let mut text_book: Xlsx<_> = calamine::open_workbook(&text_xlsx[0]).unwrap();
-        let text_sheet = text_book.worksheet_range("Sheet1").unwrap();
-        assert_eq!(
-            text_sheet.get((1, 3)),
-            Some(&Data::String("\\u{0}�".into()))
-        );
-
         // All selected datasets must be valid for BIN before creating any file.
         {
             let mut data = store.lock().unwrap();

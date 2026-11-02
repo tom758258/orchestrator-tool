@@ -119,5 +119,10 @@ mod tests {
             "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"0","rx_bytes":1}))
             .is_err()
         );
+        assert!(
+            validate_rx(&json!({"event":"rx","schema_version":3,
+            "timestamp_utc":"2026-11-02T10:00:00Z","rx_hex":"aabbcc","rx_bytes":2}))
+            .is_err()
+        );
     }
 }

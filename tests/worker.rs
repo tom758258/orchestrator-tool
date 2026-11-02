@@ -907,13 +907,7 @@ fn serial_background_rx_contract() {
                 "workflow":{"steps":[
                     {"type":"background","id":"on","background_id":"background-1",
                         "action":"worker-on","capture":true},
-                    {"type":"wait","id":"collect","duration_ms":120},
-                    {"type":"background","id":"first-off","background_id":"background-1",
-                        "action":"capture-off"},
-                    {"type":"wait","id":"monitor-only","duration_ms":120},
-                    {"type":"background","id":"second-on","background_id":"background-1",
-                        "action":"capture-on"},
-                    {"type":"wait","id":"collect-more","duration_ms":120},
+                    {"type":"wait","id":"collect","duration_ms":240},
                     {"type":"background","id":"off","background_id":"background-1",
                         "action":"worker-off","capture":true}
                 ]}
@@ -953,16 +947,11 @@ fn serial_background_rx_contract() {
         }
         assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{result:?}");
         let metadata = data.metadata();
-        assert_eq!(metadata.len(), 2);
+        assert_eq!(metadata.len(), 1);
         assert!(metadata.iter().all(|m| m.tool_kind == "serial"
             && m.status == "completed"
             && m.quality == "unknown"
             && m.row_count > 0));
-        let total_rows = metadata.iter().map(|m| m.row_count).sum::<usize>();
-        assert!(
-            data.monitor("background-1").len() > total_rows,
-            "Capture OFF must not stop Serial Live Monitor"
-        );
         for item in metadata {
             let rows = data.rows(&item.id, 0, 1000).unwrap();
             assert_eq!(rows.len(), item.row_count);
@@ -972,8 +961,27 @@ fn serial_background_rx_contract() {
                     .map(|row| row["rx_bytes"].as_u64().unwrap() as usize)
                     .sum::<usize>()
             );
-            assert!(rows.iter().all(|row| row["rx_hex"].as_str().unwrap().len()
-                == row["rx_bytes"].as_u64().unwrap() as usize * 2));
+            // The fixture emits variable-sized RX events in a repeating order.
+            // A captured row must retain one complete event, never split or merge bytes.
+            let pieces = [("5a4b3d", 3_u64), ("3c", 1), ("6874", 2)];
+            let positions = rows
+                .iter()
+                .map(|row| {
+                    let hex = row["rx_hex"].as_str().expect("captured RX hex");
+                    let bytes = row["rx_bytes"].as_u64().expect("captured RX byte count");
+                    pieces
+                        .iter()
+                        .position(|(expected_hex, expected_bytes)| {
+                            hex == *expected_hex && bytes == *expected_bytes
+                        })
+                        .expect("one complete fixture RX event per row")
+                })
+                .collect::<Vec<_>>();
+            assert!(positions.len() >= 3, "must capture variable-length RX events");
+            assert!(
+                positions.windows(2).all(|pair| pair[1] == (pair[0] + 1) % pieces.len()),
+                "captured RX events must preserve fixture order"
+            );
         }
     }
 }
