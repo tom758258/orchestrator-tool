@@ -103,10 +103,7 @@ fn hex_byte(value: &Value) -> Result<String, String> {
         }
         (integer & 0xff) as u8
     } else if let Some(real) = number.as_f64() {
-        if !real.is_finite()
-            || real < 0.0
-            || real.fract() != 0.0
-            || real > MAX_SAFE_INTEGER as f64
+        if !real.is_finite() || real < 0.0 || real.fract() != 0.0 || real > MAX_SAFE_INTEGER as f64
         {
             return Err("Hex Byte requires an exact non-negative integer".into());
         }
