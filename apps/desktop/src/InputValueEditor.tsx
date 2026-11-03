@@ -19,6 +19,7 @@ type ReferenceOptions = {
   earlierVariables: readonly string[]
   disabled: boolean
   numericSetpoint?: boolean
+  allowStringLiteral?: boolean
 }
 
 const SOURCE_HELP = {
@@ -73,17 +74,18 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   )
 }
 
-function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel = 'Value', allowBooleanLiteral = false }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel = 'Value', allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
   switch (value.source) {
     case 'literal':
-      return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') ? (
+      return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') || (allowStringLiteral && typeof value.value === 'string') ? (
         <>
-          {allowBooleanLiteral && <label className="step-property-field">
+          {(allowBooleanLiteral || allowStringLiteral) && <label className="step-property-field">
             <span className="step-property-label">Value type</span>
-            <select value={typeof value.value === 'boolean' ? 'boolean' : 'number'} disabled={disabled}
-              onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'boolean' ? false : 0 })}>
+            <select value={typeof value.value === 'boolean' ? 'boolean' : typeof value.value === 'string' ? 'string' : 'number'} disabled={disabled}
+              onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'boolean' ? false : event.target.value === 'string' ? '' : 0 })}>
               <option value="number">Number</option>
-              <option value="boolean">Boolean</option>
+              {allowBooleanLiteral && <option value="boolean">Boolean</option>}
+              {allowStringLiteral && <option value="string">String</option>}
             </select>
           </label>}
           <label className="step-property-field">
@@ -94,6 +96,9 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
                 <option value="true">True</option>
                 <option value="false">False</option>
               </select>
+            ) : typeof value.value === 'string' ? (
+              <input type="text" value={value.value} disabled={disabled}
+                onChange={(event) => onChange({ source: 'literal', value: event.target.value })} />
             ) : (
               <input type="number" step="any" value={value.value} disabled={disabled}
                 onChange={(event) => {
@@ -171,7 +176,7 @@ function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false
   )
 }
 
-function defaultOperand(source: string, references: ReferenceOptions, literal = 0): ExpressionOperandWire {
+function defaultOperand(source: string, references: ReferenceOptions, literal: number | string = 0): ExpressionOperandWire {
   switch (source) {
     case 'variable': return { source, variable: references.earlierVariables[0] }
     case 'step-output': return stepOutputReference(stepOutputCandidates(references.earlierSteps)[0], references.instances)
@@ -202,11 +207,11 @@ type InputValueEditorProps = ReferenceOptions & {
   onChange: (value: InputValueWire) => void
   sourceLabel?: string
   literalLabel?: string
-  literalDefault?: number
+  literalDefault?: number | string
 }
 
 export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
-  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, ...references }: InputValueEditorProps) {
+  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, allowStringLiteral = false, ...references }: InputValueEditorProps) {
   const operandEditor = (side: 'left' | 'right') => value.source === 'expression' && (
     <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
       onChange={(operand) => onChange({ ...value, [side]: operand })} />
@@ -273,7 +278,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
         </div>
       ) : (
         value.source !== 'elapsed-time' && value.source !== 'timestamp' &&
-        <OperandEditor {...references} value={value} literalLabel={literalLabel} onChange={onChange} />
+        <OperandEditor {...references} allowStringLiteral={allowStringLiteral} value={value} literalLabel={literalLabel} onChange={onChange} />
       )}
     </>
   )

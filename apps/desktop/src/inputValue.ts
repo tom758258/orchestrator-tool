@@ -50,6 +50,12 @@ export type CuratedResultField = {
 export const CUSTOM_RESULT = 'custom'
 
 const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[]>> = {
+  'serial/send': [{ label: 'TX Hex', pointer: '/tx_hex' }, { label: 'TX Bytes', pointer: '/tx_bytes' }],
+  'serial/send-file': [{ label: 'File Bytes', pointer: '/file_bytes' }, { label: 'Bytes Written', pointer: '/bytes_written' }],
+  'serial/receive': [{ label: 'RX Hex', pointer: '/rx_hex' }, { label: 'RX Bytes', pointer: '/rx_bytes' }],
+  'serial/query': [{ label: 'RX Hex', pointer: '/rx_hex' }, { label: 'RX Bytes', pointer: '/rx_bytes' },
+    { label: 'TX Hex', pointer: '/tx_hex' }, { label: 'TX Bytes', pointer: '/tx_bytes' },
+    { label: 'Delimiter Hex', pointer: '/delimiter_hex' }],
   'scopes/measure': [
     { label: 'Value', pointer: '/value' },
     { label: 'Unit', pointer: '/unit' },

@@ -44,7 +44,7 @@ impl Error for WorkflowExecutionError {}
 /// Executes root steps and loop bodies sequentially with fail-fast semantics.
 ///
 /// `sessions` must contain already-started `WorkerSession` references for
-/// referenced Powers, Meters and Scopes instances. The executor does not start or shut down workers.
+/// referenced Powers, Meters, Scopes and Serial instances. The executor does not start or shut down workers.
 pub fn execute_workflow(
     template: &Template,
     sessions: &HashMap<ToolInstanceId, &WorkerSession>,
@@ -710,7 +710,8 @@ fn dispatch_tool_action(
     let is_meters = tool == &ToolId::meters();
 
     let is_scopes = tool == &ToolId::scopes();
-    if !is_powers && !is_meters && !is_scopes {
+    let is_serial = tool == &ToolId::serial();
+    if !is_powers && !is_meters && !is_scopes && !is_serial {
         return StepOutcome::Failed {
             message: format!("unsupported tool {tool}"),
         };
@@ -734,6 +735,11 @@ fn dispatch_tool_action(
             Err(error) => StepOutcome::Failed {
                 message: error.to_string(),
             },
+        }
+    } else if is_serial {
+        match crate::adapters::serial::run_action(session, action, arguments, timeout) {
+            Ok(output) => StepOutcome::Succeeded { output },
+            Err(message) => StepOutcome::Failed { message },
         }
     } else if is_scopes {
         match crate::adapters::scopes::run_action(

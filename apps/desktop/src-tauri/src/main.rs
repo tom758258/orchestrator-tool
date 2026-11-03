@@ -555,9 +555,16 @@ async fn run_workflow_simulation(
     let control = state.register()?;
     let runs = runs.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        runs.clear_current();
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+        let invalid_files = orchestrator_tool::adapters::serial::send_file_path_errors(&template);
+        if !invalid_files.is_empty() {
+            return Err(format!(
+                "Serial Send File preflight failed:\n{}",
+                invalid_files.join("\n")
+            ));
+        }
+        runs.clear_current();
         let stored = runs.begin(template.clone());
         *control.run_id.lock().unwrap() = Some(stored.read().unwrap().run_id);
         let _ = on_progress.send(WorkflowRunEventDto::ProgressBatch {
@@ -650,6 +657,13 @@ async fn run_workflow_live(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let template =
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+        let invalid_files = orchestrator_tool::adapters::serial::send_file_path_errors(&template);
+        if !invalid_files.is_empty() {
+            return Err(format!(
+                "Serial Send File preflight failed:\n{}",
+                invalid_files.join("\n")
+            ));
+        }
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;
         let (stored, mut launch_specs) = begin_live_run(
@@ -1405,6 +1419,14 @@ fn save_workflow_template(path: String, template_json: String) -> Result<String,
 }
 
 #[tauri::command]
+fn check_serial_send_files(template_json: String) -> Result<Vec<String>, String> {
+    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
+    Ok(orchestrator_tool::adapters::serial::send_file_path_errors(
+        &template,
+    ))
+}
+
+#[tauri::command]
 fn load_workflow_template(path: String) -> Result<String, String> {
     let template = Template::load_from_file(&path).map_err(|error| error.to_string())?;
     template.to_json_string().map_err(|error| error.to_string())
@@ -1508,6 +1530,7 @@ fn main() {
             validate_workflow_draft,
             save_workflow_template,
             load_workflow_template,
+            check_serial_send_files,
             get_last_run_page_rows,
             get_last_run_executions,
             get_last_run_messages,
