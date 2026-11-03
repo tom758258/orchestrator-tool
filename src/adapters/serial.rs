@@ -93,13 +93,20 @@ pub fn foreground_worker_launch_spec(
 }
 
 fn hex_byte(value: &Value) -> Result<String, String> {
+    const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
     let number = value
         .as_number()
         .ok_or("Hex Byte requires a non-negative integer number")?;
     let low_byte = if let Some(integer) = number.as_u64() {
+        if integer > MAX_SAFE_INTEGER {
+            return Err("Hex Byte requires an exact non-negative integer".into());
+        }
         (integer & 0xff) as u8
     } else if let Some(real) = number.as_f64() {
-        if !real.is_finite() || real < 0.0 || real.fract() != 0.0 || real > 9_007_199_254_740_991.0
+        if !real.is_finite()
+            || real < 0.0
+            || real.fract() != 0.0
+            || real > MAX_SAFE_INTEGER as f64
         {
             return Err("Hex Byte requires an exact non-negative integer".into());
         }
@@ -405,10 +412,19 @@ mod tests {
             (json!(257), "01"),
             (json!(4660), "34"),
             (json!(3.0), "03"),
+            (json!(9_007_199_254_740_991_u64), "ff"),
         ] {
             assert_eq!(encode_tx("hex-byte", &input).unwrap(), expected);
         }
-        for value in [json!(-10), json!(1.5), json!("123"), json!(true)] {
+        for value in [
+            json!(-10),
+            json!(1.5),
+            json!("123"),
+            json!(true),
+            json!(9_007_199_254_740_992_u64),
+            json!(9_007_199_254_740_993_u64),
+            json!(9_007_199_254_740_992.0),
+        ] {
             assert!(encode_tx("hex-byte", &value).is_err());
         }
         assert_eq!(encode_tx("text", &json!("HELLO")).unwrap(), "48454c4c4f");
