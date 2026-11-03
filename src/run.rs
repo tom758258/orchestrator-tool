@@ -264,10 +264,17 @@ fn run_workflow_internal(
             "Unknown CSV Background ID {id}"
         )));
     }
+    let invalid_files = crate::adapters::serial::send_file_path_errors(template);
+    if !invalid_files.is_empty() {
+        return Err(WorkflowRunError::Background(format!(
+            "Serial Send File preflight failed:\\n{}",
+            invalid_files.join("\\n")
+        )));
+    }
     let referenced_instances = template
         .referenced_tool_instances()
         .into_iter()
-        .filter(|instance| matches!(instance.tool.as_str(), "powers" | "meters" | "scopes"))
+        .filter(|instance| matches!(instance.tool.as_str(), "powers" | "meters" | "scopes" | "serial"))
         .filter(|instance| !template.is_background_instance(&instance.id))
         .map(|instance| instance.id.clone())
         .collect::<Vec<_>>();

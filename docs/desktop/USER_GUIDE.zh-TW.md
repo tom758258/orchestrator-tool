@@ -1262,4 +1262,14 @@ Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分�
 
 Hex 與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。
 
-本階段 Serial 不提供 Numeric Charts 或 Foreground Commands。Worker 停止時仍核對 Stream 終止、Summary、EOF 和 Process Exit；若沒有更強的無遺失證據，Serial 資料品質保持 unknown，Worker／CSV 錯誤仍會使 Run Failed。
+Serial 不提供 Numeric Charts。Worker 停止時仍核對 Stream 終止、Summary、EOF 和 Process Exit；若沒有更強的無遺失證據，Serial 資料品質保持 unknown，Worker／CSV 錯誤仍會使 Run Failed。
+
+Steps Palette 將 Background Worker ON/OFF 與 Background Capture ON/OFF 獨立歸類到 Background Workflow。Template 沒有任何 Background Binding 時分類鎖定；新增 Binding 後預設展開，可自行收合，收合不會刪除現有 Steps。
+
+Serial Foreground 提供 Serial Send、Serial Send File、Serial Receive、Serial Query 四個 Actions，使用一般非 Streaming Serial Worker。同一 Serial Tool Instance 不可同時作為 Foreground 與 Background。既有 Serial Background RX-only Capture／Monitor 不變。
+
+Send／Query TX 可選 Text（僅接受字串，發送 UTF-8）或 Hex Byte（僅接受非負整數，一次發送最低 8 bits 的一個 Byte）。例如數值 4660 在 Hex Byte 模式僅發送 34。負數、小數或錯誤資料型別使消費該值的 Step Failed，且不發送任何資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
+
+Query Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
+
+Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。本次不提供 Serial run-sequence Workflow Action、Background TX 或 Workflow RX FIFO。

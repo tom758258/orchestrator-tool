@@ -1,4 +1,5 @@
 import ScopesActionEditor from './ScopesActionEditor'
+import SerialActionEditor from './SerialActionEditor'
 import { useLivePreflight } from './useLivePreflight'
 import { SCOPES_ACTIONS, scopesActionArguments, type ScopesAction } from './scopesActions'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -139,6 +140,7 @@ type WorkflowStopRequest = { generation: number; sent: boolean; error?: string }
 type StepPreset =
   | 'background-worker-on' | 'background-worker-off' | 'background-capture-on' | 'background-capture-off'
   | `scope-${ScopesAction}`
+  | 'serial-send' | 'serial-send-file' | 'serial-receive' | 'serial-query'
   | 'for'
   | 'while'
   | 'assert'
@@ -162,15 +164,21 @@ type StepPresetOption = {
 
 const STEP_CATEGORIES = [
   { category: 'Workflow', tool: null },
+  { category: 'Background Workflow', tool: null },
   { category: 'Meters', tool: 'meters' },
   { category: 'Powers', tool: 'powers' },
   { category: 'Scopes', tool: 'scopes' },
+  { category: 'Serial', tool: 'serial' },
 ] as const
 
 const STEP_PRESETS: StepPresetOption[] = [
   ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
     label: `Background ${action.split('-').map(word => word === 'on' || word === 'off' ? word.toUpperCase() : word[0].toUpperCase()+word.slice(1)).join(' ')}`,
-    prefix: `background-${action}`, category: 'Workflow' })),
+    prefix: `background-${action}`, category: 'Background Workflow' })),
+  ...(['send', 'send-file', 'receive', 'query'] as const).map(action => ({
+    value: `serial-${action}` as StepPreset, label: `Serial ${action.split('-').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}`,
+    prefix: `serial-${action}`, category: 'Serial', tool: 'serial' as const,
+  })),
   ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
   { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
@@ -187,6 +195,10 @@ const STEP_PRESETS: StepPresetOption[] = [
 ]
 
 const TOOL_ACTION_LABELS: Record<string, string> = {
+  'serial/send': 'Serial Send',
+  'serial/send-file': 'Serial Send File',
+  'serial/receive': 'Serial Receive',
+  'serial/query': 'Serial Query',
   ...Object.fromEntries(SCOPES_ACTIONS.map(([action, label]) => [`scopes/${action}`, label])),
   'powers/set-output': 'Power Set Output',
   'powers/protection-status': 'Power Protection Status',
@@ -197,6 +209,10 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 }
 
 const STEP_HELP: Record<string, string> = {
+  'serial/send': 'Send UTF-8 Text or one Hex Byte to the selected Serial instance.',
+  'serial/send-file': 'Send a Worker-local file. Run is blocked if the path is invalid.',
+  'serial/receive': 'Receive up to Max Bytes once; result contains rx_hex and rx_bytes.',
+  'serial/query': 'Send a byte or UTF-8 string and read until the specified delimiter.',
   while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
   for: 'Repeat these body steps over an exact decimal range. Loops can nest up to 5 levels.',
   assert: 'Fail the Workflow when this comparison is false.',
@@ -254,6 +270,14 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
   if (preset.startsWith('background-')) {
     const action = preset.slice(11) as import('./workflow').BackgroundAction
     return { type: 'background', id, background_id: target, action, capture: action === 'worker-off' }
+  }
+  if (preset.startsWith('serial-')) {
+    const action = preset.slice(7)
+    const arguments_: Record<string, unknown> = action === 'send-file' ? { path: '' }
+      : action === 'receive' ? { max_bytes: 1024 }
+      : action === 'query' ? { tx_format: 'text', tx_value: '', delimiter_format: 'text', delimiter_value: '\\r\\n', max_bytes: 1024 }
+      : { tx_format: 'text', tx_value: '' }
+    return { type: 'tool-action', id, target, action, arguments: arguments_ }
   }
   if (preset.startsWith('scope-')) {
     const action = preset.slice(6) as ScopesAction
@@ -498,7 +522,7 @@ function App() {
   const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
   const [runChartFitData, setRunChartFitData] = useState(false)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
-    Workflow: true, Powers: true, Meters: true, Scopes: true,
+    Workflow: true, 'Background Workflow': true, Powers: true, Meters: true, Scopes: true, Serial: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [streamingExpanded, setStreamingExpanded] = useState(false)
@@ -1159,7 +1183,14 @@ function App() {
       setWorkflowChangedSinceRun(false)
       setCsvStreamStatus(null)
       clearRunFeedback()
-      setTemplateIoMessage('Template loaded.')
+      const fileErrors = allWorkflowSteps(loadedDraft.workflow.steps).some(step =>
+         step.type === 'tool-action' && step.action === 'send-file' &&
+         loadedDraft.tool_instances.some(instance => instance.id === step.target && instance.tool === 'serial'))
+         ? await invoke<string[]>('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) }) ?? []
+         : []
+       setTemplateIoMessage(fileErrors.length > 0
+         ? `Template loaded. Serial Send File warning:\n${fileErrors.join('\n')}`
+         : 'Template loaded.')
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
@@ -2344,7 +2375,8 @@ function App() {
                     <div className="step-palette-items">
                       {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
-                        const locked = tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
+                        const locked = category === 'Background Workflow' ? !workflowDraft.backgrounds?.length
+                          : tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
                         const expanded = !locked && expandedStepCategories[category]
                         return (
                         <section key={category}>
@@ -2361,7 +2393,9 @@ function App() {
                             </button>
                           </h4>
                           {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
-                            No {category} Tool Instance. Add one in Setup.
+                            {category === 'Background Workflow'
+                               ? 'No Background binding. Enable a Background in Tool Setup.'
+                               : `No ${category} Tool Instance. Add one in Setup.`}
                           </p>}
                           {expanded && <div className="step-palette-items">
                             {presets.map((preset) => (
@@ -2685,6 +2719,7 @@ function App() {
                         <InputValueEditor
                           key={selectedStep.id}
                           value={selectedValue}
+                           allowStringLiteral={selectedStep.type === 'set-variable'}
                           timeFormat={selectedStep.type === 'output' ? selectedStep.time_format : undefined}
                           onTimeFormatChange={selectedStep.type === 'output' ? format => updateStep(selectedStep.id, step =>
                             step.type === 'output' ? { ...step, time_format: format } : step) : undefined}
@@ -2800,6 +2835,12 @@ function App() {
                         />
                       )}
 
+                      {selectedToolAction && selectedAction?.startsWith('serial/') && (
+                        <SerialActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
+                          earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
+                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                          onChange={next => updateStep(selectedToolAction.id, () => next)} />
+                      )}
                       {selectedToolAction && selectedAction?.startsWith('scopes/') && (
                         <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
                           executionMode={executionMode} scopesExecutableKey={scopesExecutableKey}
@@ -2885,7 +2926,8 @@ function App() {
                         !selectedPowersAction &&
                         selectedAction !== 'powers/protection-status' &&
                         selectedAction !== 'meters/measure' &&
-                        !selectedAction?.startsWith('scopes/') && (
+                        !selectedAction?.startsWith('scopes/') &&
+                         !selectedAction?.startsWith('serial/') && (
                           <p className="step-properties-empty">
                             No editable properties are available for this step.
                           </p>

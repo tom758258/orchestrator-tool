@@ -628,15 +628,6 @@ impl Template {
                             "{target} cannot be used by both Foreground and Background"
                         ));
                     }
-                    StepKind::ToolAction { target, .. }
-                        if instances
-                            .iter()
-                            .any(|i| &i.id == target && i.tool == ToolId::serial()) =>
-                    {
-                        return Err(format!(
-                            "{target}: Serial Foreground is not supported in this phase"
-                        ));
-                    }
                     StepKind::ToolAction { target, action, .. } if action.as_str() == "measure" => {
                         if instances
                             .iter()
@@ -735,6 +726,10 @@ fn validate_tool_action_parameters(
                         step.id()
                     ))
                 };
+                if *tool == ToolId::serial() {
+                    crate::adapters::serial::validate_action(action.as_str(), arguments, bindings)
+                        .map_err(|reason| error("arguments", &reason))?;
+                }
                 let numeric_parameters: &[&str] = if *tool == ToolId::scopes() {
                     match action.as_str() {
                         "channel-scale" => &["volts_per_division"],
@@ -3627,6 +3622,25 @@ mod tests {
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(error.to_string().contains("unknown tool instance target"));
         assert!(error.to_string().contains("missing-instance"));
+    }
+
+    #[test]
+    fn serial_foreground_template_accepts_four_actions_not_run_sequence() {
+        let mut wire = json!({
+            "schema_version": 2, "name": "Serial", 
+            "tool_instances": [{ "id": "serial-1", "tool": "serial",
+                "setup": {"baud": 115200}}],
+            "workflow": {"steps": [{ "type": "tool-action", "id": "send",
+                "target": "serial-1", "action": "send",
+                "arguments": {"tx_format": "hex-byte", "tx_value": 4660}}]}
+        });
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
+        wire["workflow"]["steps"][0]["action"] = json!("run-sequence");
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["action"] = json!("send");
+        wire["workflow"]["steps"][0]["bindings"] =
+            json!({"tx_value": {"source": "variable", "variable": "x"}});
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
     }
 
     #[test]

@@ -205,6 +205,7 @@ async function toolsView(initial, draft = template, source, local = {}) {
       calls.push([command, args])
       if (command === 'get_tool_status') return statuses
       if (command === 'create_workflow_draft' || command === 'load_workflow_template') return JSON.stringify(draft)
+      if (command === 'check_serial_send_files') return []
       if (command === 'get_live_resources') return local.resources ?? {}
       if (command === 'get_live_resource_identities') return local.identities ?? {}
       if (command === 'get_live_backends') return local.backends ?? {}
@@ -251,6 +252,23 @@ function assertCategories(app, unlocked) {
   return sections
 }
 
+test('Background Workflow palette locks only when Background bindings are missing', async () => {
+  const empty = await toolsView([status('serial')], { tool_instances: [], workflow: { steps: [] } })
+  button(empty.render(), 'Workflow').props.onClick()
+  const category = app => app.render().find(node => node.type === 'section' && node.key === 'Background Workflow')
+  assert.equal(categoryHeader(category(empty)).props.disabled, true)
+  assert.ok(text(category(empty)).includes('No Background binding'))
+  const draft = { tool_instances: [{ id: 'serial-1', tool: 'serial', setup: { baud: 115200 } }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
+    workflow: { steps: [] } }
+  const withBackground = await toolsView([status('serial')], draft)
+  button(withBackground.render(), 'Workflow').props.onClick()
+  assert.equal(categoryHeader(category(withBackground)).props.disabled, false)
+  assert.equal(categoryHeader(category(withBackground)).props['aria-expanded'], true)
+  assert.deepEqual(categorySteps(category(withBackground)).map(text),
+    ['Background Worker ON', 'Background Worker OFF', 'Background Capture ON', 'Background Capture OFF'])
+})
+
 test('Steps categories keep fixed order and lock only by Template instances in either mode', async () => {
   const empty = { tool_instances: [], workflow: { steps: [] } }
   const app = await toolsView([status('meters'), status('powers'), status('scopes')], empty)
@@ -259,8 +277,7 @@ test('Steps categories keep fixed order and lock only by Template instances in e
   const sections = assertCategories(app, [])
   assert.equal(categoryHeader(sections[0]).props['aria-expanded'], true)
   assert.deepEqual(categorySteps(sections[0]).map(text),
-    ['Background Worker ON', 'Background Worker OFF', 'Background Capture ON', 'Background Capture OFF',
-      'While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
+    ['While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
 
   const meters = { id: 'meters-1', tool: 'meters', setup: {} }
   app.render().find(node => node.type === 'ToolSetupEditor').props.onChange([meters])
