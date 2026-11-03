@@ -9,6 +9,16 @@ pub fn background_worker_launch_spec(
     port: Option<&str>,
     setup: &SerialSetup,
 ) -> Result<WorkerLaunchSpec, String> {
+    serial_worker_launch_spec(executable, mode, port, setup, true)
+}
+
+fn serial_worker_launch_spec(
+    executable: &Path,
+    mode: ExecutionMode,
+    port: Option<&str>,
+    setup: &SerialSetup,
+    streaming: bool,
+) -> Result<WorkerLaunchSpec, String> {
     setup.validate()?;
     let mut args: Vec<OsString> = vec!["worker".into(), "--mode".into()];
     args.push(
@@ -24,7 +34,12 @@ pub fn background_worker_launch_spec(
             .ok_or("Serial Live COM Port is required")?;
         args.extend(["--port".into(), port.into()]);
     } else {
-        args.extend(["--simulation-profile-id".into(), "loopback-v1".into()]);
+        let profile = if streaming {
+            "periodic-rx-v1"
+        } else {
+            "loopback-v1"
+        };
+        args.extend(["--simulation-profile-id".into(), profile.into()]);
     }
     for (flag, value) in [
         ("--baud", setup.baud.to_string()),
@@ -36,7 +51,10 @@ pub fn background_worker_launch_spec(
     ] {
         args.extend([flag.into(), value.into()]);
     }
-    args.extend(["--control-port".into(), "0".into(), "--streaming".into()]);
+    args.extend(["--control-port".into(), "0".into()]);
+    if streaming {
+        args.push("--streaming".into());
+    }
     Ok(WorkerLaunchSpec::new(executable, args))
 }
 
@@ -79,17 +97,7 @@ pub fn foreground_worker_launch_spec(
     port: Option<&str>,
     setup: &SerialSetup,
 ) -> Result<WorkerLaunchSpec, String> {
-    setup.validate()?;
-    let mut args = background_worker_launch_spec(executable, mode, port, setup)?
-        .arguments()
-        .to_vec();
-    if args
-        .last()
-        .is_some_and(|last| last.to_string_lossy() == "--streaming")
-    {
-        args.pop();
-    }
-    Ok(WorkerLaunchSpec::new(executable, args))
+    serial_worker_launch_spec(executable, mode, port, setup, false)
 }
 
 fn hex_byte(value: &Value) -> Result<String, String> {
@@ -507,7 +515,7 @@ mod tests {
         let live = as_args(&live);
         assert!(
             sim.windows(2)
-                .any(|p| p[0] == "--simulation-profile-id" && p[1] == "loopback-v1")
+                .any(|p| p[0] == "--simulation-profile-id" && p[1] == "periodic-rx-v1")
         );
         assert!(!sim.iter().any(|p| p == "--port"));
         assert!(live.windows(2).any(|p| p[0] == "--port" && p[1] == "COM4"));

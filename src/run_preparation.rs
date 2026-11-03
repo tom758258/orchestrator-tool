@@ -733,28 +733,13 @@ mod tests {
         .unwrap();
         let mut config = Config::default();
         config.set_executable_path(&ToolId::serial(), &executable);
-        let mut specs = prepare_worker_launch_specs(
+        let specs = prepare_worker_launch_specs(
             &template,
             ExecutionMode::Simulate,
             executable.parent().unwrap(),
             &config,
         )
         .unwrap();
-        let id = ToolInstanceId::new("serial-bg").unwrap();
-        let original = specs.remove(&id).unwrap();
-        let mut args = original.arguments().to_vec();
-        let profile = args
-            .iter()
-            .position(|arg| arg == "--simulation-profile-id")
-            .expect("real Serial SIM launch must declare profile")
-            + 1;
-        assert_eq!(args[profile], std::ffi::OsStr::new("loopback-v1"));
-        args[profile] = "periodic-rx-v1".into();
-        specs.insert(
-            id,
-            WorkerLaunchSpec::new(&executable, args)
-                .with_manifest(original.manifest().unwrap().clone()),
-        );
 
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         let result = run_workflow_streaming_controlled(
