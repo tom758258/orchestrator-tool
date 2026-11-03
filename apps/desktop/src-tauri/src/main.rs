@@ -1421,7 +1421,9 @@ fn save_workflow_template(path: String, template_json: String) -> Result<String,
 #[tauri::command]
 fn check_serial_send_files(template_json: String) -> Result<Vec<String>, String> {
     let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-    Ok(orchestrator_tool::adapters::serial::send_file_path_errors(&template))
+    Ok(orchestrator_tool::adapters::serial::send_file_path_errors(
+        &template,
+    ))
 }
 
 #[tauri::command]
