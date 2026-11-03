@@ -465,7 +465,11 @@ mod tests {
             std::time::Duration::from_millis(10),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("Serial Send File preflight failed"));
+        assert!(
+            error
+                .to_string()
+                .contains("Serial Send File preflight failed")
+        );
         std::fs::write(&path, [0x01, 0x02]).unwrap();
         assert!(send_file_path_errors(&template).is_empty());
         std::fs::remove_file(path).unwrap();

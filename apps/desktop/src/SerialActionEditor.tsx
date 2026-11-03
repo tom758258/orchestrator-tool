@@ -30,7 +30,7 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
   const txValue = step.bindings?.tx_value ??
     { source: 'literal' as const, value: step.arguments.tx_value ?? (txFormat === 'text' ? '' : 0) }
   const changeMode = (mode: string) => {
-    const args = { ...step.arguments, tx_format: mode }
+    const args: Record<string, unknown> = { ...step.arguments, tx_format: mode }
     if (!step.bindings?.tx_value) {
       args.tx_value = mode === 'text' ? '' : 0
     }
