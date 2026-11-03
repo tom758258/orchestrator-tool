@@ -626,11 +626,19 @@ mod tests {
                 "tool_instances": [{ "id": "serial-1", "tool": "serial",
                     "setup": {"baud": 115200}}],
                 "workflow": {"steps": [
+                    {"type": "set-variable", "id": "declare-message",
+                        "variable": "message", "value": {"source": "literal", "value": "HELLO"}},
                     {"type": "tool-action", "id": "send", "target": "serial-1",
                         "action": "send", "arguments": {"tx_format": "text",
-                            "tx_value": "HELLO"}},
+                            "tx_value": ""},
+                        "bindings": {"tx_value": {"source": "variable", "variable": "message"}}},
                     {"type": "tool-action", "id": "receive", "target": "serial-1",
                         "action": "receive", "arguments": {"max_bytes": 5}},
+                    {"type": "tool-action", "id": "send-byte", "target": "serial-1",
+                        "action": "send", "arguments": {"tx_format": "hex-byte", "tx_value": 0},
+                        "bindings": {"tx_value": {"source": "step-output", "step_id": "receive", "pointer": "/rx_bytes"}}},
+                    {"type": "tool-action", "id": "receive-byte", "target": "serial-1",
+                        "action": "receive", "arguments": {"max_bytes": 1}},
                     {"type": "tool-action", "id": "query", "target": "serial-1",
                         "action": "query", "arguments": {"tx_format": "text",
                             "tx_value": "END\r\n", "delimiter_format": "hex",
@@ -661,15 +669,23 @@ mod tests {
             Duration::from_secs(8),
         )
         .unwrap();
-        assert_eq!(result.step_executions().len(), 4);
+        assert_eq!(result.step_executions().len(), 7);
         assert!(
             result
                 .step_executions()
                 .iter()
                 .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
         );
-        assert!(matches!(result.step_executions()[1].outcome(),
-            StepOutcome::Succeeded { output } if output["rx_hex"] == "48454c4c4f"));
+        assert!(matches!(result.step_executions()[2].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "48454c4c4f" && output["rx_bytes"] == 5));
+        assert!(matches!(result.step_executions()[3].outcome(),
+            StepOutcome::Succeeded { output } if output["tx_hex"] == "05" && output["tx_bytes"] == 1));
+        assert!(matches!(result.step_executions()[4].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "05" && output["rx_bytes"] == 1));
+        assert!(matches!(result.step_executions()[5].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "454e440d0a" && output["delimiter_hex"] == "0d0a"));
+        assert!(matches!(result.step_executions()[6].outcome(),
+            StepOutcome::Succeeded { output } if output["file_bytes"] == 3 && output["bytes_written"] == 3));
         std::fs::remove_file(file).unwrap();
     }
 
