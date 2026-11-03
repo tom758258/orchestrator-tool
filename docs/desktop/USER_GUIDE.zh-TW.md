@@ -1256,7 +1256,7 @@ Runtime 後重新啟動 application。若 availability check 通過後仍出現 
 
 ## 16. Serial Background RX
 
-在 Tools 註冊 `serial-tool.exe`，再到 Setup 新增 Serial Tool Instance、設定串列埠參數，勾選 Use this instance as a Background。Simulation 使用 `loopback-v1`；在沒有 TX 的情況下不會自行產生 RX。Live 必須選擇並保存 COM Port，執行前仍須明確確認。
+在 Tools 註冊 `serial-tool.exe`，再到 Setup 新增 Serial Tool Instance、設定串列埠參數，勾選 Use this instance as a Background。Background Simulation 使用 Serial Tool 的 `periodic-rx-v1`，不需 TX 也會自行產生 RX（約每 100 ms 一筆 4 Bytes 計數資料）；Foreground Simulation 維持 `loopback-v1`。Live 必須選擇並保存 COM Port，執行前仍須明確確認。
 
 Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分段建立獨立 Dataset，不會停止來源。每個 RX Event 在 Output Data 形成一列，同一列包含該次收到的所有 Bytes；接收分段不代表通訊封包。選用的 RX-only Live Monitor 在 Capture OFF 時仍可繼續更新。
 
