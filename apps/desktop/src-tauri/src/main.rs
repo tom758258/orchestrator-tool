@@ -559,7 +559,10 @@ async fn run_workflow_simulation(
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let invalid_files = orchestrator_tool::adapters::serial::send_file_path_errors(&template);
         if !invalid_files.is_empty() {
-            return Err(format!("Serial Send File preflight failed:\\n{}", invalid_files.join("\\n")));
+            return Err(format!(
+                "Serial Send File preflight failed:\n{}",
+                invalid_files.join("\n")
+            ));
         }
         runs.clear_current();
         let stored = runs.begin(template.clone());
@@ -656,7 +659,10 @@ async fn run_workflow_live(
             Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
         let invalid_files = orchestrator_tool::adapters::serial::send_file_path_errors(&template);
         if !invalid_files.is_empty() {
-            return Err(format!("Serial Send File preflight failed:\\n{}", invalid_files.join("\\n")));
+            return Err(format!(
+                "Serial Send File preflight failed:\n{}",
+                invalid_files.join("\n")
+            ));
         }
         let application_dir = current_application_dir().map_err(|error| error.to_string())?;
         let config = load_desktop_config(&app)?;

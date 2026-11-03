@@ -72,7 +72,6 @@ pub fn validate_stop_summary(summary: &Value, exit_success: bool) -> Result<(), 
     Ok(())
 }
 
-
 /** Ordinary multi-job Serial worker, sharing the Background startup settings without RX streaming. */
 pub fn foreground_worker_launch_spec(
     executable: &Path,
@@ -84,19 +83,23 @@ pub fn foreground_worker_launch_spec(
     let mut args = background_worker_launch_spec(executable, mode, port, setup)?
         .arguments()
         .to_vec();
-    if args.last().is_some_and(|last| last.to_string_lossy() == "--streaming") {
+    if args
+        .last()
+        .is_some_and(|last| last.to_string_lossy() == "--streaming")
+    {
         args.pop();
     }
     Ok(WorkerLaunchSpec::new(executable, args))
 }
 
 fn hex_byte(value: &Value) -> Result<String, String> {
-    let number = value.as_number().ok_or("Hex Byte requires a non-negative integer number")?;
+    let number = value
+        .as_number()
+        .ok_or("Hex Byte requires a non-negative integer number")?;
     let low_byte = if let Some(integer) = number.as_u64() {
         (integer & 0xff) as u8
     } else if let Some(real) = number.as_f64() {
-        if !real.is_finite() || real < 0.0 || real.fract() != 0.0
-            || real > 9_007_199_254_740_991.0
+        if !real.is_finite() || real < 0.0 || real.fract() != 0.0 || real > 9_007_199_254_740_991.0
         {
             return Err("Hex Byte requires an exact non-negative integer".into());
         }
@@ -115,7 +118,11 @@ fn encode_tx(format: &str, value: &Value) -> Result<String, String> {
             if text.is_empty() {
                 return Err("Serial TX cannot be empty".into());
             }
-            Ok(text.as_bytes().iter().map(|byte| format!("{byte:02x}")).collect())
+            Ok(text
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect())
         }
         _ => Err("TX mode must be text or hex-byte".into()),
     }
@@ -132,7 +139,9 @@ fn delimiter_bytes(format: &str, text: &str) -> Result<Vec<u8>, String> {
                         Some('r') => decoded.push('\r'),
                         Some('n') => decoded.push('\n'),
                         Some('\\') => decoded.push('\\'),
-                        _ => return Err("Delimiter supports only \\r, \\n, and \\\\ escapes".into()),
+                        _ => {
+                            return Err("Delimiter supports only \\r, \\n, and \\\\ escapes".into());
+                        }
                     }
                 } else {
                     decoded.push(c);
@@ -142,13 +151,19 @@ fn delimiter_bytes(format: &str, text: &str) -> Result<Vec<u8>, String> {
         }
         "hex" => {
             let digits: String = text.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-            if digits.len() % 2 != 0 || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
+            if !digits.len().is_multiple_of(2) || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
                 return Err("Delimiter must contain pairs of hexadecimal digits".into());
             }
-            digits.as_bytes().chunks_exact(2).map(|pair| {
-                u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16)
-                    .map_err(|_| "Invalid Hex delimiter".to_owned())
-            }).collect()
+            digits
+                .as_bytes()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| {
+                    u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16)
+                        .map_err(|_| "Invalid Hex delimiter".to_owned())
+                })
+                .collect()
         }
         _ => Err("Delimiter mode must be text or hex".into()),
     }
@@ -161,12 +176,20 @@ pub fn validate_action(
     arguments: &Value,
     bindings: &std::collections::BTreeMap<String, crate::workflow::InputValue>,
 ) -> Result<(), String> {
-    let obj = arguments.as_object().ok_or("Serial action arguments must be an object")?;
+    let obj = arguments
+        .as_object()
+        .ok_or("Serial action arguments must be an object")?;
     let keys: &[&str] = match action {
         "send" => &["tx_format", "tx_value"],
         "send-file" => &["path"],
         "receive" => &["max_bytes"],
-        "query" => &["tx_format", "tx_value", "delimiter_format", "delimiter_value", "max_bytes"],
+        "query" => &[
+            "tx_format",
+            "tx_value",
+            "delimiter_format",
+            "delimiter_value",
+            "max_bytes",
+        ],
         _ => return Err(format!("Unsupported Serial Foreground action {action}")),
     };
     for key in obj.keys() {
@@ -180,7 +203,9 @@ pub fn validate_action(
         }
     }
     if matches!(action, "send" | "query") {
-        let format = obj.get("tx_format").and_then(Value::as_str)
+        let format = obj
+            .get("tx_format")
+            .and_then(Value::as_str)
             .ok_or("Missing Serial TX mode")?;
         if !matches!(format, "text" | "hex-byte") {
             return Err("Invalid Serial TX mode".into());
@@ -195,20 +220,28 @@ pub fn validate_action(
         }
     }
     if action == "send-file" {
-        let path = obj.get("path").and_then(Value::as_str).ok_or("Missing Send File path")?;
-        if path.trim().is_empty() || path.contains('\0') {
-            return Err("Send File path must be a nonempty absolute local path".into());
-        }
+        let path = obj
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or("Missing Send File path")?;
+        let _ = path; // Path is validated by the separate non-destructive file preflight.
     }
-    let max = obj.get("max_bytes").map(|v| v.as_u64()).unwrap_or(Some(1024))
+    let max = obj
+        .get("max_bytes")
+        .map(|v| v.as_u64())
+        .unwrap_or(Some(1024))
         .ok_or("max_bytes must be an integer")?;
     if !(1..=1_048_576).contains(&max) {
         return Err("max_bytes must be 1..=1048576".into());
     }
     if action == "query" {
-        let mode = obj.get("delimiter_format").and_then(Value::as_str)
+        let mode = obj
+            .get("delimiter_format")
+            .and_then(Value::as_str)
             .ok_or("Missing delimiter mode")?;
-        let text = obj.get("delimiter_value").and_then(Value::as_str)
+        let text = obj
+            .get("delimiter_value")
+            .and_then(Value::as_str)
             .ok_or("Missing delimiter value")?;
         let bytes = delimiter_bytes(mode, text)?;
         if bytes.is_empty() || bytes.len() > max as usize {
@@ -220,15 +253,24 @@ pub fn validate_action(
 
 /// Returns file errors without changing Template contents. Includes nested loop bodies.
 pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String> {
-    fn check(steps: &[crate::workflow::Step], instances: &[crate::tool_instance::ToolInstance],
-        errors: &mut Vec<String>) {
+    fn check(
+        steps: &[crate::workflow::Step],
+        instances: &[crate::tool_instance::ToolInstance],
+        errors: &mut Vec<String>,
+    ) {
         for step in steps {
             match step.kind() {
                 crate::workflow::StepKind::For { body, .. }
                 | crate::workflow::StepKind::While { body, .. } => check(body, instances, errors),
-                crate::workflow::StepKind::ToolAction { target, action, arguments, .. }
-                    if action.as_str() == "send-file" && instances.iter().any(|i|
-                        &i.id == target && i.tool == crate::tool::ToolId::serial()) =>
+                crate::workflow::StepKind::ToolAction {
+                    target,
+                    action,
+                    arguments,
+                    ..
+                } if action.as_str() == "send-file"
+                    && instances
+                        .iter()
+                        .any(|i| &i.id == target && i.tool == crate::tool::ToolId::serial()) =>
                 {
                     let value = arguments.get("path").and_then(Value::as_str).unwrap_or("");
                     let path = Path::new(value);
@@ -236,8 +278,9 @@ pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String
                         Some("path must be an absolute local file".to_owned())
                     } else {
                         match std::fs::metadata(path) {
-                            Ok(meta) if !meta.is_file() || meta.len() == 0 =>
-                                Some("file must exist, be regular and nonempty".to_owned()),
+                            Ok(meta) if !meta.is_file() || meta.len() == 0 => {
+                                Some("file must exist, be regular and nonempty".to_owned())
+                            }
                             Ok(_) => std::fs::File::open(path).err().map(|e| e.to_string()),
                             Err(e) => Some(e.to_string()),
                         }
@@ -251,7 +294,11 @@ pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String
         }
     }
     let mut errors = Vec::new();
-    check(template.workflow().steps(), template.tool_instances(), &mut errors);
+    check(
+        template.workflow().steps(),
+        template.tool_instances(),
+        &mut errors,
+    );
     errors
 }
 
@@ -267,7 +314,10 @@ pub fn run_action(
     match action.as_str() {
         "send" | "query" => {
             let mode = arguments["tx_format"].as_str().ok_or("Missing TX mode")?;
-            worker_args.insert("tx_hex".into(), Value::String(encode_tx(mode, &arguments["tx_value"])?));
+            worker_args.insert(
+                "tx_hex".into(),
+                Value::String(encode_tx(mode, &arguments["tx_value"])?),
+            );
         }
         "send-file" => {
             worker_args.insert("path".into(), arguments["path"].clone());
@@ -277,28 +327,50 @@ pub fn run_action(
     }
     if action.as_str() == "query" {
         let bytes = delimiter_bytes(
-            arguments["delimiter_format"].as_str().ok_or("Missing delimiter mode")?,
-            arguments["delimiter_value"].as_str().ok_or("Missing delimiter value")?,
+            arguments["delimiter_format"]
+                .as_str()
+                .ok_or("Missing delimiter mode")?,
+            arguments["delimiter_value"]
+                .as_str()
+                .ok_or("Missing delimiter value")?,
         )?;
-        worker_args.insert("delimiter_hex".into(),
-            Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect()));
+        worker_args.insert(
+            "delimiter_hex".into(),
+            Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
+        );
     }
-    if matches!(action.as_str(), "receive" | "query") {
-        if let Some(value) = arguments.get("max_bytes") {
-            worker_args.insert("max_bytes".into(), value.clone());
-        }
+    if matches!(action.as_str(), "receive" | "query")
+        && let Some(value) = arguments.get("max_bytes")
+    {
+        worker_args.insert("max_bytes".into(), value.clone());
     }
     static NEXT_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let id = format!("orchestrator-serial-{}-{}",
-        std::process::id(), NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    let terminal = session.run_async_job(action.as_str(), &Value::Object(worker_args), None, &id, timeout)?;
-    if terminal["state"] == "succeeded" && terminal["ok"] == true
-        && terminal["error"].is_null() && terminal["result"].is_object()
+    let id = format!(
+        "orchestrator-serial-{}-{}",
+        std::process::id(),
+        NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let terminal = session.run_async_job(
+        action.as_str(),
+        &Value::Object(worker_args),
+        None,
+        &id,
+        timeout,
+    )?;
+    if terminal["state"] == "succeeded"
+        && terminal["ok"] == true
+        && terminal["error"].is_null()
+        && terminal["result"].is_object()
     {
         Ok(terminal["result"].clone())
     } else {
-        Err(format!("Serial {} failed: {}",
-            action, terminal["error"]["message"].as_str().unwrap_or("unconfirmed Job failure")))
+        Err(format!(
+            "Serial {} failed: {}",
+            action,
+            terminal["error"]["message"]
+                .as_str()
+                .unwrap_or("unconfirmed Job failure")
+        ))
     }
 }
 
@@ -310,19 +382,30 @@ mod tests {
     fn foreground_launch_is_ordinary_worker() {
         let setup = SerialSetup::default();
         let spec = foreground_worker_launch_spec(
-            std::path::Path::new("serial-tool"), ExecutionMode::Simulate, None, &setup,
-        ).unwrap();
+            std::path::Path::new("serial-tool"),
+            ExecutionMode::Simulate,
+            None,
+            &setup,
+        )
+        .unwrap();
         let args = spec.arguments();
         assert!(!args.iter().any(|arg| arg == "--streaming"));
-        assert!(args.windows(2).any(|pair|
-            pair[0] == "--simulation-profile-id" && pair[1] == "loopback-v1"));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "--simulation-profile-id" && pair[1] == "loopback-v1")
+        );
     }
 
     #[test]
     fn foreground_byte_encoding_and_types() {
-        for (input, expected) in [(json!(0), "00"), (json!(255), "ff"),
-            (json!(256), "00"), (json!(257), "01"), (json!(4660), "34"),
-            (json!(3.0), "03")] {
+        for (input, expected) in [
+            (json!(0), "00"),
+            (json!(255), "ff"),
+            (json!(256), "00"),
+            (json!(257), "01"),
+            (json!(4660), "34"),
+            (json!(3.0), "03"),
+        ] {
             assert_eq!(encode_tx("hex-byte", &input).unwrap(), expected);
         }
         for value in [json!(-10), json!(1.5), json!("123"), json!(true)] {
@@ -339,17 +422,26 @@ mod tests {
         assert_eq!(delimiter_bytes("hex", "0D 0A").unwrap(), vec![13, 10]);
         assert!(delimiter_bytes("hex", "0D 0").is_err());
         assert!(validate_action("run-sequence", &json!({}), &Default::default()).is_err());
-        assert!(validate_action("query", &json!({
-            "tx_format": "hex-byte", "tx_value": 257,
-            "delimiter_format": "hex", "delimiter_value": "0D 0A",
-            "max_bytes": 1,
-        }), &Default::default()).is_err());
+        assert!(
+            validate_action(
+                "query",
+                &json!({
+                    "tx_format": "hex-byte", "tx_value": 257,
+                    "delimiter_format": "hex", "delimiter_value": "0D 0A",
+                    "max_bytes": 1,
+                }),
+                &Default::default()
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn send_file_preflight_checks_nested_steps_without_rewriting_template() {
         let path = std::env::temp_dir().join(format!(
-            "orchestrator-serial-preflight-{}", std::process::id()));
+            "orchestrator-serial-preflight-{}",
+            std::process::id()
+        ));
         let source = serde_json::json!({
             "schema_version": 2, "name": "Serial File",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
@@ -364,6 +456,16 @@ mod tests {
         });
         let template = crate::template::Template::from_json_str(&source.to_string()).unwrap();
         assert_eq!(send_file_path_errors(&template).len(), 1);
+        let error = crate::run::run_workflow(
+            &template,
+            ExecutionMode::Simulate,
+            &Default::default(),
+            std::time::Duration::from_millis(10),
+            std::time::Duration::from_millis(10),
+            std::time::Duration::from_millis(10),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Serial Send File preflight failed"));
         std::fs::write(&path, [0x01, 0x02]).unwrap();
         assert!(send_file_path_errors(&template).is_empty());
         std::fs::remove_file(path).unwrap();

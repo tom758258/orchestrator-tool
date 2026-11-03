@@ -3627,7 +3627,7 @@ mod tests {
     #[test]
     fn serial_foreground_template_accepts_four_actions_not_run_sequence() {
         let mut wire = json!({
-            "schema_version": 2, "name": "Serial", 
+            "schema_version": 2, "name": "Serial",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
                 "setup": {"baud": 115200}}],
             "workflow": {"steps": [{ "type": "tool-action", "id": "send",
@@ -3638,8 +3638,21 @@ mod tests {
         wire["workflow"]["steps"][0]["action"] = json!("run-sequence");
         assert!(Template::from_json_str(&wire.to_string()).is_err());
         wire["workflow"]["steps"][0]["action"] = json!("send");
-        wire["workflow"]["steps"][0]["bindings"] =
-            json!({"tx_value": {"source": "variable", "variable": "x"}});
+        wire["workflow"]["steps"] = json!([
+            {"type":"set-variable","id":"source","variable":"x",
+                "value":{"source":"literal","value":4660}},
+            {"type":"tool-action","id":"send","target":"serial-1","action":"send",
+                "arguments":{"tx_format":"hex-byte","tx_value":0},
+                "bindings":{"tx_value":{"source":"variable","variable":"x"}}},
+            {"type":"tool-action","id":"receive","target":"serial-1","action":"receive",
+                "arguments":{"max_bytes":128}},
+            {"type":"tool-action","id":"query","target":"serial-1","action":"query",
+                "arguments":{"tx_format":"text","tx_value":"END",
+                    "delimiter_format":"hex","delimiter_value":"0D0A",
+                    "max_bytes":128}},
+            {"type":"tool-action","id":"file","target":"serial-1","action":"send-file",
+                "arguments":{"path":""}}
+        ]);
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
     }
 

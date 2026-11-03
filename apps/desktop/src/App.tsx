@@ -2839,7 +2839,7 @@ function App() {
                         <SerialActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
                           earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
-                          onChange={next => updateStep(selectedToolAction.id, () => next)} />
+                          onChange={serialStep => updateStep(selectedToolAction.id, () => serialStep)} />
                       )}
                       {selectedToolAction && selectedAction?.startsWith('scopes/') && (
                         <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}

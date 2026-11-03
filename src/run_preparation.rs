@@ -613,38 +613,61 @@ mod tests {
         let executable = std::fs::canonicalize(
             std::env::var_os("ORCHESTRATOR_TEST_SERIAL_EXECUTABLE")
                 .expect("Set ORCHESTRATOR_TEST_SERIAL_EXECUTABLE to real serial-tool binary"),
-        ).unwrap();
+        )
+        .unwrap();
         let file = std::env::temp_dir().join(format!(
-            "orchestrator-serial-foreground-{}.bin", std::process::id()));
+            "orchestrator-serial-foreground-{}.bin",
+            std::process::id()
+        ));
         std::fs::write(&file, [0x01, 0x02, 0x03]).unwrap();
-        let template = Template::from_json_str(&serde_json::json!({
-            "schema_version": 2, "name": "Serial foreground SIM",
-            "tool_instances": [{ "id": "serial-1", "tool": "serial",
-                "setup": {"baud": 115200}}],
-            "workflow": {"steps": [
-                {"type": "tool-action", "id": "send", "target": "serial-1",
-                    "action": "send", "arguments": {"tx_format": "text",
-                        "tx_value": "HELLO"}},
-                {"type": "tool-action", "id": "receive", "target": "serial-1",
-                    "action": "receive", "arguments": {"max_bytes": 5}},
-                {"type": "tool-action", "id": "query", "target": "serial-1",
-                    "action": "query", "arguments": {"tx_format": "text",
-                        "tx_value": "END\\r\\n", "delimiter_format": "hex",
-                        "delimiter_value": "0D 0A", "max_bytes": 128}},
-                {"type": "tool-action", "id": "send-file", "target": "serial-1",
-                    "action": "send-file",
-                    "arguments": {"path": file.to_string_lossy()}}
-            ]}
-        }).to_string()).unwrap();
+        let template = Template::from_json_str(
+            &serde_json::json!({
+                "schema_version": 2, "name": "Serial foreground SIM",
+                "tool_instances": [{ "id": "serial-1", "tool": "serial",
+                    "setup": {"baud": 115200}}],
+                "workflow": {"steps": [
+                    {"type": "tool-action", "id": "send", "target": "serial-1",
+                        "action": "send", "arguments": {"tx_format": "text",
+                            "tx_value": "HELLO"}},
+                    {"type": "tool-action", "id": "receive", "target": "serial-1",
+                        "action": "receive", "arguments": {"max_bytes": 5}},
+                    {"type": "tool-action", "id": "query", "target": "serial-1",
+                        "action": "query", "arguments": {"tx_format": "text",
+                            "tx_value": "END\r\n", "delimiter_format": "hex",
+                            "delimiter_value": "0D 0A", "max_bytes": 128}},
+                    {"type": "tool-action", "id": "send-file", "target": "serial-1",
+                        "action": "send-file",
+                        "arguments": {"path": file.to_string_lossy()}}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
         let mut config = Config::default();
         config.set_executable_path(&ToolId::serial(), &executable);
-        let specs = prepare_worker_launch_specs(&template, ExecutionMode::Simulate,
-            executable.parent().unwrap(), &config).unwrap();
-        let result = run_workflow(&template, ExecutionMode::Simulate, &specs,
-            Duration::from_secs(8), Duration::from_secs(8), Duration::from_secs(8)).unwrap();
+        let specs = prepare_worker_launch_specs(
+            &template,
+            ExecutionMode::Simulate,
+            executable.parent().unwrap(),
+            &config,
+        )
+        .unwrap();
+        let result = run_workflow(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+        )
+        .unwrap();
         assert_eq!(result.step_executions().len(), 4);
-        assert!(result.step_executions().iter()
-            .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. })));
+        assert!(
+            result
+                .step_executions()
+                .iter()
+                .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
+        );
         assert!(matches!(result.step_executions()[1].outcome(),
             StepOutcome::Succeeded { output } if output["rx_hex"] == "48454c4c4f"));
         std::fs::remove_file(file).unwrap();
