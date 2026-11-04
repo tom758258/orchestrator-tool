@@ -154,3 +154,24 @@ fn output_time_xlsx_numeric_cells_and_raw_csv_across_midnight() {
     assert_eq!(streamed, csv);
     assert_eq!(rows, original);
 }
+
+#[test]
+fn null_time_columns_export_as_blank_cells() {
+    let template = Template::from_json_str(&time_template().to_string()).unwrap();
+    // An unselected If branch leaves its declared time Output as null.
+    let outputs = template.workflow().output_pages()[0]
+        .headers()
+        .iter()
+        .map(|name| WorkflowOutput::new(name.clone(), Value::Null))
+        .collect();
+    let rows = [ResultRow::new(outputs, None).with_page("Time")];
+    let datasets = page_datasets(template.workflow(), &rows, None).unwrap();
+    let bytes = pages_xlsx(&datasets).unwrap();
+    let mut workbook = Xlsx::new(Cursor::new(bytes)).unwrap();
+    let sheet = workbook.worksheet_range("Time").unwrap();
+    for column in 0..8 {
+        assert!(sheet.get_value((1, column)).is_none_or(|cell| cell == &Data::Empty));
+    }
+    let csv = String::from_utf8(page_csv(&datasets[0]).unwrap()).unwrap();
+    assert_eq!(csv.lines().count(), 2);
+}

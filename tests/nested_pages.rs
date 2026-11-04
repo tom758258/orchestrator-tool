@@ -86,7 +86,12 @@ fn depth_paths_and_unlimited_validation() {
     for depth in [8, 9] {
         let mut body = vec![];
         for i in (0..depth).rev() {
-            body = vec![if i % 2 == 0 {
+            body = vec![if i % 3 == 0 {
+                json!({"type":"if", "id":format!("loop-{i}"),
+                    "left":{"source":"literal", "value":true}, "operator":"equal",
+                    "right":{"source":"literal", "value":true},
+                    "then_steps":body, "else_steps":[]})
+            } else if i % 3 == 1 {
                 for_loop(&format!("loop-{i}"), "x", "1", body)
             } else {
                 json!({"type":"while", "id":format!("loop-{i}"), "max_iterations":1,
@@ -452,9 +457,18 @@ fn if_branches_share_rows_and_preserve_outer_variables() {
             .value(),
         &json!("HIGH")
     );
-    assert!(events.iter().all(|event| !matches!(event,
-        WorkflowRunEvent::StepCompleted(execution) if execution.step_id().as_str() == "never")));
-    let datasets = page_datasets(&workflow, result.result_rows(), Some("Rows")).unwrap();
+    let executions_for = |id: &str| {
+        events
+            .iter()
+            .filter(|event| {
+                matches!(event, WorkflowRunEvent::StepCompleted(execution)
+                    if execution.step_id().as_str() == id)
+            })
+            .count()
+    };
+    assert_eq!(executions_for("high"), 2);
+    assert_eq!(executions_for("low"), 1);
+    let datasets = page_datasets(workflow.workflow(), result.result_rows(), Some("Rows")).unwrap();
     let csv = String::from_utf8(page_csv(&datasets[0]).unwrap()).unwrap();
     assert!(csv.contains("index,high,low,verdict"));
     assert_eq!(csv.lines().count(), 4);
