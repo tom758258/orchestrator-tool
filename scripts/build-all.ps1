@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repoRoot = $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $desktopDir = Join-Path $repoRoot "apps\desktop"
 $cliExe = Join-Path $repoRoot "target\release\orchestrator-tool.exe"
 $desktopExe = Join-Path $desktopDir "src-tauri\target\release\Orchestrator Tool.exe"

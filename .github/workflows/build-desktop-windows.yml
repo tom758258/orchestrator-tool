@@ -25,7 +25,7 @@ jobs:
 
       - name: Build CLI and Tauri Desktop without installer
         shell: pwsh
-        run: .\build-all.ps1
+        run: .\scripts\build-all.ps1
 
       - name: Verify EXEs and record short commit SHA
         id: artifact

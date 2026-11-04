@@ -111,7 +111,7 @@ Python 僅用於產生與驗證 Desktop 離線 Help；一般 Desktop build 與 D
 
 ### Windows Release Build（不含 Installer）
 
-在 Windows 的 Repository 根目錄使用 PowerShell 執行 `./build-all.ps1`，即可建立 Release 模式的 CLI 與 Desktop 執行檔。腳本使用既有依賴鎖定檔、檢查 CLI 基本啟動，並將 `orchestrator-tool.exe`（工程診斷）及 `Orchestrator Tool.exe`（Desktop）放在 `dist/windows-x64/`。
+在 Windows 的 Repository 根目錄使用 PowerShell 執行 `./scripts/build-all.ps1`，即可建立 Release 模式的 CLI 與 Desktop 執行檔。腳本使用既有依賴鎖定檔、檢查 CLI 基本啟動，並將 `orchestrator-tool.exe`（工程診斷）及 `Orchestrator Tool.exe`（Desktop）放在 `dist/windows-x64/`。
 
 GitHub Actions 的 **Build Windows CLI and Desktop** 可手動觸發，Artifact 包含兩個 EXE，名稱帶有 Git Commit 短 SHA。PR 與推送至 `main` 時，CI 會自動於 Linux、Windows 驗證。Desktop 執行仍需要 WebView2；建置成功不代表 GUI 或實體儀器驗證完成。
 
