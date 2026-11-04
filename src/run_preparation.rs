@@ -37,7 +37,10 @@ fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize
                 else_steps,
                 ..
             } => {
-                match (measure_count(then_steps, target)?, measure_count(else_steps, target)?) {
+                match (
+                    measure_count(then_steps, target)?,
+                    measure_count(else_steps, target)?,
+                ) {
                     (Some(then_count), Some(else_count)) => Some(then_count.max(else_count)),
                     _ => None,
                 }

@@ -170,7 +170,11 @@ fn null_time_columns_export_as_blank_cells() {
     let mut workbook = Xlsx::new(Cursor::new(bytes)).unwrap();
     let sheet = workbook.worksheet_range("Time").unwrap();
     for column in 0..8 {
-        assert!(sheet.get_value((1, column)).is_none_or(|cell| cell == &Data::Empty));
+        assert!(
+            sheet
+                .get_value((1, column))
+                .is_none_or(|cell| cell == &Data::Empty)
+        );
     }
     let csv = String::from_utf8(page_csv(&datasets[0]).unwrap()).unwrap();
     assert_eq!(csv.lines().count(), 2);
