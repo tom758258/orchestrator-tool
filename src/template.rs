@@ -818,6 +818,58 @@ fn validate_tool_action_parameters(
                     ));
                 }
                 if *tool == ToolId::scopes() {
+                    if action.as_str() == "autoscale" {
+                        if !bindings.is_empty() {
+                            return Err(error(
+                                "bindings",
+                                "AutoScale parameters must be fixed; bindings are not supported",
+                            ));
+                        }
+                        let fields = arguments
+                            .as_object()
+                            .ok_or_else(|| error("arguments", "must be an object"))?;
+                        for key in fields.keys() {
+                            if !matches!(
+                                key.as_str(),
+                                "source_channel" | "acquire_mode" | "channels"
+                            ) {
+                                return Err(error(key, "unsupported AutoScale parameter"));
+                            }
+                        }
+                        if let Some(sources) = fields.get("source_channel") {
+                            let sources = sources
+                                .as_array()
+                                .filter(|values| !values.is_empty())
+                                .ok_or_else(|| {
+                                    error("source_channel", "must be a nonempty array of channels")
+                                })?;
+                            let mut seen = std::collections::HashSet::new();
+                            for source in sources {
+                                let channel = source
+                                    .as_u64()
+                                    .filter(|value| *value > 0 && *value <= u32::MAX as u64)
+                                    .ok_or_else(|| {
+                                        error(
+                                            "source_channel",
+                                            "channels must be positive integers",
+                                        )
+                                    })?;
+                                if !seen.insert(channel) {
+                                    return Err(error("source_channel", "duplicate channel"));
+                                }
+                            }
+                        }
+                        for (name, allowed) in [
+                            ("acquire_mode", &["normal", "current"][..]),
+                            ("channels", &["all", "displayed"][..]),
+                        ] {
+                            if let Some(value) = fields.get(name)
+                                && !value.as_str().is_some_and(|text| allowed.contains(&text))
+                            {
+                                return Err(error(name, "unsupported AutoScale option"));
+                            }
+                        }
+                    }
                     let choice = match action.as_str() {
                         "measure" => Some(("item", false)),
                         "trigger-edge" => Some(("slope", false)),
@@ -3714,6 +3766,52 @@ mod tests {
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(error.to_string().contains("unknown tool instance target"));
         assert!(error.to_string().contains("missing-instance"));
+    }
+
+    #[test]
+    fn scopes_autoscale_template_requires_only_valid_fixed_optional_parameters() {
+        let mut wire = json!({
+            "schema_version": 2,
+            "name": "Scope AutoScale",
+            "tool_instances": [{"id": "scope-1", "tool": "scopes", "setup": {}}],
+            "workflow": {"steps": [{"type": "tool-action", "id": "autoscale-1",
+                "target": "scope-1", "action": "autoscale", "arguments": {}}]}
+        });
+        for args in [
+            json!({}),
+            json!({"source_channel":[1,2]}),
+            json!({"acquire_mode":"current","channels":"all"}),
+            json!({"source_channel":[1,2],"acquire_mode":"normal","channels":"displayed"}),
+        ] {
+            wire["workflow"]["steps"][0]["arguments"] = args.clone();
+            let parsed = Template::from_json_str(&wire.to_string()).unwrap();
+            let roundtrip = Template::from_json_str(&parsed.to_json_string().unwrap()).unwrap();
+            assert_eq!(parsed, roundtrip);
+        }
+        for (args, field) in [
+            (json!({"source_channel":[]}), "source_channel"),
+            (json!({"source_channel":[1,1]}), "source_channel"),
+            (json!({"source_channel":[0]}), "source_channel"),
+            (json!({"source_channel":["1"]}), "source_channel"),
+            (json!({"source_channel":[1.5]}), "source_channel"),
+            (json!({"acquire_mode":"average"}), "acquire_mode"),
+            (json!({"channels":"both"}), "channels"),
+            (json!({"channels":null}), "channels"),
+            (json!({"extra":true}), "extra"),
+        ] {
+            wire["workflow"]["steps"][0]["arguments"] = args;
+            let error = Template::from_json_str(&wire.to_string()).unwrap_err();
+            assert!(error.to_string().contains(field), "{error}");
+        }
+        wire["workflow"]["steps"][0]["arguments"] = json!({});
+        wire["workflow"]["steps"][0]["bindings"] =
+            json!({"channels":{"source":"literal","value":"all"}});
+        assert!(
+            Template::from_json_str(&wire.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("bindings")
+        );
     }
 
     #[test]

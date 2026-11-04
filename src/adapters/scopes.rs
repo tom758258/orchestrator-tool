@@ -33,6 +33,17 @@ pub struct ScopesCapabilities {
     pub direct_measurement_items: Vec<String>,
     pub trigger_edge_slopes: Vec<String>,
     pub capture_point_options: Vec<u32>,
+    #[serde(default)]
+    pub autoscale_supported: bool,
+}
+
+pub(crate) const DEFAULT_SIMULATED_MODEL_ID: &str = "keysight-dsox4024a";
+
+pub(crate) fn autoscale_supported_model(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "keysight-dsox2004a" | "keysight-dsox3024a" | "keysight-dsox4024a" | "keysight-dsox4034a"
+    )
 }
 
 pub(crate) const DEFAULT_SCREENSHOT_FORMAT: &str = "png";
@@ -44,6 +55,23 @@ pub(crate) fn validate_preflight_action(
     check: &mut crate::live_preflight::CapabilityCheck<'_>,
 ) {
     let channels = json!((1..=caps.analog_channels).collect::<Vec<_>>());
+    if action == "autoscale" {
+        if !caps.autoscale_supported {
+            check.invalid(
+                "model",
+                "AutoScale is available only for registered Keysight models",
+            );
+        }
+        if let Some(sources) = arguments.get("source_channel") {
+            if let Some(sources) = sources.as_array() {
+                for channel in sources {
+                    check.option("source_channel", channel, Some(channels.clone()));
+                }
+            } else {
+                check.invalid("source_channel", "must be an array of channels");
+            }
+        }
+    }
     let channel_field = match action {
         "channel-display" | "channel-scale" | "channel-offset" | "measure" | "capture" => {
             Some("channel")
@@ -213,6 +241,7 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
     {
         return Err("scopes capabilities returned invalid identity or success data".into());
     }
+    let autoscale_supported = autoscale_supported_model(&r.model.model_id);
     Ok(ScopesCapabilities {
         model_id: r.model.model_id,
         model_name: r.model.display_name,
@@ -224,6 +253,7 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
         direct_measurement_items: r.capabilities.direct_measurement_items,
         trigger_edge_slopes: r.capabilities.trigger_edge_slopes,
         capture_point_options: r.capabilities.capture_point_options,
+        autoscale_supported,
     })
 }
 
@@ -328,7 +358,7 @@ pub fn validate_session(
             .and_then(|pair| pair[1].to_str())
     };
     let model = match mode {
-        ExecutionMode::Simulate => argument("--model").unwrap_or("keysight-dsox4024a"),
+        ExecutionMode::Simulate => argument("--model").unwrap_or(DEFAULT_SIMULATED_MODEL_ID),
         ExecutionMode::Live => argument("--model")
             .filter(|id| !id.trim().is_empty())
             .ok_or("Scopes canonical model ID is missing from the Live launch")?,
@@ -563,6 +593,7 @@ pub const ACTIONS: &[&str] = &[
     "measure",
     "capture",
     "screenshot",
+    "autoscale",
 ];
 pub fn run_action(
     session: &WorkerSession,
@@ -583,10 +614,10 @@ pub fn run_action(
         prepare_file_arguments(command, &mut arguments, output_folder)?;
     }
     // Screenshot transport alone may take ten seconds, before artifact writing.
-    let timeout = if matches!(command, "capture" | "screenshot") {
-        timeout.max(Duration::from_secs(30))
-    } else {
-        timeout
+    let timeout = match command {
+        "capture" | "screenshot" => timeout.max(Duration::from_secs(30)),
+        "autoscale" => timeout.max(Duration::from_secs(60)),
+        _ => timeout,
     };
     run_command(session, command, &arguments, timeout)
 }
@@ -733,6 +764,27 @@ mod tests {
         }
         assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
     }
+    #[test]
+    fn scopes_autoscale_model_policy_accepts_only_registered_keysight() {
+        for model in [
+            "keysight-dsox2004a",
+            "keysight-dsox3024a",
+            "keysight-dsox4024a",
+            "keysight-dsox4034a",
+        ] {
+            assert!(autoscale_supported_model(model), "{model}");
+        }
+        for model in [
+            "tektronix-tbs2074",
+            "tektronix-tds2024b",
+            "tektronix-tbs1052b",
+            "keysight-unknown",
+            "",
+        ] {
+            assert!(!autoscale_supported_model(model), "{model}");
+        }
+    }
+
     #[test]
     fn scopes_maps_only_explicit_setup() {
         assert!(setup_commands(&ScopesSetup::default()).is_empty());

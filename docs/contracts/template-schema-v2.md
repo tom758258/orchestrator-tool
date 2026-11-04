@@ -387,7 +387,7 @@ External modes optionally accept `hw_trigger_slope` (`pos` or `neg`) and
 other modes do not forward these fields. The Tool validates its hardware limits.
 
 Declaring a Wavegen instance does not imply that its runtime actions are
-supported. Scopes supports the nine actions documented in its integration reference.
+supported. Scopes supports the ten Foreground actions documented in its integration reference.
 
 ## Workflow steps
 
@@ -442,6 +442,17 @@ and While bodies, based on the target instance's Tool Type and Action. Other
 parameters and general workflow dataflow retain their existing source rules.
 Desktop choices come from Scopes capabilities; Core does not store model
 allowlists, and Scopes validates final model support.
+
+Scopes `autoscale` uses the existing Tool Action shape and retains Schema v2.
+Its optional fixed arguments are `source_channel` (a nonempty array of distinct
+positive analog-channel numbers), `acquire_mode` (`normal` or `current`),
+and `channels` (`all` or `displayed`). Omit unused keys; empty arrays,
+unknown keys, and bindings are rejected. The Orchestrator supports AutoScale
+only with its four registered Keysight models. As Live model identities are
+not stored in Templates, model and physical channel availability are checked
+in Live Preflight and Core Run, not invented at Template load. This applies
+recursively inside For, While, and If. Background Streaming cannot share a
+Foreground Tool Instance.
 
 Powers `protection-status` is a read-only Tool Action. Its required `channel`
 argument is an exact positive JSON integer or the exact string `"all"`; no

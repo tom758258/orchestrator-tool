@@ -16,7 +16,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
   const capabilityModelId = executionMode === 'live' ? modelId : undefined
   const key = JSON.stringify([executionMode, capabilityModelId, scopesExecutableKey, step.target])
-  const channelAction = ['channel-display', 'channel-scale', 'channel-offset', 'trigger-edge', 'measure', 'capture'].includes(step.action)
+  const channelAction = ['channel-display', 'channel-scale', 'channel-offset', 'trigger-edge', 'measure', 'capture', 'autoscale'].includes(step.action)
   useEffect(() => {
     if ((!channelAction && step.action !== 'screenshot') || (executionMode === 'live' && !capabilityModelId)) return
     let cancelled = false
@@ -39,6 +39,16 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
     const bindings = { ...step.bindings }
     delete bindings[key]
     const next: ToolActionStep = { ...step, arguments: { ...step.arguments, [key]: value }, bindings }
+    if (!Object.keys(bindings).length) delete next.bindings
+    onChange(next)
+  }
+  const changeOptional = (key: string, value: unknown | undefined) => {
+    const arguments_ = { ...step.arguments }
+    if (value === undefined) delete arguments_[key]
+    else arguments_[key] = value
+    const bindings = { ...step.bindings }
+    delete bindings[key]
+    const next: ToolActionStep = { ...step, arguments: arguments_, bindings }
     if (!Object.keys(bindings).length) delete next.bindings
     onChange(next)
   }
@@ -103,6 +113,12 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
       onChange(next)
     }} />
   const channel = step.action.startsWith('channel-') || step.action === 'measure'
+  const autoScaleAvailable = caps?.autoscale_supported === true
+  const savedAutoChannels = step.arguments.source_channel
+  const autoChannelsValid = Array.isArray(savedAutoChannels) && savedAutoChannels.length > 0
+    && savedAutoChannels.every(value => typeof value === 'number' && channels.includes(value))
+    && new Set(savedAutoChannels).size === savedAutoChannels.length
+  const selectedAutoChannels: number[] = autoChannelsValid ? [...savedAutoChannels] : []
   const savedChannels = step.arguments.channel
   const captureSupported = Array.isArray(savedChannels) && savedChannels.length > 0
     && savedChannels.every(value => typeof value === 'number' && channels.includes(value))
@@ -128,6 +144,48 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
       {capabilityChoice('slope', 'Slope', caps?.trigger_edge_slopes ?? [])}
     </>}
     {step.action === 'measure' && capabilityChoice('item', 'Measurement Item', caps?.direct_measurement_items ?? [])}
+    {step.action === 'autoscale' && <>
+      <p className="tool-setup-hint">AutoScale is a foreground-only operation for supported Keysight scopes. It may change channel display and scale, timebase, and trigger settings; no settings are restored automatically.</p>
+      {caps && !autoScaleAvailable && <p className="tool-setup-hint">AutoScale is not supported by this model. Choose a supported Keysight Live Resource.</p>}
+      <div className="step-property-field">
+        <span className="step-property-label">Source Channels (optional)</span>
+        {channels.map(channel => <label key={channel} className="step-property-checkbox">
+          <input type="checkbox" aria-label={`AutoScale CH${channel}`} checked={selectedAutoChannels.includes(channel)}
+            disabled={disabled || !autoScaleAvailable} onChange={event => {
+              if (disabled || !autoScaleAvailable || !channels.includes(channel)) return
+              const next = event.target.checked ? [...new Set([...selectedAutoChannels, channel])]
+                : selectedAutoChannels.filter(value => value !== channel)
+              changeOptional('source_channel', next.length ? next.sort((a, b) => a - b) : undefined)
+            }} />CH{channel}
+        </label>)}
+      </div>
+      {savedAutoChannels !== undefined && !autoChannelsValid && <p className="tool-setup-hint">
+        Saved AutoScale channels {JSON.stringify(savedAutoChannels)} are unsupported or invalid; the stored value is preserved until explicitly replaced.
+      </p>}
+      <label className="step-property-field"><span className="step-property-label">Acquire Mode</span>
+        <select aria-label="AutoScale Acquire Mode"
+          value={step.arguments.acquire_mode === 'normal' || step.arguments.acquire_mode === 'current'
+            ? step.arguments.acquire_mode : ''}
+          disabled={disabled || !autoScaleAvailable}
+          onChange={event => changeOptional('acquire_mode', event.target.value || undefined)}>
+          <option value="">Not specified</option>
+          <option value="normal">Normal</option><option value="current">Current</option>
+        </select>
+      </label>
+      <label className="step-property-field"><span className="step-property-label">Channels Mode</span>
+        <select aria-label="AutoScale Channels Mode"
+          value={step.arguments.channels === 'all' || step.arguments.channels === 'displayed'
+            ? step.arguments.channels : ''}
+          disabled={disabled || !autoScaleAvailable}
+          onChange={event => changeOptional('channels', event.target.value || undefined)}>
+          <option value="">Not specified</option>
+          <option value="all">All</option><option value="displayed">Displayed</option>
+        </select>
+      </label>
+      {((step.arguments.acquire_mode !== undefined && !['normal', 'current'].includes(String(step.arguments.acquire_mode)))
+        || (step.arguments.channels !== undefined && !['all', 'displayed'].includes(String(step.arguments.channels)))) &&
+        <p className="tool-setup-hint">Unsupported saved AutoScale option preserved. Select a valid value to replace it.</p>}
+    </>}
     {step.action === 'capture' && <>
       <div className="step-property-field"><span className="step-property-label">Channels</span>
         {channels.map(channel => <label key={channel} className="step-property-checkbox">

@@ -599,7 +599,7 @@ Double: 6000
 ### 6.7 Scopes actions 與 File Output
 
 Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
-Timebase Position、Edge Trigger、Measure、Capture 與 Screenshot。
+Timebase Position、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
 Channel Scale、Channel Offset、Timebase Scale、Timebase Position 與 Edge Trigger Level
 只允許數值 **Fixed value**、**Variable** 或 **Calculation** 設定值。
 Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
@@ -630,6 +630,15 @@ Capture 的 **Channels** 使用依 Capabilities 提供的 **CH1**、**CH2** 等�
 無效舊值會保留並顯示提示，所有核取方塊顯示為未勾選；勾選支援通道後，才以有效
 選擇取代原資料。既有 Channel binding 同樣保留，直到明確選擇固定通道才會取代。
 載入 Capabilities 或切換型號不會自動改寫已儲存通道。
+
+**Scope AutoScale** 僅支援 Keysight 的 Foreground Step（DSOX2004A、DSOX3024A、DSOX4024A、DSOX4034A）。
+Source Channels、Acquire Mode（Normal／Current）及 Channels Mode（All／Displayed）均為選填；
+未指定的項目不會傳給 Scopes Tool，取消全部 Source Channels 勾選即省略此參數。
+AutoScale 可能改變通道顯示與刻度、Timebase、Trigger 等儀器狀態；Orchestrator 不會自動還原。
+使用 Background Measure Streaming 時，應在 Worker ON 前完成必要的 Scopes Setup；
+Streaming 啟動後不能在同一 Worker 執行 AutoScale。Step 必須等 Async Job 完成才算成功；
+若指定來源命令遭拒，Scopes Tool 可能回報改用不指定來源的 AutoScale Fallback。
+Simulation 僅驗證命令流程，不代表已完成真實波形縮放。
 
 Screenshot 的 **Image Format** 依 Scopes 離線 Capabilities 控制：Simulation 使用
 預設型號，Live 使用已保存的裝置型號。不支援的格式仍顯示，但無法選取。切換型號時，

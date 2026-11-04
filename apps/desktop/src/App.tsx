@@ -211,6 +211,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
 }
 
 const STEP_HELP: Record<string, string> = {
+  'scopes/autoscale': 'Keysight only. AutoScale may change channel, timebase, and trigger settings. It is a foreground Step, not a Background Streaming command.',
   'serial/send': 'Send UTF-8 Text or one Hex Byte to the selected Serial instance.',
   'serial/send-file': 'Send a Worker-local file. Run is blocked if the path is invalid.',
   'serial/receive': 'Receive up to Max Bytes once; result contains rx_hex and rx_bytes.',

@@ -706,8 +706,8 @@ or While loop always reports the current iteration, never a previous one.
 ### 6.7 Scopes actions and File Output
 
 The Scopes group offers Channel Display, Channel Scale, Channel Offset,
-Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, and
-Screenshot. Channel Scale, Channel Offset, Timebase Scale, Timebase Position,
+Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, Screenshot, and
+AutoScale. Channel Scale, Channel Offset, Timebase Scale, Timebase Position,
 and Edge Trigger Level allow only numeric **Fixed value**, **Variable**, or
 **Calculation** setpoints. Calculation operands are fixed numbers or variables,
 with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
@@ -745,6 +745,15 @@ shown with no boxes checked. Checking a supported channel replaces them with
 a valid selection. Existing Channel bindings are likewise preserved until
 fixed channels are explicitly selected. Loading capabilities or changing models
 never rewrites saved channels automatically.
+
+**Scope AutoScale** is a Keysight-only Foreground Step (DSOX2004A, DSOX3024A, DSOX4024A, DSOX4034A).
+Source Channels, Acquire Mode (Normal/Current), and Channels Mode (All/Displayed) are optional;
+omitted choices are not sent to Scopes Tool. Unchecking every Source Channel omits that option.
+AutoScale may change channel display/scale, timebase, trigger, and other instrument state;
+Orchestrator does not restore those settings automatically. For Background Measure Streaming,
+finish the required Scopes Setup before Worker ON; AutoScale cannot run on an active streaming Worker.
+A Step succeeds only when its Async Job completes, and Scopes Tool may report a fallback to bare
+AutoScale if a selected-source command is rejected. Simulation does not verify physical waveform scaling.
 
 Screenshot **Image Format** uses offline Scopes capabilities: Simulation uses
 the default model, and Live uses the saved device model. Unsupported formats

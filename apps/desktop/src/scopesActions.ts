@@ -3,6 +3,7 @@ export const SCOPES_ACTIONS = [
   ['channel-offset', 'Scope Channel Offset'], ['timebase-scale', 'Scope Timebase Scale'],
   ['timebase-position', 'Scope Timebase Position'], ['trigger-edge', 'Scope Edge Trigger'],
   ['measure', 'Scope Measure'], ['capture', 'Scope Capture'], ['screenshot', 'Scope Screenshot'],
+  ['autoscale', 'Scope AutoScale'],
 ] as const
 export type ScopesAction = typeof SCOPES_ACTIONS[number][0]
 
@@ -17,6 +18,7 @@ export function scopesActionArguments(action: ScopesAction): Record<string, unkn
     case 'measure': return { channel: 1, item: 'vpp' }
     case 'capture': return { channel: [1], points: 1000 }
     case 'screenshot': return { format: 'png' }
+    case 'autoscale': return {}
   }
 }
 
