@@ -671,31 +671,45 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
 
 #[test]
 fn while_string_condition_and_if_empty_else_execute_without_workers() {
-    let workflow = Template::from_json_str(&json!({
-        "schema_version":2,"name":"String and If","tool_instances":[],
-        "workflow":{"steps":[
-            {"type":"set-variable","id":"set-status","variable":"status",
-                "value":{"source":"literal","value":"WAITING"}},
-            {"type":"while","id":"wait-ready","max_iterations":2,
-                "left":{"source":"variable","variable":"status"},"operator":"not-equal",
-                "right":{"source":"literal","value":"READY"},
-                "steps":[{"type":"set-variable","id":"mark-ready","variable":"status",
-                    "value":{"source":"literal","value":"READY"}}]},
-            {"type":"if","id":"skip","left":{"source":"variable","variable":"status"},
-                "operator":"not-equal","right":{"source":"literal","value":"READY"},
-                "then_steps":[{"type":"assert","id":"must-not-run",
-                    "left":{"source":"literal","value":false},"operator":"equal",
-                    "right":{"source":"literal","value":true},"message":"unexpected"}],
-                "else_steps":[]},
-            {"type":"output","id":"done","name":"done","page":"Results",
-                "value":{"source":"variable","variable":"status"}}
-        ]}
-    }).to_string()).unwrap();
-    let run = run_simulated_workflow(&workflow, &HashMap::new(),
-        Duration::from_secs(1), Duration::from_secs(1), Duration::from_secs(1)).unwrap();
-    assert_eq!(run.result_rows().len(),1);
-    assert_eq!(run.result_rows()[0].outputs()[0].value(),&json!("READY"));
-    assert!(!run.step_executions().iter().any(|step| step.step_id().as_str()=="must-not-run"));
+    let workflow = Template::from_json_str(
+        &json!({
+            "schema_version":2,"name":"String and If","tool_instances":[],
+            "workflow":{"steps":[
+                {"type":"set-variable","id":"set-status","variable":"status",
+                    "value":{"source":"literal","value":"WAITING"}},
+                {"type":"while","id":"wait-ready","max_iterations":2,
+                    "left":{"source":"variable","variable":"status"},"operator":"not-equal",
+                    "right":{"source":"literal","value":"READY"},
+                    "steps":[{"type":"set-variable","id":"mark-ready","variable":"status",
+                        "value":{"source":"literal","value":"READY"}}]},
+                {"type":"if","id":"skip","left":{"source":"variable","variable":"status"},
+                    "operator":"not-equal","right":{"source":"literal","value":"READY"},
+                    "then_steps":[{"type":"assert","id":"must-not-run",
+                        "left":{"source":"literal","value":false},"operator":"equal",
+                        "right":{"source":"literal","value":true},"message":"unexpected"}],
+                    "else_steps":[]},
+                {"type":"output","id":"done","name":"done","page":"Results",
+                    "value":{"source":"variable","variable":"status"}}
+            ]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let run = run_simulated_workflow(
+        &workflow,
+        &HashMap::new(),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(run.result_rows().len(), 1);
+    assert_eq!(run.result_rows()[0].outputs()[0].value(), &json!("READY"));
+    assert!(
+        !run.step_executions()
+            .iter()
+            .any(|step| step.step_id().as_str() == "must-not-run")
+    );
 }
 
 #[test]
@@ -711,9 +725,22 @@ fn if_branch_error_fails_without_running_other_branch_or_later_steps() {
             {"type":"wait","id":"later","duration_ms":0}
         ]}
     }).to_string()).unwrap();
-    let run = run_simulated_workflow(&workflow,&HashMap::new(),
-        Duration::from_secs(1),Duration::from_secs(1),Duration::from_secs(1)).unwrap();
-    let ids: Vec<_> = run.step_executions().iter().map(|step| step.step_id().as_str()).collect();
-    assert_eq!(ids,vec!["fail","decision"]);
-    assert!(matches!(run.step_executions()[1].outcome(),StepOutcome::Failed { .. }));
+    let run = run_simulated_workflow(
+        &workflow,
+        &HashMap::new(),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let ids: Vec<_> = run
+        .step_executions()
+        .iter()
+        .map(|step| step.step_id().as_str())
+        .collect();
+    assert_eq!(ids, vec!["fail", "decision"]);
+    assert!(matches!(
+        run.step_executions()[1].outcome(),
+        StepOutcome::Failed { .. }
+    ));
 }

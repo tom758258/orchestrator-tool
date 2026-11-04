@@ -386,9 +386,13 @@ fn if_branches_share_rows_and_preserve_outer_variables() {
     let steps = vec![
         json!({"type":"set-variable","id":"init","variable":"result",
             "value":{"source":"literal","value":"UNKNOWN"}}),
-        for_loop("outer","i","3",vec![
-            output("index","Rows","i"),
-            json!({"type":"if","id":"choose",
+        for_loop(
+            "outer",
+            "i",
+            "3",
+            vec![
+                output("index", "Rows", "i"),
+                json!({"type":"if","id":"choose",
                 "left":{"source":"variable","variable":"i"},"operator":"greater-than",
                 "right":{"source":"literal","value":1},
                 "then_steps":[
@@ -399,24 +403,55 @@ fn if_branches_share_rows_and_preserve_outer_variables() {
                     output("low","Rows","i"),
                     json!({"type":"set-variable","id":"set-low","variable":"result",
                         "value":{"source":"literal","value":"LOW"}})]}),
-            output("verdict","Rows","result"),
-        ]),
-        output("final","Final","result"),
+                output("verdict", "Rows", "result"),
+            ],
+        ),
+        output("final", "Final", "result"),
     ];
     let workflow = template(steps).unwrap();
-    assert_eq!(Template::from_json_str(&workflow.to_json_string().unwrap()).unwrap(), workflow);
+    assert_eq!(
+        Template::from_json_str(&workflow.to_json_string().unwrap()).unwrap(),
+        workflow
+    );
     let (result, events) = run(&workflow, None);
     assert_eq!((count(&result, "Rows"), count(&result, "Final")), (3, 1));
-    let rows: Vec<_> = result.result_rows().iter().filter(|row| row.page() == "Rows").collect();
+    let rows: Vec<_> = result
+        .result_rows()
+        .iter()
+        .filter(|row| row.page() == "Rows")
+        .collect();
     for (index, row) in rows.iter().enumerate() {
-        assert_eq!(row.outputs().iter().map(|output| output.name()).collect::<Vec<_>>(),
-            vec!["index", "high", "low", "verdict"]);
+        assert_eq!(
+            row.outputs()
+                .iter()
+                .map(|output| output.name())
+                .collect::<Vec<_>>(),
+            vec!["index", "high", "low", "verdict"]
+        );
         assert_eq!(row.outputs()[0].value(), &json!(index + 1));
-        assert_eq!(row.outputs()[1].value(), &if index == 0 { Value::Null } else { json!(index+1) });
-        assert_eq!(row.outputs()[2].value(), &if index == 0 { json!(1) } else { Value::Null });
+        assert_eq!(
+            row.outputs()[1].value(),
+            &if index == 0 {
+                Value::Null
+            } else {
+                json!(index + 1)
+            }
+        );
+        assert_eq!(
+            row.outputs()[2].value(),
+            &if index == 0 { json!(1) } else { Value::Null }
+        );
     }
-    assert_eq!(result.result_rows().iter().find(|row| row.page() == "Final").unwrap()
-        .outputs()[0].value(), &json!("HIGH"));
+    assert_eq!(
+        result
+            .result_rows()
+            .iter()
+            .find(|row| row.page() == "Final")
+            .unwrap()
+            .outputs()[0]
+            .value(),
+        &json!("HIGH")
+    );
     assert!(events.iter().all(|event| !matches!(event,
         WorkflowRunEvent::StepCompleted(execution) if execution.step_id().as_str() == "never")));
     let datasets = page_datasets(&workflow, result.result_rows(), Some("Rows")).unwrap();
@@ -429,25 +464,36 @@ fn if_branches_share_rows_and_preserve_outer_variables() {
 fn if_branch_scope_and_unlimited_while_respect_loop_ancestors() {
     let condition = json!({"left":{"source":"literal","value":true},
         "operator":"equal","right":{"source":"literal","value":true}});
-    let if_step = |then_steps: Vec<Value>, else_steps: Vec<Value>| json!({
-        "type":"if","id":"choose",
-        "left":condition["left"],"operator":"equal","right":condition["right"],
-        "then_steps":then_steps,"else_steps":else_steps
-    });
+    let if_step = |then_steps: Vec<Value>, else_steps: Vec<Value>| {
+        json!({
+            "type":"if","id":"choose",
+            "left":condition["left"],"operator":"equal","right":condition["right"],
+            "then_steps":then_steps,"else_steps":else_steps
+        })
+    };
     let local = json!({"type":"set-variable","id":"local","variable":"temporary",
         "value":{"source":"literal","value":1}});
     let outside = json!({"type":"output","id":"outside","name":"outside","page":"Results",
         "value":{"source":"variable","variable":"temporary"}});
-    assert!(template(vec![if_step(vec![local.clone()], vec![]),outside]).is_err());
+    assert!(template(vec![if_step(vec![local.clone()], vec![]), outside]).is_err());
     let else_reads = json!({"type":"output","id":"else-read","name":"else-read","page":"Results",
         "value":{"source":"variable","variable":"temporary"}});
-    assert!(template(vec![if_step(vec![local],vec![else_reads])]).is_err());
-    let body = vec![json!({"type":"set-variable","id":"finish","variable":"done",
-        "value":{"source":"literal","value":true}})];
+    assert!(template(vec![if_step(vec![local], vec![else_reads])]).is_err());
+    let body = vec![
+        json!({"type":"set-variable","id":"finish","variable":"done",
+        "value":{"source":"literal","value":true}}),
+    ];
     let unlimited = json!({"type":"while","id":"unlimited","max_iterations":null,
         "left":{"source":"literal","value":false},"operator":"equal",
         "right":{"source":"literal","value":true},"steps":body});
-    assert!(template(vec![if_step(vec![unlimited.clone()],vec![])]).is_ok());
-    assert!(template(vec![for_loop("outer","i","1",
-        vec![if_step(vec![unlimited],vec![])])]).is_err());
+    assert!(template(vec![if_step(vec![unlimited.clone()], vec![])]).is_ok());
+    assert!(
+        template(vec![for_loop(
+            "outer",
+            "i",
+            "1",
+            vec![if_step(vec![unlimited], vec![])]
+        )])
+        .is_err()
+    );
 }

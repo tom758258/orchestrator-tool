@@ -244,7 +244,8 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
     output.page = page
   }
   const last = current.ids.at(-1)
-  const index = last ? container.siblings.findIndex(step => step.id === last) + 1 : container.siblings.length
+  const index = last && container.siblings.some(step => step.id === last)
+    ? container.siblings.findIndex(step => step.id === last) + 1 : container.siblings.length
   const next = [...container.siblings.slice(0, index), ...pasted, ...container.siblings.slice(index)]
   const ids = pasted.map(step => step.id)
   const ancestors = container.parentId

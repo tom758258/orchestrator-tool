@@ -256,12 +256,24 @@ impl Execution<'_> {
         for (page, outputs) in staged {
             // Every committed row has the declared Page columns, even when an
             // unselected If branch did not produce its Output.
-            let outputs = if let Some(declared) = self.template.workflow().output_pages().iter()
-                .find(|definition| definition.name() == page) {
-                declared.headers().iter().map(|name| {
-                    outputs.iter().find(|output| output.name() == name)
-                        .cloned().unwrap_or_else(|| WorkflowOutput::new(name.clone(), Value::Null))
-                }).collect()
+            let outputs = if let Some(declared) = self
+                .template
+                .workflow()
+                .output_pages()
+                .iter()
+                .find(|definition| definition.name() == page)
+            {
+                declared
+                    .headers()
+                    .iter()
+                    .map(|name| {
+                        outputs
+                            .iter()
+                            .find(|output| output.name() == name)
+                            .cloned()
+                            .unwrap_or_else(|| WorkflowOutput::new(name.clone(), Value::Null))
+                    })
+                    .collect()
             } else if outputs.is_empty() && self.template.workflow().output_pages().is_empty() {
                 outputs
             } else {
@@ -357,21 +369,38 @@ impl Execution<'_> {
                             thread::sleep(remaining.min(Duration::from_millis(10)));
                         }
                     }
-                    StepKind::If { condition, then_steps, else_steps } => {
-                        let result = self.data.resolve(&InputValue::Expression(condition.clone()))
+                    StepKind::If {
+                        condition,
+                        then_steps,
+                        else_steps,
+                    } => {
+                        let result = self
+                            .data
+                            .resolve(&InputValue::Expression(condition.clone()))
                             .map_err(|error| error.to_string())
                             .and_then(|value| match value {
-                                Value::Bool(true) => self.run_branch(then_steps, path, iteration, staged),
-                                Value::Bool(false) => self.run_branch(else_steps, path, iteration, staged),
+                                Value::Bool(true) => {
+                                    self.run_branch(then_steps, path, iteration, staged)
+                                }
+                                Value::Bool(false) => {
+                                    self.run_branch(else_steps, path, iteration, staged)
+                                }
                                 _ => Err("If condition must resolve to a boolean".to_owned()),
                             });
                         match result {
                             Ok(flow) => (
-                                if matches!(&flow, ControlFlow::WorkflowStopped) { StepOutcome::Cancelled }
-                                else { StepOutcome::Succeeded { output: Value::Null } },
-                                flow
+                                if matches!(&flow, ControlFlow::WorkflowStopped) {
+                                    StepOutcome::Cancelled
+                                } else {
+                                    StepOutcome::Succeeded {
+                                        output: Value::Null,
+                                    }
+                                },
+                                flow,
                             ),
-                            Err(message) => (StepOutcome::Failed { message }, ControlFlow::Continue),
+                            Err(message) => {
+                                (StepOutcome::Failed { message }, ControlFlow::Continue)
+                            }
                         }
                     }
                     StepKind::For { .. } | StepKind::While { .. } => {
@@ -574,7 +603,12 @@ fn clear_body_step_outputs(body: &[Step], data_context: &mut DataContext) {
 fn clear_branch_step_outputs(steps: &[Step], data_context: &mut DataContext) {
     for step in steps {
         data_context.remove_step_output(step.id());
-        if let StepKind::If { then_steps, else_steps, .. } = step.kind() {
+        if let StepKind::If {
+            then_steps,
+            else_steps,
+            ..
+        } = step.kind()
+        {
             clear_branch_step_outputs(then_steps, data_context);
             clear_branch_step_outputs(else_steps, data_context);
         }
@@ -654,7 +688,9 @@ fn execute_non_loop_step(
             },
             Err(message) => StepOutcome::Failed { message },
         },
-        StepKind::If { .. } | StepKind::For { .. } | StepKind::While { .. }
+        StepKind::If { .. }
+        | StepKind::For { .. }
+        | StepKind::While { .. }
         | StepKind::Background { .. } => {
             unreachable!("control steps execute through their respective handlers")
         }

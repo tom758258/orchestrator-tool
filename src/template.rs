@@ -301,8 +301,14 @@ impl Template {
                             return Some(target);
                         }
                     }
-                    StepKind::If { then_steps, else_steps, .. } => {
-                        if let Some(target) = validate(then_steps, ids).or_else(|| validate(else_steps, ids)) {
+                    StepKind::If {
+                        then_steps,
+                        else_steps,
+                        ..
+                    } => {
+                        if let Some(target) =
+                            validate(then_steps, ids).or_else(|| validate(else_steps, ids))
+                        {
                             return Some(target);
                         }
                     }
@@ -344,7 +350,11 @@ impl Template {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         validate_scopes_files(body, instances)?
                     }
-                    StepKind::If { then_steps, else_steps, .. } => {
+                    StepKind::If {
+                        then_steps,
+                        else_steps,
+                        ..
+                    } => {
                         validate_scopes_files(then_steps, instances)?;
                         validate_scopes_files(else_steps, instances)?;
                     }
@@ -408,7 +418,11 @@ impl Template {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         collect(body, template, instances)
                     }
-                    StepKind::If { then_steps, else_steps, .. } => {
+                    StepKind::If {
+                        then_steps,
+                        else_steps,
+                        ..
+                    } => {
                         collect(then_steps, template, instances);
                         collect(else_steps, template, instances);
                     }
@@ -658,7 +672,11 @@ impl Template {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         check(body, ids, owners, instances)?
                     }
-                    StepKind::If { then_steps, else_steps, .. } => {
+                    StepKind::If {
+                        then_steps,
+                        else_steps,
+                        ..
+                    } => {
                         check(then_steps, ids, owners, instances)?;
                         check(else_steps, ids, owners, instances)?;
                     }
@@ -726,7 +744,11 @@ fn validate_tool_action_parameters(
             StepKind::For { body, .. } | StepKind::While { body, .. } => {
                 validate_tool_action_parameters(body, instances)?;
             }
-            StepKind::If { then_steps, else_steps, .. } => {
+            StepKind::If {
+                then_steps,
+                else_steps,
+                ..
+            } => {
                 validate_tool_action_parameters(then_steps, instances)?;
                 validate_tool_action_parameters(else_steps, instances)?;
             }
@@ -1423,7 +1445,11 @@ impl StepWire {
                 max_iterations: RequiredNullableUsize(*max_iterations),
                 steps: body.iter().map(StepWire::from_step).collect(),
             },
-            StepKind::If { condition, then_steps, else_steps } => Self::If {
+            StepKind::If {
+                condition,
+                then_steps,
+                else_steps,
+            } => Self::If {
                 id: step.id().as_str().to_owned(),
                 left: ExpressionOperandWire::from_operand(condition.left()),
                 operator: condition.operator(),
@@ -1694,8 +1720,14 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                         operator,
                         operand_from_wire(right)?,
                     ),
-                    then_steps: then_steps.into_iter().map(step_from_wire).collect::<Result<_, _>>()?,
-                    else_steps: else_steps.into_iter().map(step_from_wire).collect::<Result<_, _>>()?,
+                    then_steps: then_steps
+                        .into_iter()
+                        .map(step_from_wire)
+                        .collect::<Result<_, _>>()?,
+                    else_steps: else_steps
+                        .into_iter()
+                        .map(step_from_wire)
+                        .collect::<Result<_, _>>()?,
                 },
             ))
         }

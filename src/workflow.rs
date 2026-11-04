@@ -614,6 +614,7 @@ impl Workflow {
             all: HashSet<StepId>,
             outputs: HashSet<StepId>,
             variables: HashSet<VariableId>,
+            depth: usize,
         }
 
         fn validate_steps(
@@ -623,7 +624,6 @@ impl Workflow {
             available: &Visible,
             path: &[StepId],
             variables: &[VariableId],
-            control_depth: usize,
             pages: &mut Vec<OutputPage>,
         ) -> Result<(), WorkflowError> {
             let mut prior = available.all.clone();
@@ -674,7 +674,7 @@ impl Workflow {
                 };
                 match step.kind() {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
-                        if control_depth >= 8 {
+                        if available.depth >= 8 {
                             return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
                         let mut child_variables = variables.to_vec();
@@ -721,15 +721,19 @@ impl Workflow {
                                 all: prior.clone(),
                                 outputs: prior_outputs.clone(),
                                 variables: child_available_variables,
+                                depth: available.depth + 1,
                             },
                             &child_path,
                             &child_variables,
-                            control_depth + 1,
                             pages,
                         )?;
                     }
-                    StepKind::If { condition, then_steps, else_steps } => {
-                        if control_depth >= 8 {
+                    StepKind::If {
+                        condition,
+                        then_steps,
+                        else_steps,
+                    } => {
+                        if available.depth >= 8 {
                             return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
                         if !condition.operator().is_comparison() {
@@ -740,11 +744,17 @@ impl Workflow {
                             all: prior.clone(),
                             outputs: prior_outputs.clone(),
                             variables: prior_variables.clone(),
+                            depth: available.depth + 1,
                         };
                         for branch in [then_steps, else_steps] {
                             validate_steps(
-                                branch, seen, output_names, &branch_available,
-                                path, variables, control_depth + 1, pages,
+                                branch,
+                                seen,
+                                output_names,
+                                &branch_available,
+                                path,
+                                variables,
+                                pages,
                             )?;
                         }
                     }
@@ -862,7 +872,6 @@ impl Workflow {
             &Visible::default(),
             &[],
             &[],
-            0,
             &mut pages,
         )?;
         Ok(Self { steps, pages })

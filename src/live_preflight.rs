@@ -205,7 +205,11 @@ fn scan_actions(
             StepKind::For { body, .. } | StepKind::While { body, .. } => {
                 scan_actions(body, instance, caps, check)
             }
-            StepKind::If { then_steps, else_steps, .. } => {
+            StepKind::If {
+                then_steps,
+                else_steps,
+                ..
+            } => {
                 scan_actions(then_steps, instance, caps, check);
                 scan_actions(else_steps, instance, caps, check);
             }

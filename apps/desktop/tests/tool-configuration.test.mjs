@@ -277,7 +277,7 @@ test('Steps categories keep fixed order and lock only by Template instances in e
   const sections = assertCategories(app, [])
   assert.equal(categoryHeader(sections[0]).props['aria-expanded'], true)
   assert.deepEqual(categorySteps(sections[0]).map(text),
-    ['While', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
+    ['While', 'If / Else', 'For', 'Set Variable', 'Output', 'Wait', 'Assert', 'Show Message'])
 
   const meters = { id: 'meters-1', tool: 'meters', setup: {} }
   app.render().find(node => node.type === 'ToolSetupEditor').props.onChange([meters])
