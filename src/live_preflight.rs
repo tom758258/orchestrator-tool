@@ -66,6 +66,13 @@ pub fn validate_live_preflight_draft(
                         collect(body, actions);
                     }
                 }
+                Some("if") => {
+                    for key in ["then_steps", "else_steps"] {
+                        if let Some(body) = step[key].as_array() {
+                            collect(body, actions);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -197,6 +204,10 @@ fn scan_actions(
             }
             StepKind::For { body, .. } | StepKind::While { body, .. } => {
                 scan_actions(body, instance, caps, check)
+            }
+            StepKind::If { then_steps, else_steps, .. } => {
+                scan_actions(then_steps, instance, caps, check);
+                scan_actions(else_steps, instance, caps, check);
             }
             _ => {}
         }

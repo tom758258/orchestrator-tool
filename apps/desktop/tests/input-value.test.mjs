@@ -318,3 +318,15 @@ test('actual non-Output editors omit time format controls and retain general sou
       onTimeFormatChange: () => assert.fail('Unexpected format change') }))
   }
 })
+
+test('While and If operand editors allow String literals without changing Assert', async () => {
+  const render = await valueEditor('ExpressionOperandEditor')
+  let changed
+  const nodes = render({ side: 'Right', allowBooleanLiteral: true, allowStringLiteral: true,
+    value: { source: 'literal', value: 'READY' }, onChange: value => { changed = value } })
+  assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean', 'string'])
+  const value = nodes.find(node => node.type === 'input' && node.props.value === 'READY')
+  assert.ok(value)
+  value.props.onChange({ target: { value: 'WAITING' } })
+  assert.deepEqual(changed, { source: 'literal', value: 'WAITING' })
+})

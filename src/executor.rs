@@ -245,6 +245,62 @@ impl Execution<'_> {
         iteration: Option<&Iteration>,
     ) -> Result<ControlFlow, String> {
         let mut staged = Vec::<(String, Vec<WorkflowOutput>)>::new();
+        let flow = self.run_steps(steps, path, iteration, &mut staged)?;
+        if !matches!(flow, ControlFlow::Continue) {
+            return Ok(flow);
+        }
+        // No synthetic rows for zero-iteration pages. Retain the existing no-Output root row.
+        if path.is_empty() && self.template.workflow().output_pages().is_empty() {
+            staged.push(("Results".to_owned(), Vec::new()));
+        }
+        for (page, outputs) in staged {
+            // Every committed row has the declared Page columns, even when an
+            // unselected If branch did not produce its Output.
+            let outputs = if let Some(declared) = self.template.workflow().output_pages().iter()
+                .find(|definition| definition.name() == page) {
+                declared.headers().iter().map(|name| {
+                    outputs.iter().find(|output| output.name() == name)
+                        .cloned().unwrap_or_else(|| WorkflowOutput::new(name.clone(), Value::Null))
+                }).collect()
+            } else if outputs.is_empty() && self.template.workflow().output_pages().is_empty() {
+                outputs
+            } else {
+                return Err(format!("Unknown Output Page {page:?}"));
+            };
+            let row = match iteration {
+                Some(Iteration::For(i)) => ResultRow::new(outputs, Some(i.clone())),
+                Some(Iteration::While(i)) => ResultRow::in_while(outputs, i.clone()),
+                None => ResultRow::new(outputs, None),
+            }
+            .with_page(page.clone());
+            if let Some(rows) = &mut self.rows {
+                rows.push(row.clone());
+            }
+            notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
+            if let Err(message) = self.failure_signal.check() {
+                self.failure.get_or_insert(message.clone());
+                return Err(message);
+            }
+        }
+        // Only a fully successful scope reaches its safe point. Ancestors are checked here,
+        // so stopping one never requires finishing remaining descendant iterations.
+        for id in path {
+            if !self.workflow_stop.is_requested() && (self.should_stop)(id) {
+                return Ok(ControlFlow::LoopStop(id.clone()));
+            }
+        }
+        Ok(ControlFlow::Continue)
+    }
+
+    // Runs ordered steps without committing a new row scope. If branches use
+    // their caller's staged row; loops still commit their own iteration rows.
+    fn run_steps(
+        &mut self,
+        steps: &[Step],
+        path: &[StepId],
+        iteration: Option<&Iteration>,
+        staged: &mut Vec<(String, Vec<WorkflowOutput>)>,
+    ) -> Result<ControlFlow, String> {
         for step in steps {
             if self.failure_signal.check().is_ok() && self.workflow_stop.is_requested() {
                 return Ok(ControlFlow::WorkflowStopped);
@@ -299,6 +355,23 @@ impl Execution<'_> {
                                 break (StepOutcome::Cancelled, ControlFlow::WorkflowStopped);
                             }
                             thread::sleep(remaining.min(Duration::from_millis(10)));
+                        }
+                    }
+                    StepKind::If { condition, then_steps, else_steps } => {
+                        let result = self.data.resolve(&InputValue::Expression(condition.clone()))
+                            .map_err(|error| error.to_string())
+                            .and_then(|value| match value {
+                                Value::Bool(true) => self.run_branch(then_steps, path, iteration, staged),
+                                Value::Bool(false) => self.run_branch(else_steps, path, iteration, staged),
+                                _ => Err("If condition must resolve to a boolean".to_owned()),
+                            });
+                        match result {
+                            Ok(flow) => (
+                                if matches!(&flow, ControlFlow::WorkflowStopped) { StepOutcome::Cancelled }
+                                else { StepOutcome::Succeeded { output: Value::Null } },
+                                flow
+                            ),
+                            Err(message) => (StepOutcome::Failed { message }, ControlFlow::Continue),
                         }
                     }
                     StepKind::For { .. } | StepKind::While { .. } => {
@@ -380,34 +453,21 @@ impl Execution<'_> {
                 return Ok(unwind);
             }
         }
-        // No synthetic rows for zero-iteration pages. Retain the existing no-Output root row.
-        if path.is_empty() && self.template.workflow().output_pages().is_empty() {
-            staged.push(("Results".to_owned(), Vec::new()));
-        }
-        for (page, outputs) in staged {
-            let row = match iteration {
-                Some(Iteration::For(i)) => ResultRow::new(outputs, Some(i.clone())),
-                Some(Iteration::While(i)) => ResultRow::in_while(outputs, i.clone()),
-                None => ResultRow::new(outputs, None),
-            }
-            .with_page(page.clone());
-            if let Some(rows) = &mut self.rows {
-                rows.push(row.clone());
-            }
-            notify_progress(self.on_event, WorkflowRunEvent::ResultRowCommitted(row));
-            if let Err(message) = self.failure_signal.check() {
-                self.failure.get_or_insert(message.clone());
-                return Err(message);
-            }
-        }
-        // Only a fully successful scope reaches its safe point. Ancestors are checked here,
-        // so stopping one never requires finishing remaining descendant iterations.
-        for id in path {
-            if !self.workflow_stop.is_requested() && (self.should_stop)(id) {
-                return Ok(ControlFlow::LoopStop(id.clone()));
-            }
-        }
         Ok(ControlFlow::Continue)
+    }
+
+    fn run_branch(
+        &mut self,
+        steps: &[Step],
+        path: &[StepId],
+        iteration: Option<&Iteration>,
+        staged: &mut Vec<(String, Vec<WorkflowOutput>)>,
+    ) -> Result<ControlFlow, String> {
+        let inherited = self.data.variable_scope();
+        let result = self.run_steps(steps, path, iteration, staged);
+        self.data.leave_variable_scope(&inherited);
+        clear_branch_step_outputs(steps, &mut self.data);
+        result
     }
 
     fn run_loop(&mut self, step: &Step, ancestors: &[StepId]) -> Result<ControlFlow, String> {
@@ -511,6 +571,16 @@ fn clear_body_step_outputs(body: &[Step], data_context: &mut DataContext) {
     }
 }
 
+fn clear_branch_step_outputs(steps: &[Step], data_context: &mut DataContext) {
+    for step in steps {
+        data_context.remove_step_output(step.id());
+        if let StepKind::If { then_steps, else_steps, .. } = step.kind() {
+            clear_branch_step_outputs(then_steps, data_context);
+            clear_branch_step_outputs(else_steps, data_context);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_non_loop_step(
     step: &Step,
@@ -584,8 +654,9 @@ fn execute_non_loop_step(
             },
             Err(message) => StepOutcome::Failed { message },
         },
-        StepKind::For { .. } | StepKind::While { .. } | StepKind::Background { .. } => {
-            unreachable!("loops execute through run_loop")
+        StepKind::If { .. } | StepKind::For { .. } | StepKind::While { .. }
+        | StepKind::Background { .. } => {
+            unreachable!("control steps execute through their respective handlers")
         }
     }
 }

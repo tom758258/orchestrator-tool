@@ -92,7 +92,18 @@ export type WhileStep = {
   max_iterations: number | null
   steps: WorkflowStep[]
 }
-export type WorkflowStep = NonLoopWorkflowStep | ForStep | WhileStep
+export type IfStep = {
+  type: 'if'
+  id: string
+  left: ExpressionOperandWire
+  operator: ComparisonOperator
+  right: ExpressionOperandWire
+  then_steps: WorkflowStep[]
+  else_steps: WorkflowStep[]
+}
+export type WorkflowContainerStep = ForStep | WhileStep | IfStep
+export type WorkflowStep = NonLoopWorkflowStep | WorkflowContainerStep
+export type StepBranch = 'then' | 'else'
 
 export type ForIterationDto = { for_step_id: string; iteration_index: number }
 export type WhileIterationDto = { while_step_id: string; iteration_index: number }
@@ -149,19 +160,37 @@ export type WorkflowRunEventDto = {
 }
 
 export function allWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
-  return steps.flatMap(step => (step.type === 'for' || step.type === 'while') ? [step, ...allWorkflowSteps(step.steps)] : [step])
+  return steps.flatMap(step => step.type === 'if'
+    ? [step, ...allWorkflowSteps(step.then_steps), ...allWorkflowSteps(step.else_steps)]
+    : step.type === 'for' || step.type === 'while'
+      ? [step, ...allWorkflowSteps(step.steps)] : [step])
 }
 
-export function loopPath(steps: readonly WorkflowStep[], stepId: string | null): (ForStep | WhileStep)[] {
+export type ContainerAncestor = { step: WorkflowContainerStep; branch: StepBranch | null }
+
+/** Full lexical container path. IF branches count toward depth, but not loop rows. */
+export function containerPath(steps: readonly WorkflowStep[], stepId: string | null): ContainerAncestor[] {
+  if (!stepId) return []
   for (const step of steps) {
     if (step.id === stepId) return []
-    if (step.type === 'for' || step.type === 'while') {
+    if (step.type === 'if') {
+      for (const branch of ['then', 'else'] as const) {
+        const body = branch === 'then' ? step.then_steps : step.else_steps
+        if (allWorkflowSteps(body).some(child => child.id === stepId)) {
+          return [{ step, branch }, ...containerPath(body, stepId)]
+        }
+      }
+    } else if (step.type === 'for' || step.type === 'while') {
       if (allWorkflowSteps(step.steps).some(child => child.id === stepId)) {
-        return [step, ...loopPath(step.steps, stepId)]
+        return [{ step, branch: null }, ...containerPath(step.steps, stepId)]
       }
     }
   }
   return []
+}
+
+export function loopPath(steps: readonly WorkflowStep[], stepId: string | null): (ForStep | WhileStep)[] {
+  return containerPath(steps, stepId).flatMap(({ step }) => step.type === 'if' ? [] : [step])
 }
 
 export function enclosingLoop(steps: readonly WorkflowStep[], stepId: string | null) {
@@ -181,26 +210,34 @@ export function mapWorkflowSteps(steps: readonly WorkflowStep[], update: (step: 
   return steps.flatMap(step => {
     const next = update(step)
     if (!next) return []
-    return [(next.type === 'for' || next.type === 'while')
-      ? { ...next, steps: mapWorkflowSteps(next.steps, update) } : next]
+    return [next.type === 'if'
+      ? { ...next, then_steps: mapWorkflowSteps(next.then_steps, update), else_steps: mapWorkflowSteps(next.else_steps, update) }
+      : next.type === 'for' || next.type === 'while'
+        ? { ...next, steps: mapWorkflowSteps(next.steps, update) } : next]
   })
 }
 
 export function inputScope(steps: readonly WorkflowStep[], stepId: string | null) {
-  const path = loopPath(steps, stepId)
+  const path = containerPath(steps, stepId)
   const earlierSteps: WorkflowStep[] = []
   const variables: string[] = []
   let siblings = steps
-  for (const target of [...path.map(step => step.id), stepId]) {
-    const index = siblings.findIndex(step => step.id === target)
+  for (const { step, branch } of path) {
+    const index = siblings.findIndex(item => item.id === step.id)
     if (index < 0) break
     const prior = siblings.slice(0, index)
     earlierSteps.push(...prior)
-    variables.push(...prior.flatMap(step => step.type === 'set-variable' ? [step.variable] : []))
-    const step = siblings[index]
-    if (step.id === stepId) break
+    variables.push(...prior.flatMap(item => item.type === 'set-variable' ? [item.variable] : []))
     if (step.type === 'for') variables.push(step.variable)
-    if (step.type === 'for' || step.type === 'while') siblings = step.steps
+    siblings = step.type === 'if'
+      ? branch === 'then' ? step.then_steps : step.else_steps
+      : step.steps
+  }
+  const index = siblings.findIndex(step => step.id === stepId)
+  if (index >= 0) {
+    const prior = siblings.slice(0, index)
+    earlierSteps.push(...prior)
+    variables.push(...prior.flatMap(step => step.type === 'set-variable' ? [step.variable] : []))
   }
   return { earlierSteps, earlierVariables: [...new Set(variables.filter(variable => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(variable)))] }
 }

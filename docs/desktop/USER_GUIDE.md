@@ -375,6 +375,7 @@ types are:
   Powers set or output action or a Meters measurement.
 - **For** — repeat a body over an exact decimal range.
 - **While** — repeat a body while a condition remains true.
+- **If / Else** — run either THEN or ELSE once based on a comparison; ELSE may be empty.
 
 The **Steps** categories always appear in this order: **Workflow**, **Meters**,
 **Powers**, **Scopes**. Workflow is always available. Each instrument category
@@ -393,7 +394,7 @@ step buttons. Available categories start expanded when the app opens. This
 state is not saved in Templates. **Scopes File Output** remains a separate panel
 with its own expand/collapse state and uses the same Scopes Tool Instance lock.
 
-Steps can be placed in the root workflow or inside loop bodies. Use the step
+Steps can be placed in the root workflow, loop bodies, or If branches. Use the step
 properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
@@ -485,11 +486,11 @@ The current InputValue choices in the editor are:
 
 Set Variable steps create or update variables. A Previous step result can
 refer only to a step that is earlier and visible in the current lexical scope.
-Calculations use arithmetic and comparison operators. Assert and While offer
-`==`, `!=`, `>`, `>=`, `<`, and `<=`. Their Fixed value operands can be Number
-or Boolean. Equality can compare booleans (for example, `true == false`) and
-other JSON values without type coercion; arithmetic and ordering comparisons
-require numbers. A Calculation is not an arbitrary nested expression tree.
+Calculations use arithmetic and comparison operators. Assert, While, and If
+offer `==`, `!=`, `>`, `>=`, `<`, and `<=`. Assert Fixed value operands can
+be Number or Boolean; While and If also allow String. Equality compares JSON
+values without type coercion; arithmetic and ordering comparisons require
+numbers. A Calculation is not an arbitrary nested expression tree.
 
 For an Output with **Elapsed time**, **Time Format** offers **Seconds** (default),
 **Minutes:Seconds**, **Hours:Minutes:Seconds**, and **Days (Decimal)**. Minutes
@@ -565,7 +566,7 @@ body.
 - Positive and negative directions must agree with Start and Stop.
 - A zero Step is invalid.
 - Equal Start and Stop values execute one iteration.
-- Loop nesting is limited to five levels.
+- If, For, and While share a maximum nesting depth of eight levels.
 
 For ranges use exact decimal range semantics rather than floating-point
 tolerance. The range is evaluated according to the configured step, so a Stop
@@ -580,9 +581,9 @@ be:
 - **Unlimited**, meaning no finite iteration limit is imposed.
 
 If the condition is initially false, the body executes zero times. An
-Unlimited While is currently allowed only at the top level, must have a
-non-empty body, and may contain finite nested loops. It may not contain
-another Unlimited While.
+Unlimited While is allowed at root or inside If branches without For or
+While ancestors. Its body must be non-empty and may contain finite nested
+loops. It may not contain another Unlimited While.
 
 If Software Meters **Measure** is inside an Unlimited While and Simulation
 cannot determine the source size, **Run Simulation** shows a sample warning.
@@ -595,6 +596,14 @@ Worker is not restarted. A Live Software Measure does not receive this SIM bound
 
 Foreground Meters uses Single in both Simulation and Live. To collect batches
 or use Immediate or External triggering, enable Background for that instance.
+
+An If step evaluates its condition once and executes only its THEN or ELSE
+body. Select an If step and choose which branch receives new palette steps;
+drag and paste steps into either branch independently. Branch-local Variables
+and Step Outputs do not escape; changes to previously defined Variables
+remain available later. Outputs in either branch use the enclosing Page row
+scope, with unexecuted branch columns left empty. If does not create an
+additional row.
 
 ### 6.4 Stop Workflow and loop Stop
 
@@ -790,7 +799,7 @@ optional capability fields do not block it.
 Changing the Template, Workflow parameters, Setup, saved Resource/model, or
 Powers/Scopes executable invalidates the previous result and triggers another
 check. Save any Resource or identity draft changes first. Fixed values inside
-For/While are checked without running the loops; values overridden by bindings
+For/While/If are checked without running their bodies; values overridden by bindings
 remain subject to Worker runtime validation. Preflight never changes your
 Template or substitutes a supported channel. This automatic check does not validate
 Workflow references or scopes; use Validate or Run for full Template validation.

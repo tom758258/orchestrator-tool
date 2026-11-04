@@ -301,6 +301,11 @@ impl Template {
                             return Some(target);
                         }
                     }
+                    StepKind::If { then_steps, else_steps, .. } => {
+                        if let Some(target) = validate(then_steps, ids).or_else(|| validate(else_steps, ids)) {
+                            return Some(target);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -338,6 +343,10 @@ impl Template {
                     }
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         validate_scopes_files(body, instances)?
+                    }
+                    StepKind::If { then_steps, else_steps, .. } => {
+                        validate_scopes_files(then_steps, instances)?;
+                        validate_scopes_files(else_steps, instances)?;
                     }
                     _ => {}
                 }
@@ -398,6 +407,10 @@ impl Template {
                     }
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         collect(body, template, instances)
+                    }
+                    StepKind::If { then_steps, else_steps, .. } => {
+                        collect(then_steps, template, instances);
+                        collect(else_steps, template, instances);
                     }
                     _ => {}
                 }
@@ -645,6 +658,10 @@ impl Template {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         check(body, ids, owners, instances)?
                     }
+                    StepKind::If { then_steps, else_steps, .. } => {
+                        check(then_steps, ids, owners, instances)?;
+                        check(else_steps, ids, owners, instances)?;
+                    }
                     _ => {}
                 }
             }
@@ -708,6 +725,10 @@ fn validate_tool_action_parameters(
         match step.kind() {
             StepKind::For { body, .. } | StepKind::While { body, .. } => {
                 validate_tool_action_parameters(body, instances)?;
+            }
+            StepKind::If { then_steps, else_steps, .. } => {
+                validate_tool_action_parameters(then_steps, instances)?;
+                validate_tool_action_parameters(else_steps, instances)?;
             }
             StepKind::ToolAction {
                 target,
@@ -1268,6 +1289,14 @@ enum StepWire {
         max_iterations: RequiredNullableUsize,
         steps: Vec<StepWire>,
     },
+    If {
+        id: String,
+        left: ExpressionOperandWire,
+        operator: ExpressionOperator,
+        right: ExpressionOperandWire,
+        then_steps: Vec<StepWire>,
+        else_steps: Vec<StepWire>,
+    },
     Assert {
         id: String,
         left: ExpressionOperandWire,
@@ -1393,6 +1422,14 @@ impl StepWire {
                 right: ExpressionOperandWire::from_operand(condition.right()),
                 max_iterations: RequiredNullableUsize(*max_iterations),
                 steps: body.iter().map(StepWire::from_step).collect(),
+            },
+            StepKind::If { condition, then_steps, else_steps } => Self::If {
+                id: step.id().as_str().to_owned(),
+                left: ExpressionOperandWire::from_operand(condition.left()),
+                operator: condition.operator(),
+                right: ExpressionOperandWire::from_operand(condition.right()),
+                then_steps: then_steps.iter().map(StepWire::from_step).collect(),
+                else_steps: else_steps.iter().map(StepWire::from_step).collect(),
             },
             StepKind::Assert { condition, message } => Self::Assert {
                 id: step.id().as_str().to_owned(),
@@ -1636,6 +1673,29 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                         .into_iter()
                         .map(step_from_wire)
                         .collect::<Result<_, _>>()?,
+                },
+            ))
+        }
+        StepWire::If {
+            id,
+            left,
+            operator,
+            right,
+            then_steps,
+            else_steps,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::If {
+                    condition: Expression::new(
+                        operand_from_wire(left)?,
+                        operator,
+                        operand_from_wire(right)?,
+                    ),
+                    then_steps: then_steps.into_iter().map(step_from_wire).collect::<Result<_, _>>()?,
+                    else_steps: else_steps.into_iter().map(step_from_wire).collect::<Result<_, _>>()?,
                 },
             ))
         }
