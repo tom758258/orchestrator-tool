@@ -111,7 +111,7 @@ is recommended but optional.
 
 ### Windows release build (no installer)
 
-On Windows, run `./build-all.ps1` from PowerShell in the repository root to build the release CLI and Desktop executables. The script uses the tracked dependency lockfiles, checks CLI startup, and places `orchestrator-tool.exe` (diagnostics) and `Orchestrator Tool.exe` (Desktop) in `dist/windows-x64/`.
+On Windows, run `./scripts/build-all.ps1` from PowerShell in the repository root to build the release CLI and Desktop executables. The script uses the tracked dependency lockfiles, checks CLI startup, and places `orchestrator-tool.exe` (diagnostics) and `Orchestrator Tool.exe` (Desktop) in `dist/windows-x64/`.
 
 The **Build Windows CLI and Desktop** GitHub Actions workflow runs on demand and uploads both EXEs with the short Git commit SHA in the artifact name. Automatic CI runs on pull requests and pushes to `main` on Linux and Windows. Desktop runtime still requires WebView2; a successful build does not certify GUI or hardware behavior.
 
