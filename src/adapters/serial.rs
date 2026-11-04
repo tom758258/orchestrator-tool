@@ -274,6 +274,14 @@ pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String
             match step.kind() {
                 crate::workflow::StepKind::For { body, .. }
                 | crate::workflow::StepKind::While { body, .. } => check(body, instances, errors),
+                crate::workflow::StepKind::If {
+                    then_steps,
+                    else_steps,
+                    ..
+                } => {
+                    check(then_steps, instances, errors);
+                    check(else_steps, instances, errors);
+                }
                 crate::workflow::StepKind::ToolAction {
                     target,
                     action,

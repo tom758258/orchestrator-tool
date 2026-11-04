@@ -401,6 +401,7 @@ Schema v2 supports these step kinds:
   and optional InputValue bindings.
 - For: bind a loop variable over an exact numeric range and execute a body.
 - While: evaluate a comparison and execute a body repeatedly.
+- If: evaluate a comparison once and execute either then_steps or else_steps.
 - Show Message: write one message to a Messages Panel tab while the workflow runs.
 
 Powers `set-output` sets one or both power supply setpoints without enabling
@@ -466,8 +467,9 @@ workflow, including nested bodies. Output names are unique across the whole
 workflow, case-sensitive and without normalization. Step-output references
 must refer to an earlier step that is visible from the current lexical scope.
 
-For and While bodies are ordered step lists. Loop nesting is limited to five
-levels. There is no break, continue, boolean expression tree, or timeout
+For and While bodies, and both If branches, are ordered step lists.
+If, For, and While share a control nesting limit of eight levels.
+There is no break, continue, boolean expression tree, or timeout
 semantics in schema v2.
 
 ## Show Message semantics
@@ -585,7 +587,7 @@ resolved when the InputValue is used in a Set Variable, Output, or Tool Action
 binding. Only explicit Outputs become ResultRow/CSV columns. Expression
 operands do not support the two time sources.
 
-Assert and While reuse the same operand representation and accept the six
+Assert, While, and If reuse the same operand representation and accept the six
 comparison operators. A true Assert comparison succeeds with boolean true as
 its step result. A false Assert comparison uses the configured message, or
 Assertion failed. when the message is blank. Invalid references and expression
@@ -638,6 +640,47 @@ body-local declarations do not escape an iteration. Inherited assignments and
 shadowed For bindings keep the runtime lifecycle described above. Validation does
 not predict values, loop counts or condition results.
 
+## If semantics
+
+An If step has one condition (left, operator, right) and two ordered step
+lists named then_steps and else_steps. Both fields are required arrays; either
+may be empty. The condition is evaluated once at each If occurrence. True
+selects then_steps and false selects else_steps; the other branch is never
+executed, recorded as completed, or used to produce an Output.
+
+Both branches are validated statically, including unique Step IDs, Tool
+references, InputValue bindings, and Output names. Earlier enclosing
+Variables/StepOutputs are visible within a branch. New Variables and
+StepOutputs local to a branch do not become visible outside it or in the
+opposite branch. Mutations to Variables declared before If remain visible
+afterwards. On exit, branch-local runtime values are cleared.
+
+If is a control container, not a loop or row scope. Its Outputs participate
+in the enclosing root/For/While row and its Loop Path remains unchanged.
+An executed Output contributes its value; an Output from the unselected
+branch has a null/blank cell in an otherwise committed row, while the
+unselected Step has no execution record. No synthetic row is created when
+neither branch produces an Output. An incomplete enclosing row is discarded
+under the existing failure/Stop rules.
+
+An If can wrap an Unlimited While so long as no For or While is among its
+ancestors; the existing nonempty body and finite nested-loop rules still
+apply. For/While/If control nesting counts toward the shared eight-level
+limit. For Foreground Meters sample planning, an If contributes the maximum
+of its two mutually exclusive branches; the existing Worker reserve rule
+remains unchanged.
+
+Example:
+
+    {
+      "type": "if", "id": "check-ready",
+      "left": {"source": "variable", "variable": "status"},
+      "operator": "equal",
+      "right": {"source": "literal", "value": "READY"},
+      "then_steps": [{"type": "wait", "id": "ready-wait", "duration_ms": 100}],
+      "else_steps": []
+    }
+
 ## While semantics
 
 While evaluates its comparison before each iteration using current variables
@@ -654,9 +697,9 @@ true condition fails with the existing max-iterations diagnostic.
 An initially false While succeeds without executing its body. A condition
 resolution error or body failure fails the aggregate. A successful aggregate
 produces JSON null. Unlimited While runs until the condition becomes false,
-the body fails, or graceful Stop is requested. Unlimited While is currently
-top-level only, must contain at least one body step, and may contain finite
-nested loops. A row-producing While that executes zero iterations commits no
+the body fails, or graceful Stop is requested. Unlimited While is allowed at
+root or inside If branches without a For/While ancestor, must contain at
+least one body step, and may contain finite nested loops. A row-producing While that executes zero iterations commits no
 synthetic row.
 
 Desktop presents completed iteration numbers starting at 1, but the contract
@@ -769,7 +812,8 @@ Manual CSV writes committed chronological StoredRun rows directly with the
 Page's declared columns, while Core batch helpers and XLSX serialization may
 use PageDataset row references. CSV excludes For/While iteration metadata.
 Every committed row must match its owning Page's declared Output names, order,
-and count. Page export also validates row occurrence metadata against the Page's
+and count. In an If, only the selected branch contributes values; declared
+Outputs from unselected branches have empty cells without executing those Steps. Page export also validates row occurrence metadata against the Page's
 innermost owning loop. Root Page rows must carry no loop occurrence metadata.
 CSV cell conversion is unchanged: strings retain their contents, null becomes
 empty, and other JSON values use compact JSON text.

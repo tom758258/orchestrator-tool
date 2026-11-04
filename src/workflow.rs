@@ -447,6 +447,11 @@ pub enum StepKind {
         max_iterations: Option<usize>,
         body: Vec<Step>,
     },
+    If {
+        condition: Expression,
+        then_steps: Vec<Step>,
+        else_steps: Vec<Step>,
+    },
     For {
         variable: VariableId,
         range: NumericRange,
@@ -609,6 +614,7 @@ impl Workflow {
             all: HashSet<StepId>,
             outputs: HashSet<StepId>,
             variables: HashSet<VariableId>,
+            depth: usize,
         }
 
         fn validate_steps(
@@ -668,7 +674,7 @@ impl Workflow {
                 };
                 match step.kind() {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
-                        if path.len() >= 5 {
+                        if available.depth >= 8 {
                             return Err(WorkflowError::NestedLoop(step.id().clone()));
                         }
                         let mut child_variables = variables.to_vec();
@@ -715,11 +721,42 @@ impl Workflow {
                                 all: prior.clone(),
                                 outputs: prior_outputs.clone(),
                                 variables: child_available_variables,
+                                depth: available.depth + 1,
                             },
                             &child_path,
                             &child_variables,
                             pages,
                         )?;
+                    }
+                    StepKind::If {
+                        condition,
+                        then_steps,
+                        else_steps,
+                    } => {
+                        if available.depth >= 8 {
+                            return Err(WorkflowError::NestedLoop(step.id().clone()));
+                        }
+                        if !condition.operator().is_comparison() {
+                            return Err(WorkflowError::InvalidIfOperator(step.id().clone()));
+                        }
+                        validate_input(&InputValue::Expression(condition.clone()))?;
+                        let branch_available = Visible {
+                            all: prior.clone(),
+                            outputs: prior_outputs.clone(),
+                            variables: prior_variables.clone(),
+                            depth: available.depth + 1,
+                        };
+                        for branch in [then_steps, else_steps] {
+                            validate_steps(
+                                branch,
+                                seen,
+                                output_names,
+                                &branch_available,
+                                path,
+                                variables,
+                                pages,
+                            )?;
+                        }
                     }
                     StepKind::Assert { condition, .. } => {
                         if !condition.operator().is_comparison() {
@@ -935,6 +972,7 @@ impl Error for OutputProjectionError {}
 pub enum WorkflowError {
     InvalidAssertOperator(StepId),
     InvalidWhileOperator(StepId),
+    InvalidIfOperator(StepId),
     InvalidWhileMaxIterations(StepId),
     EmptyUnlimitedWhileBody(StepId),
     DuplicateStepId(StepId),
@@ -972,6 +1010,7 @@ impl WorkflowError {
         match self {
             Self::InvalidAssertOperator(id)
             | Self::InvalidWhileOperator(id)
+            | Self::InvalidIfOperator(id)
             | Self::InvalidWhileMaxIterations(id)
             | Self::EmptyUnlimitedWhileBody(id)
             | Self::InvalidOutputName(id)
@@ -996,6 +1035,10 @@ impl WorkflowError {
 impl fmt::Display for WorkflowError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidIfOperator(step_id) => write!(
+                formatter,
+                "If step {step_id} requires a comparison operator"
+            ),
             Self::InvalidWhileOperator(step_id) => write!(
                 formatter,
                 "While step {step_id} requires a comparison operator"
@@ -1042,12 +1085,12 @@ impl fmt::Display for WorkflowError {
             ),
             Self::NestedUnlimitedWhile(id) => write!(
                 formatter,
-                "nested Unlimited While {id} is not allowed; Unlimited must be top-level"
+                "nested Unlimited While {id} is not allowed inside For or While"
             ),
             Self::NestedLoop(step_id) => {
                 write!(
                     formatter,
-                    "nested For/While depth exceeds 5 at step {step_id}"
+                    "nested If/For/While depth exceeds 8 at step {step_id}"
                 )
             }
             Self::LoopVariableAssignment(step_id) => write!(

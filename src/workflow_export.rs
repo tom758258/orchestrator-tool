@@ -124,6 +124,11 @@ pub fn pages_xlsx(datasets: &[PageDataset<'_>]) -> Result<Vec<u8>, String> {
         }
         for (index, row) in dataset.rows.iter().enumerate() {
             for (column, output) in row.outputs().iter().enumerate() {
+                // An unselected If branch leaves this declared column blank,
+                // including when the Output has a time format.
+                if output.value().is_null() {
+                    continue;
+                }
                 if let Some(time_format) = dataset.page.time_formats()[column] {
                     worksheet
                         .write_number_with_format(

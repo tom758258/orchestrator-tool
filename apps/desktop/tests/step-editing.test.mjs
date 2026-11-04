@@ -245,16 +245,17 @@ test('Cross-level moves preserve non-contiguous order, values and complete subtr
   assert.equal(new Set(ids(allWorkflowSteps(root))).size, allWorkflowSteps(root).length)
 })
 
-test('Cross-level drops reject self, descendants, mixed selections and depth beyond five', () => {
+test('Cross-level drops reject self, descendants, mixed selections and depth beyond eight', () => {
   const deep = loop('one', [whileLoop('two', [loop('three', [whileLoop('four', [loop('five', [])])])])])
   const steps = [deep, loop('moving', [wait('child')])]
-  for (const parent of ['moving', 'child', 'five', 'missing']) {
+  for (const parent of ['moving', 'child', 'missing']) {
     assert.equal(canRelocateSteps(steps, ['moving'], parent), false)
     assert.equal(relocateSteps(steps, ['moving'], parent, 0), steps)
   }
   assert.equal(canRelocateSteps(steps, ['one'], 'two'), false)
   assert.equal(canRelocateSteps(steps, ['moving', 'child'], null), false)
   assert.equal(canRelocateSteps(steps, ['moving'], 'four'), true)
+  assert.equal(canRelocateSteps(steps, ['moving'], 'five'), true)
   assert.equal(canRelocateSteps(steps, ['child'], 'five'), true)
 })
 
@@ -280,4 +281,30 @@ test('Select all uses direct siblings and preserves the active step and Shift an
   assert.deepEqual(selectAllSteps(steps, selection('a', 'b')), { ids: ['a', 'b', 'while'], active: 'b', anchor: 'a' })
   assert.deepEqual(selectAllSteps(steps, singleSelection('c')), singleSelection('c'))
   assert.deepEqual(selectAllSteps([], singleSelection(null)), singleSelection(null))
+})
+
+test('THEN and ELSE are separate editable containers with isolated selection and relocation', () => {
+  const ifStep = { type: 'if', id: 'choose', left: literal, operator: 'equal', right: literal,
+    then_steps: [wait('yes')], else_steps: [wait('no')] }
+  const steps = [ifStep, wait('root')]
+  assert.deepEqual(selectStep(steps, singleSelection('yes'), 'no', { ctrlKey: true }), singleSelection('no'))
+  assert.equal(canRelocateSteps(steps, ['root'], 'choose', 'else'), true)
+  assert.equal(canRelocateSteps(steps, ['root'], 'choose'), false)
+  const relocated = relocateSteps(steps, ['root'], 'choose', 1, 'else')
+  assert.deepEqual(relocated[0].then_steps.map(step => step.id), ['yes'])
+  assert.deepEqual(relocated[0].else_steps.map(step => step.id), ['no', 'root'])
+  const selectedIf = pasteSteps(relocated, [wait('new')], singleSelection('choose'), new Set(), false, 'else')
+  assert.deepEqual(selectedIf.steps[0].else_steps.map(step => step.id), ['no', 'root', 'new-copy'])
+  const copiedIf = copySteps(steps, singleSelection('choose'))
+  const pasted = pasteSteps(steps, copiedIf, singleSelection(null))
+  assert.deepEqual(pasted.steps[2].then_steps.map(step => step.id), ['yes-copy'])
+  assert.deepEqual(pasted.steps[2].else_steps.map(step => step.id), ['no-copy'])
+})
+
+test('Eight nested controls are allowed while a ninth is blocked', () => {
+  let nested = loop('level-8', [wait('leaf')])
+  for (let level = 7; level >= 1; level--) nested = loop(`level-${level}`, [nested])
+  const steps = [nested, loop('moving', [wait('other')])]
+  assert.equal(canRelocateSteps(steps, ['moving'], 'level-7'), true)
+  assert.equal(canRelocateSteps(steps, ['moving'], 'level-8'), false)
 })

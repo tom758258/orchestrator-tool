@@ -42,7 +42,7 @@ A run follows this high-level flow:
 4. Core starts the Workers and waits for validated Worker Ready information
    before applying referenced Scopes Setup and invoking the Executor.
 5. The Executor evaluates the ordered workflow sequentially, including nested
-   For and While bodies, and emits progress events as steps complete and rows
+   If, For and While bodies, and emits progress events as steps complete and rows
    commit.
 6. After Executor completion, run orchestration performs the applicable
    external-tool cleanup and Worker shutdown. Core callers that request a
@@ -61,8 +61,8 @@ Resources, runtime results, output authorization, and safety-cleanup state are
 not stored in the Template. This separation keeps portable workflow definitions
 distinct from machine-local state.
 
-For and While execution is sequential. The current workflow validator permits
-nested loops up to five levels. The exact decimal range, lexical scope,
+If, For and While execution is sequential. The current workflow validator permits
+up to eight nested control containers. The exact decimal range, lexical scope,
 Output Page, row staging, graceful Stop, and loop occurrence rules are
 contract details, not redefined here.
 

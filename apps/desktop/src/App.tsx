@@ -9,7 +9,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
-import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut } from './stepEditing'
+import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import OutputCharts from './OutputCharts'
 import Collapsible from './Collapsible'
@@ -34,8 +34,8 @@ import type { NumericDisplayFormat } from './outputTime'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, insertionLoop, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
-import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow } from './workflow'
+import { allWorkflowSteps, containerPath, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
+import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow, StepBranch } from './workflow'
 import ShowMessageEditor from './ShowMessageEditor'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
@@ -143,6 +143,7 @@ type StepPreset =
   | 'serial-send' | 'serial-send-file' | 'serial-receive' | 'serial-query'
   | 'for'
   | 'while'
+  | 'if'
   | 'assert'
   | 'set-variable'
   | 'output'
@@ -181,6 +182,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   })),
   ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
   { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
+  { value: 'if', label: 'If / Else', prefix: 'if', category: 'Workflow' },
   { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
   { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
@@ -214,7 +216,8 @@ const STEP_HELP: Record<string, string> = {
   'serial/receive': 'Receive up to Max Bytes once; result contains rx_hex and rx_bytes.',
   'serial/query': 'Send a byte or UTF-8 string and read until the specified delimiter.',
   while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
-  for: 'Repeat these body steps over an exact decimal range. Loops can nest up to 5 levels.',
+  if: 'Evaluate a comparison once and execute either THEN or ELSE. ELSE may be empty.',
+  for: 'Repeat these body steps over an exact decimal range. If, For and While can nest up to 8 levels.',
   assert: 'Fail the Workflow when this comparison is false.',
   'show-message': 'Write a message to the Messages Panel while the Workflow runs. It does not create an Output Page, a Popup, or an Assert.',
   'set-variable': 'Save a value or calculation result so later steps can reuse it.',
@@ -286,6 +289,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
   switch (preset) {
     case 'while':
       return { type: 'while', id, left: { source: 'literal', value: 0 }, operator: 'less-than', right: { source: 'literal', value: 1 }, max_iterations: 1000, steps: [] }
+    case 'if':
+      return { type: 'if', id, left: { source: 'literal', value: 0 }, operator: 'equal', right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] }
     case 'for':
       return { type: 'for', id, variable: 'x', range: { start: '1', stop: '3', step: '1' }, steps: [] }
     case 'assert':
@@ -345,6 +350,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
 function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
   if (step.type === 'background') return `Background ${step.action.replace('-', ' ').toUpperCase()}`
   if (step.type === 'while') return 'While'
+  if (step.type === 'if') return 'If / Else'
   if (step.type === 'for') return `For ${step.variable} = ${step.range.start}..${step.range.stop}`
   if (step.type === 'set-variable') {
     return 'Set Variable'
@@ -626,6 +632,7 @@ function App() {
   const selection = reconcileSelection(workflowDraft?.workflow.steps ?? [], stepSelection)
   const { active: selectedStepId, ids: selectedStepIds } = selection
   const setSelectedStepId = useCallback((id: string | null) => setStepSelection(singleSelection(id)), [])
+  const [preferredIfBranch, setPreferredIfBranch] = useState<{ id: string; branch: StepBranch }>({ id: '', branch: 'then' })
   const stepClipboardRef = useRef<WorkflowStep[]>([])
   const stepClipboardCutRef = useRef(false)
   const pastedStepIdsRef = useRef(new Set<string>())
@@ -951,13 +958,22 @@ function App() {
   }, [workflowDraft, clearValidation, clearRunFeedback])
 
   const addStep = useCallback((preset: StepPresetOption) => {
-    if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) {
-      return
-    }
-    const parent = insertionLoop(workflowDraft.workflow.steps, selectedStepId)
-    if (parent && (preset.value === 'for' || preset.value === 'while') && loopPath(workflowDraft.workflow.steps, parent.id).length >= 4) return
+    if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) return
+    const steps = workflowDraft.workflow.steps
+    const selected = allWorkflowSteps(steps).find(step => step.id === selectedStepId)
+    const container = selected?.type === 'if'
+      ? { parentId: selected.id, branch: preferredIfBranch.id === selected.id ? preferredIfBranch.branch : 'then' as StepBranch }
+      : selected?.type === 'for' || selected?.type === 'while'
+        ? { parentId: selected.id, branch: null }
+        : selectedStepId
+          ? (stepContainer(steps, selectedStepId) ?? { parentId: null, branch: null })
+          : { parentId: null, branch: null }
+    const parentId = container.parentId
+    const isControl = preset.value === 'for' || preset.value === 'while' || preset.value === 'if'
+    if (isControl && parentId && containerPath(steps, parentId).length + 1 >= 8) return
     const target = preset.value.startsWith('background-') ? workflowDraft.backgrounds?.[0]?.id
-      : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool && !workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id))?.id
+      : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool &&
+          !workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id))?.id
     if (preset.value.startsWith('background-') && !target) {
       setValidationError('Configure a Background in Tool Setup before adding this action.')
       return
@@ -966,23 +982,25 @@ function App() {
       setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
       return
     }
-    const id = nextStepId(preset.prefix, workflowDraft.workflow.steps)
+    const id = nextStepId(preset.prefix, steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
-    updateSteps((steps) => {
-      if (parent) {
-        return mapWorkflowSteps(steps, step => {
-          if (step.id !== parent.id || (step.type !== 'for' && step.type !== 'while')) return step
-          const index = step.steps.findIndex(body => body.id === selectedStepId)
-          const insertIndex = index < 0 ? step.steps.length : index + 1
-          return { ...step, steps: [...step.steps.slice(0, insertIndex), newStep, ...step.steps.slice(insertIndex)] }
-        })
+    updateSteps(current => {
+      if (!parentId) {
+        const index = current.findIndex(step => step.id === selectedStepId)
+        const insertIndex = index < 0 ? current.length : index + 1
+        return [...current.slice(0, insertIndex), newStep, ...current.slice(insertIndex)]
       }
-      const selectedIndex = steps.findIndex((step) => step.id === selectedStepId)
-      const insertIndex = selectedIndex < 0 ? steps.length : selectedIndex + 1
-      return [...steps.slice(0, insertIndex), newStep, ...steps.slice(insertIndex)]
+      const parent = allWorkflowSteps(current).find(step => step.id === parentId)
+      const body = parent?.type === 'if'
+        ? container.branch === 'else' ? parent.else_steps : parent.then_steps
+        : parent?.type === 'for' || parent?.type === 'while' ? parent.steps : []
+      const index = body.findIndex(step => step.id === selectedStepId)
+      const insertIndex = index < 0 ? body.length : index + 1
+      return replaceSiblings(current, parentId,
+        [...body.slice(0, insertIndex), newStep, ...body.slice(insertIndex)], container.branch)
     })
     setSelectedStepId(id)
-  }, [workflowDraft, selectedStepId, updateSteps])
+  }, [workflowDraft, selectedStepId, preferredIfBranch, updateSteps])
 
   const deleteStep = useCallback(
     (stepId: string) => {
@@ -1077,10 +1095,10 @@ function App() {
     [updateSteps, selection, workflowDraft],
   )
 
-  const reorderStep = useCallback((ids: string[], parentId: string | null, index: number) => {
+  const reorderStep = useCallback((ids: string[], parentId: string | null, index: number, branch: StepBranch | null = null) => {
     if (stepEditingBusyRef.current || runInFlightRef.current || !workflowDraft) return
-    if (relocateSteps(workflowDraft.workflow.steps, ids, parentId, index) === workflowDraft.workflow.steps) return
-    updateSteps(steps => relocateSteps(steps, ids, parentId, index))
+    if (relocateSteps(workflowDraft.workflow.steps, ids, parentId, index, branch) === workflowDraft.workflow.steps) return
+    updateSteps(steps => relocateSteps(steps, ids, parentId, index, branch))
   }, [updateSteps, workflowDraft])
 
   function handleStepClipboard(event: React.KeyboardEvent<HTMLElement>) {
@@ -1105,7 +1123,8 @@ function App() {
       if (stepEditingBusyRef.current || runInFlightRef.current || !stepClipboardRef.current.length) return
       event.preventDefault()
       const pasted = pasteSteps(workflowDraft.workflow.steps, stepClipboardRef.current, selection,
-        pastedStepIdsRef.current, stepClipboardCutRef.current)
+        pastedStepIdsRef.current, stepClipboardCutRef.current,
+        preferredIfBranch.id === selection.active ? preferredIfBranch.branch : 'then')
       stepClipboardCutRef.current = false
       for (const step of allWorkflowSteps(pasted.steps)) pastedStepIdsRef.current.add(step.id)
       updateSteps(() => pasted.steps)
@@ -1756,7 +1775,17 @@ function App() {
   const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedParent = enclosingLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
   const selectedEnclosingForVariables = enclosingForVariables(workflowDraft?.workflow.steps ?? [], selectedStepId)
-  const addingToLoop = insertionLoop(workflowDraft?.workflow.steps ?? [], selectedStepId)
+  const selectedForInsertion = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(step => step.id === selectedStepId)
+  const insertionContainer = selectedForInsertion?.type === 'if'
+    ? { parentId: selectedForInsertion.id,
+        branch: preferredIfBranch.id === selectedForInsertion.id ? preferredIfBranch.branch : 'then' as StepBranch }
+    : selectedForInsertion?.type === 'for' || selectedForInsertion?.type === 'while'
+      ? { parentId: selectedForInsertion.id, branch: null }
+      : selectedStepId ? stepContainer(workflowDraft?.workflow.steps ?? [], selectedStepId) : null
+  const addingToParent = insertionContainer?.parentId
+    ? allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(step => step.id === insertionContainer.parentId)
+    : null
+  const insertionDepth = addingToParent ? containerPath(workflowDraft?.workflow.steps ?? [], addingToParent.id).length + 1 : 0
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
   const selectedCompatiblePages = selectedStep?.type === 'output'
@@ -2115,7 +2144,7 @@ function App() {
                 metersExecutableKey={metersExecutableKey}
                 powersExecutableKey={powersExecutableKey}
                 scopesExecutableKey={scopesExecutableKey}
-                steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while'))}
+                steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while' && step.type !== 'if'))}
                 renderPowersDeviceStatus={instance => {
                   const deviceStatus = powersStatuses[instance.id]
                   const clearPlan = deviceStatus?.clearPlan ?? null
@@ -2369,8 +2398,11 @@ function App() {
                       </button>
                     </h3>
                     {stepsExpanded && <>
-                    <p>Adding to: {addingToLoop ? `${addingToLoop.type === 'for' ? 'For' : 'While'} "${addingToLoop.id}" body` : 'Root workflow'}</p>
-                    {addingToLoop && <button className="action-button" type="button" disabled={workflowBusy}
+                    <p>Adding to: {addingToParent
+                      ? addingToParent.type === 'if' ? `If "${addingToParent.id}" ${insertionContainer?.branch?.toUpperCase()}`
+                        : `${addingToParent.type === 'for' ? 'For' : 'While'} "${addingToParent.id}" body`
+                      : 'Root workflow'}</p>
+                    {addingToParent && <button className="action-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
                     <div className="step-palette-items">
                       {STEP_CATEGORIES.map(({ category, tool }) => {
@@ -2404,7 +2436,7 @@ function App() {
                                 className="action-button step-palette-button"
                                 type="button"
                                 onClick={() => addStep(preset)}
-                                disabled={workflowBusy || (Boolean(addingToLoop) && loopPath(workflowDraft.workflow.steps, addingToLoop!.id).length >= 4 && (preset.value === 'for' || preset.value === 'while'))}
+                                disabled={workflowBusy || (insertionDepth >= 8 && (preset.value === 'for' || preset.value === 'while' || preset.value === 'if'))}
                               >
                                 {preset.label}
                               </button>
@@ -2734,23 +2766,24 @@ function App() {
                         />
                       )}
 
-                      {(selectedStep.type === 'assert' || selectedStep.type === 'while') && (
+                      {(selectedStep.type === 'assert' || selectedStep.type === 'while' || selectedStep.type === 'if') && (
                         <div key={selectedStep.id} className="step-properties-fields">
                           <ExpressionOperandEditor
                             allowBooleanLiteral
+                            allowStringLiteral={selectedStep.type !== 'assert'}
                             side="Left" value={selectedStep.left}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
                             onChange={left => updateStep(selectedStep.id, step =>
-                              (step.type === 'assert' || step.type === 'while') ? { ...step, left } : step)}
+                              (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, left } : step)}
                           />
                           <label className="step-property-field">
                             <span className="step-property-label">Operator</span>
                             <select value={selectedStep.operator} disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
-                                (step.type === 'assert' || step.type === 'while') ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
+                                (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
                               {Object.entries(COMPARISON_OPERATORS).map(([operator, symbol]) => (
                                 <option key={operator} value={operator}>{symbol}</option>
                               ))}
@@ -2758,13 +2791,14 @@ function App() {
                           </label>
                           <ExpressionOperandEditor
                             allowBooleanLiteral
+                            allowStringLiteral={selectedStep.type !== 'assert'}
                             side="Right" value={selectedStep.right}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
                             onChange={right => updateStep(selectedStep.id, step =>
-                              (step.type === 'assert' || step.type === 'while') ? { ...step, right } : step)}
+                              (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, right } : step)}
                           />
                           {selectedStep.type === 'assert' && <label className="step-property-field">
                             <span className="step-property-label">Failure message</span>
@@ -2799,6 +2833,17 @@ function App() {
                         </div>
                       )}
 
+                      {selectedStep.type === 'if' && <label className="step-property-field">
+                        <span className="step-property-label">Add new Steps to</span>
+                        <select aria-label="If branch for new Steps" disabled={workflowBusy}
+                          value={preferredIfBranch.id === selectedStep.id ? preferredIfBranch.branch : 'then'}
+                          onChange={event => setPreferredIfBranch({
+                            id: selectedStep.id, branch: event.target.value as StepBranch,
+                          })}>
+                          <option value="then">THEN</option>
+                          <option value="else">ELSE</option>
+                        </select>
+                      </label>}
                       {selectedStep.type === 'wait' && (
                         <label className="step-property-field">
                           <span className="step-property-label">Duration (ms)</span>

@@ -313,6 +313,7 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
   output action 或 Meters measurement。
 - **For** — 依 exact decimal range 重複執行 body。
 - **While** — 在 condition 為 true 時重複執行 body。
+- **If / Else** — 依 comparison 執行 THEN 或 ELSE，ELSE 可為空。
 
 **Steps** 分類固定依 **Workflow**、**Meters**、**Powers**、**Scopes** 排列。
 Workflow 永遠可用；各儀器分類需在目前 Template 中有至少一個對應的 Tool Instance。
@@ -327,7 +328,7 @@ Template 時會依其中的 instances 更新鎖定狀態，不會變更既有 st
 Template。**Scopes File Output** 維持獨立面板及自己的展開／收合狀態，
 並採用相同的 Scopes Tool Instance 鎖定條件。
 
-Steps 可以放在 root workflow 或 loop body 中。使用 step properties 編輯選取的
+Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
@@ -357,7 +358,7 @@ steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shif
 空白 Body 也可接收。插入線會顯示目標位置。拖到 Root list 最後的空白處即可
 移回 Root。拖曳已選取 step 會搬移整個 selection，包括不相鄰的 steps，並保持
 原本相對順序。搬移 Loop 會保留整個 Body；ID、參數、Binding 與引用皆保留。
-Editor 禁止將 Loop 放入自己或其子孫，以及超過五層 Loop 巢狀深度；拖曳時
+Editor 禁止將控制區塊放入自己或其子孫，以及超過八層 If／For／While 巢狀深度；拖曳時
 不驗證執行語意。接近 Sequence 上下邊界時會自動捲動。
 
 **Up**／**Down** 在同一 list 內將 selection 移動一個位置；任何選取 step 碰到
@@ -403,9 +404,9 @@ Editor 目前的 InputValue 選項是：
 
 Set Variable 會建立或更新 variables。Previous step result 只能引用目前 lexical
 scope 中較早且可見的 step。Calculation 使用 arithmetic 與 comparison
-operators。Assert 與 While 提供 `==`、`!=`、`>`、`>=`、`<`、`<=`；其 Fixed value
-operand 可選 Number 或 Boolean。Equality 可比較 boolean（例如 `true == false`）
-及其他 JSON 值，且不進行型別轉換；arithmetic 與大小比較僅接受數值。
+operators。Assert、While 與 If 提供 `==`、`!=`、`>`、`>=`、`<`、`<=`。
+Assert 的 Fixed value 可選 Number／Boolean；While 與 If 另可選 String。
+Equality 不進行型別轉換；arithmetic 與大小比較僅接受數值。
 Calculation 不是任意 nested expression tree。
 
 Output 的 **Elapsed time** 來源提供 **Time Format**：**Seconds**（預設）、
@@ -476,7 +477,7 @@ For step 具有 **Start**、**Stop**、**Step**、loop variable 與 body。
 - Positive 或 negative direction 必須與 Start、Stop 的方向一致。
 - Zero Step 無效。
 - Start 與 Stop 相等時執行一次。
-- Loop nesting 最多 5 層。
+- If、For 與 While 共用最多 8 層巢狀深度。
 
 For ranges 使用 exact decimal range semantics，而不是 floating-point tolerance。
 Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了湊整而額外執行一次。
@@ -488,9 +489,9 @@ While condition 會在每次 iteration 前判斷。Iteration limit 可以是：
 - 正的 finite `max_iterations`；或
 - **Unlimited**，表示不設定 finite iteration limit。
 
-若 condition 一開始就是 false，body 執行 0 次。Unlimited While 目前只允許
-在 top-level，body 不可為空，可以包含 finite nested loops，但不可再包含另一個
-Unlimited While。
+若 condition 一開始就是 false，body 執行 0 次。Unlimited While 可位於
+root 或沒有 For／While 祖先的 If 分支內。Body 不可為空，可包含 finite nested
+loops，但不可再包含另一個 Unlimited While。
 
 Software Meters **Measure** 位於 Unlimited While，且 Simulation 無法預先推導
 來源大小時，**Run Simulation** 會顯示 Sample 警告。每個受影響 Instance 的
@@ -502,6 +503,11 @@ Measure 不會套用這個 Simulation 上限。
 
 前景 Meters 在 Simulation 與 Live 都只使用 Single。若要每次取得一批讀值，
 或使用 Immediate、External 觸發，請將該 Instance 設為 Background。
+
+If step 每次只判斷一次 condition，只執行 THEN 或 ELSE。選取 If 後可
+指定新增 Steps 的分支，也可獨立拖曳及貼上。分支新建的 Variables 與
+Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Output
+沿用外層 Page Row Scope，未執行的分支欄位保持空白，If 不額外新增 Row。
 
 ### 6.4 Stop Workflow 與迴圈 Stop
 

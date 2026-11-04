@@ -2,7 +2,7 @@ import { toolInstanceLabel } from './toolInstanceLabel'
 import { useEffect, useRef, useState } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
-import type { StepSummaryDto, WorkflowStep, ForStep, WhileStep } from './workflow'
+import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
 import { MESSAGE_TARGET_LABELS } from './workflow'
 import { expressionSummary } from './inputValue'
 
@@ -13,7 +13,7 @@ type SequenceEditorProps = {
   formatMeasurement: (output: unknown) => string | null
   selectedStepIds: readonly string[]
   onSelectStep: (stepId: string, modifiers?: { ctrlKey: boolean; shiftKey: boolean }) => void
-  onReorderSteps: (ids: string[], parentId: string | null, index: number) => void
+  onReorderSteps: (ids: string[], parentId: string | null, index: number, branch?: StepBranch | null) => void
   validationIssue?: { step_id: string | null; message: string } | null
   stepLabel: (step: WorkflowStep) => string
   workflowBusy: boolean
@@ -47,6 +47,7 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
       return `Step ${step.range.step} · ${step.steps.length} body steps`
     case 'while':
     case 'assert':
+    case 'if':
       return expressionSummary(step)
     case 'set-variable':
       return `${step.variable} = ${valueSummary(step.value)}`
@@ -122,8 +123,8 @@ function SequenceEditor({
   } | null>(null)
   const scrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const suppressClickRef = useRef(false)
-  const dropRef = useRef<{ parentId: string | null; index: number } | null>(null)
-  const [drop, setDrop] = useState<{ parentId: string | null; index: number } | null>(null)
+  const dropRef = useRef<{ parentId: string | null; branch: StepBranch | null; index: number } | null>(null)
+  const [drop, setDrop] = useState<{ parentId: string | null; branch: StepBranch | null; index: number } | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[]>([])
 
   function finishDrag() {
@@ -149,22 +150,25 @@ function SequenceEditor({
     const editor = editorRef.current
     if (!drag?.started || !editor) return
     const target = document.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>('[data-step-drop-id], [data-step-container]')
-    let next: { parentId: string | null; index: number } | null = null
+    let next: { parentId: string | null; branch: StepBranch | null; index: number } | null = null
     if (target && editor.contains(target)) {
       const id = target.dataset.stepDropId
       const container = id ? stepContainer(steps, id) : undefined
       if (id && container && !drag.ids.includes(id)) {
         const rect = target.getBoundingClientRect()
-        next = { parentId: container.parentId,
+        next = { parentId: container.parentId, branch: container.branch,
           index: container.siblings.findIndex(step => step.id === id) + (drag.y >= rect.top + rect.height / 2 ? 1 : 0) }
       } else if (!id) {
         const parentId = target.dataset.stepContainer || null
-        next = { parentId, index: Number(target.dataset.stepCount) }
+        const branch = target.dataset.stepBranch === 'then' || target.dataset.stepBranch === 'else'
+          ? target.dataset.stepBranch : null
+        next = { parentId, branch, index: Number(target.dataset.stepCount) }
       }
-      if (next && !canRelocateSteps(steps, drag.ids, next.parentId)) next = null
+      if (next && !canRelocateSteps(steps, drag.ids, next.parentId, next.branch)) next = null
     }
     dropRef.current = next
-    setDrop(current => current?.parentId === next?.parentId && current?.index === next?.index ? current : next)
+    setDrop(current => current?.parentId === next?.parentId && current?.branch === next?.branch &&
+      current?.index === next?.index ? current : next)
   }
 
   function pointerMove(event: React.PointerEvent<HTMLButtonElement>) {
@@ -194,11 +198,13 @@ function SequenceEditor({
     updateDrop()
   }
 
-  function renderSteps(siblings: readonly WorkflowStep[], parent?: ForStep | WhileStep, parentOrder?: string): React.ReactNode {
+  function renderSteps(siblings: readonly WorkflowStep[], parent?: WorkflowContainerStep, parentOrder?: string,
+    branch: StepBranch | null = null): React.ReactNode {
     return (
-      <ol className={`sequence-steps${drop?.parentId === (parent?.id ?? null) && drop.index === siblings.length ? ' sequence-drop-end' : ''}`}
-        data-step-container={parent?.id ?? ''} data-step-count={siblings.length} aria-label={parent ? `Body of ${parent.id}` : 'Root steps'}>
-        {siblings.length === 0 && parent && <li className="sequence-body-empty">No body steps. Drop steps here or select this loop and add steps from the palette.</li>}
+      <ol className={`sequence-steps${drop?.parentId === (parent?.id ?? null) && drop.branch === branch && drop.index === siblings.length ? ' sequence-drop-end' : ''}`}
+        data-step-container={parent?.id ?? ''} data-step-branch={branch ?? ''}
+        data-step-count={siblings.length} aria-label={parent ? `${branch ? branch.toUpperCase() : 'Body'} of ${parent.id}` : 'Root steps'}>
+        {siblings.length === 0 && parent && <li className="sequence-body-empty">No steps. Drop steps here or select this container and add from the palette.</li>}
         {siblings.map((step, index) => {
           const result = runResults?.find(result => result.step_id === step.id)
           const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
@@ -222,10 +228,10 @@ function SequenceEditor({
 
           return (
             <li key={step.id} className="sequence-step-row">
-              <div className={`sequence-step-main${drop?.parentId === (parent?.id ?? null) && drop.index === index ? ' sequence-drop-before' : ''}${draggingIds.includes(step.id) ? ' sequence-dragging' : ''}`}
+              <div className={`sequence-step-main${drop?.parentId === (parent?.id ?? null) && drop.branch === branch && drop.index === index ? ' sequence-drop-before' : ''}${draggingIds.includes(step.id) ? ' sequence-dragging' : ''}`}
                 data-step-drop-id={step.id}>
                 <button className="sequence-drag-handle" type="button" disabled={workflowBusy}
-                  aria-label={`Drag ${step.id} to reorder`} title="Drag to move between Root and loop bodies"
+                  aria-label={`Drag ${step.id} to reorder`} title="Drag to move between Root and workflow containers"
                   onPointerDown={event => {
                     if (workflowBusy || event.button !== 0 || dragRef.current) return
                     suppressClickRef.current = false
@@ -244,7 +250,7 @@ function SequenceEditor({
                     drag.y = event.clientY
                     updateDrop()
                     const target = dropRef.current
-                    if (drag.started && target && !workflowBusy) onReorderSteps(drag.ids, target.parentId, target.index)
+                    if (drag.started && target && !workflowBusy) onReorderSteps(drag.ids, target.parentId, target.index, target.branch)
                     finishDrag()
                   }}
                   onPointerCancel={finishDrag}
@@ -308,6 +314,12 @@ function SequenceEditor({
               </div>
               {(step.type === 'for' || step.type === 'while') && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
                 {renderSteps(step.steps, step, order)}
+              </div>}
+              {step.type === 'if' && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
+                <h5>THEN</h5>
+                {renderSteps(step.then_steps, step, order, 'then')}
+                <h5>ELSE</h5>
+                {renderSteps(step.else_steps, step, order, 'else')}
               </div>}
             </li>
           )

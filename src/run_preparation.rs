@@ -32,6 +32,19 @@ fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize
                         .ok_or_else(|| "Meter trigger count overflow".to_owned())
                 })
                 .transpose()?,
+            StepKind::If {
+                then_steps,
+                else_steps,
+                ..
+            } => {
+                match (
+                    measure_count(then_steps, target)?,
+                    measure_count(else_steps, target)?,
+                ) {
+                    (Some(then_count), Some(else_count)) => Some(then_count.max(else_count)),
+                    _ => None,
+                }
+            }
             StepKind::While {
                 max_iterations,
                 body,
@@ -414,6 +427,78 @@ mod tests {
     use super::*;
     use crate::{template::Template, tool::ToolId, tool_instance::ToolSetup};
     use serde_json::json;
+
+    #[test]
+    fn if_meter_measure_planning_uses_largest_branch_not_sum() {
+        use crate::workflow::{
+            ActionId, Expression, ExpressionOperand, ExpressionOperator, NumericRange, StepId,
+            VariableId,
+        };
+        let meter = ToolInstanceId::new("meters-1").unwrap();
+        let measure = |id: &str| {
+            Step::new(
+                StepId::new(id).unwrap(),
+                StepKind::ToolAction {
+                    target: meter.clone(),
+                    action: ActionId::new("measure").unwrap(),
+                    arguments: json!({}),
+                    bindings: Default::default(),
+                },
+            )
+        };
+        let condition = Expression::new(
+            ExpressionOperand::Literal(json!(1)),
+            ExpressionOperator::Equal,
+            ExpressionOperand::Literal(json!(1)),
+        );
+        let long_branch = Step::new(
+            StepId::new("loop").unwrap(),
+            StepKind::For {
+                variable: VariableId::new("i").unwrap(),
+                range: NumericRange::new(1.into(), 100.into(), 1.into()).unwrap(),
+                body: vec![measure("repeat")],
+            },
+        );
+        let conditional = Step::new(
+            StepId::new("if").unwrap(),
+            StepKind::If {
+                condition: condition.clone(),
+                then_steps: vec![measure("single")],
+                else_steps: vec![long_branch],
+            },
+        );
+        assert_eq!(measure_count(&[conditional], &meter).unwrap(), Some(100));
+        let empty_else = Step::new(
+            StepId::new("empty").unwrap(),
+            StepKind::If {
+                condition: condition.clone(),
+                then_steps: vec![measure("only")],
+                else_steps: vec![],
+            },
+        );
+        assert_eq!(measure_count(&[empty_else], &meter).unwrap(), Some(1));
+        let infinite = Step::new(
+            StepId::new("unlimited").unwrap(),
+            StepKind::While {
+                condition,
+                max_iterations: None,
+                body: vec![measure("infinite-measure")],
+            },
+        );
+        let if_unlimited = Step::new(
+            StepId::new("unknown").unwrap(),
+            StepKind::If {
+                condition: Expression::new(
+                    ExpressionOperand::Literal(json!(true)),
+                    ExpressionOperator::Equal,
+                    ExpressionOperand::Literal(json!(true)),
+                ),
+                then_steps: vec![],
+                else_steps: vec![infinite],
+            },
+        );
+        assert_eq!(measure_count(&[if_unlimited], &meter).unwrap(), None);
+    }
 
     #[test]
     fn software_custom_trigger_planning_counts_paths_and_rejects_invalid_bounds() {

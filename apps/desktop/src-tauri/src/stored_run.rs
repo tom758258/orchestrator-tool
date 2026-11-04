@@ -456,6 +456,14 @@ impl StoredRun {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         any_show_message(body, step_id)
                     }
+                    StepKind::If {
+                        then_steps,
+                        else_steps,
+                        ..
+                    } => {
+                        any_show_message(then_steps, step_id)
+                            || any_show_message(else_steps, step_id)
+                    }
                     _ => false,
                 }
             })
