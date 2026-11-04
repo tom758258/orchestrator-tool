@@ -861,14 +861,46 @@ mod tests {
 
     #[test]
     fn scopes_autoscale_direct_core_run_rejects_tektronix_before_startup() {
-        let value = serde_json::json!({
+        let mut value = serde_json::json!({
             "schema_version":2,
             "name":"Scope AutoScale policy",
             "tool_instances":[{"id":"scopes-1","tool":"scopes","setup":{}}],
             "workflow":{"steps":[{"type":"tool-action","id":"autoscale",
                 "target":"scopes-1","action":"autoscale","arguments":{}}]}
         });
-        let template = crate::template::Template::from_json_str(&value.to_string()).unwrap();
+        let autoscale = value["workflow"]["steps"][0].clone();
+        let cases = [
+            ("root", value["workflow"]["steps"].clone()),
+            (
+                "if-then-for",
+                serde_json::json!([{
+                    "type":"if","id":"branch",
+                    "left":{"source":"literal","value":true},"operator":"equal",
+                    "right":{"source":"literal","value":true},
+                    "then_steps":[{
+                        "type":"for","id":"repeat","variable":"index",
+                        "range":{"start":"1","stop":"1","step":"1"},
+                        "steps":[autoscale.clone()]
+                    }],
+                    "else_steps":[]
+                }]),
+            ),
+            (
+                "if-else-while",
+                serde_json::json!([{
+                    "type":"if","id":"branch",
+                    "left":{"source":"literal","value":false},"operator":"equal",
+                    "right":{"source":"literal","value":true},
+                    "then_steps":[],
+                    "else_steps":[{
+                        "type":"while","id":"repeat","max_iterations":1,
+                        "left":{"source":"literal","value":0},"operator":"less-than",
+                        "right":{"source":"literal","value":1},
+                        "steps":[autoscale]
+                    }]
+                }]),
+            ),
+        ];
         let mut specs = HashMap::new();
         specs.insert(
             ToolInstanceId::new("scopes-1").unwrap(),
@@ -877,17 +909,24 @@ mod tests {
                 ["worker", "--simulate", "--model", "tektronix-tbs2074"],
             ),
         );
-        for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
-            let error = run_workflow(
-                &template,
-                mode,
-                &specs,
-                Duration::from_secs(1),
-                Duration::from_secs(1),
-                Duration::from_secs(1),
-            )
-            .unwrap_err();
-            assert!(error.to_string().contains("registered Keysight"), "{error}");
+        for (case, steps) in cases {
+            value["workflow"]["steps"] = steps;
+            let template = crate::template::Template::from_json_str(&value.to_string()).unwrap();
+            for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+                let error = run_workflow(
+                    &template,
+                    mode,
+                    &specs,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                )
+                .unwrap_err();
+                assert!(
+                    error.to_string().contains("registered Keysight"),
+                    "{case}: {error}"
+                );
+            }
         }
     }
 

@@ -440,8 +440,9 @@ Scopes `measure.item` and `trigger-edge.slope` require fixed nonempty strings;
 Template construction and JSON loading enforce these rules recursively in For
 and While bodies, based on the target instance's Tool Type and Action. Other
 parameters and general workflow dataflow retain their existing source rules.
-Desktop choices come from Scopes capabilities; Core does not store model
-allowlists, and Scopes validates final model support.
+Desktop choices come from Scopes capabilities; Core does not maintain
+general model allowlists, and Scopes validates final model support. The
+AutoScale Keysight-only restriction below is a specific Orchestrator policy.
 
 Scopes `autoscale` uses the existing Tool Action shape and retains Schema v2.
 Its optional fixed arguments are `source_channel` (a nonempty array of distinct
