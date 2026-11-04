@@ -26,7 +26,10 @@ use crate::{
     worker::{
         WorkerLaunchSpec, WorkerSession, WorkerShutdownError, WorkerStartError, start_worker,
     },
-    workflow::{StepId, StepOutcome, WorkflowRunEvent, WorkflowRunResult, WorkflowRunSummary},
+    workflow::{
+        Step, StepId, StepKind, StepOutcome, WorkflowRunEvent, WorkflowRunResult,
+        WorkflowRunSummary,
+    },
 };
 
 /// Runtime execution mode for a workflow run.
@@ -242,6 +245,28 @@ impl RunCompletion {
     }
 }
 
+fn contains_scope_autoscale(steps: &[Step], target: &ToolInstanceId) -> bool {
+    steps.iter().any(|step| match step.kind() {
+        StepKind::ToolAction {
+            target: step_target,
+            action,
+            ..
+        } => step_target == target && action.as_str() == "autoscale",
+        StepKind::For { body, .. } | StepKind::While { body, .. } => {
+            contains_scope_autoscale(body, target)
+        }
+        StepKind::If {
+            then_steps,
+            else_steps,
+            ..
+        } => {
+            contains_scope_autoscale(then_steps, target)
+                || contains_scope_autoscale(else_steps, target)
+        }
+        _ => false,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_workflow_internal(
     template: &Template,
@@ -295,6 +320,35 @@ fn run_workflow_internal(
             Ok((instance, spec))
         })
         .collect::<Result<Vec<_>, WorkflowRunError>>()?;
+
+    // Template v2 has no Live model ID. Enforce Orchestrator's Keysight-only
+    // AutoScale policy against the actual Worker launch, including direct Core runs.
+    for (instance, spec) in &referenced_specs {
+        let is_scopes = template
+            .tool_instances()
+            .iter()
+            .any(|item| item.id == *instance && item.tool == ToolId::scopes());
+        if !is_scopes || !contains_scope_autoscale(template.workflow().steps(), instance) {
+            continue;
+        }
+        let model = spec
+            .arguments()
+            .windows(2)
+            .find(|pair| pair[0] == "--model")
+            .and_then(|pair| pair[1].to_str())
+            .unwrap_or(match execution_mode {
+                ExecutionMode::Simulate => crate::adapters::scopes::DEFAULT_SIMULATED_MODEL_ID,
+                ExecutionMode::Live => "",
+            });
+        if !crate::adapters::scopes::autoscale_supported_model(model) {
+            return Err(WorkflowRunError::ScopesSetup {
+                instance: instance.clone(),
+                detail: format!(
+                    "AutoScale is available only for registered Keysight models (Worker model: {model:?})"
+                ),
+            });
+        }
+    }
 
     let mut sessions = Vec::with_capacity(referenced_specs.len());
     for (instance, spec) in referenced_specs {
@@ -803,6 +857,77 @@ mod tests {
         .unwrap();
         assert_eq!(actual, expected);
         assert_eq!(observed, 3);
+    }
+
+    #[test]
+    fn scopes_autoscale_direct_core_run_rejects_tektronix_before_startup() {
+        let mut value = serde_json::json!({
+            "schema_version":2,
+            "name":"Scope AutoScale policy",
+            "tool_instances":[{"id":"scopes-1","tool":"scopes","setup":{}}],
+            "workflow":{"steps":[{"type":"tool-action","id":"autoscale",
+                "target":"scopes-1","action":"autoscale","arguments":{}}]}
+        });
+        let autoscale = value["workflow"]["steps"][0].clone();
+        let cases = [
+            ("root", value["workflow"]["steps"].clone()),
+            (
+                "if-then-for",
+                serde_json::json!([{
+                    "type":"if","id":"branch",
+                    "left":{"source":"literal","value":true},"operator":"equal",
+                    "right":{"source":"literal","value":true},
+                    "then_steps":[{
+                        "type":"for","id":"repeat","variable":"index",
+                        "range":{"start":"1","stop":"1","step":"1"},
+                        "steps":[autoscale.clone()]
+                    }],
+                    "else_steps":[]
+                }]),
+            ),
+            (
+                "if-else-while",
+                serde_json::json!([{
+                    "type":"if","id":"branch",
+                    "left":{"source":"literal","value":false},"operator":"equal",
+                    "right":{"source":"literal","value":true},
+                    "then_steps":[],
+                    "else_steps":[{
+                        "type":"while","id":"repeat","max_iterations":1,
+                        "left":{"source":"literal","value":0},"operator":"less-than",
+                        "right":{"source":"literal","value":1},
+                        "steps":[autoscale]
+                    }]
+                }]),
+            ),
+        ];
+        let mut specs = HashMap::new();
+        specs.insert(
+            ToolInstanceId::new("scopes-1").unwrap(),
+            crate::worker::WorkerLaunchSpec::new(
+                "unavailable-scopes",
+                ["worker", "--simulate", "--model", "tektronix-tbs2074"],
+            ),
+        );
+        for (case, steps) in cases {
+            value["workflow"]["steps"] = steps;
+            let template = crate::template::Template::from_json_str(&value.to_string()).unwrap();
+            for mode in [ExecutionMode::Simulate, ExecutionMode::Live] {
+                let error = run_workflow(
+                    &template,
+                    mode,
+                    &specs,
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                )
+                .unwrap_err();
+                assert!(
+                    error.to_string().contains("registered Keysight"),
+                    "{case}: {error}"
+                );
+            }
+        }
     }
 
     #[test]

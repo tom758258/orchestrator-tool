@@ -15,6 +15,7 @@ export type ScopesCapabilities = {
   model_id: string
   model_name: string
   analog_channels: number
+  autoscale_supported: boolean
   acquisition_modes: string[] | null
   average_counts: number[] | null
   screenshot_formats: string[]

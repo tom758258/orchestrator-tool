@@ -791,6 +791,51 @@ mod tests {
     }
 
     #[test]
+    fn live_preflight_autoscale_checks_keysight_and_source_channels() {
+        let autoscale = template(
+            "scopes",
+            json!({}),
+            json!([action(
+                "scopes",
+                "autoscale",
+                json!({"source_channel":[1,2]})
+            )]),
+        );
+        let errors = validate_with_capabilities(&autoscale, |_| {
+            let mut caps = scopes_caps();
+            caps.model_id = "tektronix-tbs2074".into();
+            Ok(Capabilities::Scopes(caps))
+        });
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("registered Keysight models"));
+
+        let errors = validate_with_capabilities(&autoscale, |_| {
+            let mut caps = scopes_caps();
+            caps.model_id = "keysight-dsox4024a".into();
+            caps.autoscale_supported = true;
+            Ok(Capabilities::Scopes(caps))
+        });
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let unsupported_channel = template(
+            "scopes",
+            json!({}),
+            json!([action(
+                "scopes",
+                "autoscale",
+                json!({"source_channel":[1,3]})
+            )]),
+        );
+        let errors = validate_with_capabilities(&unsupported_channel, |_| {
+            let mut caps = scopes_caps();
+            caps.autoscale_supported = true;
+            Ok(Capabilities::Scopes(caps))
+        });
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("source_channel"));
+    }
+
+    #[test]
     fn live_preflight_queries_only_referenced_instances_and_keeps_their_capabilities_separate() {
         let template = Template::from_json_str(&json!({"schema_version":2,"name":"Instances","tool_instances":[
             {"id":"first","tool":"powers","setup":{}},{"id":"second","tool":"powers","setup":{}},{"id":"unused","tool":"scopes","setup":{}}

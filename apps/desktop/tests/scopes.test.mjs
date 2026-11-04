@@ -50,7 +50,7 @@ const actionEditor = invoke => componentEditor('ScopesActionEditor.tsx', 'Scopes
 const caps = { model_id: 'tektronix-tds2024b', model_name: 'TDS2024B', analog_channels: 4,
   acquisition_modes: ['normal', 'average', 'peak'], average_counts: [4, 16, 64, 128], screenshot_formats: ['bmp'], measurement_items: ['pair-only'],
   direct_measurement_items: ['vpp', 'frequency'], trigger_edge_slopes: ['positive', 'negative'],
-  capture_point_options: [1000, 5000] }
+  capture_point_options: [1000, 5000], autoscale_supported: false }
 const settle = () => new Promise(resolve => setImmediate(resolve))
 const control = (view, label) => view.find(node => node.props['aria-label'] === label)
 
@@ -116,8 +116,9 @@ test('Scopes missing Live model and failed capabilities disable controls with a 
 })
 
 test('Scopes exposes exactly the agreed actions and structured Measure output references', () => {
-  assert.deepEqual(SCOPES_ACTIONS.map(([action]) => action), ['channel-display', 'channel-scale', 'channel-offset', 'timebase-scale', 'timebase-position', 'trigger-edge', 'measure', 'capture', 'screenshot'])
+  assert.deepEqual(SCOPES_ACTIONS.map(([action]) => action), ['channel-display', 'channel-scale', 'channel-offset', 'timebase-scale', 'timebase-position', 'trigger-edge', 'measure', 'capture', 'screenshot', 'autoscale'])
   assert.deepEqual(scopesActionArguments('capture'), { channel: [1], points: 1000 })
+  assert.deepEqual(scopesActionArguments('autoscale'), {})
   for (const [action] of SCOPES_ACTIONS) {
     assert.ok(!['csv', 'meta', 'output', 'query_hardcopy', 'model', 'resource'].some(key => key in scopesActionArguments(action)))
   }
@@ -295,6 +296,45 @@ test('Scopes Channel actions request capabilities while Timebase actions do not'
     assert.equal(calls.length - before, action.startsWith('timebase-') ? 0 : 1)
     await settle()
   }
+})
+
+test('Scopes AutoScale edits optional Keysight parameters without generating hidden defaults', async () => {
+  const render = await actionEditor(async () => ({ ...caps, model_id: 'keysight-dsox4024a', autoscale_supported: true }))
+  let step = { ...screenshotProps().step, action: 'autoscale', arguments: {} }
+  const props = () => screenshotProps({ step, onChange: next => { step = next } })
+  render(props()); await settle()
+  let view = render(props())
+  assert.equal(control(view, 'AutoScale CH1').props.disabled, false)
+  assert.equal(control(view, 'AutoScale Acquire Mode').props.value, '')
+  assert.equal(control(view, 'AutoScale Channels Mode').props.value, '')
+  control(view, 'AutoScale CH1').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments, { source_channel: [1] })
+  control(render(props()), 'AutoScale CH2').props.onChange({ target: { checked: true } })
+  assert.deepEqual(step.arguments.source_channel, [1, 2])
+  control(render(props()), 'AutoScale Acquire Mode').props.onChange({ target: { value: 'current' } })
+  control(render(props()), 'AutoScale Channels Mode').props.onChange({ target: { value: 'displayed' } })
+  assert.deepEqual(step.arguments, { source_channel: [1, 2], acquire_mode: 'current', channels: 'displayed' })
+  control(render(props()), 'AutoScale CH1').props.onChange({ target: { checked: false } })
+  control(render(props()), 'AutoScale CH2').props.onChange({ target: { checked: false } })
+  control(render(props()), 'AutoScale Acquire Mode').props.onChange({ target: { value: '' } })
+  control(render(props()), 'AutoScale Channels Mode').props.onChange({ target: { value: '' } })
+  assert.deepEqual(step.arguments, {})
+})
+
+test('Scopes AutoScale blocks Tektronix and preserves saved choices when capability is unavailable', async () => {
+  let changes = 0
+  const render = await actionEditor(async () => caps)
+  const step = { ...screenshotProps().step, action: 'autoscale',
+    arguments: { source_channel: [1], acquire_mode: 'normal' } }
+  const props = screenshotProps({ step, onChange: () => { changes++ } })
+  render(props); await settle()
+  const view = render(props)
+  assert.equal(control(view, 'AutoScale CH1').props.disabled, true)
+  assert.equal(control(view, 'AutoScale Acquire Mode').props.disabled, true)
+  assert.ok(JSON.stringify(view).includes('not supported by this model'))
+  control(view, 'AutoScale CH1').props.onChange({ target: { checked: false } })
+  assert.equal(changes, 0)
+  assert.deepEqual(step.arguments, { source_channel: [1], acquire_mode: 'normal' })
 })
 
 test('Scopes Channel editor retains numeric bindings and replaces invalid saved Capture only on selection', async () => {

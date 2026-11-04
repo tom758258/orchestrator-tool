@@ -1,7 +1,7 @@
 # Scopes integration
 
 Scopes remains an external executable. Core uses its published Common Worker
-v2 and Scopes contracts; Desktop only edits Template v1 definitions and local
+v3 and Scopes contracts; Desktop edits Template v2 definitions and local
 run options. No VISA/SCPI or physical model rules live in Orchestrator.
 
 ## Template Setup
@@ -58,6 +58,7 @@ bindings. Instrument validation remains external.
 | `measure` | `channel`, `item` |
 | `capture` | `channel` array, `points` |
 | `screenshot` | `format` |
+| `autoscale` | optional `source_channel` array, `acquire_mode`, `channels` |
 
 Desktop uses the required `direct_measurement_items`, `trigger_edge_slopes`,
 and `capture_point_options` arrays from `capabilities --json` for fixed
@@ -81,6 +82,26 @@ measurement units from channel Setup. HTTP 202 only admits a job. Completion
 requires a matching schema/run/job/worker-job/command terminal event, succeeded
 state, `ok: true`, and zero exit code. Rejection, failure, cancellation, malformed
 correlation, disconnection, and timeout fail the action with diagnostics.
+
+AutoScale is a Foreground-only Tool Action admitted by Orchestrator only for
+the registered Keysight DSOX2004A, DSOX3024A, DSOX4024A, and DSOX4034A
+models. This Orchestrator restriction does not remove Tektronix AutoSet
+from Scopes Tool. Omitted parameters remain omitted; optional fixed
+`source_channel` is a nonempty list of distinct positive channel IDs, with
+actual channel availability checked against model capabilities. Optional
+`acquire_mode` is `normal` or `current`; optional `channels` is `all`
+or `displayed`. Bindings and additional arguments are rejected. Template
+v2 carries no Live model identity: Template validation checks syntax, Live
+Preflight checks the saved canonical model, and Core Run checks the launch
+model even for direct callers. Worker identity checks remain authoritative.
+AutoScale may alter channel display/scale, timebase, and trigger settings
+without automatic restoration or reapplication of Scopes Setup. Scopes Tool
+may retry bare AutoScale for specific Keysight source-command errors; the
+result's `fallback` and `commands` fields remain available to the Step.
+AutoScale uses a 60-second minimum job timeout; other ordinary actions retain
+their existing timeouts. Background Streaming remains a distinct,
+setup-before-source workflow, and AutoScale is not dispatched to its active
+Worker.
 
 Capture/Screenshot have a 30-second minimum action timeout because screenshot
 transport alone can take ten seconds. Other actions retain the caller timeout.
