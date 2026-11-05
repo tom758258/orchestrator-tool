@@ -432,7 +432,10 @@ pub fn run_action(
     }
 }
 
-fn validate_measure_result(result: Value, requested_channel: u64) -> Result<Value, PowersActionError> {
+fn validate_measure_result(
+    result: Value,
+    requested_channel: u64,
+) -> Result<Value, PowersActionError> {
     let data = result
         .get("data")
         .and_then(Value::as_object)
