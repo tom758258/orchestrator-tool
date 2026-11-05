@@ -455,6 +455,18 @@ in Live Preflight and Core Run, not invented at Template load. This applies
 recursively inside For, While, and If. Background Streaming cannot share a
 Foreground Tool Instance.
 
+Powers `measure` is a foreground read-only Tool Action. It requires exactly one
+fixed `channel` argument: a positive integer, without bindings or additional
+fields. The Desktop uses the existing Powers Capability-backed channel selector.
+It maps to Powers Worker v3 `measure`, waits for the completed Job, and retains
+the full Worker result envelope. `/data/measurements/voltage` and
+`/data/measurements/current` are finite numeric actual readings (V and A);
+`/data/channel` identifies the measured channel. A missing, malformed, or
+channel-mismatched measurement fails the Step. Use subsequent Output, Assert,
+or Calculation steps to consume these fields; reading alone does not publish
+a Result column or control the power output. This Action does not enable
+Powers Background Streaming.
+
 Powers `protection-status` is a read-only Tool Action. Its required `channel`
 argument is an exact positive JSON integer or the exact string `"all"`; no
 other argument fields are accepted. For example:

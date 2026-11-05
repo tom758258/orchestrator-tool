@@ -449,6 +449,7 @@ mod tests {
                 json!({"channel":3,"voltage":1}),
                 "channel",
             ),
+            ("powers", "measure", json!({"channel":3}), "channel"),
             ("powers", "output-on", json!({"channel":3}), "channel"),
             ("powers", "output-off", json!({"channel":3}), "channel"),
             (

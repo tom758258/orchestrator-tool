@@ -511,7 +511,7 @@ not become result columns merely because they were referenced.
 #### Power Set Output
 
 The Channel dropdown is shared by **Power Set Output**, legacy **Power Set
-Voltage**, **Power Output ON**, **Power Output OFF**, and the **Specific channel**
+Voltage**, **Power Output ON**, **Power Output OFF**, **Power Measure**, and the **Specific channel**
 selection in **Power Protection Status**. It lists only channels confirmed by
 the target instance's capabilities as **CH1**, **CH2**, etc. Simulation uses the
 simulator channels; Live uses the model identified for the saved Resource in
@@ -540,6 +540,16 @@ only configures the setpoints. Use **Power Output ON** separately to enable the 
 
 Existing Templates containing **Power Set Voltage** remain editable and keep
 that action when saved. New steps use **Power Set Output**.
+
+#### Power Measure
+
+Add **Power Measure** to read the selected channel's actual Voltage (V) and
+Current (A) once. It uses the fixed Channel dropdown without enabling the
+output or changing setpoints. After it completes, later Output, Assert, and
+Calculation steps can select **Voltage** or **Current** from its Step Output.
+The numeric pointers are `/data/measurements/voltage` and
+`/data/measurements/current`. It is foreground-only; readings do not create
+a Result column unless you add an Output step.
 
 #### Power Protection Status
 

@@ -426,7 +426,7 @@ result column。
 #### Power Set Output
 
 **Power Set Output**、舊版 **Power Set Voltage**、**Power Output ON**、
-**Power Output OFF**，以及 **Power Protection Status** 的 **Specific channel**
+**Power Output OFF**、**Power Measure**，以及 **Power Protection Status** 的 **Specific channel**
 共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
 通道，顯示為 **CH1**、**CH2** 等。Simulation 使用模擬器通道；Live 使用 Setup
 中已儲存 Resource 所辨識的型號。切換目標 instance、Execution Mode 或 Powers
@@ -452,6 +452,15 @@ Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 
 含有 **Power Set Voltage** 的既有 Template 仍可編輯，儲存後也會保留原 action。
 新建步驟使用 **Power Set Output**。
+
+#### Power Measure
+
+加入 **Power Measure** 可對指定通道量測一次實際 Voltage（V）與 Current（A）。
+此唯讀步驟使用固定 Channel 下拉選單，不會啟用輸出或修改 setpoints。
+後續 Output、Assert、Calculation 可透過 Step Output 選取 **Voltage** 或
+**Current**；數值 JSON Pointer 分別為 `/data/measurements/voltage` 與
+`/data/measurements/current`。此功能僅供 Foreground Workflow 使用，不啟動
+Background Streaming。若沒有新增 Output step，量測結果不會自動成為 Result column。
 
 #### Power Protection Status
 
