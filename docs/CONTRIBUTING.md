@@ -70,42 +70,20 @@ external project and reviewed there.
 
 ## Testing expectations
 
-Default tests and validation must not require a real instrument. Prefer Core
-unit tests, simulated Workers, temporary configuration files, and deterministic
-fixtures. Keep live hardware tests explicit and separate from the default
-test commands.
-
-For workflow or Template changes, cover the durable contract that changed:
-schema parsing and rejection, stable IDs, lexical scope, loop boundaries,
-Output Pages, ResultRow commit behavior, progress events, or export data
-conversion. Do not add tests that only lock README wording or heading order.
-
-The Desktop `npm test` command runs Node tests for pure modules and existing
-fixtures, followed by Vitest and React Testing Library component tests in
-jsdom. Prefer rendered controls and observable behavior for new component
-coverage, mocking native I/O at the Tauri boundary. Assert serialized IPC
-contracts in Rust tests. Migrate legacy source-slicing and fake-Hook tests
-in focused changes instead of expanding those harnesses.
-
-For Desktop changes, run the relevant frontend checks and, when native
-behavior is involved, the Tauri checks or a full Desktop run. For external
-process or safety-sensitive changes, also verify failure and cleanup paths.
+Follow [Testing Guidelines](testing-guidelines.md) for test ownership, focused
+coverage, UI/IPC checks, real external Worker Simulation, safety cases and
+evidence reporting. Use the relevant development commands above; the baseline
+commands and testing constraints in [AGENTS.md](../AGENTS.md) remain
+authoritative. Default tests must not require real instruments.
 
 ## Live hardware and safety-sensitive changes
 
-Treat Live execution, power-output writes, Worker shutdown, and cleanup as
-safety-sensitive. Before changing them:
-
-- understand the existing bounded shutdown and Powers safe-off sequence;
-- keep Simulation and default tests hardware-free;
-- preserve the external tool's responsibility for instrument-specific safety;
-- test workflow failure, Worker startup failure, graceful Stop, and cleanup
-  failure paths where applicable; and
-- describe required hardware, operator confirmation, and safety assumptions
-  in the pull request.
-
-Do not use a documentation or refactor change as a reason to alter runtime
-behavior, setup interpretation, or external-tool contracts.
+Follow the hardware and cleanup boundaries in
+[Testing Guidelines](testing-guidelines.md). Changes involving Live execution,
+power-output control or Worker shutdown must document any operator
+authorization, hardware assumptions and actual validation in the pull request.
+Do not change runtime semantics or external-tool contracts as a side effect of
+documentation or refactoring.
 
 ## Documentation expectations
 

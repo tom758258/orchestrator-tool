@@ -31,6 +31,9 @@ These instructions define long-term, repository-specific boundaries for agents w
 
 ## 5. Testing And Validation
 
+- Follow [Testing Guidelines](docs/testing-guidelines.md) for test selection,
+  evidence boundaries and reporting; this section remains authoritative for
+  baseline commands and testing constraints.
 - Default tests and validation must not require real instruments.
 - Prioritize tests that protect important system behavior, public contracts,
   cross-component integration, and safety boundaries. Test each contract
