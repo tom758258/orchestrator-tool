@@ -1505,7 +1505,9 @@ WebView2 is installed and up to date.
 
 ## 16. Serial Background RX
 
-Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Use this instance as a Background. Background Simulation uses Serial Tool's `periodic-rx-v1` to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use `loopback-v1`. Live uses a saved COM Port and requires explicit confirmation.
+Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Use this instance as a Background. Background Simulation uses Serial Tool's `periodic-rx-v1` to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use `loopback-v1`. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.
+
+Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in Serial Setup; UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.
 
 Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.
 

@@ -110,6 +110,17 @@ function formatResourceCandidate(candidate: LiveResourceCandidate): string {
   return detail ? `${detail} — ${candidate.resource}` : candidate.resource
 }
 
+function tcpEndpointParts(resource: string): { host: string; port: string } {
+  const bracketed = /^\[(.+)\]:(.*)$/.exec(resource)
+  const simple = /^([^:]*):(.*)$/.exec(resource)
+  const match = bracketed ?? simple
+  return match ? { host: match[1], port: match[2] } : { host: '', port: '' }
+}
+
+function formatTcpEndpoint(host: string, port: string): string {
+  return `${host.includes(':') ? `[${host}]` : host}:${port}`
+}
+
 function formatLiveResourceConfirmation(
   instance: ToolInstance,
   resource: string,
@@ -127,7 +138,7 @@ function formatLiveResourceConfirmation(
   if (serial) {
     lines.push(`S/N: ${serial}`)
   }
-  if (instance.tool === 'serial') lines.push(`COM Port: ${resource}`)
+  if (instance.tool === 'serial') lines.push(`${instance.setup.transport === 'tcp' ? 'TCP Endpoint' : 'COM Port'}: ${resource}`)
   else lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'}`, resource)
   return lines.join('\n')
 }
@@ -2275,7 +2286,34 @@ function App() {
                             <option value="@py">PyVISA-py (@py)</option>
                           </select>
                         </label>}
-                        <label className="step-property-field">
+                        {instance.tool === 'serial' && instance.setup.transport === 'tcp' ? <>
+                          <label className="step-property-field">
+                            <span className="step-property-label">TCP Host</span>
+                            <input type="text" value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').host}
+                              disabled={toolConfigBusy !== null || workflowBusy || loading}
+                              onChange={event => {
+                                setResourceDrafts(current => ({
+                                  ...current, [instance.id]: formatTcpEndpoint(
+                                    event.target.value, tcpEndpointParts(current[instance.id] ?? '').port),
+                                }))
+                                setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
+                              }} />
+                          </label>
+                          <label className="step-property-field">
+                            <span className="step-property-label">TCP Port</span>
+                            <input type="number" min={1} max={65535} step={1}
+                              value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').port}
+                              disabled={toolConfigBusy !== null || workflowBusy || loading}
+                              onChange={event => {
+                                setResourceDrafts(current => ({
+                                  ...current, [instance.id]: formatTcpEndpoint(
+                                    tcpEndpointParts(current[instance.id] ?? '').host, event.target.value),
+                                }))
+                                setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
+                              }} />
+                          </label>
+                          <p className="tool-setup-hint">Enter TCP Host and TCP Port and Save Resource before running Live. TCP does not use List Ports.</p>
+                        </> : <label className="step-property-field">
                           <span className="step-property-label">{instance.tool === 'serial' ? 'COM Port' : 'Live Resource'}</span>
                           <input
                             type="text"
@@ -2293,18 +2331,24 @@ function App() {
                           />
                         </label>
                         <div className="tool-actions">
-                          <button
+                          {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && <button
                             className="action-button"
                             type="button"
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleListResources(instance)}
                           >
                             {instance.tool === 'serial' ? 'List Ports' : 'List Resources'}
-                          </button>
+                          </button>}
                           <button
                             className="action-button"
                             type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy || loading}
+                            disabled={toolConfigBusy !== null || workflowBusy || loading ||
+                              (instance.tool === 'serial' && instance.setup.transport === 'tcp' && (
+                                !tcpEndpointParts(resourceDrafts[instance.id] ?? '').host.trim()
+                                || !Number.isInteger(Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port))
+                                || Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port) < 1
+                                || Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port) > 65535
+                              ))}
                             onClick={() => void handleResource(instance.id, false)}
                           >
                             Save Resource
@@ -2318,15 +2362,15 @@ function App() {
                             Clear Resource
                           </button>
                         </div>
-                        {discoveryErrors[instance.id] && (
+                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveryErrors[instance.id] && (
                           <p className="error" role="alert">
                             {discoveryErrors[instance.id]}
                           </p>
                         )}
-                        {discoveredResources[instance.id]?.length === 0 && (
+                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveredResources[instance.id]?.length === 0 && (
                           <p role="status">No live resources found.</p>
                         )}
-                        {(discoveredResources[instance.id]?.length ?? 0) > 0 && (
+                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && (discoveredResources[instance.id]?.length ?? 0) > 0 && (
                           <label className="step-property-field discovered-resources">
                             <span className="step-property-label">Discovered Resources</span>
                             <select

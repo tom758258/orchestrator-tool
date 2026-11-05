@@ -1,5 +1,9 @@
-//! Serial Background RX and ordinary Foreground adapter. The serial-tool owns the COM session.
-use crate::{run::ExecutionMode, serial_setup::SerialSetup, worker::WorkerLaunchSpec};
+//! Serial Background RX and ordinary Foreground adapter. Serial Tool owns the transport session.
+use crate::{
+    run::ExecutionMode,
+    serial_setup::{SerialSetup, SerialTransport, parse_tcp_endpoint},
+    worker::WorkerLaunchSpec,
+};
 use serde_json::Value;
 use std::{ffi::OsString, path::Path};
 
@@ -28,11 +32,30 @@ fn serial_worker_launch_spec(
         }
         .into(),
     );
+    if setup.transport == SerialTransport::Tcp {
+        args.extend(["--transport".into(), "tcp".into()]);
+    }
     if mode == ExecutionMode::Live {
-        let port = port
+        let resource = port
             .filter(|p| !p.trim().is_empty())
-            .ok_or("Serial Live COM Port is required")?;
-        args.extend(["--port".into(), port.into()]);
+            .ok_or("Serial Live Resource is required")?;
+        match setup.transport {
+            SerialTransport::Serial => {
+                if parse_tcp_endpoint(resource).is_ok() {
+                    return Err("Serial UART requires a COM Port, not a TCP endpoint".into());
+                }
+                args.extend(["--port".into(), resource.into()]);
+            }
+            SerialTransport::Tcp => {
+                let (host, port) = parse_tcp_endpoint(resource)?;
+                args.extend([
+                    "--host".into(),
+                    host.into(),
+                    "--tcp-port".into(),
+                    port.to_string().into(),
+                ]);
+            }
+        }
     } else {
         let profile = if streaming {
             "periodic-rx-v1"
@@ -41,15 +64,27 @@ fn serial_worker_launch_spec(
         };
         args.extend(["--simulation-profile-id".into(), profile.into()]);
     }
-    for (flag, value) in [
-        ("--baud", setup.baud.to_string()),
-        ("--data-bits", setup.data_bits.to_string()),
-        ("--parity", setup.parity.clone()),
-        ("--stop-bits", setup.stop_bits.to_string()),
-        ("--flow-control", setup.flow_control.clone()),
-        ("--timeout-ms", setup.timeout_ms.to_string()),
-    ] {
-        args.extend([flag.into(), value.into()]);
+    match setup.transport {
+        SerialTransport::Serial => {
+            for (flag, value) in [
+                ("--baud", setup.baud.to_string()),
+                ("--data-bits", setup.data_bits.to_string()),
+                ("--parity", setup.parity.clone()),
+                ("--stop-bits", setup.stop_bits.to_string()),
+                ("--flow-control", setup.flow_control.clone()),
+                ("--timeout-ms", setup.timeout_ms.to_string()),
+            ] {
+                args.extend([flag.into(), value.into()]);
+            }
+        }
+        SerialTransport::Tcp => {
+            args.extend([
+                "--connect-timeout-ms".into(),
+                setup.connect_timeout_ms.to_string().into(),
+                "--io-timeout-ms".into(),
+                setup.io_timeout_ms.to_string().into(),
+            ]);
+        }
     }
     args.extend(["--control-port".into(), "0".into()]);
     if streaming {
@@ -555,6 +590,64 @@ mod tests {
         assert!(live.contains(&"--streaming".to_owned()));
         assert!(
             background_worker_launch_spec(executable, ExecutionMode::Live, None, &setup).is_err()
+        );
+    }
+
+    #[test]
+    fn tcp_launch_uses_only_tcp_options_for_foreground_and_background() {
+        let setup = SerialSetup {
+            transport: SerialTransport::Tcp,
+            connect_timeout_ms: 4500,
+            io_timeout_ms: 1250,
+            ..Default::default()
+        };
+        let executable = std::path::Path::new("serial-tool");
+        let live = foreground_worker_launch_spec(
+            executable,
+            ExecutionMode::Live,
+            Some("device.local:5025"),
+            &setup,
+        )
+        .unwrap();
+        let sim = background_worker_launch_spec(
+            executable,
+            ExecutionMode::Simulate,
+            None,
+            &setup,
+        )
+        .unwrap();
+        let args = |spec: &WorkerLaunchSpec| {
+            spec.arguments()
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        let live = args(&live);
+        let sim = args(&sim);
+        for flag in [
+            "--baud", "--port", "--data-bits", "--parity", "--stop-bits",
+            "--flow-control", "--timeout-ms",
+        ] {
+            assert!(!live.contains(&flag.to_owned()));
+            assert!(!sim.contains(&flag.to_owned()));
+        }
+        for pair in [
+            ["--transport", "tcp"],
+            ["--host", "device.local"],
+            ["--tcp-port", "5025"],
+            ["--connect-timeout-ms", "4500"],
+            ["--io-timeout-ms", "1250"],
+        ] {
+            assert!(live.windows(2).any(|args| args[0] == pair[0] && args[1] == pair[1]));
+        }
+        assert!(!sim.iter().any(|arg| arg == "--host" || arg == "--tcp-port"));
+        assert!(sim.contains(&"--streaming".to_owned()));
+        assert!(sim.windows(2).any(|args| {
+            args[0] == "--simulation-profile-id" && args[1] == "periodic-rx-v1"
+        }));
+        assert!(
+            foreground_worker_launch_spec(executable, ExecutionMode::Live, Some("COM4"), &setup)
+                .is_err()
         );
     }
 

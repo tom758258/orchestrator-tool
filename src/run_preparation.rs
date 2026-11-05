@@ -120,9 +120,29 @@ fn validate_unique_live_resources(
         if resource_key.is_empty() {
             continue;
         }
-        // Windows COM port names are case-insensitive; preserve VISA comparison as-is.
+        // Windows COM ports are case-insensitive. TCP uses host and numeric device port.
         let identity = if instance.tool == ToolId::serial() {
-            resource_key.to_ascii_uppercase()
+            let setup = instance
+                .serial_setup()
+                .ok_or("Serial instance has no Serial setup")?;
+            match setup.transport {
+                crate::serial_setup::SerialTransport::Serial => {
+                    if crate::serial_setup::parse_tcp_endpoint(resource_key).is_ok() {
+                        return Err(format!(
+                            "{} UART requires a COM Port, not a TCP endpoint",
+                            instance.id
+                        ));
+                    }
+                    resource_key.to_ascii_uppercase()
+                }
+                crate::serial_setup::SerialTransport::Tcp => {
+                    let (host, port) = crate::serial_setup::parse_tcp_endpoint(resource_key)
+                        .map_err(|error| {
+                            format!("{} TCP Live Resource: {error}", instance.id)
+                        })?;
+                    format!("TCP::{}::{port}", host.to_ascii_lowercase())
+                }
+            }
         } else {
             resource_key.to_owned()
         };
@@ -688,6 +708,31 @@ mod tests {
         );
         config.set_live_resource(&second.id, "COM5");
         validate_unique_live_resources(&[&first, &second], &config).unwrap();
+    }
+
+    #[test]
+    fn serial_tcp_resources_are_valid_and_unique() {
+        use crate::{serial_setup::SerialTransport, tool_instance::ToolInstance};
+        let serial = |id: &str| {
+            let mut setup = crate::serial_setup::SerialSetup::default();
+            setup.transport = SerialTransport::Tcp;
+            ToolInstance {
+                id: ToolInstanceId::new(id).unwrap(),
+                display_name: None,
+                tool: ToolId::serial(),
+                setup: ToolSetup::Serial(setup),
+            }
+        };
+        let first = serial("serial-1");
+        let second = serial("serial-2");
+        let mut config = Config::default();
+        config.set_live_resource(&first.id, "Device.Local:5025");
+        config.set_live_resource(&second.id, "device.local:05025");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&second.id, "device.local:5026");
+        validate_unique_live_resources(&[&first, &second], &config).unwrap();
+        config.set_live_resource(&second.id, "COM4");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
     }
 
     #[test]

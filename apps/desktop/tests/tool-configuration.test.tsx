@@ -669,3 +669,50 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect((second.getByRole('combobox', { name: 'VISA Backend' }) as HTMLSelectElement).value).toBe('@py')
   expect((second.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('manual::second')
 }, 15000)
+
+test('Serial Transport preserves UART and TCP setup values across switching', () => {
+  const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
+    baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
+    flow_control: 'none', timeout_ms: 1000,
+  } }
+  let instances: ToolInstance[] = [serial]
+  const onChange = vi.fn((updated: ToolInstance[]) => { instances = updated })
+  const view = () => <ToolSetupEditor value={instances} steps={[]} onChange={onChange} disabled={false}
+    configuredToolTypes={['serial']} resourceIdentities={{}} executionMode="simulate"
+    metersExecutableKey="" powersExecutableKey="" scopesExecutableKey=""
+    renderResource={() => null} renderPowersDeviceStatus={() => null} />
+  const { rerender } = render(view())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Transport' }), { target: { value: 'tcp' } })
+  rerender(view())
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'I/O Timeout (ms)' }), { target: { value: '2500' } })
+  rerender(view())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Transport' }), { target: { value: 'serial' } })
+  rerender(view())
+  expect((screen.getByRole('spinbutton', { name: 'Baud Rate' }) as HTMLInputElement).value).toBe('9600')
+  expect((screen.getByRole('combobox', { name: 'Parity' }) as HTMLSelectElement).value).toBe('even')
+  const saved = JSON.parse(JSON.stringify(instances))
+  expect(saved[0].setup.io_timeout_ms).toBe(2500)
+  expect(saved[0].setup.transport).toBe('serial')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Transport' }), { target: { value: 'tcp' } })
+  rerender(view())
+  expect((screen.getByRole('spinbutton', { name: 'I/O Timeout (ms)' }) as HTMLInputElement).value).toBe('2500')
+})
+
+test('Serial TCP Live Device saves Host and Port without COM discovery', async () => {
+  tools.push(toolStatus('serial'))
+  newDraft = { ...original, tool_instances: [...original.tool_instances, {
+    id: 'serial-1', tool: 'serial', setup: {
+      transport: 'tcp', baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1,
+      flow_control: 'none', timeout_ms: 1000,
+    },
+  }] }
+  await mount()
+  const serial = instance('serial-1')
+  expect(serial.queryByRole('button', { name: 'List Ports' })).toBeNull()
+  fireEvent.change(serial.getByRole('textbox', { name: 'TCP Host' }), { target: { value: 'device.local' } })
+  fireEvent.change(serial.getByRole('spinbutton', { name: 'TCP Port' }), { target: { value: '5025' } })
+  fireEvent.click(serial.getByRole('button', { name: 'Save Resource' }))
+  await waitFor(() => expect(resources['serial-1']).toBe('device.local:5025'))
+  expect(calls().some(([command, args]) => command === 'set_live_resource'
+    && (args as { instanceId: string }).instanceId === 'serial-1')).toBe(true)
+})

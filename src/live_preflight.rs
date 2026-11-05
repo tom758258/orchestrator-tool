@@ -92,6 +92,17 @@ pub fn validate_live_preflight_draft(
             instances.push(instance);
         }
     }
+    // Include Serial Background-only bindings in the existing Live Resource preflight.
+    if let Some(backgrounds) = wire["backgrounds"].as_array() {
+        for background in backgrounds {
+            if let Some(instance) = setup.tool_instances().iter().find(|instance| {
+                instance.tool == crate::tool::ToolId::serial()
+                    && Some(instance.id.as_str()) == background["tool_instance_id"].as_str()
+            }) && !instances.contains(&instance) {
+                instances.push(instance);
+            }
+        }
+    }
     let mut errors = Vec::new();
     if let Err(error) = crate::run_preparation::validate_live_resource_instances(&instances, config)
     {
@@ -346,6 +357,56 @@ mod tests {
                 _ => unreachable!(),
             })
         })
+    }
+
+    #[test]
+    fn serial_background_only_checks_tcp_live_resource() {
+        use crate::config::Config;
+        use std::path::Path;
+        let draft = serde_json::json!({
+            "schema_version": 2,
+            "name": "TCP background",
+            "tool_instances": [{
+                "id": "serial-1",
+                "tool": "serial",
+                "setup": {"baud": 115200, "transport": "tcp"}
+            }],
+            "backgrounds": [{
+                "id": "background-1", "tool_instance_id": "serial-1",
+                "live_monitor": false, "limit_count": null
+            }],
+            "workflow": {
+                "steps": [{
+                    "type": "background", "id": "on", "background_id": "background-1",
+                    "action": "worker-on", "capture": false
+                }]
+            }
+        });
+        let mut config = Config::default();
+        let errors = super::validate_live_preflight_draft(
+            &draft.to_string(),
+            Path::new("unused"),
+            &config,
+        )
+        .unwrap();
+        assert!(!errors.is_empty());
+        let instance = crate::tool_instance::ToolInstanceId::new("serial-1").unwrap();
+        config.set_live_resource(&instance, "COM4");
+        assert!(!super::validate_live_preflight_draft(
+            &draft.to_string(),
+            Path::new("unused"),
+            &config,
+        )
+        .unwrap()
+        .is_empty());
+        config.set_live_resource(&instance, "localhost:5025");
+        assert!(super::validate_live_preflight_draft(
+            &draft.to_string(),
+            Path::new("unused"),
+            &config,
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]
