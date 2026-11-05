@@ -3343,7 +3343,18 @@ fn fixture_manifest_json(scenario: &str) -> serde_json::Value {
         "tool_version":"fixture","worker_protocol":{
             "compatibility_policy":"v3-only","schema_versions":[3]},
         "execution":{"model":model,"context_binding":binding},
-        "features":features
+        "features":features,
+        "commands":if name == "serial" {
+            json!({
+                "send":{"kind":"async_job"},
+                "send-file":{"kind":"async_job"},
+                "receive":{"kind":"async_job"},
+                "query":{"kind":"async_job"},
+                "run-sequence":{"kind":"async_job"}
+            })
+        } else {
+            json!({})
+        }
     })
 }
 
@@ -3374,7 +3385,12 @@ fn run_serial_integer_fixture() {
         .to_string(),
     );
 
-    let expected = [("send", "03"), ("send", "01"), ("query", "02"), ("send", "00")];
+    let expected = [
+        ("send", "03"),
+        ("send", "01"),
+        ("query", "02"),
+        ("send", "00"),
+    ];
     let mut sent = 0;
     let mut last_job = serde_json::Value::Null;
     loop {
@@ -3772,7 +3788,6 @@ fn run_scopes_fixture(scenario: &str) {
     }
 }
 
-
 fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
     let template = Template::from_json_str(
         &json!({
@@ -3840,13 +3855,11 @@ fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
             "{id} must dispatch correct TX"
         );
     }
-    assert!(
-        run.step_executions().iter().any(|step| {
-            step.step_id().as_str() == "send-invalid"
-                && matches!(step.outcome(), StepOutcome::Failed { message }
-                    if message.contains("-3.75") && message.contains("-3"))
-        })
-    );
+    assert!(run.step_executions().iter().any(|step| {
+        step.step_id().as_str() == "send-invalid"
+            && matches!(step.outcome(), StepOutcome::Failed { message }
+                if message.contains("-3.75") && message.contains("-3"))
+    }));
     assert!(
         !run.step_executions()
             .iter()

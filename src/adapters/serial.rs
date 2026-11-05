@@ -232,14 +232,14 @@ pub fn validate_action(
                     if expression.operator().is_comparison() {
                         return Err("Hex Byte Calculation must use a numeric operator".into());
                     }
-                    for operand in std::iter::once(expression.left())
-                        .chain(expression.right_operand())
+                    for operand in
+                        std::iter::once(expression.left()).chain(expression.right_operand())
                     {
                         if let ExpressionOperand::Literal(value) = operand
                             && !value.is_number()
                         {
                             return Err(
-                                "Hex Byte Calculation literal operands must be numeric".into(),
+                                "Hex Byte Calculation literal operands must be numeric".into()
                             );
                         }
                     }
