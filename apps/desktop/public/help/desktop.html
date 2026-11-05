@@ -477,7 +477,7 @@ clears the old time settings. Set Variable and Tool Action time sources are unch
 not become result columns merely because they were referenced.</p>
 <h4 id="power-set-output">Power Set Output</h4>
 <p>The Channel dropdown is shared by <strong>Power Set Output</strong>, legacy <strong>Power Set
-Voltage</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, and the <strong>Specific channel</strong>
+Voltage</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, <strong>Power Measure</strong>, and the <strong>Specific channel</strong>
 selection in <strong>Power Protection Status</strong>. It lists only channels confirmed by
 the target instance's capabilities as <strong>CH1</strong>, <strong>CH2</strong>, etc. Simulation uses the
 simulator channels; Live uses the model identified for the saved Resource in
@@ -503,6 +503,14 @@ current-limit setpoint, expressed in A, not a forced output current. This step
 only configures the setpoints. Use <strong>Power Output ON</strong> separately to enable the output.</p>
 <p>Existing Templates containing <strong>Power Set Voltage</strong> remain editable and keep
 that action when saved. New steps use <strong>Power Set Output</strong>.</p>
+<h4 id="power-measure">Power Measure</h4>
+<p>Add <strong>Power Measure</strong> to read the selected channel's actual Voltage (V) and
+Current (A) once. It uses the fixed Channel dropdown without enabling the
+output or changing setpoints. After it completes, later Output, Assert, and
+Calculation steps can select <strong>Voltage</strong> or <strong>Current</strong> from its Step Output.
+The numeric pointers are <code>/data/measurements/voltage</code> and
+<code>/data/measurements/current</code>. It is foreground-only; readings do not create
+a Result column unless you add an Output step.</p>
 <h4 id="power-protection-status">Power Protection Status</h4>
 <p>Add <strong>Power Protection Status</strong> to read protection trip state without changing
 instrument settings. Select <strong>All</strong> channels or <strong>Specific channel</strong> and choose
