@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
   CUSTOM_RESULT,
   EXPRESSION_OPERATORS,
+  UNARY_OPERATORS,
   curatedResultFields,
   resultSelection,
   stepOutputCandidates,
@@ -19,6 +20,7 @@ type ReferenceOptions = {
   earlierVariables: readonly string[]
   disabled: boolean
   numericSetpoint?: boolean
+  numericCalculation?: boolean
   allowStringLiteral?: boolean
 }
 
@@ -211,9 +213,10 @@ type InputValueEditorProps = ReferenceOptions & {
 }
 
 export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
-  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, allowStringLiteral = false, ...references }: InputValueEditorProps) {
-  const operandEditor = (side: 'left' | 'right') => value.source === 'expression' && (
-    <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side]}
+  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, numericCalculation = false, allowStringLiteral = false, ...references }: InputValueEditorProps) {
+  const operandEditor = (side: 'left' | 'right') => value.source === 'expression' &&
+    (side === 'left' || !Object.hasOwn(UNARY_OPERATORS, value.operator)) && (
+    <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side] ?? { source: 'literal', value: 0 }}
       onChange={(operand) => onChange({ ...value, [side]: operand })} />
   )
 
@@ -237,6 +240,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
       </label>
       <p className="value-source-help">{numericSetpoint && value.source === 'expression'
         ? 'Calculate a numeric value from fixed numbers or variables.' : SOURCE_HELP[value.source]}</p>
+      {numericSetpoint && <p className="value-source-help">Number (decimals allowed); the instrument still validates its supported range.</p>}
       {value.source === 'elapsed-time' && timeFormat?.kind === 'elapsed-time' && onTimeFormatChange && <>
         <label className="step-property-field">
           <span className="step-property-label">Time Format</span>
@@ -267,9 +271,15 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
           <label className="step-property-field">
             <span className="step-property-label">Operator</span>
             <select value={value.operator} disabled={references.disabled}
-              onChange={(event) => onChange({ ...value, operator: event.target.value as typeof value.operator })}>
+              onChange={(event) => {
+                const operator = event.target.value as typeof value.operator
+                onChange(Object.hasOwn(UNARY_OPERATORS, operator)
+                  ? { source: 'expression', left: value.left, operator }
+                  : { ...value, operator, right: value.right ?? { source: 'literal', value: 0 } })
+              }}>
               {Object.entries(EXPRESSION_OPERATORS)
-                .filter(([operator]) => !numericSetpoint || ['add', 'subtract', 'multiply', 'divide'].includes(operator)).map(([operator, symbol]) => (
+                .filter(([operator]) => !(numericSetpoint || numericCalculation) ||
+                  ['add', 'subtract', 'multiply', 'divide', 'round', 'floor', 'ceil', 'trunc'].includes(operator)).map(([operator, symbol]) => (
                 <option key={operator} value={operator}>{symbol}</option>
               ))}
             </select>

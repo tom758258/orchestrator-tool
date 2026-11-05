@@ -49,10 +49,11 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
       </label>
       <p className="value-source-help">{txFormat === 'text'
         ? 'Text sends UTF-8 bytes of a string only. "00FF" sends four ASCII characters, not 00 FF.'
-        : 'Hex Byte sends one byte from a non-negative integer. High bytes are discarded (4660 → 34). Negative, fractional, string, and Boolean values fail this step.'}</p>
+        : 'Hex Byte (Integer ≥ 0): fixed values must be integers. Dynamic numeric values (Variable, Calculation or Step Output) are truncated toward zero before sending; invalid types or out-of-range values fail without TX. High bytes are discarded (4660 → 34).'}</p>
       <InputValueEditor key={`${step.id}-tx`}
         value={txValue} literalDefault={txFormat === 'text' ? '' : 0}
         allowStringLiteral={txFormat === 'text'}
+        numericCalculation={txFormat === 'hex-byte'}
         sourceLabel="TX Source" literalLabel="TX Value"
         earlierSteps={earlierSteps} earlierVariables={earlierVariables}
         instances={instances} stepLabel={stepLabel} disabled={disabled}

@@ -15,11 +15,19 @@ export const COMPARISON_OPERATORS = {
 
 export type ComparisonOperator = keyof typeof COMPARISON_OPERATORS
 
+export const UNARY_OPERATORS = {
+  round: 'Round',
+  floor: 'Floor',
+  ceil: 'Ceil',
+  trunc: 'Trunc',
+} as const
+
 export const EXPRESSION_OPERATORS = {
   add: '+',
   subtract: '−',
   multiply: '×',
   divide: '÷',
+  ...UNARY_OPERATORS,
   ...COMPARISON_OPERATORS,
 } as const
 
@@ -27,7 +35,7 @@ export type InputValueWire = ExpressionOperandWire | { source: 'elapsed-time' } 
   source: 'expression'
   left: ExpressionOperandWire
   operator: keyof typeof EXPRESSION_OPERATORS
-  right: ExpressionOperandWire
+  right?: ExpressionOperandWire
 }
 
 type StepOutputCandidate = {
@@ -118,5 +126,8 @@ export function expressionSummary(value: Omit<Extract<InputValueWire, { source: 
       case 'step-output': return `${operand.step_id} → ${operand.pointer || '(root)'}`
     }
   }
-  return `${operandSummary(value.left)} ${EXPRESSION_OPERATORS[value.operator]} ${operandSummary(value.right)}`
+  if (Object.hasOwn(UNARY_OPERATORS, value.operator)) {
+    return `${EXPRESSION_OPERATORS[value.operator]}(${operandSummary(value.left)})`
+  }
+  return `${operandSummary(value.left)} ${EXPRESSION_OPERATORS[value.operator]} ${value.right ? operandSummary(value.right) : '?'}`
 }

@@ -168,7 +168,8 @@ test('actual Numeric Setpoint editor offers only numeric sources, operands and a
   assert.deepEqual(fieldOptions(nodes, 'Value Source'), ['literal', 'variable', 'expression'])
   assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable'])
   assert.deepEqual(fieldOptions(nodes, 'Right Source'), ['literal', 'variable'])
-  assert.deepEqual(fieldOptions(nodes, 'Operator'), ['add', 'subtract', 'multiply', 'divide'])
+  assert.deepEqual(fieldOptions(nodes, 'Operator'),
+    ['add', 'subtract', 'multiply', 'divide', 'round', 'floor', 'ceil', 'trunc'])
   let changed
   const literalNodes = render({ value: { source: 'literal', value: 3 }, numericSetpoint: true,
     onChange: value => { changed = value } })
@@ -185,9 +186,28 @@ test('actual general editor retains result/time sources and comparison calculati
   assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable', 'step-output'])
   assert.deepEqual(fieldOptions(nodes, 'Right Source'), ['literal', 'variable', 'step-output'])
   assert.deepEqual(fieldOptions(nodes, 'Operator'),
-    ['add', 'subtract', 'multiply', 'divide', ...Object.keys(COMPARISON_OPERATORS)])
+    ['add', 'subtract', 'multiply', 'divide', 'round', 'floor', 'ceil', 'trunc', ...Object.keys(COMPARISON_OPERATORS)])
   const result = render({ value: { source: 'step-output', step_id: 'measure-1', pointer: '/value' } })
   assert.ok(result.some(node => node.type === 'select' && node.props.value === 'measure-1'))
+})
+
+test('unary Calculation edits and preserves Serial numeric sources', async () => {
+  const render = await valueEditor()
+  let changed
+  const unary = { source: 'expression', left: { source: 'variable', variable: 'x' }, operator: 'trunc' }
+  const nodes = render({ value: unary, onChange: value => { changed = value } })
+  assert.ok(fieldOptions(nodes, 'Operator').includes('trunc'))
+  assert.equal(nodes.some(node => node.props['aria-label'] === 'Right operand'), false)
+  const select = nodes.find(node => node.type === 'select' && node.props.value === 'trunc')
+  select.props.onChange({ target: { value: 'divide' } })
+  assert.deepEqual(changed, { ...unary, operator: 'divide', right: { source: 'literal', value: 0 } })
+  const binaryNodes = render({ value: changed, onChange: value => { changed = value } })
+  const next = binaryNodes.find(node => node.type === 'select' && node.props.value === 'divide')
+  next.props.onChange({ target: { value: 'round' } })
+  assert.deepEqual(changed, { source: 'expression', left: unary.left, operator: 'round' })
+  const serialNodes = render({ value: unary, numericCalculation: true })
+  assert.ok(fieldOptions(serialNodes, 'Value Source').includes('step-output'))
+  assert.equal(fieldOptions(serialNodes, 'Operator').includes('equal'), false)
 })
 
 test('actual Assert and While operand editor retains boolean literals and step results', async () => {

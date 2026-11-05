@@ -722,7 +722,9 @@ fn validate_tool_action_parameters(
                 if expression.operator().is_comparison() {
                     return Err("Calculation requires an arithmetic operator");
                 }
-                for operand in [expression.left(), expression.right()] {
+                for operand in std::iter::once(expression.left())
+                    .chain(expression.right_operand())
+                {
                     match operand {
                         ExpressionOperand::Literal(value) if value.is_number() => {}
                         ExpressionOperand::Variable(_) => {}
@@ -1588,7 +1590,8 @@ enum InputValueWire {
     Expression {
         left: ExpressionOperandWire,
         operator: ExpressionOperator,
-        right: ExpressionOperandWire,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        right: Option<ExpressionOperandWire>,
     },
 }
 
@@ -1648,7 +1651,7 @@ impl InputValueWire {
             InputValue::Expression(expression) => Self::Expression {
                 left: ExpressionOperandWire::from_operand(expression.left()),
                 operator: expression.operator(),
-                right: ExpressionOperandWire::from_operand(expression.right()),
+                right: expression.right_operand().map(ExpressionOperandWire::from_operand),
             },
             InputValue::Literal(value) => Self::Literal {
                 value: value.clone(),
@@ -1672,11 +1675,23 @@ fn input_from_wire(wire: InputValueWire) -> Result<InputValue, TemplateError> {
             left,
             operator,
             right,
-        } => Ok(InputValue::Expression(Expression::new(
-            operand_from_wire(left)?,
-            operator,
-            operand_from_wire(right)?,
-        ))),
+        } => {
+            let left = operand_from_wire(left)?;
+            let expression = if operator.is_unary() {
+                if right.is_some() {
+                    return Err(TemplateError::Instance(
+                        "unary Calculation must not have a right operand".into(),
+                    ));
+                }
+                Expression::unary(left, operator)
+            } else {
+                let right = right.ok_or_else(|| {
+                    TemplateError::Instance("binary Calculation requires a right operand".into())
+                })?;
+                Expression::new(left, operator, operand_from_wire(right)?)
+            };
+            Ok(InputValue::Expression(expression))
+        },
         InputValueWire::Literal { value } => Ok(InputValue::Literal(value)),
         InputValueWire::Variable { variable } => {
             let variable =
@@ -3123,6 +3138,30 @@ mod tests {
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");
         assert_eq!(Template::from_json_str(&json).unwrap(), original);
+    }
+
+    #[test]
+    fn unary_expression_template_requires_exactly_one_operand() {
+        let mut wire = serde_json::json!({
+            "schema_version": 2,
+            "name": "Unary Calculation",
+            "tool_instances": [],
+            "workflow": { "steps": [
+                { "type": "set-variable", "id": "set-value", "variable": "result",
+                  "value": { "source": "expression",
+                             "left": { "source": "literal", "value": -2.5 },
+                             "operator": "round" } }
+            ]}
+        });
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        assert_eq!(Template::from_json_str(&template.to_json_string().unwrap()).unwrap(), template);
+        wire["workflow"]["steps"][0]["value"]["right"] =
+            serde_json::json!({"source": "literal", "value": 9});
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["value"]["operator"] = serde_json::json!("add");
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
+        wire["workflow"]["steps"][0]["value"].as_object_mut().unwrap().remove("right");
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
     }
 
     #[test]
