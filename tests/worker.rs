@@ -4396,10 +4396,10 @@ fn powers_measure_voltage_and_current_reach_result_row() {
         "workflow": { "steps": [
             { "type": "tool-action", "id": "measure-1", "target": "powers-1",
               "action": "measure", "arguments": { "channel": 2 } },
-            { "type": "output", "id": "voltage-out", "name": "Voltage",
+            { "type": "output", "id": "voltage-out", "name": "Voltage", "page": "Results",
               "value": { "source": "step-output", "step_id": "measure-1",
                          "pointer": "/data/measurements/voltage" } },
-            { "type": "output", "id": "current-out", "name": "Current",
+            { "type": "output", "id": "current-out", "name": "Current", "page": "Results",
               "value": { "source": "step-output", "step_id": "measure-1",
                          "pointer": "/data/measurements/current" } },
             { "type": "assert", "id": "current-safe",
