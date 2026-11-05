@@ -171,7 +171,7 @@ pub enum InputValue {
 pub struct Expression {
     left: ExpressionOperand,
     operator: ExpressionOperator,
-    right: ExpressionOperand,
+    right: Option<ExpressionOperand>,
 }
 
 impl Expression {
@@ -183,7 +183,15 @@ impl Expression {
         Self {
             left,
             operator,
-            right,
+            right: Some(right),
+        }
+    }
+
+    pub fn unary(operand: ExpressionOperand, operator: ExpressionOperator) -> Self {
+        Self {
+            left: operand,
+            operator,
+            right: None,
         }
     }
 
@@ -196,7 +204,13 @@ impl Expression {
     }
 
     pub fn right(&self) -> &ExpressionOperand {
-        &self.right
+        self.right
+            .as_ref()
+            .expect("binary expression requires a right operand")
+    }
+
+    pub fn right_operand(&self) -> Option<&ExpressionOperand> {
+        self.right.as_ref()
     }
 }
 
@@ -214,6 +228,10 @@ pub enum ExpressionOperator {
     Subtract,
     Multiply,
     Divide,
+    Round,
+    Floor,
+    Ceil,
+    Trunc,
     Equal,
     NotEqual,
     GreaterThan,
@@ -223,6 +241,10 @@ pub enum ExpressionOperator {
 }
 
 impl ExpressionOperator {
+    pub fn is_unary(self) -> bool {
+        matches!(self, Self::Round | Self::Floor | Self::Ceil | Self::Trunc)
+    }
+
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
@@ -658,7 +680,7 @@ impl Workflow {
                         InputValue::StepOutput(r) => check(r),
                         InputValue::Variable(variable) => check_variable(variable),
                         InputValue::Expression(e) => {
-                            for o in [e.left(), e.right()] {
+                            for o in std::iter::once(e.left()).chain(e.right_operand()) {
                                 match o {
                                     ExpressionOperand::StepOutput(r) => check(r)?,
                                     ExpressionOperand::Variable(variable) => {

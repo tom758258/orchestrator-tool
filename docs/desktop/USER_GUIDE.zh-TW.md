@@ -398,7 +398,7 @@ Editor 目前的 InputValue 選項是：
 - **Variable** — Workflow variable 的目前值。
 - **Previous step result** — 較早且可見的 step result。目前 UI 會提供先前
   Tool Actions 的 results。
-- **Calculation** — 一個左 operand、一個 operator 與一個右 operand。
+- **Calculation** — 四則運算／比較使用左右兩個 operand；Round、Floor、Ceil、Trunc 僅使用一個 operand（Round 的 0.5 中點遠離零、Trunc 朝零捨去小數）。
 - **Elapsed time** — runtime elapsed-time value。
 - **Timestamp** — runtime timestamp value。
 
@@ -1283,7 +1283,7 @@ Steps Palette 將 Background Worker ON/OFF 與 Background Capture ON/OFF 獨立�
 
 Serial Foreground 提供 Serial Send、Serial Send File、Serial Receive、Serial Query 四個 Actions，使用一般非 Streaming Serial Worker。同一 Serial Tool Instance 不可同時作為 Foreground 與 Background。既有 Serial Background RX-only Capture／Monitor 不變。
 
-Send／Query TX 可選 Text（僅接受字串，發送 UTF-8）或 Hex Byte（僅接受非負整數，一次發送最低 8 bits 的一個 Byte）。例如數值 4660 在 Hex Byte 模式僅發送 34。負數、小數或錯誤資料型別使消費該值的 Step Failed，且不發送任何資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
+Send／Query TX 可選 Text（僅接受字串，發送 UTF-8）或 Hex Byte（僅接受非負整數，一次發送最低 8 bits 的一個 Byte）。例如數值 4660 在 Hex Byte 模式僅發送 34。Hex Byte 固定小數在 Validate 時拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
 
 Query Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
 

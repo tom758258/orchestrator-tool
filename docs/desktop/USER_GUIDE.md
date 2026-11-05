@@ -480,7 +480,7 @@ The current InputValue choices in the editor are:
 - **Variable** — the current value of a workflow variable.
 - **Previous step result** — a result from an earlier visible step. The current
   UI offers results from prior Tool Actions.
-- **Calculation** — one left operand, one operator, and one right operand.
+- **Calculation** — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).
 - **Elapsed time** — a runtime elapsed-time value.
 - **Timestamp** — a runtime timestamp value.
 
@@ -1517,7 +1517,7 @@ The Steps palette groups Background Worker ON/OFF and Background Capture ON/OFF 
 
 Serial Foreground has four actions: Serial Send, Serial Send File, Serial Receive and Serial Query. These use an ordinary non-streaming Serial Worker. A Serial Tool Instance cannot be used for both Foreground and Background. The original Serial Background RX-only capture and monitoring are unchanged.
 
-Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negative integer, sending only its lowest eight bits). For example 4660 sends the single byte 34 in Hex Byte mode. Negative, fractional or incorrectly typed inputs fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.
+Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negative integer, sending only its lowest eight bits). For example 4660 sends the single byte 34 in Hex Byte mode. Fixed fractional Hex Byte values fail validation. Dynamic numeric Hex Byte values are truncated toward zero before TX; negative results, invalid types and out-of-range values fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.
 
 Query Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.
 

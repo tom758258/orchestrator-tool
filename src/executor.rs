@@ -669,7 +669,18 @@ fn execute_non_loop_step(
             action,
             arguments,
             bindings,
-        } => match resolve_tool_arguments(arguments, bindings, data_context) {
+        } => match resolve_tool_arguments(arguments, bindings, data_context).and_then(
+            |mut arguments| {
+                truncate_dynamic_integer_argument(
+                    &mut arguments,
+                    bindings,
+                    template,
+                    target,
+                    action,
+                )?;
+                Ok(arguments)
+            },
+        ) {
             Ok(arguments) => dispatch_tool_action(
                 template,
                 target,
@@ -790,6 +801,43 @@ fn resolve_tool_arguments(
         }
     }
     Ok(arguments)
+}
+
+/// Convert only dynamically bound Serial Hex Byte values. Fixed literals still
+/// require integer validation before Run; the DataContext value stays unchanged.
+fn truncate_dynamic_integer_argument(
+    arguments: &mut Value,
+    bindings: &BTreeMap<String, InputValue>,
+    template: &Template,
+    target: &ToolInstanceId,
+    action: &crate::workflow::ActionId,
+) -> Result<(), String> {
+    if !bindings.contains_key("tx_value")
+        || !matches!(action.as_str(), "send" | "query")
+        || arguments.get("tx_format").and_then(Value::as_str) != Some("hex-byte")
+        || !template
+            .tool_instances()
+            .iter()
+            .any(|instance| &instance.id == target && instance.tool == ToolId::serial())
+    {
+        return Ok(());
+    }
+    let value = arguments
+        .get_mut("tx_value")
+        .ok_or("Serial Hex Byte missing dynamic tx_value")?;
+    let original = value.clone();
+    let number = original
+        .as_f64()
+        .ok_or_else(|| format!("Serial Hex Byte tx_value must be numeric, received {original}"))?;
+    let truncated = number.trunc();
+    const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+    if !truncated.is_finite() || truncated < 0.0 || truncated > MAX_SAFE_INTEGER {
+        return Err(format!(
+            "Serial Hex Byte tx_value {original} truncates to {truncated}, outside the non-negative safe integer range"
+        ));
+    }
+    *value = Value::from(truncated as u64);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1638,6 +1686,69 @@ mod tests {
             super::resolve_tool_arguments(&json!([1]), &Default::default(), &context).unwrap(),
             json!([1])
         );
+    }
+
+    #[test]
+    fn serial_hex_byte_truncates_dynamic_values_without_changing_variables() {
+        let template = crate::template::Template::from_json_str(
+            &json!({
+                "schema_version": 2, "name": "Serial test",
+                "tool_instances": [{"id":"serial-1","tool":"serial","setup":{"baud":115200}}],
+                "workflow": {"steps":[
+                    {"type":"set-variable","id":"set-x","variable":"x",
+                     "value":{"source":"literal","value":3.75}},
+                    {"type":"tool-action","id":"send","target":"serial-1","action":"send",
+                     "arguments":{"tx_format":"hex-byte","tx_value":0},
+                     "bindings":{"tx_value":{"source":"variable","variable":"x"}}}
+                ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let target = ToolInstanceId::new("serial-1").unwrap();
+        let variable = VariableId::new("x").unwrap();
+        let bindings = [(
+            "tx_value".to_owned(),
+            InputValue::Variable(variable.clone()),
+        )]
+        .into();
+        let arguments = json!({"tx_format":"hex-byte","tx_value":0});
+        let mut context = crate::data_context::DataContext::new();
+        for action_name in ["send", "query"] {
+            let action = crate::workflow::ActionId::new(action_name).unwrap();
+            for (source, expected) in [
+                (json!(3.75), json!(3)),
+                (json!(2.5), json!(2)),
+                (json!(256.9), json!(256)),
+                (json!(0.99), json!(0)),
+            ] {
+                context.set_variable(variable.clone(), source.clone());
+                let mut value =
+                    super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap();
+                super::truncate_dynamic_integer_argument(
+                    &mut value, &bindings, &template, &target, &action,
+                )
+                .unwrap();
+                assert_eq!(value["tx_value"], expected);
+                assert_eq!(context.variable(&variable), Some(&source));
+            }
+            for invalid in [
+                json!(-3.75),
+                json!("3.75"),
+                json!(true),
+                json!(9_007_199_254_740_992_u64),
+            ] {
+                context.set_variable(variable.clone(), invalid);
+                let mut value =
+                    super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap();
+                assert!(
+                    super::truncate_dynamic_integer_argument(
+                        &mut value, &bindings, &template, &target, &action,
+                    )
+                    .is_err()
+                );
+            }
+        }
     }
 
     #[test]

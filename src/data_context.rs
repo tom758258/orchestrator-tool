@@ -81,6 +81,19 @@ impl DataContext {
             InputValue::Timestamp => Ok(timestamp_value(SystemTime::now().into())),
             InputValue::Expression(expression) => {
                 let left = self.resolve_expression_operand(expression.left())?;
+                if expression.operator().is_unary() {
+                    let number = left.as_f64().ok_or(ResolveError::InvalidNumericOperand)?;
+                    let result = match expression.operator() {
+                        ExpressionOperator::Round => number.round(),
+                        ExpressionOperator::Floor => number.floor(),
+                        ExpressionOperator::Ceil => number.ceil(),
+                        ExpressionOperator::Trunc => number.trunc(),
+                        _ => unreachable!(),
+                    };
+                    return Number::from_f64(result)
+                        .map(Value::Number)
+                        .ok_or(ResolveError::InvalidNumericResult);
+                }
                 match expression.operator() {
                     ExpressionOperator::Equal | ExpressionOperator::NotEqual => {
                         let right = self.resolve_expression_operand(expression.right())?;
@@ -114,6 +127,10 @@ impl DataContext {
                     ExpressionOperator::LessThan => return Ok(Value::Bool(left < right)),
                     ExpressionOperator::LessThanOrEqual => return Ok(Value::Bool(left <= right)),
                     ExpressionOperator::Equal | ExpressionOperator::NotEqual => unreachable!(),
+                    ExpressionOperator::Round
+                    | ExpressionOperator::Floor
+                    | ExpressionOperator::Ceil
+                    | ExpressionOperator::Trunc => unreachable!(),
                 };
                 Number::from_f64(result)
                     .map(Value::Number)
@@ -286,6 +303,34 @@ mod tests {
 
             assert_eq!(DataContext::new().resolve(&input).unwrap(), json!(expected));
         }
+    }
+
+    #[test]
+    fn unary_rounding_functions_resolve_numeric_values() {
+        for (operator, input, expected) in [
+            (ExpressionOperator::Round, 2.5, 3.0),
+            (ExpressionOperator::Round, -2.5, -3.0),
+            (ExpressionOperator::Floor, -2.5, -3.0),
+            (ExpressionOperator::Ceil, -2.5, -2.0),
+            (ExpressionOperator::Trunc, -2.5, -2.0),
+            (ExpressionOperator::Trunc, -0.99, 0.0),
+            (ExpressionOperator::Trunc, 3.75, 3.0),
+        ] {
+            let expression = InputValue::Expression(Expression::unary(
+                ExpressionOperand::Literal(json!(input)),
+                operator,
+            ));
+            let result = DataContext::new().resolve(&expression).unwrap();
+            assert_eq!(result.as_f64(), Some(expected));
+        }
+        let invalid = InputValue::Expression(Expression::unary(
+            ExpressionOperand::Literal(json!("bad")),
+            ExpressionOperator::Trunc,
+        ));
+        assert!(matches!(
+            DataContext::new().resolve(&invalid),
+            Err(ResolveError::InvalidNumericOperand)
+        ));
     }
 
     #[test]

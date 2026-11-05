@@ -194,7 +194,7 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
   const operand = (value: ExpressionOperandWire): ExpressionOperandWire => value.source === 'step-output'
     ? { ...value, step_id: idMap.get(value.step_id) ?? value.step_id } : value
   const input = (value: InputValueWire): InputValueWire => value.source === 'expression'
-    ? { ...value, left: operand(value.left), right: operand(value.right) }
+    ? { ...value, left: operand(value.left), ...(value.right ? { right: operand(value.right) } : {}) }
     : value.source === 'step-output' ? operand(value) : value
   const pasted = mapWorkflowSteps(structuredClone([...clipboard]), step => {
     const next = { ...step, id: idMap.get(step.id)! }

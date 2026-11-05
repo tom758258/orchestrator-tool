@@ -429,7 +429,7 @@ This applies to Scopes `channel-scale.volts_per_division`, `channel-offset.volts
 `timebase-scale.seconds_per_division`, `timebase-position.seconds`, and
 `trigger-edge.level`, plus Powers `set-voltage.voltage` and
 `set-output.voltage/current`. Calculation operands must be numeric literals or
-Variables and operators must be Add, Subtract, Multiply, or Divide. Effective
+Variables, and operators may be Add, Subtract, Multiply, Divide, Round, Floor, Ceil or Trunc. The four rounding operators use a single operand. Effective
 fixed arguments must be JSON numbers. Bindings override arguments as usual;
 dynamic variable values remain subject to runtime and Worker validation.
 Each of the five Scopes setpoints is required in `arguments` or `bindings`.
@@ -565,9 +565,9 @@ An InputValue can use these sources:
 - step-output; or
 - expression.
 
-An expression has a left operand, operator, and right operand. Expression
+An expression has a left operand and operator. Binary expressions also have a required right operand; unary round, floor, ceil and trunc expressions must omit right. Expression
 operands can be literal, variable, or step-output. Nested expressions are not
-supported. Arithmetic operators are add, subtract, multiply, and divide.
+supported. Arithmetic operators are add, subtract, multiply, and divide. Unary operators are round, floor, ceil and trunc; round uses halfway-away-from-zero semantics.
 Ordering comparison operators are greater-than, greater-than-or-equal,
 less-than, and less-than-or-equal. Equality comparison operators are equal
 and not-equal. Arithmetic and ordering comparisons require JSON numbers;
@@ -876,7 +876,7 @@ Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--stre
 
 Serial Foreground uses the existing `tool-action` type and its `arguments` and optional `bindings`; the `tool` remains `serial` on the Tool Instance. It does not adopt Streaming or share an Instance with Background RX. Four actions are supported:
 
-- `send`: `arguments.tx_format` is `text` or `hex-byte`; `tx_value` is either a fixed argument or a binding. Text accepts a string and sends its UTF-8 bytes. Hex Byte accepts a non-negative exact integer, sending one low byte (`4660` sends `34`). Invalid types, negative/fractional values, and unsupported modes fail validation (resolved dynamic values fail the consuming Step without TX). The User Interface stores logical values, not the native `tx_hex`.
+- `send`: `arguments.tx_format` is `text` or `hex-byte`; `tx_value` is either a fixed argument or a binding. Text accepts a string and sends its UTF-8 bytes. Hex Byte accepts a non-negative exact integer, sending one low byte (`4660` sends `34`). Fixed fractional inputs fail validation. Dynamically bound numeric inputs are truncated toward zero before dispatch, while negative results, invalid types and out-of-range values fail the consuming Step without TX. Unsupported modes remain invalid. The User Interface stores logical values, not the native `tx_hex`.
 - `send-file`: `arguments.path` is an absolute path on the Worker host. The Template retains it even if unavailable; missing, unreadable, empty or non-local paths are reported on load and block Run before any Worker is started. It is never inlined or copied into the Template.
 - `receive`: optional `arguments.max_bytes`, default 1024, range 1..=1048576. A successful Job returns raw `rx_hex` and `rx_bytes` as one Step Output.
 - `query`: TX follows the `send` rules, and `delimiter_format` (`text` or `hex`) plus `delimiter_value` specify a nonempty multi-byte delimiter. Text supports backslash-r, backslash-n and escaped backslashes; Hex accepts pairs of hexadecimal digits with ASCII whitespace. The decoded delimiter must not exceed `max_bytes`. Query returns raw `tx_hex`, `tx_bytes`, `rx_hex`, `rx_bytes`, `delimiter_hex`.
