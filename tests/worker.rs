@@ -500,6 +500,7 @@ fn main() {
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
     powers_set_voltage_step_outputs_reach_result_row();
+    powers_measure_voltage_and_current_reach_result_row();
     powers_set_output_binding_reaches_worker();
     powers_protection_status_asserts_untripped_result();
     manual_powers_status_reads_and_shuts_down();
@@ -2626,6 +2627,7 @@ fn run_fixture(scenario: &OsStr) {
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
         "powers-workflow-set-output" => run_powers_workflow_fixture("simulate-set-output"),
+        "powers-workflow-measure" => run_powers_workflow_fixture("simulate-measure"),
         "powers-workflow-protection-status" => {
             run_powers_workflow_fixture("simulate-protection-status")
         }
@@ -2931,6 +2933,9 @@ fn run_powers_workflow_fixture(scenario: &str) {
     if scenario == "simulate-set-output" {
         commands[0].1 = json!({ "channel": 1, "voltage": 5.0, "current": 0.2 });
     }
+    if scenario == "simulate-measure" {
+        commands = vec![("measure", json!({ "channel": 2 }), "job-measure")];
+    }
     if scenario == "simulate-protection-status" {
         commands = vec![(
             "protection-status",
@@ -3030,7 +3035,13 @@ fn run_powers_workflow_fixture(scenario: &str) {
                         || (matches!(scenario, "simulate-protection-set-failure" | "live-protection-set-failure" | "live-protection-set-and-cleanup-failure")
                             && command == "protection-set") { "failed" } else { "succeeded" },
                     "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
-                    "result": if command == "protection-status" {
+                    "result": if command == "measure" {
+                        json!({
+                            "request": { "command": "measure", "arguments": { "channel": 2 } },
+                            "data": { "channel": 2, "measurements": { "voltage": 5.002, "current": 0.125 } },
+                            "metadata": { "source": "fixture" }
+                        })
+                    } else if command == "protection-status" {
                         json!({
                             "request": { "command": "protection-status" },
                             "data": { "protection": { "over_voltage_tripped": scenario.ends_with("protection-trip"), "over_current_tripped": false } },
@@ -4374,6 +4385,53 @@ fn powers_set_voltage_step_outputs_reach_result_row() {
             .map(|output| (output.name(), output.value()))
             .collect::<Vec<_>>(),
         [("voltage", &json!(5.0)), ("channel", &json!(1))]
+    );
+}
+
+fn powers_measure_voltage_and_current_reach_result_row() {
+    let template = Template::from_json_str(&json!({
+        "schema_version": 2,
+        "name": "Power Measure",
+        "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
+        "workflow": { "steps": [
+            { "type": "tool-action", "id": "measure-1", "target": "powers-1",
+              "action": "measure", "arguments": { "channel": 2 } },
+            { "type": "output", "id": "voltage-out", "name": "Voltage",
+              "value": { "source": "step-output", "step_id": "measure-1",
+                         "pointer": "/data/measurements/voltage" } },
+            { "type": "output", "id": "current-out", "name": "Current",
+              "value": { "source": "step-output", "step_id": "measure-1",
+                         "pointer": "/data/measurements/current" } },
+            { "type": "assert", "id": "current-safe",
+              "left": { "source": "step-output", "step_id": "measure-1",
+                        "pointer": "/data/measurements/current" },
+              "operator": "less-than", "right": { "source": "literal", "value": 0.5 },
+              "message": "Current limit exceeded" }
+        ] }
+    }).to_string()).unwrap();
+    assert_eq!(Template::from_json_str(&template.to_json_string().unwrap()).unwrap(), template);
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("powers-1").unwrap(),
+            fixture_spec("powers-workflow-measure"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(run.step_executions().iter().all(|execution|
+        matches!(execution.result().outcome(), StepOutcome::Succeeded { .. })
+    ));
+    assert_eq!(run.result_rows().len(), 1);
+    assert_eq!(
+        run.result_rows()[0]
+            .outputs()
+            .iter()
+            .map(|output| (output.name(), output.value()))
+            .collect::<Vec<_>>(),
+        [("Voltage", &json!(5.002)), ("Current", &json!(0.125))]
     );
 }
 
