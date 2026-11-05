@@ -91,7 +91,7 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
                   : 'Bound value'
             : `${step.arguments.voltage ?? '?'} V`}`
         }
-        if (step.action === 'output-on' || step.action === 'output-off') {
+        if (step.action === 'output-on' || step.action === 'output-off' || step.action === 'measure') {
           return channel
         }
       }
