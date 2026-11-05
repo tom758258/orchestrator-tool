@@ -55,7 +55,7 @@ pub(crate) fn validate_preflight_action(
 ) {
     if matches!(
         action,
-        "set-output" | "set-voltage" | "output-on" | "output-off" | "protection-status"
+        "set-output" | "set-voltage" | "output-on" | "output-off" | "protection-status" | "measure"
     ) && let Some(channel) = arguments.get("channel")
         && !(action == "protection-status" && channel == "all")
     {
@@ -400,7 +400,7 @@ impl Error for PowersSmokeError {
 
 /// Runs a single runtime Powers action on an already-started Worker session.
 ///
-/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`, `protection-status`.
+/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`, `protection-status`, `measure`.
 /// Execution context and output confirmation are runtime-only.
 pub fn run_action(
     session: &WorkerSession,
@@ -414,6 +414,7 @@ pub fn run_action(
         "output-on" => "output-on",
         "output-off" => "output-off",
         "protection-status" => "protection-status",
+        "measure" => "measure",
         _ => {
             return Err(PowersActionError::UnsupportedAction(action.clone()));
         }
@@ -421,11 +422,44 @@ pub fn run_action(
 
     let arguments = validate_arguments(action.as_str(), arguments)?;
     let result = run_command(session, worker_command, arguments, execution_mode, timeout)?;
-    if action.as_str() == "protection-status" {
-        augment_protection_status_result(result)
-    } else {
-        Ok(result)
+    match action.as_str() {
+        "protection-status" => augment_protection_status_result(result),
+        "measure" => validate_measure_result(
+            result,
+            arguments["channel"].as_u64().expect("validated channel"),
+        ),
+        _ => Ok(result),
     }
+}
+
+fn validate_measure_result(result: Value, requested_channel: u64) -> Result<Value, PowersActionError> {
+    let data = result
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| PowersActionError::InvalidResponse("missing data object".to_owned()))?;
+    if data.get("channel").and_then(Value::as_u64) != Some(requested_channel) {
+        return Err(PowersActionError::InvalidResponse(
+            "data.channel does not match the requested channel".to_owned(),
+        ));
+    }
+    let measurements = data
+        .get("measurements")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            PowersActionError::InvalidResponse("missing data.measurements object".to_owned())
+        })?;
+    for field in ["voltage", "current"] {
+        if !measurements
+            .get(field)
+            .and_then(Value::as_f64)
+            .is_some_and(f64::is_finite)
+        {
+            return Err(PowersActionError::InvalidResponse(format!(
+                "data.measurements.{field} must be a finite number"
+            )));
+        }
+    }
+    Ok(result)
 }
 
 fn augment_protection_status_result(mut result: Value) -> Result<Value, PowersActionError> {
@@ -872,7 +906,7 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
     let (required_fields, allowed_fields): (&[&str], &[&str]) = match action {
         "set-voltage" => (&["channel", "voltage"], &["channel", "voltage"]),
         "set-output" => (&["channel"], &["channel", "voltage", "current"]),
-        "output-on" | "output-off" | "protection-status" => (&["channel"], &["channel"]),
+        "output-on" | "output-off" | "protection-status" | "measure" => (&["channel"], &["channel"]),
         _ => {
             return Err(PowersActionError::InvalidArguments(format!(
                 "unsupported action {action:?}"
@@ -1000,7 +1034,7 @@ mod tests {
 
     use super::{
         PowersActionError, augment_protection_status_result, read_status_request,
-        simulate_worker_launch_spec, validate_arguments,
+        simulate_worker_launch_spec, validate_arguments, validate_measure_result,
     };
 
     #[test]
@@ -1093,6 +1127,11 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            validate_arguments("measure", &json!({ "channel": 2 })).unwrap(),
+            json!({ "channel": 2 })
+        );
+
         let output_on = validate_arguments("output-on", &json!({ "channel": 2 })).unwrap();
         assert_eq!(output_on, json!({ "channel": 2 }));
 
@@ -1171,6 +1210,34 @@ mod tests {
                 ),
                 "{arguments}"
             );
+        }
+    }
+
+    #[test]
+    fn power_measure_rejects_invalid_arguments_and_results() {
+        for arguments in [
+            json!({}),
+            json!({ "channel": 0 }),
+            json!({ "channel": 1.5 }),
+            json!({ "channel": "1" }),
+            json!({ "channel": "all" }),
+            json!({ "channel": 1, "extra": true }),
+        ] {
+            assert!(validate_arguments("measure", &arguments).is_err(), "{arguments}");
+        }
+        let valid = json!({
+            "request": { "command": "measure" },
+            "data": { "channel": 2, "measurements": { "voltage": 5.002, "current": 0.125 } },
+            "metadata": { "source": "worker" }
+        });
+        assert_eq!(validate_measure_result(valid.clone(), 2).unwrap(), valid);
+        for invalid in [
+            json!({}),
+            json!({ "data": { "channel": 1, "measurements": { "voltage": 5.0, "current": 0.2 } } }),
+            json!({ "data": { "channel": 2, "measurements": { "voltage": 5.0 } } }),
+            json!({ "data": { "channel": 2, "measurements": { "voltage": "5.0", "current": 0.2 } } }),
+        ] {
+            assert!(validate_measure_result(invalid, 2).is_err());
         }
     }
 
