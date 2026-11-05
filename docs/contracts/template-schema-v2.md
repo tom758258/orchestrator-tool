@@ -870,7 +870,7 @@ is preserved after workflow failure or graceful Stop.
 
 A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or a FIFO.
 
-Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--streaming` to produce RX without TX; Foreground Simulation retains `loopback-v1` without streaming. Live requires a separately saved and confirmed COM Port. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source. Foreground Serial actions are separately supported by ordinary non-streaming Workers.
+Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--streaming` to produce RX without TX; Foreground Simulation retains `loopback-v1` without streaming. Live requires a separately saved and confirmed COM Port or TCP endpoint. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source. Foreground Serial actions are separately supported by ordinary non-streaming Workers.
 
 ## Serial Foreground Tool Actions (schema v2)
 
@@ -882,3 +882,10 @@ Serial Foreground uses the existing `tool-action` type and its `arguments` and o
 - `query`: TX follows the `send` rules, and `delimiter_format` (`text` or `hex`) plus `delimiter_value` specify a nonempty multi-byte delimiter. Text supports backslash-r, backslash-n and escaped backslashes; Hex accepts pairs of hexadecimal digits with ASCII whitespace. The decoded delimiter must not exceed `max_bytes`. Query returns raw `tx_hex`, `tx_bytes`, `rx_hex`, `rx_bytes`, `delimiter_hex`.
 
 Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background TX, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
+
+
+## Serial UART / TCP Client Transport (schema v2)
+
+The existing `serial` Tool Instance has one selected `setup.transport`: `serial` (the default for legacy Templates) or `tcp`. Existing UART settings remain in the same Setup. Optional TCP settings `connect_timeout_ms` (default 3000) and `io_timeout_ms` (default 1000) are retained even while UART is selected. Both must be positive. Switching Transport does not erase either set of communication settings. The Template schema version remains 2.
+
+The COM Port or TCP device endpoint is an instance-scoped local Live Resource, never Template data. TCP resources use `host:port` (or `[IPv6]:port`) with device port 1..65535. The same TCP endpoint may not be assigned to two referenced Serial instances in one Workflow. TCP Live uses `--transport tcp --host ... --tcp-port ...` and its TCP-only timeouts, without UART startup options; TCP Simulation uses the existing Foreground `loopback-v1` or Background `periodic-rx-v1` profile without device Host or Port. Existing Foreground Actions and RX-only Background semantics do not change.

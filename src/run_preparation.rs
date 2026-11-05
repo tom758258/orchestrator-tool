@@ -120,9 +120,31 @@ fn validate_unique_live_resources(
         if resource_key.is_empty() {
             continue;
         }
-        // Windows COM port names are case-insensitive; preserve VISA comparison as-is.
+        // Windows COM ports are case-insensitive. TCP uses host and numeric device port.
         let identity = if instance.tool == ToolId::serial() {
-            resource_key.to_ascii_uppercase()
+            let setup = instance
+                .serial_setup()
+                .ok_or("Serial instance has no Serial setup")?;
+            match setup.transport {
+                crate::serial_setup::SerialTransport::Serial => {
+                    if crate::serial_setup::parse_tcp_endpoint(resource_key).is_ok() {
+                        return Err(format!(
+                            "{} UART requires a COM Port, not a TCP endpoint",
+                            instance.id
+                        ));
+                    }
+                    resource_key.to_ascii_uppercase()
+                }
+                crate::serial_setup::SerialTransport::Tcp => {
+                    let (host, port) = crate::serial_setup::parse_tcp_endpoint(resource_key)
+                        .map_err(|error| format!("{} TCP Live Resource: {error}", instance.id))?;
+                    let normalized_host = match host.parse::<std::net::Ipv6Addr>() {
+                        Ok(address) => address.to_string(),
+                        Err(_) => host.to_ascii_lowercase(),
+                    };
+                    format!("TCP::{normalized_host}::{port}")
+                }
+            }
         } else {
             resource_key.to_owned()
         };
@@ -691,8 +713,51 @@ mod tests {
     }
 
     #[test]
+    fn serial_tcp_resources_are_valid_and_unique() {
+        use crate::{serial_setup::SerialTransport, tool_instance::ToolInstance};
+        let serial = |id: &str| {
+            let setup = crate::serial_setup::SerialSetup {
+                transport: SerialTransport::Tcp,
+                ..Default::default()
+            };
+            ToolInstance {
+                id: ToolInstanceId::new(id).unwrap(),
+                display_name: None,
+                tool: ToolId::serial(),
+                setup: ToolSetup::Serial(setup),
+            }
+        };
+        let first = serial("serial-1");
+        let second = serial("serial-2");
+        let mut config = Config::default();
+        config.set_live_resource(&first.id, "Device.Local:5025");
+        config.set_live_resource(&second.id, "device.local:05025");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&second.id, "device.local:5026");
+        validate_unique_live_resources(&[&first, &second], &config).unwrap();
+        config.set_live_resource(&second.id, "COM4");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&first.id, "[::1]:5025");
+        config.set_live_resource(&second.id, "[0:0:0:0:0:0:0:1]:5025");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&second.id, "[::1]:5026");
+        validate_unique_live_resources(&[&first, &second], &config).unwrap();
+    }
+
+    #[test]
     #[ignore = "requires external serial-tool; ordinary loopback SIM, no physical device"]
     fn serial_real_worker_foreground_simulation() {
+        run_serial_real_worker_foreground_simulation("serial");
+    }
+
+    // Requires ORCHESTRATOR_TEST_SERIAL_EXECUTABLE, not run by the default CI suite.
+    #[test]
+    #[ignore = "requires external serial-tool; TCP loopback SIM, no physical device"]
+    fn serial_real_worker_tcp_foreground_simulation() {
+        run_serial_real_worker_foreground_simulation("tcp");
+    }
+
+    fn run_serial_real_worker_foreground_simulation(transport: &str) {
         use crate::{run::run_workflow, workflow::StepOutcome};
         use std::time::Duration;
         let executable = std::fs::canonicalize(
@@ -701,7 +766,7 @@ mod tests {
         )
         .unwrap();
         let file = std::env::temp_dir().join(format!(
-            "orchestrator-serial-foreground-{}.bin",
+            "orchestrator-serial-foreground-{transport}-{}.bin",
             std::process::id()
         ));
         std::fs::write(&file, [0x01, 0x02, 0x03]).unwrap();
@@ -709,7 +774,7 @@ mod tests {
             &serde_json::json!({
                 "schema_version": 2, "name": "Serial foreground SIM",
                 "tool_instances": [{ "id": "serial-1", "tool": "serial",
-                    "setup": {"baud": 115200}}],
+                    "setup": {"baud": 115200, "transport": transport}}],
                 "workflow": {"steps": [
                     {"type": "set-variable", "id": "declare-message",
                         "variable": "message", "value": {"source": "literal", "value": "HELLO"}},
@@ -780,6 +845,17 @@ mod tests {
     #[test]
     #[ignore = "requires external serial-tool; autonomous RX SIM, no physical device"]
     fn serial_real_worker_rx_only_simulation() {
+        run_serial_real_worker_rx_only_simulation("serial");
+    }
+
+    // Requires ORCHESTRATOR_TEST_SERIAL_EXECUTABLE, not run by the default CI suite.
+    #[test]
+    #[ignore = "requires external serial-tool; TCP periodic RX SIM, no physical device"]
+    fn serial_real_worker_tcp_rx_only_simulation() {
+        run_serial_real_worker_rx_only_simulation("tcp");
+    }
+
+    fn run_serial_real_worker_rx_only_simulation(transport: &str) {
         use crate::{
             background::BackgroundStore,
             run::{RunOptions, run_workflow_streaming_controlled},
@@ -796,7 +872,7 @@ mod tests {
             &json!({
                 "schema_version": 2,
                 "name": "Serial real RX-only SIM",
-                "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200}}],
+                "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200,"transport":transport}}],
                 "backgrounds": [{"id":"background-1","tool_instance_id":"serial-bg",
                     "live_monitor":true,"limit_count":null}],
                 "workflow": {"steps": [
