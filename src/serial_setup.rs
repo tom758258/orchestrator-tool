@@ -170,8 +170,7 @@ mod tests {
 
     #[test]
     fn legacy_uart_and_both_transport_settings_round_trip() {
-        let legacy: SerialSetup =
-            serde_json::from_str(r#"{"baud":9600,"parity":"even"}"#).unwrap();
+        let legacy: SerialSetup = serde_json::from_str(r#"{"baud":9600,"parity":"even"}"#).unwrap();
         assert_eq!(legacy.transport, SerialTransport::Serial);
         let mut setup = legacy.clone();
         setup.transport = SerialTransport::Tcp;
@@ -183,7 +182,11 @@ mod tests {
         assert_eq!(loaded.baud, 9600);
         assert_eq!(loaded.parity, "even");
         assert_eq!(loaded.io_timeout_ms, 1250);
-        assert!(!serde_json::to_string(&legacy).unwrap().contains("transport"));
+        assert!(
+            !serde_json::to_string(&legacy)
+                .unwrap()
+                .contains("transport")
+        );
     }
 
     #[test]

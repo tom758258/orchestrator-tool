@@ -57,19 +57,28 @@ pub fn validate_live_preflight_draft(
 ) -> Result<Vec<String>, String> {
     let setup = crate::template::preflight_setup(json).map_err(|error| error.to_string())?;
     let wire: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
-    fn collect<'a>(steps: &'a [Value], actions: &mut Vec<&'a Value>) {
+    fn collect<'a>(
+        steps: &'a [Value],
+        actions: &mut Vec<&'a Value>,
+        background_ids: &mut Vec<&'a str>,
+    ) {
         for step in steps {
             match step["type"].as_str() {
                 Some("tool-action") => actions.push(step),
+                Some("background") => {
+                    if let Some(id) = step["background_id"].as_str() {
+                        background_ids.push(id);
+                    }
+                }
                 Some("for" | "while") => {
                     if let Some(body) = step["steps"].as_array() {
-                        collect(body, actions);
+                        collect(body, actions, background_ids);
                     }
                 }
                 Some("if") => {
                     for key in ["then_steps", "else_steps"] {
                         if let Some(body) = step[key].as_array() {
-                            collect(body, actions);
+                            collect(body, actions, background_ids);
                         }
                     }
                 }
@@ -78,8 +87,9 @@ pub fn validate_live_preflight_draft(
         }
     }
     let mut actions = Vec::new();
+    let mut background_ids = Vec::new();
     if let Some(steps) = wire["workflow"]["steps"].as_array() {
-        collect(steps, &mut actions);
+        collect(steps, &mut actions, &mut background_ids);
     }
     let mut instances = Vec::new();
     for action in &actions {
@@ -95,10 +105,14 @@ pub fn validate_live_preflight_draft(
     // Include Serial Background-only bindings in the existing Live Resource preflight.
     if let Some(backgrounds) = wire["backgrounds"].as_array() {
         for background in backgrounds {
+            if !background_ids.contains(&background["id"].as_str().unwrap_or("")) {
+                continue;
+            }
             if let Some(instance) = setup.tool_instances().iter().find(|instance| {
                 instance.tool == crate::tool::ToolId::serial()
                     && Some(instance.id.as_str()) == background["tool_instance_id"].as_str()
-            }) && !instances.contains(&instance) {
+            }) && !instances.contains(&instance)
+            {
                 instances.push(instance);
             }
         }
@@ -383,12 +397,9 @@ mod tests {
             }
         });
         let mut config = Config::default();
-        let errors = super::validate_live_preflight_draft(
-            &draft.to_string(),
-            Path::new("unused"),
-            &config,
-        )
-        .unwrap();
+        let errors =
+            super::validate_live_preflight_draft(&draft.to_string(), Path::new("unused"), &config)
+                .unwrap();
         assert!(!errors.is_empty());
         let instance = crate::tool_instance::ToolInstanceId::new("serial-1").unwrap();
         config.set_live_resource(&instance, "COM4");
@@ -400,13 +411,10 @@ mod tests {
         .unwrap()
         .is_empty());
         config.set_live_resource(&instance, "localhost:5025");
-        assert!(super::validate_live_preflight_draft(
-            &draft.to_string(),
-            Path::new("unused"),
-            &config,
-        )
-        .unwrap()
-        .is_empty());
+        let errors =
+            super::validate_live_preflight_draft(&draft.to_string(), Path::new("unused"), &config)
+                .unwrap();
+        assert!(errors.is_empty());
     }
 
     #[test]

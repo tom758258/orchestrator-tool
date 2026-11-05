@@ -609,13 +609,8 @@ mod tests {
             &setup,
         )
         .unwrap();
-        let sim = background_worker_launch_spec(
-            executable,
-            ExecutionMode::Simulate,
-            None,
-            &setup,
-        )
-        .unwrap();
+        let sim = background_worker_launch_spec(executable, ExecutionMode::Simulate, None, &setup)
+            .unwrap();
         let args = |spec: &WorkerLaunchSpec| {
             spec.arguments()
                 .iter()
@@ -625,8 +620,13 @@ mod tests {
         let live = args(&live);
         let sim = args(&sim);
         for flag in [
-            "--baud", "--port", "--data-bits", "--parity", "--stop-bits",
-            "--flow-control", "--timeout-ms",
+            "--baud",
+            "--port",
+            "--data-bits",
+            "--parity",
+            "--stop-bits",
+            "--flow-control",
+            "--timeout-ms",
         ] {
             assert!(!live.contains(&flag.to_owned()));
             assert!(!sim.contains(&flag.to_owned()));
@@ -638,13 +638,18 @@ mod tests {
             ["--connect-timeout-ms", "4500"],
             ["--io-timeout-ms", "1250"],
         ] {
-            assert!(live.windows(2).any(|args| args[0] == pair[0] && args[1] == pair[1]));
+            assert!(
+                live.windows(2)
+                    .any(|args| args[0] == pair[0] && args[1] == pair[1])
+            );
         }
         assert!(!sim.iter().any(|arg| arg == "--host" || arg == "--tcp-port"));
         assert!(sim.contains(&"--streaming".to_owned()));
-        assert!(sim.windows(2).any(|args| {
-            args[0] == "--simulation-profile-id" && args[1] == "periodic-rx-v1"
-        }));
+        assert!(
+            sim.windows(2).any(|args| {
+                args[0] == "--simulation-profile-id" && args[1] == "periodic-rx-v1"
+            })
+        );
         assert!(
             foreground_worker_launch_spec(executable, ExecutionMode::Live, Some("COM4"), &setup)
                 .is_err()

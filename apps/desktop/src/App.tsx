@@ -2329,7 +2329,7 @@ function App() {
                               setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: null }))
                             }}
                           />
-                        </label>
+                        </label>}
                         <div className="tool-actions">
                           {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && <button
                             className="action-button"

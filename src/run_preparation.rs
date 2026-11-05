@@ -137,9 +137,7 @@ fn validate_unique_live_resources(
                 }
                 crate::serial_setup::SerialTransport::Tcp => {
                     let (host, port) = crate::serial_setup::parse_tcp_endpoint(resource_key)
-                        .map_err(|error| {
-                            format!("{} TCP Live Resource: {error}", instance.id)
-                        })?;
+                        .map_err(|error| format!("{} TCP Live Resource: {error}", instance.id))?;
                     format!("TCP::{}::{port}", host.to_ascii_lowercase())
                 }
             }
@@ -714,8 +712,10 @@ mod tests {
     fn serial_tcp_resources_are_valid_and_unique() {
         use crate::{serial_setup::SerialTransport, tool_instance::ToolInstance};
         let serial = |id: &str| {
-            let mut setup = crate::serial_setup::SerialSetup::default();
-            setup.transport = SerialTransport::Tcp;
+            let setup = crate::serial_setup::SerialSetup {
+                transport: SerialTransport::Tcp,
+                ..Default::default()
+            };
             ToolInstance {
                 id: ToolInstanceId::new(id).unwrap(),
                 display_name: None,
