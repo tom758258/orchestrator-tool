@@ -818,6 +818,24 @@ fn validate_tool_action_parameters(
                         "at least one setpoint is required; both are missing from arguments and bindings",
                     ));
                 }
+                if *tool == ToolId::powers() && action.as_str() == "measure" {
+                    if !bindings.is_empty() {
+                        return Err(error("bindings", "Power Measure does not accept bindings"));
+                    }
+                    let fields = arguments
+                        .as_object()
+                        .ok_or_else(|| error("arguments", "must be an object"))?;
+                    if fields.keys().any(|key| key != "channel") {
+                        return Err(error("arguments", "Power Measure accepts only channel"));
+                    }
+                    if !fields
+                        .get("channel")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|channel| channel > 0 && channel <= u32::MAX as u64)
+                    {
+                        return Err(error("channel", "must be a positive integer"));
+                    }
+                }
                 if *tool == ToolId::scopes() {
                     if action.as_str() == "autoscale" {
                         if !bindings.is_empty() {
@@ -3108,6 +3126,40 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn power_measure_requires_one_fixed_positive_channel() {
+        let valid = action_parameter_template(
+            "powers",
+            "measure",
+            json!({"channel": 2}),
+            json!({}),
+            "root",
+        );
+        check_action_parameters(&valid, None);
+        for nesting in ["root", "for", "while"] {
+            for arguments in [
+                json!({}),
+                json!({"channel": 0}),
+                json!({"channel": 1.5}),
+                json!({"channel": "1"}),
+            ] {
+                check_action_parameters(
+                    &action_parameter_template("powers", "measure", arguments, json!({}), nesting),
+                    Some(("channel", "positive integer")),
+                );
+            }
+            check_action_parameters(
+                &action_parameter_template("powers", "measure", json!({"channel": 1, "extra": true}), json!({}), nesting),
+                Some(("arguments", "only channel")),
+            );
+            check_action_parameters(
+                &action_parameter_template("powers", "measure", json!({"channel": 1}),
+                    json!({"channel": {"source": "variable", "variable": "value"}}), nesting),
+                Some(("bindings", "does not accept bindings")),
+            );
+        }
     }
 
     #[test]
