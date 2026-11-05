@@ -722,8 +722,7 @@ fn validate_tool_action_parameters(
                 if expression.operator().is_comparison() {
                     return Err("Calculation requires an arithmetic operator");
                 }
-                for operand in std::iter::once(expression.left())
-                    .chain(expression.right_operand())
+                for operand in std::iter::once(expression.left()).chain(expression.right_operand())
                 {
                     match operand {
                         ExpressionOperand::Literal(value) if value.is_number() => {}
@@ -1651,7 +1650,9 @@ impl InputValueWire {
             InputValue::Expression(expression) => Self::Expression {
                 left: ExpressionOperandWire::from_operand(expression.left()),
                 operator: expression.operator(),
-                right: expression.right_operand().map(ExpressionOperandWire::from_operand),
+                right: expression
+                    .right_operand()
+                    .map(ExpressionOperandWire::from_operand),
             },
             InputValue::Literal(value) => Self::Literal {
                 value: value.clone(),
@@ -1691,7 +1692,7 @@ fn input_from_wire(wire: InputValueWire) -> Result<InputValue, TemplateError> {
                 Expression::new(left, operator, operand_from_wire(right)?)
             };
             Ok(InputValue::Expression(expression))
-        },
+        }
         InputValueWire::Literal { value } => Ok(InputValue::Literal(value)),
         InputValueWire::Variable { variable } => {
             let variable =
@@ -3154,13 +3155,19 @@ mod tests {
             ]}
         });
         let template = Template::from_json_str(&wire.to_string()).unwrap();
-        assert_eq!(Template::from_json_str(&template.to_json_string().unwrap()).unwrap(), template);
+        assert_eq!(
+            Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+            template
+        );
         wire["workflow"]["steps"][0]["value"]["right"] =
             serde_json::json!({"source": "literal", "value": 9});
         assert!(Template::from_json_str(&wire.to_string()).is_err());
         wire["workflow"]["steps"][0]["value"]["operator"] = serde_json::json!("add");
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
-        wire["workflow"]["steps"][0]["value"].as_object_mut().unwrap().remove("right");
+        wire["workflow"]["steps"][0]["value"]
+            .as_object_mut()
+            .unwrap()
+            .remove("right");
         assert!(Template::from_json_str(&wire.to_string()).is_err());
     }
 

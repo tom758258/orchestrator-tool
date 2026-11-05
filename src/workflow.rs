@@ -204,7 +204,9 @@ impl Expression {
     }
 
     pub fn right(&self) -> &ExpressionOperand {
-        self.right.as_ref().expect("binary expression requires a right operand")
+        self.right
+            .as_ref()
+            .expect("binary expression requires a right operand")
     }
 
     pub fn right_operand(&self) -> Option<&ExpressionOperand> {

@@ -1693,7 +1693,7 @@ mod tests {
         let template = crate::template::Template::from_json_str(
             &json!({
                 "schema_version": 2, "name": "Serial test",
-                "tool_instances": [{"id":"serial-1","tool":"serial","setup":{}}],
+                "tool_instances": [{"id":"serial-1","tool":"serial","setup":{"baud":115200}}],
                 "workflow": {"steps":[
                     {"type":"set-variable","id":"set-x","variable":"x",
                      "value":{"source":"literal","value":3.75}},
@@ -1707,7 +1707,11 @@ mod tests {
         .unwrap();
         let target = ToolInstanceId::new("serial-1").unwrap();
         let variable = VariableId::new("x").unwrap();
-        let bindings = [("tx_value".to_owned(), InputValue::Variable(variable.clone()))].into();
+        let bindings = [(
+            "tx_value".to_owned(),
+            InputValue::Variable(variable.clone()),
+        )]
+        .into();
         let arguments = json!({"tx_format":"hex-byte","tx_value":0});
         let mut context = crate::data_context::DataContext::new();
         for action_name in ["send", "query"] {
@@ -1728,15 +1732,21 @@ mod tests {
                 assert_eq!(value["tx_value"], expected);
                 assert_eq!(context.variable(&variable), Some(&source));
             }
-            for invalid in [json!(-3.75), json!("3.75"), json!(true),
-                json!(9_007_199_254_740_992_u64)]
-            {
+            for invalid in [
+                json!(-3.75),
+                json!("3.75"),
+                json!(true),
+                json!(9_007_199_254_740_992_u64),
+            ] {
                 context.set_variable(variable.clone(), invalid);
                 let mut value =
                     super::resolve_tool_arguments(&arguments, &bindings, &context).unwrap();
-                assert!(super::truncate_dynamic_integer_argument(
-                    &mut value, &bindings, &template, &target, &action,
-                ).is_err());
+                assert!(
+                    super::truncate_dynamic_integer_argument(
+                        &mut value, &bindings, &template, &target, &action,
+                    )
+                    .is_err()
+                );
             }
         }
     }
