@@ -4409,7 +4409,10 @@ fn powers_measure_voltage_and_current_reach_result_row() {
               "message": "Current limit exceeded" }
         ] }
     }).to_string()).unwrap();
-    assert_eq!(Template::from_json_str(&template.to_json_string().unwrap()).unwrap(), template);
+    assert_eq!(
+        Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
+        template
+    );
     let run = run_simulated_workflow(
         &template,
         &HashMap::from([(
@@ -4421,9 +4424,10 @@ fn powers_measure_voltage_and_current_reach_result_row() {
         Duration::from_secs(5),
     )
     .unwrap();
-    assert!(run.step_executions().iter().all(|execution|
-        matches!(execution.result().outcome(), StepOutcome::Succeeded { .. })
-    ));
+    assert!(run.step_executions().iter().all(|execution| matches!(
+        execution.result().outcome(),
+        StepOutcome::Succeeded { .. }
+    )));
     assert_eq!(run.result_rows().len(), 1);
     assert_eq!(
         run.result_rows()[0]
