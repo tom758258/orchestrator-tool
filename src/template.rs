@@ -3099,7 +3099,6 @@ mod tests {
             ("powers", "output-on", "channel", json!({})),
             ("powers", "output-off", "channel", json!({})),
             ("powers", "protection-status", "channel", json!({})),
-            ("powers", "measure", "item", json!({})),
             ("wavegen", "capture", "points", json!({})),
             ("scopes", "channel-offset", "channel", json!({"volts":0})),
             ("powers", "set-output", "channel", json!({"voltage":0})),

@@ -425,10 +425,7 @@ pub fn run_action(
     let result = run_command(session, worker_command, arguments, execution_mode, timeout)?;
     match action.as_str() {
         "protection-status" => augment_protection_status_result(result),
-        "measure" => validate_measure_result(
-            result,
-            requested_channel.expect("validated channel"),
-        ),
+        "measure" => validate_measure_result(result, requested_channel.expect("validated channel")),
         _ => Ok(result),
     }
 }
