@@ -27,6 +27,9 @@ const instances = [
 const meterMeasure = {
   type: 'tool-action', id: 'measure-1', target: 'meter-1', action: 'measure', arguments: {},
 }
+const powerMeasure = {
+  type: 'tool-action', id: 'power-measure-1', target: 'power-1', action: 'measure', arguments: { channel: 1 },
+}
 const powerSetVoltage = {
   type: 'tool-action', id: 'set-voltage-1', target: 'power-1', action: 'set-voltage', arguments: {},
 }
@@ -51,6 +54,17 @@ test('curated results map Meter Measure Value and Unit pointers', () => {
   ])
   assert.deepEqual(stepOutputReference(meterMeasure, instances), {
     source: 'step-output', step_id: 'measure-1', pointer: '/value',
+  })
+})
+
+test('Power Measure exposes actual voltage and current from Worker data', () => {
+  assert.deepEqual(curatedResultFields(powerMeasure, instances), [
+    { label: 'Voltage', pointer: '/data/measurements/voltage' },
+    { label: 'Current', pointer: '/data/measurements/current' },
+    { label: 'Channel', pointer: '/data/channel' },
+  ])
+  assert.deepEqual(stepOutputReference(powerMeasure, instances), {
+    source: 'step-output', step_id: 'power-measure-1', pointer: '/data/measurements/voltage',
   })
 })
 
