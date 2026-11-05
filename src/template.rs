@@ -3146,17 +3146,34 @@ mod tests {
                 json!({"channel": "1"}),
             ] {
                 check_action_parameters(
-                    &action_parameter_template("powers", "measure", arguments, json!({}), nesting),
+                    &action_parameter_template(
+                        "powers",
+                        "measure",
+                        arguments,
+                        json!({}),
+                        nesting,
+                    ),
                     Some(("channel", "positive integer")),
                 );
             }
             check_action_parameters(
-                &action_parameter_template("powers", "measure", json!({"channel": 1, "extra": true}), json!({}), nesting),
+                &action_parameter_template(
+                    "powers",
+                    "measure",
+                    json!({"channel": 1, "extra": true}),
+                    json!({}),
+                    nesting,
+                ),
                 Some(("arguments", "only channel")),
             );
             check_action_parameters(
-                &action_parameter_template("powers", "measure", json!({"channel": 1}),
-                    json!({"channel": {"source": "variable", "variable": "value"}}), nesting),
+                &action_parameter_template(
+                    "powers",
+                    "measure",
+                    json!({"channel": 1}),
+                    json!({"channel": {"source": "variable", "variable": "value"}}),
+                    nesting,
+                ),
                 Some(("bindings", "does not accept bindings")),
             );
         }
