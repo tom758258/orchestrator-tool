@@ -160,6 +160,7 @@ type StepPreset =
   | 'output'
   | 'power-set-output'
   | 'power-protection-status'
+  | 'power-measure'
   | 'power-output-on'
   | 'wait'
   | 'meter-measure'
@@ -199,6 +200,7 @@ const STEP_PRESETS: StepPresetOption[] = [
   { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
   { value: 'power-set-output', label: 'Power Set Output', prefix: 'power-set', category: 'Powers', tool: 'powers' },
   { value: 'power-protection-status', label: 'Power Protection Status', prefix: 'power-protection', category: 'Powers', tool: 'powers' },
+  { value: 'power-measure', label: 'Power Measure', prefix: 'power-measure', category: 'Powers', tool: 'powers' },
   { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
   { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
   { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
@@ -215,6 +217,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   ...Object.fromEntries(SCOPES_ACTIONS.map(([action, label]) => [`scopes/${action}`, label])),
   'powers/set-output': 'Power Set Output',
   'powers/protection-status': 'Power Protection Status',
+  'powers/measure': 'Power Measure',
   'powers/set-voltage': 'Power Set Voltage',
   'powers/output-on': 'Power Output ON',
   'meters/measure': 'Meter Measure',
@@ -237,6 +240,7 @@ const STEP_HELP: Record<string, string> = {
   wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
   'powers/set-output': 'This step only configures the setpoints. Use Power Output ON separately to enable the output.',
   'powers/protection-status': 'Power Protection Status reads the selected Power channel protection state without changing instrument settings. Use Protection Tripped with Assert when the Workflow should fail after detecting a protection trip.',
+  'powers/measure': 'Read the selected channel\'s actual Voltage (V) and Current (A) once. This foreground action does not change power output settings.',
   'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
   'powers/output-off': 'Disable the selected Power channel.',
@@ -327,6 +331,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
       }
     case 'power-protection-status':
       return { type: 'tool-action', id, target, action: 'protection-status', arguments: { channel: 'all' } }
+    case 'power-measure':
+      return { type: 'tool-action', id, target, action: 'measure', arguments: { channel: 1 } }
     case 'power-output-on':
       return {
         type: 'tool-action',
@@ -1809,6 +1815,7 @@ function App() {
   const selectedPowersAction =
     selectedAction === 'powers/set-output' ||
     selectedAction === 'powers/set-voltage' ||
+    selectedAction === 'powers/measure' ||
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
   const selectedPowersModel = executionMode === 'simulate' ? 'simulator'
