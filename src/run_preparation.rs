@@ -138,7 +138,11 @@ fn validate_unique_live_resources(
                 crate::serial_setup::SerialTransport::Tcp => {
                     let (host, port) = crate::serial_setup::parse_tcp_endpoint(resource_key)
                         .map_err(|error| format!("{} TCP Live Resource: {error}", instance.id))?;
-                    format!("TCP::{}::{port}", host.to_ascii_lowercase())
+                    let normalized_host = match host.parse::<std::net::Ipv6Addr>() {
+                        Ok(address) => address.to_string(),
+                        Err(_) => host.to_ascii_lowercase(),
+                    };
+                    format!("TCP::{normalized_host}::{port}")
                 }
             }
         } else {
@@ -733,11 +737,27 @@ mod tests {
         validate_unique_live_resources(&[&first, &second], &config).unwrap();
         config.set_live_resource(&second.id, "COM4");
         assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&first.id, "[::1]:5025");
+        config.set_live_resource(&second.id, "[0:0:0:0:0:0:0:1]:5025");
+        assert!(validate_unique_live_resources(&[&first, &second], &config).is_err());
+        config.set_live_resource(&second.id, "[::1]:5026");
+        validate_unique_live_resources(&[&first, &second], &config).unwrap();
     }
 
     #[test]
     #[ignore = "requires external serial-tool; ordinary loopback SIM, no physical device"]
     fn serial_real_worker_foreground_simulation() {
+        run_serial_real_worker_foreground_simulation("serial");
+    }
+
+    // Requires ORCHESTRATOR_TEST_SERIAL_EXECUTABLE, not run by the default CI suite.
+    #[test]
+    #[ignore = "requires external serial-tool; TCP loopback SIM, no physical device"]
+    fn serial_real_worker_tcp_foreground_simulation() {
+        run_serial_real_worker_foreground_simulation("tcp");
+    }
+
+    fn run_serial_real_worker_foreground_simulation(transport: &str) {
         use crate::{run::run_workflow, workflow::StepOutcome};
         use std::time::Duration;
         let executable = std::fs::canonicalize(
@@ -746,7 +766,7 @@ mod tests {
         )
         .unwrap();
         let file = std::env::temp_dir().join(format!(
-            "orchestrator-serial-foreground-{}.bin",
+            "orchestrator-serial-foreground-{transport}-{}.bin",
             std::process::id()
         ));
         std::fs::write(&file, [0x01, 0x02, 0x03]).unwrap();
@@ -754,7 +774,7 @@ mod tests {
             &serde_json::json!({
                 "schema_version": 2, "name": "Serial foreground SIM",
                 "tool_instances": [{ "id": "serial-1", "tool": "serial",
-                    "setup": {"baud": 115200}}],
+                    "setup": {"baud": 115200, "transport": transport}}],
                 "workflow": {"steps": [
                     {"type": "set-variable", "id": "declare-message",
                         "variable": "message", "value": {"source": "literal", "value": "HELLO"}},
@@ -825,6 +845,17 @@ mod tests {
     #[test]
     #[ignore = "requires external serial-tool; autonomous RX SIM, no physical device"]
     fn serial_real_worker_rx_only_simulation() {
+        run_serial_real_worker_rx_only_simulation("serial");
+    }
+
+    // Requires ORCHESTRATOR_TEST_SERIAL_EXECUTABLE, not run by the default CI suite.
+    #[test]
+    #[ignore = "requires external serial-tool; TCP periodic RX SIM, no physical device"]
+    fn serial_real_worker_tcp_rx_only_simulation() {
+        run_serial_real_worker_rx_only_simulation("tcp");
+    }
+
+    fn run_serial_real_worker_rx_only_simulation(transport: &str) {
         use crate::{
             background::BackgroundStore,
             run::{RunOptions, run_workflow_streaming_controlled},
@@ -841,7 +872,7 @@ mod tests {
             &json!({
                 "schema_version": 2,
                 "name": "Serial real RX-only SIM",
-                "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200}}],
+                "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200,"transport":transport}}],
                 "backgrounds": [{"id":"background-1","tool_instance_id":"serial-bg",
                     "live_monitor":true,"limit_count":null}],
                 "workflow": {"steps": [
