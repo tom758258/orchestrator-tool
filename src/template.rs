@@ -1589,7 +1589,11 @@ enum InputValueWire {
     Expression {
         left: ExpressionOperandWire,
         operator: ExpressionOperator,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_present_expression_operand"
+        )]
         right: Option<ExpressionOperandWire>,
     },
 }
@@ -1600,6 +1604,17 @@ enum ExpressionOperandWire {
     Literal { value: Value },
     Variable { variable: String },
     StepOutput { step_id: String, pointer: String },
+}
+
+// A missing right operand is valid only for unary expressions. An explicitly
+// present null must not silently become None and bypass the Template contract.
+fn deserialize_present_expression_operand<'de, D>(
+    deserializer: D,
+) -> Result<Option<ExpressionOperandWire>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    ExpressionOperandWire::deserialize(deserializer).map(Some)
 }
 
 impl ExpressionOperandWire {
@@ -3162,12 +3177,18 @@ mod tests {
         wire["workflow"]["steps"][0]["value"]["right"] =
             serde_json::json!({"source": "literal", "value": 9});
         assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["value"]["right"] = serde_json::Value::Null;
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["value"]["right"] =
+            serde_json::json!({"source": "literal", "value": 9});
         wire["workflow"]["steps"][0]["value"]["operator"] = serde_json::json!("add");
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
         wire["workflow"]["steps"][0]["value"]
             .as_object_mut()
             .unwrap()
             .remove("right");
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["value"]["right"] = serde_json::Value::Null;
         assert!(Template::from_json_str(&wire.to_string()).is_err());
     }
 
@@ -3871,6 +3892,9 @@ mod tests {
                 "arguments": {"tx_format": "hex-byte", "tx_value": 4660}}]}
         });
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
+        wire["workflow"]["steps"][0]["arguments"]["tx_value"] = json!(1.5);
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["arguments"]["tx_value"] = json!(4660);
         wire["workflow"]["steps"][0]["action"] = json!("run-sequence");
         assert!(Template::from_json_str(&wire.to_string()).is_err());
         wire["workflow"]["steps"][0]["action"] = json!("send");
@@ -3890,6 +3914,22 @@ mod tests {
                 "arguments":{"path":""}}
         ]);
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
+
+        // Hex Byte can determine a comparison's Boolean result (and a
+        // non-numeric literal operand) is invalid before launching a Worker.
+        wire["workflow"]["steps"] = json!([{
+            "type":"tool-action","id":"send","target":"serial-1","action":"send",
+            "arguments":{"tx_format":"hex-byte","tx_value":0},
+            "bindings":{"tx_value":{"source":"expression",
+                "left":{"source":"literal","value":2},
+                "operator":"greater-than",
+                "right":{"source":"literal","value":1}}}
+        }]);
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
+        wire["workflow"]["steps"][0]["bindings"]["tx_value"]["operator"] = json!("add");
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
+        wire["workflow"]["steps"][0]["bindings"]["tx_value"]["left"]["value"] = json!("bad");
+        assert!(Template::from_json_str(&wire.to_string()).is_err());
     }
 
     #[test]

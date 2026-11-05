@@ -492,6 +492,7 @@ fn main() {
     runtime_event_receive_times_out_when_no_event();
     powers_worker_smoke_correlates_terminal_job();
     common_v3_accepts_additional_tool_without_parser_branch();
+    serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx();
     opted_in_stream_readiness_preserves_samples_and_rejects_failure();
     async_job_without_terminal_is_unconfirmed();
     powers_operation_failure_preserves_nonzero_worker_exit();
@@ -2621,6 +2622,7 @@ fn run_fixture(scenario: &OsStr) {
             run_http_fixture(scenario.to_str().unwrap())
         }
         "conformance-extra-tool" => run_extra_v3_tool_fixture(),
+        "serial-integer" => run_serial_integer_fixture(),
         "powers-runtime-success" => run_powers_runtime_fixture(),
         "powers-workflow-runtime" => run_powers_workflow_fixture("simulate"),
         "powers-workflow-set-output" => run_powers_workflow_fixture("simulate-set-output"),
@@ -3359,6 +3361,83 @@ fn fixture_spec(scenario: &str) -> WorkerLaunchSpec {
     .with_manifest(fixture_manifest(scenario))
 }
 
+fn run_serial_integer_fixture() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    print_json_line(
+        &json!({
+            "event":"ready","run_id":"serial-integer-run",
+            "status_url":format!("{base}/status"),
+            "command_url":format!("{base}/command"),
+            "stop_url":format!("{base}/stop")
+        })
+        .to_string(),
+    );
+
+    let expected = [("send", "03"), ("send", "01"), ("query", "02"), ("send", "00")];
+    let mut sent = 0;
+    let mut last_job = serde_json::Value::Null;
+    loop {
+        let request = accept_request(&listener);
+        match request.path.as_str() {
+            "/status" => write_response(
+                request.stream,
+                200,
+                &json!({
+                    "worker_state":"running","fatal_error":null,
+                    "active_job":null,"last_job":last_job
+                })
+                .to_string(),
+            ),
+            "/command" => {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                let (expected_command, expected_hex) = expected
+                    .get(sent)
+                    .expect("invalid dynamic value must not reach Worker TX");
+                assert_eq!(body["command"], *expected_command);
+                assert_eq!(body["arguments"]["tx_hex"], *expected_hex);
+                let worker_job_id = format!("serial-integer-job-{sent}");
+                let result = json!({
+                    "tx_hex":expected_hex,"tx_bytes":1,
+                    "rx_hex":if *expected_command == "query" { "02" } else { "" },
+                    "rx_bytes":if *expected_command == "query" { 1 } else { 0 },
+                    "delimiter_hex":if *expected_command == "query" { "0a" } else { "" }
+                });
+                write_response(
+                    request.stream,
+                    202,
+                    &json!({
+                        "status":"accepted","command":expected_command,
+                        "job_id":body["job_id"],"worker_job_id":worker_job_id
+                    })
+                    .to_string(),
+                );
+                last_job = json!({
+                    "worker_job_id":worker_job_id,"job_id":body["job_id"],
+                    "command":expected_command,"state":"succeeded",
+                    "ok":true,"result":result,"error":null
+                });
+                print_json_line(
+                    &json!({
+                        "event":"job_finished","run_id":"serial-integer-run",
+                        "worker_job_id":worker_job_id,"job_id":body["job_id"],
+                        "command":expected_command,"state":"succeeded",
+                        "ok":true,"result":result,"error":null
+                    })
+                    .to_string(),
+                );
+                sent += 1;
+            }
+            "/stop" => {
+                assert_eq!(sent, expected.len(), "expected only valid TX jobs");
+                write_response(request.stream, 200, r#"{"ok":true}"#);
+                return;
+            }
+            other => panic!("unexpected Serial Worker request {other}"),
+        }
+    }
+}
+
 fn run_extra_v3_tool_fixture() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -3691,6 +3770,88 @@ fn run_scopes_fixture(scenario: &str) {
             other => panic!("unexpected Scopes request {other}"),
         }
     }
+}
+
+
+fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version":2,"name":"Serial dynamic integer",
+            "tool_instances":[{"id":"serial-1","tool":"serial","setup":{"baud":115200}}],
+            "workflow":{"steps":[
+                {"type":"set-variable","id":"source","variable":"b",
+                    "value":{"source":"literal","value":3.75}},
+                {"type":"tool-action","id":"send-b","target":"serial-1","action":"send",
+                    "arguments":{"tx_format":"hex-byte","tx_value":0},
+                    "bindings":{"tx_value":{"source":"variable","variable":"b"}}},
+                {"type":"output","id":"output-b","name":"original","page":"Results",
+                    "value":{"source":"variable","variable":"b"}},
+                {"type":"tool-action","id":"send-result","target":"serial-1","action":"send",
+                    "arguments":{"tx_format":"hex-byte","tx_value":0},
+                    "bindings":{"tx_value":{"source":"step-output","step_id":"send-b","pointer":"/tx_bytes"}}},
+                {"type":"tool-action","id":"query-calculated","target":"serial-1","action":"query",
+                    "arguments":{"tx_format":"hex-byte","tx_value":0,
+                        "delimiter_format":"hex","delimiter_value":"0A","max_bytes":128},
+                    "bindings":{"tx_value":{"source":"expression",
+                        "left":{"source":"literal","value":5},"operator":"divide",
+                        "right":{"source":"literal","value":2}}}},
+                {"type":"set-variable","id":"set-large","variable":"large",
+                    "value":{"source":"literal","value":256.9}},
+                {"type":"tool-action","id":"send-large","target":"serial-1","action":"send",
+                    "arguments":{"tx_format":"hex-byte","tx_value":0},
+                    "bindings":{"tx_value":{"source":"variable","variable":"large"}}},
+                {"type":"set-variable","id":"set-negative","variable":"negative",
+                    "value":{"source":"literal","value":-3.75}},
+                {"type":"tool-action","id":"send-invalid","target":"serial-1","action":"send",
+                    "arguments":{"tx_format":"hex-byte","tx_value":0},
+                    "bindings":{"tx_value":{"source":"variable","variable":"negative"}}},
+                {"type":"wait","id":"not-reached","duration_ms":0}
+            ]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let run = run_simulated_workflow(
+        &template,
+        &HashMap::from([(
+            ToolInstanceId::new("serial-1").unwrap(),
+            fixture_spec("serial-integer"),
+        )]),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    assert_eq!(run.result_rows().len(), 1);
+    assert_eq!(run.result_rows()[0].outputs()[0].value(), &json!(3.75));
+    for (id, expected) in [
+        ("send-b", "03"),
+        ("send-result", "01"),
+        ("query-calculated", "02"),
+        ("send-large", "00"),
+    ] {
+        assert!(
+            run.step_executions().iter().any(|step| {
+                step.step_id().as_str() == id
+                    && matches!(step.outcome(), StepOutcome::Succeeded { output }
+                        if output["tx_hex"] == expected)
+            }),
+            "{id} must dispatch correct TX"
+        );
+    }
+    assert!(
+        run.step_executions().iter().any(|step| {
+            step.step_id().as_str() == "send-invalid"
+                && matches!(step.outcome(), StepOutcome::Failed { message }
+                    if message.contains("-3.75") && message.contains("-3"))
+        })
+    );
+    assert!(
+        !run.step_executions()
+            .iter()
+            .any(|step| step.step_id().as_str() == "not-reached")
+    );
 }
 
 fn common_v3_accepts_additional_tool_without_parser_branch() {

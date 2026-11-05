@@ -223,8 +223,31 @@ pub fn validate_action(
             return Err("Invalid Serial TX mode".into());
         }
         if let Some(input) = bindings.get("tx_value") {
-            if let crate::workflow::InputValue::Literal(value) = input {
-                encode_tx(format, value)?;
+            use crate::workflow::{ExpressionOperand, InputValue};
+            match input {
+                InputValue::Literal(value) => {
+                    encode_tx(format, value)?;
+                }
+                InputValue::Expression(expression) if format == "hex-byte" => {
+                    if expression.operator().is_comparison() {
+                        return Err("Hex Byte Calculation must use a numeric operator".into());
+                    }
+                    for operand in std::iter::once(expression.left())
+                        .chain(expression.right_operand())
+                    {
+                        if let ExpressionOperand::Literal(value) = operand
+                            && !value.is_number()
+                        {
+                            return Err(
+                                "Hex Byte Calculation literal operands must be numeric".into(),
+                            );
+                        }
+                    }
+                }
+                InputValue::Timestamp if format == "hex-byte" => {
+                    return Err("Hex Byte requires a numeric source".into());
+                }
+                _ => {}
             }
         } else {
             let value = obj.get("tx_value").ok_or("Missing Serial TX value")?;
