@@ -3838,8 +3838,14 @@ fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
     )
     .unwrap();
 
-    assert_eq!(run.result_rows().len(), 1);
-    assert_eq!(run.result_rows()[0].outputs()[0].value(), &json!(3.75));
+    // The final invalid step discards the root scope's staged Result Row,
+    // but the earlier Output Step must still resolve the original decimal.
+    assert!(run.result_rows().is_empty());
+    assert!(run.step_executions().iter().any(|step| {
+        step.step_id().as_str() == "output-b"
+            && matches!(step.outcome(), StepOutcome::Succeeded { output }
+                if output == &json!(3.75))
+    }));
     for (id, expected) in [
         ("send-b", "03"),
         ("send-result", "01"),
