@@ -4389,26 +4389,30 @@ fn powers_set_voltage_step_outputs_reach_result_row() {
 }
 
 fn powers_measure_voltage_and_current_reach_result_row() {
-    let template = Template::from_json_str(&json!({
-        "schema_version": 2,
-        "name": "Power Measure",
-        "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-        "workflow": { "steps": [
-            { "type": "tool-action", "id": "measure-1", "target": "powers-1",
-              "action": "measure", "arguments": { "channel": 2 } },
-            { "type": "output", "id": "voltage-out", "name": "Voltage", "page": "Results",
-              "value": { "source": "step-output", "step_id": "measure-1",
-                         "pointer": "/data/measurements/voltage" } },
-            { "type": "output", "id": "current-out", "name": "Current", "page": "Results",
-              "value": { "source": "step-output", "step_id": "measure-1",
-                         "pointer": "/data/measurements/current" } },
-            { "type": "assert", "id": "current-safe",
-              "left": { "source": "step-output", "step_id": "measure-1",
-                        "pointer": "/data/measurements/current" },
-              "operator": "less-than", "right": { "source": "literal", "value": 0.5 },
-              "message": "Current limit exceeded" }
-        ] }
-    }).to_string()).unwrap();
+    let template = Template::from_json_str(
+        &json!({
+            "schema_version": 2,
+            "name": "Power Measure",
+            "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
+            "workflow": { "steps": [
+                { "type": "tool-action", "id": "measure-1", "target": "powers-1",
+                  "action": "measure", "arguments": { "channel": 2 } },
+                { "type": "output", "id": "voltage-out", "name": "Voltage", "page": "Results",
+                  "value": { "source": "step-output", "step_id": "measure-1",
+                             "pointer": "/data/measurements/voltage" } },
+                { "type": "output", "id": "current-out", "name": "Current", "page": "Results",
+                  "value": { "source": "step-output", "step_id": "measure-1",
+                             "pointer": "/data/measurements/current" } },
+                { "type": "assert", "id": "current-safe",
+                  "left": { "source": "step-output", "step_id": "measure-1",
+                            "pointer": "/data/measurements/current" },
+                  "operator": "less-than", "right": { "source": "literal", "value": 0.5 },
+                  "message": "Current limit exceeded" }
+            ] }
+        })
+        .to_string(),
+    )
+    .unwrap();
     assert_eq!(
         Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
         template
@@ -4424,10 +4428,11 @@ fn powers_measure_voltage_and_current_reach_result_row() {
         Duration::from_secs(5),
     )
     .unwrap();
-    assert!(run.step_executions().iter().all(|execution| matches!(
-        execution.result().outcome(),
-        StepOutcome::Succeeded { .. }
-    )));
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|execution| matches!(execution.result().outcome(), StepOutcome::Succeeded { .. }))
+    );
     assert_eq!(run.result_rows().len(), 1);
     assert_eq!(
         run.result_rows()[0]

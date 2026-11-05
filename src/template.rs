@@ -3146,13 +3146,7 @@ mod tests {
                 json!({"channel": "1"}),
             ] {
                 check_action_parameters(
-                    &action_parameter_template(
-                        "powers",
-                        "measure",
-                        arguments,
-                        json!({}),
-                        nesting,
-                    ),
+                    &action_parameter_template("powers", "measure", arguments, json!({}), nesting),
                     Some(("channel", "positive integer")),
                 );
             }

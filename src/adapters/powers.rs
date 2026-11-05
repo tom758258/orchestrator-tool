@@ -421,12 +421,13 @@ pub fn run_action(
     };
 
     let arguments = validate_arguments(action.as_str(), arguments)?;
+    let requested_channel = arguments["channel"].as_u64();
     let result = run_command(session, worker_command, arguments, execution_mode, timeout)?;
     match action.as_str() {
         "protection-status" => augment_protection_status_result(result),
         "measure" => validate_measure_result(
             result,
-            arguments["channel"].as_u64().expect("validated channel"),
+            requested_channel.expect("validated channel"),
         ),
         _ => Ok(result),
     }
@@ -909,7 +910,9 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
     let (required_fields, allowed_fields): (&[&str], &[&str]) = match action {
         "set-voltage" => (&["channel", "voltage"], &["channel", "voltage"]),
         "set-output" => (&["channel"], &["channel", "voltage", "current"]),
-        "output-on" | "output-off" | "protection-status" | "measure" => (&["channel"], &["channel"]),
+        "output-on" | "output-off" | "protection-status" | "measure" => {
+            (&["channel"], &["channel"])
+        }
         _ => {
             return Err(PowersActionError::InvalidArguments(format!(
                 "unsupported action {action:?}"
@@ -1226,7 +1229,10 @@ mod tests {
             json!({ "channel": "all" }),
             json!({ "channel": 1, "extra": true }),
         ] {
-            assert!(validate_arguments("measure", &arguments).is_err(), "{arguments}");
+            assert!(
+                validate_arguments("measure", &arguments).is_err(),
+                "{arguments}"
+            );
         }
         let valid = json!({
             "request": { "command": "measure" },

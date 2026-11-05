@@ -315,7 +315,7 @@ test('Steps categories update immediately through Setup add/remove and preserve 
   }
   let sections = assertCategories(app, categoryNames.slice(1))
   assert.deepEqual(categorySteps(sections[2]).map(text),
-    ['Power Set Output', 'Power Protection Status', 'Power Output ON', 'Power Output OFF'])
+    ['Power Set Output', 'Power Protection Status', 'Power Measure', 'Power Output ON', 'Power Output OFF'])
   const scopeLabels = (await import('../src/scopesActions.ts')).SCOPES_ACTIONS.map(([, label]) => label)
   assert.deepEqual(categorySteps(sections[3]).map(text), scopeLabels)
   for (const name of categoryNames) {
