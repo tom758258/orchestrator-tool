@@ -159,6 +159,46 @@ async function savedDraft(): Promise<WorkflowDraft> {
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
 
+test('Charts creation settings filter Page by Ground and label each source', async () => {
+  currentDraft = backgroundDraft(1)
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await finish(31)
+  tab('Output')
+  const charts = within(screen.getByRole('region', { name: 'Charts' }))
+  const ground = charts.getByRole('combobox', { name: 'Ground' }) as HTMLSelectElement
+  const page = charts.getByRole('combobox', { name: 'Page' }) as HTMLSelectElement
+  expect(ground.value).toBe('foreground')
+  expect([...page.options].map(option => option.textContent?.trim())).toEqual(['Results'])
+  fireEvent.click(charts.getByRole('button', { name: '+ Add Chart' }))
+  expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)[0]).toMatchObject({
+    page: 'Results', outputs: ['Voltage'],
+  })
+
+  fireEvent.change(ground, { target: { value: 'background' } })
+  expect([...page.options].map(option => option.textContent?.trim())).toEqual(['background-1'])
+  fireEvent.click(charts.getByRole('button', { name: '+ Add Chart' }))
+  const second = within(screen.getByRole('region', { name: 'Chart 2' }))
+  expect(second.getByText('Data source').parentElement?.textContent).toContain('Background')
+  expect(second.getByText('Source: background-1')).toBeTruthy()
+
+  fireEvent.change(ground, { target: { value: 'foreground' } })
+  expect(page.value).toBe('page:Results')
+  expect(charts.getByText('Charts: 2 / 8')).toBeTruthy()
+})
+
+test('Charts disable Add Chart when the chosen Ground has no sources', async () => {
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await finish(32)
+  tab('Output')
+  const charts = within(screen.getByRole('region', { name: 'Charts' }))
+  fireEvent.change(charts.getByRole('combobox', { name: 'Ground' }), { target: { value: 'background' } })
+  const page = charts.getByRole('combobox', { name: 'Page' }) as HTMLSelectElement
+  expect(page.disabled).toBe(true)
+  expect((charts.getByRole('button', { name: '+ Add Chart' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
 test.each([8, 7])('Run preserves %i saved Background Charts without adding a Foreground Chart', async count => {
   currentDraft = backgroundDraft(1)
   let panels = addBackgroundChartPanel([], 'background-1')
@@ -188,7 +228,7 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   fireEvent.click(runButton('Simulation'))
   await finish(22)
   tab('Output')
-  fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Ground' }), { target: { value: 'background' } })
   fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
   const chart = () => screen.getByRole('region', { name: 'Chart 1' })
   const axis = () => within(chart()).getByLabelText('X axis') as HTMLSelectElement
@@ -263,7 +303,7 @@ test('overlapping chart PNG exports keep application actions busy until every ex
   fireEvent.click(runButton('Simulation'))
   await finish(23)
   tab('Output')
-  fireEvent.change(screen.getByLabelText('Chart source'), { target: { value: 'background:background-1' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Ground' }), { target: { value: 'background' } })
   for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
   const chart = (n: number) => within(screen.getByRole('region', { name: `Chart ${n}` }))
   for (const n of [1, 2]) await chart(n).findByRole('img', { name: 'line chart' })
@@ -465,8 +505,9 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   const currentOutput = within(screen.getByRole('region', { name: 'Background Output' }))
   fireEvent.click(screen.getByRole('button', { name: 'Collapse Charts' }))
   expect(screen.queryByRole('button', { name: '+ Add Chart' })).toBeNull()
-  expect(screen.queryByRole('checkbox', { name: 'Save charts with template' })).toBeNull()
-  expect(screen.queryByRole('combobox', { name: 'Chart source' })).toBeNull()
+  expect(screen.getByRole('checkbox', { name: 'Save charts with template' })).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Ground' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Page' })).toBeNull()
   expect(screen.queryByRole('region', { name: 'Chart 2' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Collapse Foreground Output' }).getAttribute('aria-expanded')).toBe('true')
   expect(currentOutput.getByRole('button', { name: 'Collapse Background Output' }).getAttribute('aria-expanded')).toBe('true')
@@ -1045,6 +1086,8 @@ test('the final Foreground Chart can be removed without any result rows', () => 
   render(<ChartPanelView panel={panels[0]} panels={panels} onPanelsChange={onPanelsChange}
     charts={new Map()} numericNames={['Voltage']} running={false} hasRows={false}
     canExport={false} onSavingChange={() => {}}>{null}</ChartPanelView>)
+  expect(screen.getByText('Foreground')).toBeTruthy()
+  expect(screen.getByText('Page: Results')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Remove Chart 1' }))
   expect(onPanelsChange).toHaveBeenCalledWith([])
 })

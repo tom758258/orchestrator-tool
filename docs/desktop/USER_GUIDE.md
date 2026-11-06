@@ -948,8 +948,11 @@ had Background bindings; changing the current Draft does not hide those results.
 Its Background and Capture Dataset selectors control its Summary, Output Data
 and export, independently of each Chart's selection.
 
-In **Charts**, choose a **Chart source**, then **Add Chart**. All Foreground Pages
-and Background Charts appear together. Each Background Chart has its own
+In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Background),
+then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
+Each Chart displays a colored Foreground or Background source label and its Page or
+Background ID. The **Save charts with template** option and shared chart count appear
+at the top-right of Charts. All Foreground Pages and Background Charts appear together. Each Background Chart has its own
 Background, Capture Dataset, X axis, **Settings**, **Export PNG** and **Remove**.
 Scopes Charts additionally select one **Measurement** field per Chart; use
 multiple Charts to plot different measurements rather than combining different

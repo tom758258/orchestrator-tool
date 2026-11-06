@@ -803,7 +803,10 @@ Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏
 Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Output Data 與匯出，
 與每張圖的選擇互相獨立。
 
-在 **Charts** 選擇 **Chart source**，按 **Add Chart**。所有 Foreground Page 與
+在 **Charts** 的 **Chart settings** 中，先選擇 **Ground**（Foreground 或 Background），
+再透過 **Page** 選擇前景 Output Page 或背景資料來源，最後按 **Add Chart**。
+每張圖表以不同顏色的 Foreground／Background 標籤與 Page／Background ID 顯示來源。
+**Save charts with template** 與圖表數量顯示在 Charts 區域右上角。所有 Foreground Page 與
 Background 圖表集中顯示。每張 Background Chart 可獨立選擇 Background、Capture Dataset、
 X axis，並使用 **Settings**、**Export PNG**、**Remove**；Scopes Chart 另可選擇單一
 **Measurement** 欄位，每張圖只繪製一個項目。若要比較不同項目，請使用多張 Chart，

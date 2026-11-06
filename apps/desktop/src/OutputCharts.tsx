@@ -89,6 +89,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
   selections: BackgroundChartSelections
 }) {
   const [selectedSource, setSelectedSource] = useState('')
+  const [selectedGround, setSelectedGround] = useState<'foreground' | 'background' | null>(null)
   const { output, error } = useBackgroundOutput(runId, backgrounds[0]?.id, running)
   const updatePanels = (next: ChartPanel[]) => {
     for (const [id, selection] of selections) {
@@ -102,22 +103,51 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
     ...backgrounds.filter(background => toolKinds[background.tool_instance_id] !== 'serial')
       .map(background => ({ key: `background:${background.id}`, label: `Background: ${background.id}`, background })),
   ]
-  const selected = sources.find(source => source.key === selectedSource) ?? sources[0]
-  return <Collapsible title="Charts" className="result-chart" framed actions={<div className="result-chart-header-actions">
-    <label><input type="checkbox" checked={saveChartsWithTemplate} onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
+
+  const foregroundSources = sources.filter(source => 'page' in source)
+  const backgroundSources = sources.filter(source => 'background' in source)
+  const ground = selectedGround ?? (foregroundSources.length ? 'foreground'
+    : backgroundSources.length ? 'background' : 'foreground')
+  const availableSources = ground === 'foreground' ? foregroundSources : backgroundSources
+  const selected = availableSources.find(source => source.key === selectedSource) ?? availableSources[0]
+  return <Collapsible title="Charts" className="result-chart" framed headingActions={<div className="result-chart-header-actions">
+    <label className="result-chart-template-option"><input type="checkbox" checked={saveChartsWithTemplate}
+      onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
     <span>Charts: {panels.length} / {MAX_CHARTS}</span>
-    <label>Chart source<select value={selected?.key ?? ''} onChange={event => setSelectedSource(event.target.value)}>
-      {sources.map(source => <option key={source.key} value={source.key}>{source.label}</option>)}
-    </select></label>
-    <button className="action-button" type="button" disabled={!selected || panels.length >= MAX_CHARTS || ('names' in selected && selected.names.length === 0)}
-      onClick={() => {
-        if (!selected) return
-        updatePanels('background' in selected ? addBackgroundChartPanel(panels, selected.background.id, selected.background.scopes_measurements?.[0]?.id ?? 'value')
-          : addChartPanel(panels, selected.page.name, selected.names))
-      }}>+ Add Chart</button>
   </div>}>
+    <div className="result-chart-create">
+      <h4>Chart settings</h4>
+      <div className="result-chart-create-row">
+        <div className="result-chart-create-fields">
+          <label>Ground<select value={ground} onChange={event => {
+            setSelectedGround(event.target.value as 'foreground' | 'background')
+            setSelectedSource('')
+          }}>
+            <option value="foreground">Foreground</option>
+            <option value="background">Background</option>
+          </select></label>
+          <label>Page<select value={selected?.key ?? ''} onChange={event => setSelectedSource(event.target.value)}
+            disabled={availableSources.length === 0}>
+            {availableSources.length === 0 && <option value="">No available sources</option>}
+            {availableSources.map(source => <option key={source.key} value={source.key}>
+              {'page' in source ? source.page.name : source.background.id}
+            </option>)}
+          </select></label>
+        </div>
+        <div className="result-chart-create-action">
+          <button className="action-button" type="button"
+            disabled={!selected || panels.length >= MAX_CHARTS || ('names' in selected && selected.names.length === 0)}
+            onClick={() => {
+              if (!selected) return
+              updatePanels('background' in selected ? addBackgroundChartPanel(panels, selected.background.id, selected.background.scopes_measurements?.[0]?.id ?? 'value')
+                : addChartPanel(panels, selected.page.name, selected.names))
+            }}>+ Add Chart</button>
+        </div>
+      </div>
+      <p className="result-chart-create-help">Choose Foreground or Background, then select a page or background source for the new chart.</p>
+    </div>
     {panels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
-    {panels.length === 0 && <p>No charts. Choose a source and Add Chart.</p>}
+    {panels.length === 0 && <p>No charts. Choose Ground and Page above, then Add Chart.</p>}
     {error && <p role="alert">Could not load Background datasets: {error}</p>}
     <div className="result-charts-grid">
     {pages.map(page => {

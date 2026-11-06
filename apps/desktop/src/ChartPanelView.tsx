@@ -39,7 +39,13 @@ export default function ChartPanelView({ panel, panels, onPanelsChange, charts, 
       disabled={saving}
       onClick={() => onPanelsChange(panels.filter(item => item.id !== panel.id))}>Remove</button>
   </div>}>
-    <p>{panel.source ? `Background: ${panel.source.background_id} · Value` : `Foreground: ${panel.page}`}</p>
+    <div className="result-chart-source-info">
+      <strong>Data source</strong>
+      <span className={`result-chart-source-badge ${panel.source ? 'result-chart-source-background' : 'result-chart-source-foreground'}`}>
+        {panel.source ? 'Background' : 'Foreground'}
+      </span>
+      <span className="result-chart-page-badge">{panel.source ? `Source: ${panel.source.background_id}` : `Page: ${panel.page}`}</span>
+    </div>
     {feedback && <p role="status">{feedback}</p>}
     <fieldset className="result-chart-controls" disabled={saving}>{children}</fieldset>
     {settings && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={[...numericNames, ...timestampNames]}
