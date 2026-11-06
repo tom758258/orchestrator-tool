@@ -103,7 +103,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
       .map(background => ({ key: `background:${background.id}`, label: `Background: ${background.id}`, background })),
   ]
   const selected = sources.find(source => source.key === selectedSource) ?? sources[0]
-  return <Collapsible title="Charts" className="result-chart" actions={<div className="result-chart-header-actions">
+  return <Collapsible title="Charts" className="result-chart" framed actions={<div className="result-chart-header-actions">
     <label><input type="checkbox" checked={saveChartsWithTemplate} onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
     <span>Charts: {panels.length} / {MAX_CHARTS}</span>
     <label>Chart source<select value={selected?.key ?? ''} onChange={event => setSelectedSource(event.target.value)}>

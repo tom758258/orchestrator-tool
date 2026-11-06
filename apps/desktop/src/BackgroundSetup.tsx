@@ -9,6 +9,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
   instance: ToolInstance; value: BackgroundConfig[]; steps: WorkflowStep[]; onChange: (value: BackgroundConfig[]) => void
   executionMode?: ExecutionMode; modelId?: string | null; scopesExecutableKey?: string
 }) {
+  const [expanded, setExpanded] = useState(false)
   const config = value.find(background => background.tool_instance_id === instance.id)
   const supported = instance.tool === 'meters' || instance.tool === 'scopes' || instance.tool === 'serial'
   const scopes = instance.tool === 'scopes'
@@ -47,7 +48,13 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
     update({ scopes_measurements: next })
   }
   return <section className="background-setup">
-    <h4>Background Streaming</h4>
+    <h4>
+      <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} Background Streaming`} onClick={() => setExpanded(!expanded)}>
+        <span aria-hidden="true">{expanded ? '−' : '+'}</span>
+      </button>Background Streaming
+    </h4>
+    <div hidden={!expanded}>
     {!supported && <p>Unsupported. Background Streaming requires Meters, Scopes or Serial.</p>}
     <label><input type="checkbox" checked={Boolean(config)} disabled={(!supported && !config) || Boolean(referenced)} onChange={event => {
       if (!event.target.checked) { onChange(value.filter(item => item !== config)); return }
@@ -58,7 +65,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
         ...(scopes ? { scopes_measurements: [{ id: 'ch1_frequency', channel: 1, item: 'frequency' }], scopes_interval_seconds: 1 }
           : software ? { timer_interval_ms: 1000 } : {}),
       }])
-    }} /> Use this instance as a Background</label>
+    }} /> Enable Background Streaming</label>
     {config && <>
       <p>Background: <code>{config.id}</code>. Use Worker and Capture actions to control this instance.</p>
       {foregroundReferenced && <p role="alert">This instance still has Foreground actions. Remove those actions or use another instance before running.</p>}
@@ -104,5 +111,6 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
       : 'Live Monitor keeps the latest 1,000 samples as a Line. It does not record or export data.'}</p>
       {referenced && <p>Remove Background actions before turning off Background use.</p>}
     </>}
+    </div>
   </section>
 }

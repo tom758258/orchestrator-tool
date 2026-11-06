@@ -110,6 +110,13 @@ collapse or expand it. **Tool Instance Summary**, above Add Tool Instance, count
 instances by Tool Type, including types not configured locally. Unused types
 are omitted, and the summary is hidden when there are no instances.
 
+Within each instance, tool settings come first, followed by **Background
+Streaming**, then **Live Device**, with separators around Background Streaming.
+Both sections have independent **− / +** controls. Background Streaming starts
+collapsed; Live Device starts expanded. Expand Background Streaming and select
+**Enable Background Streaming** to show the supported Background options.
+Unsupported Tool Types keep this checkbox disabled and show an explanation.
+
 Group and card expansion states persist while editing, switching tabs, or
 collapsing an outer instance. Successful **New Template** or **Open Template**
 restores the default states, including External Tools cards. These UI states
@@ -138,7 +145,10 @@ spinner buttons are hidden.
 
 ### 5.1 Meters Setup
 
-For a Meters Tool Instance, the current Setup controls:
+Meters **Measurement Setup** starts expanded; use **− / +** to hide or show its
+measurement and trigger settings without hiding Background Streaming or Live
+Device. These settings apply to Foreground or Background as supported by the
+selected mode. The current Setup controls:
 
 - Measurement: **DC Voltage** or **DC Current**.
 - Range Mode: **Auto** or **Manual**.
@@ -147,7 +157,7 @@ For a Meters Tool Instance, the current Setup controls:
 - NPLC: the currently exposed standard choices are `0.02`, `0.2`, `1`, `10`,
   and `100`.
 - Auto Zero: **On**, **Off**, or **Once**.
-- Choose whether to **Use this instance as a Background** before selecting its mode.
+- Choose whether to **Enable Background Streaming** before selecting its mode.
   Foreground uses **Single**: each Measure triggers and returns one reading.
 - Background offers **Software**, **Immediate**, **External**, **Software Custom**,
   **Immediate Custom**, and **External Custom**. Unsupported model modes are disabled
@@ -867,7 +877,7 @@ Safe-Off through powers-tool; it does not claim that real outputs were changed.
 
 ## Background Streaming
 
-In **Tool Setup**, enable **Use this instance as a Background** for a Meters
+In **Tool Setup**, select **Enable Background Streaming** for a Meters
 or Scopes Tool Instance. Meters offers six acquisition modes. Scopes Background
 captures read-only numeric Measure cycles, not screenshots or waveforms.
 Powers and Wavegen do not support Background.
@@ -1073,6 +1083,10 @@ and both Output sections' Summary and Output Data have independent `− / +`
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.
+
+The three main sections have matching rounded frames, with their titles and
+collapse buttons embedded in the top border. Collapsing keeps the frame and
+title visible. Charts also hides its header controls until expanded again.
 
 **Last Run Execution Results** and **Messages** each have a `+ / −` control on
 the right of their heading. Both start expanded, and each collapses on its own
@@ -1515,9 +1529,9 @@ WebView2 is installed and up to date.
 
 ## 16. Serial Background RX
 
-Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Use this instance as a Background. Background Simulation uses Serial Tool's `periodic-rx-v1` to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use `loopback-v1`. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.
+Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Enable Background Streaming. Background Simulation uses Serial Tool's `periodic-rx-v1` to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use `loopback-v1`. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.
 
-Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in Serial Setup; UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.
+Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in **Communication Setup**, which starts expanded. Use **− / +** to hide or show Transport and its UART or TCP settings; Background Streaming and Live Device stay visible. UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.
 
 Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.
 

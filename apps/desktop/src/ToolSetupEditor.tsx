@@ -120,6 +120,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
   }, [model, executionMode, metersExecutableKey])
 
   const meters = value.meters
+  const [expanded, setExpanded] = useState(true)
   const triggerMode = meters.trigger_mode ?? 'software'
   const customMode = isCustomTriggerMode(triggerMode)
   const currentCapabilities = capabilities?.requestedModel === model
@@ -159,6 +160,13 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
 
   return (
     <>
+      <h4 className="powers-section-heading">
+        <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} Measurement Setup`} onClick={() => setExpanded(!expanded)}>
+          {expanded ? '−' : '+'}
+        </button>Measurement Setup
+      </h4>
+      <div hidden={!expanded}>
       <p className="tool-setup-hint">Applied before the run starts.</p>
       <div className="meters-setup-fields">
         <label className="step-property-field meters-setup-trigger-mode">
@@ -345,6 +353,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
             <option value="neg">Negative</option>
           </select>
         </label>
+      </div>
       </div>
     </>
   )
@@ -589,9 +598,18 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
 }
 
 function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: (v: SerialSetup) => void }) {
+  const [expanded, setExpanded] = useState(true)
   const update = (change: Partial<SerialSetup>) => onChange({ ...value, ...change })
   const tcp = value.transport === 'tcp'
-  return <div className="serial-setup-fields">
+  return <>
+    <h4 className="powers-section-heading">
+      <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} Communication Setup`} onClick={() => setExpanded(!expanded)}>
+        {expanded ? '−' : '+'}
+      </button>Communication Setup
+    </h4>
+    <div hidden={!expanded}>
+    <div className="serial-setup-fields">
     <label className="step-property-field"><span className="step-property-label">Transport</span>
       <select aria-label="Transport" value={value.transport ?? 'serial'}
         onChange={e => update({ transport: e.target.value as 'serial' | 'tcp' })}>
@@ -623,7 +641,9 @@ function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: 
       <label className="step-property-field"><span className="step-property-label">Timeout (ms)</span>
         <input type="number" min={0} step={1} value={value.timeout_ms} onChange={e => update({ timeout_ms: Number(e.target.value) })} /></label>
     </>}
-  </div>
+    </div>
+    </div>
+  </>
 }
 
 function setupSummary(instance: ToolInstance, background?: BackgroundConfig): string {
@@ -747,9 +767,6 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
             <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>
           </label>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
-          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange}
-            executionMode={executionMode} modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : null}
-            scopesExecutableKey={scopesExecutableKey} />}
           {instance.tool === 'meters'
             ? <MetersSetupFields metersExecutableKey={metersExecutableKey}
                 model={executionMode === 'live' ? resourceIdentities[instance.id]?.model : undefined}
@@ -788,6 +805,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                     ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
                     : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
                 </>}
+          {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange}
+            executionMode={executionMode} modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : null}
+            scopesExecutableKey={scopesExecutableKey} />}
           {renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced || backgrounds.some(background => background.tool_instance_id === instance.id)}
             onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>

@@ -37,7 +37,8 @@ test.each(['root', 'nested', 'unreferenced'])('Background binding removal respec
   render(<BackgroundSetup instance={backgroundMeter}
     value={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 10 }]}
     steps={steps} onChange={onChange} />)
-  const binding = screen.getByLabelText('Use this instance as a Background') as HTMLInputElement
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Background Streaming' }))
+  const binding = screen.getByLabelText('Enable Background Streaming') as HTMLInputElement
   expect(binding.disabled).toBe(kind !== 'unreferenced')
   if (kind === 'unreferenced') {
     fireEvent.click(binding)
@@ -117,6 +118,92 @@ const instance = (id: string) => within(screen.getByRole('button', {
   name: new RegExp(`^(?:Expand|Collapse) ${id}$`),
 }).closest('fieldset')!)
 const calls = () => vi.mocked(invoke).mock.calls
+
+test('all Tool instances place Background Streaming between tool setup and Live Device', () => {
+  const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
+    baud: 9600, data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000,
+  } }
+  const instances = [backgroundMeter, ...original.tool_instances, serial]
+  render(<ToolSetupEditor value={instances} steps={[]} onChange={vi.fn()} disabled={false}
+    configuredToolTypes={instances.map(item => item.tool)} resourceIdentities={{}} executionMode="simulate"
+    metersExecutableKey="" powersExecutableKey="" scopesExecutableKey="" onBackgroundsChange={vi.fn()}
+    renderResource={item => <h4>Live Device {item.id}</h4>} renderPowersDeviceStatus={() => null} />)
+  const headings = { meters: 'Measurement Setup', powers: 'Protection Setup', scopes: 'Channel Configuration',
+    serial: 'Communication Setup', wavegen: 'No additional setup' }
+  for (const item of instances) {
+    const card = instance(item.id)
+    const setup = card.getByText(headings[item.tool])
+    const background = card.getByRole('heading', { name: /Background Streaming$/ })
+    const resource = card.getByRole('heading', { name: `Live Device ${item.id}` })
+    expect(setup.compareDocumentPosition(background) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(background.compareDocumentPosition(resource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect((card.getByLabelText('Enable Background Streaming') as HTMLInputElement).disabled)
+      .toBe(item.tool === 'powers' || item.tool === 'wavegen')
+  }
+})
+
+test('Setup groups preserve settings through collapse and tabs, and reset on New/Open Template', async () => {
+  tools.push(toolStatus('serial'))
+  const instances: ToolInstance[] = [backgroundMeter, { id: 'serial-1', tool: 'serial', setup: {
+    transport: 'tcp', baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
+    flow_control: 'none', timeout_ms: 1000, connect_timeout_ms: 3000, io_timeout_ms: 2500,
+  } }]
+  newDraft = { ...original, tool_instances: instances, backgrounds: [
+    { id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, limit_count: 10 },
+  ] }
+  loadedDraft = structuredClone(newDraft)
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Setup')
+  const groups = [['meters-1', 'Measurement Setup', 'Trigger Mode'], ['serial-1', 'Communication Setup', 'Transport']]
+  for (const [id, title, field] of groups) {
+    const card = instance(id)
+    expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
+    expect(isInaccessible(card.getByLabelText('Enable Background Streaming'))).toBe(true)
+    expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
+    const resource = card.getByRole('textbox', { name: id === 'meters-1' ? 'Live Resource' : 'TCP Host' })
+    fireEvent.change(resource, { target: { value: id === 'meters-1' ? 'USB::pending' : '127.0.0.1' } })
+    fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
+    fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
+    expect(isInaccessible(resource)).toBe(true)
+    expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
+    expect(card.queryByRole('combobox', { name: field })).toBeNull()
+    expect(isInaccessible(card.getByLabelText('Enable Background Streaming'))).toBe(false)
+    expect(card.getByRole('button', { name: 'Expand Live Device' })).toBeTruthy()
+    fireEvent.click(card.getByRole('button', { name: `Collapse ${id}` }))
+  }
+  tab('Tools'); tab('Setup')
+  for (const [id, title] of groups) {
+    fireEvent.click(instance(id).getByRole('button', { name: `Expand ${id}` }))
+    const card = instance(id)
+    expect(card.getByRole('button', { name: `Expand ${title}` }).getAttribute('aria-expanded')).toBe('false')
+    expect(card.getByRole('button', { name: 'Collapse Background Streaming' }).getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(card.getByRole('button', { name: 'Expand Live Device' }))
+    expect((card.getByRole('textbox', { name: id === 'meters-1' ? 'Live Resource' : 'TCP Host' }) as HTMLInputElement).value)
+      .toBe(id === 'meters-1' ? 'USB::pending' : '127.0.0.1')
+    fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
+  }
+  const saved = await savedDraft()
+  expect(saved.tool_instances).toEqual(instances)
+  expect(saved.backgrounds).toEqual(newDraft.backgrounds)
+  for (const action of ['Open Template', 'New Template']) {
+    const previous = instance('meters-1').getByRole('button', { name: 'Expand Measurement Setup' })
+    click(action)
+    await waitFor(() => expect(previous.isConnected).toBe(false))
+    tab('Setup')
+    for (const [id, title, field] of groups) {
+      const card = instance(id)
+      expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
+      expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
+      expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
+      expect(card.getByRole('combobox', { name: field })).toBeTruthy()
+      fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
+      fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
+      fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
+    }
+  }
+})
 function focusClick(control: HTMLElement) {
   fireEvent.pointerDown(control)
   act(() => control.focus()) // Native focus() dispatches blur/focusout before click, including relatedTarget.
@@ -225,7 +312,8 @@ test('Meters role controls six Background modes without deleting existing steps'
   const modes = () => screen.getByLabelText('Trigger Mode') as HTMLSelectElement
   await waitFor(() => expect(modes().options[0].disabled).toBe(false))
   expect([...modes().options].map(option => option.textContent)).toEqual(['Single'])
-  fireEvent.click(screen.getByLabelText('Use this instance as a Background'))
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Background Streaming' }))
+  fireEvent.click(screen.getByLabelText('Enable Background Streaming'))
   rerender(view())
   expect(modes().options.length).toBe(6)
   expect(backgrounds[0]).toMatchObject({ limit_count: 1000, timer_interval_ms: 1000 })
@@ -247,7 +335,7 @@ test('Meters role controls six Background modes without deleting existing steps'
   fireEvent.change(screen.getByLabelText('Hardware Trigger Delay (s)'), { target: { value: '0.25' } })
   rerender(view())
   expect(instances[0].setup).toMatchObject({ hw_trigger_slope: 'neg', hw_trigger_delay_s: 0.25 })
-  fireEvent.click(screen.getByLabelText('Use this instance as a Background'))
+  fireEvent.click(screen.getByLabelText('Enable Background Streaming'))
   rerender(view())
   expect(screen.getByText(/Foreground Meters requires Single/)).toBeTruthy()
   fireEvent.change(modes(), { target: { value: 'software' } })
@@ -686,6 +774,13 @@ test('Serial Transport preserves UART and TCP setup values across switching', ()
   rerender(view())
   fireEvent.change(screen.getByRole('spinbutton', { name: 'I/O Timeout (ms)' }), { target: { value: '2500' } })
   rerender(view())
+  const changes = onChange.mock.calls.length
+  fireEvent.click(screen.getByRole('button', { name: 'Collapse Communication Setup' }))
+  expect(screen.queryByRole('combobox', { name: 'Transport' })).toBeNull()
+  expect(screen.queryByRole('spinbutton', { name: 'I/O Timeout (ms)' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Communication Setup' }))
+  expect(onChange).toHaveBeenCalledTimes(changes)
+  expect((screen.getByRole('spinbutton', { name: 'I/O Timeout (ms)' }) as HTMLInputElement).value).toBe('2500')
   fireEvent.change(screen.getByRole('combobox', { name: 'Transport' }), { target: { value: 'serial' } })
   rerender(view())
   expect((screen.getByRole('spinbutton', { name: 'Baud Rate' }) as HTMLInputElement).value).toBe('9600')
