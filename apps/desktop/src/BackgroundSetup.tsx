@@ -58,7 +58,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
         ...(scopes ? { scopes_measurements: [{ id: 'ch1_frequency', channel: 1, item: 'frequency' }], scopes_interval_seconds: 1 }
           : software ? { timer_interval_ms: 1000 } : {}),
       }])
-    }} /> Use this instance as a Background</label>
+    }} /> Enable Background Streaming</label>
     {config && <>
       <p>Background: <code>{config.id}</code>. Use Worker and Capture actions to control this instance.</p>
       {foregroundReferenced && <p role="alert">This instance still has Foreground actions. Remove those actions or use another instance before running.</p>}

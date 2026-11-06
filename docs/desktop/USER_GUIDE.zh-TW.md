@@ -93,6 +93,10 @@ Live Resources 不屬於 Template。
 Add Tool Instance 上方的 **Tool Instance Summary** 依 Tool Type 統計 instance
 數量，包含未在本機配置的類型。未使用的類型不顯示，沒有 instance 時隱藏整個摘要。
 
+每個 instance 內依序排列 Tool 原有設定、**Background Streaming**、**Live Device**，
+Background Streaming 前後各有分隔線。勾選 **Enable Background Streaming** 後顯示
+支援的 Background 選項。不支援的 Tool Type 維持停用核取方塊並顯示原因。
+
 編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
 成功執行 **New Template** 或 **Open Template** 後恢復預設狀態，包含 External
 Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
@@ -115,7 +119,9 @@ Wavegen 即使尚未支援 runtime actions，仍可保存名稱。
 
 ### 5.1 Meters Setup
 
-目前 Meters Tool Instance 的 Setup 提供：
+Meters 的 **Measurement Setup** 預設展開，可用 **− / +** 隱藏或顯示量測與觸發
+設定，不影響 Background Streaming 或 Live Device。這些設定依所選模式供 Foreground
+或 Background 使用。目前提供：
 
 - Measurement：**DC Voltage** 或 **DC Current**。
 - Range Mode：**Auto** 或 **Manual**。
@@ -123,7 +129,7 @@ Wavegen 即使尚未支援 runtime actions，仍可保存名稱。
   文字值。
 - NPLC：目前 UI 暴露的標準選項為 `0.02`、`0.2`、`1`、`10` 與 `100`。
 - Auto Zero：**On**、**Off** 或 **Once**。
-- 先選擇是否 **Use this instance as a Background**。前景只使用 **Single**，
+- 先選擇是否 **Enable Background Streaming**。前景只使用 **Single**，
   每次 Measure 觸發一次量測並取得一筆讀值。
 - 背景可選 **Software**、**Immediate**、**External**、**Software Custom**、
   **Immediate Custom** 與 **External Custom**。取得型號能力後，不支援的模式無法選取。
@@ -736,7 +742,7 @@ outputs 已被改變。
 ## Background Streaming
 
 在 **Tool Setup** 中，Meters 或 Scopes Instance 都可勾選
-**Use this instance as a Background**。Meters 提供六種背景量測模式；
+**Enable Background Streaming**。Meters 提供六種背景量測模式；
 Scopes Background 支援唯讀的數值 Measure Cycle，不包含 Screenshot 或
 Waveform Capture。Powers 和 Wavegen 仍不支援 Background。
 背景 Instance 不可同時供前景 Tool Action 使用。切換用途時會保留既有步驟，
@@ -912,6 +918,9 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 Charts、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
 區塊中的 Summary／Output Data 都有獨立 `− / +` 控制，預設全部展開。收合只隱藏內容，
 不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。
+
+三大區塊使用一致的圓角外框，標題與收合按鈕嵌入上方框線。收合後仍保留外框與
+標題；Charts 的標題列操作控制也會隱藏，重新展開後恢復。
 
 **Last Run Execution Results** 與 **Messages** 的標題右側各有 `+ / −` 控制。兩者
 預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
@@ -1280,9 +1289,9 @@ Runtime 後重新啟動 application。若 availability check 通過後仍出現 
 
 ## 16. Serial Background RX
 
-在 Tools 註冊 `serial-tool.exe`，再到 Setup 新增 Serial Tool Instance、設定串列埠參數，勾選 Use this instance as a Background。Background Simulation 使用 Serial Tool 的 `periodic-rx-v1`，不需 TX 也會自行產生 RX（約每 100 ms 一筆 4 Bytes 計數資料）；Foreground Simulation 維持 `loopback-v1`。Live 必須選擇並保存 COM Port 或 TCP Endpoint，執行前仍須明確確認。
+在 Tools 註冊 `serial-tool.exe`，再到 Setup 新增 Serial Tool Instance、設定串列埠參數，勾選 Enable Background Streaming。Background Simulation 使用 Serial Tool 的 `periodic-rx-v1`，不需 TX 也會自行產生 RX（約每 100 ms 一筆 4 Bytes 計數資料）；Foreground Simulation 維持 `loopback-v1`。Live 必須選擇並保存 COM Port 或 TCP Endpoint，執行前仍須明確確認。
 
-Serial 同一個 Tool Instance 支援 UART（COM Port）及原始 TCP Client。於 Serial Setup 選擇 Transport；切換時 UART 參數及 TCP Timeout 設定皆保留於 Template。TCP Live 須在 Live Device 輸入 TCP Host 與 TCP Port 並按 Save Resource。COM Port 和 TCP Endpoint 僅儲存於本機，不寫入 Template。TCP Simulation 不需要 Host 或設備 Port；TCP 不提供 List Ports 探索。
+Serial 同一個 Tool Instance 支援 UART（COM Port）及原始 TCP Client。於預設展開的 **Communication Setup** 選擇 Transport，可用 **− / +** 隱藏或顯示 Transport 與所選 UART／TCP 設定，Background Streaming 和 Live Device 保持可見。切換時 UART 參數及 TCP Timeout 設定皆保留於 Template。TCP Live 須在 Live Device 輸入 TCP Host 與 TCP Port 並按 Save Resource。COM Port 和 TCP Endpoint 僅儲存於本機，不寫入 Template。TCP Simulation 不需要 Host 或設備 Port；TCP 不提供 List Ports 探索。
 
 Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分段建立獨立 Dataset，不會停止來源。每個 RX Event 在 Output Data 形成一列，同一列包含該次收到的所有 Bytes；接收分段不代表通訊封包。選用的 RX-only Live Monitor 在 Capture OFF 時仍可繼續更新。
 

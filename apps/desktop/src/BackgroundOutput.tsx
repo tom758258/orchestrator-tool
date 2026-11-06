@@ -57,7 +57,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
     } catch (reason) { setError(String(reason)) }
     finally { setExporting(false); onExportingChange?.(false) }
   }
-  return <Collapsible className="background-output" title="Background Output">
+  return <Collapsible className="background-output" title="Background Output" framed>
     <label>Background<select value={background} disabled={exporting} onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0) }}>
       {backgrounds.map(config => <option key={config.id} value={config.id}>{config.id} · {config.tool_instance_id}</option>)}
     </select></label>

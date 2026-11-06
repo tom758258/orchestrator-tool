@@ -3202,7 +3202,7 @@ function App() {
                 onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}
                 saveChartsWithTemplate={saveChartsWithTemplate} onSaveChartsWithTemplateChange={setSaveChartsWithTemplate}
                 selections={backgroundChartSelections} />}
-              <Collapsible title="Foreground Output">
+              <Collapsible title="Foreground Output" framed>
               {runPage && <div className="last-run-page-tabs" role="tablist" aria-label="Last Run Pages">
                 {runPages.map((page, index) => <button key={page.name} type="button" role="tab"
                   id={`last-run-page-${index}`} aria-controls="last-run-workspace"
