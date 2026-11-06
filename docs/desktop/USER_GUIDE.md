@@ -112,7 +112,9 @@ are omitted, and the summary is hidden when there are no instances.
 
 Within each instance, tool settings come first, followed by **Background
 Streaming**, then **Live Device**, with separators around Background Streaming.
-Select **Enable Background Streaming** to show the supported Background options.
+Both sections have independent **− / +** controls. Background Streaming starts
+collapsed; Live Device starts expanded. Expand Background Streaming and select
+**Enable Background Streaming** to show the supported Background options.
 Unsupported Tool Types keep this checkbox disabled and show an explanation.
 
 Group and card expansion states persist while editing, switching tabs, or

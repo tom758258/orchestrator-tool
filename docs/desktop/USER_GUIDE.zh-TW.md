@@ -94,8 +94,10 @@ Add Tool Instance 上方的 **Tool Instance Summary** 依 Tool Type 統計 insta
 數量，包含未在本機配置的類型。未使用的類型不顯示，沒有 instance 時隱藏整個摘要。
 
 每個 instance 內依序排列 Tool 原有設定、**Background Streaming**、**Live Device**，
-Background Streaming 前後各有分隔線。勾選 **Enable Background Streaming** 後顯示
-支援的 Background 選項。不支援的 Tool Type 維持停用核取方塊並顯示原因。
+Background Streaming 前後各有分隔線。兩區皆可用 **− / +** 獨立收合；Background
+Streaming 預設收合，Live Device 預設展開。展開 Background Streaming 並勾選
+**Enable Background Streaming** 後顯示支援的 Background 選項。不支援的 Tool Type
+維持停用核取方塊並顯示原因。
 
 編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
 成功執行 **New Template** 或 **Open Template** 後恢復預設狀態，包含 External

@@ -37,6 +37,7 @@ test.each(['root', 'nested', 'unreferenced'])('Background binding removal respec
   render(<BackgroundSetup instance={backgroundMeter}
     value={[{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 10 }]}
     steps={steps} onChange={onChange} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Background Streaming' }))
   const binding = screen.getByLabelText('Enable Background Streaming') as HTMLInputElement
   expect(binding.disabled).toBe(kind !== 'unreferenced')
   if (kind === 'unreferenced') {
@@ -132,7 +133,7 @@ test('all Tool instances place Background Streaming between tool setup and Live 
   for (const item of instances) {
     const card = instance(item.id)
     const setup = card.getByText(headings[item.tool])
-    const background = card.getByRole('heading', { name: 'Background Streaming' })
+    const background = card.getByRole('heading', { name: /Background Streaming$/ })
     const resource = card.getByRole('heading', { name: `Live Device ${item.id}` })
     expect(setup.compareDocumentPosition(background) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(background.compareDocumentPosition(resource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -141,7 +142,7 @@ test('all Tool instances place Background Streaming between tool setup and Live 
   }
 })
 
-test('Meters and Serial groups preserve setup through collapse and tabs, and reset on New/Open Template', async () => {
+test('Setup groups preserve settings through collapse and tabs, and reset on New/Open Template', async () => {
   tools.push(toolStatus('serial'))
   const instances: ToolInstance[] = [backgroundMeter, { id: 'serial-1', tool: 'serial', setup: {
     transport: 'tcp', baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
@@ -157,17 +158,31 @@ test('Meters and Serial groups preserve setup through collapse and tabs, and res
   const groups = [['meters-1', 'Measurement Setup', 'Trigger Mode'], ['serial-1', 'Communication Setup', 'Transport']]
   for (const [id, title, field] of groups) {
     const card = instance(id)
+    expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
+    expect(isInaccessible(card.getByLabelText('Enable Background Streaming'))).toBe(true)
+    expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
+    const resource = card.getByRole('textbox', { name: id === 'meters-1' ? 'Live Resource' : 'TCP Host' })
+    fireEvent.change(resource, { target: { value: id === 'meters-1' ? 'USB::pending' : '127.0.0.1' } })
+    fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
+    fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
+    expect(isInaccessible(resource)).toBe(true)
     expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
     expect(card.queryByRole('combobox', { name: field })).toBeNull()
-    expect(card.getByLabelText('Enable Background Streaming')).toBeTruthy()
-    expect(card.getByText('Live Device')).toBeTruthy()
+    expect(isInaccessible(card.getByLabelText('Enable Background Streaming'))).toBe(false)
+    expect(card.getByRole('button', { name: 'Expand Live Device' })).toBeTruthy()
     fireEvent.click(card.getByRole('button', { name: `Collapse ${id}` }))
   }
   tab('Tools'); tab('Setup')
   for (const [id, title] of groups) {
     fireEvent.click(instance(id).getByRole('button', { name: `Expand ${id}` }))
-    expect(instance(id).getByRole('button', { name: `Expand ${title}` }).getAttribute('aria-expanded')).toBe('false')
+    const card = instance(id)
+    expect(card.getByRole('button', { name: `Expand ${title}` }).getAttribute('aria-expanded')).toBe('false')
+    expect(card.getByRole('button', { name: 'Collapse Background Streaming' }).getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(card.getByRole('button', { name: 'Expand Live Device' }))
+    expect((card.getByRole('textbox', { name: id === 'meters-1' ? 'Live Resource' : 'TCP Host' }) as HTMLInputElement).value)
+      .toBe(id === 'meters-1' ? 'USB::pending' : '127.0.0.1')
+    fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
   }
   const saved = await savedDraft()
   expect(saved.tool_instances).toEqual(instances)
@@ -179,8 +194,12 @@ test('Meters and Serial groups preserve setup through collapse and tabs, and res
     tab('Setup')
     for (const [id, title, field] of groups) {
       const card = instance(id)
+      expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
+      expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
       expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
       expect(card.getByRole('combobox', { name: field })).toBeTruthy()
+      fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
+      fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
       fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
     }
   }
@@ -293,6 +312,7 @@ test('Meters role controls six Background modes without deleting existing steps'
   const modes = () => screen.getByLabelText('Trigger Mode') as HTMLSelectElement
   await waitFor(() => expect(modes().options[0].disabled).toBe(false))
   expect([...modes().options].map(option => option.textContent)).toEqual(['Single'])
+  fireEvent.click(screen.getByRole('button', { name: 'Expand Background Streaming' }))
   fireEvent.click(screen.getByLabelText('Enable Background Streaming'))
   rerender(view())
   expect(modes().options.length).toBe(6)

@@ -205,6 +205,8 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   if (expandFirst) fireEvent.click(expandFirst)
   const binding = (id: string) => within(screen.getByRole('button', { name: `Collapse ${id}` }).closest('fieldset')!)
     .getByLabelText('Enable Background Streaming') as HTMLInputElement
+  fireEvent.click(within(screen.getByRole('button', { name: 'Collapse meters-1' }).closest('fieldset')!)
+    .getByRole('button', { name: 'Expand Background Streaming' }))
   fireEvent.click(binding('meters-1'))
   tab('Output')
   fireEvent.change(axis(), { target: { value: 'index' } })
