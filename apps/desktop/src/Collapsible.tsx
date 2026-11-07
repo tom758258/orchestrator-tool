@@ -8,7 +8,7 @@ export default function Collapsible({ title, children, actions, headingActions, 
     aria-label={`${expanded ? 'Collapse' : 'Expand'} ${title}`} onClick={() => setExpanded(value => !value)}>
     {expanded ? '−' : '+'}</button> {title}</h3>
   if (framed) return <fieldset className={`output-section ${className}`} role="region" aria-label={title}>
-    <legend>{headingActions ? <div className="collapsible-legend-row">{heading}{headingActions}</div> : heading}</legend>
+    {headingActions ? <div className="collapsible-framed-header">{heading}{headingActions}</div> : <legend>{heading}</legend>}
     <div hidden={!expanded}>{actions}{children}</div>
   </fieldset>
   return <section className={className} aria-label={title}>
