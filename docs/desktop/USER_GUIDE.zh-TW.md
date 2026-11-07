@@ -808,9 +808,11 @@ Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Out
 每張圖表以不同顏色的 Foreground／Background 標籤與 Page／Background ID 顯示來源。
 **Save charts with template** 與圖表數量顯示在 Charts 區域右上角。所有 Foreground Page 與
 Background 圖表集中顯示。每張 Background Chart 有 **Export PNG**、**Settings**、
-**Source settings**、**Remove**。按 **Source settings** 開啟獨立視窗，可選
-Background、Capture Dataset、X axis；Scopes 另外提供 **Measurement**。
-選擇後立即套用，Chart 卡片仍顯示來源標籤與 Samples 摘要。每張 Scopes Chart 只繪製單一欄位。若要比較不同項目，請使用多張 Chart，
+**Source settings**、**Remove**。**Source settings** 以唯讀方式顯示已選擇的 Background，
+主要提供 **Capture Dataset** 與 **X-axis data**（Elapsed Time／Timestamp／Sample Index）；
+Scopes 另外保留 **Measurement**。Background 來源在建立 Chart 時指定，
+若不再存在於目前 Draft 或 Last Run，可透過 **Reassign source** 選擇兩者皆有效的來源。
+選擇後立即套用，Chart 卡片仍顯示來源標籤與 **Data summary**。每張 Scopes Chart 只繪製單一欄位。若要比較不同項目，請使用多張 Chart，
 不要把不同單位混用同一條 Y 軸。Background 圖表可全部移除至零張。
 Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。
 Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
@@ -819,7 +821,7 @@ Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Backg
 
 Background X 軸使用實際的 Elapsed Time（秒）、Timestamp 或 Sample Index；Hover 顯示
 實際繪製 Sample。抽樣時 Line／Area 保留峰值、谷值與端點；Scatter／Column／Bar 顯示代表性觀測值。
-畫面列出 Dataset 總筆數、可視範圍筆數、繪製筆數及抽樣狀態。Line／Area／Column 的 Zoom
+**Data summary** 以 Total samples、In range、Plotted 顯示資料筆數及既有抽樣狀態。Line／Area／Column 的 Zoom
 會重新查詢可視範圍；Scatter／Bar 沒有 Zoom。Line 的 **Settings → General → Show All Raw Data**
 可完整顯示可視範圍內最多 **25,000** 筆 Samples；超限時不繪製資料，並提示縮小 Zoom 或關閉此選項。
 完整 Dataset 保存與 CSV／XLSX 匯出不受繪圖上限影響。
@@ -830,7 +832,9 @@ Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示�
 
 Setup 啟用 **Live Monitor** 後，**Live Monitors** 會在 Charts 下方獨立顯示，
 使用與 Charts 相同的外框與內部卡片樣式，兩區可各自收合；沒有啟用 Monitor 時整區隱藏。
-數值 Monitor 保留原本 Line 外觀、Hover 與 Zoom。Monitor 顯示最新 1,000 筆 Worker Samples，Capture OFF 時仍可更新；Worker OFF 後停止更新，
+每張 Monitor 使用精簡的 **Monitor info** 說明：數值 Monitor 為最新 1,000 筆 Worker Samples
+的緩衝上限，Serial RX 則為最近的有限長度 Bytes；兩者皆獨立於 Capture。
+數值 Monitor 保留原本 Line 外觀、Hover 與 Zoom，Capture OFF 時仍可更新；Worker OFF 後停止更新，
 新 Worker Runtime 會清空 Buffer。它沒有 Chart Settings、Add／Remove、Saved Chart、PNG、
 Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 對 Meters
 顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；Scopes 則依 **Measurement**

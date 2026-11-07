@@ -887,9 +887,12 @@ Each Chart displays a colored Foreground or Background source label and its Page
 Background ID. The <strong>Save charts with template</strong> option and shared chart count appear
 at the top-right of Charts. All Foreground Pages and Background Charts appear together.
 Each Background Chart offers <strong>Export PNG</strong>, <strong>Settings</strong>, <strong>Source settings</strong>, and <strong>Remove</strong>.
-<strong>Source settings</strong> opens Background, Capture Dataset, X axis, and (for Scopes)
-<strong>Measurement</strong> selectors. Changes take effect immediately, and the Chart card
-continues showing its source badge and sample counts. Each Scopes Chart selects
+<strong>Source settings</strong> shows the selected Background as read-only and offers
+<strong>Capture Dataset</strong> and <strong>X-axis data</strong> (Elapsed Time, Timestamp or Sample Index).
+Scopes adds a <strong>Measurement</strong> selector. The Background source is chosen when the
+Chart is created; when unavailable in the current Draft or Last Run, use
+<strong>Reassign source</strong> to select a valid Background present in both. Changes apply
+immediately, and the Chart card retains its source badge and <strong>Data summary</strong>. Each Scopes Chart selects
 one Measurement field; use
 multiple Charts to plot different measurements rather than combining different
 units on one axis.
@@ -902,7 +905,7 @@ data and never substitutes Monitor samples.</p>
 <p>Background X uses actual Elapsed Time in seconds, Timestamp, or Sample Index.
 Hover identifies an actual displayed sample. Line/Area retain peaks, troughs and
 endpoints when sampled; Scatter/Column/Bar show representative observations.
-Counts show Dataset size, visible samples and displayed samples. Line/Area/Column
+<strong>Data summary</strong> shows Total samples, In range and Plotted, with the current sampling status. Line/Area/Column
 Zoom requests detail for the visible range; Scatter/Bar have no Zoom controls.
 Line <strong>Settings → General → Show All Raw Data</strong> displays all visible samples up
 to <strong>25,000</strong>. Above this limit the Chart shows no points and asks you to narrow
@@ -915,9 +918,11 @@ Remove that Chart, select a valid source, or turn off saving Charts.</p>
 <p>When enabled in Setup, <strong>Live Monitors</strong> appears immediately below Charts as a
 separate expandable framed section with matching inner cards. Charts and
 Live Monitors collapse independently; without any enabled Monitor, the section
-is hidden. Numeric monitors retain Line appearance, Hover and Zoom. Each
-Monitor shows the latest 1,000 Worker samples, including
-while Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
+is hidden. Each monitor has a compact <strong>Monitor info</strong> section: numeric monitors
+describe the latest-1,000-Worker-sample buffer, while Serial RX monitors describe
+their bounded-byte buffer. Both operate independently of Capture. Numeric
+monitors retain Line appearance, Hover and Zoom, and continue updating while
+Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
 Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
 CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
 count/min/max/average, status and quality for Meters. For Scopes, it shows

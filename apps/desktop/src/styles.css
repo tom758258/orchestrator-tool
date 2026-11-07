@@ -2316,6 +2316,29 @@ textarea:disabled {
   color: var(--muted);
   font-size: 0.9rem;
 }
+.chart-info-summary {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+.chart-info-summary h4 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+.chart-info-summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 0;
+}
+.chart-info-summary dl > div { flex: 1 1 100px; min-width: 0; }
+.chart-info-summary dt { color: var(--muted); font-size: 0.8rem; }
+.chart-info-summary dd { margin: 4px 0 0; font-weight: 600; }
+.chart-info-note { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; }
+.source-settings-source { margin-bottom: 0; }
+
 .result-chart-source-info {
   display: flex;
   flex-wrap: wrap;

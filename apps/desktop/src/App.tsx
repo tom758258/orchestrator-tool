@@ -3209,6 +3209,7 @@ function App() {
               {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
               {runWorkflowSnapshot && <OutputCharts key={`charts-${displayedRun?.run_id ?? 'starting'}`} runId={displayedRun?.run_id ?? null}
                 pages={runPages} metadata={displayedRun?.pages ?? []} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
+                currentDraftBackgrounds={workflowDraft?.backgrounds ?? null}
                 toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
                 panels={chartPanels} onPanelsChange={setChartPanels} chartData={chartData} running={runStatus === 'running'}
                 onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}

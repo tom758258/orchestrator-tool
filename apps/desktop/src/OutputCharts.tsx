@@ -39,7 +39,14 @@ function SerialLiveMonitor({ runId, background, running }: {
   const [mode, setMode] = useState<SerialDataFormat>('hex')
   const display = useMemo(() => serialContinuousView(output?.monitor ?? [], mode), [output, mode])
   return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
-    <p>Continuous Serial RX · latest bounded bytes · independent of Capture</p>
+    <section className="chart-info-summary" aria-label="Monitor info">
+      <h4>Monitor info</h4>
+      <dl>
+        <div><dt>Sample buffer</dt><dd>Latest bounded bytes</dd></div>
+        <div><dt>Capture</dt><dd>Independent</dd></div>
+      </dl>
+      <p className="chart-info-note">Continuous Serial RX</p>
+    </section>
     <label>Display<select aria-label={`Serial Live Monitor Display ${background.id}`} value={mode}
       onChange={event => setMode(event.target.value as SerialDataFormat)}>
       <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>
@@ -69,7 +76,13 @@ function LiveMonitor({ runId, background, running }: { runId: number; background
     return backgroundPlotData(points, x.length ? { min: Math.min(...x), max: Math.max(...x) } : null)
   }, [output, field])
   return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
-    <p>Latest 1,000 Worker samples · independent of Capture</p>
+    <section className="chart-info-summary" aria-label="Monitor info">
+      <h4>Monitor info</h4>
+      <dl>
+        <div><dt>Sample buffer</dt><dd>Latest 1,000 Worker samples</dd></div>
+        <div><dt>Capture</dt><dd>Independent</dd></div>
+      </dl>
+    </section>
     {fields.length > 0 && <label>Measurement<select aria-label={'Live Monitor Measurement ' + background.id} value={field}
       onChange={event => setField(event.target.value)}>
       {fields.map(measurement => <option key={measurement.id} value={measurement.id}>{measurement.id}</option>)}
@@ -94,9 +107,10 @@ export function LiveMonitors({ runId, backgrounds, toolKinds, running }: {
 }
 
 export default function OutputCharts({ runId, pages, metadata, backgrounds, toolKinds, panels, onPanelsChange, chartData, running,
-  onSavingChange, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, selections }: {
+  onSavingChange, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, selections, currentDraftBackgrounds }: {
   runId: number | null; pages: { name: string; outputs: OutputStep[] }[]; metadata: RunPageMetadata[]
-  backgrounds: BackgroundConfig[]; toolKinds: Record<string, string>; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
+  backgrounds: BackgroundConfig[]; currentDraftBackgrounds: BackgroundConfig[] | null
+  toolKinds: Record<string, string>; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
   chartData: Map<string, PageChartData>; running: boolean; onSavingChange: (saving: boolean) => void
   changeSettings?: ChartChangeSettings | null; fitData?: boolean
   saveChartsWithTemplate: boolean; onSaveChartsWithTemplateChange: (checked: boolean) => void
@@ -120,6 +134,9 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
 
   const foregroundSources = sources.filter(source => 'page' in source)
   const backgroundSources = sources.filter(source => 'background' in source)
+  const validBackgrounds = backgrounds.filter(background =>
+    toolKinds[background.tool_instance_id] !== 'serial' &&
+    (currentDraftBackgrounds === null || currentDraftBackgrounds.some(draft => draft.id === background.id)))
   const ground = selectedGround ?? (foregroundSources.length ? 'foreground'
     : backgroundSources.length ? 'background' : 'foreground')
   const availableSources = ground === 'foreground' ? foregroundSources : backgroundSources
@@ -176,7 +193,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
         onSavingChange={onSavingChange} changeSettings={changeSettings} fitData={fitData} />
     })}
     {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartPanel key={panel.id}
-      panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds}
+      panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds} validBackgrounds={validBackgrounds}
       datasets={output?.datasets ?? []} running={running} selections={selections} onSavingChange={onSavingChange} />)}
     </div>
   </Collapsible>

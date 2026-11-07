@@ -242,12 +242,16 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
     return within(screen.getByRole('dialog', { name: 'Source settings' }))
   }
   let source = openSource()
+  expect(source.getByText('Source: background-1')).toBeTruthy()
+  expect(source.queryByRole('combobox', { name: 'Background' })).toBeNull()
+  expect(source.getByLabelText('Capture Dataset')).toBeTruthy()
+  expect(source.getByLabelText('X-axis data')).toBeTruthy()
   // A close event queued during StrictMode's effect cleanup must not dismiss a reopened dialog.
   const sourceDialog = screen.getByRole('dialog', { name: 'Source settings' }) as HTMLDialogElement
   expect(sourceDialog.open).toBe(true)
   fireEvent(sourceDialog, new Event('close'))
   expect(screen.getByRole('dialog', { name: 'Source settings' })).toBe(sourceDialog)
-  const axis = () => source.getByLabelText('X axis') as HTMLSelectElement
+  const axis = () => source.getByLabelText('X-axis data') as HTMLSelectElement
   const closeSource = () => fireEvent.click(source.getByRole('button', { name: 'Close' }))
   await within(chart()).findByRole('img', { name: 'line chart' })
   fireEvent.click(screen.getByLabelText('Save charts with template'))
@@ -268,6 +272,9 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   fireEvent.click(binding('meters-1'))
   tab('Output')
   source = openSource()
+  expect(source.getByRole('alert').textContent).toContain('no longer available')
+  const reassign = source.getByLabelText('Reassign source') as HTMLSelectElement
+  expect([...reassign.options].map(option => option.value)).toContain('background-2')
   fireEvent.change(axis(), { target: { value: 'index' } })
   expect(axis().value).toBe('index')
   closeSource()
@@ -317,6 +324,33 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   expect(saved.backgrounds).toEqual([{ id: 'background-1', tool_instance_id: 'meters-2', live_monitor: false, limit_count: 1000 }])
   expect(saved.output_views?.charts[0].source?.x_axis).toBe('elapsed')
   expect(runCalls()).toHaveLength(2)
+})
+
+test('invalid Background Chart can be reassigned to a source in both Draft and Last Run', async () => {
+  currentDraft = backgroundDraft(2)
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  await finish(22)
+  tab('Output')
+  fireEvent.change(screen.getByRole('combobox', { name: 'Ground' }), { target: { value: 'background' } })
+  fireEvent.click(screen.getByRole('button', { name: '+ Add Chart' }))
+  tab('Setup')
+  const expandFirst = screen.queryByRole('button', { name: 'Expand meters-1' })
+  if (expandFirst) fireEvent.click(expandFirst)
+  const first = screen.getByRole('button', { name: 'Collapse meters-1' }).closest('fieldset')!
+  fireEvent.click(within(first).getByRole('button', { name: 'Expand Background Streaming' }))
+  fireEvent.click(within(first).getByLabelText('Enable Background Streaming'))
+  tab('Output')
+  const chart = within(screen.getByRole('region', { name: 'Chart 1' }))
+  fireEvent.click(chart.getByRole('button', { name: 'Source settings' }))
+  const dialog = within(screen.getByRole('dialog', { name: 'Source settings' }))
+  const reassign = dialog.getByLabelText('Reassign source') as HTMLSelectElement
+  expect([...reassign.options].map(option => option.value)).toContain('background-2')
+  fireEvent.change(reassign, { target: { value: 'background-2' } })
+  expect(chart.getByText('Source: background-2')).toBeTruthy()
+  expect(dialog.queryByLabelText('Reassign source')).toBeNull()
+  expect(dialog.getByLabelText('Capture Dataset')).toBeTruthy()
+  fireEvent.click(dialog.getByRole('button', { name: 'Close' }))
 })
 
 test('overlapping chart PNG exports keep application actions busy until every export settles', async () => {
@@ -497,7 +531,8 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   const output = await screen.findByRole('region', { name: 'Background Output' })
   const charts = screen.getByRole('region', { name: 'Charts' })
   const currentMonitors = () => within(screen.getByRole('region', { name: 'Live Monitors' }))
-  expect(currentMonitors().getByRole('region', { name: 'Live Monitor: background-1' })).toBeTruthy()
+  const monitor = currentMonitors().getByRole('region', { name: 'Live Monitor: background-1' })
+  expect(within(monitor).getByRole('region', { name: 'Monitor info' })).toBeTruthy()
   expect(within(charts).queryByRole('region', { name: 'Live Monitor: background-1' })).toBeNull()
   expect(screen.getByRole('region', { name: 'Foreground Output' })).toBeTruthy()
   await within(output).findByText(/More than 300,000 samples/)
@@ -512,12 +547,18 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   const dataset = (dialog: ReturnType<typeof within>) => dialog.getByLabelText('Capture Dataset') as HTMLSelectElement
   const closeSource = (dialog: ReturnType<typeof within>) => fireEvent.click(dialog.getByRole('button', { name: 'Close' }))
   let source = openSource(1)
+  expect(source.getByText('Source: background-1')).toBeTruthy()
+  expect(source.queryByRole('combobox', { name: 'Background' })).toBeNull()
   await waitFor(() => expect(dataset(source).value).toBe('capture-2'))
   fireEvent.change(dataset(source), { target: { value: 'capture-1' } })
   closeSource(source)
   source = openSource(2)
   expect(dataset(source).value).toBe('capture-2')
   closeSource(source)
+  const summary = await chart(1).findByRole('region', { name: 'Data summary' })
+  expect(within(summary).getByText('Total samples')).toBeTruthy()
+  expect(within(summary).getByText('In range')).toBeTruthy()
+  expect(within(summary).getByText('Plotted')).toBeTruthy()
   captures.push('capture-3')
   source = openSource(1)
   await source.findByRole('option', { name: /capture-3/ })
@@ -591,6 +632,7 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   fireEvent.click(screen.getByLabelText('Show All Raw Data'))
   fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
   await chart(1).findByText(/Show All Raw Data supports at most 25,000/)
+  expect(within(chart(1).getByRole('region', { name: 'Data summary' })).getByText('Plotted')).toBeTruthy()
   expect(chart(1).getByRole('img').textContent).toBe('0 displayed samples')
   expect((chart(1).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(true)
   expect((chart(2).getByRole('button', { name: 'Export PNG' }) as HTMLButtonElement).disabled).toBe(false)
