@@ -3214,7 +3214,7 @@ function App() {
                 onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}
                 saveChartsWithTemplate={saveChartsWithTemplate} onSaveChartsWithTemplateChange={setSaveChartsWithTemplate}
                 selections={backgroundChartSelections} />}
-              {runWorkflowSnapshot && <LiveMonitors
+              {runWorkflowSnapshot && <LiveMonitors key={`monitors-${displayedRun?.run_id ?? 'starting'}`}
                 runId={displayedRun?.run_id ?? null} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
                 toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
                 running={runStatus === 'running'} />}
