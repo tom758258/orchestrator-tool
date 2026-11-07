@@ -264,8 +264,8 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   tab('Output')
   source = openSource()
   fireEvent.change(axis(), { target: { value: 'index' } })
-  closeSource()
   expect(axis().value).toBe('index')
+  closeSource()
   await within(chart()).findByRole('img', { name: 'line chart' })
   const writes = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').length
   const before = writes()
