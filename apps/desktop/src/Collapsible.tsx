@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 
-export default function Collapsible({ title, children, actions, className = '', framed = false }: {
-  title: string; children: ReactNode; actions?: ReactNode; className?: string; framed?: boolean
+export default function Collapsible({ title, children, actions, headingActions, className = '', framed = false }: {
+  title: string; children: ReactNode; actions?: ReactNode; headingActions?: ReactNode; className?: string; framed?: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
   const heading = <h3><button className="collapse-button" type="button" aria-expanded={expanded}
@@ -9,6 +9,7 @@ export default function Collapsible({ title, children, actions, className = '', 
     {expanded ? '−' : '+'}</button> {title}</h3>
   if (framed) return <fieldset className={`output-section ${className}`} role="region" aria-label={title}>
     <legend>{heading}</legend>
+    {headingActions && <div className="collapsible-framed-metadata">{headingActions}</div>}
     <div hidden={!expanded}>{actions}{children}</div>
   </fieldset>
   return <section className={className} aria-label={title}>
