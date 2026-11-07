@@ -245,7 +245,7 @@ test('Last Run Charts survive binding removal, recover from invalid validation a
   // A close event queued during StrictMode's effect cleanup must not dismiss a reopened dialog.
   const sourceDialog = screen.getByRole('dialog', { name: 'Source settings' }) as HTMLDialogElement
   expect(sourceDialog.open).toBe(true)
-  fireEvent.close(sourceDialog)
+  fireEvent(sourceDialog, new Event('close'))
   expect(screen.getByRole('dialog', { name: 'Source settings' })).toBe(sourceDialog)
   const axis = () => source.getByLabelText('X axis') as HTMLSelectElement
   const closeSource = () => fireEvent.click(source.getByRole('button', { name: 'Close' }))
