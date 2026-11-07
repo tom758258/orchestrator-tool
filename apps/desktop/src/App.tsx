@@ -11,7 +11,7 @@ import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor from './SequenceEditor'
 import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
-import OutputCharts from './OutputCharts'
+import OutputCharts, { LiveMonitors } from './OutputCharts'
 import Collapsible from './Collapsible'
 import type { BackgroundChartSelections } from './BackgroundChartPanel'
 import { EXECUTION_WINDOW_SIZE, MESSAGE_WINDOW_SIZE } from './executionWindow'
@@ -3214,6 +3214,10 @@ function App() {
                 onSavingChange={handleChartSavingChange} changeSettings={runChartSampling} fitData={runChartFitData}
                 saveChartsWithTemplate={saveChartsWithTemplate} onSaveChartsWithTemplateChange={setSaveChartsWithTemplate}
                 selections={backgroundChartSelections} />}
+              {runWorkflowSnapshot && <LiveMonitors key={`monitors-${displayedRun?.run_id ?? 'starting'}`}
+                runId={displayedRun?.run_id ?? null} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
+                toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
+                running={runStatus === 'running'} />}
               <Collapsible title="Foreground Output" framed>
               {runPage && <div className="last-run-page-tabs" role="tablist" aria-label="Last Run Pages">
                 {runPages.map((page, index) => <button key={page.name} type="button" role="tab"

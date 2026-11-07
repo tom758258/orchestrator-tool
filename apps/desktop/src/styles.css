@@ -1684,6 +1684,7 @@ textarea:disabled {
 .result-chart-panel-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-left: auto;
 }
@@ -1794,6 +1795,8 @@ textarea:disabled {
 .chart-settings-dialog::backdrop {
   background: rgb(0 0 0 / 55%);
 }
+.source-settings-dialog { width: min(480px, calc(100vw - 32px)); }
+.source-settings-dialog .chart-settings-field select { min-width: 0; width: 100%; }
 
 .chart-settings-content {
   display: grid;

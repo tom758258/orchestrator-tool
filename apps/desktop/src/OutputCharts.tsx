@@ -79,6 +79,20 @@ function LiveMonitor({ runId, background, running }: { runId: number; background
   </Collapsible>
 }
 
+export function LiveMonitors({ runId, backgrounds, toolKinds, running }: {
+  runId: number | null; backgrounds: BackgroundConfig[]; toolKinds: Record<string, string>; running: boolean
+}) {
+  const enabled = backgrounds.filter(background => background.live_monitor)
+  if (runId === null || enabled.length === 0) return null
+  return <Collapsible title="Live Monitors" className="live-monitors" framed>
+    <div className="result-charts-grid">
+      {enabled.map(background => toolKinds[background.tool_instance_id] === 'serial'
+        ? <SerialLiveMonitor key={background.id} runId={runId} background={background} running={running} />
+        : <LiveMonitor key={background.id} runId={runId} background={background} running={running} />)}
+    </div>
+  </Collapsible>
+}
+
 export default function OutputCharts({ runId, pages, metadata, backgrounds, toolKinds, panels, onPanelsChange, chartData, running,
   onSavingChange, changeSettings, fitData, saveChartsWithTemplate, onSaveChartsWithTemplateChange, selections }: {
   runId: number | null; pages: { name: string; outputs: OutputStep[] }[]; metadata: RunPageMetadata[]
@@ -164,10 +178,6 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
     {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartPanel key={panel.id}
       panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds}
       datasets={output?.datasets ?? []} running={running} selections={selections} onSavingChange={onSavingChange} />)}
-    {runId !== null && backgrounds.filter(background => background.live_monitor).map(background =>
-      toolKinds[background.tool_instance_id] === 'serial'
-        ? <SerialLiveMonitor key={background.id} runId={runId} background={background} running={running} />
-        : <LiveMonitor key={background.id} runId={runId} background={background} running={running} />)}
     </div>
   </Collapsible>
 }

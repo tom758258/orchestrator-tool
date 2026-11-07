@@ -941,8 +941,8 @@ OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.
 
-**Output** contains three expandable sections on the same page: **Charts**,
-**Foreground Output**, and **Background Output**. Background-only runs can use
+**Output** contains **Charts**, optional **Live Monitors**, **Foreground Output**,
+and **Background Output** as separate expandable sections. Background-only runs can use
 Charts and Background Output. Background Output appears only when the Last Run
 had Background bindings; changing the current Draft does not hide those results.
 Its Background and Capture Dataset selectors control its Summary, Output Data
@@ -952,9 +952,12 @@ In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Backgr
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or
 Background ID. The **Save charts with template** option and shared chart count appear
-at the top-right of Charts. All Foreground Pages and Background Charts appear together. Each Background Chart has its own
-Background, Capture Dataset, X axis, **Settings**, **Export PNG** and **Remove**.
-Scopes Charts additionally select one **Measurement** field per Chart; use
+at the top-right of Charts. All Foreground Pages and Background Charts appear together.
+Each Background Chart offers **Export PNG**, **Settings**, **Source settings**, and **Remove**.
+**Source settings** opens Background, Capture Dataset, X axis, and (for Scopes)
+**Measurement** selectors. Changes take effect immediately, and the Chart card
+continues showing its source badge and sample counts. Each Scopes Chart selects
+one Measurement field; use
 multiple Charts to plot different measurements rather than combining different
 units on one axis.
 Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
@@ -979,8 +982,11 @@ With **Save charts with template** enabled, a Chart referring to a Background
 missing from the Draft prevents Template Save and identifies the Chart to fix.
 Remove that Chart, select a valid source, or turn off saving Charts.
 
-When enabled in Setup, **Live Monitor** appears inside Charts, with the same Line
-appearance, Hover and Zoom. It shows the latest 1,000 Worker samples, including
+When enabled in Setup, **Live Monitors** appears immediately below Charts as a
+separate expandable framed section with matching inner cards. Charts and
+Live Monitors collapse independently; without any enabled Monitor, the section
+is hidden. Numeric monitors retain Line appearance, Hover and Zoom. Each
+Monitor shows the latest 1,000 Worker samples, including
 while Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
 Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
 CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
@@ -1058,7 +1064,8 @@ After a run, the Output area can show the following visible sections:
   shown latest first when the result list is paged.
 - **Messages** — text written by Show Message steps during the run.
 - **Last Run** — the current run's Output Pages and result workspace.
-- **Charts** — all Foreground and Background chart panels, plus enabled Live Monitors.
+- **Charts** — all Foreground and Background chart panels.
+- **Live Monitors** — enabled monitors in their own section below Charts.
 - **Summary** — numeric Count, Min, Max, and Avg values when applicable.
 - **Output Data** — committed rows for the selected Page, shown latest first.
 
@@ -1081,15 +1088,16 @@ results and can be manually exported after execution stops.
 
 ### 10.2 Collapsing the result panels
 
-Charts, Foreground Output and Background Output, each Chart and Live Monitor,
+Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent `− / +`
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.
 
-The three main sections have matching rounded frames, with their titles and
-collapse buttons embedded in the top border. Collapsing keeps the frame and
-title visible. Charts also hides its header controls until expanded again.
+Charts, optional Live Monitors, Foreground Output and Background Output share
+matching rounded frames with their titles and collapse buttons in the top border.
+Each collapses independently and keeps its frame and title visible. Charts also
+keeps **Save charts with template** and its chart count visible when collapsed.
 
 **Last Run Execution Results** and **Messages** each have a `+ / −` control on
 the right of their heading. Both start expanded, and each collapses on its own
