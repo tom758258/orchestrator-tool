@@ -347,7 +347,8 @@ test('invalid Background Chart can be reassigned to a source in both Draft and L
   const reassign = dialog.getByLabelText('Reassign source') as HTMLSelectElement
   expect([...reassign.options].map(option => option.value)).toContain('background-2')
   fireEvent.change(reassign, { target: { value: 'background-2' } })
-  expect(chart.getByText('Source: background-2')).toBeTruthy()
+  expect(dialog.getByText('Source: background-2')).toBeTruthy()
+  expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)[0].source.background_id).toBe('background-2')
   expect(dialog.queryByLabelText('Reassign source')).toBeNull()
   expect(dialog.getByLabelText('Capture Dataset')).toBeTruthy()
   fireEvent.click(dialog.getByRole('button', { name: 'Close' }))
