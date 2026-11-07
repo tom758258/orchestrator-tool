@@ -160,7 +160,7 @@ async function savedDraft(): Promise<WorkflowDraft> {
 }
 
 test('Charts creation settings filter Page by Ground and label each source', async () => {
-  currentDraft = backgroundDraft(1)
+  currentDraft = backgroundDraft(2)
   await mount()
   fireEvent.click(runButton('Simulation'))
   await finish(31)
@@ -176,11 +176,16 @@ test('Charts creation settings filter Page by Ground and label each source', asy
   })
 
   fireEvent.change(ground, { target: { value: 'background' } })
-  expect([...page.options].map(option => option.textContent?.trim())).toEqual(['background-1'])
+  expect([...page.options].map(option => option.textContent?.trim())).toEqual(['background-1', 'background-2'])
+  fireEvent.change(page, { target: { value: 'background:background-2' } })
+  expect(page.value).toBe('background:background-2')
   fireEvent.click(charts.getByRole('button', { name: '+ Add Chart' }))
   const second = within(screen.getByRole('region', { name: 'Chart 2' }))
   expect(second.getByText('Data source').parentElement?.textContent).toContain('Background')
-  expect(second.getByText('Source: background-1')).toBeTruthy()
+  expect(second.getByText('Source: background-2')).toBeTruthy()
+  expect(JSON.parse(screen.getByTestId('chart-panels').textContent!)[1]).toMatchObject({
+    source: { background_id: 'background-2' },
+  })
 
   fireEvent.change(ground, { target: { value: 'foreground' } })
   expect(page.value).toBe('page:Results')
