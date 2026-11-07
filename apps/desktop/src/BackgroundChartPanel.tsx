@@ -162,7 +162,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
           </dl>
           {!series.raw_limit_exceeded && <p className="chart-info-note">{series.sampled
             ? 'Representative samples' : 'All visible samples plotted'}</p>}
-        </section>
+        </section>}
         {series?.raw_limit_exceeded && <p role="alert">This range contains {series.visible_count.toLocaleString()} samples; Show All Raw Data supports at most {series.raw_limit.toLocaleString()}. Narrow Zoom or turn off Show All Raw Data.</p>}
         {!series && !error && <p role="status">Preparing chart data...</p>}
         <ChartPlot key={`${runId}:${source.background_id}:${source.field}:${datasetId}:${source.x_axis}`} panel={panel} data={EMPTY_DATA}
