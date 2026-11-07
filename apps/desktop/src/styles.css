@@ -2257,17 +2257,10 @@ textarea:disabled {
 .result-chart-panel > div[hidden], .result-chart > div[hidden], .background-output > div[hidden] { display: none; }
 
 /* Charts heading metadata and contained creation controls. */
-.result-chart > .collapsible-framed-header {
+.result-chart > .collapsible-framed-metadata {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding-top: 14px;
-}
-.result-chart > .collapsible-framed-header h3 {
-  margin: 0;
-  font-size: 1rem;
+  justify-content: flex-end;
+  min-width: 0;
 }
 .result-chart-header-actions {
   gap: 16px;
