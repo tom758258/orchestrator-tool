@@ -85,7 +85,7 @@ export function LiveMonitors({ runId, backgrounds, toolKinds, running }: {
   const enabled = backgrounds.filter(background => background.live_monitor)
   if (runId === null || enabled.length === 0) return null
   return <Collapsible title="Live Monitors" className="live-monitors" framed>
-    <div className="result-charts-grid">
+    <div key={runId} className="result-charts-grid">
       {enabled.map(background => toolKinds[background.tool_instance_id] === 'serial'
         ? <SerialLiveMonitor key={background.id} runId={runId} background={background} running={running} />
         : <LiveMonitor key={background.id} runId={runId} background={background} running={running} />)}
