@@ -1663,6 +1663,11 @@ textarea:disabled {
   gap: 16px;
 }
 
+/* Space the first Live Monitor card below its outer frame, without changing Charts. */
+.live-monitors .result-charts-grid {
+  padding-top: 16px;
+}
+
 .result-chart-panel {
   min-width: 0;
   padding: 16px;
