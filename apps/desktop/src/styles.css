@@ -2257,7 +2257,7 @@ textarea:disabled {
 .result-chart-sources { display: flex; flex-wrap: wrap; gap: 12px; }
 .result-chart-sources label { display: flex; align-items: center; gap: 6px; max-width: 100%; }
 .result-chart-sources select { min-width: 0; max-width: 100%; }
-.result-chart-panel > div[hidden], .result-chart > div[hidden], .background-output > div[hidden] { display: none; }
+.result-chart-panel > div[hidden], .result-chart > div[hidden], .live-monitors > div[hidden], .background-output > div[hidden] { display: none; }
 
 /* Charts heading metadata and contained creation controls. */
 .result-chart > .collapsible-framed-metadata {
