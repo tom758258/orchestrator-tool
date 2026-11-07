@@ -9,11 +9,11 @@ import Collapsible from './Collapsible'
 import { chartPng } from './chartPng'
 
 export default function ChartPanelView({ panel, panels, onPanelsChange, charts, numericNames, timestampNames = [],
-  outputs = [], running, hasRows, canExport, onSavingChange, children, rawLimit }: {
+  outputs = [], running, hasRows, canExport, onSavingChange, children, rawLimit, onSourceSettings }: {
   panel: ChartPanel; panels: ChartPanel[]; onPanelsChange: (panels: ChartPanel[]) => void
   charts: Map<number, EChartsType>; numericNames: string[]; timestampNames?: string[]; outputs?: OutputStep[]
   running: boolean; hasRows: boolean; canExport: boolean; onSavingChange: (saving: boolean) => void
-  children: ReactNode; rawLimit?: number
+  children: ReactNode; rawLimit?: number; onSourceSettings?: () => void
 }) {
   const [settings, setSettings] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -35,11 +35,19 @@ export default function ChartPanelView({ panel, panels, onPanelsChange, charts, 
   return <Collapsible title={`Chart ${number}`} className="result-chart-panel" actions={<div className="result-chart-panel-actions">
     <button className="action-button" type="button" disabled={saving || !canExport} onClick={() => void saveImage()}>Export PNG</button>
     <button className="action-button" type="button" disabled={saving} onClick={() => setSettings(true)}>Settings</button>
+    {onSourceSettings && <button className="action-button" type="button" disabled={saving}
+      onClick={onSourceSettings}>Source settings</button>}
     <button className="action-button action-button-danger" type="button" aria-label={`Remove Chart ${number}`}
       disabled={saving}
       onClick={() => onPanelsChange(panels.filter(item => item.id !== panel.id))}>Remove</button>
   </div>}>
-    <p>{panel.source ? `Background: ${panel.source.background_id} · Value` : `Foreground: ${panel.page}`}</p>
+    <div className="result-chart-source-info">
+      <strong>Data source</strong>
+      <span className={`result-chart-source-badge ${panel.source ? 'result-chart-source-background' : 'result-chart-source-foreground'}`}>
+        {panel.source ? 'Background' : 'Foreground'}
+      </span>
+      <span className="result-chart-page-badge">{panel.source ? `Source: ${panel.source.background_id}` : `Page: ${panel.page}`}</span>
+    </div>
     {feedback && <p role="status">{feedback}</p>}
     <fieldset className="result-chart-controls" disabled={saving}>{children}</fieldset>
     {settings && <ChartSettings panel={panel} numericNames={numericNames} scatterXNames={[...numericNames, ...timestampNames]}

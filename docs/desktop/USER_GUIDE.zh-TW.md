@@ -797,16 +797,20 @@ Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker O
 Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會清理尚在
 執行的 Worker，同時保留原有 Powers Safe-Off 行為。
 
-**Output** 同頁包含 **Charts**、**Foreground Output**、**Background Output** 三個可收合區塊。
+**Output** 同頁包含 **Charts**、有啟用 Monitor 才顯示的 **Live Monitors**、**Foreground Output**、**Background Output**，各自可收合。
 只有 Background 的 Run 也能使用 Charts 與 Background Output。該次 Last Run 有
 Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏既有結果。
 Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Output Data 與匯出，
 與每張圖的選擇互相獨立。
 
-在 **Charts** 選擇 **Chart source**，按 **Add Chart**。所有 Foreground Page 與
-Background 圖表集中顯示。每張 Background Chart 可獨立選擇 Background、Capture Dataset、
-X axis，並使用 **Settings**、**Export PNG**、**Remove**；Scopes Chart 另可選擇單一
-**Measurement** 欄位，每張圖只繪製一個項目。若要比較不同項目，請使用多張 Chart，
+在 **Charts** 的 **Chart settings** 中，先選擇 **Ground**（Foreground 或 Background），
+再透過 **Page** 選擇前景 Output Page 或背景資料來源，最後按 **Add Chart**。
+每張圖表以不同顏色的 Foreground／Background 標籤與 Page／Background ID 顯示來源。
+**Save charts with template** 與圖表數量顯示在 Charts 區域右上角。所有 Foreground Page 與
+Background 圖表集中顯示。每張 Background Chart 有 **Export PNG**、**Settings**、
+**Source settings**、**Remove**。按 **Source settings** 開啟獨立視窗，可選
+Background、Capture Dataset、X axis；Scopes 另外提供 **Measurement**。
+選擇後立即套用，Chart 卡片仍顯示來源標籤與 Samples 摘要。每張 Scopes Chart 只繪製單一欄位。若要比較不同項目，請使用多張 Chart，
 不要把不同單位混用同一條 Y 軸。Background 圖表可全部移除至零張。
 Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。
 Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
@@ -824,8 +828,9 @@ Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示�
 若啟用 **Save charts with template**，而圖表引用的 Background 已不在 Draft，Template Save
 會被阻止並指出需修正的圖表。可移除該圖、選擇有效來源，或關閉保存圖表設定。
 
-Setup 啟用 **Live Monitor** 後，它顯示於 Charts 內，使用相同 Line 外觀、Hover 與 Zoom。
-Monitor 顯示最新 1,000 筆 Worker Samples，Capture OFF 時仍可更新；Worker OFF 後停止更新，
+Setup 啟用 **Live Monitor** 後，**Live Monitors** 會在 Charts 下方獨立顯示，
+使用與 Charts 相同的外框與內部卡片樣式，兩區可各自收合；沒有啟用 Monitor 時整區隱藏。
+數值 Monitor 保留原本 Line 外觀、Hover 與 Zoom。Monitor 顯示最新 1,000 筆 Worker Samples，Capture OFF 時仍可更新；Worker OFF 後停止更新，
 新 Worker Runtime 會清空 Buffer。它沒有 Chart Settings、Add／Remove、Saved Chart、PNG、
 Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 對 Meters
 顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；Scopes 則依 **Measurement**
@@ -895,7 +900,8 @@ Run 後，Output 區域目前可顯示以下 visible sections：
   execution results 以 latest first 顯示並可分頁瀏覽。
 - **Messages** — Show Message step 在執行時寫入的文字。
 - **Last Run** — 目前 run 的 Output Pages 與 result workspace。
-- **Charts** — 集中顯示所有 Foreground／Background 圖表及已啟用的 Live Monitor。
+- **Charts** — 集中顯示所有 Foreground／Background 圖表。
+- **Live Monitors** — 獨立顯示已啟用的監看卡片，位於 Charts 下方。
 - **Summary** — 適用時顯示 numeric Count、Min、Max 與 Avg。
 - **Output Data** — 所選 Page 的 committed rows，以 latest first 顯示。
 
@@ -917,12 +923,13 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 
 ### 10.2 收合結果面板
 
-Charts、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
+Charts、Live Monitors（有啟用才顯示）、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
 區塊中的 Summary／Output Data 都有獨立 `− / +` 控制，預設全部展開。收合只隱藏內容，
 不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。
 
-三大區塊使用一致的圓角外框，標題與收合按鈕嵌入上方框線。收合後仍保留外框與
-標題；Charts 的標題列操作控制也會隱藏，重新展開後恢復。
+Charts、Live Monitors、Foreground Output 與 Background Output 使用相同圓角外框，
+標題與收合按鈕嵌入框線，彼此獨立收合，且收合後仍保留外框與標題。
+Charts 收合時仍顯示 **Save charts with template** 與圖表數量。
 
 **Last Run Execution Results** 與 **Messages** 的標題右側各有 `+ / −` 控制。兩者
 預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution

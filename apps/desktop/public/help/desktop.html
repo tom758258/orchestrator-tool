@@ -875,16 +875,22 @@ automatic finish; the first Worker OFF releases the source. A second explicit
 OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.</p>
-<p><strong>Output</strong> contains three expandable sections on the same page: <strong>Charts</strong>,
-<strong>Foreground Output</strong>, and <strong>Background Output</strong>. Background-only runs can use
+<p><strong>Output</strong> contains <strong>Charts</strong>, optional <strong>Live Monitors</strong>, <strong>Foreground Output</strong>,
+and <strong>Background Output</strong> as separate expandable sections. Background-only runs can use
 Charts and Background Output. Background Output appears only when the Last Run
 had Background bindings; changing the current Draft does not hide those results.
 Its Background and Capture Dataset selectors control its Summary, Output Data
 and export, independently of each Chart's selection.</p>
-<p>In <strong>Charts</strong>, choose a <strong>Chart source</strong>, then <strong>Add Chart</strong>. All Foreground Pages
-and Background Charts appear together. Each Background Chart has its own
-Background, Capture Dataset, X axis, <strong>Settings</strong>, <strong>Export PNG</strong> and <strong>Remove</strong>.
-Scopes Charts additionally select one <strong>Measurement</strong> field per Chart; use
+<p>In <strong>Charts</strong>, use <strong>Chart settings</strong> to choose <strong>Ground</strong> (Foreground or Background),
+then <strong>Page</strong> (a Foreground Output Page or Background source), and select <strong>Add Chart</strong>.
+Each Chart displays a colored Foreground or Background source label and its Page or
+Background ID. The <strong>Save charts with template</strong> option and shared chart count appear
+at the top-right of Charts. All Foreground Pages and Background Charts appear together.
+Each Background Chart offers <strong>Export PNG</strong>, <strong>Settings</strong>, <strong>Source settings</strong>, and <strong>Remove</strong>.
+<strong>Source settings</strong> opens Background, Capture Dataset, X axis, and (for Scopes)
+<strong>Measurement</strong> selectors. Changes take effect immediately, and the Chart card
+continues showing its source badge and sample counts. Each Scopes Chart selects
+one Measurement field; use
 multiple Charts to plot different measurements rather than combining different
 units on one axis.
 Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
@@ -906,8 +912,11 @@ the current Workflow. Display settings never recreate or modify Draft bindings.
 With <strong>Save charts with template</strong> enabled, a Chart referring to a Background
 missing from the Draft prevents Template Save and identifies the Chart to fix.
 Remove that Chart, select a valid source, or turn off saving Charts.</p>
-<p>When enabled in Setup, <strong>Live Monitor</strong> appears inside Charts, with the same Line
-appearance, Hover and Zoom. It shows the latest 1,000 Worker samples, including
+<p>When enabled in Setup, <strong>Live Monitors</strong> appears immediately below Charts as a
+separate expandable framed section with matching inner cards. Charts and
+Live Monitors collapse independently; without any enabled Monitor, the section
+is hidden. Numeric monitors retain Line appearance, Hover and Zoom. Each
+Monitor shows the latest 1,000 Worker samples, including
 while Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
 Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
 CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
@@ -976,7 +985,8 @@ folder:</p>
   shown latest first when the result list is paged.</li>
 <li><strong>Messages</strong> — text written by Show Message steps during the run.</li>
 <li><strong>Last Run</strong> — the current run's Output Pages and result workspace.</li>
-<li><strong>Charts</strong> — all Foreground and Background chart panels, plus enabled Live Monitors.</li>
+<li><strong>Charts</strong> — all Foreground and Background chart panels.</li>
+<li><strong>Live Monitors</strong> — enabled monitors in their own section below Charts.</li>
 <li><strong>Summary</strong> — numeric Count, Min, Max, and Avg values when applicable.</li>
 <li><strong>Output Data</strong> — committed rows for the selected Page, shown latest first.</li>
 </ul>
@@ -993,14 +1003,15 @@ a simulated success is never presented as a real-hardware success.</p>
 <p>If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.</p>
 <h3 id="102-collapsing-the-result-panels">10.2 Collapsing the result panels</h3>
-<p>Charts, Foreground Output and Background Output, each Chart and Live Monitor,
+<p>Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent <code>− / +</code>
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.</p>
-<p>The three main sections have matching rounded frames, with their titles and
-collapse buttons embedded in the top border. Collapsing keeps the frame and
-title visible. Charts also hides its header controls until expanded again.</p>
+<p>Charts, optional Live Monitors, Foreground Output and Background Output share
+matching rounded frames with their titles and collapse buttons in the top border.
+Each collapses independently and keeps its frame and title visible. Charts also
+keeps <strong>Save charts with template</strong> and its chart count visible when collapsed.</p>
 <p><strong>Last Run Execution Results</strong> and <strong>Messages</strong> each have a <code>+ / −</code> control on
 the right of their heading. Both start expanded, and each collapses on its own
 without affecting the other. Collapsing changes what is displayed only: it
