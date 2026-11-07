@@ -441,6 +441,20 @@ body {
   margin-top: 12px;
 }
 
+.step-palette-scroll {
+  max-height: 60vh;
+  max-height: 60dvh;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
+}
+
+.step-palette-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .step-category-header {
   display: flex;
   align-items: center;

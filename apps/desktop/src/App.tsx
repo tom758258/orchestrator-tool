@@ -2468,7 +2468,7 @@ function App() {
                       : 'Root workflow'}</p>
                     {addingToParent && <button className="action-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
-                    <div className="step-palette-items">
+                    <div className="step-palette-items step-palette-scroll" role="region" aria-label="Step categories" tabIndex={0}>
                       {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
                         const locked = category === 'Background Workflow' ? !workflowDraft.backgrounds?.length
