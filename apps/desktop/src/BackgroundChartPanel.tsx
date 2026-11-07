@@ -20,7 +20,10 @@ function SourceSettingsDialog({ children, onClose }: { children: ReactNode; onCl
     return () => { if (element.open) element.close() }
   }, [])
   return <dialog ref={dialog} className="chart-settings-dialog source-settings-dialog"
-    aria-label="Source settings" onClose={onClose}>
+    aria-label="Source settings" onClose={event => {
+      // StrictMode effect cleanup may queue a close event before showModal reopens.
+      if (!event.currentTarget.open && event.currentTarget.isConnected) onClose()
+    }}>
     <div className="chart-settings-content">
       <h3>Source settings</h3>
       {children}
