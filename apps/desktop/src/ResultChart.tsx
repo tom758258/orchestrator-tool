@@ -1,5 +1,6 @@
 import type { OutputStep } from './workflow'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { EChartsType } from 'echarts/core'
 import ChartPlot from './ChartPlot'
 import ChartPanelView from './ChartPanelView'
@@ -14,12 +15,13 @@ const CHART_SERIES_CHUNK_ROWS = 25_000
 const EMPTY_DATA = createPageChartData()
 type StatisticalState = { key: string; response?: StatisticalDto; error?: string }
 
-export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, onSavingChange, running, changeSettings, fitData }: {
+export default function ResultChart({ runId, revision, rowCount, numericNames, timestampNames, outputs, panels, onPanelsChange, page, chartData, portalSlots, onSavingChange, running, changeSettings, fitData }: {
   runId: number | null
   revision: number
   rowCount: number
   page: string
   chartData: Map<string, PageChartData>
+  portalSlots: ReadonlyMap<number, HTMLElement>
   onSavingChange: (saving: boolean) => void
   panels: ChartPanel[]
   onPanelsChange: (panels: ChartPanel[]) => void
@@ -160,6 +162,8 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
 
   return <div className="result-chart-page">
       {localPanels.map((panel) => {
+        const target = portalSlots.get(panel.id)
+        if (!target) return null
         const waiting = running && !chartSupportsLive(panel.type)
         const selectedOutputs = panel.outputs.filter(name => numericNames.includes(name))
         const visiblePanel = selectedOutputs.length === panel.outputs.length ? panel : { ...panel, outputs: selectedOutputs }
@@ -173,7 +177,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
         const analysisReady = runId !== null && !waitingForRunData && (isStatistical ? statisticReady : panel.type === 'line' ||
           (data !== null && data.commonLength(chartRequiredOutputs(visiblePanel)) >= rowCount))
         const enoughOutputs = panel.type !== 'combo' || selectedOutputs.length >= 2
-        return <ChartPanelView key={panel.id} panel={panel} panels={panels} onPanelsChange={onPanelsChange}
+        return createPortal(<ChartPanelView panel={panel} panels={panels} onPanelsChange={onPanelsChange}
           charts={plots.current} numericNames={numericNames} timestampNames={timestampNames} outputs={outputs}
           running={running} hasRows={rowCount > 0} onSavingChange={onSavingChange}
           canExport={!waiting && selectedOutputs.length > 0 && analysisReady && enoughOutputs}>
@@ -206,7 +210,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
               statistical={isStatistical ? statisticState?.response : undefined}
               changeSettings={changeSettings} fitData={fitData} xTimeFormat={xTimeFormat} />
           )}
-        </ChartPanelView>
+        </ChartPanelView>, target, panel.id)
       })}
     </div>
 }

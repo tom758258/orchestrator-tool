@@ -1677,6 +1677,15 @@ textarea:disabled {
   gap: 16px;
 }
 
+.result-chart-slot {
+  min-width: 0;
+}
+
+.result-chart-slot > .result-chart-panel {
+  height: 100%;
+  box-sizing: border-box;
+}
+
 /* Space the first Live Monitor card below its outer frame, without changing Charts. */
 .live-monitors .result-charts-grid {
   padding-top: 16px;

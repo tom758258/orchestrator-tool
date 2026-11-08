@@ -956,7 +956,7 @@ In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Backgr
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or
 Background ID. The **Save charts with template** option and shared chart count appear
-at the top-right of Charts. All Foreground Pages and Background Charts appear together.
+at the top-right of Charts. All Foreground Pages and Background Charts appear together in Chart number order, regardless of source.
 Each Background Chart offers **Export PNG**, **Settings**, **Source settings**, and **Remove**.
 **Source settings** shows the selected Background as read-only and offers
 **Capture Dataset** and **X-axis data** (Elapsed Time, Timestamp or Sample Index).

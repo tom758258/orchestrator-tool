@@ -974,7 +974,7 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。
 
 Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
-最多 8 張額度。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
+最多 8 張額度。Foreground／Background Charts 依顯示的 Chart 編號排列，不會因來源不同而分組。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
 
 Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with template**，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
