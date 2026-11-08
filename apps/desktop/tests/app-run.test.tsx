@@ -1192,3 +1192,38 @@ test('the final Foreground Chart can be removed without any result rows', () => 
   fireEvent.click(screen.getByRole('button', { name: 'Remove Chart 1' }))
   expect(onPanelsChange).toHaveBeenCalledWith([])
 })
+
+
+test('Foreground Output Page picker identifies the selected page and keeps export scoped to it', async () => {
+  currentDraft = structuredClone(draft)
+  currentDraft.workflow.steps.push({
+    type: 'output', id: 'other-output', name: 'Current', page: 'Meter Series',
+    value: { source: 'literal', value: 5 },
+  })
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  const first = metadata(46)
+  await act(async () => run.resolve({ ...first, pages: [
+    ...first.pages,
+    { ...first.pages[0], name: 'Meter Series', output_names: ['Current'], numeric_outputs: ['Current'],
+      summaries: [{ name: 'Current', count: 1, min: 5, max: 5, avg: 5, std_dev: null }] },
+  ] }))
+  tab('Output')
+  const foreground = within(screen.getByRole('region', { name: 'Foreground Output' }))
+  const page = foreground.getByRole('combobox', { name: 'Output Page' }) as HTMLSelectElement
+  expect([...page.options].map(option => option.value)).toEqual(['Results', 'Meter Series'])
+  expect(foreground.getByText('Page 1 of 2')).toBeTruthy()
+  fireEvent.change(page, { target: { value: 'Meter Series' } })
+  expect(foreground.getByText('Page 2 of 2')).toBeTruthy()
+  expect(within(foreground.getByRole('table', { name: 'Page Result Summary' }))
+    .getByRole('rowheader', { name: 'Current' })).toBeTruthy()
+  fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_last_run_pages', {
+    runId: 46, destinationPath: 'saved.json', page: 'Meter Series', format: 'xlsx',
+  }))
+  fireEvent.change(foreground.getByRole('combobox', { name: 'Export Pages' }), { target: { value: 'all' } })
+  fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_last_run_pages', {
+    runId: 46, destinationPath: 'saved.json', page: null, format: 'xlsx',
+  }))
+})

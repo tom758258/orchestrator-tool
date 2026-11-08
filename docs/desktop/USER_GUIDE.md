@@ -948,6 +948,10 @@ had Background bindings; changing the current Draft does not hide those results.
 Its Background and Capture Dataset selectors control its Summary, Output Data
 and export, independently of each Chart's selection.
 
+Foreground Output has a Source card with an Output Page selector, the current page number, and short guidance. Changing the Output Page updates its Summary, Output Data, and selected-page export. Background Output has a Source card for its Background and Capture Dataset selectors and Worker status. Both outputs place their export options under Export settings below Output Data.
+
+Background numeric Summary and Output Data use the same styled tables as Foreground. Background numeric values share the Auto, Fixed, and Raw Number display setting, without changing stored data or export precision. Background Summary shows only statistics already present in the Dataset, including Scopes valid and invalid counts; Serial RX shows event and byte counts instead. Background still reads 100 rows per page, independently of Foreground Output Pages.
+
 In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Background),
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or

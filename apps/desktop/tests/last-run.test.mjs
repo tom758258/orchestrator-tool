@@ -25,16 +25,6 @@ test('Clear Last Run clears Rust ownership before dropping frontend state', () =
   assert.match(handler, /Could not clear Last Run/)
 })
 
-test('Output shows Last Run Page tabs while Page editing stays in Workflow Properties', () => {
-  const output = source.slice(source.indexOf('<section id="output-panel"'))
-  assert.ok(output.includes('aria-label="Last Run Pages"'))
-  assert.ok(output.includes('setSelectedRunPage(page.name)'))
-  assert.ok(!output.includes('Rename this Page'))
-  const properties = source.slice(0, source.indexOf('<section id="output-panel"'))
-  assert.ok(properties.includes('Existing compatible Page'))
-  assert.ok(properties.includes('selectedCompatiblePages.map'))
-})
-
 const invalidSettingsSummary = 'This operation was not valid or supported with the current settings.'
 
 test('failure presentation matches real invalid and unsupported adapter errors', () => {

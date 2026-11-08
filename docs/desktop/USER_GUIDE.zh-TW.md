@@ -927,6 +927,10 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 
 ### 10.2 收合結果面板
 
+Foreground Output 的 Source 卡片提供 Output Page 下拉選單、目前頁數與操作說明；切換後會更新 Summary、Output Data 及所選 Page 的匯出範圍。Background Output 的 Source 卡片提供 Background、Capture Dataset 選擇及 Worker 狀態。兩區的匯出選項都集中在 Output Data 下方的 Export settings。
+
+Background 數值 Summary 與 Output Data 使用和 Foreground 相同的表格樣式，並共用 Auto、Fixed、Raw 的 Number display 設定；這些設定不改變儲存資料或匯出精度。Background Summary 只顯示 Dataset 已有的統計，Scopes 保留 Valid／Invalid，Serial RX 則顯示事件與 Bytes 數量。Background 仍使用每頁 100 筆資料，不與 Foreground Output Page 混用。
+
 Charts、Live Monitors（有啟用才顯示）、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
 區塊中的 Summary／Output Data 都有獨立 `− / +` 控制，預設全部展開。收合只隱藏內容，
 不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。
