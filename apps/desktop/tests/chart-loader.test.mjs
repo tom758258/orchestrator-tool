@@ -374,6 +374,7 @@ test('non-Line panels wait for completion without exporting or loading raw data'
   const PanelView = () => null
   const modules = { react: { useMemo: factory => factory(), useRef: value => ({ current: value }),
     useEffect: () => {}, useState: value => [value, () => {}] },
+    'react-dom': { createPortal: child => child },
     './ChartPlot': () => null, './ChartPanelView': PanelView,
     './chartData': await import('../src/chartData.ts'), './chartPanels': await import('../src/chartPanels.ts'),
     './chartStatistics': await import('../src/chartStatistics.ts'),
@@ -385,7 +386,8 @@ test('non-Line panels wait for completion without exporting or loading raw data'
   for (const type of ['scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
     const panel = { ...addChartPanel([], 'A', ['V'])[0], type }
     const tree = component({ runId: 77, revision: 1, rowCount: 2, numericNames: ['V'], timestampNames: [], outputs: [],
-      panels: [panel], onPanelsChange: () => {}, page: 'A', chartData: new Map(), running: true })
+      panels: [panel], onPanelsChange: () => {}, page: 'A', chartData: new Map(), running: true,
+      portalSlots: new Map([[panel.id, {}]]) })
     const view = tree.props.children[0]
     assert.equal(view.type, PanelView)
     assert.equal(view.props.canExport, false)
@@ -412,7 +414,8 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
       return [index === 2 ? settingsId : typeof initial === 'function' ? initial() : initial,
         value => { if (index === 2) settingsId = value }]
     },
-  }, './ChartPlot': Plot, './ChartPanelView': PanelView, './chartData': chartDataModule,
+  }, 'react-dom': { createPortal: child => child },
+  './ChartPlot': Plot, './ChartPanelView': PanelView, './chartData': chartDataModule,
   './chartPanels': chartPanels, './chartStatistics': chartStatistics, './chartPng': { chartPng: () => {} },
   '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
   '@tauri-apps/plugin-dialog': { save: () => {} } }
@@ -439,7 +442,8 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
       else if (React.isValidElement(node)) { nodes.push(node); visit(node.props.children) }
     }
     visit(component({ runId: 1, revision: 1, rowCount: 2, numericNames: ['V', 'Elapsed'], timestampNames: ['Time'], outputs,
-      panels: [panel], page: 'A', chartData: new Map([['A', data]]), running: false }))
+      panels: [panel], page: 'A', chartData: new Map([['A', data]]), running: false,
+      portalSlots: new Map([[panel.id, {}]]) }))
     return nodes
   }
   for (const format of formats) {
