@@ -482,7 +482,8 @@ test('Simulation sample warning supports cancellation, per-instance overrides an
       expect(snapshot().runId).toBe(lastRunId)
       await screen.findByTitle('10.6')
       await screen.findByText(/capture-1/)
-      expect((screen.getByRole('button', { name: lastRunId === 19 ? 'Export Partial XLSX' : 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(false)
+      expect((within(screen.getByRole('region', { name: 'Foreground Output' }))
+        .getByRole('button', { name: lastRunId === 19 ? 'Export Partial XLSX' : 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(false)
       if (lastRunId === 19) expect(screen.getByText(originalError)).toBeTruthy()
     }
     tab('Workflow')
@@ -538,7 +539,7 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   expect(screen.getByRole('region', { name: 'Foreground Output' })).toBeTruthy()
   await within(output).findByText(/More than 300,000 samples/)
   expect((within(output).getByLabelText('Samples per XLSX file') as HTMLInputElement).value).toBe('300000')
-  expect((within(output).getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((within(output).getByRole('button', { name: 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(true)
   for (let i = 0; i < 2; i++) fireEvent.click(within(charts).getByRole('button', { name: '+ Add Chart' }))
   const chart = (n: number) => within(screen.getByRole('region', { name: `Chart ${n}` }))
   const openSource = (n: number) => {
@@ -605,9 +606,9 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   expect(currentOutput.getByRole('button', { name: 'Collapse Background Output' }).getAttribute('aria-expanded')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: 'Collapse Foreground Output' }))
   expect(screen.queryByRole('combobox', { name: 'Export Pages' })).toBeNull()
-  expect(currentOutput.getByRole('button', { name: 'Export Background' })).toBeTruthy()
+  expect(currentOutput.getByRole('button', { name: 'Export XLSX' })).toBeTruthy()
   fireEvent.click(currentOutput.getByRole('button', { name: 'Collapse Background Output' }))
-  expect(currentOutput.queryByRole('button', { name: 'Export Background' })).toBeNull()
+  expect(currentOutput.queryByRole('button', { name: 'Export XLSX' })).toBeNull()
   await waitFor(() => expect(queries()).toBeGreaterThan(beforePoll))
   fireEvent.click(screen.getByRole('button', { name: 'Expand Charts' }))
   expect(currentCharts().getByText('Charts: 8 / 8')).toBeTruthy()
@@ -618,7 +619,7 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   fireEvent.click(screen.getByRole('button', { name: 'Expand Foreground Output' }))
   expect(screen.getByRole('combobox', { name: 'Export Pages' })).toBeTruthy()
   fireEvent.click(currentOutput.getByRole('button', { name: 'Expand Background Output' }))
-  expect(currentOutput.getByRole('button', { name: 'Export Background' })).toBeTruthy()
+  expect(currentOutput.getByRole('button', { name: 'Export XLSX' })).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Expand Chart 1' }))
   source = openSource(1)
   expect(dataset(source).value).toBe('capture-1')
@@ -628,7 +629,7 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   expect(Number(within(screen.getByRole('region', { name: 'Live Monitor: background-1' })).getByRole('img').textContent!.split(' ')[0])).toBeGreaterThan(1)
   await act(async () => run.resolve({ ...metadata(20), pages: [] }))
   const backgroundOutput = within(screen.getByRole('region', { name: 'Background Output' }))
-  await waitFor(() => expect((backgroundOutput.getByRole('button', { name: 'Export Background' }) as HTMLButtonElement).disabled).toBe(false))
+  await waitFor(() => expect((backgroundOutput.getByRole('button', { name: 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(chart(1).getByRole('button', { name: 'Settings' }))
   fireEvent.click(screen.getByLabelText('Show All Raw Data'))
   fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
@@ -1191,4 +1192,43 @@ test('the final Foreground Chart can be removed without any result rows', () => 
   expect(screen.queryByRole('button', { name: 'Source settings' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Remove Chart 1' }))
   expect(onPanelsChange).toHaveBeenCalledWith([])
+})
+
+
+test('Foreground Output Page picker identifies the selected page and keeps export scoped to it', async () => {
+  currentDraft = structuredClone(draft)
+  currentDraft.workflow.steps.push({
+    type: 'output', id: 'other-output', name: 'Current', page: 'Meter Series',
+    value: { source: 'literal', value: 5 },
+  })
+  await mount()
+  fireEvent.click(runButton('Simulation'))
+  const first = metadata(46)
+  await act(async () => run.resolve({ ...first, pages: [
+    ...first.pages,
+    { ...first.pages[0], name: 'Meter Series', output_names: ['Current'], numeric_outputs: ['Current'],
+      summaries: [{ name: 'Current', count: 1, min: 5, max: 5, avg: 5, std_dev: null }] },
+  ] }))
+  tab('Output')
+  const foreground = within(screen.getByRole('region', { name: 'Foreground Output' }))
+  const page = foreground.getByRole('combobox', { name: 'Output Page' }) as HTMLSelectElement
+  expect([...page.options].map(option => option.value)).toEqual(['Results', 'Meter Series'])
+  expect(foreground.getByText('Page 1 of 2')).toBeTruthy()
+  fireEvent.change(page, { target: { value: 'Meter Series' } })
+  expect(foreground.getByText('Page 2 of 2')).toBeTruthy()
+  expect(foreground.getByText('Export the selected Output Page. Choose a file name and location.')).toBeTruthy()
+  expect(within(foreground.getByRole('table', { name: 'Page Result Summary' }))
+    .getByRole('rowheader', { name: 'Current' })).toBeTruthy()
+  fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_last_run_pages', {
+    runId: 46, destinationPath: 'saved.json', page: 'Meter Series', format: 'xlsx',
+  }))
+  fireEvent.change(foreground.getByRole('combobox', { name: 'Export Pages' }), { target: { value: 'all' } })
+  expect(foreground.getByText('Export all Output Pages in one XLSX file. Choose a file name and location.')).toBeTruthy()
+  fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_last_run_pages', {
+    runId: 46, destinationPath: 'saved.json', page: null, format: 'xlsx',
+  }))
+  fireEvent.change(foreground.getByRole('combobox', { name: 'Export format' }), { target: { value: 'csv' } })
+  expect(foreground.getByText('Export all Output Pages as separate CSV files. Choose a destination folder.')).toBeTruthy()
 })

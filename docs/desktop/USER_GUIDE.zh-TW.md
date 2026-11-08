@@ -927,6 +927,12 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 
 ### 10.2 收合結果面板
 
+Foreground Output 的 Source 卡片提供 Output Page 下拉選單、目前頁數與操作說明；切換後會更新 Summary、Output Data 及所選 Page 的匯出範圍。Background Output 的 Source 卡片提供 Background、Capture Dataset 選擇及 Worker 狀態。兩區的匯出選項都集中在 Output Data 下方的 Export settings。
+
+Background 數值 Summary 與 Output Data 使用和 Foreground 相同的表格樣式，並共用 Auto、Fixed、Raw 的 Number display 設定；這些設定不改變儲存資料或匯出精度。Background Summary 只顯示 Dataset 已有的統計，Scopes 保留 Valid／Invalid，Serial RX 則顯示事件與 Bytes 數量。Background 仍使用每頁 100 筆資料，不與 Foreground Output Page 混用。
+
+Background Source 的 Background 與 Capture Dataset 下拉選單在寬視窗並排，窄視窗則自動換行。Dataset 超過 100 筆才顯示分頁按鈕，並沿用專案標準按鈕樣式。Foreground Export settings 會依目前選項說明將選擇檔案或資料夾；Background Export settings 固定選擇目的資料夾，匯出完整的所選或全部 Datasets，不只目前顯示的資料列。Background 匯出按鈕依所選格式顯示名稱。
+
 Charts、Live Monitors（有啟用才顯示）、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
 區塊中的 Summary／Output Data 都有獨立 `− / +` 控制，預設全部展開。收合只隱藏內容，
 不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。
@@ -970,7 +976,7 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。
 
 Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
-最多 8 張額度。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
+最多 8 張額度。Foreground／Background Charts 依顯示的 Chart 編號排列，不會因來源不同而分組。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
 
 Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with template**，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
@@ -1307,6 +1313,8 @@ Runtime 後重新啟動 application。若 availability check 通過後仍出現 
 Serial 同一個 Tool Instance 支援 UART（COM Port）及原始 TCP Client。於預設展開的 **Communication Setup** 選擇 Transport，可用 **− / +** 隱藏或顯示 Transport 與所選 UART／TCP 設定，Background Streaming 和 Live Device 保持可見。切換時 UART 參數及 TCP Timeout 設定皆保留於 Template。TCP Live 須在 Live Device 輸入 TCP Host 與 TCP Port 並按 Save Resource。COM Port 和 TCP Endpoint 僅儲存於本機，不寫入 Template。TCP Simulation 不需要 Host 或設備 Port；TCP 不提供 List Ports 探索。
 
 Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分段建立獨立 Dataset，不會停止來源。每個 RX Event 在 Output Data 形成一列，同一列包含該次收到的所有 Bytes；接收分段不代表通訊封包。選用的 RX-only Live Monitor 在 Capture OFF 時仍可繼續更新。
+
+Serial RX Live Monitor 的 Hex／Text 接收資料區固定高度並有獨立捲軸。收到新資料時會自動追蹤底部；手動向上捲動可查看緩衝區內的舊資料，不會被新資料拉走，捲回底部即恢復自動追蹤。切換 Hex／Text 會回到最新資料。此處只顯示有限的 Monitor 緩衝資料，不能取代 Capture。
 
 Hex 與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。
 

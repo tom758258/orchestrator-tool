@@ -948,11 +948,17 @@ had Background bindings; changing the current Draft does not hide those results.
 Its Background and Capture Dataset selectors control its Summary, Output Data
 and export, independently of each Chart's selection.
 
+Foreground Output has a Source card with an Output Page selector, the current page number, and short guidance. Changing the Output Page updates its Summary, Output Data, and selected-page export. Background Output has a Source card for its Background and Capture Dataset selectors and Worker status. Both outputs place their export options under Export settings below Output Data.
+
+Background numeric Summary and Output Data use the same styled tables as Foreground. Background numeric values share the Auto, Fixed, and Raw Number display setting, without changing stored data or export precision. Background Summary shows only statistics already present in the Dataset, including Scopes valid and invalid counts; Serial RX shows event and byte counts instead. Background still reads 100 rows per page, independently of Foreground Output Pages.
+
+Background Source places Background and Capture Dataset side by side when space permits and wraps them on narrow windows. Pagination controls appear only for Datasets exceeding 100 rows and use the standard action-button style. Foreground Export settings explains whether the selected option opens a file or folder picker; Background Export settings always selects a destination folder and exports the complete selected or all Datasets, not just the visible rows. The Background export button shows the chosen format.
+
 In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Background),
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or
 Background ID. The **Save charts with template** option and shared chart count appear
-at the top-right of Charts. All Foreground Pages and Background Charts appear together.
+at the top-right of Charts. All Foreground Pages and Background Charts appear together in Chart number order, regardless of source.
 Each Background Chart offers **Export PNG**, **Settings**, **Source settings**, and **Remove**.
 **Source settings** shows the selected Background as read-only and offers
 **Capture Dataset** and **X-axis data** (Elapsed Time, Timestamp or Sample Index).
@@ -1550,6 +1556,8 @@ Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set t
 Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in **Communication Setup**, which starts expanded. Use **− / +** to hide or show Transport and its UART or TCP settings; Background Streaming and Live Device stay visible. UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.
 
 Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.
+
+Serial RX Live Monitor keeps the Hex/Text received-data pane at a fixed height with its own scrollbar. Incoming data follows the bottom until you scroll up to inspect buffered bytes; scrolling back to the bottom resumes automatic following. Switching Hex/Text returns to the latest data. This is a bounded Monitor view, not a substitute for Capture.
 
 Choose Hex or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.
 

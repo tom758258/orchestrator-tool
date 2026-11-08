@@ -3220,23 +3220,18 @@ function App() {
                 toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
                 running={runStatus === 'running'} />}
               <Collapsible title="Foreground Output" framed>
-              {runPage && <div className="last-run-page-tabs" role="tablist" aria-label="Last Run Pages">
-                {runPages.map((page, index) => <button key={page.name} type="button" role="tab"
-                  id={`last-run-page-${index}`} aria-controls="last-run-workspace"
-                  aria-selected={page.name === runPage.name} disabled={chartSaving}
-                  tabIndex={page.name === runPage.name ? 0 : -1}
-                  onClick={() => setSelectedRunPage(page.name)} onKeyDown={event => {
-                    const next = event.key === 'ArrowRight' ? (index + 1) % runPages.length
-                      : event.key === 'ArrowLeft' ? (index + runPages.length - 1) % runPages.length
-                      : event.key === 'Home' ? 0 : event.key === 'End' ? runPages.length - 1 : null
-                    if (next === null) return
-                    event.preventDefault()
-                    setSelectedRunPage(runPages[next].name)
-                    document.getElementById(`last-run-page-${next}`)?.focus()
-                  }}>{page.name}</button>)}
+              {runPage && <div className="output-source-card">
+                <h4>Source</h4>
+                <label>Output Page
+                  <select value={runPage.name} disabled={chartSaving}
+                    onChange={event => setSelectedRunPage(event.target.value)}>
+                    {runPages.map(page => <option key={page.name} value={page.name}>{page.name}</option>)}
+                  </select>
+                </label>
+                <p className="output-source-meta">Page {runPages.indexOf(runPage) + 1} of {runPages.length}</p>
+                <p className="output-source-help">Select an Output Page from this run to view its results.</p>
               </div>}
-              <div id="last-run-workspace" role="tabpanel"
-                aria-labelledby={runPage ? `last-run-page-${runPages.indexOf(runPage)}` : 'last-run-title'}>
+              <div id="last-run-workspace" role="region" aria-label="Output Page results">
                 {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
                 {partialRun && <p className="feedback-warning" role="status">{runMetadata.pages.some(page => page.row_count > 0)
                   ? 'Run did not fully complete. Committed rows are partial results and can be exported.'
@@ -3277,32 +3272,38 @@ function App() {
                 )}
               </div>
 
-          <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
-            onChange={event => setExportAllPages(event.target.value === 'all')}>
-            <option value="current">Run Page</option><option value="all">All Run Pages</option>
-          </select>
-          <select aria-label="Export format" disabled={workflowBusy} value={exportFormat}
-            onChange={event => setExportFormat(event.target.value as 'csv' | 'xlsx')}>
-            <option value="csv">CSV</option><option value="xlsx">XLSX</option>
-          </select>
-          <button
-            className="action-button"
-            type="button"
-            onClick={() => void handleExport()}
-            disabled={!hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy}
-          >
-            {exporting ? 'Exporting…' : `Export ${partialRun ? 'Partial ' : ''}${exportFormat.toUpperCase()}`}
-          </button>
-          {exportMessage && (
-            <p className="validation-success" role="status">{exportMessage}</p>
-          )}
-          {exportError && (
-            <p className="error" role="alert">Export failed: {exportError}</p>
-          )}
+          <div className="output-export-settings">
+            <h4>Export settings</h4>
+            <div className="output-export-controls">
+              <label>Pages
+                <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
+                  onChange={event => setExportAllPages(event.target.value === 'all')}>
+                  <option value="current">Run Page</option><option value="all">All Run Pages</option>
+                </select>
+              </label>
+              <label>Format
+                <select aria-label="Export format" disabled={workflowBusy} value={exportFormat}
+                  onChange={event => setExportFormat(event.target.value as 'csv' | 'xlsx')}>
+                  <option value="csv">CSV</option><option value="xlsx">XLSX</option>
+                </select>
+              </label>
+              <button className="action-button" type="button" onClick={() => void handleExport()}
+                disabled={!hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy}>
+                {exporting ? 'Exporting…' : `Export ${partialRun ? 'Partial ' : ''}${exportFormat.toUpperCase()}`}
+              </button>
+            </div>
+            <p className="output-export-help">{exportAllPages && exportFormat === 'csv'
+              ? 'Export all Output Pages as separate CSV files. Choose a destination folder.'
+              : exportAllPages
+                ? 'Export all Output Pages in one XLSX file. Choose a file name and location.'
+                : 'Export the selected Output Page. Choose a file name and location.'}</p>
+            {exportMessage && <p className="validation-success" role="status">{exportMessage}</p>}
+            {exportError && <p className="error" role="alert">Export failed: {exportError}</p>}
+          </div>
               </Collapsible>
               {!!runWorkflowSnapshot?.backgrounds?.length && displayedRun && <BackgroundOutput key={`background-${displayedRun.run_id}`}
                 runId={displayedRun.run_id} backgrounds={runWorkflowSnapshot.backgrounds} running={runStatus === 'running'}
-                onExportingChange={setExporting} />}
+                onExportingChange={setExporting} numericFormat={numericFormat} onNumericFormatChange={setNumericFormat} />}
             </section>
           )}
 

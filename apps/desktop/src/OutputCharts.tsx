@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { EChartsType } from 'echarts/core'
 import type { BackgroundConfig, OutputStep, RunPageMetadata } from './workflow'
@@ -38,6 +38,23 @@ function SerialLiveMonitor({ runId, background, running }: {
   const { output, error } = useBackgroundOutput(runId, background.id, running)
   const [mode, setMode] = useState<SerialDataFormat>('hex')
   const display = useMemo(() => serialContinuousView(output?.monitor ?? [], mode), [output, mode])
+  const rxView = useRef<HTMLPreElement>(null)
+  const followLatest = useRef(true)
+  const scrollToLatest = () => {
+    const element = rxView.current
+    if (element) element.scrollTop = element.scrollHeight
+  }
+  useLayoutEffect(() => {
+    followLatest.current = true
+    scrollToLatest()
+  }, [mode, runId, background.id])
+  useLayoutEffect(() => {
+    if (followLatest.current) scrollToLatest()
+  }, [display])
+  const handleRxScroll = (event: UIEvent<HTMLPreElement>) => {
+    const element = event.currentTarget
+    followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24
+  }
   return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
     <section className="chart-info-summary" aria-label="Monitor info">
       <h4>Monitor info</h4>
@@ -51,7 +68,8 @@ function SerialLiveMonitor({ runId, background, running }: {
       onChange={event => setMode(event.target.value as SerialDataFormat)}>
       <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>
     {error && <p role="alert">{error}</p>}
-    <pre className="serial-live-monitor" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{display}</pre>
+    <pre ref={rxView} className="serial-live-monitor" aria-label={`Serial RX ${background.id}`}
+      onScroll={handleRxScroll}>{display}</pre>
   </Collapsible>
 }
 
@@ -118,6 +136,25 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
 }) {
   const [selectedSource, setSelectedSource] = useState('')
   const [selectedGround, setSelectedGround] = useState<'foreground' | 'background' | null>(null)
+  // Keep source-specific loaders mounted once, while placing every Chart in panel order.
+  const [chartSlots, setChartSlots] = useState<Map<number, HTMLDivElement>>(() => new Map())
+  const slotRefs = useRef(new Map<number, (node: HTMLDivElement | null) => void>())
+  const slotRef = (id: number) => {
+    let callback = slotRefs.current.get(id)
+    if (!callback) {
+      callback = (node) => {
+        setChartSlots(current => {
+          if (current.get(id) === node || (node === null && !current.has(id))) return current
+          const next = new Map(current)
+          if (node) next.set(id, node)
+          else next.delete(id)
+          return next
+        })
+      }
+      slotRefs.current.set(id, callback)
+    }
+    return callback
+  }
   const { output, error } = useBackgroundOutput(runId, backgrounds[0]?.id, running)
   const updatePanels = (next: ChartPanel[]) => {
     for (const [id, selection] of selections) {
@@ -141,6 +178,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
     : backgroundSources.length ? 'background' : 'foreground')
   const availableSources = ground === 'foreground' ? foregroundSources : backgroundSources
   const selected = availableSources.find(source => source.key === selectedSource) ?? availableSources[0]
+  const visiblePanels = panels.filter(panel => panel.source ? runId !== null : pages.some(page => page.name === panel.page))
   return <Collapsible title="Charts" className="result-chart" framed headingActions={<div className="result-chart-header-actions">
     <label className="result-chart-template-option"><input type="checkbox" checked={saveChartsWithTemplate}
       onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
@@ -181,6 +219,14 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
     {panels.length === 0 && <p>No charts. Choose Ground and Page above, then Add Chart.</p>}
     {error && <p role="alert">Could not load Background datasets: {error}</p>}
     <div className="result-charts-grid">
+      {visiblePanels.map(panel => <div className="result-chart-slot" key={panel.id} ref={slotRef(panel.id)}>
+        {panel.source && runId !== null && <BackgroundChartPanel
+          panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId}
+          backgrounds={backgrounds} validBackgrounds={validBackgrounds}
+          datasets={output?.datasets ?? []} running={running} selections={selections}
+          onSavingChange={onSavingChange} />}
+      </div>)}
+    </div>
     {pages.map(page => {
       const pageMetadata = metadata.find(item => item.name === page.name)
       const numericNames = foregroundChartNames(panels, page, pageMetadata, running)
@@ -189,12 +235,8 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
         numericNames={numericNames} timestampNames={running && (pageMetadata?.row_count ?? 0) === 0
           ? page.outputs.filter(output => output.value.source === 'timestamp').map(output => output.name)
           : pageMetadata?.timestamp_outputs ?? []}
-        panels={panels} onPanelsChange={updatePanels} chartData={chartData} running={running}
+        panels={panels} onPanelsChange={updatePanels} chartData={chartData} portalSlots={chartSlots} running={running}
         onSavingChange={onSavingChange} changeSettings={changeSettings} fitData={fitData} />
     })}
-    {runId !== null && panels.filter(panel => panel.source).map(panel => <BackgroundChartPanel key={panel.id}
-      panel={panel} panels={panels} onPanelsChange={updatePanels} runId={runId} backgrounds={backgrounds} validBackgrounds={validBackgrounds}
-      datasets={output?.datasets ?? []} running={running} selections={selections} onSavingChange={onSavingChange} />)}
-    </div>
   </Collapsible>
 }
