@@ -3297,7 +3297,7 @@ function App() {
               : exportAllPages
                 ? 'Export all Output Pages in one XLSX file. Choose a file name and location.'
                 : 'Export the selected Output Page. Choose a file name and location.'}</p>
-            {exportMessage && <p className="validation-success" role="status">{exportMessage}</p>
+            {exportMessage && <p className="validation-success" role="status">{exportMessage}</p>}
             {exportError && <p className="error" role="alert">Export failed: {exportError}</p>}
           </div>
               </Collapsible>

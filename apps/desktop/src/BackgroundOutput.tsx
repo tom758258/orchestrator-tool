@@ -182,7 +182,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
           <span>Page {Math.floor(offset / 100) + 1} of {Math.ceil(dataset.row_count / 100)}</span>
           <button className="action-button" type="button" disabled={offset + 100 >= dataset.row_count}
             onClick={() => setOffset(offset + 100)}>Next</button>
-        </div>
+        </div>}
       </Collapsible>
     </>}
     <div className="output-export-settings">
