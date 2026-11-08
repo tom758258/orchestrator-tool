@@ -72,11 +72,19 @@ test('Background Meters use the shared numeric summary and table style without c
   fireEvent.click(columns)
   fireEvent.click(screen.getByRole('checkbox', { name: 'Max' }))
   expect(within(summary).queryByRole('columnheader', { name: 'Max' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  const previous = screen.getByRole('button', { name: 'Previous' }) as HTMLButtonElement
+  const next = screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement
+  expect(previous.classList.contains('action-button')).toBe(true)
+  expect(next.classList.contains('action-button')).toBe(true)
+  expect(previous.disabled).toBe(true)
+  expect(next.disabled).toBe(false)
+  fireEvent.click(next)
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('get_background_output', {
     runId: 5, backgroundId: 'bg-meter', datasetId: 'meter-1', offset: 100, limit: 100,
   }))
   expect(screen.getByText('Page 2 of 2')).toBeTruthy()
+  expect(previous.disabled).toBe(false)
+  expect(next.disabled).toBe(true)
 })
 
 test('Background Source switches preserve Scopes invalid readings and Serial RX statistics', async () => {
@@ -88,6 +96,8 @@ test('Background Source switches preserve Scopes invalid readings and Serial RX 
   const scopeSummary = screen.getByRole('table', { name: 'Background Result Summary' })
   expect(within(scopeSummary).getByRole('columnheader', { name: 'Invalid' })).toBeTruthy()
   expect(screen.getByText(/Quality: incomplete/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Previous' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
   expect(await screen.findByTitle('Invalid measurement')).toBeTruthy()
   fireEvent.change(source, { target: { value: 'bg-serial' } })
   await waitFor(() => expect(screen.getByRole('rowheader', { name: 'Captured bytes' })).toBeTruthy())
@@ -95,4 +105,17 @@ test('Background Source switches preserve Scopes invalid readings and Serial RX 
   expect(within(serialSummary).getByRole('rowheader', { name: 'RX events' })).toBeTruthy()
   expect(within(serialSummary).getByRole('cell', { name: '2' })).toBeTruthy()
   expect(screen.queryByRole('combobox', { name: 'Background Number display' })).toBeNull()
+  expect(screen.getByText(/Choose a destination folder; full datasets are exported/)).toBeTruthy()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Background export format' }), { target: { value: 'bin' } })
+  const exportButton = screen.getByRole('button', { name: 'Export BIN' }) as HTMLButtonElement
+  expect(exportButton.classList.contains('action-button')).toBe(true)
+  expect(exportButton.disabled).toBe(false)
+  fireEvent.click(exportButton)
+  await waitFor(() => expect(open).toHaveBeenCalledWith({
+    directory: true, multiple: false, title: 'Export Background datasets',
+  }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_background_datasets', {
+    runId: 5, datasetIds: ['serial-1'], outputFolder: 'exports', format: 'bin',
+    scopesMode: 'values-only', serialFormat: 'hex', rowsPerFile: 300000,
+  }))
 })

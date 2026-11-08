@@ -952,6 +952,8 @@ Foreground Output has a Source card with an Output Page selector, the current pa
 
 Background numeric Summary and Output Data use the same styled tables as Foreground. Background numeric values share the Auto, Fixed, and Raw Number display setting, without changing stored data or export precision. Background Summary shows only statistics already present in the Dataset, including Scopes valid and invalid counts; Serial RX shows event and byte counts instead. Background still reads 100 rows per page, independently of Foreground Output Pages.
 
+Background Source places Background and Capture Dataset side by side when space permits and wraps them on narrow windows. Pagination controls appear only for Datasets exceeding 100 rows and use the standard action-button style. Foreground Export settings explains whether the selected option opens a file or folder picker; Background Export settings always selects a destination folder and exports the complete selected or all Datasets, not just the visible rows. The Background export button shows the chosen format.
+
 In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Background),
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or

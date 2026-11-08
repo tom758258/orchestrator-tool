@@ -82,21 +82,24 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
   return <Collapsible className="background-output" title="Background Output" framed>
     <div className="output-source-card">
       <h4>Source</h4>
-      <label>Background
-        <select value={background} disabled={exporting}
-          onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0) }}>
-          {backgrounds.map(config => <option key={config.id} value={config.id}>{config.id} · {config.tool_instance_id}</option>)}
-        </select>
-      </label>
-      <label>Capture Dataset
-        <select aria-label="Background Dataset" value={datasetId ?? ''} disabled={exporting}
-          onChange={event => { setDatasetId(event.target.value || null); setOutput(null); setOffset(0) }}>
-          <option value="">Select Dataset</option>
-          {datasets.map(item => <option key={item.id} value={item.id}>
-            {item.id} · {item.row_count} {item.tool_kind === 'serial' ? 'RX events' : 'samples'} · {item.status}
-          </option>)}
-        </select>
-      </label>
+      <div className="output-source-fields">
+        <label>Background
+          <select value={background} disabled={exporting}
+            onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0) }}>
+            {backgrounds.map(config => <option key={config.id} value={config.id}>{config.id} · {config.tool_instance_id}</option>)}
+          </select>
+        </label>
+        <label>Capture Dataset
+          <select aria-label="Background Dataset" value={datasetId ?? ''} disabled={exporting}
+            onChange={event => { setDatasetId(event.target.value || null); setOutput(null); setOffset(0) }}>
+            <option value="">Select Dataset</option>
+            {datasets.map(item => <option key={item.id} value={item.id}>
+              {item.id} · {item.row_count} {item.tool_kind === 'serial' ? 'RX events' : 'samples'} · {item.status}
+            </option>)}
+          </select>
+        </label>
+      </div>
+      <p className="output-source-help">Select a Background and Capture Dataset from this run to view its results.</p>
       <p className="output-source-meta" role="status">
         Worker: {worker?.state ?? 'off'}{worker?.stream_state ? ' · Source: ' + worker.stream_state : ''}
       </p>
@@ -173,10 +176,12 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
               }) : <><td>{sample.value == null ? '—' : formatNumber(sample.value, numericFormat)}</td><td>{sample.unit}</td></>}
           </tr>)}</tbody>
         </table></div>
-        <div className="background-data-pagination">
-          <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>Previous</button>
-          <span>Page {Math.floor(offset / 100) + 1} of {Math.max(1, Math.ceil(dataset.row_count / 100))}</span>
-          <button type="button" disabled={offset + 100 >= dataset.row_count} onClick={() => setOffset(offset + 100)}>Next</button>
+        {dataset.row_count > 100 && <div className="background-data-pagination">
+          <button className="action-button" type="button" disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - 100))}>Previous</button>
+          <span>Page {Math.floor(offset / 100) + 1} of {Math.ceil(dataset.row_count / 100)}</span>
+          <button className="action-button" type="button" disabled={offset + 100 >= dataset.row_count}
+            onClick={() => setOffset(offset + 100)}>Next</button>
         </div>
       </Collapsible>
     </>}
@@ -205,11 +210,12 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
           <input type="number" min={1} max={1048575} step={1} value={rowsPerFile}
             onChange={event => setRowsPerFile(event.target.value)} />
         </label>}
-        <button type="button" disabled={running || exporting || selected.length === 0 || (format === 'bin' && !binAllowed)
+        <button className="action-button" type="button" disabled={running || exporting || selected.length === 0 || (format === 'bin' && !binAllowed)
           || (format === 'xlsx' && !validRows)} onClick={() => void exportData()}>
-          {exporting ? 'Exporting…' : 'Export Background'}
+          {exporting ? 'Exporting…' : `Export ${format.toUpperCase()}`}
         </button>
       </div>
+      <p className="output-export-help">Export the selected or all datasets. Choose a destination folder; full datasets are exported, not only visible rows.</p>
       {format === 'bin' && !binAllowed && <p role="alert">BIN requires Serial-only selected datasets.</p>}
       {format === 'xlsx' && large && <p role="status">
         More than 300,000 samples. XLSX export may take time; data will be split into files using the count above.

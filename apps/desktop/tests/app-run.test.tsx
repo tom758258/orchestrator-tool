@@ -1215,6 +1215,7 @@ test('Foreground Output Page picker identifies the selected page and keeps expor
   expect(foreground.getByText('Page 1 of 2')).toBeTruthy()
   fireEvent.change(page, { target: { value: 'Meter Series' } })
   expect(foreground.getByText('Page 2 of 2')).toBeTruthy()
+  expect(foreground.getByText('Export the selected Output Page. Choose a file name and location.')).toBeTruthy()
   expect(within(foreground.getByRole('table', { name: 'Page Result Summary' }))
     .getByRole('rowheader', { name: 'Current' })).toBeTruthy()
   fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
@@ -1222,8 +1223,11 @@ test('Foreground Output Page picker identifies the selected page and keeps expor
     runId: 46, destinationPath: 'saved.json', page: 'Meter Series', format: 'xlsx',
   }))
   fireEvent.change(foreground.getByRole('combobox', { name: 'Export Pages' }), { target: { value: 'all' } })
+  expect(foreground.getByText('Export all Output Pages in one XLSX file. Choose a file name and location.')).toBeTruthy()
   fireEvent.click(foreground.getByRole('button', { name: 'Export XLSX' }))
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('export_last_run_pages', {
     runId: 46, destinationPath: 'saved.json', page: null, format: 'xlsx',
   }))
+  fireEvent.change(foreground.getByRole('combobox', { name: 'Export format' }), { target: { value: 'csv' } })
+  expect(foreground.getByText('Export all Output Pages as separate CSV files. Choose a destination folder.')).toBeTruthy()
 })
