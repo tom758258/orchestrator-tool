@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
-import OutputCharts from '../src/OutputCharts'
+import OutputCharts, { LiveMonitors } from '../src/OutputCharts'
 import { addBackgroundChartPanel, addChartPanel, chartPanelToSavedChart, savedChartsToPanels } from '../src/chartPanels'
 import type { ChartPanel } from '../src/chartPanels'
 import type { BackgroundConfig, OutputStep, RunPageMetadata } from '../src/workflow'
@@ -72,4 +72,51 @@ test('saved mixed-source Charts retain their order when restored', () => {
     .toEqual(['Background', 'Foreground', 'Background', 'Foreground'])
   expect(cards.map(card => card.getAttribute('aria-label')))
     .toEqual(['Chart 1', 'Chart 2', 'Chart 3', 'Chart 4'])
+})
+
+test('Serial Live Monitor follows new RX until manually scrolled up, then resumes at the bottom', async () => {
+  let rxHex = '41'
+  vi.mocked(invoke).mockImplementation(async command => {
+    if (command !== 'get_background_output') throw new Error('Unexpected IPC: ' + command)
+    return { datasets: [], workers: [], rows: [],
+      monitor: [{ timestamp_utc: '2026-11-08T00:00:00Z', rx_hex: rxHex, rx_bytes: rxHex.length / 2 }] }
+  })
+  const serialBackground: BackgroundConfig = {
+    id: 'bg-serial', tool_instance_id: 'serial-1', live_monitor: true, limit_count: null,
+  }
+  const view = (running: boolean) => <LiveMonitors runId={42} backgrounds={[serialBackground]}
+    toolKinds={{ 'serial-1': 'serial' }} running={running} />
+  const { rerender } = render(view(false))
+  const rx = await screen.findByLabelText('Serial RX bg-serial') as HTMLPreElement
+  await waitFor(() => expect(rx.textContent).toBe('41'))
+  Object.defineProperty(rx, 'scrollHeight', { configurable: true, value: 1200 })
+  Object.defineProperty(rx, 'clientHeight', { configurable: true, value: 350 })
+
+  rxHex = '4242'
+  rerender(view(true))
+  await waitFor(() => expect(rx.textContent).toBe('42 42'))
+  expect(rx.scrollTop).toBe(1200)
+
+  rx.scrollTop = 200
+  fireEvent.scroll(rx)
+  rxHex = '4343'
+  rerender(view(false))
+  rerender(view(true))
+  await waitFor(() => expect(rx.textContent).toBe('43 43'))
+  expect(rx.scrollTop).toBe(200)
+
+  rx.scrollTop = 850
+  fireEvent.scroll(rx)
+  rxHex = '4444'
+  rerender(view(false))
+  rerender(view(true))
+  await waitFor(() => expect(rx.textContent).toBe('44 44'))
+  expect(rx.scrollTop).toBe(1200)
+
+  rx.scrollTop = 200
+  fireEvent.scroll(rx)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Serial Live Monitor Display bg-serial' }),
+    { target: { value: 'text' } })
+  expect(rx.textContent).toBe('DD')
+  expect(rx.scrollTop).toBe(1200)
 })

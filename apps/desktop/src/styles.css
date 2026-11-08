@@ -1691,6 +1691,20 @@ textarea:disabled {
   padding-top: 16px;
 }
 
+.serial-live-monitor {
+  height: 350px;
+  max-height: 45vh;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
 .result-chart-panel {
   min-width: 0;
   padding: 16px;

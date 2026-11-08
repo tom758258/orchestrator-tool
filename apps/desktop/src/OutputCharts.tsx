@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { EChartsType } from 'echarts/core'
 import type { BackgroundConfig, OutputStep, RunPageMetadata } from './workflow'
@@ -38,6 +38,23 @@ function SerialLiveMonitor({ runId, background, running }: {
   const { output, error } = useBackgroundOutput(runId, background.id, running)
   const [mode, setMode] = useState<SerialDataFormat>('hex')
   const display = useMemo(() => serialContinuousView(output?.monitor ?? [], mode), [output, mode])
+  const rxView = useRef<HTMLPreElement>(null)
+  const followLatest = useRef(true)
+  const scrollToLatest = () => {
+    const element = rxView.current
+    if (element) element.scrollTop = element.scrollHeight
+  }
+  useLayoutEffect(() => {
+    followLatest.current = true
+    scrollToLatest()
+  }, [mode, runId, background.id])
+  useLayoutEffect(() => {
+    if (followLatest.current) scrollToLatest()
+  }, [display])
+  const handleRxScroll = (event: UIEvent<HTMLPreElement>) => {
+    const element = event.currentTarget
+    followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24
+  }
   return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
     <section className="chart-info-summary" aria-label="Monitor info">
       <h4>Monitor info</h4>
@@ -51,7 +68,8 @@ function SerialLiveMonitor({ runId, background, running }: {
       onChange={event => setMode(event.target.value as SerialDataFormat)}>
       <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>
     {error && <p role="alert">{error}</p>}
-    <pre className="serial-live-monitor" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{display}</pre>
+    <pre ref={rxView} className="serial-live-monitor" aria-label={`Serial RX ${background.id}`}
+      onScroll={handleRxScroll}>{display}</pre>
   </Collapsible>
 }
 

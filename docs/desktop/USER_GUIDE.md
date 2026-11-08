@@ -1557,6 +1557,8 @@ Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Ch
 
 Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.
 
+Serial RX Live Monitor keeps the Hex/Text received-data pane at a fixed height with its own scrollbar. Incoming data follows the bottom until you scroll up to inspect buffered bytes; scrolling back to the bottom resumes automatic following. Switching Hex/Text returns to the latest data. This is a bounded Monitor view, not a substitute for Capture.
+
 Choose Hex or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.
 
 Serial does not offer numeric Charts. Worker shutdown validates stream termination, summary, EOF and exit status. Serial data quality remains unknown without stronger loss evidence; actual Worker and CSV errors still fail the run.

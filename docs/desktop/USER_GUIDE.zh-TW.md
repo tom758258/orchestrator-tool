@@ -1314,6 +1314,8 @@ Serial 同一個 Tool Instance 支援 UART（COM Port）及原始 TCP Client。�
 
 Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分段建立獨立 Dataset，不會停止來源。每個 RX Event 在 Output Data 形成一列，同一列包含該次收到的所有 Bytes；接收分段不代表通訊封包。選用的 RX-only Live Monitor 在 Capture OFF 時仍可繼續更新。
 
+Serial RX Live Monitor 的 Hex／Text 接收資料區固定高度並有獨立捲軸。收到新資料時會自動追蹤底部；手動向上捲動可查看緩衝區內的舊資料，不會被新資料拉走，捲回底部即恢復自動追蹤。切換 Hex／Text 會回到最新資料。此處只顯示有限的 Monitor 緩衝資料，不能取代 Capture。
+
 Hex 與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。
 
 Serial 不提供 Numeric Charts。Worker 停止時仍核對 Stream 終止、Summary、EOF 和 Process Exit；若沒有更強的無遺失證據，Serial 資料品質保持 unknown，Worker／CSV 錯誤仍會使 Run Failed。
