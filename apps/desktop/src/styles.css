@@ -408,6 +408,36 @@ body {
   font-size: 1rem;
 }
 
+.step-insertion-target {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.step-insertion-target-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.step-insertion-target-value {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.step-insertion-root-button {
+  margin-top: 8px;
+}
+
 .streaming-toggle {
   display: flex;
   align-items: flex-start;

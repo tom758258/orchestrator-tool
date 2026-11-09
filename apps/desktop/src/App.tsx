@@ -1816,6 +1816,13 @@ function App() {
   const addingToParent = insertionContainer?.parentId
     ? allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(step => step.id === insertionContainer.parentId)
     : null
+  const insertionTargetId = addingToParent
+    ? addingToParent.id.match(new RegExp(`^${addingToParent.type}-(\\d+)$`))?.[1] ?? addingToParent.id
+    : null
+  const insertionTargetLabel = addingToParent
+    ? `${addingToParent.type.toUpperCase()} ${insertionTargetId}${addingToParent.type === 'if'
+      ? ` → ${insertionContainer?.branch === 'else' ? 'ELSE' : 'THEN'}` : ''}`
+    : 'Root Workflow'
   const insertionDepth = addingToParent ? containerPath(workflowDraft?.workflow.steps ?? [], addingToParent.id).length + 1 : 0
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
@@ -2462,11 +2469,11 @@ function App() {
                       </button>
                     </h3>
                     {stepsExpanded && <>
-                    <p>Adding to: {addingToParent
-                      ? addingToParent.type === 'if' ? `If "${addingToParent.id}" ${insertionContainer?.branch?.toUpperCase()}`
-                        : `${addingToParent.type === 'for' ? 'For' : 'While'} "${addingToParent.id}" body`
-                      : 'Root workflow'}</p>
-                    {addingToParent && <button className="action-button" type="button" disabled={workflowBusy}
+                    <div className="step-insertion-target" role="status" aria-label="Step insertion target">
+                      <span className="step-insertion-target-label">ADDING STEP TO</span>
+                      <strong className="step-insertion-target-value"><span aria-hidden="true">📍 </span>{insertionTargetLabel}</strong>
+                    </div>
+                    {addingToParent && <button className="action-button step-insertion-root-button" type="button" disabled={workflowBusy}
                       onClick={() => setSelectedStepId(null)}>Add to root</button>}
                     <div className="step-palette-items step-palette-scroll" role="region" aria-label="Step categories" tabIndex={0}>
                       {STEP_CATEGORIES.map(({ category, tool }) => {

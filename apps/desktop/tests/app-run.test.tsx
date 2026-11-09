@@ -1059,6 +1059,51 @@ test('unlocated validation errors do not guess a card from their message', async
   expect(screen.queryByRole('img', { name: 'Validation warning' })).toBeNull()
 })
 
+test('Steps insertion target card tracks Root, If branches, loops and the actual palette destination', async () => {
+  currentDraft = { schema_version: 2, name: 'Target card', tool_instances: [], workflow: { steps: [
+    { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
+      right: { source: 'literal', value: 1 },
+      then_steps: [{ type: 'wait', id: 'then-wait', duration_ms: 1 }],
+      else_steps: [{ type: 'wait', id: 'else-wait', duration_ms: 1 }] },
+    { type: 'for', id: 'for-1', variable: 'i', range: { start: '1', stop: '2', step: '1' }, steps: [] },
+    { type: 'while', id: 'while-1', left: { source: 'literal', value: 0 }, operator: 'less-than',
+      right: { source: 'literal', value: 1 }, max_iterations: 1, steps: [] },
+  ] } }
+  await mount()
+  const target = screen.getByRole('status', { name: 'Step insertion target' })
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  const expectTarget = (label: string) => expect(target.textContent).toContain(label)
+  expect(within(target).getByText('ADDING STEP TO')).toBeTruthy()
+  expect(target.textContent).toContain('📍')
+  expectTarget('Root Workflow')
+  expect(Boolean(target.compareDocumentPosition(screen.getByRole('region', { name: 'Step categories' })) &
+    Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+
+  fireEvent.click(card('if-2'))
+  expectTarget('IF 2 → THEN')
+  fireEvent.change(screen.getByRole('combobox', { name: 'If branch for new Steps' }), { target: { value: 'else' } })
+  expectTarget('IF 2 → ELSE')
+  fireEvent.click(card('then-wait'))
+  expectTarget('IF 2 → THEN')
+  fireEvent.click(card('else-wait'))
+  expectTarget('IF 2 → ELSE')
+  fireEvent.click(card('for-1'))
+  expectTarget('FOR 1')
+  fireEvent.click(card('while-1'))
+  expectTarget('WHILE 1')
+
+  fireEvent.click(card('if-2'))
+  expectTarget('IF 2 → ELSE')
+  fireEvent.click(screen.getByRole('button', { name: 'Wait' }))
+  expect(within(screen.getByRole('list', { name: 'ELSE of if-2' }))
+    .getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expectTarget('IF 2 → ELSE')
+  fireEvent.click(screen.getByRole('button', { name: 'Add to root' }))
+  expectTarget('Root Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Steps' }))
+  expect(screen.queryByRole('status', { name: 'Step insertion target' })).toBeNull()
+})
+
 test('Workflow shortcuts cut, paste, copy, select siblings and delete while respecting editing and busy state', async () => {
   await mount()
   const panel = screen.getByRole('tabpanel', { name: 'Workflow' })
