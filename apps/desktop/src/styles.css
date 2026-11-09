@@ -471,6 +471,14 @@ body {
   margin-top: 12px;
 }
 
+.step-palette-button {
+  cursor: grab;
+}
+
+.step-palette-button:active {
+  cursor: grabbing;
+}
+
 .step-palette-scroll {
   max-height: 60vh;
   max-height: 60dvh;

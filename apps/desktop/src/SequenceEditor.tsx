@@ -1,12 +1,21 @@
 import { toolInstanceLabel } from './toolInstanceLabel'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
 import { MESSAGE_TARGET_LABELS } from './workflow'
 import { expressionSummary } from './inputValue'
 
+export type SequenceDropTarget = { parentId: string | null; branch: StepBranch | null; index: number }
+
+export type SequenceEditorHandle = {
+  updatePaletteDrop: (x: number, y: number) => void
+  finishPaletteDrop: (x: number, y: number) => SequenceDropTarget | null
+  clearPaletteDrop: () => void
+}
+
 type SequenceEditorProps = {
+  paletteDropRef?: RefObject<SequenceEditorHandle | null>
   instances: ToolInstance[]
   steps: readonly WorkflowStep[]
   runResults: readonly StepSummaryDto[] | null
@@ -115,6 +124,7 @@ function SequenceEditor({
   onMoveStep,
   onDeleteStep,
   onClearWorkflow,
+  paletteDropRef,
 }: SequenceEditorProps) {
   const editorRef = useRef<HTMLElement>(null)
   const dragRef = useRef<{
@@ -123,53 +133,117 @@ function SequenceEditor({
   } | null>(null)
   const scrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const suppressClickRef = useRef(false)
-  const dropRef = useRef<{ parentId: string | null; branch: StepBranch | null; index: number } | null>(null)
-  const [drop, setDrop] = useState<{ parentId: string | null; branch: StepBranch | null; index: number } | null>(null)
+  const palettePointRef = useRef<{ x: number; y: number } | null>(null)
+  const dropRef = useRef<SequenceDropTarget | null>(null)
+  const [drop, setDrop] = useState<SequenceDropTarget | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[]>([])
+
+  function setDropTarget(next: SequenceDropTarget | null) {
+    dropRef.current = next
+    setDrop(current => current?.parentId === next?.parentId && current?.branch === next?.branch &&
+      current?.index === next?.index ? current : next)
+  }
+
+  function stopScrollTimer() {
+    if (scrollTimerRef.current !== null) clearInterval(scrollTimerRef.current)
+    scrollTimerRef.current = null
+  }
 
   function finishDrag() {
     const drag = dragRef.current
     dragRef.current = null
-    if (scrollTimerRef.current !== null) clearInterval(scrollTimerRef.current)
-    scrollTimerRef.current = null
-    dropRef.current = null
-    setDrop(null)
+    stopScrollTimer()
+    setDropTarget(null)
     setDraggingIds([])
     if (drag?.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId)
   }
 
+  function clearPaletteDrop() {
+    palettePointRef.current = null
+    if (!dragRef.current) stopScrollTimer()
+    setDropTarget(null)
+  }
+
   useEffect(() => {
-    if (workflowBusy) finishDrag()
+    if (workflowBusy) {
+      finishDrag()
+      clearPaletteDrop()
+    }
   }, [workflowBusy])
   useEffect(() => () => {
-    if (scrollTimerRef.current !== null) clearInterval(scrollTimerRef.current)
+    stopScrollTimer()
   }, [])
 
-  function updateDrop() {
-    const drag = dragRef.current
+  function resolveDrop(x: number, y: number, movingIds?: readonly string[]): SequenceDropTarget | null {
     const editor = editorRef.current
-    if (!drag?.started || !editor) return
-    const target = document.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>('[data-step-drop-id], [data-step-container]')
-    let next: { parentId: string | null; branch: StepBranch | null; index: number } | null = null
+    if (!editor) return null
+    const hit = document.elementFromPoint(x, y)
+    const target = hit?.closest<HTMLElement>('[data-step-drop-id], [data-step-container]')
+    let next: SequenceDropTarget | null = null
     if (target && editor.contains(target)) {
       const id = target.dataset.stepDropId
       const container = id ? stepContainer(steps, id) : undefined
-      if (id && container && !drag.ids.includes(id)) {
+      if (id && container && !movingIds?.includes(id)) {
         const rect = target.getBoundingClientRect()
         next = { parentId: container.parentId, branch: container.branch,
-          index: container.siblings.findIndex(step => step.id === id) + (drag.y >= rect.top + rect.height / 2 ? 1 : 0) }
+          index: container.siblings.findIndex(step => step.id === id) + (y >= rect.top + rect.height / 2 ? 1 : 0) }
       } else if (!id) {
         const parentId = target.dataset.stepContainer || null
         const branch = target.dataset.stepBranch === 'then' || target.dataset.stepBranch === 'else'
           ? target.dataset.stepBranch : null
         next = { parentId, branch, index: Number(target.dataset.stepCount) }
       }
-      if (next && !canRelocateSteps(steps, drag.ids, next.parentId, next.branch)) next = null
+    } else if (steps.length === 0 && hit?.closest('.sequence-empty') && editor.contains(hit)) {
+      next = { parentId: null, branch: null, index: 0 }
     }
-    dropRef.current = next
-    setDrop(current => current?.parentId === next?.parentId && current?.branch === next?.branch &&
-      current?.index === next?.index ? current : next)
+    if (next && movingIds && !canRelocateSteps(steps, movingIds, next.parentId, next.branch)) return null
+    return next
   }
+
+  function updateDrop() {
+    const drag = dragRef.current
+    if (drag?.started) setDropTarget(resolveDrop(drag.x, drag.y, drag.ids))
+  }
+
+  function startScrollTimer() {
+    if (scrollTimerRef.current !== null) return
+    scrollTimerRef.current = setInterval(() => {
+      const editor = editorRef.current
+      const point = dragRef.current?.started ? dragRef.current : palettePointRef.current
+      if (!editor || !point) return
+      const rect = editor.getBoundingClientRect()
+      const top = Math.max(rect.top, 0)
+      const bottom = Math.min(rect.bottom, window.innerHeight)
+      if (point.x >= rect.left && point.x <= rect.right && point.y >= top && point.y <= bottom) {
+        const direction = point.y < top + 40 ? -1 : point.y > bottom - 40 ? 1 : 0
+        if (direction) editor.scrollTop += direction * 12
+      }
+      if (dragRef.current?.started) updateDrop()
+      else if (palettePointRef.current) setDropTarget(resolveDrop(point.x, point.y))
+    }, 50)
+  }
+
+  useEffect(() => {
+    if (!paletteDropRef) return
+    const api: SequenceEditorHandle = {
+      updatePaletteDrop(x, y) {
+        if (workflowBusy || dragRef.current) return
+        palettePointRef.current = { x, y }
+        startScrollTimer()
+        setDropTarget(resolveDrop(x, y))
+      },
+      finishPaletteDrop(x, y) {
+        const next = workflowBusy || dragRef.current ? null : resolveDrop(x, y)
+        clearPaletteDrop()
+        return next
+      },
+      clearPaletteDrop,
+    }
+    paletteDropRef.current = api
+    return () => {
+      if (paletteDropRef.current === api) paletteDropRef.current = null
+    }
+  })
 
   function pointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     const drag = dragRef.current
@@ -181,19 +255,7 @@ function SequenceEditor({
       suppressClickRef.current = true
       if (!selectedStepIds.includes(drag.id)) onSelectStep(drag.id)
       setDraggingIds(drag.ids)
-      scrollTimerRef.current = setInterval(() => {
-        const editor = editorRef.current
-        const current = dragRef.current
-        if (!editor || !current) return
-        const rect = editor.getBoundingClientRect()
-        const top = Math.max(rect.top, 0)
-        const bottom = Math.min(rect.bottom, window.innerHeight)
-        if (current.x >= rect.left && current.x <= rect.right && current.y >= top && current.y <= bottom) {
-          const direction = current.y < top + 40 ? -1 : current.y > bottom - 40 ? 1 : 0
-          if (direction) editor.scrollTop += direction * 12
-        }
-        updateDrop()
-      }, 50)
+      startScrollTimer()
     }
     updateDrop()
   }
@@ -233,7 +295,7 @@ function SequenceEditor({
                 <button className="sequence-drag-handle" type="button" disabled={workflowBusy}
                   aria-label={`Drag ${step.id} to reorder`} title="Drag to move between Root and workflow containers"
                   onPointerDown={event => {
-                    if (workflowBusy || event.button !== 0 || dragRef.current) return
+                    if (workflowBusy || event.button !== 0 || dragRef.current || palettePointRef.current) return
                     suppressClickRef.current = false
                     event.currentTarget.setPointerCapture(event.pointerId)
                     dragRef.current = {
