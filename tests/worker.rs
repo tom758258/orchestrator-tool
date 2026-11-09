@@ -499,7 +499,7 @@ fn main() {
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
-    powers_set_voltage_step_outputs_reach_result_row();
+    powers_set_output_step_outputs_reach_result_row();
     powers_measure_voltage_and_current_reach_result_row();
     powers_set_output_binding_reaches_worker();
     powers_protection_status_asserts_untripped_result();
@@ -4331,7 +4331,7 @@ fn powers_runtime_action_succeeds() {
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
-fn powers_set_voltage_step_outputs_reach_result_row() {
+fn powers_set_output_step_outputs_reach_result_row() {
     let set_voltage_step_id = StepId::new("power-set-1").unwrap();
     let workflow = Workflow::new(vec![
         Step::new(

@@ -125,7 +125,7 @@ Resources, model IDs, and generated artifact paths are not Template settings.
 
 [Example Templates](../../tests/fixtures/scopes/) cover Setup/Measure/Output,
 dynamic settings/bindings, repeated Capture/Screenshot, and mixed Scopes/Meters.
-They load directly as v1 Templates. Configure the external executables locally
+They load directly using the current versionless Template format. Configure the external executables locally
 before running them in Desktop Simulation.
 
 Default unit tests do not require instruments. The explicitly ignored tests

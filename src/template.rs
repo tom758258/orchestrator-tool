@@ -2156,7 +2156,7 @@ mod tests {
     }
 
     #[test]
-    fn display_name_legacy_templates_omit_the_optional_field() {
+    fn display_name_optional_field_can_be_omitted() {
         let original = sample_template();
         let json = original.to_json_string().unwrap();
         assert!(!json.contains("display_name"));
@@ -2785,7 +2785,6 @@ mod tests {
             ("scopes", "timebase-scale", "seconds_per_division"),
             ("scopes", "timebase-position", "seconds"),
             ("scopes", "trigger-edge", "level"),
-            ("powers", "set-output", "voltage"),
             ("powers", "set-output", "voltage"),
             ("powers", "set-output", "current"),
         ] {
@@ -3425,7 +3424,7 @@ mod tests {
     }
 
     #[test]
-    fn show_message_round_trips_in_schema_one_without_storing_records() {
+    fn show_message_round_trips_without_storing_records() {
         let wire = json!({
              "name": "Messages", "tool_instances": [],
             "workflow": { "steps": [
