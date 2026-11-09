@@ -1147,8 +1147,8 @@ mod tests {
         let error = validate_arguments("unknown-action", &json!({ "channel": 1 })).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
-        let error = validate_arguments("set-output", &json!({ "channel": 0, "voltage": 5.0 }))
-            .unwrap_err();
+        let error =
+            validate_arguments("set-output", &json!({ "channel": 0, "voltage": 5.0 })).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
         let error = validate_arguments("set-output", &json!({ "channel": 1, "voltage": "high" }))

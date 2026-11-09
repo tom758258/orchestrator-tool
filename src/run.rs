@@ -321,7 +321,7 @@ fn run_workflow_internal(
         })
         .collect::<Result<Vec<_>, WorkflowRunError>>()?;
 
-    // Template v2 has no Live model ID. Enforce Orchestrator's Keysight-only
+    // Templates have no Live model ID. Enforce Orchestrator's Keysight-only
     // AutoScale policy against the actual Worker launch, including direct Core runs.
     for (instance, spec) in &referenced_specs {
         let is_scopes = template

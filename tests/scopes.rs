@@ -28,7 +28,7 @@ fn sample(name: &str) -> Template {
 }
 
 #[test]
-fn scopes_samples_and_setup_round_trip_in_v1() {
+fn scopes_samples_and_setup_round_trip() {
     for name in [
         "setup-measure.json",
         "dynamic-settings.json",
@@ -39,7 +39,7 @@ fn scopes_samples_and_setup_round_trip_in_v1() {
         let saved = template.to_json_string().unwrap();
         assert_eq!(Template::from_json_str(&saved).unwrap(), template);
         let wire: Value = serde_json::from_str(&saved).unwrap();
-        assert_eq!(wire["schema_version"], 2);
+        assert!(wire.get("schema_version").is_none());
         for local in ["model_id", "resource", "executable", "output_folder"] {
             assert!(!saved.contains(local));
         }

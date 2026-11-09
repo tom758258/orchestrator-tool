@@ -32,7 +32,7 @@ fn time_template() -> Value {
 }
 
 #[test]
-fn output_time_template_v1_round_trip_and_validation() {
+fn output_time_template_round_trip_and_validation() {
     let wire = time_template();
     let template = Template::from_json_str(&wire.to_string()).unwrap();
     let saved = template.to_json_string().unwrap();
