@@ -340,6 +340,13 @@ Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step prop
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
+在 **Steps** 中，點擊 Step 類型只會選取，不會立即加入 Workflow。
+**Selected Step** 與 **Add Step** 固定在可捲動的分類清單上方。
+未選取類型時 **Add Step** 停用；按下後才會將 Step 加入 **ADDING STEP TO**
+顯示的目標位置。新增成功後會清除 Palette 的類型選取，但 Workflow 中
+新加入的 Step 仍保持選取，方便編輯。**Set Target to Root** 只切換
+新增目標，不會新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
+
 **Validate**、**Run Simulation / Run Live**、**Stop Workflow** 與 active loop 的 **Stop** 控制項
 位於 Workflow summary 右上方，與 **Template**、**Steps** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處

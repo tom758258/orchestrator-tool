@@ -562,6 +562,7 @@ function App() {
     Workflow: true, 'Background Workflow': true, Powers: true, Meters: true, Scopes: true, Serial: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
+  const [selectedPaletteStep, setSelectedPaletteStep] = useState<StepPreset | null>(null)
   const [streamingExpanded, setStreamingExpanded] = useState(false)
   const [scopesOutputExpanded, setScopesOutputExpanded] = useState(false)
   const [chartOptionsExpanded, setChartOptionsExpanded] = useState(false)
@@ -906,6 +907,7 @@ function App() {
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
+      setSelectedPaletteStep(null)
       setDraftCreationError(null)
       setRunMetadata(null)
       setLastRunExecutionMode(null)
@@ -1031,6 +1033,7 @@ function App() {
         [...body.slice(0, insertIndex), newStep, ...body.slice(insertIndex)], container.branch)
     })
     setSelectedStepId(id)
+    setSelectedPaletteStep(null)
   }, [workflowDraft, selectedStepId, preferredIfBranch, updateSteps])
 
   const deleteStep = useCallback(
@@ -1221,6 +1224,7 @@ function App() {
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
       setSelectedStepId(null)
+      setSelectedPaletteStep(null)
       clearValidation()
       setValidationStatus('valid')
       setRunMetadata(null)
@@ -1816,7 +1820,22 @@ function App() {
   const addingToParent = insertionContainer?.parentId
     ? allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(step => step.id === insertionContainer.parentId)
     : null
+  const insertionTargetId = addingToParent
+    ? addingToParent.id.match(new RegExp(`^${addingToParent.type}-(\\d+)$`))?.[1] ?? addingToParent.id
+    : null
+  const insertionTargetLabel = addingToParent
+    ? `${addingToParent.type.toUpperCase()} ${insertionTargetId}${addingToParent.type === 'if'
+      ? ` → ${insertionContainer?.branch === 'else' ? 'ELSE' : 'THEN'}` : ''}`
+    : 'Root Workflow'
   const insertionDepth = addingToParent ? containerPath(workflowDraft?.workflow.steps ?? [], addingToParent.id).length + 1 : 0
+  const selectedPalettePreset = STEP_PRESETS.find(preset => preset.value === selectedPaletteStep)
+  const selectedPaletteLocked = selectedPalettePreset?.category === 'Background Workflow'
+    ? !workflowDraft?.backgrounds?.length
+    : selectedPalettePreset?.tool
+      ? !workflowDraft?.tool_instances.some(instance => instance.tool === selectedPalettePreset.tool)
+      : false
+  const selectedPaletteTooDeep = insertionDepth >= 8 && (selectedPaletteStep === 'for' ||
+    selectedPaletteStep === 'while' || selectedPaletteStep === 'if')
   const selectedValue = selectedStep?.type === 'output' || selectedStep?.type === 'set-variable'
     ? selectedStep.value : null
   const selectedCompatiblePages = selectedStep?.type === 'output'
@@ -2462,12 +2481,18 @@ function App() {
                       </button>
                     </h3>
                     {stepsExpanded && <>
-                    <p>Adding to: {addingToParent
-                      ? addingToParent.type === 'if' ? `If "${addingToParent.id}" ${insertionContainer?.branch?.toUpperCase()}`
-                        : `${addingToParent.type === 'for' ? 'For' : 'While'} "${addingToParent.id}" body`
-                      : 'Root workflow'}</p>
-                    {addingToParent && <button className="action-button" type="button" disabled={workflowBusy}
-                      onClick={() => setSelectedStepId(null)}>Add to root</button>}
+                    <div className="step-insertion-target" role="status" aria-label="Step insertion target">
+                      <span className="step-insertion-target-label">ADDING STEP TO</span>
+                      <strong className="step-insertion-target-value">{insertionTargetLabel}</strong>
+                    </div>
+                    {addingToParent && <button className="action-button step-insertion-root-button" type="button" disabled={workflowBusy}
+                      onClick={() => setSelectedStepId(null)}>Set Target to Root</button>}
+                    <p className="step-palette-selected">Selected Step: <strong>{selectedPalettePreset?.label ?? 'None'}</strong></p>
+                    <button className="action-button action-button-primary step-palette-add" type="button"
+                      disabled={!selectedPalettePreset || workflowBusy || selectedPaletteLocked || selectedPaletteTooDeep}
+                      onClick={() => { if (selectedPalettePreset) addStep(selectedPalettePreset) }}>
+                      Add Step
+                    </button>
                     <div className="step-palette-items step-palette-scroll" role="region" aria-label="Step categories" tabIndex={0}>
                       {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
@@ -2499,7 +2524,8 @@ function App() {
                                 key={preset.value}
                                 className="action-button step-palette-button"
                                 type="button"
-                                onClick={() => addStep(preset)}
+                                aria-pressed={selectedPaletteStep === preset.value}
+                                onClick={() => setSelectedPaletteStep(preset.value)}
                                 disabled={workflowBusy || (insertionDepth >= 8 && (preset.value === 'for' || preset.value === 'while' || preset.value === 'if'))}
                               >
                                 {preset.label}

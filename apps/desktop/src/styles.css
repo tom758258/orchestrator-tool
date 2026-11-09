@@ -408,6 +408,36 @@ body {
   font-size: 1rem;
 }
 
+.step-insertion-target {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.step-insertion-target-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.step-insertion-target-value {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.step-insertion-root-button {
+  margin-top: 8px;
+}
+
 .streaming-toggle {
   display: flex;
   align-items: flex-start;
@@ -484,6 +514,32 @@ body {
   width: 100%;
   padding: 7px 10px;
   text-align: left;
+}
+
+.step-palette-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--surface-selected);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.step-palette-button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--surface-selected);
+}
+
+.step-palette-selected {
+  margin: 12px 0 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.step-palette-selected strong {
+  color: var(--ink);
+}
+
+.step-palette-add {
+  width: 100%;
 }
 
 .workflow-canvas {

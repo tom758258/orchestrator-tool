@@ -410,6 +410,14 @@ check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
 
+In **Steps**, click a step type to select it; clicking does not insert it.
+**Selected Step** and **Add Step** stay above the scrollable categories.
+**Add Step** is disabled until a type is selected. Press it to insert into
+the location shown by **ADDING STEP TO**. After insertion the palette selection
+clears, while the inserted Workflow step remains selected for editing.
+**Set Target to Root** switches the destination without inserting a step.
+Creating or opening a Template also clears the palette selection.
+
 **Validate**, **Run Simulation / Run Live**, **Stop Workflow**, and active loop **Stop** controls
 appear at the top-right of the Workflow summary, beside **Template** and
 **Steps**. Validation, running, Stop, and run failure feedback appears below
