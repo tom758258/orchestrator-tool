@@ -71,7 +71,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
     assert_eq!(outputs[1].value(), &json!(true));
     let saved: serde_json::Value =
         serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-    assert_eq!(saved["schema_version"], 2);
+    assert!(saved.get("schema_version").is_none());
     assert_eq!(saved["workflow"]["steps"][1]["name"], "measurement");
     assert_eq!(
         Template::from_json_str(&saved.to_string()).unwrap(),

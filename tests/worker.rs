@@ -4999,10 +4999,8 @@ fn simulated_measurement_dataflow_exports_csv() {
 
     let saved = template.to_json_string().unwrap();
     assert_eq!(saved, definition_before_run);
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&saved).unwrap()["schema_version"],
-        2
-    );
+    let saved_wire: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(saved_wire.get("schema_version").is_none());
     assert_eq!(Template::from_json_str(&saved).unwrap(), template);
 }
 
