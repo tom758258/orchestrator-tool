@@ -772,7 +772,7 @@ mod tests {
         std::fs::write(&file, [0x01, 0x02, 0x03]).unwrap();
         let template = Template::from_json_str(
             &serde_json::json!({
-                "schema_version": 2, "name": "Serial foreground SIM",
+                "name": "Serial foreground SIM",
                 "tool_instances": [{ "id": "serial-1", "tool": "serial",
                     "setup": {"baud": 115200, "transport": transport}}],
                 "workflow": {"steps": [
@@ -870,7 +870,6 @@ mod tests {
         .unwrap();
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 2,
                 "name": "Serial real RX-only SIM",
                 "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200,"transport":transport}}],
                 "backgrounds": [{"id":"background-1","tool_instance_id":"serial-bg",
@@ -977,7 +976,7 @@ mod tests {
             path
         };
         let template = Template::from_json_str(&json!({
-            "schema_version": 2, "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
+            "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                 "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
                 "nplc": 1.0, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
                 "current_terminal": null
@@ -1284,7 +1283,7 @@ mod tests {
         let executable = std::fs::canonicalize(executable).unwrap();
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "Meters simulation vertical slice",
+                "name": "Meters simulation vertical slice",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": setup}, {"id": "powers-1", "tool": "powers", "setup": {}}],
                 "workflow": {"steps": [
                     {"type": "tool-action", "id": "measure", "target": "meters-1",
@@ -1342,7 +1341,7 @@ mod tests {
     fn preparation_without_meters_does_not_require_setup() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "Wait only", "tool_instances": [],
+                "name": "Wait only", "tool_instances": [],
                 "workflow": {"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
             })
             .to_string(),
@@ -1414,7 +1413,7 @@ mod tests {
 
     fn instance_template() -> Template {
         Template::from_json_str(&json!({
-            "schema_version": 2, "name": "Instances",
+            "name": "Instances",
             "tool_instances": [
                 {"id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto", "nplc": 1,

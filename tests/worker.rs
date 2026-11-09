@@ -499,7 +499,7 @@ fn main() {
     powers_terminal_failure_preserves_diagnostic_detail();
     meters_worker_smoke_captures_sample_and_shuts_down();
     powers_runtime_action_succeeds();
-    powers_set_voltage_step_outputs_reach_result_row();
+    powers_set_output_step_outputs_reach_result_row();
     powers_measure_voltage_and_current_reach_result_row();
     powers_set_output_binding_reaches_worker();
     powers_protection_status_asserts_untripped_result();
@@ -901,9 +901,9 @@ fn serial_background_rx_contract() {
     for scenario in ["serial-ok", "serial-invalid"] {
         let template = Template::from_json_str(
             &json!({
-                "schema_version":2, "name":"Serial Background RX",
+                "name":"Serial Background RX",
                 "tool_instances":[{"id":"serial-bg","tool":"serial",
-                    "setup":{"baud":115200}}],
+                    "setup":{"transport":"serial","baud":115200}}],
                 "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
                     "live_monitor":true,"limit_count":null}],
                 "workflow":{"steps":[
@@ -1113,7 +1113,7 @@ fn background_template(steps: serde_json::Value) -> Template {
         trigger_mode: MetersTriggerMode::ImmediateCustom,
         ..MetersSetup::default()
     };
-    Template::from_json_str(&json!({"schema_version":2,"name":"Background contract", "tool_instances":[
+    Template::from_json_str(&json!({"name":"Background contract", "tool_instances":[
         {"id":"meters-bg","tool":"meters","setup":setup}],"backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","live_monitor":true,"limit_count":6}],
         "workflow":{"steps":steps}}).to_string()).unwrap()
 }
@@ -1680,7 +1680,7 @@ fn background_capture_and_termination_contract() {
             serde_json::from_str(&background_template(json!([on])).to_json_string().unwrap())
                 .unwrap();
         wire["workflow"]["steps"] = json!([
-            {"type":"tool-action","id":"set","target":"powers-1","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+            {"type":"tool-action","id":"set","target":"powers-1","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
             {"type":"tool-action","id":"power-on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
             on,{"type":"wait","id":"wait","duration_ms":150},
             {"type":"wait","id":"after-failure","duration_ms":0}
@@ -2021,7 +2021,7 @@ fn real_meters_background_and_unlimited_simulation() {
     }
     // A source bound is a launch parameter: it never turns the While into a finite loop.
     let setup = MetersSetup::default();
-    let template=Template::from_json_str(&json!({"schema_version":2,"name":"Unlimited SIM", "tool_instances":[{"id":"meters-1","tool":"meters","setup":setup}],
+    let template=Template::from_json_str(&json!({"name":"Unlimited SIM", "tool_instances":[{"id":"meters-1","tool":"meters","setup":setup}],
         "workflow":{"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
             "steps":[{"type":"tool-action","id":"measure","target":"meters-1","action":"measure","arguments":{}}]}]}}).to_string()).unwrap();
     let specs = prepare_worker_launch_specs_with_simulation(
@@ -2084,10 +2084,10 @@ fn real_powers_simulated_workflow_uses_common_tracker() {
     let instance = ToolInstanceId::new("powers-real").unwrap();
     let workflow = Workflow::new(vec![
         Step::new(
-            StepId::new("set-voltage").unwrap(),
+            StepId::new("set-output").unwrap(),
             StepKind::ToolAction {
                 target: instance.clone(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({"channel":1,"voltage":2.5}),
                 bindings: Default::default(),
             },
@@ -3802,8 +3802,8 @@ fn run_scopes_fixture(scenario: &str) {
 fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version":2,"name":"Serial dynamic integer",
-            "tool_instances":[{"id":"serial-1","tool":"serial","setup":{"baud":115200}}],
+            "name":"Serial dynamic integer",
+            "tool_instances":[{"id":"serial-1","tool":"serial","setup":{"transport":"serial","baud":115200}}],
             "workflow":{"steps":[
                 {"type":"set-variable","id":"source","variable":"b",
                     "value":{"source":"literal","value":3.75}},
@@ -3971,7 +3971,7 @@ fn scopes_worker_protocol_cases() {
 }
 
 fn scopes_setup_failure_stops_workflow() {
-    let template = Template::from_json_str(&json!({"schema_version":2,"name":"Setup failure",
+    let template = Template::from_json_str(&json!({"name":"Setup failure",
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
         "workflow":{"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
             "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
@@ -3992,11 +3992,11 @@ fn scopes_setup_failure_stops_workflow() {
 }
 
 fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
-    let template = Template::from_json_str(&json!({"schema_version":2,"name":"Dynamic Worker failure",
+    let template = Template::from_json_str(&json!({"name":"Dynamic Worker failure",
         "tool_instances":[{"id":"power","tool":"powers","setup":{}},{"id":"scope","tool":"scopes","setup":{}}],
         "workflow":{"steps":[
             {"type":"set-variable","id":"channel","variable":"channel","value":{"source":"literal","value":99}},
-            {"type":"tool-action","id":"set","target":"power","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+            {"type":"tool-action","id":"set","target":"power","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
             {"type":"tool-action","id":"on","target":"power","action":"output-on","arguments":{"channel":1}},
             {"type":"tool-action","id":"measure","target":"scope","action":"measure","arguments":{"channel":1,"item":"vpp"},"bindings":{"channel":{"source":"variable","variable":"channel"}}},
             {"type":"tool-action","id":"later","target":"power","action":"output-off","arguments":{"channel":1}}
@@ -4310,7 +4310,7 @@ fn powers_runtime_action_succeeds() {
         Duration::from_secs(5),
     )
     .unwrap();
-    let action = ActionId::new("set-voltage").unwrap();
+    let action = ActionId::new("set-output").unwrap();
     let result = run_powers_action(
         &session,
         &action,
@@ -4331,14 +4331,14 @@ fn powers_runtime_action_succeeds() {
     assert!(session.shutdown(Duration::from_secs(5)).unwrap().success());
 }
 
-fn powers_set_voltage_step_outputs_reach_result_row() {
+fn powers_set_output_step_outputs_reach_result_row() {
     let set_voltage_step_id = StepId::new("power-set-1").unwrap();
     let workflow = Workflow::new(vec![
         Step::new(
             set_voltage_step_id.clone(),
             StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             },
@@ -4391,7 +4391,6 @@ fn powers_set_voltage_step_outputs_reach_result_row() {
 fn powers_measure_voltage_and_current_reach_result_row() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 2,
             "name": "Power Measure",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
             "workflow": { "steps": [
@@ -4447,7 +4446,6 @@ fn powers_measure_voltage_and_current_reach_result_row() {
 fn powers_set_output_binding_reaches_worker() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 2,
             "name": "Power set output",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
             "workflow": { "steps": [
@@ -4566,7 +4564,6 @@ fn simulated_manual_powers_clear_returns_plan_without_reread() {
 
 fn powers_protection_status_asserts_untripped_result() {
     let template = Template::from_json_str(&json!({
-        "schema_version": 2,
         "name": "Power Protection Status",
         "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
         "workflow": { "steps": [
@@ -4701,7 +4698,7 @@ fn meters_single_shutdown_waits_for_exit_after_stop_failure() {
 
 fn single_meter_template(steps: serde_json::Value) -> Template {
     Template::from_json_str(
-        &json!({"schema_version": 2, "name": "Single meter", "tool_instances": [{
+        &json!({"name": "Single meter", "tool_instances": [{
         "id": "meters-1", "tool": "meters", "setup": MetersSetup::default()
     }], "workflow": { "steps": steps }})
         .to_string(),
@@ -4791,7 +4788,7 @@ fn meters_single_outputs_preserve_staging() {
 
     let error = Template::from_json_str(
         &json!({
-            "schema_version": 2, "name": "Two batches", "tool_instances": [{
+            "name": "Two batches", "tool_instances": [{
                 "id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
@@ -4816,7 +4813,7 @@ fn meters_single_outputs_preserve_staging() {
 
     let error = Template::from_json_str(
         &json!({
-            "schema_version": 2, "name": "Batch used by Assert", "tool_instances": [{
+            "name": "Batch used by Assert", "tool_instances": [{
                 "id": "meters-1", "tool": "meters", "setup": {
                     "measurement": "voltage-dc", "range_mode": "auto",
                     "manual_range": null, "nplc": 1.0, "auto_zero": "on",
@@ -4844,7 +4841,7 @@ fn powers_and_meters_workflow_executes_end_to_end() {
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             },
@@ -4938,7 +4935,6 @@ fn powers_and_meters_workflow_executes_end_to_end() {
 fn simulated_measurement_dataflow_exports_csv() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 2,
             "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {
                 "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,
                 "nplc": 1.0, "auto_zero": "on", "dcv_input_impedance": null,
@@ -5003,10 +4999,8 @@ fn simulated_measurement_dataflow_exports_csv() {
 
     let saved = template.to_json_string().unwrap();
     assert_eq!(saved, definition_before_run);
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&saved).unwrap()["schema_version"],
-        2
-    );
+    let saved_wire: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(saved_wire.get("schema_version").is_none());
     assert_eq!(Template::from_json_str(&saved).unwrap(), template);
 }
 
@@ -5080,7 +5074,7 @@ fn partial_startup_failure_shuts_down_started_worker() {
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             },
@@ -5159,11 +5153,11 @@ fn record_event_if_requested(event: &str) {
 fn powers_protection_setup_lifecycle() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 2, "name": "Protection setup fixture",
+            "name": "Protection setup fixture",
             "tool_instances": [{"id":"powers-1","tool":"powers","setup":{"protection":{"channels":[
                 {"channel":1,"ovp_voltage":5.5,"ocp":"on"}]}}}],
             "workflow":{"steps":[
-                {"type":"tool-action","id":"set-1","target":"powers-1","action":"set-voltage",
+                {"type":"tool-action","id":"set-1","target":"powers-1","action":"set-output",
                     "arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on-1","target":"powers-1","action":"output-on",
                     "arguments":{"channel":1}},
@@ -5284,7 +5278,7 @@ fn live_workflow_cleanup_lifecycle() {
                 StepId::new("set-1").unwrap(),
                 StepKind::ToolAction {
                     target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
+                    action: ActionId::new("set-output").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
                 },
@@ -5495,9 +5489,9 @@ fn live_workflow_cleanup_lifecycle() {
         unsafe {
             env::set_var(CLEANUP_MARKER_ENV, &marker);
         }
-        let template = Template::from_json_str(&json!({"schema_version":2,"name":"Stop cleanup",
+        let template = Template::from_json_str(&json!({"name":"Stop cleanup",
             "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"steps":[
-                {"type":"tool-action","id":"set","target":"powers-1","action":"set-voltage","arguments":{"channel":1,"voltage":5.0}},
+                {"type":"tool-action","id":"set","target":"powers-1","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
                 {"type":"wait","id":"after","duration_ms":0}
             ]}}).to_string()).unwrap();

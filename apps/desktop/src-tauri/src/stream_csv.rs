@@ -251,7 +251,7 @@ mod tests {
     fn template() -> Template {
         Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "test/name", "tool_instances": [],
+                "name": "test/name", "tool_instances": [],
                 "workflow": { "steps": [{
                     "type": "output", "id": "out", "name": "value", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn selected_and_all_pages_route_and_flush_only_their_rows() {
         let template = Template::from_json_str(&json!({
-            "schema_version": 2, "name": "pages", "tool_instances": [],
+            "name": "pages", "tool_instances": [],
             "workflow": {"steps": [
                 {"type":"output", "id":"a", "name":"a", "page":"Outer", "value":{"source":"literal", "value":1}},
                 {"type":"output", "id":"b", "name":"b", "page":"Inner", "value":{"source":"literal", "value":2}}
@@ -400,7 +400,7 @@ mod tests {
     fn all_pages_prepare_failure_preserves_partial_csv_before_execution() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "pages", "tool_instances": [],
+                "name": "pages", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "output", "id": "one", "name": "one", "page": "One",
                       "value": { "source": "literal", "value": 1 } },

@@ -1453,7 +1453,7 @@ mod tests {
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
                     target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
+                    action: ActionId::new("set-output").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
                 },
@@ -1471,7 +1471,7 @@ mod tests {
             workflow.steps()[1].kind(),
             &StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             }
@@ -1496,7 +1496,7 @@ mod tests {
                 },
                 StepKind::ToolAction {
                     target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
+                    action: ActionId::new("set-output").unwrap(),
                     arguments: json!({}),
                     bindings: [("voltage".to_owned(), value.clone())].into(),
                 },

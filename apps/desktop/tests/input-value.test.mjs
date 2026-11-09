@@ -30,9 +30,6 @@ const meterMeasure = {
 const powerMeasure = {
   type: 'tool-action', id: 'power-measure-1', target: 'power-1', action: 'measure', arguments: { channel: 1 },
 }
-const powerSetVoltage = {
-  type: 'tool-action', id: 'set-voltage-1', target: 'power-1', action: 'set-voltage', arguments: {},
-}
 const powerSetOutput = {
   type: 'tool-action', id: 'set-output-1', target: 'power-1', action: 'set-output', arguments: { channel: 1, current: 0.2 },
 }
@@ -68,17 +65,6 @@ test('Power Measure exposes actual voltage and current from Worker data', () => 
   })
 })
 
-test('curated results map Powers Set Voltage pointers', () => {
-  const fields = curatedResultFields(powerSetVoltage, instances)
-  assert.deepEqual(fields, [
-    { label: 'Voltage', pointer: '/request/arguments/voltage' },
-    { label: 'Channel', pointer: '/request/arguments/channel' },
-  ])
-  assert.deepEqual(stepOutputReference(powerSetVoltage, instances), {
-    source: 'step-output', step_id: 'set-voltage-1', pointer: '/request/arguments/voltage',
-  })
-})
-
 test('Powers Set Output defaults to its required Channel result', () => {
   assert.deepEqual(curatedResultFields(powerSetOutput, instances), [
     { label: 'Channel', pointer: '/request/arguments/channel' },
@@ -102,19 +88,19 @@ test('Power Protection Status defaults to Protection Tripped', () => {
 })
 
 test('known and custom pointers select without rewriting the pointer', () => {
-  const fields = curatedResultFields(powerSetVoltage, instances)
+  const fields = curatedResultFields(powerSetOutput, instances)
   assert.equal(resultSelection('/request/arguments/channel', fields), '/request/arguments/channel')
 
-  const existing = { source: 'step-output', step_id: 'set-voltage-1', pointer: '/data/custom' }
+  const existing = { source: 'step-output', step_id: 'set-output-1', pointer: '/data/custom' }
   assert.equal(resultSelection(existing.pointer, fields), CUSTOM_RESULT)
   assert.equal(existing.pointer, '/data/custom')
 })
 
 test('switching incompatible actions replaces the previous curated pointer', () => {
   const previous = stepOutputReference(meterMeasure, instances)
-  const switched = stepOutputReference(powerSetVoltage, instances)
+  const switched = stepOutputReference(powerSetOutput, instances)
   assert.equal(previous.pointer, '/value')
-  assert.equal(switched.pointer, '/request/arguments/voltage')
+  assert.equal(switched.pointer, '/request/arguments/channel')
 })
 
 test('Powers Output On and Output Off have no curated results', () => {

@@ -45,13 +45,6 @@ fn control_job_id() -> String {
     )
 }
 
-/// Manual ranges advertised by meters-tool for one measurement.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct MetersRangeOptions {
-    pub measurement_name: String,
-    pub range_values: Vec<f64>,
-}
-
 /// Integer limits advertised by meters-tool capabilities.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MetersIntegerLimit {
@@ -136,22 +129,6 @@ pub fn get_capabilities(
         ));
     }
     parse_capabilities(&output.stdout)
-}
-
-/// Backward-compatible range-only projection for callers that do not need full capabilities.
-pub fn get_range_options(
-    application_dir: &Path,
-    config: &Config,
-    model: Option<&str>,
-) -> Result<Vec<MetersRangeOptions>, String> {
-    Ok(get_capabilities(application_dir, config, model)?
-        .measurements
-        .into_iter()
-        .map(|measurement| MetersRangeOptions {
-            measurement_name: measurement.measurement_name,
-            range_values: measurement.range_values,
-        })
-        .collect())
 }
 
 fn parse_capabilities(stdout: &[u8]) -> Result<MetersCapabilities, String> {

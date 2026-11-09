@@ -88,18 +88,6 @@ function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
           })
           return [channel, ...setpoints].join(' · ')
         }
-        if (step.action === 'set-voltage') {
-          const voltage = step.bindings?.voltage
-          return `${channel} · ${voltage
-            ? voltage.source === 'variable'
-              ? `Voltage = ${voltage.variable}`
-              : voltage.source === 'literal'
-                ? `${valueSummary(voltage)} V`
-                : voltage.source === 'expression'
-                  ? `Voltage = ${expressionSummary(voltage)}`
-                  : 'Bound value'
-            : `${step.arguments.voltage ?? '?'} V`}`
-        }
         if (step.action === 'output-on' || step.action === 'output-off' || step.action === 'measure') {
           return channel
         }

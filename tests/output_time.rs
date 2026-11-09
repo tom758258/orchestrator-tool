@@ -28,11 +28,11 @@ fn time_template() -> Value {
         steps.push(json!({"type":"output", "id":format!("stamp-{index}"), "name":format!("stamp-{index}"), "page":"Time",
             "value":{"source":"timestamp"}, "time_format":{"kind":"timestamp", "include_date":date, "include_utc_offset":offset}}));
     }
-    json!({"schema_version":2, "name":"Time formats", "tool_instances":[], "workflow":{"steps":steps}})
+    json!({"name":"Time formats", "tool_instances":[], "workflow":{"steps":steps}})
 }
 
 #[test]
-fn output_time_template_v1_round_trip_and_validation() {
+fn output_time_template_round_trip_and_validation() {
     let wire = time_template();
     let template = Template::from_json_str(&wire.to_string()).unwrap();
     let saved = template.to_json_string().unwrap();

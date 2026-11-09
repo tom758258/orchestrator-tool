@@ -412,24 +412,6 @@ async fn check_live_preflight(
     .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
-async fn get_meters_range_options(
-    app: AppHandle,
-    model: Option<String>,
-) -> Result<Vec<orchestrator_tool::adapters::meters::MetersRangeOptions>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::adapters::meters::get_range_options(
-            &application_dir,
-            &config,
-            model.as_deref(),
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
 #[derive(Serialize)]
 struct ToolStatusDto {
     tool_id: String,
@@ -1510,7 +1492,6 @@ fn main() {
             check_live_preflight,
             refresh_powers_status,
             clear_powers_protection,
-            get_meters_range_options,
             run_workflow_simulation,
             get_simulation_sample_requirements,
             get_background_output,
@@ -1583,7 +1564,6 @@ mod tests {
     fn export_template() -> orchestrator_tool::template::Template {
         orchestrator_tool::template::Template::from_json_str(
             &json!({
-                "schema_version": 2,
                 "name": "export",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -1628,7 +1608,7 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             path
         };
-        let template = Template::from_json_str(&json!({"schema_version":2,"name":"Live", "tool_instances":[
+        let template = Template::from_json_str(&json!({"name":"Live", "tool_instances":[
             {"id":"first","tool":"powers","setup":{}}, {"id":"second","tool":"powers","setup":{}}
         ],"workflow":{"steps":[
             {"type":"tool-action","id":"first-off","target":"first","action":"output-off","arguments":{"channel":3}},
@@ -1980,7 +1960,6 @@ mod tests {
     fn executor_failure_exports_only_rows_committed_before_failure() {
         let template = Template::from_json_str(
             &json!({
-                "schema_version": 2,
                 "name": "partial export",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -2081,7 +2060,6 @@ mod regression_tests {
     fn progress_template() -> Template {
         Template::from_json_str(
             &json!({
-                "schema_version": 2,
                 "name": "progress",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -2438,7 +2416,6 @@ mod regression_tests {
         assert_eq!(template.name(), "Untitled");
         assert!(template.workflow().steps().is_empty());
         let invalid = r#"{
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Invalid",
             "workflow": { "steps": [
@@ -2449,7 +2426,7 @@ mod regression_tests {
         assert!(error.message.contains("invalid step ID"));
         assert!(error.step_id.is_none());
         let invalid_reference = r#"{
-            "schema_version": 2, "name": "Invalid reference", "tool_instances": [],
+            "name": "Invalid reference", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "output", "id": "out", "name": "Value", "page": "Results",
                   "value": { "source": "variable", "variable": "missing" } }
@@ -2467,7 +2444,6 @@ mod regression_tests {
         let dir = unique_test_dir("orchestrator-template-round-trip");
         let path = dir.join("template.json");
         let template_json = r#"{
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Round Trip",
             "workflow": { "steps": [
@@ -2525,7 +2501,6 @@ mod regression_tests {
     fn referenced_tool_instances_only_selects_used_instances() {
         let template = Template::from_json_str(
             r#"{
-                "schema_version": 2,
                 "tool_instances": [
                     {"id": "meters-1", "tool": "meters", "setup": {
                         "measurement": "voltage-dc", "range_mode": "auto", "manual_range": null,

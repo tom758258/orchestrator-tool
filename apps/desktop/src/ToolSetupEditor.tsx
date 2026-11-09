@@ -10,7 +10,7 @@ import { protectionChannelNumbers, updatePowersProtectionSetting } from './power
 import BackgroundSetup from './BackgroundSetup'
 import type { BackgroundConfig } from './workflow'
 
-// Mirrors per-instance setup serialization in Template schema v2.
+// Mirrors per-instance setup serialization in the current Template format.
 export type MetersSetup = {
   measurement: 'voltage-dc' | 'current-dc'
   range_mode: 'auto' | 'manual'
@@ -29,7 +29,7 @@ export type MetersSetup = {
 }
 
 export type SerialSetup = {
-  transport?: 'serial' | 'tcp'
+  transport: 'serial' | 'tcp'
   baud: number; data_bits: number; parity: 'none' | 'odd' | 'even'; stop_bits: number
   flow_control: 'none' | 'software' | 'hardware'; timeout_ms: number
   connect_timeout_ms?: number; io_timeout_ms?: number
@@ -611,7 +611,7 @@ function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: 
     <div hidden={!expanded}>
     <div className="serial-setup-fields">
     <label className="step-property-field"><span className="step-property-label">Transport</span>
-      <select aria-label="Transport" value={value.transport ?? 'serial'}
+      <select aria-label="Transport" value={value.transport}
         onChange={e => update({ transport: e.target.value as 'serial' | 'tcp' })}>
         <option value="serial">UART (COM Port)</option>
         <option value="tcp">TCP Client</option>

@@ -55,7 +55,7 @@ pub(crate) fn validate_preflight_action(
 ) {
     if matches!(
         action,
-        "set-output" | "set-voltage" | "output-on" | "output-off" | "protection-status" | "measure"
+        "set-output" | "output-on" | "output-off" | "protection-status" | "measure"
     ) && let Some(channel) = arguments.get("channel")
         && !(action == "protection-status" && channel == "all")
     {
@@ -400,7 +400,7 @@ impl Error for PowersSmokeError {
 
 /// Runs a single runtime Powers action on an already-started Worker session.
 ///
-/// Supported actions: `set-output`, `set-voltage`, `output-on`, `output-off`, `protection-status`, `measure`.
+/// Supported actions: `set-output`, `output-on`, `output-off`, `protection-status`, `measure`.
 /// Execution context and output confirmation are runtime-only.
 pub fn run_action(
     session: &WorkerSession,
@@ -410,7 +410,7 @@ pub fn run_action(
     timeout: Duration,
 ) -> Result<Value, PowersActionError> {
     let worker_command = match action.as_str() {
-        "set-output" | "set-voltage" => "set",
+        "set-output" => "set",
         "output-on" => "output-on",
         "output-off" => "output-off",
         "protection-status" => "protection-status",
@@ -905,7 +905,6 @@ fn validate_arguments(action: &str, arguments: &Value) -> Result<Value, PowersAc
     })?;
 
     let (required_fields, allowed_fields): (&[&str], &[&str]) = match action {
-        "set-voltage" => (&["channel", "voltage"], &["channel", "voltage"]),
         "set-output" => (&["channel"], &["channel", "voltage", "current"]),
         "output-on" | "output-off" | "protection-status" | "measure" => {
             (&["channel"], &["channel"])
@@ -1116,9 +1115,10 @@ mod tests {
 
     #[test]
     fn powers_action_mapping_and_argument_validation() {
-        let set_voltage =
-            validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": 5.0 })).unwrap();
-        assert_eq!(set_voltage, json!({ "channel": 1, "voltage": 5.0 }));
+        assert!(matches!(
+            validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": 5.0 })),
+            Err(PowersActionError::InvalidArguments(_))
+        ));
         for arguments in [
             json!({ "channel": 1, "voltage": 5.0 }),
             json!({ "channel": 1, "current": 0.2 }),
@@ -1147,22 +1147,22 @@ mod tests {
         let error = validate_arguments("unknown-action", &json!({ "channel": 1 })).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
-        let error = validate_arguments("set-voltage", &json!({ "channel": 0, "voltage": 5.0 }))
-            .unwrap_err();
+        let error =
+            validate_arguments("set-output", &json!({ "channel": 0, "voltage": 5.0 })).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
-        let error = validate_arguments("set-voltage", &json!({ "channel": 1, "voltage": "high" }))
+        let error = validate_arguments("set-output", &json!({ "channel": 1, "voltage": "high" }))
             .unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
         let error = validate_arguments(
-            "set-voltage",
+            "set-output",
             &json!({ "channel": 1, "voltage": 5.0, "extra": true }),
         )
         .unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
-        let error = validate_arguments("set-voltage", &json!("not-an-object")).unwrap_err();
+        let error = validate_arguments("set-output", &json!("not-an-object")).unwrap_err();
         assert!(matches!(error, PowersActionError::InvalidArguments(_)));
 
         for arguments in [
@@ -1177,13 +1177,6 @@ mod tests {
                 Err(PowersActionError::InvalidArguments(_))
             ));
         }
-        assert!(matches!(
-            validate_arguments(
-                "set-voltage",
-                &json!({ "channel": 1, "voltage": 5.0, "current": 0.2 })
-            ),
-            Err(PowersActionError::InvalidArguments(_))
-        ));
     }
 
     #[test]

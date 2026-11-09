@@ -2,7 +2,7 @@
 
 This document describes the current architecture of Orchestrator Tool. It is
 an engineering reference, not an operator guide. Template and runtime
-semantics are defined in [Template Schema v2](../contracts/template-schema-v2.md).
+semantics are defined in [Template Format](../contracts/template-schema.md).
 
 ## Component ownership
 
@@ -302,7 +302,7 @@ attempts background cleanup and all Powers Safe-Off operations; cleanup errors
 retain the original failure and do not erase partial results.
 
 CSV streaming and XLSX serialization are contract-level behaviors documented
-in [Template Schema v2](../contracts/template-schema-v2.md). The key
+in [Template Format](../contracts/template-schema.md). The key
 architecture rule is that both batch and streaming export consume committed
 ResultRow data rather than re-evaluating the Workflow or reading presentation
 state.
