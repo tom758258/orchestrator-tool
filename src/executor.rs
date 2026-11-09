@@ -931,7 +931,7 @@ mod tests {
             run::{RunOptions, run_workflow_streaming_controlled},
             run_failure::RunFailure,
         };
-        let template=crate::template::Template::from_json_str(&serde_json::json!({"schema_version":2,"name":"CSV failure", "tool_instances":[],
+        let template=crate::template::Template::from_json_str(&serde_json::json!({"name":"CSV failure", "tool_instances":[],
             "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"1","stop":"3","step":"1"},
                 "steps":[{"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                 {"type":"wait","id":"after","duration_ms":0}]}}).to_string()).unwrap();
@@ -999,7 +999,7 @@ mod tests {
     fn workflow_stop_unwinds_nested_scopes_without_committing_partial_rows() {
         use crate::run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled};
         let template = crate::template::Template::from_json_str(&json!({
-            "schema_version": 2, "name": "Nested stop", "tool_instances": [],
+            "name": "Nested stop", "tool_instances": [],
             "workflow": {"steps": [
                 {"type":"output","id":"root-value","name":"root","page":"Root","value":{"source":"literal","value":9}},
                 {"type":"for","id":"outer","variable":"i","range":{"start":"1","stop":"3","step":"1"},"steps":[
@@ -1095,7 +1095,7 @@ mod tests {
             "after-complete",
         ] {
             let mut wire = json!({
-                "schema_version":2,"name":"Stop boundaries","tool_instances":[],
+                "name":"Stop boundaries","tool_instances":[],
                 "workflow":{"steps":[
                     {"type":"wait","id":"first","duration_ms":0},
                     {"type":"wait","id":"wait","duration_ms":if timing == "during-wait" { 30_000 } else { 0 }},
@@ -1226,7 +1226,7 @@ mod tests {
         };
         let template = crate::template::Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "Stop", "tool_instances": [],
+                "name": "Stop", "tool_instances": [],
                 "workflow": { "steps": [loop_step,
                     { "type": "wait", "id": "root-later", "duration_ms": 0 },
                     { "type": "for", "id": "later-loop", "variable": "y",
@@ -1455,7 +1455,7 @@ mod tests {
     #[test]
     fn for_restores_loop_variable_and_preserves_run_wide_mutations_in_root_row() {
         let template = crate::template::Template::from_json_str(&json!({
-            "schema_version": 2, "name": "For scope", "tool_instances": [],
+            "name": "For scope", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "set-variable", "id": "set-x", "variable": "x",
                   "value": { "source": "literal", "value": 99 } },
@@ -1513,7 +1513,7 @@ mod tests {
     #[test]
     fn for_binds_exact_decimal_values_and_commits_ordered_iteration_rows() {
         let template = crate::template::Template::from_json_str(&json!({
-            "schema_version": 2, "name": "Decimal sweep", "tool_instances": [],
+            "name": "Decimal sweep", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "set-variable", "id": "before", "variable": "baseline",
                   "value": { "source": "literal", "value": 42 } },
@@ -1563,7 +1563,7 @@ mod tests {
     fn failed_for_iteration_discards_only_current_staged_row_and_stops_execution() {
         let template = crate::template::Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "Failed sweep", "tool_instances": [],
+                "name": "Failed sweep", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
@@ -1692,8 +1692,8 @@ mod tests {
     fn serial_hex_byte_truncates_dynamic_values_without_changing_variables() {
         let template = crate::template::Template::from_json_str(
             &json!({
-                "schema_version": 2, "name": "Serial test",
-                "tool_instances": [{"id":"serial-1","tool":"serial","setup":{"baud":115200}}],
+                "name": "Serial test",
+                "tool_instances": [{"id":"serial-1","tool":"serial","setup":{"transport":"serial","baud":115200}}],
                 "workflow": {"steps":[
                     {"type":"set-variable","id":"set-x","variable":"x",
                      "value":{"source":"literal","value":3.75}},
@@ -1765,7 +1765,7 @@ mod tests {
                     StepId::new("power-set-1").unwrap(),
                     StepKind::ToolAction {
                         target: ToolInstanceId::new("powers-1").unwrap(),
-                        action: ActionId::new("set-voltage").unwrap(),
+                        action: ActionId::new("set-output").unwrap(),
                         arguments,
                         bindings: [(
                             "voltage".to_owned(),
@@ -2200,7 +2200,7 @@ mod tests {
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
                     target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
+                    action: ActionId::new("set-output").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
                 },

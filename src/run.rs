@@ -862,7 +862,6 @@ mod tests {
     #[test]
     fn scopes_autoscale_direct_core_run_rejects_tektronix_before_startup() {
         let mut value = serde_json::json!({
-            "schema_version":2,
             "name":"Scope AutoScale policy",
             "tool_instances":[{"id":"scopes-1","tool":"scopes","setup":{}}],
             "workflow":{"steps":[{"type":"tool-action","id":"autoscale",
@@ -936,7 +935,7 @@ mod tests {
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: serde_json::json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             },

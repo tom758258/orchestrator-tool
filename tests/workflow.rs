@@ -17,7 +17,6 @@ use serde_json::json;
 fn comparison_expression_flows_through_simulated_workflow() {
     let template = Template::from_json_str(
         &json!({
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Comparison integration",
             "workflow": { "steps": [
@@ -98,7 +97,7 @@ fn workflow_template_step_result_integration() {
             StepId::new("power-set-1").unwrap(),
             StepKind::ToolAction {
                 target: ToolInstanceId::new("powers-1").unwrap(),
-                action: ActionId::new("set-voltage").unwrap(),
+                action: ActionId::new("set-output").unwrap(),
                 arguments: json!({ "channel": 1, "voltage": 5.0 }),
                 bindings: Default::default(),
             },
@@ -302,7 +301,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
 // Shared wire fixture also protects While template parsing and serialization.
 fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
     json!({
-        "schema_version": 2, "name": "While counter", "tool_instances": [],
+        "name": "While counter", "tool_instances": [],
         "workflow": { "steps": [
             { "type": "set-variable", "id": "init", "variable": "x",
               "value": { "source": "literal", "value": 0 } },
@@ -673,7 +672,7 @@ fn while_step_output_scope_and_row_scope_follow_loop_boundaries() {
 fn while_string_condition_and_if_empty_else_execute_without_workers() {
     let workflow = Template::from_json_str(
         &json!({
-            "schema_version":2,"name":"String and If","tool_instances":[],
+            "name":"String and If","tool_instances":[],
             "workflow":{"steps":[
                 {"type":"set-variable","id":"set-status","variable":"status",
                     "value":{"source":"literal","value":"WAITING"}},
@@ -715,7 +714,7 @@ fn while_string_condition_and_if_empty_else_execute_without_workers() {
 #[test]
 fn if_branch_error_fails_without_running_other_branch_or_later_steps() {
     let workflow = Template::from_json_str(&json!({
-        "schema_version":2,"name":"Failed If","tool_instances":[],
+        "name":"Failed If","tool_instances":[],
         "workflow":{"steps":[
             {"type":"if","id":"decision","left":{"source":"literal","value":true},
                 "operator":"equal","right":{"source":"literal","value":true},

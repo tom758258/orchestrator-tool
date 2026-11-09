@@ -218,7 +218,6 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   'powers/set-output': 'Power Set Output',
   'powers/protection-status': 'Power Protection Status',
   'powers/measure': 'Power Measure',
-  'powers/set-voltage': 'Power Set Voltage',
   'powers/output-on': 'Power Output ON',
   'meters/measure': 'Meter Measure',
   'powers/output-off': 'Power Output OFF',
@@ -241,7 +240,6 @@ const STEP_HELP: Record<string, string> = {
   'powers/set-output': 'This step only configures the setpoints. Use Power Output ON separately to enable the output.',
   'powers/protection-status': 'Power Protection Status reads the selected Power channel protection state without changing instrument settings. Use Protection Tripped with Assert when the Workflow should fail after detecting a protection trip.',
   'powers/measure': 'Read the selected channel\'s actual Voltage (V) and Current (A) once. This foreground action does not change power output settings.',
-  'powers/set-voltage': 'Set the voltage for a Power channel. This does not enable the channel output.',
   'powers/output-on': 'Enable the selected Power channel.',
   'powers/output-off': 'Disable the selected Power channel.',
   'meters/measure': 'Acquire the next Meter reading or Custom batch using the trigger mode defined in Setup. The result can be used by later steps.',
@@ -1873,7 +1871,6 @@ function App() {
     : null
   const selectedPowersAction =
     selectedAction === 'powers/set-output' ||
-    selectedAction === 'powers/set-voltage' ||
     selectedAction === 'powers/measure' ||
     selectedAction === 'powers/output-on' ||
     selectedAction === 'powers/output-off'
@@ -3075,10 +3072,8 @@ function App() {
                         </>
                       )}
 
-                      {selectedToolAction &&
-                        (selectedAction === 'powers/set-output' || selectedAction === 'powers/set-voltage') &&
-                        (selectedAction === 'powers/set-voltage' ? ['voltage'] as const : ['voltage', 'current'] as const)
-                          .map((name) => {
+                      {selectedToolAction && selectedAction === 'powers/set-output' &&
+                        (['voltage', 'current'] as const).map((name) => {
                             const active = hasPowerSetpoint(selectedToolAction, name)
                             const label = name === 'voltage' ? 'Voltage' : 'Current Limit'
                             return <div className="step-properties-fields" key={`${selectedStep.id}-${name}`}>
@@ -3098,7 +3093,7 @@ function App() {
                                   ? "Set the channel's output voltage. Uncheck to leave the existing voltage setting unchanged."
                                   : 'Set the maximum allowed output current, not a forced output current. Uncheck to leave the existing limit unchanged.'}
                               </p>}
-                              {(active || selectedAction === 'powers/set-voltage') && (
+                              {active && (
                                 <InputValueEditor
                                   value={selectedToolAction.bindings?.[name] ?? { source: 'literal', value: numericArgument(selectedToolAction, name) }}
                                   sourceLabel={`${label} Source`}

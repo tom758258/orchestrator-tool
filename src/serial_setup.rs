@@ -9,16 +9,9 @@ pub enum SerialTransport {
     Tcp,
 }
 
-impl SerialTransport {
-    fn is_serial(&self) -> bool {
-        *self == Self::Serial
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SerialSetup {
-    #[serde(default, skip_serializing_if = "SerialTransport::is_serial")]
     pub transport: SerialTransport,
     pub baud: u32,
     #[serde(default = "default_data_bits")]
@@ -169,24 +162,21 @@ mod tests {
     }
 
     #[test]
-    fn legacy_uart_and_both_transport_settings_round_trip() {
-        let legacy: SerialSetup = serde_json::from_str(r#"{"baud":9600,"parity":"even"}"#).unwrap();
-        assert_eq!(legacy.transport, SerialTransport::Serial);
-        let mut setup = legacy.clone();
+    fn transport_is_required_and_both_modes_round_trip() {
+        assert!(serde_json::from_str::<SerialSetup>(r#"{"baud":9600,"parity":"even"}"#).is_err());
+        let mut setup = SerialSetup {
+            baud: 9600,
+            parity: "even".into(),
+            ..Default::default()
+        };
+        let uart = serde_json::to_string(&setup).unwrap();
+        assert!(uart.contains(r#""transport":"serial""#));
+        assert_eq!(serde_json::from_str::<SerialSetup>(&uart).unwrap(), setup);
         setup.transport = SerialTransport::Tcp;
         setup.connect_timeout_ms = 4500;
         setup.io_timeout_ms = 1250;
-        let saved = serde_json::to_string(&setup).unwrap();
-        let loaded: SerialSetup = serde_json::from_str(&saved).unwrap();
-        assert_eq!(loaded, setup);
-        assert_eq!(loaded.baud, 9600);
-        assert_eq!(loaded.parity, "even");
-        assert_eq!(loaded.io_timeout_ms, 1250);
-        assert!(
-            !serde_json::to_string(&legacy)
-                .unwrap()
-                .contains("transport")
-        );
+        let tcp = serde_json::to_string(&setup).unwrap();
+        assert_eq!(serde_json::from_str::<SerialSetup>(&tcp).unwrap(), setup);
     }
 
     #[test]

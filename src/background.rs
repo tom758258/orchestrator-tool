@@ -1868,7 +1868,7 @@ mod tests {
                     .count(),
                 1
             );
-            let template = Template::from_json_str(&json!({"schema_version":2,"name":"CSV failure", "tool_instances":[],
+            let template = Template::from_json_str(&json!({"name":"CSV failure", "tool_instances":[],
                 "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
                     "steps":[{"type":"output","id":"out","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                     {"type":"wait","id":"after-loop","duration_ms":0}]}}).to_string()).unwrap();

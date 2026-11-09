@@ -1,18 +1,18 @@
-# Template Schema v2
+# Template Format
 
 This document is the durable contract reference for the current Template JSON
 and the workflow semantics that are already implemented. It does not define a
 future schema, migration framework, or compatibility layer.
 
-## Version and ownership
+## Format and ownership
 
-The root JSON object has schema_version 2, a template name, a tool_instances
-array, and a workflow object containing ordered steps. It may also contain
+The root JSON object has a template name, a tool_instances array, and a
+workflow object containing ordered steps. The format has no version field
+before the Orchestrator Tool v1.0.0 release. It may also contain
 optional output_views when the Desktop author explicitly chooses to save Chart
 definitions with the Template:
 
     {
-      "schema_version": 2,
       "name": "Example",
       "tool_instances": [],
       "workflow": { "steps": [] }
@@ -24,12 +24,11 @@ The Template is split into:
 - Workflow Sequence: the ordered procedure. Foreground Workers start before
   execution; Background Workers start only at Worker ON.
 - Optional Output Views: saved Chart definitions used to restore the intended
-  result presentation. Templates without output_views retain the v2
-  wire shape.
+  result presentation. Omitting output_views is supported.
 
-Schema v2 is parsed and serialized directly. Unsupported schema versions,
-unknown fields, invalid IDs, invalid references, and invalid values are
-rejected. Existing previous setup/action shapes are not migrated.
+Only the current Template format is parsed and serialized. Unknown or
+obsolete fields (including schema_version), invalid IDs, invalid references,
+and invalid values are rejected. There is no compatibility loader or migration.
 
 The Template does not contain:
 
@@ -114,7 +113,7 @@ For Meters, `field` is `value`; for Scopes, `field` is one of that
 Background's configured `scopes_measurements[].id` values. Each Background
 Chart displays one field; different units are not combined on a single axis.
 Unknown fields (including runtime Dataset IDs) and the old `backgrounds[].chart`
-are rejected; there is no migration. Schema version remains 2. Save validation
+are rejected without migration. Save validation
 finishes before writing the file. A Chart whose Background was removed from the
 current Draft blocks saving when Chart persistence is enabled; it is neither
 removed silently nor used to recreate the binding. Last Run presentation still
@@ -128,7 +127,7 @@ Fit Data) remain Desktop session options and are not saved by this opt-in.
 
 ## Background ownership and actions
 
-Version 2 rejects version 1; there is no migration. Optional `backgrounds` is
+Optional `backgrounds` is
 the single source of background bindings and acquisition configuration:
 
 ```json
@@ -314,16 +313,13 @@ serialized without the field, never as `"display_name": null`.
 For example: `{"id": "powers-1", "display_name": "DUT Power Supply", "tool": "powers", "setup": {}}`.
 The name affects presentation only. The `id`, Workflow Step `target`, local Live
 Resource and identity keys, and runtime instance references remain unchanged.
-Existing Templates without this field load normally and retain their original
-field shape. The schema_version remains 2. Older strict schema v2 readers may
-reject Templates containing `display_name`; no legacy export mode is provided.
+Omitting `display_name` remains valid because instance names are optional.
 
 The Tool Type selects the setup schema; setup fields do not determine the Tool
 Type. Meters uses MetersSetup. Powers uses an optional per-channel Protection
-Setup. Existing Powers instances with `"setup": {}` remain valid and serialize
-the same way. Scopes uses optional acquisition/channel settings; an empty
-Scopes setup remains valid. Wavegen continues to use an empty setup object. The
-schema_version remains 2. See [Scopes integration](scopes-integration.md) for
+Setup. Powers instances with `"setup": {}` are valid. Scopes uses optional
+acquisition/channel settings; an empty Scopes setup remains valid.
+Wavegen continues to use an empty setup object. See [Scopes integration](scopes-integration.md) for
 its setup shape, selected actions, and runtime file-output boundary.
 
 For example, a Powers instance may contain:
@@ -365,8 +361,7 @@ fields are mutually constrained by the selected measurement type.
 
 Both DC Voltage and DC Current may specify `vm_comp_slope` as `pos` or `neg`.
 When omitted, Orchestrator does not pass `--vm-comp-slope`, leaving the
-instrument's VM Comp setting unchanged. Existing schema v2 Templates without
-this field load with no VM Comp slope specified.
+instrument's VM Comp setting unchanged. When this field is omitted, no VM Comp slope is specified.
 
 Manual range mode requires a manual range. Auto mode ignores any stored manual
 range and does not emit a range startup argument. Meters trigger mode defaults
@@ -391,7 +386,7 @@ supported. Scopes supports the ten Foreground actions documented in its integrat
 
 ## Workflow steps
 
-Schema v2 supports these step kinds:
+The Template supports these step kinds:
 
 - Assert: a comparison expression and failure message.
 - Set Variable: assign an InputValue to a variable.
@@ -420,20 +415,18 @@ Desktop calls `current` **Current Limit**. For example:
 
 The Powers adapter sends `set-output` as the external Worker's `set` command,
 with only the setpoints present after bindings resolve. `Power Output ON` is a
-separate action. Existing `set-voltage` steps remain valid: they require
-`channel` and `voltage`, reject `current`, and retain their action name when
-loaded and saved. Schema version remains 1; no action migration occurs.
+separate action. The obsolete `set-voltage` action is rejected; use
+`set-output` with a voltage setpoint instead.
 
 Numeric setpoints accept only numeric literal, Variable, or Calculation sources.
 This applies to Scopes `channel-scale.volts_per_division`, `channel-offset.volts`,
 `timebase-scale.seconds_per_division`, `timebase-position.seconds`, and
-`trigger-edge.level`, plus Powers `set-voltage.voltage` and
-`set-output.voltage/current`. Calculation operands must be numeric literals or
+`trigger-edge.level`, plus Powers `set-output.voltage/current`. Calculation operands must be numeric literals or
 Variables, and operators may be Add, Subtract, Multiply, Divide, Round, Floor, Ceil or Trunc. The four rounding operators use a single operand. Effective
 fixed arguments must be JSON numbers. Bindings override arguments as usual;
 dynamic variable values remain subject to runtime and Worker validation.
 Each of the five Scopes setpoints is required in `arguments` or `bindings`.
-Powers `set-voltage` requires `voltage`; `set-output` requires either setpoint.
+Powers `set-output` requires at least one setpoint.
 
 Scopes `measure.item` and `trigger-edge.slope` require fixed nonempty strings;
 `capture.points` requires a fixed positive JSON integer. None accepts a binding.
@@ -444,7 +437,7 @@ Desktop choices come from Scopes capabilities; Core does not maintain
 general model allowlists, and Scopes validates final model support. The
 AutoScale Keysight-only restriction below is a specific Orchestrator policy.
 
-Scopes `autoscale` uses the existing Tool Action shape and retains Schema v2.
+Scopes `autoscale` uses the Tool Action shape.
 Its optional fixed arguments are `source_channel` (a nonempty array of distinct
 positive analog-channel numbers), `acquire_mode` (`normal` or `current`),
 and `channels` (`all` or `displayed`). Omit unused keys; empty arrays,
@@ -494,7 +487,7 @@ must refer to an earlier step that is visible from the current lexical scope.
 For and While bodies, and both If branches, are ordered step lists.
 If, For, and While share a control nesting limit of eight levels.
 There is no break, continue, boolean expression tree, or timeout
-semantics in schema v2.
+semantics in the current Template format.
 
 ## Show Message semantics
 
@@ -583,8 +576,7 @@ supported. Arithmetic operators are add, subtract, multiply, and divide. Unary o
 Ordering comparison operators are greater-than, greater-than-or-equal,
 less-than, and less-than-or-equal. Equality comparison operators are equal
 and not-equal. Arithmetic and ordering comparisons require JSON numbers;
-equality compares JSON values directly without type coercion. Schema version
-remains 1.
+equality compares JSON values directly without type coercion.
 
 For example, x multiplied by 2 is represented as:
 
@@ -732,7 +724,7 @@ execution, and external tool limits still apply.
 
 ## Output Pages and ResultRow semantics
 
-Time-source Output steps also require a per-step `time_format` object in V1:
+Time-source Output steps require a per-step `time_format` object:
 
 - Elapsed: `{"kind":"elapsed-time","format":"seconds"}`. Allowed formats are
   `seconds`, `minutes-seconds`, `hours-minutes-seconds`, and `days-decimal`.
@@ -878,13 +870,13 @@ failed or stopped owning scope are not exported. Graceful Stop does not by
 itself mark a run as failed or cancelled. Already committed streaming CSV data
 is preserved after workflow failure or graceful Stop.
 
-## Serial Background RX-only (schema v2)
+## Serial Background RX-only (Template)
 
 A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or a FIFO.
 
 Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--streaming` to produce RX without TX; Foreground Simulation retains `loopback-v1` without streaming. Live requires a separately saved and confirmed COM Port or TCP endpoint. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source. Foreground Serial actions are separately supported by ordinary non-streaming Workers.
 
-## Serial Foreground Tool Actions (schema v2)
+## Serial Foreground Tool Actions (Template)
 
 Serial Foreground uses the existing `tool-action` type and its `arguments` and optional `bindings`; the `tool` remains `serial` on the Tool Instance. It does not adopt Streaming or share an Instance with Background RX. Four actions are supported:
 
@@ -896,8 +888,8 @@ Serial Foreground uses the existing `tool-action` type and its `arguments` and o
 Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background TX, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
 
 
-## Serial UART / TCP Client Transport (schema v2)
+## Serial UART / TCP Client Transport (Template)
 
-The existing `serial` Tool Instance has one selected `setup.transport`: `serial` (the default for legacy Templates) or `tcp`. Existing UART settings remain in the same Setup. Optional TCP settings `connect_timeout_ms` (default 3000) and `io_timeout_ms` (default 1000) are retained even while UART is selected. Both must be positive. Switching Transport does not erase either set of communication settings. The Template schema version remains 2.
+A `serial` Tool Instance requires an explicit `setup.transport`: `serial` (UART) or `tcp`. New Desktop instances default to UART and save that choice explicitly. Optional TCP settings `connect_timeout_ms` (default 3000) and `io_timeout_ms` (default 1000) are retained even while UART is selected. Both must be positive. Switching Transport does not erase either set of communication settings.
 
 The COM Port or TCP device endpoint is an instance-scoped local Live Resource, never Template data. TCP resources use `host:port` (or `[IPv6]:port`) with device port 1..65535. The same TCP endpoint may not be assigned to two referenced Serial instances in one Workflow. TCP Live uses `--transport tcp --host ... --tcp-port ...` and its TCP-only timeouts, without UART startup options; TCP Simulation uses the existing Foreground `loopback-v1` or Background `periodic-rx-v1` profile without device Host or Port. Existing Foreground Actions and RX-only Background semantics do not change.

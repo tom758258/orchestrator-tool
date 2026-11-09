@@ -446,7 +446,7 @@ result column。
 
 #### Power Set Output
 
-**Power Set Output**、舊版 **Power Set Voltage**、**Power Output ON**、
+**Power Set Output**、**Power Output ON**、
 **Power Output OFF**、**Power Measure**，以及 **Power Protection Status** 的 **Specific channel**
 共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
 通道，顯示為 **CH1**、**CH2** 等。Simulation 使用模擬器通道；Live 使用 Setup
@@ -463,16 +463,13 @@ result column。
 Channel 為必填；兩個設定值至少須選取一項。使用 **Set Voltage** 與
 **Set Current Limit** 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
 輸入欄位顯示 **Voltage (V)** 與 **Current Limit (A)**。
-Power Set Output 與 Power Set Voltage 的設定值只允許數值 **Fixed value**、
+Power Set Output 的設定值只允許數值 **Fixed value**、
 **Variable** 或 **Calculation**。Calculation 的運算元只允許固定數值或變數，
 運算子只允許 Add、Subtract、Multiply 或 Divide。設定值不能使用 Previous step result、
 Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 變數解析後仍必須是數值，否則 Powers action validation 會失敗。
 **Current Limit** 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
 電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 **Power Output ON**。
-
-含有 **Power Set Voltage** 的既有 Template 仍可編輯，儲存後也會保留原 action。
-新建步驟使用 **Power Set Output**。
 
 #### Power Measure
 

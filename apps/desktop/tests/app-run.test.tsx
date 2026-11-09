@@ -31,7 +31,7 @@ vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof Re
 vi.mock('../src/ChartPlot', () => ({ default: ({ panel, bounded }: { panel: { type: string }; bounded?: { values: Float64Array } }) =>
   <div role="img" aria-label={`${panel.type} chart`}>{bounded?.values.length ?? 0} displayed samples</div> }))
 
-const draft: WorkflowDraft = { schema_version: 2, name: 'Run test', tool_instances: [], workflow: { steps: [
+const draft: WorkflowDraft = { name: 'Run test', tool_instances: [], workflow: { steps: [
   { type: 'for', id: 'outer', variable: 'i', range: { start: '0', stop: '2', step: '1' }, steps: [
     { type: 'for', id: 'inner', variable: 'j', range: { start: '0', stop: '2', step: '1' }, steps: [
       { type: 'output', id: 'out', name: 'Voltage', page: 'Results', value: { source: 'literal', value: 10.600000000000001 } },
@@ -1060,7 +1060,7 @@ test('unlocated validation errors do not guess a card from their message', async
 })
 
 test('Steps palette selects a type before inserting, keeps action fixed, and clears selection afterward', async () => {
-  currentDraft = { schema_version: 2, name: 'Target card', tool_instances: [], workflow: { steps: [
+  currentDraft = { name: 'Target card', tool_instances: [], workflow: { steps: [
     { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
       right: { source: 'literal', value: 1 },
       then_steps: [{ type: 'wait', id: 'then-wait', duration_ms: 1 }],

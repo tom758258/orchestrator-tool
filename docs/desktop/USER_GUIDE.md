@@ -535,8 +535,7 @@ not become result columns merely because they were referenced.
 
 #### Power Set Output
 
-The Channel dropdown is shared by **Power Set Output**, legacy **Power Set
-Voltage**, **Power Output ON**, **Power Output OFF**, **Power Measure**, and the **Specific channel**
+The Channel dropdown is shared by **Power Set Output**, **Power Output ON**, **Power Output OFF**, **Power Measure**, and the **Specific channel**
 selection in **Power Protection Status**. It lists only channels confirmed by
 the target instance's capabilities as **CH1**, **CH2**, etc. Simulation uses the
 simulator channels; Live uses the model identified for the saved Resource in
@@ -554,7 +553,7 @@ Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
 **Set Voltage** and **Set Current Limit** to include or remove each setpoint;
 unchecking leaves that instrument setting unchanged. The fields show **Voltage
-(V)** and **Current Limit (A)**. Power Set Output and Power Set Voltage allow
+(V)** and **Current Limit (A)**. Power Set Output allows
 only numeric **Fixed value**, **Variable**, or **Calculation** setpoints.
 Calculation operands allow only fixed numbers or variables, with Add, Subtract,
 Multiply, or Divide. Previous step result, Elapsed time, Timestamp, and comparison
@@ -562,9 +561,6 @@ calculations are unavailable for setpoints. Templates enforce these restrictions
 Resolved variables must still be numeric or Powers action validation fails. **Current Limit** is the power supply output
 current-limit setpoint, expressed in A, not a forced output current. This step
 only configures the setpoints. Use **Power Output ON** separately to enable the output.
-
-Existing Templates containing **Power Set Voltage** remain editable and keep
-that action when saved. New steps use **Power Set Output**.
 
 #### Power Measure
 

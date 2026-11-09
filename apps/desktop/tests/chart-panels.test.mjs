@@ -14,7 +14,7 @@ test('Foreground and Background Charts share one saved list and Background setup
     panels = addBackgroundChartPanel(panels, 'background-1')
     panels.at(-1).source.x_axis = axis
   }
-  const draft = { schema_version: 2, name: 'Saved charts', tool_instances: [], backgrounds, workflow: { steps: [] } }
+  const draft = { name: 'Saved charts', tool_instances: [], backgrounds, workflow: { steps: [] } }
   assert.equal(savedChartCount(panels), 8)
   assert.equal(addBackgroundChartPanel(panels, 'background-1'), panels)
   const saved = JSON.parse(templateDraftJson(draft, panels, true))

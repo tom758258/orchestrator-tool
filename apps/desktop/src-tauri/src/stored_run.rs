@@ -1112,7 +1112,7 @@ mod tests {
     #[test]
     fn output_time_timestamp_chart_series_excludes_statistics_and_preserves_rows() {
         let template = Template::from_json_str(&serde_json::json!({
-            "schema_version":2, "name":"Time chart", "tool_instances":[],
+            "name":"Time chart", "tool_instances":[],
             "workflow":{"steps":[
                 {"type":"output", "id":"time", "name":"Time", "page":"Results",
                  "value":{"source":"timestamp"}, "time_format":{"kind":"timestamp", "include_date":false, "include_utc_offset":false}},
@@ -1182,7 +1182,6 @@ mod tests {
     fn template() -> Template {
         Template::from_json_str(
             &serde_json::json!({
-                "schema_version": 2,
                 "name": "stored",
                 "tool_instances": [],
                 "workflow": { "steps": [{
@@ -1203,7 +1202,6 @@ mod tests {
     fn message_template() -> Template {
         Template::from_json_str(
             &serde_json::json!({
-                "schema_version": 2,
                 "name": "messages",
                 "tool_instances": [],
                 "workflow": { "steps": [

@@ -70,8 +70,8 @@ function options(select) {
   return elements(select).filter(node => node.type === 'option' && !node.props.disabled).map(node => node.props.value)
 }
 
-test('all five Powers actions select only confirmed capability channels and write numbers', () => {
-  for (const action of ['set-output', 'set-voltage', 'output-on', 'output-off', 'protection-status']) {
+test('Powers channel actions select only confirmed capability channels and write numbers', () => {
+  for (const action of ['set-output', 'output-on', 'output-off', 'protection-status']) {
     const state = editor(action)
     const view = state.view()
     assert.deepEqual(options(view.channel), [2, 5], action)
@@ -83,8 +83,8 @@ test('all five Powers actions select only confirmed capability channels and writ
   }
 })
 
-test('legacy channels and bindings survive rendering and JSON reload until explicitly replaced', () => {
-  for (const action of ['set-output', 'set-voltage', 'output-on', 'output-off', 'protection-status']) {
+test('Unconfirmed channels and bindings survive rendering and JSON reload until explicitly replaced', () => {
+  for (const action of ['set-output', 'output-on', 'output-off', 'protection-status']) {
     for (const binding of [undefined, { source: 'variable', variable: 'selected-channel' }]) {
       const state = editor(action, { channel: 99, voltage: 7 }, binding ? {
         channel: binding, voltage: { source: 'variable', variable: 'volts' },
@@ -234,9 +234,6 @@ test('checkbox handlers hide removed fields, keep one setpoint and preserve othe
   assert.equal(state.value.arguments.current, 0)
   assert.equal(state.value.bindings.current, undefined)
   assert.deepEqual(state.value.bindings.channel, { source: 'variable', variable: 'ch' })
-  const legacy = editor('set-voltage', { channel: 2, voltage: 8 })
-  assert.equal(legacy.view().checkboxes.length, 0)
-  assert.equal(legacy.view().inputs[0].props.value.value, 8)
 })
 
 const modelContext = app.slice(app.indexOf('  const powersModels ='), app.indexOf('  const [draftLoading,'))
@@ -304,12 +301,9 @@ test('cancelled capability requests cannot overwrite the current mode or executa
   assert.deepEqual(loaded, { key: current.key, models: { simulator: { status: 'ready', channels: [6] } } })
 })
 
-test('Powers Set Voltage and both Set Output fields use the shared Numeric Setpoint mode', () => {
-  for (const action of ['set-voltage', 'set-output']) {
-    const fields = editor(action).view().inputs
-    assert.equal(fields.length, action === 'set-voltage' ? 1 : 2)
-    assert.ok(fields.every(field => field.props.numericSetpoint === true))
-    assert.deepEqual(fields.map(field => field.props.sourceLabel),
-      action === 'set-voltage' ? ['Voltage Source'] : ['Voltage Source', 'Current Limit Source'])
-  }
+test('Power Set Output fields use the shared Numeric Setpoint mode', () => {
+  const fields = editor('set-output').view().inputs
+  assert.equal(fields.length, 2)
+  assert.ok(fields.every(field => field.props.numericSetpoint === true))
+  assert.deepEqual(fields.map(field => field.props.sourceLabel), ['Voltage Source', 'Current Limit Source'])
 })

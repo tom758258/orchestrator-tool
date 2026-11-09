@@ -530,9 +530,9 @@ mod tests {
             std::process::id()
         ));
         let source = serde_json::json!({
-            "schema_version": 2, "name": "Serial File",
+            "name": "Serial File",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
-                "setup": {"baud": 115200} }],
+                "setup": {"transport":"serial","baud": 115200} }],
             "workflow": {"steps": [
                 {"type": "for", "id": "loop", "variable": "n",
                  "range": {"start": "1", "stop": "1", "step": "1"},

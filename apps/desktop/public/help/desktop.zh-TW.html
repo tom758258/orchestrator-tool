@@ -409,7 +409,7 @@ Set Variable 與 Tool Action 的時間來源維持原有行為。</p>
 <p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。</p>
 <h4 id="power-set-output">Power Set Output</h4>
-<p><strong>Power Set Output</strong>、舊版 <strong>Power Set Voltage</strong>、<strong>Power Output ON</strong>、
+<p><strong>Power Set Output</strong>、<strong>Power Output ON</strong>、
 <strong>Power Output OFF</strong>、<strong>Power Measure</strong>，以及 <strong>Power Protection Status</strong> 的 <strong>Specific channel</strong>
 共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
 通道，顯示為 <strong>CH1</strong>、<strong>CH2</strong> 等。Simulation 使用模擬器通道；Live 使用 Setup
@@ -424,15 +424,13 @@ result column。</p>
 Channel 為必填；兩個設定值至少須選取一項。使用 <strong>Set Voltage</strong> 與
 <strong>Set Current Limit</strong> 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
 輸入欄位顯示 <strong>Voltage (V)</strong> 與 <strong>Current Limit (A)</strong>。
-Power Set Output 與 Power Set Voltage 的設定值只允許數值 <strong>Fixed value</strong>、
+Power Set Output 的設定值只允許數值 <strong>Fixed value</strong>、
 <strong>Variable</strong> 或 <strong>Calculation</strong>。Calculation 的運算元只允許固定數值或變數，
 運算子只允許 Add、Subtract、Multiply 或 Divide。設定值不能使用 Previous step result、
 Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 變數解析後仍必須是數值，否則 Powers action validation 會失敗。
 <strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
 電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 <strong>Power Output ON</strong>。</p>
-<p>含有 <strong>Power Set Voltage</strong> 的既有 Template 仍可編輯，儲存後也會保留原 action。
-新建步驟使用 <strong>Power Set Output</strong>。</p>
 <h4 id="power-measure">Power Measure</h4>
 <p>加入 <strong>Power Measure</strong> 可對指定通道量測一次實際 Voltage（V）與 Current（A）。
 此唯讀步驟使用固定 Channel 下拉選單，不會啟用輸出或修改 setpoints。

@@ -15,7 +15,7 @@ vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTheme: async () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), save: vi.fn() }))
 
-const original: WorkflowDraft = { schema_version: 2, name: 'Setup test', tool_instances: [
+const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
   { id: 'powers-1', tool: 'powers', setup: { protection: { channels: [{ channel: 1, ocp: 'on' }] } } },
   { id: 'scopes-1', tool: 'scopes', setup: { acquisition: { acquisition_type: 'average', average_count: 16 },
     channels: [{ channel: 4, invert: true }] } },
@@ -121,7 +121,7 @@ const calls = () => vi.mocked(invoke).mock.calls
 
 test('all Tool instances place Background Streaming between tool setup and Live Device', () => {
   const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
-    baud: 9600, data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000,
+    transport: 'serial', baud: 9600, data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000,
   } }
   const instances = [backgroundMeter, ...original.tool_instances, serial]
   render(<ToolSetupEditor value={instances} steps={[]} onChange={vi.fn()} disabled={false}
@@ -760,7 +760,7 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
 
 test('Serial Transport preserves UART and TCP setup values across switching', () => {
   const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
-    baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
+    transport: 'serial', baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
     flow_control: 'none', timeout_ms: 1000,
   } }
   let instances: ToolInstance[] = [serial]

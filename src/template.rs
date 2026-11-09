@@ -18,9 +18,6 @@ use crate::{
     },
 };
 
-/// Current template file format version.
-pub const TEMPLATE_SCHEMA_VERSION: u32 = 2;
-
 const MAX_SAVED_CHARTS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -457,16 +454,6 @@ impl Template {
 
     /// Deserializes a template from JSON text.
     pub fn from_json_str(json: &str) -> Result<Self, TemplateError> {
-        let version_wire: TemplateVersionWire =
-            serde_json::from_str(json).map_err(TemplateError::Json)?;
-
-        if version_wire.schema_version != TEMPLATE_SCHEMA_VERSION {
-            return Err(TemplateError::UnsupportedSchemaVersion {
-                expected: TEMPLATE_SCHEMA_VERSION,
-                found: version_wire.schema_version,
-            });
-        }
-
         let wire: TemplateWire = serde_json::from_str(json).map_err(TemplateError::Json)?;
         let workflow = workflow_from_wire(wire.workflow)?;
         let instances = instances_from_wire(wire.tool_instances)?;
@@ -770,6 +757,9 @@ fn validate_tool_action_parameters(
                         step.id()
                     ))
                 };
+                if *tool == ToolId::powers() && action.as_str() == "set-voltage" {
+                    return Err(error("action", "obsolete Powers action; use set-output"));
+                }
                 if *tool == ToolId::serial() {
                     crate::adapters::serial::validate_action(action.as_str(), arguments, bindings)
                         .map_err(|reason| error("arguments", &reason))?;
@@ -785,7 +775,6 @@ fn validate_tool_action_parameters(
                     }
                 } else if *tool == ToolId::powers() {
                     match action.as_str() {
-                        "set-voltage" => &["voltage"],
                         "set-output" => &["voltage", "current"],
                         _ => &[],
                     }
@@ -1214,10 +1203,6 @@ pub enum TemplateError {
     },
     Json(serde_json::Error),
     OutputViews(String),
-    UnsupportedSchemaVersion {
-        expected: u32,
-        found: u32,
-    },
     InvalidStepId {
         value: String,
         source: InvalidStepId,
@@ -1251,10 +1236,6 @@ impl fmt::Display for TemplateError {
             Self::OutputViews(message) => {
                 write!(formatter, "template output views error: {message}")
             }
-            Self::UnsupportedSchemaVersion { expected, found } => write!(
-                formatter,
-                "unsupported template schema version {found}, expected {expected}"
-            ),
             Self::InvalidStepId { value, source } => {
                 write!(formatter, "invalid step ID {value:?}: {source}")
             }
@@ -1284,9 +1265,7 @@ impl Error for TemplateError {
             Self::InvalidVariableId { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
-            Self::UnsupportedSchemaVersion { .. } | Self::Instance(_) | Self::OutputViews(_) => {
-                None
-            }
+            Self::Instance(_) | Self::OutputViews(_) => None,
             Self::InvalidStepId { source, .. } => Some(source),
             Self::InvalidActionId { source, .. } => Some(source),
             Self::InvalidToolId { source, .. } => Some(source),
@@ -1298,15 +1277,9 @@ impl Error for TemplateError {
     }
 }
 
-#[derive(Deserialize)]
-struct TemplateVersionWire {
-    schema_version: u32,
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TemplateWire {
-    schema_version: u32,
     name: String,
     tool_instances: Vec<ToolInstanceWire>,
     workflow: WorkflowWire,
@@ -1319,7 +1292,6 @@ struct TemplateWire {
 impl TemplateWire {
     fn from_template(template: &Template) -> Result<Self, serde_json::Error> {
         Ok(Self {
-            schema_version: TEMPLATE_SCHEMA_VERSION,
             backgrounds: template.backgrounds.clone(),
             name: template.name.clone(),
             tool_instances: template
@@ -2008,7 +1980,7 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use super::{TEMPLATE_SCHEMA_VERSION, Template, TemplateError};
+    use super::{Template, TemplateError};
     use crate::{
         meters_setup::{
             AutoZero, DcvInputImpedance, MetersMeasurement, MetersSetup, MetersSetupError,
@@ -2033,7 +2005,7 @@ mod tests {
             allow_buffer_overflow_risk: true,
             ..Default::default()
         };
-        let wire = json!({"schema_version":2,"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
+        let wire = json!({"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"limit_count":null}],
             "workflow":{"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
         let template = Template::from_json_str(&wire.to_string()).unwrap();
@@ -2074,7 +2046,7 @@ mod tests {
             }
         }
         for case in [
-            "old-version",
+            "obsolete-schema-field",
             "duplicate",
             "missing-target",
             "missing-background",
@@ -2089,7 +2061,7 @@ mod tests {
             match case {
                 "risk" => invalid["tool_instances"][0]["setup"]["allow_buffer_overflow_risk"]=json!(false),
                 "old-count" => invalid["backgrounds"][0]["trigger_count"]=json!(3),
-                "old-version" => invalid["schema_version"]=json!(1),
+                "obsolete-schema-field" => invalid["schema_version"]=json!(2),
                 "duplicate" => invalid["backgrounds"].as_array_mut().unwrap().push(wire["backgrounds"][0].clone()),
                 "missing-target" => invalid["backgrounds"][0]["tool_instance_id"]=json!("missing"),
                 "missing-background" => invalid["workflow"]["steps"][0]["background_id"]=json!("missing"),
@@ -2136,7 +2108,7 @@ mod tests {
                 StepId::new("power-set-1").unwrap(),
                 StepKind::ToolAction {
                     target: ToolInstanceId::new("powers-1").unwrap(),
-                    action: ActionId::new("set-voltage").unwrap(),
+                    action: ActionId::new("set-output").unwrap(),
                     arguments: json!({ "channel": 1, "voltage": 5.0 }),
                     bindings: Default::default(),
                 },
@@ -2248,7 +2220,6 @@ mod tests {
             );
         }
         assert_eq!(saved, unnamed);
-        assert_eq!(saved["schema_version"], 2);
     }
 
     #[test]
@@ -2344,7 +2315,6 @@ mod tests {
 
     fn chart_template_wire() -> Value {
         json!({
-            "schema_version": 2,
             "name": "Chart Template",
             "tool_instances": [],
             "workflow": {"steps": [
@@ -2391,7 +2361,6 @@ mod tests {
         let json = original.to_json_string().unwrap();
 
         let value: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["schema_version"], TEMPLATE_SCHEMA_VERSION);
         assert_eq!(value["name"], "Power and Meter Test");
         assert_eq!(
             value["tool_instances"][0]["setup"],
@@ -2661,7 +2630,6 @@ mod tests {
     fn meters_actions_require_setup() {
         for action in ["measure", "unsupported"] {
             let wire = json!({
-                "schema_version": 2,
                 "name": "Missing setup",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {}}],
                 "workflow": {"steps": [{
@@ -2691,7 +2659,6 @@ mod tests {
             );
             let serialized: Value =
                 serde_json::from_str(&parsed.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["tool_instances"][0]["setup"], json!({}));
             assert_eq!(
                 Template::from_json_str(&serialized.to_string()).unwrap(),
@@ -2763,7 +2730,7 @@ mod tests {
             json!({"type":"set-variable", "id":"declare-value",
             "variable":"value", "value":{"source":"literal","value":1}}),
         );
-        json!({"schema_version":2,"name":"Parameter validation",
+        json!({"name":"Parameter validation",
             "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
             "workflow":{"steps":steps}})
     }
@@ -2818,7 +2785,7 @@ mod tests {
             ("scopes", "timebase-scale", "seconds_per_division"),
             ("scopes", "timebase-position", "seconds"),
             ("scopes", "trigger-edge", "level"),
-            ("powers", "set-voltage", "voltage"),
+            ("powers", "set-output", "voltage"),
             ("powers", "set-output", "voltage"),
             ("powers", "set-output", "current"),
         ] {
@@ -3194,7 +3161,7 @@ mod tests {
                     StepId::new("power-set-1").unwrap(),
                     StepKind::ToolAction {
                         target: ToolInstanceId::new("powers-1").unwrap(),
-                        action: ActionId::new("set-voltage").unwrap(),
+                        action: ActionId::new("set-output").unwrap(),
                         arguments: json!({ "channel": 1, "voltage": 0 }),
                         bindings: [(
                             "voltage".to_owned(),
@@ -3209,9 +3176,8 @@ mod tests {
         .unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["schema_version"], 2);
         assert_eq!(value["tool_instances"][0]["setup"], json!({}));
-        assert_eq!(value["workflow"]["steps"][1]["action"], "set-voltage");
+        assert_eq!(value["workflow"]["steps"][1]["action"], "set-output");
         let binding = &value["workflow"]["steps"][1]["bindings"]["voltage"];
         assert_eq!(binding["source"], "variable");
         assert_eq!(binding["variable"], "x");
@@ -3221,7 +3187,6 @@ mod tests {
     #[test]
     fn unary_expression_template_requires_exactly_one_operand() {
         let mut wire = serde_json::json!({
-            "schema_version": 2,
             "name": "Unary Calculation",
             "tool_instances": [],
             "workflow": { "steps": [
@@ -3273,7 +3238,6 @@ mod tests {
             .push(assertion.clone());
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         let serialized: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-        assert_eq!(serialized["schema_version"], 2);
         assert_eq!(serialized["workflow"]["steps"][3], assertion);
         assert!(
             matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, message }
@@ -3296,7 +3260,6 @@ mod tests {
             let template = Template::from_json_str(&wire.to_string()).unwrap();
             let serialized: Value =
                 serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
             assert!(
                 matches!(template.workflow().steps()[3].kind(), StepKind::Assert { condition, .. }
@@ -3315,7 +3278,6 @@ mod tests {
             let while_template = Template::from_json_str(&while_wire.to_string()).unwrap();
             let serialized: Value =
                 serde_json::from_str(&while_template.to_json_string().unwrap()).unwrap();
-            assert_eq!(serialized["schema_version"], 2);
             assert_eq!(serialized["workflow"]["steps"][3]["operator"], operator);
         }
 
@@ -3341,29 +3303,36 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_schema_version_is_rejected() {
-        let json = json!({
-            "schema_version": 99,
-            "future_field": true,
-            "workflow_v99": { "nodes": [] }
-        })
-        .to_string();
+    fn obsolete_schema_field_and_power_action_are_rejected() {
+        let wire = json!({
+            "name": "Current format",
+            "tool_instances": [],
+            "workflow": {"steps": []}
+        });
+        assert!(Template::from_json_str(&wire.to_string()).is_ok());
+        for version in [1, 2, 99] {
+            let mut obsolete = wire.clone();
+            obsolete["schema_version"] = json!(version);
+            assert!(matches!(
+                Template::from_json_str(&obsolete.to_string()),
+                Err(TemplateError::Json(_))
+            ));
+        }
 
-        let error = Template::from_json_str(&json).unwrap_err();
-        assert!(
-            matches!(
-                error,
-                TemplateError::UnsupportedSchemaVersion { expected, found }
-                if expected == TEMPLATE_SCHEMA_VERSION && found == 99
-            ),
-            "unexpected error: {error:?}"
-        );
+        let old_action = json!({
+            "name": "Obsolete Power action",
+            "tool_instances": [{"id": "power", "tool": "powers", "setup": {}}],
+            "workflow": {"steps": [{
+                "type": "tool-action", "id": "set", "target": "power",
+                "action": "set-voltage", "arguments": {"channel": 1, "voltage": 5.0}
+            }]}
+        });
+        assert!(Template::from_json_str(&old_action.to_string()).is_err());
     }
 
     #[test]
     fn duplicate_step_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Dup",
             "workflow": {
@@ -3385,7 +3354,6 @@ mod tests {
     #[test]
     fn invalid_target_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Bad tool",
             "workflow": {
@@ -3394,7 +3362,7 @@ mod tests {
                         "id": "power-set-1",
                         "type": "tool-action",
                         "target": "Meters-1",
-                        "action": "set-voltage",
+                        "action": "set-output",
                         "arguments": {}
                     }
                 ]
@@ -3430,7 +3398,7 @@ mod tests {
             ("timestamp", InputValue::Timestamp),
         ] {
             let mut wire = json!({
-                "schema_version": 2, "name": "Time inputs", "tool_instances": [],
+                 "name": "Time inputs", "tool_instances": [],
                 "workflow": { "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
                     { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
@@ -3459,7 +3427,7 @@ mod tests {
     #[test]
     fn show_message_round_trips_in_schema_one_without_storing_records() {
         let wire = json!({
-            "schema_version": 2, "name": "Messages", "tool_instances": [],
+             "name": "Messages", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "output", "id": "iteration", "name": "Iteration", "page": "Results",
                   "value": { "source": "literal", "value": 3000 } },
@@ -3492,7 +3460,7 @@ mod tests {
 
         // A reference to a later step is rejected by the shared validation.
         let invalid = json!({
-            "schema_version": 2, "name": "Messages", "tool_instances": [],
+             "name": "Messages", "tool_instances": [],
             "workflow": { "steps": [
                 { "type": "show-message", "id": "show-message-1", "target": "message-1",
                   "fields": [ { "kind": "output", "step_id": "later", "pointer": "", "newline": false } ] },
@@ -3516,7 +3484,7 @@ mod tests {
         });
         let template_wire = |output: Value| {
             json!({
-                "schema_version": 2, "name": "Required Output fields", "tool_instances": [],
+                 "name": "Required Output fields", "tool_instances": [],
                 "workflow": { "steps": [output] }
             })
         };
@@ -3566,7 +3534,6 @@ mod tests {
         let original = Template::new("Dataflow".to_owned(), Default::default(), workflow).unwrap();
         let json = original.to_json_string().unwrap();
         let value: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["schema_version"], 2);
         let steps = &value["workflow"]["steps"];
         assert_eq!(steps[0]["type"], "set-variable");
         assert_eq!(steps[0]["value"]["source"], "literal");
@@ -3581,7 +3548,6 @@ mod tests {
     #[test]
     fn invalid_variable_id_is_rejected_from_json() {
         let json = json!({
-            "schema_version": 2,
             "tool_instances": [],
             "name": "Invalid variable",
             "workflow": { "steps": [{
@@ -3634,7 +3600,6 @@ mod tests {
         .unwrap();
         let json = original.to_json_string().unwrap();
         let wire: Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(wire["schema_version"], 2);
         assert_eq!(
             wire["workflow"]["steps"][1]["value"],
             json!({
@@ -3727,7 +3692,6 @@ mod tests {
                 .unwrap();
                 let json = original.to_json_string().unwrap();
                 let wire: Value = serde_json::from_str(&json).unwrap();
-                assert_eq!(wire["schema_version"], 2);
                 assert_eq!(
                     wire["workflow"]["steps"][3]["value"],
                     json!({
@@ -3844,7 +3808,6 @@ mod tests {
         let instances = vec![sample_template().tool_instances()[0].clone()];
         let template = Template::new("For".to_owned(), instances, workflow).unwrap();
         let wire: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
-        assert_eq!(wire["schema_version"], 2);
         assert_eq!(wire["workflow"]["steps"][0]["type"], "for");
         assert_eq!(
             wire["workflow"]["steps"][0]["range"],
@@ -3900,7 +3863,6 @@ mod tests {
     #[test]
     fn scopes_autoscale_template_requires_only_valid_fixed_optional_parameters() {
         let mut wire = json!({
-            "schema_version": 2,
             "name": "Scope AutoScale",
             "tool_instances": [{"id": "scope-1", "tool": "scopes", "setup": {}}],
             "workflow": {"steps": [{"type": "tool-action", "id": "autoscale-1",
@@ -3946,9 +3908,9 @@ mod tests {
     #[test]
     fn serial_foreground_template_accepts_four_actions_not_run_sequence() {
         let mut wire = json!({
-            "schema_version": 2, "name": "Serial",
+             "name": "Serial",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
-                "setup": {"baud": 115200}}],
+                "setup": {"transport":"serial", "baud": 115200}}],
             "workflow": {"steps": [{ "type": "tool-action", "id": "send",
                 "target": "serial-1", "action": "send",
                 "arguments": {"tx_format": "hex-byte", "tx_value": 4660}}]}

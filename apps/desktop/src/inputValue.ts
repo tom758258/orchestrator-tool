@@ -79,10 +79,6 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
     { label: 'Current', pointer: '/data/measurements/current' },
     { label: 'Channel', pointer: '/data/channel' },
   ],
-  'powers/set-voltage': [
-    { label: 'Voltage', pointer: '/request/arguments/voltage' },
-    { label: 'Channel', pointer: '/request/arguments/channel' },
-  ],
   'powers/set-output': [
     { label: 'Channel', pointer: '/request/arguments/channel' },
     { label: 'Voltage', pointer: '/request/arguments/voltage' },

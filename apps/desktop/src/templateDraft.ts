@@ -3,7 +3,6 @@ import type { BackgroundConfig, WorkflowStep } from './workflow'
 import { chartPanelToSavedChart, type ChartPanel, type SavedOutputViews } from './chartPanels.ts'
 
 export type WorkflowDraft = {
-  schema_version: number
   name: string
   tool_instances: ToolInstance[]
   backgrounds?: BackgroundConfig[]

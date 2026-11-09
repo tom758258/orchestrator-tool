@@ -1,7 +1,7 @@
 # Scopes integration
 
 Scopes remains an external executable. Core uses its published Common Worker
-v3 and Scopes contracts; Desktop edits Template v2 definitions and local
+v3 and Scopes contracts; Desktop edits Template definitions and local
 run options. No VISA/SCPI or physical model rules live in Orchestrator.
 
 ## Template Setup
@@ -91,7 +91,7 @@ from Scopes Tool. Omitted parameters remain omitted; optional fixed
 actual channel availability checked against model capabilities. Optional
 `acquire_mode` is `normal` or `current`; optional `channels` is `all`
 or `displayed`. Bindings and additional arguments are rejected. Template
-v2 carries no Live model identity: Template validation checks syntax, Live
+Templates carry no Live model identity: Template validation checks syntax, Live
 Preflight checks the saved canonical model, and Core Run checks the launch
 model even for direct callers. Worker identity checks remain authoritative.
 AutoScale may alter channel display/scale, timebase, and trigger settings
