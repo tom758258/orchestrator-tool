@@ -1059,7 +1059,7 @@ test('unlocated validation errors do not guess a card from their message', async
   expect(screen.queryByRole('img', { name: 'Validation warning' })).toBeNull()
 })
 
-test('Steps insertion target card tracks Root, If branches, loops and the actual palette destination', async () => {
+test('Steps palette selects a type before inserting, keeps action fixed, and clears selection afterward', async () => {
   currentDraft = { schema_version: 2, name: 'Target card', tool_instances: [], workflow: { steps: [
     { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
       right: { source: 'literal', value: 1 },
@@ -1071,13 +1071,17 @@ test('Steps insertion target card tracks Root, If branches, loops and the actual
   ] } }
   await mount()
   const target = screen.getByRole('status', { name: 'Step insertion target' })
+  const categories = screen.getByRole('region', { name: 'Step categories' })
+  const add = screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement
+  const paletteButton = (name: string) => within(categories).getByRole('button', { name })
   const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
   const expectTarget = (label: string) => expect(target.textContent).toContain(label)
   expect(within(target).getByText('ADDING STEP TO')).toBeTruthy()
-  expect(target.textContent).toContain('📍')
+  expect(target.textContent).not.toContain('📍')
   expectTarget('Root Workflow')
-  expect(Boolean(target.compareDocumentPosition(screen.getByRole('region', { name: 'Step categories' })) &
-    Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  expect(add.disabled).toBe(true)
+  expect(screen.getByText('Selected Step:')).toHaveProperty('textContent', 'Selected Step: None')
+  expect(Boolean(add.compareDocumentPosition(categories) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
 
   fireEvent.click(card('if-2'))
   expectTarget('IF 2 → THEN')
@@ -1094,12 +1098,36 @@ test('Steps insertion target card tracks Root, If branches, loops and the actual
 
   fireEvent.click(card('if-2'))
   expectTarget('IF 2 → ELSE')
-  fireEvent.click(screen.getByRole('button', { name: 'Wait' }))
+  fireEvent.click(paletteButton('Wait'))
+  expect(paletteButton('Wait').getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByText('Selected Step:').textContent).toContain('Wait')
+  expect(add.disabled).toBe(false)
+  expect(screen.queryByRole('button', { name: /Step .*?, wait-1$/ })).toBeNull()
+  fireEvent.click(add)
   expect(within(screen.getByRole('list', { name: 'ELSE of if-2' }))
     .getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
   expectTarget('IF 2 → ELSE')
-  fireEvent.click(screen.getByRole('button', { name: 'Add to root' }))
+  expect(add.disabled).toBe(true)
+  expect(paletteButton('Wait').getAttribute('aria-pressed')).toBe('false')
+
+  fireEvent.click(paletteButton('Wait'))
+  fireEvent.click(screen.getByRole('button', { name: 'Set Target to Root' }))
   expectTarget('Root Workflow')
+  expect(add.disabled).toBe(false)
+  fireEvent.click(add)
+  expect(within(screen.getByRole('list', { name: 'Root steps' }))
+    .getByRole('button', { name: /Step .*?, wait-2$/ })).toBeTruthy()
+  expect(add.disabled).toBe(true)
+
+  fireEvent.click(paletteButton('Wait'))
+  fireEvent.click(screen.getByRole('button', { name: 'New Template' }))
+  await waitFor(() => expect(screen.getByText('Selected Step:').textContent).toBe('Selected Step: None'))
+  fireEvent.click(paletteButton('Wait'))
+  vi.mocked(open).mockResolvedValueOnce('template.json')
+  fireEvent.click(screen.getByRole('button', { name: 'Open Template' }))
+  await screen.findByText('Template loaded.')
+  expect(screen.getByText('Selected Step:').textContent).toBe('Selected Step: None')
+  expect(add.disabled).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Steps' }))
   expect(screen.queryByRole('status', { name: 'Step insertion target' })).toBeNull()
 })
