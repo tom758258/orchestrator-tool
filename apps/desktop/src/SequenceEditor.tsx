@@ -137,6 +137,7 @@ function SequenceEditor({
   const dropRef = useRef<SequenceDropTarget | null>(null)
   const [drop, setDrop] = useState<SequenceDropTarget | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[]>([])
+  const [paletteDragControl, setPaletteDragControl] = useState<boolean | null>(null)
 
   function setDropTarget(next: SequenceDropTarget | null) {
     dropRef.current = next
@@ -160,6 +161,7 @@ function SequenceEditor({
 
   function clearPaletteDrop() {
     palettePointRef.current = null
+    setPaletteDragControl(null)
     if (!dragRef.current) stopScrollTimer()
     setDropTarget(null)
   }
@@ -178,7 +180,7 @@ function SequenceEditor({
     const editor = editorRef.current
     if (!editor) return null
     const hit = document.elementFromPoint(x, y)
-    const target = hit?.closest<HTMLElement>('[data-step-drop-id], [data-step-container]')
+    const target = hit?.closest<HTMLElement>('[data-step-end-target], [data-step-drop-id], [data-step-container]')
     let next: SequenceDropTarget | null = null
     if (target && editor.contains(target)) {
       const id = target.dataset.stepDropId
@@ -193,15 +195,20 @@ function SequenceEditor({
           ? target.dataset.stepBranch : null
         // Palette drops in the gap between sibling cards use the nearest insertion boundary.
         // Keep the existing Sequence reorder behavior unchanged.
-        const rows = movingIds ? [] : Array.from(target.children).filter((child): child is HTMLElement =>
-          child instanceof HTMLElement && child.classList.contains('sequence-step-row'))
-        const before = rows.findIndex(row => {
-          const main = row.querySelector<HTMLElement>('.sequence-step-main') ?? row
-          const rect = main.getBoundingClientRect()
-          return y < rect.top + rect.height / 2
-        })
-        next = { parentId, branch, index: movingIds ? Number(target.dataset.stepCount)
-          : before < 0 ? rows.length : before }
+        if (target.hasAttribute('data-step-end-target')) {
+          // The visible end zone identifies a specific container, even at a deeply nested boundary.
+          next = { parentId, branch, index: Number(target.dataset.stepCount) }
+        } else {
+          const rows = movingIds ? [] : Array.from(target.children).filter((child): child is HTMLElement =>
+            child instanceof HTMLElement && child.classList.contains('sequence-step-row'))
+          const before = rows.findIndex(row => {
+            const main = row.querySelector<HTMLElement>('.sequence-step-main') ?? row
+            const rect = main.getBoundingClientRect()
+            return y < rect.top + rect.height / 2
+          })
+          next = { parentId, branch, index: movingIds ? Number(target.dataset.stepCount)
+            : before < 0 ? rows.length : before }
+        }
       }
     } else if (steps.length === 0 && hit?.closest('.sequence-empty') && editor.contains(hit)) {
       next = { parentId: null, branch: null, index: 0 }
@@ -241,6 +248,7 @@ function SequenceEditor({
       updatePaletteDrop(x, y, isControl) {
         if (workflowBusy || dragRef.current) return
         palettePointRef.current = { x, y, isControl }
+        setPaletteDragControl(isControl)
         startScrollTimer()
         setDropTarget(resolveDrop(x, y, undefined, isControl))
       },
@@ -274,8 +282,16 @@ function SequenceEditor({
 
   function renderSteps(siblings: readonly WorkflowStep[], parent?: WorkflowContainerStep, parentOrder?: string,
     branch: StepBranch | null = null): React.ReactNode {
+    const isTargetContainer = drop?.parentId === (parent?.id ?? null) && drop.branch === branch
+    const dragging = paletteDragControl !== null || draggingIds.length > 0
+    const locationLabel = parent
+      ? `${parent.type.toUpperCase()} ${parentOrder ?? parent.id} (${parent.id}) · ${branch ? branch.toUpperCase() : 'Body'}`
+      : 'Root Workflow'
+    const showEndZone = dragging && (paletteDragControl !== null
+      ? !paletteDragControl || !parent || containerPath(steps, parent.id).length + 1 < 8
+      : canRelocateSteps(steps, draggingIds, parent?.id ?? null, branch))
     return (
-      <ol className={`sequence-steps${drop?.parentId === (parent?.id ?? null) && drop.branch === branch && drop.index === siblings.length ? ' sequence-drop-end' : ''}`}
+      <ol className={`sequence-steps${isTargetContainer ? ' sequence-drop-container-active' : ''}${isTargetContainer && drop?.index === siblings.length ? ' sequence-drop-end' : ''}`}
         data-step-container={parent?.id ?? ''} data-step-branch={branch ?? ''}
         data-step-count={siblings.length} aria-label={parent ? `${branch ? branch.toUpperCase() : 'Body'} of ${parent.id}` : 'Root steps'}>
         {siblings.length === 0 && parent && <li className="sequence-body-empty">No steps. Drop steps here or select this container and add from the palette.</li>}
@@ -304,8 +320,13 @@ function SequenceEditor({
             <li key={step.id} className="sequence-step-row">
               <div className={`sequence-step-main${drop?.parentId === (parent?.id ?? null) && drop.branch === branch && drop.index === index ? ' sequence-drop-before' : ''}${draggingIds.includes(step.id) ? ' sequence-dragging' : ''}`}
                 data-step-drop-id={step.id}>
+                {isTargetContainer && drop?.index === index && (
+                  <span className="sequence-drop-caption" role="status">
+                    ▸ {locationLabel} · {index === 0 ? 'Start' : `Before ${stepLabel(step)} (${step.id})`}
+                  </span>
+                )}
                 <button className="sequence-drag-handle" type="button" disabled={workflowBusy}
-                  aria-label={`Drag ${step.id} to reorder`} title="Drag to move between Root and workflow containers"
+                  aria-label={`Drag ${step.id} to reorder`} title="Drag to reorder Steps or move them between workflow levels"
                   onPointerDown={event => {
                     if (workflowBusy || event.button !== 0 || dragRef.current || palettePointRef.current) return
                     suppressClickRef.current = false
@@ -333,7 +354,12 @@ function SequenceEditor({
                     if (!suppressClickRef.current) onSelectStep(step.id)
                     suppressClickRef.current = false
                   }}>
-                  <span aria-hidden="true">⠿</span>
+                  <svg aria-hidden="true" focusable="false" width="16" height="18" viewBox="0 0 16 18">
+                    <circle cx="5" cy="4" r="1.5" /><circle cx="11" cy="4" r="1.5" />
+                    <circle cx="5" cy="9" r="1.5" /><circle cx="11" cy="9" r="1.5" />
+                    <circle cx="5" cy="14" r="1.5" /><circle cx="11" cy="14" r="1.5" />
+                  </svg>
+                  <span aria-hidden="true">Drag</span>
                 </button>
                 <button
                   className={`sequence-step-card${validationIssue?.step_id === step.id ? ' sequence-step-invalid' : ''}`}
@@ -398,6 +424,15 @@ function SequenceEditor({
             </li>
           )
         })}
+        {showEndZone && (
+          <li className={`sequence-drop-zone${isTargetContainer && drop?.index === siblings.length ? ' sequence-drop-zone-active' : ''}`}
+            data-step-end-target="" data-step-container={parent?.id ?? ''} data-step-branch={branch ?? ''}
+            data-step-count={siblings.length} role="presentation">
+            <span title={`${locationLabel} · End`} role={isTargetContainer && drop?.index === siblings.length ? 'status' : undefined}>
+              ▸ {locationLabel} · End
+            </span>
+          </li>
+        )}
       </ol>
     )
   }

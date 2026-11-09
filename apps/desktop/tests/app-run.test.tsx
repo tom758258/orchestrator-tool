@@ -1202,6 +1202,71 @@ test('Dragging palette steps inserts exactly at the Root and nested drop target 
 })
 
 
+test('Nested end zones show their level and drop into the matching FOR body', async () => {
+  let nested: ForStep = { type: 'for', id: 'depth-4', variable: 'd',
+    range: { start: '1', stop: '2', step: '1' },
+    steps: [{ type: 'wait', id: 'tail', duration_ms: 1 }] }
+  for (let level = 3; level >= 1; level--) {
+    nested = { type: 'for', id: `depth-${level}`, variable: `d${level}`,
+      range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
+  }
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  let destination: Element | null = null
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
+  const root = screen.getByRole('list', { name: 'Root steps' })
+  const body4 = screen.getByRole('list', { name: 'Body of depth-4' })
+  const body3 = screen.getByRole('list', { name: 'Body of depth-3' })
+  const palette = within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'Wait' })
+  Object.assign(palette, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  expect(screen.queryByText('▸ FOR 1.1.1.1 (depth-4) · Body · End')).toBeNull()
+  const start = (handle: HTMLElement) => {
+    destination = root
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  }
+  const dropAt = (handle: HTMLElement, zone: Element) => {
+    destination = zone
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  }
+
+  start(palette)
+  const end4 = within(body4).getByText('▸ FOR 1.1.1.1 (depth-4) · Body · End').closest('li')!
+  destination = end4
+  fireEvent.pointerMove(palette, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body4.classList.contains('sequence-drop-container-active')).toBe(true)
+  expect(body3.classList.contains('sequence-drop-container-active')).toBe(false)
+  expect(end4.classList.contains('sequence-drop-zone-active')).toBe(true)
+  fireEvent.pointerUp(palette, { pointerId: 1, clientX: 20, clientY: 50 })
+  fireEvent.click(palette, { detail: 1 })
+  expect(within(body4).getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expect(screen.queryByText('▸ FOR 1.1.1 (depth-3) · Body · End')).toBeNull()
+
+  start(palette)
+  dropAt(palette, within(body3).getByText('▸ FOR 1.1.1 (depth-3) · Body · End').closest('li')!)
+  fireEvent.click(palette, { detail: 1 })
+  expect(within(body3).getByRole('button', { name: /Step .*?, wait-2$/ })).toBeTruthy()
+  expect(within(body4).queryByRole('button', { name: /Step .*?, wait-2$/ })).toBeNull()
+
+  const handle = screen.getByRole('button', { name: 'Drag wait-1 to reorder' })
+  expect(within(handle).getByText('Drag')).toBeTruthy()
+  expect(handle.querySelector('svg')).toBeTruthy()
+  Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  start(handle)
+  destination = within(body3).getByText('▸ FOR 1.1.1 (depth-3) · Body · End').closest('li')
+  fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body3.classList.contains('sequence-drop-container-active')).toBe(true)
+  fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(within(body3).getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expect(within(body4).queryByRole('button', { name: /Step .*?, wait-1$/ })).toBeNull()
+})
+
 test('Palette control drag rejects a ninth nested level without showing an insertion indicator', async () => {
   let nested: ForStep = { type: 'for', id: 'deep-8', variable: 'i',
     range: { start: '1', stop: '2', step: '1' }, steps: [] }
@@ -1223,6 +1288,7 @@ test('Palette control drag rejects a ninth nested level without showing an inser
   fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
   fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: 50 })
   expect(body.classList.contains('sequence-drop-end')).toBe(false)
+  expect(within(body).queryByText(/▸ .*deep-8.*End/)).toBeNull()
   fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 50 })
   expect(within(body).queryAllByRole('button', { name: /^Step / })).toHaveLength(0)
   expect(screen.queryByRole('button', { name: /Step .*?, for-1$/ })).toBeNull()
@@ -1245,7 +1311,9 @@ test('Palette drag into an empty Workflow, cancellation and busy state leave no 
   destination = document.body
   fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
   pointer(50)
+  expect(screen.getByText('▸ Root Workflow · End')).toBeTruthy()
   fireEvent.pointerCancel(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(screen.queryByText('▸ Root Workflow · End')).toBeNull()
   expect(screen.queryByRole('button', { name: /Step .*?, wait-1$/ })).toBeNull()
   destination = screen.getByText('Create your first workflow')
   fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
