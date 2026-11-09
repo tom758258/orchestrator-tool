@@ -1188,6 +1188,44 @@ test('Dragging palette steps inserts exactly at the Root and nested drop target 
   expect(ids(screen.getByRole('list', { name: 'Body of while-1' }))).toEqual(['wait-5', 'wait-6'])
   expect(screen.getByText('Selected Step:').textContent).toContain('None')
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft')).toHaveLength(0)
+
+  // A drop on the list gap must land between cards, not silently append to Root.
+  Array.from(root.children).forEach((row, index) => {
+    const main = row.querySelector('.sequence-step-main')
+    if (main) vi.spyOn(main, 'getBoundingClientRect').mockReturnValue({ top: index * 100, height: 80 } as DOMRect)
+  })
+  drag('Wait', root, 190)
+  expect(ids(root)).toEqual(['if-2', 'for-1', 'wait-7', 'while-1', 'wait-1', 'anchor', 'assert-1'])
+  expect(card('wait-7').getAttribute('aria-pressed')).toBe('true')
+  expect((within(screen.getByRole('region', { name: 'Properties' }))
+    .getByRole('spinbutton', { name: 'Duration (ms)' }) as HTMLInputElement).value).toBe('500')
+})
+
+
+test('Palette control drag rejects a ninth nested level without showing an insertion indicator', async () => {
+  let nested: ForStep = { type: 'for', id: 'deep-8', variable: 'i',
+    range: { start: '1', stop: '2', step: '1' }, steps: [] }
+  for (let level = 7; level >= 1; level--) {
+    nested = { type: 'for', id: `deep-${level}`, variable: 'i',
+      range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
+  }
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  const button = within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'For' })
+  Object.assign(button, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  const body = screen.getByRole('list', { name: 'Body of deep-8' })
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => body })
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+  fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body.classList.contains('sequence-drop-end')).toBe(false)
+  fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(within(body).queryAllByRole('button', { name: /^Step / })).toHaveLength(0)
+  expect(screen.queryByRole('button', { name: /Step .*?, for-1$/ })).toBeNull()
 })
 
 test('Palette drag into an empty Workflow, cancellation and busy state leave no partial step', async () => {

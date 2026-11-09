@@ -3,14 +3,14 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
-import { MESSAGE_TARGET_LABELS } from './workflow'
+import { containerPath, MESSAGE_TARGET_LABELS } from './workflow'
 import { expressionSummary } from './inputValue'
 
 export type SequenceDropTarget = { parentId: string | null; branch: StepBranch | null; index: number }
 
 export type SequenceEditorHandle = {
-  updatePaletteDrop: (x: number, y: number) => void
-  finishPaletteDrop: (x: number, y: number) => SequenceDropTarget | null
+  updatePaletteDrop: (x: number, y: number, isControl: boolean) => void
+  finishPaletteDrop: (x: number, y: number, isControl: boolean) => SequenceDropTarget | null
   clearPaletteDrop: () => void
 }
 
@@ -133,7 +133,7 @@ function SequenceEditor({
   } | null>(null)
   const scrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const suppressClickRef = useRef(false)
-  const palettePointRef = useRef<{ x: number; y: number } | null>(null)
+  const palettePointRef = useRef<{ x: number; y: number; isControl: boolean } | null>(null)
   const dropRef = useRef<SequenceDropTarget | null>(null)
   const [drop, setDrop] = useState<SequenceDropTarget | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[]>([])
@@ -174,7 +174,7 @@ function SequenceEditor({
     stopScrollTimer()
   }, [])
 
-  function resolveDrop(x: number, y: number, movingIds?: readonly string[]): SequenceDropTarget | null {
+  function resolveDrop(x: number, y: number, movingIds?: readonly string[], paletteIsControl = false): SequenceDropTarget | null {
     const editor = editorRef.current
     if (!editor) return null
     const hit = document.elementFromPoint(x, y)
@@ -191,12 +191,24 @@ function SequenceEditor({
         const parentId = target.dataset.stepContainer || null
         const branch = target.dataset.stepBranch === 'then' || target.dataset.stepBranch === 'else'
           ? target.dataset.stepBranch : null
-        next = { parentId, branch, index: Number(target.dataset.stepCount) }
+        // Palette drops in the gap between sibling cards use the nearest insertion boundary.
+        // Keep the existing Sequence reorder behavior unchanged.
+        const rows = movingIds ? [] : Array.from(target.children).filter((child): child is HTMLElement =>
+          child instanceof HTMLElement && child.classList.contains('sequence-step-row'))
+        const before = rows.findIndex(row => {
+          const main = row.querySelector<HTMLElement>('.sequence-step-main') ?? row
+          const rect = main.getBoundingClientRect()
+          return y < rect.top + rect.height / 2
+        })
+        next = { parentId, branch, index: movingIds ? Number(target.dataset.stepCount)
+          : before < 0 ? rows.length : before }
       }
     } else if (steps.length === 0 && hit?.closest('.sequence-empty') && editor.contains(hit)) {
       next = { parentId: null, branch: null, index: 0 }
     }
     if (next && movingIds && !canRelocateSteps(steps, movingIds, next.parentId, next.branch)) return null
+    if (next && paletteIsControl && next.parentId &&
+        containerPath(steps, next.parentId).length + 1 >= 8) return null
     return next
   }
 
@@ -219,21 +231,21 @@ function SequenceEditor({
         if (direction) editor.scrollTop += direction * 12
       }
       if (dragRef.current?.started) updateDrop()
-      else if (palettePointRef.current) setDropTarget(resolveDrop(point.x, point.y))
+      else if (palettePointRef.current) setDropTarget(resolveDrop(point.x, point.y, undefined, palettePointRef.current.isControl))
     }, 50)
   }
 
   useEffect(() => {
     if (!paletteDropRef) return
     const api: SequenceEditorHandle = {
-      updatePaletteDrop(x, y) {
+      updatePaletteDrop(x, y, isControl) {
         if (workflowBusy || dragRef.current) return
-        palettePointRef.current = { x, y }
+        palettePointRef.current = { x, y, isControl }
         startScrollTimer()
-        setDropTarget(resolveDrop(x, y))
+        setDropTarget(resolveDrop(x, y, undefined, isControl))
       },
-      finishPaletteDrop(x, y) {
-        const next = workflowBusy || dragRef.current ? null : resolveDrop(x, y)
+      finishPaletteDrop(x, y, isControl) {
+        const next = workflowBusy || dragRef.current ? null : resolveDrop(x, y, undefined, isControl)
         clearPaletteDrop()
         return next
       },

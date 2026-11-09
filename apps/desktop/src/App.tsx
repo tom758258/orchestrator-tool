@@ -2567,13 +2567,15 @@ function App() {
                                   if (!drag.started && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
                                     drag.started = true
                                   }
-                                  if (drag.started) sequenceEditorRef.current?.updatePaletteDrop(event.clientX, event.clientY)
+                                  if (drag.started) sequenceEditorRef.current?.updatePaletteDrop(event.clientX, event.clientY,
+                                    drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if')
                                 }}
                                 onPointerUp={event => {
                                   const drag = paletteDragRef.current
                                   if (!drag || drag.pointerId !== event.pointerId) return
                                   const location = drag.started && !workflowBusy
-                                    ? sequenceEditorRef.current?.finishPaletteDrop(event.clientX, event.clientY) : null
+                                    ? sequenceEditorRef.current?.finishPaletteDrop(event.clientX, event.clientY,
+                                        drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if') : null
                                   if (drag.started) suppressPaletteClickRef.current = drag.preset
                                   finishPaletteDrag()
                                   if (location) insertStepAt(preset, location)
