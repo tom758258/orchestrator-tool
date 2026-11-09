@@ -8,7 +8,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
-import SequenceEditor from './SequenceEditor'
+import SequenceEditor, { type SequenceEditorHandle, type SequenceDropTarget } from './SequenceEditor'
 import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import OutputCharts, { LiveMonitors } from './OutputCharts'
@@ -563,6 +563,12 @@ function App() {
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [selectedPaletteStep, setSelectedPaletteStep] = useState<StepPreset | null>(null)
+  const sequenceEditorRef = useRef<SequenceEditorHandle>(null)
+  const paletteDragRef = useRef<{
+    preset: StepPreset; pointerId: number; handle: HTMLButtonElement;
+    startX: number; startY: number; started: boolean
+  } | null>(null)
+  const suppressPaletteClickRef = useRef<StepPreset | null>(null)
   const [streamingExpanded, setStreamingExpanded] = useState(false)
   const [scopesOutputExpanded, setScopesOutputExpanded] = useState(false)
   const [chartOptionsExpanded, setChartOptionsExpanded] = useState(false)
@@ -990,18 +996,19 @@ function App() {
     setTemplateIoMessage(null)
   }, [workflowDraft, clearValidation, clearRunFeedback])
 
-  const addStep = useCallback((preset: StepPresetOption) => {
+  const insertStepAt = useCallback((preset: StepPresetOption, location: SequenceDropTarget) => {
     if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) return
     const steps = workflowDraft.workflow.steps
-    const selected = allWorkflowSteps(steps).find(step => step.id === selectedStepId)
-    const container = selected?.type === 'if'
-      ? { parentId: selected.id, branch: preferredIfBranch.id === selected.id ? preferredIfBranch.branch : 'then' as StepBranch }
-      : selected?.type === 'for' || selected?.type === 'while'
-        ? { parentId: selected.id, branch: null }
-        : selectedStepId
-          ? (stepContainer(steps, selectedStepId) ?? { parentId: null, branch: null })
-          : { parentId: null, branch: null }
-    const parentId = container.parentId
+    const { parentId, branch, index } = location
+    const parent = parentId === null ? null : allWorkflowSteps(steps).find(step => step.id === parentId)
+    if ((parentId === null && branch !== null) ||
+        (parentId !== null && (!parent || (parent.type === 'if'
+          ? branch !== 'then' && branch !== 'else'
+          : (parent.type !== 'for' && parent.type !== 'while') || branch !== null)))) return
+    const siblings = parent?.type === 'if'
+      ? branch === 'else' ? parent.else_steps : parent.then_steps
+      : parent?.type === 'for' || parent?.type === 'while' ? parent.steps : steps
+    if (!Number.isInteger(index) || index < 0 || index > siblings.length) return
     const isControl = preset.value === 'for' || preset.value === 'while' || preset.value === 'if'
     if (isControl && parentId && containerPath(steps, parentId).length + 1 >= 8) return
     const target = preset.value.startsWith('background-') ? workflowDraft.backgrounds?.[0]?.id
@@ -1018,23 +1025,43 @@ function App() {
     const id = nextStepId(preset.prefix, steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
     updateSteps(current => {
-      if (!parentId) {
-        const index = current.findIndex(step => step.id === selectedStepId)
-        const insertIndex = index < 0 ? current.length : index + 1
-        return [...current.slice(0, insertIndex), newStep, ...current.slice(insertIndex)]
-      }
-      const parent = allWorkflowSteps(current).find(step => step.id === parentId)
-      const body = parent?.type === 'if'
-        ? container.branch === 'else' ? parent.else_steps : parent.then_steps
-        : parent?.type === 'for' || parent?.type === 'while' ? parent.steps : []
-      const index = body.findIndex(step => step.id === selectedStepId)
-      const insertIndex = index < 0 ? body.length : index + 1
+      const currentParent = parentId === null ? null : allWorkflowSteps(current).find(step => step.id === parentId)
+      const currentSiblings = currentParent?.type === 'if'
+        ? branch === 'else' ? currentParent.else_steps : currentParent.then_steps
+        : currentParent?.type === 'for' || currentParent?.type === 'while' ? currentParent.steps : current
+      if (index > currentSiblings.length) return current
       return replaceSiblings(current, parentId,
-        [...body.slice(0, insertIndex), newStep, ...body.slice(insertIndex)], container.branch)
+        [...currentSiblings.slice(0, index), newStep, ...currentSiblings.slice(index)], branch)
     })
     setSelectedStepId(id)
     setSelectedPaletteStep(null)
-  }, [workflowDraft, selectedStepId, preferredIfBranch, updateSteps])
+  }, [workflowDraft, updateSteps, setSelectedStepId])
+
+  const addStep = useCallback((preset: StepPresetOption) => {
+    if (!workflowDraft) return
+    const steps = workflowDraft.workflow.steps
+    const selected = allWorkflowSteps(steps).find(step => step.id === selectedStepId)
+    const container = selected?.type === 'if'
+      ? { parentId: selected.id, branch: preferredIfBranch.id === selected.id ? preferredIfBranch.branch : 'then' as StepBranch }
+      : selected?.type === 'for' || selected?.type === 'while'
+        ? { parentId: selected.id, branch: null }
+        : selectedStepId
+          ? (stepContainer(steps, selectedStepId) ?? { parentId: null, branch: null })
+          : { parentId: null, branch: null }
+    const parent = container.parentId === null ? null : allWorkflowSteps(steps).find(step => step.id === container.parentId)
+    const siblings = parent?.type === 'if'
+      ? container.branch === 'else' ? parent.else_steps : parent.then_steps
+      : parent?.type === 'for' || parent?.type === 'while' ? parent.steps : steps
+    const selectedIndex = siblings.findIndex(step => step.id === selectedStepId)
+    insertStepAt(preset, { ...container, index: selectedIndex < 0 ? siblings.length : selectedIndex + 1 })
+  }, [workflowDraft, selectedStepId, preferredIfBranch, insertStepAt])
+
+  const finishPaletteDrag = useCallback(() => {
+    const drag = paletteDragRef.current
+    paletteDragRef.current = null
+    sequenceEditorRef.current?.clearPaletteDrop()
+    if (drag?.handle.hasPointerCapture(drag.pointerId)) drag.handle.releasePointerCapture(drag.pointerId)
+  }, [])
 
   const deleteStep = useCallback(
     (stepId: string) => {
@@ -2525,8 +2552,43 @@ function App() {
                                 className="action-button step-palette-button"
                                 type="button"
                                 aria-pressed={selectedPaletteStep === preset.value}
-                                onClick={() => setSelectedPaletteStep(preset.value)}
-                                disabled={workflowBusy || (insertionDepth >= 8 && (preset.value === 'for' || preset.value === 'while' || preset.value === 'if'))}
+                                onPointerDown={event => {
+                                  if (workflowBusy || event.button !== 0 || paletteDragRef.current) return
+                                  suppressPaletteClickRef.current = null
+                                  event.currentTarget.setPointerCapture(event.pointerId)
+                                  paletteDragRef.current = {
+                                    preset: preset.value, pointerId: event.pointerId, handle: event.currentTarget,
+                                    startX: event.clientX, startY: event.clientY, started: false,
+                                  }
+                                }}
+                                onPointerMove={event => {
+                                  const drag = paletteDragRef.current
+                                  if (!drag || drag.pointerId !== event.pointerId || workflowBusy) return
+                                  if (!drag.started && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
+                                    drag.started = true
+                                  }
+                                  if (drag.started) sequenceEditorRef.current?.updatePaletteDrop(event.clientX, event.clientY,
+                                    drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if')
+                                }}
+                                onPointerUp={event => {
+                                  const drag = paletteDragRef.current
+                                  if (!drag || drag.pointerId !== event.pointerId) return
+                                  const location = drag.started && !workflowBusy
+                                    ? sequenceEditorRef.current?.finishPaletteDrop(event.clientX, event.clientY,
+                                        drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if') : null
+                                  if (drag.started) suppressPaletteClickRef.current = drag.preset
+                                  finishPaletteDrag()
+                                  if (location) insertStepAt(preset, location)
+                                }}
+                                onPointerCancel={finishPaletteDrag}
+                                onLostPointerCapture={finishPaletteDrag}
+                                onClick={event => {
+                                  if (event?.detail === 0 || suppressPaletteClickRef.current !== preset.value) {
+                                    setSelectedPaletteStep(preset.value)
+                                  }
+                                  suppressPaletteClickRef.current = null
+                                }}
+                                disabled={workflowBusy}
                               >
                                 {preset.label}
                               </button>
@@ -2681,6 +2743,7 @@ function App() {
                 </aside>
 
                 <SequenceEditor
+                  paletteDropRef={sequenceEditorRef}
                   steps={workflowDraft.workflow.steps}
                   selectedStepIds={selectedStepIds}
                   onSelectStep={(id, modifiers) => setStepSelection(current => selectStep(workflowDraft.workflow.steps, current, id, modifiers))}

@@ -1132,6 +1132,204 @@ test('Steps palette selects a type before inserting, keeps action fixed, and cle
   expect(screen.queryByRole('status', { name: 'Step insertion target' })).toBeNull()
 })
 
+test('Dragging palette steps inserts exactly at the Root and nested drop target without replacing Add Step', async () => {
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [
+    { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
+      right: { source: 'literal', value: 1 }, then_steps: [], else_steps: [] },
+    { type: 'for', id: 'for-1', variable: 'i', range: { start: '1', stop: '2', step: '1' }, steps: [] },
+    { type: 'while', id: 'while-1', left: { source: 'literal', value: 0 },
+      operator: 'less-than', right: { source: 'literal', value: 1 }, max_iterations: 2, steps: [] },
+    { type: 'wait', id: 'anchor', duration_ms: 1 },
+  ] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  const categories = screen.getByRole('region', { name: 'Step categories' })
+  let destination: Element | null = null
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
+  const drag = (name: string, target: Element | null, y = 50) => {
+    const button = within(categories).getByRole('button', { name })
+    Object.assign(button, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+    destination = target
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: y })
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: y })
+    fireEvent.click(button, { detail: 1 })
+  }
+  const root = screen.getByRole('list', { name: 'Root steps' })
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  const ids = (list: HTMLElement) => within(list).queryAllByRole('button', { name: /^Step / })
+    .filter(button => button.closest('ol') === list).map(button => button.getAttribute('aria-label')!.split(', ').at(-1))
+  vi.spyOn(card('anchor').parentElement!, 'getBoundingClientRect')
+    .mockReturnValue({ top: 0, height: 100 } as DOMRect)
+  fireEvent.click(card('anchor'))
+  drag('Wait', card('anchor'), 25)
+  expect(ids(root)).toEqual(['if-2', 'for-1', 'while-1', 'wait-1', 'anchor'])
+  expect(card('wait-1').getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByText('Selected Step:').textContent).toContain('None')
+  drag('Assert', card('anchor'), 75)
+  expect(ids(root)).toEqual(['if-2', 'for-1', 'while-1', 'wait-1', 'anchor', 'assert-1'])
+  drag('Wait', screen.getByRole('list', { name: 'THEN of if-2' }))
+  expect(ids(screen.getByRole('list', { name: 'THEN of if-2' }))).toEqual(['wait-2'])
+  drag('Wait', screen.getByRole('list', { name: 'ELSE of if-2' }))
+  expect(ids(screen.getByRole('list', { name: 'ELSE of if-2' }))).toEqual(['wait-3'])
+  drag('Wait', screen.getByRole('list', { name: 'Body of for-1' }))
+  drag('Wait', screen.getByRole('list', { name: 'Body of while-1' }))
+  expect(ids(screen.getByRole('list', { name: 'Body of for-1' }))).toEqual(['wait-4'])
+  expect(ids(screen.getByRole('list', { name: 'Body of while-1' }))).toEqual(['wait-5'])
+  const beforeCancel = root.textContent
+  drag('Wait', document.body)
+  expect(root.textContent).toBe(beforeCancel)
+  fireEvent.click(within(categories).getByRole('button', { name: 'Wait' }))
+  expect(screen.getByText('Selected Step:').textContent).toContain('Wait')
+  fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+  expect(ids(screen.getByRole('list', { name: 'Body of while-1' }))).toEqual(['wait-5', 'wait-6'])
+  expect(screen.getByText('Selected Step:').textContent).toContain('None')
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'validate_workflow_draft')).toHaveLength(0)
+
+  // A drop on the list gap must land between cards, not silently append to Root.
+  Array.from(root.children).forEach((row, index) => {
+    const main = row.querySelector('.sequence-step-main')
+    if (main) vi.spyOn(main, 'getBoundingClientRect').mockReturnValue({ top: index * 100, height: 80 } as DOMRect)
+  })
+  drag('Wait', root, 190)
+  expect(ids(root)).toEqual(['if-2', 'for-1', 'wait-7', 'while-1', 'wait-1', 'anchor', 'assert-1'])
+  expect(card('wait-7').getAttribute('aria-pressed')).toBe('true')
+  expect((within(screen.getByRole('region', { name: 'Properties' }))
+    .getByRole('spinbutton', { name: 'Duration (ms)' }) as HTMLInputElement).value).toBe('500')
+})
+
+
+test('Nested end zones show their level and drop into the matching FOR body', async () => {
+  let nested: ForStep = { type: 'for', id: 'depth-4', variable: 'd',
+    range: { start: '1', stop: '2', step: '1' },
+    steps: [{ type: 'wait', id: 'tail', duration_ms: 1 }] }
+  for (let level = 3; level >= 1; level--) {
+    nested = { type: 'for', id: `depth-${level}`, variable: `d${level}`,
+      range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
+  }
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  let destination: Element | null = null
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
+  const root = screen.getByRole('list', { name: 'Root steps' })
+  const body4 = screen.getByRole('list', { name: 'Body of depth-4' })
+  const body3 = screen.getByRole('list', { name: 'Body of depth-3' })
+  const palette = within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'Wait' })
+  Object.assign(palette, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  expect(screen.queryByText('▸ FOR 1.1.1.1 (depth-4) · Body · End')).toBeNull()
+  const start = (handle: HTMLElement) => {
+    destination = root
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  }
+  const dropAt = (handle: HTMLElement, zone: Element) => {
+    destination = zone
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  }
+
+  start(palette)
+  const end4 = within(body4).getByText('▸ FOR 1.1.1.1 (depth-4) · Body · End').closest('li')!
+  destination = end4
+  fireEvent.pointerMove(palette, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body4.classList.contains('sequence-drop-container-active')).toBe(true)
+  expect(body3.classList.contains('sequence-drop-container-active')).toBe(false)
+  expect(end4.classList.contains('sequence-drop-zone-active')).toBe(true)
+  fireEvent.pointerUp(palette, { pointerId: 1, clientX: 20, clientY: 50 })
+  fireEvent.click(palette, { detail: 1 })
+  expect(within(body4).getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expect(screen.queryByText('▸ FOR 1.1.1 (depth-3) · Body · End')).toBeNull()
+
+  start(palette)
+  dropAt(palette, within(body3).getByText('▸ FOR 1.1.1 (depth-3) · Body · End').closest('li')!)
+  fireEvent.click(palette, { detail: 1 })
+  expect(within(body3).getByRole('button', { name: /Step .*?, wait-2$/ })).toBeTruthy()
+  expect(within(body4).queryByRole('button', { name: /Step .*?, wait-2$/ })).toBeNull()
+
+  const handle = screen.getByRole('button', { name: 'Drag wait-1 to reorder' })
+  expect(within(handle).getByText('Drag')).toBeTruthy()
+  expect(handle.querySelector('svg')).toBeTruthy()
+  Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  start(handle)
+  destination = within(body3).getByText('▸ FOR 1.1.1 (depth-3) · Body · End').closest('li')
+  fireEvent.pointerMove(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body3.classList.contains('sequence-drop-container-active')).toBe(true)
+  fireEvent.pointerUp(handle, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(within(body3).getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expect(within(body4).queryByRole('button', { name: /Step .*?, wait-1$/ })).toBeNull()
+})
+
+test('Palette control drag rejects a ninth nested level without showing an insertion indicator', async () => {
+  let nested: ForStep = { type: 'for', id: 'deep-8', variable: 'i',
+    range: { start: '1', stop: '2', step: '1' }, steps: [] }
+  for (let level = 7; level >= 1; level--) {
+    nested = { type: 'for', id: `deep-${level}`, variable: 'i',
+      range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
+  }
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  const button = within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'For' })
+  Object.assign(button, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  const body = screen.getByRole('list', { name: 'Body of deep-8' })
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => body })
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+  fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(body.classList.contains('sequence-drop-end')).toBe(false)
+  expect(within(body).queryByText(/▸ .*deep-8.*End/)).toBeNull()
+  fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(within(body).queryAllByRole('button', { name: /^Step / })).toHaveLength(0)
+  expect(screen.queryByRole('button', { name: /Step .*?, for-1$/ })).toBeNull()
+})
+
+test('Palette drag into an empty Workflow, cancellation and busy state leave no partial step', async () => {
+  currentDraft = { ...structuredClone(draft), workflow: { steps: [] } }
+  await mount()
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit) { super(type, init); this.pointerId = init.pointerId ?? 1 }
+  })
+  const button = within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'Wait' })
+  Object.assign(button, { setPointerCapture: vi.fn(), hasPointerCapture: () => false, releasePointerCapture: vi.fn() })
+  let destination: Element | null = null
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => destination })
+  const pointer = (y: number) =>
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 20, clientY: y })
+  destination = document.body
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+  pointer(50)
+  expect(screen.getByText('▸ Root Workflow · End')).toBeTruthy()
+  fireEvent.pointerCancel(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(screen.queryByText('▸ Root Workflow · End')).toBeNull()
+  expect(screen.queryByRole('button', { name: /Step .*?, wait-1$/ })).toBeNull()
+  destination = screen.getByText('Create your first workflow')
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+  pointer(50)
+  fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(screen.getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  expect((button as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+  pointer(50)
+  fireEvent.pointerUp(button, { pointerId: 1, clientX: 20, clientY: 50 })
+  expect(screen.queryByRole('button', { name: /Step .*?, wait-2$/ })).toBeNull()
+  await finish(8)
+})
+
 test('Workflow shortcuts cut, paste, copy, select siblings and delete while respecting editing and busy state', async () => {
   await mount()
   const panel = screen.getByRole('tabpanel', { name: 'Workflow' })

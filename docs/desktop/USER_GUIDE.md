@@ -418,6 +418,13 @@ clears, while the inserted Workflow step remains selected for editing.
 **Set Target to Root** switches the destination without inserting a step.
 Creating or opening a Template also clears the palette selection.
 
+Alternatively, drag a Step type from **Steps** into **Sequence** to insert it at the
+drop position, independently of the **ADDING STEP TO** target. Drop before or
+after a Step, at the end of Root, or into an empty or populated IF **THEN** /
+**ELSE**, FOR, or WHILE body. Dropping outside a valid destination does not add
+a Step. After a successful drop, the new Step is selected in **Properties** and
+the Palette selection clears. Drag-to-add is unavailable while editing is busy.
+
 **Validate**, **Run Simulation / Run Live**, **Stop Workflow**, and active loop **Stop** controls
 appear at the top-right of the Workflow summary, beside **Template** and
 **Steps**. Validation, running, Stop, and run failure feedback appears below

@@ -347,6 +347,12 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 新加入的 Step 仍保持選取，方便編輯。**Set Target to Root** 只切換
 新增目標，不會新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
 
+也可以從 **Steps** 將 Step 類型拖曳到 **Sequence** 指定位置，依滑鼠放開時的
+落點新增，不使用 **ADDING STEP TO** 目標。可放在既有 Step 前後、Root 末端，
+或 IF 的 **THEN**／**ELSE**、FOR／WHILE Body（包括空白區塊）。放在無效位置
+不會新增 Step。新增成功後會選取新 Step，在 **Properties** 顯示設定，
+並清除 Palette 類型選取。Workflow 編輯忙碌時不可拖曳新增。
+
 **Validate**、**Run Simulation / Run Live**、**Stop Workflow** 與 active loop 的 **Stop** 控制項
 位於 Workflow summary 右上方，與 **Template**、**Steps** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
