@@ -79,6 +79,7 @@ let currentDraft: WorkflowDraft
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem('orchestrator-tool.step-density')
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   run = deferred<RunMetadataDto>()
@@ -1451,6 +1452,116 @@ test('Pointer dragging moves between Root and empty bodies, preserves selection 
   await finish(8)
 })
 
+
+test('Sequence controls collapse nested FOR and WHILE without losing selection or changing the template', async () => {
+  await mount()
+  const sequence = screen.getByRole('region', { name: 'Sequence' })
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  expect(card('out')).toBeTruthy()
+  fireEvent.click(card('out'))
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
+  expect(screen.queryByRole('button', { name: /Step .*?, inner$/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: /Step .*?, out$/ })).toBeNull()
+  expect(within(sequence).getByText('Selected Step inside')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Properties' })).getByLabelText('Page name')).toBeTruthy()
+  expect(within(sequence).getByText('2 nested Steps')).toBeTruthy()
+  expect(within(sequence).getByRole('button', { name: 'Drag outer to reorder' })).toBeTruthy()
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Expand FOR outer' }))
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR inner' }))
+  expect(screen.queryByRole('button', { name: /Step .*?, out$/ })).toBeNull()
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Expand All' }))
+  expect(card('out')).toBeTruthy()
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse All' }))
+  expect(screen.queryByRole('button', { name: /Step .*?, inner$/ })).toBeNull()
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Expand All' }))
+  expect(card('out')).toBeTruthy()
+  expect((await savedDraft()).workflow.steps).toEqual(currentDraft.workflow.steps)
+})
+
+test('Sequence IF supports independent THEN/ELSE collapse and Add Step reveals its target', async () => {
+  currentDraft = { name: 'IF collapse', tool_instances: [], workflow: { steps: [
+    { type: 'if', id: 'if-1', left: { source: 'literal', value: 1 }, operator: 'equal',
+      right: { source: 'literal', value: 1 },
+      then_steps: [{ type: 'wait', id: 'then-wait', duration_ms: 1 }],
+      else_steps: [{ type: 'wait', id: 'else-wait', duration_ms: 1 }] },
+    { type: 'wait', id: 'after-if', duration_ms: 1 },
+  ] } }
+  await mount()
+  const sequence = screen.getByRole('region', { name: 'Sequence' })
+  const button = (name: string) => within(sequence).getByRole('button', { name })
+  expect(within(sequence).getByText('THEN (1 Steps)')).toBeTruthy()
+  expect(within(sequence).getByText('ELSE (1 Steps)')).toBeTruthy()
+  fireEvent.click(button('Collapse THEN of if-1'))
+  expect(screen.queryByRole('button', { name: /Step .*?, then-wait$/ })).toBeNull()
+  expect(screen.getByRole('button', { name: /Step .*?, else-wait$/ })).toBeTruthy()
+  fireEvent.click(button('Collapse ELSE of if-1'))
+  expect(screen.queryByRole('button', { name: /Step .*?, else-wait$/ })).toBeNull()
+  fireEvent.click(button('Collapse IF if-1'))
+  expect(within(sequence).getByText('THEN 1 · ELSE 1')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Expand THEN of if-1' })).toBeNull()
+  expect(screen.getByRole('button', { name: /Step .*?, after-if$/ })).toBeTruthy()
+  fireEvent.click(button('Expand IF if-1'))
+  expect(button('Expand THEN of if-1')).toBeTruthy()
+  expect(button('Expand ELSE of if-1')).toBeTruthy()
+
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, if-1$/ }))
+  fireEvent.click(within(screen.getByRole('region', { name: 'Step categories' }))
+    .getByRole('button', { name: 'Wait' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+  expect(button('Collapse THEN of if-1')).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Step .*?, wait-1$/ })).toBeTruthy()
+  expect(button('Expand ELSE of if-1')).toBeTruthy()
+  expect((await savedDraft()).workflow.steps[0].type).toBe('if')
+})
+
+test('Sequence locates nested validation errors even when their ancestors were collapsed', async () => {
+  await mount()
+  const sequence = screen.getByRole('region', { name: 'Sequence' })
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse All' }))
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === 'validate_workflow_draft') throw { message: 'Nested output is invalid', step_id: 'out' }
+    return original(command, args)
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+  await screen.findByText('Validation failed: Nested output is invalid')
+  const card = await screen.findByRole('button', { name: /Step .*?, out$/ })
+  expect(card.getAttribute('aria-invalid')).toBe('true')
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
+  expect(within(sequence).getByText('Validation warning inside')).toBeTruthy()
+})
+
+test('Sequence density is a local preference, survives Template changes and remains editable during a run', async () => {
+  await mount()
+  const sequence = screen.getByRole('region', { name: 'Sequence' })
+  const density = within(sequence).getByRole('combobox', { name: 'Step Display Density' }) as HTMLSelectElement
+  expect(density.value).toBe('standard')
+  fireEvent.change(density, { target: { value: 'compact' } })
+  expect(sequence.getAttribute('data-step-density')).toBe('compact')
+  expect(localStorage.getItem('orchestrator-tool.step-density')).toBe('compact')
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
+  fireEvent.click(screen.getByRole('button', { name: 'New Template' }))
+  await waitFor(() => expect(within(sequence).getByRole('button', { name: 'Collapse FOR outer' })).toBeTruthy())
+  expect(density.value).toBe('compact')
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
+  vi.mocked(open).mockResolvedValueOnce('template.json')
+  fireEvent.click(screen.getByRole('button', { name: 'Open Template' }))
+  await screen.findByText('Template loaded.')
+  expect(within(sequence).getByRole('button', { name: 'Collapse FOR outer' })).toBeTruthy()
+  expect(density.value).toBe('compact')
+
+  fireEvent.click(runButton('Simulation'))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  expect((within(sequence).getByRole('button', { name: 'Drag outer to reorder' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(density, { target: { value: 'comfortable' } })
+  expect(sequence.getAttribute('data-step-density')).toBe('comfortable')
+  fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
+  expect(within(sequence).getByRole('button', { name: 'Expand FOR outer' })).toBeTruthy()
+  expect(JSON.parse((runCalls()[0][1] as { templateJson: string }).templateJson).workflow.steps)
+    .toEqual(currentDraft.workflow.steps)
+  await finish(8)
+  expect((await savedDraft()).workflow.steps).toEqual(currentDraft.workflow.steps)
+})
 
 test('the final Foreground Chart can be removed without any result rows', () => {
   const panels = addChartPanel([], 'Results', ['Voltage'])

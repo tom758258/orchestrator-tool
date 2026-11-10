@@ -359,6 +359,16 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 查看詳細 run 錯誤。視窗較窄時控制項會換行。**Clear Workflow** 仍位於
 **Sequence** header。
 
+**Clear Workflow** 右側的 **Step Display Density** 下拉選單提供
+**Compact**、**Standard**（預設）及 **Comfortable**。顯示密度儲存在本機，
+不同 Template 共用，不會修改 Workflow 資料。
+
+在 **Sequence**，每個 **FOR**、**WHILE**、**IF** Step 都有獨立的展開／收合箭頭；
+**IF** 的 **THEN**、**ELSE** 也能分別收合。Sequence 標題下方提供
+**Expand All** 與 **Collapse All**。收合時隱藏子 Steps，但保留數量及必要的
+選取、驗證警告、執行失敗提示。切換頁籤會保留目前收合狀態；新建或開啟 Template
+會全部展開。拖曳到收合的容器前須先展開；使用 **Add Step** 成功新增後會展開目標。
+
 修改 Workflow steps、Tool Setup 的執行設定，或 Background Binding／Setup 時，
 Workflow summary 會立即隱藏上次 run failure 或 Live 啟動錯誤。即使沒有修改，
 按下 **Validate** 也會立即隱藏這些回饋。驗證會顯示自己的結果；**Valid** 不保證

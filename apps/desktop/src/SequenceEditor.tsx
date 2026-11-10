@@ -3,10 +3,11 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
-import { containerPath, MESSAGE_TARGET_LABELS } from './workflow'
+import { allWorkflowSteps, containerPath, MESSAGE_TARGET_LABELS } from './workflow'
 import { expressionSummary } from './inputValue'
 
 export type SequenceDropTarget = { parentId: string | null; branch: StepBranch | null; index: number }
+export type StepDensity = 'compact' | 'standard' | 'comfortable'
 
 export type SequenceEditorHandle = {
   updatePaletteDrop: (x: number, y: number, isControl: boolean) => void
@@ -29,6 +30,13 @@ type SequenceEditorProps = {
   onMoveStep: (stepId: string, offset: -1 | 1) => void
   onDeleteStep: (stepId: string) => void
   onClearWorkflow: () => void
+  density: StepDensity
+  onDensityChange: (density: StepDensity) => void
+  collapsedStepIds: ReadonlySet<string>
+  collapsedBranches: ReadonlySet<string>
+  onToggleContainer: (id: string) => void
+  onToggleBranch: (id: string, branch: StepBranch) => void
+  onSetAllExpanded: (expanded: boolean) => void
 }
 
 function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
@@ -112,6 +120,13 @@ function SequenceEditor({
   onMoveStep,
   onDeleteStep,
   onClearWorkflow,
+  density,
+  onDensityChange,
+  collapsedStepIds,
+  collapsedBranches,
+  onToggleContainer,
+  onToggleBranch,
+  onSetAllExpanded,
   paletteDropRef,
 }: SequenceEditorProps) {
   const editorRef = useRef<HTMLElement>(null)
@@ -126,6 +141,8 @@ function SequenceEditor({
   const [drop, setDrop] = useState<SequenceDropTarget | null>(null)
   const [draggingIds, setDraggingIds] = useState<string[]>([])
   const [paletteDragControl, setPaletteDragControl] = useState<boolean | null>(null)
+  const hasContainers = allWorkflowSteps(steps).some(
+    step => step.type === 'for' || step.type === 'while' || step.type === 'if')
 
   function setDropTarget(next: SequenceDropTarget | null) {
     dropRef.current = next
@@ -286,6 +303,18 @@ function SequenceEditor({
         {siblings.map((step, index) => {
           const result = runResults?.find(result => result.step_id === step.id)
           const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
+          const children = step.type === 'if'
+            ? [...allWorkflowSteps(step.then_steps), ...allWorkflowSteps(step.else_steps)]
+            : step.type === 'for' || step.type === 'while' ? allWorkflowSteps(step.steps) : []
+          const isContainer = step.type === 'for' || step.type === 'while' || step.type === 'if'
+          const collapsed = collapsedStepIds.has(step.id)
+          const hiddenSelected = collapsed && children.some(child => selectedStepIds.includes(child.id))
+          const hiddenInvalid = collapsed && children.some(child => child.id === validationIssue?.step_id)
+          const hiddenFailed = collapsed && children.some(child => runResults?.some(result =>
+            result.step_id === child.id && (result.any_failed || result.status === 'failed')))
+          const countLabel = step.type === 'if'
+            ? `THEN ${allWorkflowSteps(step.then_steps).length} · ELSE ${allWorkflowSteps(step.else_steps).length}`
+            : isContainer ? `${children.length} nested Steps` : null
           let outputSummary: string | null = null
           if (!parent && result?.status === 'succeeded') {
             outputSummary = formatMeasurement(result.output)
@@ -363,6 +392,7 @@ function SequenceEditor({
                     <span className="sequence-step-label">{stepLabel(step)}
                       {validationIssue?.step_id === step.id && <span className="sequence-validation-warning" role="img" aria-label="Validation warning" title={validationIssue.message}> ⚠</span>}
                     </span>
+                    {countLabel && collapsed && <span className="sequence-container-count">{countLabel}</span>}
                     <span className="sequence-step-summary" title={stepSummary(step, instances)}>
                       {stepSummary(step, instances)}
                     </span>
@@ -382,7 +412,23 @@ function SequenceEditor({
                     )}
                   </span>
                 </button>
+                {isContainer && (
+                  <button className="sequence-collapse-button" type="button"
+                    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${step.type.toUpperCase()} ${step.id}`}
+                    aria-expanded={!collapsed}
+                    title={collapsed ? 'Expand nested Steps' : 'Collapse nested Steps'}
+                    onClick={() => onToggleContainer(step.id)}>
+                    <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+                  </button>
+                )}
               </div>
+              {isContainer && collapsed && (hiddenSelected || hiddenInvalid || hiddenFailed) && (
+                <div className="sequence-hidden-status" role="status">
+                  {hiddenSelected && <span>Selected Step inside</span>}
+                  {hiddenInvalid && <span className="sequence-hidden-warning">Validation warning inside</span>}
+                  {hiddenFailed && <span className="sequence-hidden-warning">Failed Step inside</span>}
+                </div>
+              )}
               <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`} data-step-drop-id={step.id}>
                 <button className="action-button" type="button"
                   disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], -1)}
@@ -400,15 +446,43 @@ function SequenceEditor({
                   Delete
                 </button>
               </div>
-              {(step.type === 'for' || step.type === 'while') && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
-                {renderSteps(step.steps, step, order)}
-              </div>}
-              {step.type === 'if' && <div style={{ width: 'calc(100% - 24px)', marginLeft: 24 }}>
-                <h5>THEN</h5>
-                {renderSteps(step.then_steps, step, order, 'then')}
-                <h5>ELSE</h5>
-                {renderSteps(step.else_steps, step, order, 'else')}
-              </div>}
+              {(step.type === 'for' || step.type === 'while') && !collapsed && (
+                <div className="sequence-nested-body">{renderSteps(step.steps, step, order)}</div>
+              )}
+              {step.type === 'if' && !collapsed && (
+                <div className="sequence-nested-body">
+                  {(['then', 'else'] as const).map(ifBranch => {
+                    const branchSteps = ifBranch === 'then' ? step.then_steps : step.else_steps
+                    const branchChildren = allWorkflowSteps(branchSteps)
+                    const branchCollapsed = collapsedBranches.has(`${step.id}:${ifBranch}`)
+                    const branchHiddenSelected = branchCollapsed && branchChildren.some(child => selectedStepIds.includes(child.id))
+                    const branchHiddenInvalid = branchCollapsed && branchChildren.some(child => child.id === validationIssue?.step_id)
+                    const branchHiddenFailed = branchCollapsed && branchChildren.some(child => runResults?.some(result =>
+                      result.step_id === child.id && (result.any_failed || result.status === 'failed')))
+                    return (
+                      <div key={ifBranch} className="sequence-if-branch">
+                        <div className="sequence-branch-heading">
+                          <h5>{ifBranch.toUpperCase()} ({branchChildren.length} Steps)</h5>
+                          {(branchHiddenSelected || branchHiddenInvalid || branchHiddenFailed) && (
+                            <span className="sequence-branch-status" role="status">
+                              {branchHiddenSelected ? 'Selected inside' : ''}
+                              {branchHiddenInvalid ? ' · Validation warning' : ''}
+                              {branchHiddenFailed ? ' · Failed Step' : ''}
+                            </span>
+                          )}
+                          <button type="button" className="sequence-branch-toggle"
+                            aria-label={`${branchCollapsed ? 'Expand' : 'Collapse'} ${ifBranch.toUpperCase()} of ${step.id}`}
+                            aria-expanded={!branchCollapsed}
+                            onClick={() => onToggleBranch(step.id, ifBranch)}>
+                            <span aria-hidden="true">{branchCollapsed ? '▸' : '▾'}</span>
+                          </button>
+                        </div>
+                        {!branchCollapsed && renderSteps(branchSteps, step, order, ifBranch)}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </li>
           )
         })}
@@ -426,14 +500,31 @@ function SequenceEditor({
   }
 
   return (
-    <section ref={editorRef} className="sequence-editor" aria-labelledby="sequence-editor-title">
-      <div className="section-header">
+    <section ref={editorRef} className="sequence-editor" aria-labelledby="sequence-editor-title"
+      data-step-density={density}>
+      <div className="section-header sequence-header">
         <h3 id="sequence-editor-title">Sequence</h3>
-        <button className="action-button action-button-danger" type="button"
-          disabled={workflowBusy || steps.length === 0}
-          onClick={onClearWorkflow}>
-          Clear Workflow
-        </button>
+        <div className="sequence-header-actions">
+          <button className="action-button action-button-danger" type="button"
+            disabled={workflowBusy || steps.length === 0}
+            onClick={onClearWorkflow}>
+            Clear Workflow
+          </button>
+          <label className="sequence-density-setting">Step height
+            <select aria-label="Step Display Density" value={density}
+              onChange={event => onDensityChange(event.target.value as StepDensity)}>
+              <option value="compact">Compact</option>
+              <option value="standard">Standard</option>
+              <option value="comfortable">Comfortable</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="sequence-bulk-actions">
+        <button className="action-button" type="button" disabled={!hasContainers}
+          onClick={() => onSetAllExpanded(true)}>Expand All</button>
+        <button className="action-button" type="button" disabled={!hasContainers}
+          onClick={() => onSetAllExpanded(false)}>Collapse All</button>
       </div>
       {steps.length === 0 ? (
         <div className="sequence-empty">

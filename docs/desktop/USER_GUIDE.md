@@ -432,6 +432,18 @@ these controls, above the Builder. Detailed run errors remain available there.
 Controls wrap when the window is narrow. **Clear Workflow** stays in the
 **Sequence** header.
 
+The **Step Display Density** menu to the right of **Clear Workflow** offers
+**Compact**, **Standard** (default), and **Comfortable**. The density preference is
+stored locally and applies across Templates; it does not change Workflow data.
+
+In **Sequence**, each **FOR**, **WHILE**, and **IF** step has its own expand/collapse
+arrow. **IF** also lets you collapse **THEN** and **ELSE** independently.
+**Expand All** and **Collapse All** appear below the Sequence heading. Collapsing
+hides nested steps but keeps their count and any selection, validation, or run
+failure indication visible. Switching tabs keeps the current view; creating or
+opening a Template expands all steps. Expand a body before dragging into it;
+**Add Step** reveals a collapsed destination after successful insertion.
+
 Editing Workflow steps, execution settings in Tool Setup, or Background bindings
 and setup immediately hides the previous run failure or Live startup error from
 the Workflow summary. Pressing **Validate** also hides that feedback immediately,
