@@ -8,7 +8,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
-import SequenceEditor, { type SequenceEditorHandle, type SequenceDropTarget } from './SequenceEditor'
+import SequenceEditor, { type SequenceEditorHandle, type SequenceDropTarget, type StepDensity } from './SequenceEditor'
 import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import OutputCharts, { LiveMonitors } from './OutputCharts'
@@ -472,6 +472,17 @@ function LiveDeviceSetup({ children }: { children: ReactNode }) {
   </div>
 }
 
+const STEP_DENSITY_STORAGE_KEY = 'orchestrator-tool.step-density'
+
+function readStepDensity(): StepDensity {
+  try {
+    const stored = localStorage.getItem(STEP_DENSITY_STORAGE_KEY)
+    return stored === 'compact' || stored === 'comfortable' ? stored : 'standard'
+  } catch {
+    return 'standard'
+  }
+}
+
 function App() {
   const simulationSamples = useSimulationSamples()
   const [backgroundCsvEnabled, setBackgroundCsvEnabled] = useState(false)
@@ -481,6 +492,16 @@ function App() {
   const [backgroundCsvFolder, setBackgroundCsvFolder] = useState<string | null>(null)
   const [backgroundCsvError, setBackgroundCsvError] = useState<string | null>(null)
   const [themePreference, setThemePreference] = useState(readThemePreference)
+  const [stepDensity, setStepDensity] = useState<StepDensity>(readStepDensity)
+  const [collapsedStepIds, setCollapsedStepIds] = useState<Set<string>>(() => new Set())
+  const [collapsedBranches, setCollapsedBranches] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    try {
+      localStorage.setItem(STEP_DENSITY_STORAGE_KEY, stepDensity)
+    } catch {
+      // A disabled preference store must not prevent editing.
+    }
+  }, [stepDensity])
   const [applicationVersion, setApplicationVersion] = useState<string | null>(null)
   const [helpError, setHelpError] = useState<string | null>(null)
   async function handleOpenHelp() {
@@ -669,6 +690,73 @@ function App() {
   const { active: selectedStepId, ids: selectedStepIds } = selection
   const setSelectedStepId = useCallback((id: string | null) => setStepSelection(singleSelection(id)), [])
   const [preferredIfBranch, setPreferredIfBranch] = useState<{ id: string; branch: StepBranch }>({ id: '', branch: 'then' })
+
+  const revealSequencePath = useCallback((steps: readonly WorkflowStep[], stepId: string,
+    includeContainer = false, branch: StepBranch | null = null) => {
+    const ancestors = containerPath(steps, stepId)
+    const ids = [...ancestors.map(({ step }) => step.id), ...(includeContainer ? [stepId] : [])]
+    const branches = ancestors.flatMap(({ step, branch }) => branch ? [`${step.id}:${branch}`] : [])
+    if (includeContainer && branch) branches.push(`${stepId}:${branch}`)
+    setCollapsedStepIds(current => {
+      if (!ids.some(id => current.has(id))) return current
+      const next = new Set(current)
+      ids.forEach(id => next.delete(id))
+      return next
+    })
+    setCollapsedBranches(current => {
+      if (!branches.some(key => current.has(key))) return current
+      const next = new Set(current)
+      branches.forEach(key => next.delete(key))
+      return next
+    })
+  }, [])
+
+  const toggleSequenceContainer = useCallback((id: string) => {
+    setCollapsedStepIds(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+  const toggleSequenceBranch = useCallback((id: string, branch: StepBranch) => {
+    setCollapsedBranches(current => {
+      const next = new Set(current)
+      const key = `${id}:${branch}`
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  const setAllSequenceExpanded = useCallback((expanded: boolean) => {
+    const controls = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).filter(
+      step => step.type === 'if' || step.type === 'for' || step.type === 'while')
+    setCollapsedStepIds(new Set(expanded ? [] : controls.map(step => step.id)))
+    setCollapsedBranches(new Set(expanded ? [] : controls.flatMap(step => step.type === 'if'
+      ? [`${step.id}:then`, `${step.id}:else`] : [])))
+  }, [workflowDraft?.workflow.steps])
+
+  useEffect(() => {
+    const controls = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).filter(
+      step => step.type === 'if' || step.type === 'for' || step.type === 'while')
+    const validIds = new Set(controls.map(step => step.id))
+    const validBranches = new Set(controls.flatMap(step => step.type === 'if'
+      ? [`${step.id}:then`, `${step.id}:else`] : []))
+    setCollapsedStepIds(current => {
+      const next = new Set([...current].filter(id => validIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+    setCollapsedBranches(current => {
+      const next = new Set([...current].filter(key => validBranches.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [workflowDraft?.workflow.steps])
+
+  useEffect(() => {
+    if (validationIssue?.step_id && workflowDraft) {
+      revealSequencePath(workflowDraft.workflow.steps, validationIssue.step_id)
+    }
+  }, [validationIssue, workflowDraft?.workflow.steps, revealSequencePath])
   const stepClipboardRef = useRef<WorkflowStep[]>([])
   const stepClipboardCutRef = useRef(false)
   const pastedStepIdsRef = useRef(new Set<string>())
@@ -907,6 +995,8 @@ function App() {
       setWorkflowDraft(workflowOnlyDraft(draft))
       setTemplateUiGeneration(current => current + 1)
       setExpandedToolIds([])
+      setCollapsedStepIds(new Set())
+      setCollapsedBranches(new Set())
       setSaveChartsWithTemplate(false)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
@@ -1033,7 +1123,8 @@ function App() {
     })
     setSelectedStepId(id)
     setSelectedPaletteStep(null)
-  }, [workflowDraft, updateSteps, setSelectedStepId])
+    if (parentId) revealSequencePath(steps, parentId, true, branch)
+  }, [workflowDraft, updateSteps, setSelectedStepId, revealSequencePath])
 
   const addStep = useCallback((preset: StepPresetOption) => {
     if (!workflowDraft) return
@@ -1188,6 +1279,7 @@ function App() {
       for (const step of allWorkflowSteps(pasted.steps)) pastedStepIdsRef.current.add(step.id)
       updateSteps(() => pasted.steps)
       setStepSelection(pasted.selection)
+      if (pasted.selection.active) revealSequencePath(pasted.steps, pasted.selection.active)
     }
   }
 
@@ -1245,6 +1337,8 @@ function App() {
       setWorkflowDraft(workflowOnlyDraft(loadedDraft))
       setTemplateUiGeneration(current => current + 1)
       setExpandedToolIds([])
+      setCollapsedStepIds(new Set())
+      setCollapsedBranches(new Set())
       setSaveChartsWithTemplate(loadedDraft.output_views !== undefined)
       setExecutionMode(DEFAULT_EXECUTION_MODE)
       setPowersStatuses({})
@@ -2754,6 +2848,13 @@ function App() {
                   onMoveStep={moveStep}
                   onDeleteStep={deleteStep}
                   onClearWorkflow={() => void clearWorkflow()}
+                  density={stepDensity}
+                  onDensityChange={setStepDensity}
+                  collapsedStepIds={collapsedStepIds}
+                  collapsedBranches={collapsedBranches}
+                  onToggleContainer={toggleSequenceContainer}
+                  onToggleBranch={toggleSequenceBranch}
+                  onSetAllExpanded={setAllSequenceExpanded}
                 />
 
                 <section className="step-properties" aria-labelledby="step-properties-title">
