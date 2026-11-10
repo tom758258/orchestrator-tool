@@ -1141,7 +1141,8 @@ textarea:disabled {
   min-width: 0;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
-  padding-right: 12px;
+  scrollbar-gutter: stable;
+  padding: 16px 32px 0 0;
 }
 
 .sequence-editor h3 {
@@ -1151,6 +1152,7 @@ textarea:disabled {
 
 .sequence-header {
   flex-wrap: wrap;
+  row-gap: 12px;
 }
 
 .sequence-header-actions,
@@ -1161,10 +1163,17 @@ textarea:disabled {
   flex-wrap: wrap;
 }
 
+.sequence-header-actions {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
 .sequence-density-setting {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   font-size: 0.85rem;
   color: var(--muted);
 }
