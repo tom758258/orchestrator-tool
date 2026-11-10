@@ -1525,7 +1525,7 @@ test('Sequence locates nested validation errors even when their ancestors were c
   })
   fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
   await screen.findByText('Validation failed: Nested output is invalid')
-  const card = screen.getByRole('button', { name: /Step .*?, out$/ })
+  const card = await screen.findByRole('button', { name: /Step .*?, out$/ })
   expect(card.getAttribute('aria-invalid')).toBe('true')
   fireEvent.click(within(sequence).getByRole('button', { name: 'Collapse FOR outer' }))
   expect(within(sequence).getByText('Validation warning inside')).toBeTruthy()
