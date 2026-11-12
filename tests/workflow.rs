@@ -19,7 +19,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
         &json!({
             "tool_instances": [],
             "name": "Comparison integration",
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 {
                     "type": "set-variable", "id": "set-threshold", "variable": "threshold",
                     "value": { "source": "literal", "value": 3 }
@@ -302,7 +302,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
 fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
     json!({
         "name": "While counter", "tool_instances": [],
-        "workflow": { "steps": [
+        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
             { "type": "set-variable", "id": "init", "variable": "x",
               "value": { "source": "literal", "value": 0 } },
             { "type": "while", "id": "repeat", "max_iterations": limit,
@@ -673,7 +673,7 @@ fn while_string_condition_and_if_empty_else_execute_without_workers() {
     let workflow = Template::from_json_str(
         &json!({
             "name":"String and If","tool_instances":[],
-            "workflow":{"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                 {"type":"set-variable","id":"set-status","variable":"status",
                     "value":{"source":"literal","value":"WAITING"}},
                 {"type":"while","id":"wait-ready","max_iterations":2,
@@ -715,7 +715,7 @@ fn while_string_condition_and_if_empty_else_execute_without_workers() {
 fn if_branch_error_fails_without_running_other_branch_or_later_steps() {
     let workflow = Template::from_json_str(&json!({
         "name":"Failed If","tool_instances":[],
-        "workflow":{"steps":[
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
             {"type":"if","id":"decision","left":{"source":"literal","value":true},
                 "operator":"equal","right":{"source":"literal","value":true},
                 "then_steps":[{"type":"assert","id":"fail","left":{"source":"literal","value":1},

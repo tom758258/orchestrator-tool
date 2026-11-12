@@ -31,7 +31,7 @@ vi.mock('../src/ResultChart', () => ({ default: (props: ComponentProps<typeof Re
 vi.mock('../src/ChartPlot', () => ({ default: ({ panel, bounded }: { panel: { type: string }; bounded?: { values: Float64Array } }) =>
   <div role="img" aria-label={`${panel.type} chart`}>{bounded?.values.length ?? 0} displayed samples</div> }))
 
-const draft: WorkflowDraft = { name: 'Run test', tool_instances: [], workflow: { steps: [
+const draft: WorkflowDraft = { name: 'Run test', tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
   { type: 'for', id: 'outer', variable: 'i', range: { start: '0', stop: '2', step: '1' }, steps: [
     { type: 'for', id: 'inner', variable: 'j', range: { start: '0', stop: '2', step: '1' }, steps: [
       { type: 'output', id: 'out', name: 'Voltage', page: 'Results', value: { source: 'literal', value: 10.600000000000001 } },
@@ -47,7 +47,7 @@ function backgroundDraft(count: number): WorkflowDraft {
   })), backgrounds: Array.from({ length: count }, (_, index) => ({
     id: `background-${index+1}`, tool_instance_id: `meters-${index+1}`, live_monitor: true,
     limit_count: 3,
-  })), workflow: { steps: [
+  })), workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: true },
     ...structuredClone(draft.workflow.steps),
   ] } }
@@ -1061,7 +1061,7 @@ test('unlocated validation errors do not guess a card from their message', async
 })
 
 test('Steps palette selects a type before inserting, keeps action fixed, and clears selection afterward', async () => {
-  currentDraft = { name: 'Target card', tool_instances: [], workflow: { steps: [
+  currentDraft = { name: 'Target card', tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
       right: { source: 'literal', value: 1 },
       then_steps: [{ type: 'wait', id: 'then-wait', duration_ms: 1 }],
@@ -1134,7 +1134,7 @@ test('Steps palette selects a type before inserting, keeps action fixed, and cle
 })
 
 test('Dragging palette steps inserts exactly at the Root and nested drop target without replacing Add Step', async () => {
-  currentDraft = { ...structuredClone(draft), workflow: { steps: [
+  currentDraft = { ...structuredClone(draft), workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'if', id: 'if-2', left: { source: 'literal', value: 1 }, operator: 'equal',
       right: { source: 'literal', value: 1 }, then_steps: [], else_steps: [] },
     { type: 'for', id: 'for-1', variable: 'i', range: { start: '1', stop: '2', step: '1' }, steps: [] },
@@ -1211,7 +1211,7 @@ test('Nested end zones show their level and drop into the matching FOR body', as
     nested = { type: 'for', id: `depth-${level}`, variable: `d${level}`,
       range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
   }
-  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  currentDraft = { ...structuredClone(draft), workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [nested] } }
   await mount()
   vi.stubGlobal('PointerEvent', class extends MouseEvent {
     pointerId: number
@@ -1275,7 +1275,7 @@ test('Palette control drag rejects a ninth nested level without showing an inser
     nested = { type: 'for', id: `deep-${level}`, variable: 'i',
       range: { start: '1', stop: '2', step: '1' }, steps: [nested] }
   }
-  currentDraft = { ...structuredClone(draft), workflow: { steps: [nested] } }
+  currentDraft = { ...structuredClone(draft), workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [nested] } }
   await mount()
   vi.stubGlobal('PointerEvent', class extends MouseEvent {
     pointerId: number
@@ -1296,7 +1296,7 @@ test('Palette control drag rejects a ninth nested level without showing an inser
 })
 
 test('Palette drag into an empty Workflow, cancellation and busy state leave no partial step', async () => {
-  currentDraft = { ...structuredClone(draft), workflow: { steps: [] } }
+  currentDraft = { ...structuredClone(draft), workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
   await mount()
   vi.stubGlobal('PointerEvent', class extends MouseEvent {
     pointerId: number
@@ -1371,7 +1371,7 @@ test('Pointer dragging moves between Root and empty bodies, preserves selection 
     operator: 'less-than' as const, right: { source: 'literal' as const, value: 0 }, max_iterations: 2, steps: [] }
   const a = { type: 'wait' as const, id: 'a', duration_ms: 1 }
   const b = { type: 'wait' as const, id: 'b', duration_ms: 2 }
-  const dragDraft = { ...draft, workflow: { steps: [...draft.workflow.steps, a, whileStep, b] } }
+  const dragDraft = { ...draft, workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [...draft.workflow.steps, a, whileStep, b] } }
   const original = vi.mocked(invoke).getMockImplementation()!
   vi.mocked(invoke).mockImplementation(async (command, args) => command === 'create_workflow_draft'
     ? JSON.stringify(dragDraft) : original(command, args))
@@ -1443,7 +1443,7 @@ test('Pointer dragging moves between Root and empty bodies, preserves selection 
   const outer = draft.workflow.steps[0] as ForStep
   const inner = outer.steps[0] as ForStep
   expect(JSON.parse((runCalls()[0][1] as { templateJson: string }).templateJson)).toEqual({
-    ...draft, workflow: { steps: [
+    ...draft, workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
       { ...outer, steps: [{ ...inner, steps: [] }] },
       { ...whileStep, steps: [inner.steps[0]] }, a, b,
     ] },
@@ -1479,7 +1479,7 @@ test('Sequence controls collapse nested FOR and WHILE without losing selection o
 })
 
 test('Sequence IF supports independent THEN/ELSE collapse and Add Step reveals its target', async () => {
-  currentDraft = { name: 'IF collapse', tool_instances: [], workflow: { steps: [
+  currentDraft = { name: 'IF collapse', tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'if', id: 'if-1', left: { source: 'literal', value: 1 }, operator: 'equal',
       right: { source: 'literal', value: 1 },
       then_steps: [{ type: 'wait', id: 'then-wait', duration_ms: 1 }],

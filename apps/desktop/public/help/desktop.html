@@ -774,6 +774,48 @@ Screenshot produces an image in the selected format. Every execution, including
 loop iterations and later runs, receives new absolute file paths. Existing
 files are not overwritten. Job failure or missing required files fails the step.
 This panel is separate from CSV Export of Workflow Output rows.</p>
+<h3 id="fgbg-interaction">FG/BG Interaction</h3>
+<p>In the Workflow left panel, select <strong>Enable FG/BG Interaction</strong> to use the
+Background interaction Steps. <strong>Max Active Command Status</strong> defaults to <strong>4096</strong>
+and accepts <strong>1–65536</strong>. This limit is shared across Backgrounds for commands
+still being tracked; it does not limit the total number of commands in a Run.
+Both settings are saved with the Template. Version 0.3.0 requires the current
+Template format; older Templates without these settings cannot be loaded.</p>
+<p>First enable Background Streaming for the Tool Instance in Setup, then add
+<strong>Worker ON</strong> before interaction Steps. Interaction does not start a Worker
+automatically. Capture may remain OFF.</p>
+<ul>
+<li><strong>BG Command</strong>: currently supports Meters <strong>Software (Simple)</strong> only. In
+  Background Setup select <strong>Trigger with BG Command</strong>; this replaces the automatic
+  timer. The Step succeeds when the Worker accepts the trigger. Select <strong>Wait for
+  Completion</strong> to wait for its measurement within the same Step.</li>
+<li><strong>Get Latest</strong>: returns the newest native Background event. Missing or invalid
+  newest data fails the Step; it does not substitute an older valid reading.</li>
+<li><strong>Wait Next</strong>: waits for the first event arriving after the Step starts. The
+  first invalid event fails the Step. It can wait for a Source that is starting,
+  but fails immediately once the Source has ended.</li>
+<li><strong>Get Command Result</strong>: select the earlier <strong>Source BG Command Step</strong>. It waits
+  for that command's completion and result, then returns the native event. In a
+  Loop, the source must have run in the applicable iteration. A source skipped by
+  an IF branch fails the Get; another command's result is never substituted.</li>
+</ul>
+<p>Get Steps expose the complete native event as Step Output, for example Meters
+<code>/value</code> in an existing Binding or Output. Latest/Next also support existing
+Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
+Custom batches, Scopes and Serial. Powers and Wavegen do not support Background.</p>
+<p><strong>Step timeout (ms)</strong> is optional; blank uses the action timeout. One deadline
+covers the whole Step. Each Background can retain one requested result; consume
+it before sending another command whose result is needed. Busy or capacity
+limits fail immediately without queuing. A command failure after acceptance
+fails the Run and starts cleanup, even though its dispatch Step already succeeded.
+An uncertain dispatch is not retried.</p>
+<p>Normal Run end waits for outstanding commands with one action timeout. Worker OFF
+waits for required commands within its own deadline. Unread results add no wait;
+existing finite sample-count and capture-quality rules still apply. Stop Workflow
+uses cooperative cleanup without extra ordinary command waits. Worker OFF and a
+new Worker ON invalidate old data/result references. If shutdown cannot be
+confirmed, reuse is blocked; verify the external tool is stopped before restarting
+the application.</p>
 <h2 id="7-run-simulation">7. Run Simulation</h2>
 <p>Before Simulation, configure every referenced external executable and ensure
 its manifest and Worker compatibility checks can succeed. You can use
@@ -859,13 +901,15 @@ Scopes validates supported items and channel/model parameters when starting.</p>
 Custom modes use <strong>Trigger Count</strong>, with <strong>Sample Count</strong> readings per trigger.
 Infinite Custom requires explicit <strong>Allow Buffer Overflow Risk</strong>. Infinite
 Background acquisition has no hidden Simulation sample limit.</p>
-<p><strong>Software</strong> and <strong>Software Custom</strong> require <strong>Timer Interval (ms)</strong>, initially
+<p><strong>Software</strong> and <strong>Software Custom</strong> use <strong>Timer Interval (ms)</strong> by default, initially
 <strong>1000</strong>. The first trigger is sent when the source is ready. After one reading
 or a complete Custom batch arrives, Orchestrator waits the selected interval
 before the next trigger. This is a delay between completed measurements, not a
 fixed sampling frequency. Capture OFF leaves triggering and optional Live Monitor
 running. Worker OFF, Stop Workflow, source completion or failure stops triggering.
-A rejected trigger or measurement timeout fails the run and preserves available data.</p>
+A rejected trigger or measurement timeout fails the run and preserves available data.
+For Software Simple, <strong>Trigger with BG Command</strong> replaces this timer with
+Workflow commands; enable FG/BG Interaction in Workflow before using it.</p>
 <p><strong>External</strong> and <strong>External Custom</strong> use the connected trigger signal in Live.
 Simulation generates virtual triggers on supported models, including 34461A;
 34460A does not support External. Slope and delay settings are passed to the tool.

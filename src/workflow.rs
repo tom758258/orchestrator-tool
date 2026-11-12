@@ -437,6 +437,11 @@ impl Step {
 /// The behavior represented by a workflow step.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StepKind {
+    Interaction {
+        background_id: String,
+        operation: crate::interaction::InteractionOperation,
+        timeout_ms: Option<u64>,
+    },
     Background {
         background_id: String,
         action: crate::background::BackgroundAction,
@@ -620,6 +625,7 @@ pub fn validate_page_name(name: &str) -> Result<(), String> {
 /// An ordered collection of top-level workflow steps.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workflow {
+    interaction: crate::interaction::InteractionSettings,
     steps: Vec<Step>,
     pages: Vec<OutputPage>,
 }
@@ -877,7 +883,9 @@ impl Workflow {
                             }
                         }
                     }
-                    StepKind::Wait { .. } | StepKind::Background { .. } => {}
+                    StepKind::Wait { .. }
+                    | StepKind::Background { .. }
+                    | StepKind::Interaction { .. } => {}
                 }
                 // A Show Message field may only display a published Output step value.
                 if matches!(step.kind(), StepKind::Output { .. }) {
@@ -896,7 +904,24 @@ impl Workflow {
             &[],
             &mut pages,
         )?;
-        Ok(Self { steps, pages })
+        Ok(Self {
+            steps,
+            pages,
+            interaction: Default::default(),
+        })
+    }
+
+    pub fn interaction(&self) -> &crate::interaction::InteractionSettings {
+        &self.interaction
+    }
+
+    pub fn with_interaction(
+        mut self,
+        settings: crate::interaction::InteractionSettings,
+    ) -> Result<Self, String> {
+        settings.validate()?;
+        self.interaction = settings;
+        Ok(self)
     }
 
     pub fn output_pages(&self) -> &[OutputPage] {

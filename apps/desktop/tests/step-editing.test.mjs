@@ -131,6 +131,9 @@ test('Two-pass clone remaps every formal value, operand and binding while preser
     { type: 'assert', id: 'assert', left: ref('tool'), operator: 'equal', right: ref('later'), message: 'check' },
     loop('for', [whileLoop('while', [output('out', 'Loop', 'Reading', expression(ref('tool'), ref('external')))])]),
     output('later', 'Results', 'Later', ref('tool')),
+    { type: 'bg-interaction', id: 'send', background_id: 'bg', operation: { kind: 'command', command: 'software-trigger', wait_for_completion: false } },
+    { type: 'bg-interaction', id: 'result', background_id: 'bg', operation: { kind: 'get-command-result', source_step: 'send' } },
+    { type: 'bg-interaction', id: 'external-result', background_id: 'bg', operation: { kind: 'get-command-result', source_step: 'external-command' } },
   ]
   snapshot[4].steps[0].left = ref('tool')
   snapshot[4].steps[0].right = ref('external')
@@ -148,6 +151,9 @@ test('Two-pass clone remaps every formal value, operand and binding while preser
   assert.deepEqual(byId['while-copy'].left, ref('tool-copy'))
   assert.deepEqual(byId['while-copy'].right, ref('external'))
   assert.deepEqual(snapshot[0].bindings.direct, ref('later'))
+  assert.equal(byId['result-copy'].operation.source_step, 'send-copy')
+  assert.equal(byId['external-result-copy'].operation.source_step, 'external-command')
+  assert.equal(snapshot[7].operation.source_step, 'send')
 })
 
 test('Output names are unique on repeated Paste and unchanged when no collision exists', () => {

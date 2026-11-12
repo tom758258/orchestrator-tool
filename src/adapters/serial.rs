@@ -533,7 +533,7 @@ mod tests {
             "name": "Serial File",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
                 "setup": {"transport":"serial","baud": 115200} }],
-            "workflow": {"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                 {"type": "for", "id": "loop", "variable": "n",
                  "range": {"start": "1", "stop": "1", "step": "1"},
                  "steps": [{"type": "tool-action", "id": "send-file",

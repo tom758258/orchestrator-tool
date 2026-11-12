@@ -516,7 +516,7 @@ fn run_workflow_internal(
         action_timeout,
         options.workflow_stop.clone(),
     );
-    let execution = execute_workflow_internal(
+    let mut execution = execute_workflow_internal(
         template,
         &session_refs,
         execution_mode,
@@ -527,7 +527,7 @@ fn run_workflow_internal(
         scopes_output_folder,
         options.failure.clone(),
         Some(&mut background),
-        options.workflow_stop,
+        options.workflow_stop.clone(),
     )
     .map(|result| {
         if retain_results {
@@ -548,8 +548,28 @@ fn run_workflow_internal(
         Err(error) => Some(error.to_string()),
         Ok(results) => results.failure(),
     };
-    let stopped = matches!(&execution, Ok(RunCompletion::Streaming(summary)) if summary.stopped());
-    let background_cleanup = background.cleanup_after_workflow(stopped);
+    let mut stopped =
+        matches!(&execution, Ok(RunCompletion::Streaming(summary)) if summary.stopped());
+    if execution_failure.is_none()
+        && !stopped
+        && options.failure.check().is_ok()
+        && let Err(error) =
+            background.wait_commands(None, std::time::Instant::now() + action_timeout)
+    {
+        if options.workflow_stop.is_requested() && options.failure.check().is_ok() {
+            stopped = true;
+            if matches!(execution, Ok(RunCompletion::Streaming(_))) {
+                execution = Ok(RunCompletion::Streaming(WorkflowRunSummary::with_stop(
+                    None, true,
+                )));
+            }
+        } else {
+            options.failure.fail(error);
+        }
+    }
+    let background_cleanup = background.cleanup_after_workflow(
+        stopped || execution_failure.is_some() || options.failure.check().is_err(),
+    );
     let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
     let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
     if let Some((instance, source)) = cleanup {
@@ -864,7 +884,7 @@ mod tests {
         let mut value = serde_json::json!({
             "name":"Scope AutoScale policy",
             "tool_instances":[{"id":"scopes-1","tool":"scopes","setup":{}}],
-            "workflow":{"steps":[{"type":"tool-action","id":"autoscale",
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"tool-action","id":"autoscale",
                 "target":"scopes-1","action":"autoscale","arguments":{}}]}
         });
         let autoscale = value["workflow"]["steps"][0].clone();

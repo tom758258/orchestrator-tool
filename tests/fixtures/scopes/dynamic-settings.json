@@ -7,7 +7,7 @@
       "setup": {}
     }
   ],
-  "workflow": {
+  "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
     "steps": [
       {
         "type": "set-variable",

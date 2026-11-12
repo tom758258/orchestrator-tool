@@ -92,7 +92,7 @@ test('Unconfirmed channels and bindings survive rendering and JSON reload until 
       const original = structuredClone(state.value)
       const view = state.view()
       assert.equal(state.changes, 0)
-      assert.deepEqual(roundTrip({ workflow: { steps: [state.value] } }).workflow.steps[0], original)
+      assert.deepEqual(roundTrip({ workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [state.value] } }).workflow.steps[0], original)
       if (binding) {
         assert.equal(view.channel.props.value, '')
         assert.match(view.text, /binding preserved/i)

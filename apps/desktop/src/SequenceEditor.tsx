@@ -58,6 +58,8 @@ function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'])
 
 function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
   switch (step.type) {
+    case 'bg-interaction':
+      return `${step.background_id}${step.operation.kind === 'get-command-result' ? ' · ' + step.operation.source_step : ''}`
     case 'background':
       return `${step.background_id}${step.capture ? ' · simultaneous Capture' : ''}`
     case 'for':

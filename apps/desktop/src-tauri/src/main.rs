@@ -1566,7 +1566,7 @@ mod tests {
             &json!({
                 "name": "export",
                 "tool_instances": [],
-                "workflow": { "steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                     "type": "output", "id": "out", "name": "Voltage", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
                 }] }
@@ -1610,7 +1610,7 @@ mod tests {
         };
         let template = Template::from_json_str(&json!({"name":"Live", "tool_instances":[
             {"id":"first","tool":"powers","setup":{}}, {"id":"second","tool":"powers","setup":{}}
-        ],"workflow":{"steps":[
+        ],"workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
             {"type":"tool-action","id":"first-off","target":"first","action":"output-off","arguments":{"channel":3}},
             {"type":"tool-action","id":"second-off","target":"second","action":"output-off","arguments":{"channel":3}}
         ]}}).to_string()).unwrap();
@@ -1962,7 +1962,7 @@ mod tests {
             &json!({
                 "name": "partial export",
                 "tool_instances": [],
-                "workflow": { "steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                     "type": "for",
                     "id": "sweep",
                     "variable": "x",
@@ -2062,7 +2062,7 @@ mod regression_tests {
             &json!({
                 "name": "progress",
                 "tool_instances": [],
-                "workflow": { "steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                     "type": "output", "id": "out", "name": "value", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
                 }] }
@@ -2415,10 +2415,15 @@ mod regression_tests {
         let template = Template::from_json_str(&json).unwrap();
         assert_eq!(template.name(), "Untitled");
         assert!(template.workflow().steps().is_empty());
+        let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            wire["workflow"]["interaction"],
+            json!({"enabled":false,"max_active_command_status":4096})
+        );
         let invalid = r#"{
             "tool_instances": [],
             "name": "Invalid",
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
             ] }
         }"#;
@@ -2427,7 +2432,7 @@ mod regression_tests {
         assert!(error.step_id.is_none());
         let invalid_reference = r#"{
             "name": "Invalid reference", "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "output", "id": "out", "name": "Value", "page": "Results",
                   "value": { "source": "variable", "variable": "missing" } }
             ] }
@@ -2446,7 +2451,7 @@ mod regression_tests {
         let template_json = r#"{
             "tool_instances": [],
             "name": "Round Trip",
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":true,"max_active_command_status":12}, "steps": [
                 {
                     "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
                     "value": { "source": "literal", "value": 3.3 }
@@ -2494,6 +2499,11 @@ mod regression_tests {
         let loaded = load_workflow_template(path.display().to_string()).unwrap();
         assert!(saved.contains("\"output_views\""));
         assert_eq!(saved, loaded);
+        let wire: serde_json::Value = serde_json::from_str(&loaded).unwrap();
+        assert_eq!(
+            wire["workflow"]["interaction"],
+            json!({"enabled":true,"max_active_command_status":12})
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -2511,7 +2521,7 @@ mod regression_tests {
                     {"id": "scopes-1", "tool": "scopes", "setup": {}}
                 ],
                 "name": "Referenced instances",
-                "workflow": { "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                     { "type": "wait", "id": "wait-1", "duration_ms": 1 },
                     { "type": "tool-action", "id": "meter-read-1", "target": "meters-1", "action": "measure", "arguments": {} },
                     { "type": "tool-action", "id": "scope-read-1", "target": "scopes-1", "action": "capture", "arguments": { "channel": [1], "points": 1000 } }

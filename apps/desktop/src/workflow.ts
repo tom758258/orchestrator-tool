@@ -63,6 +63,15 @@ export type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
+export type InteractionSettings = { enabled: boolean; max_active_command_status: number }
+export type InteractionOperation =
+  | { kind: 'command'; command: 'software-trigger'; wait_for_completion: boolean }
+  | { kind: 'get-latest' }
+  | { kind: 'wait-next' }
+  | { kind: 'get-command-result'; source_step: string }
+export type InteractionStep = { type: 'bg-interaction'; id: string; background_id: string; operation: InteractionOperation; timeout_ms: number | null }
+export const INTERACTION_LABELS = { command: 'BG Command', 'get-latest': 'Get Latest', 'wait-next': 'Wait Next', 'get-command-result': 'Get Command Result' }
+
 export type BackgroundAction = 'worker-on' | 'worker-off' | 'capture-on' | 'capture-off'
 export type BackgroundStep = { type: 'background'; id: string; background_id: string; action: BackgroundAction; capture: boolean }
 export type ScopesMeasurement = {
@@ -70,12 +79,13 @@ export type ScopesMeasurement = {
   reference_channel?: number; time_s?: number; level?: number; slope?: string; occurrence?: number
 }
 export type BackgroundConfig = {
+  command_trigger?: boolean
   id: string; tool_instance_id: string; live_monitor: boolean; limit_count: number | null
   timer_interval_ms?: number | null
   scopes_measurements?: ScopesMeasurement[]
   scopes_interval_seconds?: number | null
 }
-export type NonLoopWorkflowStep = BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
+export type NonLoopWorkflowStep = InteractionStep | BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {
   type: 'for'
   id: string

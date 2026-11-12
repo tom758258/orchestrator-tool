@@ -696,6 +696,43 @@ JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop itera
 都會取得新的絕對檔案路徑，不覆蓋既有檔案。Job 失敗或缺少必要檔案會使 step 失敗。
 此區塊與匯出 Workflow Output rows 的 CSV Export 分開。
 
+### FG/BG Interaction
+
+在 Workflow 左側勾選 **Enable FG/BG Interaction**，即可使用 Background 互動
+Steps。**Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
+Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。兩項設定都會隨
+Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。
+
+先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
+**Worker ON**。啟用 Interaction 不會自動啟動 Worker；Capture 可以保持 OFF。
+
+- **BG Command**：目前僅支援 Meters **Software (Simple)**。在 Background Setup
+  勾選 **Trigger with BG Command**，以明確命令取代自動計時觸發。Worker 確認接受
+  觸發後 Step 即成功；勾選 **Wait for Completion** 可在同一 Step 等待量測完成。
+- **Get Latest**：取得最新一筆完整原生 Background 事件。最新資料不存在或無效時
+  Step 失敗，不會改用較舊的有效值。
+- **Wait Next**：等待 Step 開始後到達的第一筆事件；首筆無效即失敗。可等待尚在
+  啟動的 Source，但 Source 已結束時立即失敗。
+- **Get Command Result**：選擇先前的 **Source BG Command Step**，等待該命令
+  完成且結果就緒，再取得原生事件。在 Loop 中，來源必須已於適用的迭代執行；
+  IF 分支跳過來源時 Get 會失敗，不會拿其他命令的結果替代。
+
+Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Binding 或 Output
+使用 Meters 的 `/value`。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
+事件。Custom 批次、Scopes 與 Serial 不提供 Command／Result；Powers 與 Wavegen
+不支援 Background。
+
+**Step timeout (ms)** 可留白以使用 action timeout；整個 Step 共用一個期限。
+每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
+命令。Busy 或容量不足會直接失敗，不會排入佇列。已接受的命令稍後失敗時，Run
+仍會失敗並開始清理，先前成功的派送 Step 不會改寫。無法確認派送結果時不會重送。
+
+正常 Run 結束時，以一個 action timeout 等待尚未完成的命令；Worker OFF 在
+自己的期限內等待必要命令與關閉。未讀結果不增加等待，既有有限筆數與擷取品質
+規則仍適用。Stop Workflow 採合作式清理，不額外等待普通命令。Worker OFF 後
+重新 ON 會使舊資料與結果引用失效。若無法確認關閉，系統會阻擋重用；重新啟動
+應用程式前，請先確認外部工具已停止。
+
 ## 7. Run Simulation
 
 執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
@@ -784,11 +821,13 @@ Meters 的有限 Simple 模式設定 **Max Samples**；
 無限 Custom 必須明確勾選 **Allow Buffer Overflow Risk**。背景無限擷取
 不會套用隱藏的 Simulation 筆數上限。
 
-**Software** 與 **Software Custom** 必填 **Timer Interval (ms)**，預設
+**Software** 與 **Software Custom** 預設使用 **Timer Interval (ms)**，初始值為
 **1000**。來源就緒後送出第一次觸發；收到一筆讀值或完整一批 Custom 讀值後，
 等待指定間隔才送出下一次。這是完成量測後的等待時間，不保證固定取樣頻率。
 Capture OFF 後仍持續觸發，也可繼續更新 Live Monitor。Worker OFF、Stop Workflow、
 來源完成或失敗時停止觸發。觸發遭拒或量測逾時會使執行失敗，並保留已取得的資料。
+Software Simple 可勾選 **Trigger with BG Command**，改由 Workflow 命令觸發；
+使用前請先在 Workflow 啟用 FG/BG Interaction。
 
 **External** 與 **External Custom** 在 Live 使用接入的實體觸發訊號；
 Simulation 會對支援的型號自動產生虛擬觸發，例如 34461A。34460A 不支援 External。

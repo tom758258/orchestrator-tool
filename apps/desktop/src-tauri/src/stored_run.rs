@@ -1113,7 +1113,7 @@ mod tests {
     fn output_time_timestamp_chart_series_excludes_statistics_and_preserves_rows() {
         let template = Template::from_json_str(&serde_json::json!({
             "name":"Time chart", "tool_instances":[],
-            "workflow":{"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                 {"type":"output", "id":"time", "name":"Time", "page":"Results",
                  "value":{"source":"timestamp"}, "time_format":{"kind":"timestamp", "include_date":false, "include_utc_offset":false}},
                 {"type":"output", "id":"elapsed", "name":"Elapsed", "page":"Results",
@@ -1184,7 +1184,7 @@ mod tests {
             &serde_json::json!({
                 "name": "stored",
                 "tool_instances": [],
-                "workflow": { "steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                     "type": "output", "id": "out", "name": "Voltage", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
                 }] }
@@ -1204,7 +1204,7 @@ mod tests {
             &serde_json::json!({
                 "name": "messages",
                 "tool_instances": [],
-                "workflow": { "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                     { "type": "output", "id": "out", "name": "Voltage", "page": "Results",
                       "value": { "source": "literal", "value": 1 } },
                     { "type": "show-message", "id": "show-message-1", "target": "message-1",

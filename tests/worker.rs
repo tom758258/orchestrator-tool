@@ -46,6 +46,9 @@ use serde_json::json;
 
 const FIXTURE_UTC: &str = "2026-10-23T10:00:00Z";
 
+#[path = "support/interaction.rs"]
+mod interaction_tests;
+
 #[derive(Default)]
 struct FixtureV3 {
     run_id: String,
@@ -372,6 +375,28 @@ fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     if arguments
         .first()
+        .is_some_and(|arg| arg == "--interaction-fixture")
+    {
+        interaction_tests::fixture(arguments[1].to_str().unwrap());
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--interaction-tests")
+    {
+        interaction_tests::contract(false);
+        serial_background_rx_contract();
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--meters-real-interaction-tests")
+    {
+        interaction_tests::contract(true);
+        return;
+    }
+    if arguments
+        .first()
         .is_some_and(|arg| arg == "--background-fixture")
     {
         background_fixture(arguments[1].to_str().unwrap());
@@ -475,6 +500,7 @@ fn main() {
     }
 
     valid_ready_starts_worker_session();
+    interaction_tests::contract(false);
     serial_background_rx_contract();
     software_background_timer_contract();
     background_capture_and_termination_contract();
@@ -898,25 +924,28 @@ fn serial_background_rx_contract() {
     };
     use std::sync::Arc;
 
-    for scenario in ["serial-ok", "serial-invalid"] {
-        let template = Template::from_json_str(
-            &json!({
-                "name":"Serial Background RX",
-                "tool_instances":[{"id":"serial-bg","tool":"serial",
-                    "setup":{"transport":"serial","baud":115200}}],
-                "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
-                    "live_monitor":true,"limit_count":null}],
-                "workflow":{"steps":[
-                    {"type":"background","id":"on","background_id":"background-1",
-                        "action":"worker-on","capture":true},
-                    {"type":"wait","id":"collect","duration_ms":240},
-                    {"type":"background","id":"off","background_id":"background-1",
-                        "action":"worker-off","capture":true}
-                ]}
-            })
-            .to_string(),
-        )
-        .unwrap();
+    for scenario in ["serial-ok", "serial-invalid", "serial-interaction"] {
+        let capture = scenario != "serial-interaction";
+        let mut wire = json!({
+            "name":"Serial Background RX",
+            "tool_instances":[{"id":"serial-bg","tool":"serial",
+                "setup":{"transport":"serial","baud":115200}}],
+            "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
+                "live_monitor":true,"limit_count":null}],
+            "workflow":{"interaction":{"enabled":!capture,"max_active_command_status":4096},"steps":[
+                {"type":"background","id":"on","background_id":"background-1",
+                    "action":"worker-on","capture":capture},
+                {"type":"wait","id":"collect","duration_ms":240},
+                {"type":"background","id":"off","background_id":"background-1",
+                    "action":"worker-off","capture":capture}
+            ]}
+        });
+        if !capture {
+            let steps = wire["workflow"]["steps"].as_array_mut().unwrap();
+            steps.insert(1, json!({"type":"bg-interaction","id":"next","background_id":"background-1","operation":{"kind":"wait-next"}}));
+            steps.insert(3, json!({"type":"bg-interaction","id":"latest","background_id":"background-1","operation":{"kind":"get-latest"}}));
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
         let specs = HashMap::from([(
             ToolInstanceId::new("serial-bg").unwrap(),
             WorkerLaunchSpec::new(
@@ -926,6 +955,7 @@ fn serial_background_rx_contract() {
             .with_manifest(fixture_manifest("serial-smoke")),
         )]);
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let mut received = Vec::new();
         let result = run_workflow_streaming_controlled(
             &template,
             ExecutionMode::Simulate,
@@ -938,7 +968,14 @@ fn serial_background_rx_contract() {
                 backgrounds: store.clone(),
                 ..Default::default()
             },
-            |_| {},
+            |event| {
+                if let WorkflowRunEvent::StepCompleted(step) = event
+                    && matches!(step.step_id().as_str(), "next" | "latest")
+                    && let StepOutcome::Succeeded { output } = step.outcome()
+                {
+                    received.push(output.clone());
+                }
+            },
             |_| false,
         );
         let data = store.lock().unwrap();
@@ -948,6 +985,24 @@ fn serial_background_rx_contract() {
             continue;
         }
         assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{result:?}");
+        if !capture {
+            assert!(data.metadata().is_empty());
+            assert_eq!(received.len(), 2);
+            for event in received {
+                assert_eq!(event["event"], "rx");
+                assert_eq!(event["run_id"], "serial-run");
+                assert_eq!(
+                    event["rx_hex"].as_str().unwrap().len() as u64,
+                    event["rx_bytes"].as_u64().unwrap() * 2
+                );
+                assert!(
+                    event.get("captured").is_none(),
+                    "return the native RX event"
+                );
+            }
+            println!("FG/BG Serial Latest/Next with Capture OFF (fake Worker): passed");
+            continue;
+        }
         let metadata = data.metadata();
         assert_eq!(metadata.len(), 1);
         assert!(metadata.iter().all(|m| m.tool_kind == "serial"
@@ -1115,7 +1170,7 @@ fn background_template(steps: serde_json::Value) -> Template {
     };
     Template::from_json_str(&json!({"name":"Background contract", "tool_instances":[
         {"id":"meters-bg","tool":"meters","setup":setup}],"backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","live_monitor":true,"limit_count":6}],
-        "workflow":{"steps":steps}}).to_string()).unwrap()
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}}).to_string()).unwrap()
 }
 
 fn background_workflow_stop_contract() {
@@ -2022,7 +2077,7 @@ fn real_meters_background_and_unlimited_simulation() {
     // A source bound is a launch parameter: it never turns the While into a finite loop.
     let setup = MetersSetup::default();
     let template=Template::from_json_str(&json!({"name":"Unlimited SIM", "tool_instances":[{"id":"meters-1","tool":"meters","setup":setup}],
-        "workflow":{"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
             "steps":[{"type":"tool-action","id":"measure","target":"meters-1","action":"measure","arguments":{}}]}]}}).to_string()).unwrap();
     let specs = prepare_worker_launch_specs_with_simulation(
         &template,
@@ -3804,7 +3859,7 @@ fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
         &json!({
             "name":"Serial dynamic integer",
             "tool_instances":[{"id":"serial-1","tool":"serial","setup":{"transport":"serial","baud":115200}}],
-            "workflow":{"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                 {"type":"set-variable","id":"source","variable":"b",
                     "value":{"source":"literal","value":3.75}},
                 {"type":"tool-action","id":"send-b","target":"serial-1","action":"send",
@@ -3973,7 +4028,7 @@ fn scopes_worker_protocol_cases() {
 fn scopes_setup_failure_stops_workflow() {
     let template = Template::from_json_str(&json!({"name":"Setup failure",
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
-        "workflow":{"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
             "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
     let error = run_simulated_workflow(
         &template,
@@ -3994,7 +4049,7 @@ fn scopes_setup_failure_stops_workflow() {
 fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
     let template = Template::from_json_str(&json!({"name":"Dynamic Worker failure",
         "tool_instances":[{"id":"power","tool":"powers","setup":{}},{"id":"scope","tool":"scopes","setup":{}}],
-        "workflow":{"steps":[
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
             {"type":"set-variable","id":"channel","variable":"channel","value":{"source":"literal","value":99}},
             {"type":"tool-action","id":"set","target":"power","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
             {"type":"tool-action","id":"on","target":"power","action":"output-on","arguments":{"channel":1}},
@@ -4393,7 +4448,7 @@ fn powers_measure_voltage_and_current_reach_result_row() {
         &json!({
             "name": "Power Measure",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "tool-action", "id": "measure-1", "target": "powers-1",
                   "action": "measure", "arguments": { "channel": 2 } },
                 { "type": "output", "id": "voltage-out", "name": "Voltage", "page": "Results",
@@ -4448,7 +4503,7 @@ fn powers_set_output_binding_reaches_worker() {
         &json!({
             "name": "Power set output",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "set-variable", "id": "set-limit", "variable": "limit",
                   "value": { "source": "literal", "value": 0.2 } },
                 { "type": "tool-action", "id": "power-set", "target": "powers-1",
@@ -4566,7 +4621,7 @@ fn powers_protection_status_asserts_untripped_result() {
     let template = Template::from_json_str(&json!({
         "name": "Power Protection Status",
         "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-        "workflow": { "steps": [
+        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
             { "type": "tool-action", "id": "protection-1", "target": "powers-1",
               "action": "protection-status", "arguments": { "channel": "all" } },
             { "type": "assert", "id": "assert-1",
@@ -4700,7 +4755,7 @@ fn single_meter_template(steps: serde_json::Value) -> Template {
     Template::from_json_str(
         &json!({"name": "Single meter", "tool_instances": [{
         "id": "meters-1", "tool": "meters", "setup": MetersSetup::default()
-    }], "workflow": { "steps": steps }})
+    }], "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": steps }})
         .to_string(),
     )
     .unwrap()
@@ -4797,7 +4852,7 @@ fn meters_single_outputs_preserve_staging() {
                     "buffer_drain_size": null, "allow_buffer_overflow_risk": false
                 }
             }],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "tool-action", "id": "measure-a", "target": "meters-1", "action": "measure", "arguments": {} },
                 { "type": "output", "id": "out-a", "name": "a", "page": "Batch",
                   "value": { "source": "step-output", "step_id": "measure-a", "pointer": "/value" } },
@@ -4821,7 +4876,7 @@ fn meters_single_outputs_preserve_staging() {
                     "trigger_mode": "software-custom", "sample_count": 3
                 }
             }],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "tool-action", "id": "measure", "target": "meters-1", "action": "measure", "arguments": {} },
                 { "type": "assert", "id": "assert-batch",
                   "left": { "source": "step-output", "step_id": "measure", "pointer": "/value" },
@@ -4941,7 +4996,7 @@ fn simulated_measurement_dataflow_exports_csv() {
                 "current_terminal": null
             }}, {"id": "powers-1", "tool": "powers", "setup": {}}],
             "name": "Measurement CSV",
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 {
                     "type": "set-variable", "id": "set-threshold", "variable": "threshold",
                     "value": { "source": "literal", "value": 3 }
@@ -5156,7 +5211,7 @@ fn powers_protection_setup_lifecycle() {
             "name": "Protection setup fixture",
             "tool_instances": [{"id":"powers-1","tool":"powers","setup":{"protection":{"channels":[
                 {"channel":1,"ovp_voltage":5.5,"ocp":"on"}]}}}],
-            "workflow":{"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                 {"type":"tool-action","id":"set-1","target":"powers-1","action":"set-output",
                     "arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on-1","target":"powers-1","action":"output-on",
@@ -5490,7 +5545,7 @@ fn live_workflow_cleanup_lifecycle() {
             env::set_var(CLEANUP_MARKER_ENV, &marker);
         }
         let template = Template::from_json_str(&json!({"name":"Stop cleanup",
-            "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"steps":[
+            "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                 {"type":"tool-action","id":"set","target":"powers-1","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
                 {"type":"wait","id":"after","duration_ms":0}
