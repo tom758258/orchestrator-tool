@@ -775,7 +775,7 @@ mod tests {
                 "name": "Serial foreground SIM",
                 "tool_instances": [{ "id": "serial-1", "tool": "serial",
                     "setup": {"baud": 115200, "transport": transport}}],
-                "workflow": {"steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                     {"type": "set-variable", "id": "declare-message",
                         "variable": "message", "value": {"source": "literal", "value": "HELLO"}},
                     {"type": "tool-action", "id": "send", "target": "serial-1",
@@ -874,7 +874,7 @@ mod tests {
                 "tool_instances": [{"id":"serial-bg","tool":"serial","setup":{"baud":115200,"transport":transport}}],
                 "backgrounds": [{"id":"background-1","tool_instance_id":"serial-bg",
                     "live_monitor":true,"limit_count":null}],
-                "workflow": {"steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                     {"type":"background","id":"on","background_id":"background-1",
                         "action":"worker-on","capture":true},
                     {"type":"wait","id":"capture-first","duration_ms":450},
@@ -980,7 +980,7 @@ mod tests {
                 "measurement": "voltage-dc", "range_mode": "manual", "manual_range": 10.0,
                 "nplc": 1.0, "auto_zero": "once", "dcv_input_impedance": "ten-megohm",
                 "current_terminal": null
-            }}, {"id": "powers-1", "tool": "powers", "setup": {}}], "name": "Three measurements", "workflow": { "steps": [
+            }}, {"id": "powers-1", "tool": "powers", "setup": {}}], "name": "Three measurements", "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 {"type": "tool-action", "id": "read-1", "target": "meters-1", "action": "measure", "arguments": {}},
                 {"type": "wait", "id": "wait-1", "duration_ms": 0},
                 {"type": "tool-action", "id": "read-2", "target": "meters-1", "action": "measure", "arguments": {}},
@@ -1285,7 +1285,7 @@ mod tests {
             &json!({
                 "name": "Meters simulation vertical slice",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": setup}, {"id": "powers-1", "tool": "powers", "setup": {}}],
-                "workflow": {"steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                     {"type": "tool-action", "id": "measure", "target": "meters-1",
                      "action": "measure", "arguments": {}}
                 ]}
@@ -1342,7 +1342,7 @@ mod tests {
         let template = Template::from_json_str(
             &json!({
                 "name": "Wait only", "tool_instances": [],
-                "workflow": {"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{"type": "wait", "id": "wait-1", "duration_ms": 0}]}
             })
             .to_string(),
         )
@@ -1425,7 +1425,7 @@ mod tests {
                 }},
                 {"id": "powers-1", "tool": "powers", "setup": {}}
             ],
-            "workflow": {"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                 {"type": "tool-action", "id": "read-1", "target": "meters-1", "action": "measure", "arguments": {}},
                 {"type": "tool-action", "id": "read-2", "target": "meters-2", "action": "measure", "arguments": {}},
                 {"type": "tool-action", "id": "power-1", "target": "powers-1", "action": "output-off", "arguments": {"channel": 1}}

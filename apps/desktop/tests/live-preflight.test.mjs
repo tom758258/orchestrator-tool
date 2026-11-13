@@ -37,7 +37,7 @@ function harness() {
   const hook = new Function('useEffect', 'useState', 'invoke', 'allWorkflowSteps', 'setTimeout', 'clearTimeout',
     `${body}; return useLivePreflight`)(useEffect, useState, invoke, allWorkflowSteps,
     callback => { const timer = { callback }; timers.push(timer); return timer }, timer => { timer.cancelled = true })
-  const draft = { tool_instances: [{ id: 'power', tool: 'powers', setup: {} }], workflow: { steps: [
+  const draft = { tool_instances: [{ id: 'power', tool: 'powers', setup: {} }], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'tool-action', id: 'off', target: 'power', action: 'output-off', arguments: { channel: 1 } },
   ] } }
   const args = ['simulate', draft, { power: 'USB::1' }, { power: 'USB::1' },
@@ -77,7 +77,7 @@ test('live_preflight discards stale responses and debounces edits, then releases
   h.args[0] = 'live'
   h.render(); h.timers()
   for (let channel = 2; channel <= 4; channel++) {
-    h.args[1] = { ...h.args[1], workflow: { steps: [{ ...h.args[1].workflow.steps[0], arguments: { channel } }] } }
+    h.args[1] = { ...h.args[1], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [{ ...h.args[1].workflow.steps[0], arguments: { channel } }] } }
     assert.equal(h.render().blocked, true)
   }
   h.queries[0].resolve([])

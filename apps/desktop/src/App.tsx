@@ -22,6 +22,8 @@ import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, t
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import FailureDetails from './FailureDetails'
 import WorkflowRunSummary from './WorkflowRunSummary'
+import { InteractionEditor, InteractionSettingsEditor } from './InteractionEditor'
+import { INTERACTION_LABELS } from './workflow'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
 import BackgroundOutput from './BackgroundOutput'
@@ -149,6 +151,7 @@ type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type WorkflowStopRequest = { generation: number; sent: boolean; error?: string }
 type StepPreset =
+  | 'bg-command' | 'bg-get-latest' | 'bg-wait-next' | 'bg-get-result'
   | 'background-worker-on' | 'background-worker-off' | 'background-capture-on' | 'background-capture-off'
   | `scope-${ScopesAction}`
   | 'serial-send' | 'serial-send-file' | 'serial-receive' | 'serial-query'
@@ -185,6 +188,7 @@ const STEP_CATEGORIES = [
 ] as const
 
 const STEP_PRESETS: StepPresetOption[] = [
+  ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: ['BG Command', 'Get Latest', 'Wait Next', 'Get Command Result'][index], prefix: value, category: 'Background Workflow' })),
   ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
     label: `Background ${action.split('-').map(word => word === 'on' || word === 'off' ? word.toUpperCase() : word[0].toUpperCase()+word.slice(1)).join(' ')}`,
     prefix: `background-${action}`, category: 'Background Workflow' })),
@@ -284,6 +288,13 @@ function nextStepId(prefix: string, steps: WorkflowStep[]): string {
 }
 
 function createPresetStep(preset: StepPreset, id: string, target: string): WorkflowStep {
+  if (preset.startsWith('bg-')) {
+    const operation: import('./workflow').InteractionOperation = preset === 'bg-command'
+      ? { kind: 'command', command: 'software-trigger', wait_for_completion: false }
+      : preset === 'bg-get-result' ? { kind: 'get-command-result', source_step: '' }
+        : { kind: preset === 'bg-get-latest' ? 'get-latest' : 'wait-next' }
+    return { type: 'bg-interaction', id, background_id: target, operation, timeout_ms: null }
+  }
   if (preset.startsWith('background-')) {
     const action = preset.slice(11) as import('./workflow').BackgroundAction
     return { type: 'background', id, background_id: target, action, capture: action === 'worker-off' }
@@ -364,6 +375,7 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
 }
 
 function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
+  if (step.type === 'bg-interaction') return INTERACTION_LABELS[step.operation.kind]
   if (step.type === 'background') return `Background ${step.action.replace('-', ' ').toUpperCase()}`
   if (step.type === 'while') return 'While'
   if (step.type === 'if') return 'If / Else'
@@ -1099,10 +1111,13 @@ function App() {
     if (!Number.isInteger(index) || index < 0 || index > siblings.length) return
     const isControl = preset.value === 'for' || preset.value === 'while' || preset.value === 'if'
     if (isControl && parentId && containerPath(steps, parentId).length + 1 >= 8) return
-    const target = preset.value.startsWith('background-') ? workflowDraft.backgrounds?.[0]?.id
+    if (preset.value.startsWith('bg-') && !workflowDraft.workflow.interaction.enabled) {
+      setValidationError('Enable FG/BG Interaction in Workflow settings before adding an interaction Step.'); return
+    }
+    const target = (preset.value.startsWith('background-') || preset.value.startsWith('bg-')) ? workflowDraft.backgrounds?.[0]?.id
       : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool &&
           !workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id))?.id
-    if (preset.value.startsWith('background-') && !target) {
+    if ((preset.value.startsWith('background-') || preset.value.startsWith('bg-')) && !target) {
       setValidationError('Configure a Background in Tool Setup before adding this action.')
       return
     }
@@ -2589,6 +2604,10 @@ function App() {
 
               <div className="workflow-builder">
                 <aside className="workflow-sidebar">
+                  <InteractionSettingsEditor value={workflowDraft.workflow.interaction} disabled={workflowBusy} onChange={interaction => {
+                    setWorkflowDraft(current => current ? { ...current, workflow: { ...current.workflow, interaction } } : current)
+                    setWorkflowChangedSinceRun(true); clearRunFeedback(); setTemplateIoMessage(null)
+                  }} />
                   <section className="step-palette" aria-labelledby="step-palette-title">
                     <h3 id="step-palette-title">
                       <button type="button" className="collapsible-header"
@@ -2894,6 +2913,9 @@ function App() {
                             .map(instance => <option key={instance.id} value={instance.id}>{targetLabel(instance, resourceIdentityDrafts[instance.id])}</option>)}
                         </select>
                       </label>}
+                      {selectedStep.type === 'bg-interaction' && <InteractionEditor step={selectedStep}
+                        steps={workflowDraft.workflow.steps} backgrounds={workflowDraft.backgrounds ?? []} disabled={workflowBusy}
+                        onChange={next => updateStep(selectedStep.id, () => next)} />}
                       {selectedStep.type === 'background' && <>
                         <label>Background<select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
                           {workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id} · {background.tool_instance_id}</option>)}

@@ -199,6 +199,8 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
   const pasted = mapWorkflowSteps(structuredClone([...clipboard]), step => {
     const next = { ...step, id: idMap.get(step.id)! }
     switch (next.type) {
+      case 'bg-interaction': return next.operation.kind === 'get-command-result'
+        ? { ...next, operation: { ...next.operation, source_step: idMap.get(next.operation.source_step) ?? next.operation.source_step } } : next
       case 'set-variable':
       case 'output': return { ...next, value: input(next.value) }
       case 'assert':

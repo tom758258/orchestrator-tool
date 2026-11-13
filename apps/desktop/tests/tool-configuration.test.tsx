@@ -20,7 +20,7 @@ const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
   { id: 'scopes-1', tool: 'scopes', setup: { acquisition: { acquisition_type: 'average', average_count: 16 },
     channels: [{ channel: 4, invert: true }] } },
   { id: 'wavegen-1', tool: 'wavegen', setup: {} },
-], workflow: { steps: [] } }
+], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
 const empty: WorkflowDraft = { ...original, tool_instances: [] }
 const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
   measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
@@ -223,6 +223,30 @@ async function savedDraft() {
   const args = calls().filter(([command]) => command === 'save_workflow_template').at(-1)![1] as { templateJson: string }
   return JSON.parse(args.templateJson)
 }
+
+test('Workflow saves interaction settings and command/result references through the editor', async () => {
+  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  fireEvent.change(screen.getByLabelText('Max Active Command Status'), { target: { value: '12' } })
+  click('BG Command')
+  click('Add Step')
+  fireEvent.click(screen.getByLabelText('Wait for Completion'))
+  click('Get Command Result')
+  click('Add Step')
+  const source = screen.getByLabelText('Source BG Command Step') as HTMLSelectElement
+  expect(source.options.length).toBe(2)
+  fireEvent.change(source, { target: { value: source.options[1].value } })
+  const saved = await savedDraft()
+  expect(saved.workflow.interaction).toEqual({ enabled: true, max_active_command_status: 12 })
+  const [command, get] = saved.workflow.steps
+  expect(command.operation).toEqual({ kind: 'command', command: 'software-trigger', wait_for_completion: true })
+  expect(get.operation).toEqual({ kind: 'get-command-result', source_step: command.id })
+})
 
 test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow Risk and known capacity in %s', async executionMode => {
   const capabilities = { model: 'Test Meter', trigger_modes: ['software', 'immediate-custom'], limits: {

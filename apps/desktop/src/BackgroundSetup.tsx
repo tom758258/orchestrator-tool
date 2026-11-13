@@ -31,7 +31,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
   const items = capabilities?.direct_measurement_items ?? []
   const channels = capabilities?.analog_channels ?? 1
   const foregroundReferenced = allWorkflowSteps(steps).some(step => step.type === 'tool-action' && step.target === instance.id)
-  const referenced = config && allWorkflowSteps(steps).some(step => step.type === 'background' && step.background_id === config.id)
+  const referenced = config && allWorkflowSteps(steps).some(step => (step.type === 'background' || step.type === 'bg-interaction') && step.background_id === config.id)
   const update = (change: Partial<BackgroundConfig>) => onChange(value.map(item => item.id === config?.id ? { ...item, ...change } : item))
   const measurements = config?.scopes_measurements ?? []
   function uniqueId(channel: number, item: string, except = -1) {
@@ -76,9 +76,13 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
       {!serial && config.limit_count !== null && <label>{custom ? 'Trigger Count' : scopes ? 'Cycles' : 'Max Samples'}<input type="number" min={1} max={1000000} step={1} value={config.limit_count}
         onChange={event => update({ limit_count: Number(event.target.value) })} /></label>}
       {custom && <p>Each trigger records Sample Count readings. Infinite acquisition requires Allow Buffer Overflow Risk.</p>}
-      {software && <label>Timer Interval (ms)<input type="number" required min={1} step={1} value={config.timer_interval_ms ?? ''}
+      {mode === 'software' && <label><input type="checkbox" checked={config.command_trigger ?? false}
+        onChange={event => update({ command_trigger: event.target.checked, timer_interval_ms: event.target.checked ? null : 1000 })} />
+        Trigger with BG Command</label>}
+      {config.command_trigger && <p>Enable FG/BG Interaction in Workflow settings. Worker ON waits for BG Command; the timer is disabled. Use Wait for Completion or Get Command Result before another command.</p>}
+      {software && !config.command_trigger && <label>Timer Interval (ms)<input type="number" required min={1} step={1} value={config.timer_interval_ms ?? ''}
         onChange={event => update({ timer_interval_ms: Number(event.target.value) })} /></label>}
-      {software && <p>The first trigger is sent when ready. Each later trigger waits this interval after the previous measurement completes.</p>}
+      {software && !config.command_trigger && <p>The first trigger is sent when ready. Each later trigger waits this interval after the previous measurement completes.</p>}
       {serial && <p>Serial RX runs continuously until Worker OFF, with no finite count or trigger.</p>}
       {scopes && <>
         <label>Measure interval (seconds)<input type="number" min={0} max={86400} step="any" required

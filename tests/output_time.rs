@@ -28,7 +28,7 @@ fn time_template() -> Value {
         steps.push(json!({"type":"output", "id":format!("stamp-{index}"), "name":format!("stamp-{index}"), "page":"Time",
             "value":{"source":"timestamp"}, "time_format":{"kind":"timestamp", "include_date":date, "include_utc_offset":offset}}));
     }
-    json!({"name":"Time formats", "tool_instances":[], "workflow":{"steps":steps}})
+    json!({"name":"Time formats", "tool_instances":[], "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}})
 }
 
 #[test]

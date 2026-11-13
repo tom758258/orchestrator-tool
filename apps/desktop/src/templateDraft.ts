@@ -7,6 +7,7 @@ export type WorkflowDraft = {
   tool_instances: ToolInstance[]
   backgrounds?: BackgroundConfig[]
   workflow: {
+    interaction: import("./workflow").InteractionSettings
     steps: WorkflowStep[]
   }
   output_views?: SavedOutputViews

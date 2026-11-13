@@ -30,7 +30,7 @@ function harness(approved) {
         current_terminal: null,
       },
     }],
-    workflow: {
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096 },
       steps: [
         { type: 'set-variable', id: 'set-threshold', variable: 'threshold', value: { source: 'literal', value: 4.5 } },
         {

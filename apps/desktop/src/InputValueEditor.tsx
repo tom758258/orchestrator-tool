@@ -157,7 +157,7 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
             </select>
           </label>
           {!candidates.some((step) => step.id === value.step_id) && (
-            <p className="step-properties-empty">Reference preserved: {value.step_id} is not an eligible earlier Tool Action. Validate to check it.</p>
+            <p className="step-properties-empty">Reference preserved: {value.step_id} is not an eligible earlier result-producing step. Validate to check it.</p>
           )}
           <ResultPathEditor key={value.step_id} value={value} onChange={onChange}
             fields={fields} disabled={disabled} />

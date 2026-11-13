@@ -252,7 +252,7 @@ mod tests {
         Template::from_json_str(
             &json!({
                 "name": "test/name", "tool_instances": [],
-                "workflow": { "steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                     "type": "output", "id": "out", "name": "value", "page": "Results",
                     "value": { "source": "literal", "value": 1 }
                 }] }
@@ -301,7 +301,7 @@ mod tests {
     fn selected_and_all_pages_route_and_flush_only_their_rows() {
         let template = Template::from_json_str(&json!({
             "name": "pages", "tool_instances": [],
-            "workflow": {"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                 {"type":"output", "id":"a", "name":"a", "page":"Outer", "value":{"source":"literal", "value":1}},
                 {"type":"output", "id":"b", "name":"b", "page":"Inner", "value":{"source":"literal", "value":2}}
             ]}
@@ -401,7 +401,7 @@ mod tests {
         let template = Template::from_json_str(
             &json!({
                 "name": "pages", "tool_instances": [],
-                "workflow": { "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                     { "type": "output", "id": "one", "name": "one", "page": "One",
                       "value": { "source": "literal", "value": 1 } },
                     { "type": "output", "id": "two", "name": "two", "page": "Two",

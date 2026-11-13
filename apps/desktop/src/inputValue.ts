@@ -43,6 +43,7 @@ type StepOutputCandidate = {
   type: string
   target?: string
   action?: string
+  operation?: { kind: string }
 }
 
 type ToolIdentity = {
@@ -92,7 +93,9 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
 }
 
 export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {
-  return steps.filter(step => step.type === 'tool-action')
+  return steps.filter(step => step.type === 'tool-action' || (
+    step.type === 'bg-interaction' && ['get-latest', 'wait-next', 'get-command-result'].includes(step.operation?.kind ?? '')
+  ))
 }
 
 export function curatedResultFields(

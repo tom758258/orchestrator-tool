@@ -116,6 +116,8 @@ pub struct BackgroundChartSeries {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackgroundConfig {
+    #[serde(default)]
+    pub command_trigger: bool,
     pub id: String,
     pub tool_instance_id: ToolInstanceId,
     #[serde(default)]
@@ -561,9 +563,40 @@ pub(crate) fn unique_file(
 }
 
 enum Command {
-    Action(BackgroundAction, bool, mpsc::SyncSender<Result<(), String>>),
+    Interaction(u64, Instant, mpsc::SyncSender<Result<(), String>>),
+    Action(
+        BackgroundAction,
+        bool,
+        Instant,
+        mpsc::SyncSender<Result<(), String>>,
+    ),
     Cleanup(bool, mpsc::SyncSender<Result<(), String>>),
 }
+fn quarantined_runtimes() -> &'static Mutex<std::collections::HashSet<String>> {
+    static KEYS: std::sync::OnceLock<Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    KEYS.get_or_init(Default::default)
+}
+
+fn runtime_safety_key(spec: &WorkerLaunchSpec) -> String {
+    spec.arguments()
+        .windows(2)
+        .find(|args| args[0] == "--resource")
+        .map(|args| format!("resource:{:?}", args[1]))
+        .unwrap_or_else(|| format!("simulate:{:?}:{:?}", spec.executable(), spec.arguments()))
+}
+
+pub(crate) fn check_runtime_reuse(spec: &WorkerLaunchSpec) -> Result<(), String> {
+    if quarantined_runtimes()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&runtime_safety_key(spec))
+    {
+        return Err("Background Runtime reuse blocked: previous Worker shutdown is unconfirmed; verify the external tool before restarting the application".into());
+    }
+    Ok(())
+}
+
 struct Runtime {
     sender: mpsc::SyncSender<Command>,
     thread: JoinHandle<()>,
@@ -577,6 +610,8 @@ enum BackgroundSetup {
 }
 
 pub struct BackgroundManager {
+    pub interaction: crate::interaction::InteractionCore,
+    interaction_enabled: bool,
     configs: Vec<(BackgroundConfig, BackgroundSetup)>,
     specs: HashMap<ToolInstanceId, WorkerLaunchSpec>,
     runtimes: HashMap<String, Runtime>,
@@ -590,6 +625,181 @@ pub struct BackgroundManager {
 }
 
 impl BackgroundManager {
+    fn check_interaction_failure(&self) -> Result<(), String> {
+        self.failure.check()?;
+        if let Some(error) = self.interaction.snapshot().failure {
+            self.failure.fail(error.clone());
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn check_interaction(&self) -> Result<(), String> {
+        self.check_interaction_failure()?;
+        if self.workflow_stop.is_requested() {
+            return Err("Workflow stopped".into());
+        }
+        Ok(())
+    }
+
+    pub fn dispatch(
+        &mut self,
+        background: &str,
+        interest: bool,
+        wait: bool,
+        deadline: Instant,
+    ) -> Result<u64, String> {
+        use crate::interaction::CommandState;
+        if !self.interaction_enabled {
+            return Err("FG/BG Interaction is disabled".into());
+        }
+        loop {
+            let snapshot = self.interaction.snapshot();
+            self.check_interaction()?;
+            if self.interaction.is_active(background)? {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("BG Command timed out waiting for Active".into());
+            }
+            self.interaction
+                .wait_for_change(snapshot.revision, deadline);
+        }
+        if self.interaction.snapshot().commands.iter().any(|v| {
+            v.background_id == background
+                && !matches!(v.state, CommandState::Completed | CommandState::Failed)
+        }) {
+            return Err(
+                "Background Command is busy; wait for its completion before dispatching again"
+                    .into(),
+            );
+        }
+        let runtime = self.runtimes.get(background).ok_or("Worker is OFF")?;
+        let id = self.interaction.reserve(background, interest)?;
+        let generation = self.interaction.command(id)?.generation;
+        let (tx, rx) = mpsc::sync_channel(1);
+        if runtime
+            .sender
+            .try_send(Command::Interaction(id, deadline, tx))
+            .is_err()
+        {
+            self.interaction.rejected(id);
+            return Err("Background dispatcher is busy or unavailable".into());
+        }
+        let result = (|| {
+            loop {
+                match rx.recv_timeout(
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .min(Duration::from_millis(10)),
+                ) {
+                    Ok(result) => {
+                        result?;
+                        break;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        self.interaction.observe(
+                            id,
+                            generation,
+                            CommandState::DispatchOutcomeUnknown,
+                            Some("Background dispatcher ended during admission".into()),
+                        );
+                        return Err("Background dispatcher ended during admission".into());
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if Instant::now() >= deadline {
+                            self.interaction.observe(
+                                id,
+                                generation,
+                                CommandState::DispatchOutcomeUnknown,
+                                Some("Dispatch Outcome Unknown: admission deadline expired".into()),
+                            );
+                            return Err(
+                                "Dispatch Outcome Unknown: admission deadline expired".into()
+                            );
+                        }
+                        self.check_interaction()?;
+                    }
+                }
+            }
+            if wait {
+                loop {
+                    let snapshot = self.interaction.snapshot();
+                    self.check_interaction()?;
+                    if self.interaction.command(id)?.state == CommandState::Completed {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err("BG Command completion timed out".into());
+                    }
+                    self.interaction
+                        .wait_for_change(snapshot.revision, deadline);
+                }
+            }
+            Ok(id)
+        })();
+        self.interaction.finish_dispatch(id);
+        result
+    }
+
+    pub fn get_data(
+        &self,
+        background: &str,
+        operation: &crate::interaction::InteractionOperation,
+        command: Option<u64>,
+        deadline: Instant,
+    ) -> Result<Value, String> {
+        use crate::interaction::InteractionOperation;
+        self.check_interaction()?;
+        if matches!(operation, InteractionOperation::GetLatest) {
+            return self.interaction.latest(background);
+        }
+        let next = if matches!(operation, InteractionOperation::WaitNext) {
+            Some(self.interaction.next(background)?)
+        } else {
+            None
+        };
+        loop {
+            let snapshot = self.interaction.snapshot();
+            self.check_interaction()?;
+            let value = if let Some(next) = &next {
+                next.poll()?
+            } else {
+                self.interaction.take_result(
+                    command.ok_or("Source BG Command Step did not execute in this scope")?,
+                )?
+            };
+            if let Some(value) = value {
+                return Ok(value);
+            }
+            if Instant::now() >= deadline {
+                return Err("Background data Step timed out".into());
+            }
+            self.interaction
+                .wait_for_change(snapshot.revision, deadline);
+        }
+    }
+
+    pub fn wait_commands(&self, background: Option<&str>, deadline: Instant) -> Result<(), String> {
+        use crate::interaction::CommandState;
+        loop {
+            let snapshot = self.interaction.snapshot();
+            self.check_interaction_failure()?;
+            if snapshot.commands.iter().all(|c| {
+                background.is_some_and(|b| b != c.background_id)
+                    || matches!(c.state, CommandState::Completed | CommandState::Failed)
+            }) {
+                return Ok(());
+            }
+            self.check_interaction()?;
+            if Instant::now() >= deadline {
+                return Err("Timed out waiting for outstanding Background Commands".into());
+            }
+            self.interaction
+                .wait_for_change(snapshot.revision, deadline);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         template: &Template,
@@ -618,6 +828,11 @@ impl BackgroundManager {
                 .collect();
         }
         Self {
+            interaction: crate::interaction::InteractionCore::new(
+                template.workflow().interaction().max_active_command_status,
+            )
+            .expect("validated capacity"),
+            interaction_enabled: template.workflow().interaction().enabled,
             configs: configs
                 .iter()
                 .map(|config| {
@@ -724,16 +939,33 @@ impl BackgroundManager {
             {
                 return Err("Background Unsupported by selected Worker Manifest".into());
             }
+            if config.command_trigger
+                && manifest.command_kind("software_trigger") != Some("control")
+            {
+                return Err("Selected Worker does not support Software Trigger control".into());
+            }
+            // Every mode must honor an existing interaction quarantine. Only
+            // command-trigger lifecycles create that guard; ordinary capture
+            // quality errors keep their existing restart behavior.
+            let safety_key = config.command_trigger.then(|| runtime_safety_key(&spec));
+            check_runtime_reuse(&spec)?;
             let spec = spec.with_manifest(manifest);
             let (sender, receiver) = mpsc::sync_channel(1);
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+            let generation = self.interaction.worker_on(id)?;
             let mut dispatcher = Dispatcher {
+                stopping: false,
+                interaction: self.interaction.clone(),
+                generation,
+                pending_command: None,
+                command_source_active: false,
+                safety_key,
                 config: config.clone(),
                 expected_readings,
                 custom: matches!(&setup, BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom()),
                 scopes,
                 serial,
-                timer: if scopes || serial {
+                timer: if scopes || serial || config.command_trigger {
                     None
                 } else {
                     config_timer(&config, sample_count, self.startup, self.action_timeout)?
@@ -844,6 +1076,10 @@ impl BackgroundManager {
                 .recv_timeout(self.startup + self.shutdown + Duration::from_secs(1))
                 .map_err(|e| e.to_string())?;
         }
+        let deadline = Instant::now() + self.action_timeout;
+        if action == BackgroundAction::WorkerOff {
+            self.wait_commands(Some(id), deadline)?;
+        }
         let runtime = self
             .runtimes
             .get(id)
@@ -851,10 +1087,10 @@ impl BackgroundManager {
         let (tx, rx) = mpsc::sync_channel(1);
         runtime
             .sender
-            .send(Command::Action(action, capture, tx))
+            .send(Command::Action(action, capture, deadline, tx))
             .map_err(|e| e.to_string())?;
         let result = rx
-            .recv_timeout(self.action_timeout + self.shutdown + Duration::from_secs(1))
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .map_err(|e| e.to_string())?;
         if action == BackgroundAction::WorkerOff && result.is_ok() {
             let runtime = self.runtimes.remove(id).unwrap();
@@ -972,6 +1208,12 @@ impl SoftwareTimer {
 }
 
 struct Dispatcher {
+    stopping: bool,
+    interaction: crate::interaction::InteractionCore,
+    generation: u64,
+    pending_command: Option<u64>,
+    command_source_active: bool,
+    safety_key: Option<String>,
     config: BackgroundConfig,
     expected_readings: Option<usize>,
     custom: bool,
@@ -994,6 +1236,149 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
+    fn dispatch_command(
+        &mut self,
+        session: Option<&WorkerSession>,
+        id: u64,
+        deadline: Instant,
+    ) -> Result<(), String> {
+        use crate::interaction::CommandState;
+        let reject = if !self.config.command_trigger {
+            Some("BG Command triggering is not enabled")
+        } else if self.pending_command.is_some() {
+            Some("Background Command is busy")
+        } else if Instant::now() >= deadline {
+            Some("BG Command expired before dispatch")
+        } else if self.workflow_stop.is_requested() || self.failure.check().is_err() {
+            Some("Workflow is stopping")
+        } else if session.is_none() || !self.command_source_active {
+            Some("Background Source is not active")
+        } else {
+            None
+        };
+        if let Some(error) = reject {
+            self.interaction.rejected(id);
+            return Err(error.into());
+        }
+        let session = session.unwrap();
+        let client_id = format!("interaction-{id}");
+        let request = json!({"schema_version":3,"command":"software_trigger","job_id":client_id,
+            "arguments":{"metadata":{"orchestrator_command_id":id.to_string()}}});
+        // HTTP admission must not own the dispatcher while Stop or a failure
+        // needs it. Only this dispatcher consumes JSONL and updates Core. The
+        // transport task sends once, has the original deadline, and cannot
+        // publish late evidence into a stopped/replaced runtime.
+        let client = crate::worker_http::WorkerClient::new(session.ready());
+        let (tx, rx) = mpsc::sync_channel(1);
+        if let Err(error) = thread::Builder::new()
+            .name("background-admission".into())
+            .spawn(move || {
+                if Instant::now() >= deadline {
+                    return;
+                }
+                let response = client.command_with_rejection_timeout(
+                    &request,
+                    deadline.saturating_duration_since(Instant::now()),
+                );
+                let _ = tx.send(response);
+            })
+        {
+            self.interaction.rejected(id);
+            return Err(error.to_string());
+        }
+        self.pending_command = Some(id);
+        let response = loop {
+            if self.workflow_stop.is_requested() || self.failure.check().is_err() {
+                // Cancellation is not a rejection. Keep the reservation and
+                // resource guard until Worker OFF has actually been verified.
+                if let Some(key) = &self.safety_key {
+                    quarantined_runtimes()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(key.clone());
+                }
+                return Err("Workflow stopping before command acceptance".into());
+            }
+            match rx.recv_timeout(Duration::from_millis(5)) {
+                Ok(response) => break response.map_err(|e| e.to_string()),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break Err("Command admission transport ended".into());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            if Instant::now() >= deadline {
+                break Err("Command admission deadline expired".into());
+            }
+            match session.recv_event(Duration::from_millis(1)) {
+                Ok(event) => {
+                    if let Err(error) = self.event(event) {
+                        self.fail(&error);
+                    }
+                }
+                Err(WorkerEventError::Timeout(_)) => {}
+                Err(error) => break Err(error.to_string()),
+            }
+        };
+        let admitted = match response {
+            Ok((code, reply)) if code != 202 => {
+                match crate::common_v3::command_rejected(
+                    &reply,
+                    code,
+                    session.ready().run_id(),
+                    "software_trigger",
+                    &client_id,
+                ) {
+                    Ok(reason)
+                        if self
+                            .interaction
+                            .command(id)
+                            .is_ok_and(|status| status.state == CommandState::Dispatching) =>
+                    {
+                        self.pending_command = None;
+                        self.interaction.rejected(id);
+                        return Err(format!("BG Command rejected: {reason}"));
+                    }
+                    Ok(_) => Err("Command rejection contradicts observed execution".into()),
+                    Err(error) => Err(error),
+                }
+            }
+            Ok((code, reply)) => crate::common_v3::command_accepted(
+                &reply,
+                code,
+                session.ready().run_id(),
+                "software_trigger",
+                &client_id,
+                "control",
+            )
+            .map(|_| ()),
+            Err(error) => Err(error),
+        };
+        match admitted {
+            Ok(()) => {
+                self.interaction
+                    .observe(id, self.generation, CommandState::Accepted, None);
+                Ok(())
+            }
+            Err(error) => {
+                let error = format!("Dispatch Outcome Unknown: {error}");
+                self.interaction.observe(
+                    id,
+                    self.generation,
+                    CommandState::DispatchOutcomeUnknown,
+                    Some(error.clone()),
+                );
+                if let Some(key) = &self.safety_key {
+                    quarantined_runtimes()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(key.clone());
+                }
+                self.failure.fail(error.clone());
+                Err(error)
+            }
+        }
+    }
+
     fn state(&self, state: &str, error: Option<String>) {
         let mut data = self.store.lock().unwrap_or_else(|e| e.into_inner());
         let worker = data
@@ -1009,6 +1394,14 @@ impl Dispatcher {
         worker.error = error;
     }
     fn fail(&mut self, error: &str) {
+        if let Some(id) = self.pending_command.take() {
+            self.interaction.observe(
+                id,
+                self.generation,
+                crate::interaction::CommandState::Failed,
+                Some(error.into()),
+            );
+        }
         self.failure.fail(format!("{}: {error}", self.config.id));
         // Keep accepting valid tail samples until bounded shutdown completes.
         if let Some(index) = self.current {
@@ -1149,10 +1542,70 @@ impl Dispatcher {
         self.finish("completed", "unknown", None);
         self.failure.check()
     }
-    fn event(&mut self, mut event: Value) -> Result<(), String> {
+    fn event(&mut self, event: Value) -> Result<(), String> {
+        let native = event.clone();
+        let is_data = native["event"] == "sample" || native["event"] == "rx";
+        let mut result = self.record_event(event);
+        if is_data {
+            if self.config.command_trigger && result.is_ok() {
+                result = match self.pending_command {
+                    None => Err("Uncorrelated Meters sample without a pending BG Command".into()),
+                    Some(id) => {
+                        let expected_id = id.to_string();
+                        if native["trigger_metadata"]["orchestrator_command_id"].as_str()
+                            == Some(expected_id.as_str())
+                        {
+                            Ok(())
+                        } else {
+                            Err("Meters result Command ID mismatch; result was not assigned".into())
+                        }
+                    }
+                };
+            }
+            let quality = result.clone().and_then(|()| {
+                if self.scopes
+                    && native["values"]
+                        .as_object()
+                        .is_some_and(|v| v.values().any(|v| v["valid"] != true))
+                {
+                    Err("Latest Scopes event contains invalid measurements".into())
+                } else {
+                    Ok(native.clone())
+                }
+            });
+            self.interaction
+                .data(&self.config.id, self.generation, quality);
+            if self.config.command_trigger && result.is_ok() {
+                let id = self.pending_command.unwrap(); // Correlation was validated before publication.
+                self.interaction.result(id, self.generation, Ok(native));
+                self.interaction.observe(
+                    id,
+                    self.generation,
+                    crate::interaction::CommandState::Completed,
+                    None,
+                );
+                self.pending_command = None;
+            }
+        }
+        result
+    }
+
+    fn record_event(&mut self, mut event: Value) -> Result<(), String> {
         match event["event"].as_str().unwrap_or("") {
             "status" => {
                 self.stream_state = event["stream"]["state"].as_str().map(str::to_owned);
+                self.command_source_active = self.stream_state.as_deref() == Some("active")
+                    && event["worker_state"] == "running";
+                if self.stream_state.as_deref() == Some("active") {
+                    self.interaction
+                        .source_active(&self.config.id, self.generation);
+                } else if self.stream_state.as_deref() == Some("ended") {
+                    self.interaction
+                        .source_ended(&self.config.id, self.generation);
+                    if self.pending_command.is_some() && !self.stopping {
+                        return Err("Source ended before Command completion".into());
+                    }
+                }
                 if event["worker_state"] == "stopping"
                     && let Some(timer) = &mut self.timer
                 {
@@ -1356,6 +1809,31 @@ impl Dispatcher {
         shutdown: Duration,
         stopped: bool,
     ) -> Result<bool, String> {
+        let result = self.stop_inner(session, shutdown, stopped);
+        if let Some(key) = &self.safety_key {
+            let mut keys = quarantined_runtimes()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if result.is_ok() {
+                keys.remove(key);
+            } else {
+                keys.insert(key.clone());
+            }
+        }
+        if result.is_err() {
+            self.interaction
+                .worker_off(&self.config.id, self.generation, false);
+        }
+        result
+    }
+
+    fn stop_inner(
+        &mut self,
+        session: WorkerSession,
+        shutdown: Duration,
+        stopped: bool,
+    ) -> Result<bool, String> {
+        self.stopping = stopped;
         if let Some(timer) = &mut self.timer {
             timer.stopping = true;
         }
@@ -1511,7 +1989,11 @@ impl Dispatcher {
         let mut session = Some(session);
         loop {
             match receiver.try_recv() {
-                Ok(Command::Action(action, capture, reply)) => {
+                Ok(Command::Interaction(id, deadline, reply)) => {
+                    let result = self.dispatch_command(session.as_ref(), id, deadline);
+                    let _ = reply.send(result);
+                }
+                Ok(Command::Action(action, capture, deadline, reply)) => {
                     let result = match action {
                         BackgroundAction::CaptureOn => self
                             .capture_on(session.as_ref().map(|s| s.ready().run_id()).unwrap_or("")),
@@ -1523,7 +2005,13 @@ impl Dispatcher {
                                 Err("Capture is ON; switch it OFF before Worker OFF".into())
                             } else {
                                 if let Some(session) = session.take()
-                                    && let Err(e) = self.stop(session, shutdown, false)
+                                    && let Err(e) = self.stop(
+                                        session,
+                                        shutdown.min(
+                                            deadline.saturating_duration_since(Instant::now()),
+                                        ),
+                                        false,
+                                    )
                                 {
                                     self.fail(&e);
                                     self.finish("failed", "incomplete", Some(e.clone()));
@@ -1537,6 +2025,8 @@ impl Dispatcher {
                                     "no_loss_detected"
                                 };
                                 self.finish("completed", quality, None);
+                                self.interaction
+                                    .worker_off(&self.config.id, self.generation, true);
                                 self.state("off", None);
                                 self.failure.check()
                             }
@@ -1574,6 +2064,8 @@ impl Dispatcher {
                         );
                         self.state("off", None);
                     }
+                    self.interaction
+                        .worker_off(&self.config.id, self.generation, result.is_ok());
                     let _ = reply.send(result.map(|_| ()));
                     return;
                 }
@@ -1794,6 +2286,7 @@ mod tests {
                 std::process::id()
             ));
             let config = BackgroundConfig {
+                command_trigger: false,
                 id: "background-1".into(),
                 tool_instance_id: ToolInstanceId::new("meter").unwrap(),
                 live_monitor: false,
@@ -1813,6 +2306,12 @@ mod tests {
                 monitor: VecDeque::new(),
             });
             let mut dispatcher = Dispatcher {
+                stopping: false,
+                interaction: crate::interaction::InteractionCore::new(4096).unwrap(),
+                generation: 1,
+                pending_command: None,
+                command_source_active: false,
+                safety_key: None,
                 config,
                 expected_readings: Some(10),
                 custom: true,
@@ -1869,7 +2368,7 @@ mod tests {
                 1
             );
             let template = Template::from_json_str(&json!({"name":"CSV failure", "tool_instances":[],
-                "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
+                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
                     "steps":[{"type":"output","id":"out","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                     {"type":"wait","id":"after-loop","duration_ms":0}]}}).to_string()).unwrap();
             let mut committed = Vec::new();

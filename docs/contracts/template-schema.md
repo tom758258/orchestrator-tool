@@ -15,7 +15,7 @@ definitions with the Template:
     {
       "name": "Example",
       "tool_instances": [],
-      "workflow": { "steps": [] }
+      "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [] }
     }
 
 The Template is split into:
@@ -151,7 +151,7 @@ Custom modes also pass
 and `sample_count`. Infinite sources have no fixed expected total. The old
 `trigger_count` configuration field is rejected without migration.
 
-Software and Software Custom require a positive `timer_interval_ms` (Desktop
+Software and Software Custom normally require a positive `timer_interval_ms` (Desktop
 initially uses 1000). Other modes reject a non-null Timer Interval. The sole
 Background dispatcher waits for the current Worker's active stream, sends one
 software trigger, and waits for one valid sample (Simple) or the complete
@@ -162,6 +162,11 @@ failure stop scheduling. Startup, command admission and measurement completion
 are bounded; a batch receives the existing action timeout multiplied by its
 sample count, to allow buffered batches to complete without imposing a short
 fixed limit. HTTP uses the existing action timeout.
+
+Software Simple may instead use `command_trigger: true` with
+`timer_interval_ms: null` and enabled Workflow Interaction. This disables the
+automatic timer: only explicit BG Command Steps trigger measurements. Custom
+batches do not support this option.
 
 Scopes is also a Background source; Powers and Wavegen remain unsupported.
 A Scopes binding requires a nonempty `scopes_measurements` list, with distinct
@@ -294,6 +299,83 @@ does not trigger manual export. Background manual CSV/XLSX reserves new names;
 XLSX defaults to 300,000 samples per file, accepts 1–1,048,575, and splits larger
 Datasets. The writer uses bounded source windows and constant-memory worksheet
 spooling for export, without creating an internal file-backed Dataset store.
+
+## FG/BG Interaction (internal version 0.3.0)
+
+Every Workflow requires `interaction: {"enabled": false,
+"max_active_command_status": 4096}` (or explicit enabled settings). Missing
+settings are rejected; there is no old-format fallback or migration. Capacity is
+an integer from 1 to 65,536, shared across the Run, counting retained statuses
+including admission reservations, rather than cumulative commands.
+
+```json
+{"type":"bg-interaction","id":"trigger","background_id":"background-1",
+ "operation":{"kind":"command","command":"software-trigger","wait_for_completion":false},
+ "timeout_ms":2000}
+```
+
+Other `operation` objects are `{"kind":"get-latest"}`, `{"kind":"wait-next"}`
+and `{"kind":"get-command-result","source_step":"trigger"}`. The latter
+references an earlier BG Command Step for the same Background, in the same or an
+ancestor Loop scope. IF paths are checked at execution: an unexecuted source
+fails the Get. Each iteration binds its own invocation ID and releases result
+interest at scope exit. Root-scope interest lasts until Run end, including when
+an IF skips its Get. Finishing an IF does not prove that a later legal reader
+cannot execute; consume the retained result before another result-bearing
+command in that scope. Copy/paste remaps internal source references.
+
+Each interaction Step has one deadline, using `action_timeout` unless a positive
+`timeout_ms` is supplied. Worker must be ON; Capture may be OFF. Get Latest
+returns the newest complete native event or fails if it is absent/invalid; it
+never falls back. Wait Next atomically subscribes for the first subsequent event,
+including an invalid event, and may start before Source Active. Source Ended
+rejects Wait Next but preserves Latest until Worker OFF. A new Worker lifecycle
+invalidates old data and command references.
+
+BG Command succeeds after reliable Accepted, or after Completed when
+`wait_for_completion` is true. Its output is `null`; invocation IDs remain
+internal to source-Step resolution. Get Command Result requires both Completed
+and Result Ready and returns the native event as
+Step Output for JSON Pointer/Binding. There is one retained result slot per
+Background; potential IF readers reserve it conservatively. A successful Get
+consumes it. Release Interest does not free an unresolved result; terminal,
+unreferenced successes are reclaimed automatically. Result-only errors stay
+available to legal readers without independently failing the Run.
+
+Admission reserves global capacity before I/O. Busy, an occupied result slot, or
+capacity exhaustion rejects before dispatch, without a queue. Only a verified
+rejection rolls back admission. Ambiguous admission preserves status, fails the
+Run, and quarantines the Runtime without retry. Late evidence cannot undo that
+failure. Unconfirmed shutdown blocks affected resource reuse in the current
+application process, including a switch to timer triggering or Foreground use.
+Restarting the application requires the operator to first verify the external
+tool's state; restart is not a Core-verified Recovery operation. No persistent
+command history is created.
+
+The Core retains facts and a sticky failure snapshot with revision notifications;
+the Run controller applies fail-fast and existing Powers cleanup. A later command
+failure does not rewrite its already successful Dispatch Step. Normal Run end
+waits for all unfinished finite commands with one shared `action_timeout`;
+explicit Worker OFF shares its deadline between waiting and shutdown. Unread
+results do not extend that wait. Stop/failure cleanup skips ordinary command waits
+and preserves existing Worker, Capture, summary and data-integrity checks.
+
+| Background capability | Command / Result | Latest / Next |
+| --- | --- | --- |
+| Meters Software Simple, explicit command trigger | `software_trigger` control ACK; one validated sample with matching string `trigger_metadata.orchestrator_command_id` proves completion/result | Native sample |
+| Other supported Meters Background modes | Unsupported | Native sample |
+| Scopes numeric streaming | Unsupported | Native cycle; invalid measurements fail the Get |
+| Serial RX | Unsupported | Native RX event |
+| Powers / Wavegen | Background unsupported | Unsupported |
+
+The Meters capability is based on meters-tool `56024a92ff34f957b5e35c10cf08605c9f08cc2d`
+([Worker contract](https://github.com/tom758258/meters-tool/blob/56024a92ff34f957b5e35c10cf08605c9f08cc2d/docs/contracts/meters-worker-contract.md),
+[JSONL contract](https://github.com/tom758258/meters-tool/blob/56024a92ff34f957b5e35c10cf08605c9f08cc2d/docs/contracts/meters-cli-jsonl-contract.md)).
+The manifest must advertise `software_trigger` as `control`. HTTP 202 alone is
+never completion. This control path does not create another async Job Tracker;
+existing WorkerSession v3 validation and the sole Background dispatcher retain
+ownership. No inferred batch completion, Serial TX, waveform streaming or new
+external protocol is introduced.
 
 ## Tool Instances and setup
 

@@ -180,6 +180,7 @@ pub(crate) fn execute_workflow_internal(
         scopes_output_folder,
         on_event,
         should_stop: should_stop_after_iteration,
+        command_bindings: HashMap::new(),
         data: DataContext::new(),
         executions: retain_results.then(Vec::new),
         rows: retain_results.then(Vec::new),
@@ -192,6 +193,7 @@ pub(crate) fn execute_workflow_internal(
         execution.scope(workflow.steps(), &[], None),
         Ok(ControlFlow::WorkflowStopped)
     );
+    execution.release_commands(workflow.steps());
     Ok(ExecutionResult {
         executions: execution.executions,
         rows: execution.rows,
@@ -221,6 +223,7 @@ struct Execution<'a> {
     scopes_output_folder: Option<&'a Path>,
     on_event: &'a mut dyn FnMut(WorkflowRunEvent),
     should_stop: &'a mut dyn FnMut(&StepId) -> bool,
+    command_bindings: HashMap<String, u64>,
     data: DataContext,
     executions: Option<Vec<StepExecution>>,
     rows: Option<Vec<ResultRow>>,
@@ -237,6 +240,30 @@ enum ControlFlow {
 }
 
 impl Execution<'_> {
+    fn release_commands(&mut self, steps: &[Step]) {
+        for step in steps {
+            if let Some(id) = self.command_bindings.remove(step.id().as_str())
+                && let Some(manager) = &self.background
+            {
+                manager.interaction.release_interest(id);
+            }
+            match step.kind() {
+                StepKind::For { body, .. } | StepKind::While { body, .. } => {
+                    self.release_commands(body)
+                }
+                StepKind::If {
+                    then_steps,
+                    else_steps,
+                    ..
+                } => {
+                    self.release_commands(then_steps);
+                    self.release_commands(else_steps);
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Loop stops unwind to their owner; workflow stops always unwind to the root.
     fn scope(
         &mut self,
@@ -321,6 +348,63 @@ impl Execution<'_> {
                 (StepOutcome::Failed { message }, ControlFlow::Continue)
             } else {
                 match step.kind() {
+                    StepKind::Interaction {
+                        background_id,
+                        operation,
+                        timeout_ms,
+                    } => {
+                        use crate::interaction::InteractionOperation;
+                        let deadline = std::time::Instant::now()
+                            + timeout_ms
+                                .map(Duration::from_millis)
+                                .unwrap_or(self.action_timeout);
+                        let interest = command_result_referenced(
+                            self.template.workflow().steps(),
+                            step.id().as_str(),
+                        );
+                        let result = self
+                            .background
+                            .as_mut()
+                            .ok_or("BG Interaction requires the Run controller".to_owned())
+                            .and_then(|manager| {
+                                if let InteractionOperation::Command {
+                                    wait_for_completion,
+                                    ..
+                                } = operation
+                                {
+                                    let id = manager.dispatch(
+                                        background_id,
+                                        interest,
+                                        *wait_for_completion,
+                                        deadline,
+                                    )?;
+                                    self.command_bindings.insert(step.id().to_string(), id);
+                                    Ok(Value::Null)
+                                } else {
+                                    let id = match operation {
+                                        InteractionOperation::GetCommandResult { source_step } => {
+                                            self.command_bindings.get(source_step).copied()
+                                        }
+                                        _ => None,
+                                    };
+                                    manager.get_data(background_id, operation, id, deadline)
+                                }
+                            });
+                        match result {
+                            Ok(output) => {
+                                (StepOutcome::Succeeded { output }, ControlFlow::Continue)
+                            }
+                            Err(_)
+                                if self.workflow_stop.is_requested()
+                                    && self.failure_signal.check().is_ok() =>
+                            {
+                                (StepOutcome::Cancelled, ControlFlow::WorkflowStopped)
+                            }
+                            Err(message) => {
+                                (StepOutcome::Failed { message }, ControlFlow::Continue)
+                            }
+                        }
+                    }
                     StepKind::Background {
                         background_id,
                         action,
@@ -555,6 +639,7 @@ impl Execution<'_> {
                 clear_body_step_outputs(body, &mut self.data);
                 let inherited = self.data.variable_scope();
                 let body_result = self.scope(body, &path, Some(&occurrence));
+                self.release_commands(body);
                 self.data.leave_variable_scope(&inherited);
                 match body_result? {
                     ControlFlow::Continue => {}
@@ -576,6 +661,27 @@ impl Execution<'_> {
         }
         result
     }
+}
+
+fn command_result_referenced(steps: &[Step], source: &str) -> bool {
+    steps.iter().any(|step| match step.kind() {
+        StepKind::Interaction {
+            operation: crate::interaction::InteractionOperation::GetCommandResult { source_step },
+            ..
+        } => source_step == source,
+        StepKind::For { body, .. } | StepKind::While { body, .. } => {
+            command_result_referenced(body, source)
+        }
+        StepKind::If {
+            then_steps,
+            else_steps,
+            ..
+        } => {
+            command_result_referenced(then_steps, source)
+                || command_result_referenced(else_steps, source)
+        }
+        _ => false,
+    })
 }
 
 fn notify_progress(
@@ -702,7 +808,8 @@ fn execute_non_loop_step(
         StepKind::If { .. }
         | StepKind::For { .. }
         | StepKind::While { .. }
-        | StepKind::Background { .. } => {
+        | StepKind::Background { .. }
+        | StepKind::Interaction { .. } => {
             unreachable!("control steps execute through their respective handlers")
         }
     }
@@ -932,7 +1039,7 @@ mod tests {
             run_failure::RunFailure,
         };
         let template=crate::template::Template::from_json_str(&serde_json::json!({"name":"CSV failure", "tool_instances":[],
-            "workflow":{"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"1","stop":"3","step":"1"},
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"1","stop":"3","step":"1"},
                 "steps":[{"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                 {"type":"wait","id":"after","duration_ms":0}]}}).to_string()).unwrap();
         let failure = RunFailure::default();
@@ -1000,7 +1107,7 @@ mod tests {
         use crate::run::{RunOptions, WorkflowStop, run_workflow_streaming_controlled};
         let template = crate::template::Template::from_json_str(&json!({
             "name": "Nested stop", "tool_instances": [],
-            "workflow": {"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                 {"type":"output","id":"root-value","name":"root","page":"Root","value":{"source":"literal","value":9}},
                 {"type":"for","id":"outer","variable":"i","range":{"start":"1","stop":"3","step":"1"},"steps":[
                     {"type":"while","id":"inner","max_iterations":3,
@@ -1096,7 +1203,7 @@ mod tests {
         ] {
             let mut wire = json!({
                 "name":"Stop boundaries","tool_instances":[],
-                "workflow":{"steps":[
+                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                     {"type":"wait","id":"first","duration_ms":0},
                     {"type":"wait","id":"wait","duration_ms":if timing == "during-wait" { 30_000 } else { 0 }},
                     {"type":"output","id":"value","name":"value","page":"Results","value":{"source":"literal","value":1}}
@@ -1227,7 +1334,7 @@ mod tests {
         let template = crate::template::Template::from_json_str(
             &json!({
                 "name": "Stop", "tool_instances": [],
-                "workflow": { "steps": [loop_step,
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [loop_step,
                     { "type": "wait", "id": "root-later", "duration_ms": 0 },
                     { "type": "for", "id": "later-loop", "variable": "y",
                       "range": { "start": "1", "stop": "2", "step": "1" }, "steps": [
@@ -1456,7 +1563,7 @@ mod tests {
     fn for_restores_loop_variable_and_preserves_run_wide_mutations_in_root_row() {
         let template = crate::template::Template::from_json_str(&json!({
             "name": "For scope", "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "set-variable", "id": "set-x", "variable": "x",
                   "value": { "source": "literal", "value": 99 } },
                 { "type": "set-variable", "id": "set-count", "variable": "count",
@@ -1514,7 +1621,7 @@ mod tests {
     fn for_binds_exact_decimal_values_and_commits_ordered_iteration_rows() {
         let template = crate::template::Template::from_json_str(&json!({
             "name": "Decimal sweep", "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "set-variable", "id": "before", "variable": "baseline",
                   "value": { "source": "literal", "value": 42 } },
                 { "type": "for", "id": "sweep", "variable": "voltage",
@@ -1564,7 +1671,7 @@ mod tests {
         let template = crate::template::Template::from_json_str(
             &json!({
                 "name": "Failed sweep", "tool_instances": [],
-                "workflow": { "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                     { "type": "for", "id": "sweep", "variable": "x",
                       "range": { "start": "1", "stop": "3", "step": "1" }, "steps": [
                         { "type": "output", "id": "out-x", "name": "x", "page": "Results",
@@ -1694,7 +1801,7 @@ mod tests {
             &json!({
                 "name": "Serial test",
                 "tool_instances": [{"id":"serial-1","tool":"serial","setup":{"transport":"serial","baud":115200}}],
-                "workflow": {"steps":[
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
                     {"type":"set-variable","id":"set-x","variable":"x",
                      "value":{"source":"literal","value":3.75}},
                     {"type":"tool-action","id":"send","target":"serial-1","action":"send",

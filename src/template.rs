@@ -371,6 +371,7 @@ impl Template {
             output_views: None,
         };
         template.validate_backgrounds()?;
+        crate::interaction::validate_template(&template).map_err(TemplateError::Instance)?;
         Ok(template)
     }
 
@@ -539,7 +540,7 @@ impl Template {
                         "Scopes fields are not valid for Meters Background".into(),
                     ));
                 }
-                if setup.trigger_mode.uses_software_trigger() {
+                if setup.trigger_mode.uses_software_trigger() && !background.command_trigger {
                     if background
                         .timer_interval_ms
                         .is_none_or(|interval| interval == 0)
@@ -1325,12 +1326,14 @@ struct ToolInstanceWire {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WorkflowWire {
+    interaction: crate::interaction::InteractionSettings,
     steps: Vec<StepWire>,
 }
 
 impl WorkflowWire {
     fn from_workflow(workflow: &Workflow) -> Self {
         Self {
+            interaction: workflow.interaction().clone(),
             steps: workflow.steps().iter().map(StepWire::from_step).collect(),
         }
     }
@@ -1339,6 +1342,12 @@ impl WorkflowWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum StepWire {
+    BgInteraction {
+        id: String,
+        background_id: String,
+        operation: crate::interaction::InteractionOperation,
+        timeout_ms: Option<u64>,
+    },
     Background {
         id: String,
         background_id: String,
@@ -1466,6 +1475,16 @@ struct NumericRangeWire {
 impl StepWire {
     fn from_step(step: &Step) -> Self {
         match step.kind() {
+            StepKind::Interaction {
+                background_id,
+                operation,
+                timeout_ms,
+            } => Self::BgInteraction {
+                id: step.id().as_str().into(),
+                background_id: background_id.clone(),
+                operation: operation.clone(),
+                timeout_ms: *timeout_ms,
+            },
             StepKind::Background {
                 background_id,
                 action,
@@ -1727,11 +1746,31 @@ fn workflow_from_wire(wire: WorkflowWire) -> Result<Workflow, TemplateError> {
         steps.push(step);
     }
 
-    Workflow::new(steps).map_err(TemplateError::Workflow)
+    Workflow::new(steps)
+        .map_err(TemplateError::Workflow)?
+        .with_interaction(wire.interaction)
+        .map_err(TemplateError::Instance)
 }
 
 fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
     match wire {
+        StepWire::BgInteraction {
+            id,
+            background_id,
+            operation,
+            timeout_ms,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            Ok(Step::new(
+                step_id,
+                StepKind::Interaction {
+                    background_id,
+                    operation,
+                    timeout_ms,
+                },
+            ))
+        }
         StepWire::Background {
             id,
             background_id,
@@ -2007,7 +2046,7 @@ mod tests {
         };
         let wire = json!({"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"limit_count":null}],
-            "workflow":{"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         assert_eq!(
             Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
@@ -2317,7 +2356,7 @@ mod tests {
         json!({
             "name": "Chart Template",
             "tool_instances": [],
-            "workflow": {"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
                 {
                     "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
                     "value": {"source": "literal", "value": 3.3}
@@ -2632,7 +2671,7 @@ mod tests {
             let wire = json!({
                 "name": "Missing setup",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {}}],
-                "workflow": {"steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{
                     "type": "tool-action", "id": "read-1", "target": "meters-1",
                     "action": action, "arguments": {}
                 }]}
@@ -2732,7 +2771,7 @@ mod tests {
         );
         json!({"name":"Parameter validation",
             "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
-            "workflow":{"steps":steps}})
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}})
     }
 
     fn check_action_parameters(wire: &Value, expected_reason: Option<(&str, &str)>) {
@@ -3188,7 +3227,7 @@ mod tests {
         let mut wire = serde_json::json!({
             "name": "Unary Calculation",
             "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "set-variable", "id": "set-value", "variable": "result",
                   "value": { "source": "expression",
                              "left": { "source": "literal", "value": -2.5 },
@@ -3306,7 +3345,7 @@ mod tests {
         let wire = json!({
             "name": "Current format",
             "tool_instances": [],
-            "workflow": {"steps": []}
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": []}
         });
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
         for version in [1, 2, 99] {
@@ -3321,7 +3360,7 @@ mod tests {
         let old_action = json!({
             "name": "Obsolete Power action",
             "tool_instances": [{"id": "power", "tool": "powers", "setup": {}}],
-            "workflow": {"steps": [{
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{
                 "type": "tool-action", "id": "set", "target": "power",
                 "action": "set-voltage", "arguments": {"channel": 1, "voltage": 5.0}
             }]}
@@ -3334,7 +3373,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Dup",
-            "workflow": {
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
                 "steps": [
                     { "id": "wait-1", "type": "wait", "duration_ms": 100 },
                     { "id": "wait-1", "type": "wait", "duration_ms": 200 }
@@ -3355,7 +3394,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Bad tool",
-            "workflow": {
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
                 "steps": [
                     {
                         "id": "power-set-1",
@@ -3398,7 +3437,7 @@ mod tests {
         ] {
             let mut wire = json!({
                  "name": "Time inputs", "tool_instances": [],
-                "workflow": { "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
                     { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
                 ] }
@@ -3427,7 +3466,7 @@ mod tests {
     fn show_message_round_trips_without_storing_records() {
         let wire = json!({
              "name": "Messages", "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "output", "id": "iteration", "name": "Iteration", "page": "Results",
                   "value": { "source": "literal", "value": 3000 } },
                 { "type": "show-message", "id": "show-message-1", "target": "message-2",
@@ -3460,7 +3499,7 @@ mod tests {
         // A reference to a later step is rejected by the shared validation.
         let invalid = json!({
              "name": "Messages", "tool_instances": [],
-            "workflow": { "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
                 { "type": "show-message", "id": "show-message-1", "target": "message-1",
                   "fields": [ { "kind": "output", "step_id": "later", "pointer": "", "newline": false } ] },
                 { "type": "output", "id": "later", "name": "Later", "page": "Results",
@@ -3484,7 +3523,7 @@ mod tests {
         let template_wire = |output: Value| {
             json!({
                  "name": "Required Output fields", "tool_instances": [],
-                "workflow": { "steps": [output] }
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [output] }
             })
         };
 
@@ -3549,7 +3588,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Invalid variable",
-            "workflow": { "steps": [{
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
                 "type": "set-variable", "id": "set-x", "variable": "Bad_Name",
                 "value": { "source": "literal", "value": 5.0 }
             }] }
@@ -3864,7 +3903,7 @@ mod tests {
         let mut wire = json!({
             "name": "Scope AutoScale",
             "tool_instances": [{"id": "scope-1", "tool": "scopes", "setup": {}}],
-            "workflow": {"steps": [{"type": "tool-action", "id": "autoscale-1",
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{"type": "tool-action", "id": "autoscale-1",
                 "target": "scope-1", "action": "autoscale", "arguments": {}}]}
         });
         for args in [
@@ -3910,7 +3949,7 @@ mod tests {
              "name": "Serial",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
                 "setup": {"transport":"serial", "baud": 115200}}],
-            "workflow": {"steps": [{ "type": "tool-action", "id": "send",
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{ "type": "tool-action", "id": "send",
                 "target": "serial-1", "action": "send",
                 "arguments": {"tx_format": "hex-byte", "tx_value": 4660}}]}
         });
