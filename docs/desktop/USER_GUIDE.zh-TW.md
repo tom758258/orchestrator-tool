@@ -718,7 +718,9 @@ Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本�
   IF 分支跳過來源時 Get 會失敗，不會拿其他命令的結果替代。
 
 Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Binding 或 Output
-使用 Meters 的 `/value`。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
+使用 Meters 的 `/value`：選擇 **Previous step result**、指定 Get Step，再填入
+**JSON Pointer**。BG Command 本身不提供資料輸出；Get Command Result 依來源
+Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
 事件。Custom 批次、Scopes 與 Serial 不提供 Command／Result；Powers 與 Wavegen
 不支援 Background。
 
@@ -726,12 +728,15 @@ Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Bindin
 每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
 命令。Busy 或容量不足會直接失敗，不會排入佇列。已接受的命令稍後失敗時，Run
 仍會失敗並開始清理，先前成功的派送 Step 不會改寫。無法確認派送結果時不會重送。
+若 IF 跳過 Get Command Result，結果仍保留至所在 Loop 當次迭代結束；Loop 外的
+命令則保留至 Run 結束。在同一範圍派送另一筆需要結果的命令前，請先取用該結果。
 
 正常 Run 結束時，以一個 action timeout 等待尚未完成的命令；Worker OFF 在
 自己的期限內等待必要命令與關閉。未讀結果不增加等待，既有有限筆數與擷取品質
 規則仍適用。Stop Workflow 採合作式清理，不額外等待普通命令。Worker OFF 後
-重新 ON 會使舊資料與結果引用失效。若無法確認關閉，系統會阻擋重用；重新啟動
-應用程式前，請先確認外部工具已停止。
+重新 ON 會使舊資料與結果引用失效。若無法確認關閉，同一資源即使改用計時觸發
+或 Foreground 仍會被阻擋。重新啟動應用程式前，請先確認外部工具已停止；
+重新啟動本身不代表已驗證關閉。
 
 ## 7. Run Simulation
 

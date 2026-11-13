@@ -319,7 +319,10 @@ and `{"kind":"get-command-result","source_step":"trigger"}`. The latter
 references an earlier BG Command Step for the same Background, in the same or an
 ancestor Loop scope. IF paths are checked at execution: an unexecuted source
 fails the Get. Each iteration binds its own invocation ID and releases result
-interest at scope exit. Copy/paste remaps internal source references.
+interest at scope exit. Root-scope interest lasts until Run end, including when
+an IF skips its Get. Finishing an IF does not prove that a later legal reader
+cannot execute; consume the retained result before another result-bearing
+command in that scope. Copy/paste remaps internal source references.
 
 Each interaction Step has one deadline, using `action_timeout` unless a positive
 `timeout_ms` is supplied. Worker must be ON; Capture may be OFF. Get Latest
@@ -330,8 +333,9 @@ rejects Wait Next but preserves Latest until Worker OFF. A new Worker lifecycle
 invalidates old data and command references.
 
 BG Command succeeds after reliable Accepted, or after Completed when
-`wait_for_completion` is true. Its output is `{"command_id": N}`. Get Command
-Result requires both Completed and Result Ready and returns the native event as
+`wait_for_completion` is true. Its output is `null`; invocation IDs remain
+internal to source-Step resolution. Get Command Result requires both Completed
+and Result Ready and returns the native event as
 Step Output for JSON Pointer/Binding. There is one retained result slot per
 Background; potential IF readers reserve it conservatively. A successful Get
 consumes it. Release Interest does not free an unresolved result; terminal,
@@ -343,8 +347,10 @@ capacity exhaustion rejects before dispatch, without a queue. Only a verified
 rejection rolls back admission. Ambiguous admission preserves status, fails the
 Run, and quarantines the Runtime without retry. Late evidence cannot undo that
 failure. Unconfirmed shutdown blocks affected resource reuse in the current
-application process. Restarting the application requires the operator to first
-verify the external tool's state; no persistent command history is created.
+application process, including a switch to timer triggering or Foreground use.
+Restarting the application requires the operator to first verify the external
+tool's state; restart is not a Core-verified Recovery operation. No persistent
+command history is created.
 
 The Core retains facts and a sticky failure snapshot with revision notifications;
 the Run controller applies fail-fast and existing Powers cleanup. A later command

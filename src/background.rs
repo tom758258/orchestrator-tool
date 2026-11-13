@@ -578,6 +578,25 @@ fn quarantined_runtimes() -> &'static Mutex<std::collections::HashSet<String>> {
     KEYS.get_or_init(Default::default)
 }
 
+fn runtime_safety_key(spec: &WorkerLaunchSpec) -> String {
+    spec.arguments()
+        .windows(2)
+        .find(|args| args[0] == "--resource")
+        .map(|args| format!("resource:{:?}", args[1]))
+        .unwrap_or_else(|| format!("simulate:{:?}:{:?}", spec.executable(), spec.arguments()))
+}
+
+pub(crate) fn check_runtime_reuse(spec: &WorkerLaunchSpec) -> Result<(), String> {
+    if quarantined_runtimes()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&runtime_safety_key(spec))
+    {
+        return Err("Background Runtime reuse blocked: previous Worker shutdown is unconfirmed; verify the external tool before restarting the application".into());
+    }
+    Ok(())
+}
+
 struct Runtime {
     sender: mpsc::SyncSender<Command>,
     thread: JoinHandle<()>,
@@ -925,23 +944,11 @@ impl BackgroundManager {
             {
                 return Err("Selected Worker does not support Software Trigger control".into());
             }
-            let safety_key = config.command_trigger.then(|| {
-                spec.arguments()
-                    .windows(2)
-                    .find(|args| args[0] == "--resource")
-                    .map(|args| format!("resource:{:?}", args[1]))
-                    .unwrap_or_else(|| {
-                        format!("simulate:{:?}:{:?}", spec.executable(), spec.arguments())
-                    })
-            });
-            if safety_key.as_ref().is_some_and(|key| {
-                quarantined_runtimes()
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .contains(key)
-            }) {
-                return Err("Background Runtime reuse blocked: previous Worker shutdown is unconfirmed; verify the external tool before restarting the application".into());
-            }
+            // Every mode must honor an existing interaction quarantine. Only
+            // command-trigger lifecycles create that guard; ordinary capture
+            // quality errors keep their existing restart behavior.
+            let safety_key = config.command_trigger.then(|| runtime_safety_key(&spec));
+            check_runtime_reuse(&spec)?;
             let spec = spec.with_manifest(manifest);
             let (sender, receiver) = mpsc::sync_channel(1);
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -1257,11 +1264,61 @@ impl Dispatcher {
         let client_id = format!("interaction-{id}");
         let request = json!({"schema_version":3,"command":"software_trigger","job_id":client_id,
             "arguments":{"metadata":{"orchestrator_command_id":id.to_string()}}});
-        let response = crate::worker_http::WorkerClient::new(session.ready())
-            .command_with_rejection_timeout(
-                &request,
-                deadline.saturating_duration_since(Instant::now()),
-            );
+        // HTTP admission must not own the dispatcher while Stop or a failure
+        // needs it. Only this dispatcher consumes JSONL and updates Core. The
+        // transport task sends once, has the original deadline, and cannot
+        // publish late evidence into a stopped/replaced runtime.
+        let client = crate::worker_http::WorkerClient::new(session.ready());
+        let (tx, rx) = mpsc::sync_channel(1);
+        if let Err(error) = thread::Builder::new()
+            .name("background-admission".into())
+            .spawn(move || {
+                if Instant::now() >= deadline {
+                    return;
+                }
+                let response = client.command_with_rejection_timeout(
+                    &request,
+                    deadline.saturating_duration_since(Instant::now()),
+                );
+                let _ = tx.send(response);
+            })
+        {
+            self.interaction.rejected(id);
+            return Err(error.to_string());
+        }
+        self.pending_command = Some(id);
+        let response = loop {
+            if self.workflow_stop.is_requested() || self.failure.check().is_err() {
+                // Cancellation is not a rejection. Keep the reservation and
+                // resource guard until Worker OFF has actually been verified.
+                if let Some(key) = &self.safety_key {
+                    quarantined_runtimes()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(key.clone());
+                }
+                return Err("Workflow stopping before command acceptance".into());
+            }
+            match rx.recv_timeout(Duration::from_millis(5)) {
+                Ok(response) => break response.map_err(|e| e.to_string()),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break Err("Command admission transport ended".into());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            if Instant::now() >= deadline {
+                break Err("Command admission deadline expired".into());
+            }
+            match session.recv_event(Duration::from_millis(1)) {
+                Ok(event) => {
+                    if let Err(error) = self.event(event) {
+                        self.fail(&error);
+                    }
+                }
+                Err(WorkerEventError::Timeout(_)) => {}
+                Err(error) => break Err(error.to_string()),
+            }
+        };
         let admitted = match response {
             Ok((code, reply)) if code != 202 => {
                 match crate::common_v3::command_rejected(
@@ -1271,10 +1328,17 @@ impl Dispatcher {
                     "software_trigger",
                     &client_id,
                 ) {
-                    Ok(reason) => {
+                    Ok(reason)
+                        if self
+                            .interaction
+                            .command(id)
+                            .is_ok_and(|status| status.state == CommandState::Dispatching) =>
+                    {
+                        self.pending_command = None;
                         self.interaction.rejected(id);
                         return Err(format!("BG Command rejected: {reason}"));
                     }
+                    Ok(_) => Err("Command rejection contradicts observed execution".into()),
                     Err(error) => Err(error),
                 }
             }
@@ -1287,9 +1351,8 @@ impl Dispatcher {
                 "control",
             )
             .map(|_| ()),
-            Err(error) => Err(error.to_string()),
+            Err(error) => Err(error),
         };
-        self.pending_command = Some(id);
         match admitted {
             Ok(()) => {
                 self.interaction

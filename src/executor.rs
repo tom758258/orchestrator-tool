@@ -379,7 +379,7 @@ impl Execution<'_> {
                                         deadline,
                                     )?;
                                     self.command_bindings.insert(step.id().to_string(), id);
-                                    Ok(serde_json::json!({"command_id":id}))
+                                    Ok(Value::Null)
                                 } else {
                                     let id = match operation {
                                         InteractionOperation::GetCommandResult { source_step } => {

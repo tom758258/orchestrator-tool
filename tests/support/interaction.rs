@@ -8,6 +8,22 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub fn fixture(scenario: &str) {
+    let arguments: Vec<_> = env::args_os().collect();
+    let marker = |flag: &str| {
+        arguments
+            .windows(2)
+            .find(|args| args[0] == flag)
+            .map(|args| &args[1])
+    };
+    if let Some(path) = marker("--launch-marker") {
+        fs::write(path, b"started").unwrap();
+    }
+    // Hold only the command response, leaving the stop endpoint responsive.
+    let delayed = matches!(
+        scenario,
+        "stop-before-ack" | "failure-before-ack" | "timeout-before-ack" | "result-before-ack"
+    );
+    let mut held_response: Option<(Instant, TestRequest, String)> = None;
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -40,7 +56,7 @@ pub fn fixture(scenario: &str) {
     } else {
         1
     };
-    while captured < limit {
+    while captured < limit || held_response.is_some() {
         if !active && started.elapsed() >= Duration::from_millis(30) {
             active = true;
             status("active");
@@ -51,6 +67,9 @@ pub fn fixture(scenario: &str) {
             let body: Value = serde_json::from_slice(&request.body).unwrap_or(json!({}));
             let rejected = !stop && scenario == "rejected";
             if !stop {
+                if let Some(path) = marker("--command-marker") {
+                    fs::write(path, b"received").unwrap();
+                }
                 assert!(active);
                 assert!(
                     pending.is_none(),
@@ -74,24 +93,59 @@ pub fn fixture(scenario: &str) {
                 if rejected {
                     reply["error"] = json!({"category":"admission","code":"queue_full","message":"busy","details":{}});
                 }
-                if scenario == "unknown" {
+                if matches!(scenario, "unknown" | "quarantine") {
                     reply["job_id"] = json!("wrong-id");
                 }
             }
             let text = reply.to_string();
-            write!(request.stream, "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", if rejected {"429 Too Many Requests"} else {"202 Accepted"}, text.len(), text).unwrap();
+            let response = format!(
+                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                if stop && scenario == "quarantine" {
+                    "500 Internal Server Error"
+                } else if rejected {
+                    "429 Too Many Requests"
+                } else {
+                    "202 Accepted"
+                },
+                text.len(),
+                text
+            );
+            if delayed && !stop {
+                let delay = if scenario == "result-before-ack" {
+                    Duration::from_millis(300)
+                } else {
+                    Duration::from_secs(5)
+                };
+                held_response = Some((Instant::now() + delay, request, response));
+            } else {
+                request.stream.write_all(response.as_bytes()).unwrap();
+            }
             if stop {
                 stopped = true;
                 break;
             }
         }
+        if held_response
+            .as_ref()
+            .is_some_and(|(at, _, _)| Instant::now() >= *at)
+        {
+            let (_, mut request, response) = held_response.take().unwrap();
+            let _ = request.stream.write_all(response.as_bytes());
+        }
         if pending
             .as_ref()
             .is_some_and(|(at, _)| Instant::now() >= *at)
-            && !matches!(scenario, "timeout" | "stop-run-end")
+            && !matches!(
+                scenario,
+                "timeout"
+                    | "stop-run-end"
+                    | "stop-before-ack"
+                    | "timeout-before-ack"
+                    | "quarantine"
+            )
         {
             let (_, mut metadata) = pending.take().unwrap();
-            if scenario == "async-failure" {
+            if matches!(scenario, "async-failure" | "failure-before-ack") {
                 emit(
                     json!({"event":"status","worker_state":"failed","fatal_error":{"category":"execution","code":"measurement_failed","message":"measurement failed","details":{}},"stream":{"lifecycle":"run_bound","state":"active"}}),
                 );
@@ -155,6 +209,14 @@ pub fn contract(real: bool) {
             "timeout",
             "stop",
             "stop-run-end",
+            "result-before-ack",
+            "stop-before-ack",
+            "failure-before-ack",
+            "timeout-before-ack",
+            "quarantine",
+            "quarantined-command",
+            "quarantined-timer",
+            "quarantined-foreground",
         ]
     };
     for &scenario in scenarios {
@@ -190,11 +252,17 @@ pub fn contract(real: bool) {
                 ));
             }
             _ => {
-                steps.push(send(scenario == "wait-completion"));
+                steps.push(send(matches!(
+                    scenario,
+                    "wait-completion" | "result-before-ack"
+                )));
                 if scenario == "wait-next" {
                     steps.push(operation("next", json!({"kind":"wait-next"})));
                 }
-                if matches!(scenario, "wait-completion" | "mismatch") {
+                if matches!(
+                    scenario,
+                    "wait-completion" | "mismatch" | "result-before-ack"
+                ) {
                     steps.push(get());
                 }
                 if matches!(scenario, "async-failure" | "stop") {
@@ -205,13 +273,38 @@ pub fn contract(real: bool) {
                 }
             }
         }
+        if matches!(
+            scenario,
+            "stop-before-ack" | "failure-before-ack" | "timeout-before-ack"
+        ) {
+            steps[1]["timeout_ms"] = json!(if scenario == "timeout-before-ack" {
+                100
+            } else {
+                10000
+            });
+        }
         let setup = MetersSetup {
             trigger_mode: MetersTriggerMode::Software,
             ..Default::default()
         };
-        let template = Template::from_json_str(&json!({"name":"Interaction contract","tool_instances":[{"id":"meters-bg","tool":"meters","setup":setup}],
+        let mut wire = json!({"name":"Interaction contract","tool_instances":[{"id":"meters-bg","tool":"meters","setup":setup}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","limit_count":if matches!(scenario,"loop"|"skip-result") {3} else if scenario == "slot-busy" {2} else {1},"command_trigger":true}],
-            "workflow":{"interaction":{"enabled":true,"max_active_command_status":2},"steps":steps}}).to_string()).unwrap();
+            "workflow":{"interaction":{"enabled":true,"max_active_command_status":2},"steps":steps}});
+        if scenario == "quarantined-timer" {
+            wire["backgrounds"][0]["command_trigger"] = json!(false);
+            wire["backgrounds"][0]["timer_interval_ms"] = json!(1000);
+            wire["workflow"]["steps"] = json!([steps[0]]);
+        } else if scenario == "quarantined-foreground" {
+            wire.as_object_mut().unwrap().remove("backgrounds");
+            wire["workflow"]["steps"] = json!([{"type":"tool-action","id":"measure","target":"meters-bg","action":"measure","arguments":{}}]);
+        }
+        let template = Template::from_json_str(&wire.to_string()).unwrap();
+        let launch_marker =
+            env::temp_dir().join(format!("interaction-launch-{}-{scenario}", process::id()));
+        let command_marker =
+            env::temp_dir().join(format!("interaction-command-{}-{scenario}", process::id()));
+        let _ = fs::remove_file(&launch_marker);
+        let _ = fs::remove_file(&command_marker);
         let specs = if real {
             let executable =
                 env::var_os("ORCHESTRATOR_TEST_METERS_EXECUTABLE").expect("Supply real Meters CLI");
@@ -228,13 +321,25 @@ pub fn contract(real: bool) {
         } else {
             let mut manifest = fixture_manifest_json("meters-smoke");
             manifest["commands"]["software_trigger"] = json!({"kind":"control"});
+            let mut arguments = vec![
+                OsString::from("--interaction-fixture"),
+                OsString::from(scenario),
+                OsString::from("--launch-marker"),
+                launch_marker.clone().into_os_string(),
+                OsString::from("--command-marker"),
+                command_marker.clone().into_os_string(),
+            ];
+            if scenario.starts_with("quarantin") {
+                arguments.extend([
+                    OsString::from("--resource"),
+                    OsString::from("interaction-quarantined-resource"),
+                ]);
+            }
             HashMap::from([(
                 ToolInstanceId::new("meters-bg").unwrap(),
-                WorkerLaunchSpec::new(
-                    env::current_exe().unwrap(),
-                    ["--interaction-fixture", scenario],
-                )
-                .with_manifest(parse_manifest(&manifest.to_string(), &ToolId::meters()).unwrap()),
+                WorkerLaunchSpec::new(env::current_exe().unwrap(), arguments).with_manifest(
+                    parse_manifest(&manifest.to_string(), &ToolId::meters()).unwrap(),
+                ),
             )])
         };
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
@@ -261,6 +366,20 @@ pub fn contract(real: bool) {
             },
             |event| {
                 if let WorkflowRunEvent::StepCompleted(step) = event {
+                    if scenario == "stop-before-ack" && step.step_id().as_str() == "on" {
+                        let stop = stop.clone();
+                        let marker = command_marker.clone();
+                        stop_request = Some(thread::spawn(move || {
+                            let deadline = Instant::now() + Duration::from_secs(5);
+                            while !marker.exists() {
+                                assert!(Instant::now() < deadline, "command was never received");
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            let requested = Instant::now();
+                            stop.request();
+                            requested
+                        }));
+                    }
                     if scenario == "stop" && step.step_id().as_str() == "send" {
                         stop.request();
                     }
@@ -269,6 +388,7 @@ pub fn contract(real: bool) {
                         stop_request = Some(thread::spawn(move || {
                             thread::sleep(Duration::from_millis(30));
                             stop.request();
+                            Instant::now()
                         }));
                     }
                     completed.push(step);
@@ -277,15 +397,24 @@ pub fn contract(real: bool) {
             |_| false,
         );
         if let Some(request) = stop_request {
-            request.join().unwrap();
+            let requested = request.join().unwrap();
+            if scenario == "stop-before-ack" {
+                assert!(
+                    requested.elapsed() < Duration::from_secs(3),
+                    "Stop must not wait for the 5-second ACK"
+                );
+            }
         }
         let error = match scenario {
             "missing-source" => Some("did not execute"),
             "slot-busy" => Some("Result Slot is busy"),
-            "async-failure" => Some("measurement failed"),
+            "async-failure" | "failure-before-ack" => Some("measurement failed"),
             "mismatch" => Some("Command ID mismatch"),
             "rejected" => Some("rejected"),
-            "unknown" => Some("Dispatch Outcome Unknown"),
+            "unknown" | "quarantine" | "timeout-before-ack" => Some("Dispatch Outcome Unknown"),
+            "quarantined-command" | "quarantined-timer" | "quarantined-foreground" => {
+                Some("reuse blocked")
+            }
             "timeout" => Some("Timed out"),
             _ => None,
         };
@@ -303,13 +432,31 @@ pub fn contract(real: bool) {
                     "failure must interrupt foreground wait"
                 );
             }
-        } else if matches!(scenario, "stop" | "stop-run-end") {
+            if scenario == "failure-before-ack" {
+                assert!(
+                    started.elapsed() < Duration::from_secs(3),
+                    "failure must interrupt ACK admission"
+                );
+            }
+            if scenario.starts_with("quarantined-") {
+                assert!(
+                    !launch_marker.exists(),
+                    "quarantined resource must not launch any Worker"
+                );
+            }
+        } else if matches!(scenario, "stop" | "stop-run-end" | "stop-before-ack") {
             assert!(result.as_ref().is_ok_and(|r| r.stopped()), "{result:?}");
         } else {
             assert!(
                 result.as_ref().is_ok_and(|r| r.succeeded()),
                 "{scenario} real={real}: {result:?}"
             );
+            for step in completed.iter().filter(|s| s.step_id().as_str() == "send") {
+                assert!(
+                    matches!(step.outcome(), StepOutcome::Succeeded { output } if output.is_null()),
+                    "BG Command IDs stay internal; Get resolves by source Step"
+                );
+            }
             let values: Vec<_> = completed
                 .iter()
                 .filter(|s| s.step_id().as_str() == "get")
@@ -324,7 +471,7 @@ pub fn contract(real: bool) {
             if scenario == "loop" {
                 assert_eq!(values, vec![1, 2, 3]);
             }
-            if scenario == "wait-completion" {
+            if matches!(scenario, "wait-completion" | "result-before-ack") {
                 assert_eq!(values, vec![1]);
             }
             if scenario == "wait-next" {
@@ -335,6 +482,8 @@ pub fn contract(real: bool) {
                 "Capture remains OFF"
             );
         }
+        let _ = fs::remove_file(&launch_marker);
+        let _ = fs::remove_file(&command_marker);
         println!(
             "FG/BG {scenario} ({}): passed",
             if real {

@@ -371,7 +371,7 @@ impl InteractionCore {
                     if let Some(source) = s.sources.get_mut(&status.background_id) {
                         source.quarantined = true;
                     }
-                } else if matches!(status.result, ResultState::Pending) {
+                } else if matches!(status.result, ResultState::Pending | ResultState::Ready(_)) {
                     status.result = ResultState::Failed(
                         status.error.clone().unwrap_or("Command failed".into()),
                     );

@@ -108,7 +108,7 @@ test('Powers Output On and Output Off have no curated results', () => {
   assert.deepEqual(curatedResultFields(powerOutputOff, instances), [])
 })
 
-test('only Tool Actions are offered as Step Output candidates', () => {
+test('structural steps are excluded from Step Output candidates', () => {
   const structuralSteps = [
     { type: 'set-variable', id: 'set-1' },
     { type: 'wait', id: 'wait-1' },

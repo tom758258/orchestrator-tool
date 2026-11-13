@@ -377,6 +377,8 @@ fn run_workflow_internal(
                 }),
         };
         let launch_result = manifest_result.and_then(|manifest| {
+            crate::background::check_runtime_reuse(spec)
+                .map_err(WorkerStartError::InvalidContract)?;
             if manifest.tool_id() != &declared_tool
                 || manifest.worker_compatibility() != WorkerCompatibility::Compatible
             {

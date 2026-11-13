@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
 import { InteractionEditor, InteractionSettingsEditor } from '../src/InteractionEditor'
+import InputValueEditor from '../src/InputValueEditor'
+import type { InputValueWire } from '../src/inputValue'
 import type { InteractionStep, WorkflowStep } from '../src/workflow'
 
 test('Workflow interaction controls require opt-in and retain the shared capacity', () => {
@@ -23,6 +25,31 @@ test('Workflow interaction controls require opt-in and retain the shared capacit
 
 const command = (id: string, background_id = 'bg'): InteractionStep => ({ type: 'bg-interaction', id, background_id, timeout_ms: null,
   operation: { kind: 'command', command: 'software-trigger', wait_for_completion: false } })
+
+test('Binding and Output value editor can select native Get results and their JSON pointers', () => {
+  const getters: InteractionStep[] = [
+    { ...command('latest'), operation: { kind: 'get-latest' } },
+    { ...command('next'), operation: { kind: 'wait-next' } },
+    { ...command('result'), operation: { kind: 'get-command-result', source_step: 'send' } },
+  ]
+  const changed = vi.fn()
+  function Editor() {
+    const [value, setValue] = useState<InputValueWire>({ source: 'literal', value: 0 })
+    return <InputValueEditor value={value} onChange={next => { setValue(next); changed(next) }}
+      earlierSteps={[command('send'), ...getters]} instances={[]} earlierVariables={[]}
+      stepLabel={step => step.id} disabled={false} />
+  }
+  render(<Editor />)
+  expect((screen.getByRole('option', { name: 'Previous step result' }) as HTMLOptionElement).disabled).toBe(false)
+  fireEvent.change(screen.getByLabelText('Value Source'), { target: { value: 'step-output' } })
+  const source = screen.getByLabelText('Step') as HTMLSelectElement
+  expect(Array.from(source.options).map(option => option.value)).toEqual(['', 'latest', 'next', 'result'])
+  for (const step of getters) {
+    fireEvent.change(source, { target: { value: step.id } })
+    fireEvent.change(screen.getByLabelText('JSON Pointer'), { target: { value: '/value' } })
+    expect(changed).toHaveBeenLastCalledWith({ source: 'step-output', step_id: step.id, pointer: '/value' })
+  }
+})
 
 test('Result editor offers earlier same-Background commands in legal Loop scopes', () => {
   const get: InteractionStep = { type: 'bg-interaction', id: 'get', background_id: 'bg', timeout_ms: null, operation: { kind: 'get-command-result', source_step: '' } }

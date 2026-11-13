@@ -66,6 +66,20 @@ fn interaction_result_needs_completion_and_ready_in_either_order() {
         assert!(core.snapshot().commands.is_empty());
         assert!(core.reserve("a", true).is_ok());
     }
+    let (core, generation) = core(2);
+    let id = core.reserve("a", true).unwrap();
+    core.observe(id, generation, C::Accepted, None);
+    core.finish_dispatch(id);
+    core.result(id, generation, Ok(json!({"value": 42})));
+    core.observe(id, generation, C::Failed, Some("measurement failed".into()));
+    assert_eq!(core.take_result(id).unwrap_err(), "measurement failed");
+    assert!(core.snapshot().failure.is_some());
+    assert!(
+        core.reserve("a", true).is_ok(),
+        "terminal failure releases the result slot"
+    );
+    core.result(id, generation, Ok(json!({"value": 99})));
+    assert_eq!(core.take_result(id).unwrap_err(), "measurement failed");
 }
 
 #[test]

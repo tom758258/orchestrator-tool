@@ -850,7 +850,10 @@ automatically. Capture may remain OFF.
   an IF branch fails the Get; another command's result is never substituted.
 
 Get Steps expose the complete native event as Step Output, for example Meters
-`/value` in an existing Binding or Output. Latest/Next also support existing
+`/value` in an existing Binding or Output: choose **Previous step result**, select
+the Get Step, then enter its **JSON Pointer**. BG Command itself supplies no data
+output; Get Command Result resolves its invocation internally by source Step.
+Latest/Next also support existing
 Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
 Custom batches, Scopes and Serial. Powers and Wavegen do not support Background.
 
@@ -859,15 +862,19 @@ covers the whole Step. Each Background can retain one requested result; consume
 it before sending another command whose result is needed. Busy or capacity
 limits fail immediately without queuing. A command failure after acceptance
 fails the Run and starts cleanup, even though its dispatch Step already succeeded.
-An uncertain dispatch is not retried.
+An uncertain dispatch is not retried. If an IF skips Get Command Result, the
+result remains reserved until its enclosing Loop iteration ends, or until Run
+end for a command outside Loops. Consume it before sending another command
+whose result is needed in the same scope.
 
 Normal Run end waits for outstanding commands with one action timeout. Worker OFF
 waits for required commands within its own deadline. Unread results add no wait;
 existing finite sample-count and capture-quality rules still apply. Stop Workflow
 uses cooperative cleanup without extra ordinary command waits. Worker OFF and a
 new Worker ON invalidate old data/result references. If shutdown cannot be
-confirmed, reuse is blocked; verify the external tool is stopped before restarting
-the application.
+confirmed, the same resource remains blocked even if you switch to timer
+triggering or Foreground use. Verify the external tool is stopped before
+restarting the application; restarting alone does not verify shutdown.
 
 ## 7. Run Simulation
 
