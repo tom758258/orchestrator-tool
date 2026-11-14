@@ -6,21 +6,31 @@ import InputValueEditor from '../src/InputValueEditor'
 import type { InputValueWire } from '../src/inputValue'
 import type { InteractionStep, WorkflowStep } from '../src/workflow'
 
-test('Workflow interaction controls require opt-in and retain the shared capacity', () => {
-  function Settings() {
+test('Interaction settings lock without Background and retain capacity through collapse', () => {
+  function Settings({ hasBackground, disabled = false }: { hasBackground: boolean; disabled?: boolean }) {
     const [value, setValue] = useState({ enabled: false, max_active_command_status: 4096 })
-    return <InteractionSettingsEditor value={value} disabled={false} onChange={setValue} />
+    return <InteractionSettingsEditor value={value} hasBackground={hasBackground} disabled={disabled} onChange={setValue} />
   }
-  render(<Settings />)
+  const view = render(<Settings hasBackground={false} />)
+  const toggle = () => screen.getByRole('button', { name: /FG\/BG Interaction$/ })
+  expect((toggle() as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByLabelText('Enable FG/BG Interaction')).toBeNull()
+
+  view.rerender(<Settings hasBackground />)
+  expect((toggle() as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(toggle())
   const capacity = screen.getByLabelText('Max Active Command Status') as HTMLInputElement
   expect(capacity.disabled).toBe(true)
   expect(capacity.value).toBe('4096')
   fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
   fireEvent.change(capacity, { target: { value: '65536' } })
-  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
-  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
-  expect(capacity.value).toBe('65536')
-  expect(capacity.disabled).toBe(false)
+  fireEvent.click(toggle())
+  expect(screen.queryByLabelText('Max Active Command Status')).toBeNull()
+  fireEvent.click(toggle())
+  expect((screen.getByLabelText('Max Active Command Status') as HTMLInputElement).value).toBe('65536')
+  view.rerender(<Settings hasBackground disabled />)
+  expect((screen.getByLabelText('Enable FG/BG Interaction') as HTMLInputElement).disabled).toBe(true)
+  expect((screen.getByLabelText('Max Active Command Status') as HTMLInputElement).disabled).toBe(true)
 })
 
 const command = (id: string, background_id = 'bg'): InteractionStep => ({ type: 'bg-interaction', id, background_id, timeout_ms: null,

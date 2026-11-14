@@ -369,16 +369,15 @@ types are:</p>
 <li><strong>While</strong> — repeat a body while a condition remains true.</li>
 <li><strong>If / Else</strong> — run either THEN or ELSE once based on a comparison; ELSE may be empty.</li>
 </ul>
-<p>The <strong>Steps</strong> categories always appear in this order: <strong>Workflow</strong>, <strong>Meters</strong>,
-<strong>Powers</strong>, <strong>Scopes</strong>. Workflow is always available. Each instrument category
-requires at least one matching Tool Instance in the current Template. Without
-one, its header is greyed out with a lock and a hint to add an instance in
-<strong>Setup</strong>; it stays collapsed and cannot be expanded. Adding the first matching
-instance unlocks it immediately; removing the last locks it again. Loading a
-Template updates the locks from its instances without changing existing steps.
-Saved Live Resources, executable configuration, capabilities, and Execution Mode
-do not affect these locks. Adding a Tool Instance and saving a Live Resource are
-separate operations; Simulation editing does not require a Live Resource.</p>
+<p>The <strong>Steps</strong> categories appear in this order: <strong>Workflow</strong>,
+<strong>Background Workflow</strong>, <strong>FG/BG Interaction</strong>, <strong>Meters</strong>, <strong>Powers</strong>, <strong>Scopes</strong>,
+<strong>Serial</strong>. Workflow is always available. Background Workflow requires a Background
+binding in Setup; FG/BG Interaction additionally requires <strong>Enable FG/BG Interaction</strong>
+in the Workflow sidebar. Instrument categories require a matching Tool Instance in
+the Template. Locked categories show a lock and reason and cannot expand. Adding
+or removing bindings or instances updates the locks without deleting existing
+Steps. Live Resources, executable configuration, capabilities, and Execution
+Mode do not affect these locks.</p>
 <p>Click an available category header to expand or collapse it independently.
 Expanded categories show <strong>−</strong>; collapsed categories show <strong>+</strong> and hide their
 step buttons. Available categories start expanded when the app opens. This
@@ -775,11 +774,15 @@ loop iterations and later runs, receives new absolute file paths. Existing
 files are not overwritten. Job failure or missing required files fails the step.
 This panel is separate from CSV Export of Workflow Output rows.</p>
 <h3 id="fgbg-interaction">FG/BG Interaction</h3>
-<p>In the Workflow left panel, select <strong>Enable FG/BG Interaction</strong> to use the
-Background interaction Steps. <strong>Max Active Command Status</strong> defaults to <strong>4096</strong>
-and accepts <strong>1–65536</strong>. This limit is shared across Backgrounds for commands
-still being tracked; it does not limit the total number of commands in a Run.
-Both settings are saved with the Template. Version 0.3.0 requires the current
+<p>The <strong>FG/BG Interaction</strong> settings panel is at the bottom of the Workflow
+sidebar, below <strong>Chart Options</strong>, and starts collapsed. Without a Background
+binding it is locked and its controls are hidden. After enabling Background
+Streaming in Setup, expand the panel and select <strong>Enable FG/BG Interaction</strong>
+to unlock interaction Steps. Removing the last unreferenced Background binding
+disables Interaction but retains the capacity value. <strong>Max Active Command Status</strong>
+defaults to <strong>4096</strong> and accepts <strong>1–65536</strong>. It is shared across Backgrounds
+for commands still being tracked, not cumulative commands in a Run. Both
+settings are saved with the Template. Version 0.3.0 requires the current
 Template format; older Templates without these settings cannot be loaded.</p>
 <p>First enable Background Streaming for the Tool Instance in Setup, then add
 <strong>Worker ON</strong> before interaction Steps. Interaction does not start a Worker

@@ -323,13 +323,14 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **While** — 在 condition 為 true 時重複執行 body。
 - **If / Else** — 依 comparison 執行 THEN 或 ELSE，ELSE 可為空。
 
-**Steps** 分類固定依 **Workflow**、**Meters**、**Powers**、**Scopes** 排列。
-Workflow 永遠可用；各儀器分類需在目前 Template 中有至少一個對應的 Tool Instance。
-沒有時，標題會灰化並顯示鎖頭及前往 **Setup** 新增 instance 的提示；分類維持收合，
-無法展開。新增第一個同類 instance 後立即解鎖；移除最後一個後再次鎖定。載入
-Template 時會依其中的 instances 更新鎖定狀態，不會變更既有 steps。
-已保存的 Live Resource、EXE 配置、capabilities 與 Execution Mode 都不影響分類鎖定。
-新增 Tool Instance 與保存 Live Resource 是不同操作；Simulation 編輯不需要 Live Resource。
+**Steps** 分類依 **Workflow**、**Background Workflow**、**FG/BG Interaction**、
+**Meters**、**Powers**、**Scopes**、**Serial** 排列。Workflow 永遠可用。
+Background Workflow 需要在 Setup 啟用 Background Binding；FG/BG Interaction
+還需要在 Workflow 左側勾選 **Enable FG/BG Interaction**。儀器分類需要
+Template 內有對應的 Tool Instance。缺少條件時分類顯示鎖頭及原因，
+不可展開；新增或移除 Binding、Tool Instance 會更新鎖定狀態，
+但不會刪除已存在的 Steps。Live Resource、EXE 配置、capabilities 與
+Execution Mode 都不影響這些分類的鎖定條件。
 
 點擊可用分類的標題，可獨立展開或收合該分類。展開時顯示 **−**；收合時顯示 **+**
 並隱藏該分類的 step buttons。App 開啟時可用分類預設展開；此狀態不會保存於
@@ -698,8 +699,12 @@ JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop itera
 
 ### FG/BG Interaction
 
-在 Workflow 左側勾選 **Enable FG/BG Interaction**，即可使用 Background 互動
-Steps。**Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
+Workflow 左側最下方、**Chart Options** 下方的 **FG/BG Interaction**
+設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
+在 Setup 啟用 Background Streaming 後，才能展開並勾選
+**Enable FG/BG Interaction** 以解鎖互動 Steps。移除最後一個未被
+Step 引用的 Background Binding 時會關閉 Interaction，但保留容量數值。
+**Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
 Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。兩項設定都會隨
 Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。
 
