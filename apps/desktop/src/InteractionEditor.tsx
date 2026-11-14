@@ -33,11 +33,14 @@ export function InteractionSettingsEditor({ value, disabled, hasBackground, onCh
   </section>
 }
 
-export function InteractionEditor({ step, steps, backgrounds, instances = [], disabled, onChange }: {
+type CommandOperation = Extract<InteractionOperation, { kind: 'command' }>
+export type InteractionCommandDrafts = Partial<Record<CommandOperation['command'], CommandOperation>>
+
+export function InteractionEditor({ step, steps, backgrounds, instances = [], disabled, savedCommands, onSaveCommand, onChange }: {
   step: InteractionStep; steps: WorkflowStep[]; backgrounds: BackgroundConfig[]; disabled: boolean; onChange: (step: InteractionStep) => void
   instances?: ToolInstance[]
+  savedCommands: InteractionCommandDrafts; onSaveCommand: (operation: CommandOperation) => void
 }) {
-  const [savedCommands, setSavedCommands] = useState<Record<string, InteractionOperation>>({})
   const instanceId = backgrounds.find(b => b.id === step.background_id)?.tool_instance_id
   const tool = instances.find(i => i.id === instanceId)?.tool
   const operation = step.operation
@@ -46,8 +49,8 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
   const { earlierSteps, earlierVariables } = inputScope(steps, step.id)
   const selectCommand = (command: 'software-trigger' | 'serial-send' | 'serial-send-file') => {
     if (operation.kind !== 'command') return
-    setSavedCommands(current => ({ ...current, [`${step.id}:${operation.command}`]: operation }))
-    const saved = savedCommands[`${step.id}:${command}`]
+    onSaveCommand(operation)
+    const saved = savedCommands[command]
     onChange({ ...step, operation: saved ?? (command === 'software-trigger'
       ? { kind: 'command', command, wait_for_completion: operation.wait_for_completion }
       : { kind: 'command', command, wait_for_completion: operation.wait_for_completion,

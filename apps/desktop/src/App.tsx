@@ -22,7 +22,7 @@ import { parseChartThresholdPercent, pruneChartData, type ChartChangeSettings, t
 import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLastRunReplacement, releaseRunGate } from './runLifecycle'
 import FailureDetails from './FailureDetails'
 import WorkflowRunSummary from './WorkflowRunSummary'
-import { InteractionEditor, InteractionSettingsEditor } from './InteractionEditor'
+import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDrafts } from './InteractionEditor'
 import { INTERACTION_LABELS } from './workflow'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
@@ -652,6 +652,15 @@ function App() {
   const [toolConfigBusy, setToolConfigBusy] = useState<string | null>(null)
   const [toolConfigError, setToolConfigError] = useState<string | null>(null)
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraft | null>(null)
+  const [interactionCommandDrafts, setInteractionCommandDrafts] = useState<Record<string, InteractionCommandDrafts>>({})
+  useEffect(() => {
+    const commandIds = new Set(allWorkflowSteps(workflowDraft?.workflow.steps ?? [])
+      .filter(step => step.type === 'bg-interaction' && step.operation.kind === 'command').map(step => step.id))
+    setInteractionCommandDrafts(current => {
+      const remaining = Object.fromEntries(Object.entries(current).filter(([id]) => commandIds.has(id)))
+      return Object.keys(remaining).length === Object.keys(current).length ? current : remaining
+    })
+  }, [workflowDraft?.workflow.steps])
   useEffect(() => {
     if (backgroundCsvTarget !== 'all' && !workflowDraft?.backgrounds?.some(background => background.id === backgroundCsvTarget)) {
       setBackgroundCsvTarget('all')
@@ -1006,6 +1015,7 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(workflowOnlyDraft(draft))
+      setInteractionCommandDrafts({})
       setTemplateUiGeneration(current => current + 1)
       setExpandedToolIds([])
       setCollapsedStepIds(new Set())
@@ -1356,6 +1366,7 @@ function App() {
       runGenerationRef.current += 1
       runIdRef.current = null
       setWorkflowDraft(workflowOnlyDraft(loadedDraft))
+      setInteractionCommandDrafts({})
       setTemplateUiGeneration(current => current + 1)
       setExpandedToolIds([])
       setCollapsedStepIds(new Set())
@@ -1378,13 +1389,14 @@ function App() {
       setCsvStreamStatus(null)
       clearRunFeedback()
       const fileErrors = allWorkflowSteps(loadedDraft.workflow.steps).some(step =>
-         step.type === 'tool-action' && step.action === 'send-file' &&
-         loadedDraft.tool_instances.some(instance => instance.id === step.target && instance.tool === 'serial'))
-         ? await invoke<string[]>('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) }) ?? []
-         : []
-       setTemplateIoMessage(fileErrors.length > 0
-         ? `Template loaded. Serial Send File warning:\n${fileErrors.join('\n')}`
-         : 'Template loaded.')
+        (step.type === 'tool-action' && step.action === 'send-file' &&
+          loadedDraft.tool_instances.some(instance => instance.id === step.target && instance.tool === 'serial')) ||
+        (step.type === 'bg-interaction' && step.operation.kind === 'command' && step.operation.command === 'serial-send-file'))
+        ? await invoke<string[]>('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) }) ?? []
+        : []
+      setTemplateIoMessage(fileErrors.length > 0
+        ? `Template loaded. Serial Send File warning:\n${fileErrors.join('\n')}`
+        : 'Template loaded.')
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
@@ -2939,6 +2951,10 @@ function App() {
                       {selectedStep.type === 'bg-interaction' && <InteractionEditor step={selectedStep}
                         key={`${templateUiGeneration}:${selectedStep.id}`}
                         instances={workflowDraft.tool_instances}
+                        savedCommands={interactionCommandDrafts[selectedStep.id] ?? {}}
+                        onSaveCommand={operation => setInteractionCommandDrafts(current => ({ ...current,
+                          [selectedStep.id]: { ...current[selectedStep.id], [operation.command]: operation },
+                        }))}
                         steps={workflowDraft.workflow.steps} backgrounds={workflowDraft.backgrounds ?? []} disabled={workflowBusy}
                         onChange={next => updateStep(selectedStep.id, () => next)} />}
                       {selectedStep.type === 'background' && <>

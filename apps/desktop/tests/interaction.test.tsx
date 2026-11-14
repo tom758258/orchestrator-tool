@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
-import { InteractionEditor, InteractionSettingsEditor } from '../src/InteractionEditor'
+import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDrafts } from '../src/InteractionEditor'
 import InputValueEditor from '../src/InputValueEditor'
 import type { InputValueWire } from '../src/inputValue'
 import type { InteractionStep, WorkflowStep } from '../src/workflow'
@@ -70,6 +70,7 @@ test('Result editor offers earlier same-Background commands in legal Loop scopes
     { type: 'for', id: 'closed-loop', variable: 'i', range: { start: '0', stop: '1', step: '1' }, steps: [command('expired')] }, get, command('later')]
   const onChange = vi.fn()
   render(<InteractionEditor step={get} steps={steps} backgrounds={[{ id: 'bg', tool_instance_id: 'meter', live_monitor: false, limit_count: 1 }]}
+    savedCommands={{}} onSaveCommand={vi.fn()}
     disabled={false} onChange={onChange} />)
   const source = screen.getByLabelText('Source BG Command Step') as HTMLSelectElement
   expect(Array.from(source.options).map(option => option.value)).toEqual(['', 'outer'])
@@ -82,7 +83,7 @@ test('Result editor offers earlier same-Background commands in legal Loop scopes
 test('BG Command exposes optional completion wait and locks controls during a Run', () => {
   const step = command('send')
   const onChange = vi.fn()
-  const props = { step, steps: [step], backgrounds: [], onChange }
+  const props = { step, steps: [step], backgrounds: [], onChange, savedCommands: {}, onSaveCommand: vi.fn() }
   const view = render(<InteractionEditor {...props} disabled={false} />)
   fireEvent.click(screen.getByLabelText('Wait for Completion'))
   expect(onChange).toHaveBeenCalledWith({ ...step, operation: { ...step.operation, wait_for_completion: true } })
@@ -97,7 +98,9 @@ test('Serial BG Command reuses TX and file controls and retains settings across 
   let saved = original
   function Editor() {
     const [step, setStep] = useState(original)
+    const [savedCommands, setSavedCommands] = useState<InteractionCommandDrafts>({})
     return <InteractionEditor step={step} steps={[step]} instances={[instance]}
+      savedCommands={savedCommands} onSaveCommand={operation => setSavedCommands(current => ({ ...current, [operation.command]: operation }))}
       backgrounds={[{ id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null }]}
       disabled={false} onChange={value => { saved = value; setStep(value) }} />
   }
@@ -125,7 +128,7 @@ test('Changing Background preserves Serial inputs and shows an incompatible comm
     ] as ToolInstance[]} backgrounds={[
       { id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null },
       { id: 'other', tool_instance_id: 'meter', live_monitor: false, limit_count: 1 },
-    ]} disabled={false} onChange={value => { changed(value); setStep(value) }} />
+    ]} savedCommands={{}} onSaveCommand={vi.fn()} disabled={false} onChange={value => { changed(value); setStep(value) }} />
   }
   render(<Editor />)
   fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'other' } })
