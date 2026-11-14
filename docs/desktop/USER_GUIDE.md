@@ -387,16 +387,15 @@ types are:
 - **While** — repeat a body while a condition remains true.
 - **If / Else** — run either THEN or ELSE once based on a comparison; ELSE may be empty.
 
-The **Steps** categories always appear in this order: **Workflow**, **Meters**,
-**Powers**, **Scopes**. Workflow is always available. Each instrument category
-requires at least one matching Tool Instance in the current Template. Without
-one, its header is greyed out with a lock and a hint to add an instance in
-**Setup**; it stays collapsed and cannot be expanded. Adding the first matching
-instance unlocks it immediately; removing the last locks it again. Loading a
-Template updates the locks from its instances without changing existing steps.
-Saved Live Resources, executable configuration, capabilities, and Execution Mode
-do not affect these locks. Adding a Tool Instance and saving a Live Resource are
-separate operations; Simulation editing does not require a Live Resource.
+The **Steps** categories appear in this order: **Workflow**,
+**Background Workflow**, **FG/BG Interaction**, **Meters**, **Powers**, **Scopes**,
+**Serial**. Workflow is always available. Background Workflow requires a Background
+binding in Setup; FG/BG Interaction additionally requires **Enable FG/BG Interaction**
+in the Workflow sidebar. Instrument categories require a matching Tool Instance in
+the Template. Locked categories show a lock and reason and cannot expand. Adding
+or removing bindings or instances updates the locks without deleting existing
+Steps. Live Resources, executable configuration, capabilities, and Execution
+Mode do not affect these locks.
 
 Click an available category header to expand or collapse it independently.
 Expanded categories show **−**; collapsed categories show **+** and hide their
@@ -824,11 +823,15 @@ This panel is separate from CSV Export of Workflow Output rows.
 
 ### FG/BG Interaction
 
-In the Workflow left panel, select **Enable FG/BG Interaction** to use the
-Background interaction Steps. **Max Active Command Status** defaults to **4096**
-and accepts **1–65536**. This limit is shared across Backgrounds for commands
-still being tracked; it does not limit the total number of commands in a Run.
-Both settings are saved with the Template. Version 0.3.0 requires the current
+The **FG/BG Interaction** settings panel is at the bottom of the Workflow
+sidebar, below **Chart Options**, and starts collapsed. Without a Background
+binding it is locked and its controls are hidden. After enabling Background
+Streaming in Setup, expand the panel and select **Enable FG/BG Interaction**
+to unlock interaction Steps. Removing the last unreferenced Background binding
+disables Interaction but retains the capacity value. **Max Active Command Status**
+defaults to **4096** and accepts **1–65536**. It is shared across Backgrounds
+for commands still being tracked, not cumulative commands in a Run. Both
+settings are saved with the Template. Version 0.3.0 requires the current
 Template format; older Templates without these settings cannot be loaded.
 
 First enable Background Streaming for the Tool Instance in Setup, then add

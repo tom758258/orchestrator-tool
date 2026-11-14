@@ -224,6 +224,50 @@ async function savedDraft() {
   return JSON.parse(args.templateJson)
 }
 
+test('Interaction panel and Step category follow Background binding and opt-in', async () => {
+  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }], backgrounds: [],
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  const categories = () => within(screen.getByRole('region', { name: 'Step categories' }))
+  const interactionCategory = () => categories().getByRole('button', { name: 'FG/BG Interaction' }) as HTMLButtonElement
+  const bgCategory = () => categories().getByRole('button', { name: 'Background Workflow' }) as HTMLButtonElement
+  expect(interactionCategory().disabled).toBe(true)
+  expect(bgCategory().disabled).toBe(true)
+  const panelButton = screen.getByRole('button', { name: 'Expand FG/BG Interaction' }) as HTMLButtonElement
+  expect(panelButton.disabled).toBe(true)
+  expect(bgCategory().compareDocumentPosition(interactionCategory()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Chart Options' }).compareDocumentPosition(panelButton)
+    & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+  tab('Setup')
+  fireEvent.click(instance('meters-1').getByRole('button', { name: 'Expand Background Streaming' }))
+  fireEvent.click(instance('meters-1').getByLabelText('Enable Background Streaming'))
+  tab('Workflow')
+  expect(bgCategory().disabled).toBe(false)
+  expect(interactionCategory().disabled).toBe(true)
+  click('Expand FG/BG Interaction')
+  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  expect(interactionCategory().disabled).toBe(false)
+  fireEvent.click(categories().getByRole('button', { name: 'BG Command' }))
+  expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(false)
+
+  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  expect(interactionCategory().disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  fireEvent.change(screen.getByLabelText('Max Active Command Status'), { target: { value: '12' } })
+  tab('Setup')
+  fireEvent.click(instance('meters-1').getByLabelText('Enable Background Streaming'))
+  tab('Workflow')
+  expect(bgCategory().disabled).toBe(true)
+  expect(interactionCategory().disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'Expand FG/BG Interaction' }) as HTMLButtonElement).disabled).toBe(true)
+  const saved = await savedDraft()
+  expect(saved.workflow.interaction).toEqual({ enabled: false, max_active_command_status: 12 })
+})
+
 test('Workflow saves interaction settings and command/result references through the editor', async () => {
   newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
@@ -231,6 +275,7 @@ test('Workflow saves interaction settings and command/result references through 
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
   tab('Workflow')
+  click('Expand FG/BG Interaction')
   fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
   fireEvent.change(screen.getByLabelText('Max Active Command Status'), { target: { value: '12' } })
   click('BG Command')

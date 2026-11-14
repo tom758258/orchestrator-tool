@@ -181,6 +181,7 @@ type StepPresetOption = {
 const STEP_CATEGORIES = [
   { category: 'Workflow', tool: null },
   { category: 'Background Workflow', tool: null },
+  { category: 'FG/BG Interaction', tool: null },
   { category: 'Meters', tool: 'meters' },
   { category: 'Powers', tool: 'powers' },
   { category: 'Scopes', tool: 'scopes' },
@@ -188,7 +189,7 @@ const STEP_CATEGORIES = [
 ] as const
 
 const STEP_PRESETS: StepPresetOption[] = [
-  ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: ['BG Command', 'Get Latest', 'Wait Next', 'Get Command Result'][index], prefix: value, category: 'Background Workflow' })),
+  ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: ['BG Command', 'Get Latest', 'Wait Next', 'Get Command Result'][index], prefix: value, category: 'FG/BG Interaction' })),
   ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
     label: `Background ${action.split('-').map(word => word === 'on' || word === 'off' ? word.toUpperCase() : word[0].toUpperCase()+word.slice(1)).join(' ')}`,
     prefix: `background-${action}`, category: 'Background Workflow' })),
@@ -590,7 +591,7 @@ function App() {
   const [runChartSampling, setRunChartSampling] = useState<ChartChangeSettings | null>(null)
   const [runChartFitData, setRunChartFitData] = useState(false)
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
-    Workflow: true, 'Background Workflow': true, Powers: true, Meters: true, Scopes: true, Serial: true,
+    Workflow: true, 'Background Workflow': true, 'FG/BG Interaction': true, Powers: true, Meters: true, Scopes: true, Serial: true,
   })
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [selectedPaletteStep, setSelectedPaletteStep] = useState<StepPreset | null>(null)
@@ -1965,7 +1966,9 @@ function App() {
   const selectedPalettePreset = STEP_PRESETS.find(preset => preset.value === selectedPaletteStep)
   const selectedPaletteLocked = selectedPalettePreset?.category === 'Background Workflow'
     ? !workflowDraft?.backgrounds?.length
-    : selectedPalettePreset?.tool
+    : selectedPalettePreset?.category === 'FG/BG Interaction'
+      ? !workflowDraft?.backgrounds?.length || !workflowDraft?.workflow.interaction.enabled
+      : selectedPalettePreset?.tool
       ? !workflowDraft?.tool_instances.some(instance => instance.tool === selectedPalettePreset.tool)
       : false
   const selectedPaletteTooDeep = insertionDepth >= 8 && (selectedPaletteStep === 'for' ||
@@ -2317,7 +2320,13 @@ function App() {
                 value={workflowDraft.tool_instances}
                 backgrounds={workflowDraft.backgrounds}
                 onBackgroundsChange={backgrounds => {
-                  setWorkflowDraft(current => current ? { ...current, backgrounds } : current)
+                  setWorkflowDraft(current => current ? {
+                    ...current,
+                    backgrounds,
+                    workflow: current.backgrounds?.length && !backgrounds.length
+                      ? { ...current.workflow, interaction: { ...current.workflow.interaction, enabled: false } }
+                      : current.workflow,
+                  } : current)
                   setWorkflowChangedSinceRun(true)
                   clearRunFeedback()
                   clearValidation()
@@ -2604,10 +2613,6 @@ function App() {
 
               <div className="workflow-builder">
                 <aside className="workflow-sidebar">
-                  <InteractionSettingsEditor value={workflowDraft.workflow.interaction} disabled={workflowBusy} onChange={interaction => {
-                    setWorkflowDraft(current => current ? { ...current, workflow: { ...current.workflow, interaction } } : current)
-                    setWorkflowChangedSinceRun(true); clearRunFeedback(); setTemplateIoMessage(null)
-                  }} />
                   <section className="step-palette" aria-labelledby="step-palette-title">
                     <h3 id="step-palette-title">
                       <button type="button" className="collapsible-header"
@@ -2634,7 +2639,9 @@ function App() {
                       {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
                         const locked = category === 'Background Workflow' ? !workflowDraft.backgrounds?.length
-                          : tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
+                          : category === 'FG/BG Interaction'
+                            ? !workflowDraft.backgrounds?.length || !workflowDraft.workflow.interaction.enabled
+                            : tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
                         const expanded = !locked && expandedStepCategories[category]
                         return (
                         <section key={category}>
@@ -2653,7 +2660,11 @@ function App() {
                           {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
                             {category === 'Background Workflow'
                                ? 'No Background binding. Enable a Background in Tool Setup.'
-                               : `No ${category} Tool Instance. Add one in Setup.`}
+                               : category === 'FG/BG Interaction'
+                                 ? !workflowDraft.backgrounds?.length
+                                   ? 'No Background binding. Enable Background Streaming in Setup.'
+                                   : 'Enable FG/BG Interaction in the Workflow sidebar.'
+                                 : `No ${category} Tool Instance. Add one in Setup.`}
                           </p>}
                           {expanded && <div className="step-palette-items">
                             {presets.map((preset) => (
@@ -2850,6 +2861,13 @@ function App() {
                       </section>
                     </div>}
                   </section>
+                  <InteractionSettingsEditor key={templateUiGeneration}
+                    value={workflowDraft.workflow.interaction}
+                    hasBackground={Boolean(workflowDraft.backgrounds?.length)}
+                    disabled={workflowBusy} onChange={interaction => {
+                      setWorkflowDraft(current => current ? { ...current, workflow: { ...current.workflow, interaction } } : current)
+                      setWorkflowChangedSinceRun(true); clearRunFeedback(); setTemplateIoMessage(null)
+                    }} />
                 </aside>
 
                 <SequenceEditor

@@ -266,8 +266,7 @@ test('Background Workflow palette locks only when Background bindings are missin
   assert.equal(categoryHeader(category(withBackground)).props.disabled, false)
   assert.equal(categoryHeader(category(withBackground)).props['aria-expanded'], true)
   assert.deepEqual(categorySteps(category(withBackground)).map(text),
-    ['BG Command', 'Get Latest', 'Wait Next', 'Get Command Result',
-      'Background Worker ON', 'Background Worker OFF', 'Background Capture ON', 'Background Capture OFF'])
+    ['Background Worker ON', 'Background Worker OFF', 'Background Capture ON', 'Background Capture OFF'])
 })
 
 test('Steps categories keep fixed order and lock only by Template instances in either mode', async () => {

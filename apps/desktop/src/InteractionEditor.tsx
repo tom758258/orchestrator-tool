@@ -1,16 +1,33 @@
+import { useState } from 'react'
 import { allWorkflowSteps, loopPath, type BackgroundConfig, type InteractionSettings, type InteractionStep, type WorkflowStep } from './workflow'
 
-export function InteractionSettingsEditor({ value, disabled, onChange }: {
-  value: InteractionSettings; disabled: boolean; onChange: (value: InteractionSettings) => void
+export function InteractionSettingsEditor({ value, disabled, hasBackground, onChange }: {
+  value: InteractionSettings; disabled: boolean; hasBackground: boolean
+  onChange: (value: InteractionSettings) => void
 }) {
-  return <section aria-label="FG/BG Interaction settings">
-    <h3>FG/BG Interaction</h3>
-    <label><input type="checkbox" checked={value.enabled} disabled={disabled}
-      onChange={event => onChange({ ...value, enabled: event.target.checked })} />Enable FG/BG Interaction</label>
-    <label>Max Active Command Status<input type="number" min={1} max={65536} step={1} required
-      value={value.max_active_command_status} disabled={disabled || !value.enabled}
-      onChange={event => onChange({ ...value, max_active_command_status: Number(event.target.value) })} /></label>
-    <p>Shared by all Backgrounds in this Run. Completed, settled commands release capacity.</p>
+  const [expanded, setExpanded] = useState(false)
+  const open = hasBackground && expanded
+  return <section className="streaming-panel" aria-label="FG/BG Interaction settings">
+    <h3><button type="button" className="collapsible-header"
+      aria-label={`${open ? 'Collapse' : 'Expand'} FG/BG Interaction`}
+      aria-expanded={open} disabled={!hasBackground}
+      aria-describedby={!hasBackground ? 'fg-bg-interaction-hint' : undefined}
+      onClick={() => setExpanded(current => !current)}>
+      FG/BG Interaction <span aria-hidden="true">{!hasBackground ? '🔒' : open ? '−' : '+'}</span>
+    </button></h3>
+    {!hasBackground && <p className="step-category-hint" id="fg-bg-interaction-hint">
+      No Background binding. Enable Background Streaming in Setup.
+    </p>}
+    {open && <div className="interaction-settings-fields">
+      <label className="streaming-toggle"><input type="checkbox" checked={value.enabled} disabled={disabled}
+        onChange={event => onChange({ ...value, enabled: event.target.checked })} /> Enable FG/BG Interaction</label>
+      <label className="step-property-field">Max Active Command Status
+        <input type="number" min={1} max={65536} step={1} required
+          value={value.max_active_command_status} disabled={disabled || !value.enabled}
+          onChange={event => onChange({ ...value, max_active_command_status: Number(event.target.value) })} />
+      </label>
+      <p className="tool-setup-hint">Shared by all Backgrounds in this Run. Completed, settled commands release capacity.</p>
+    </div>}
   </section>
 }
 
