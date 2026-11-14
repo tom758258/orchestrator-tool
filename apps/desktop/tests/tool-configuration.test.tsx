@@ -257,6 +257,7 @@ test('Interaction panel and Step category follow Background binding and opt-in',
   expect(interactionCategory().disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  fireEvent.change(screen.getByLabelText('Max Active Command Status'), { target: { value: '12' } })
   tab('Setup')
   fireEvent.click(instance('meters-1').getByLabelText('Enable Background Streaming'))
   tab('Workflow')
@@ -264,7 +265,7 @@ test('Interaction panel and Step category follow Background binding and opt-in',
   expect(interactionCategory().disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Expand FG/BG Interaction' }) as HTMLButtonElement).disabled).toBe(true)
   const saved = await savedDraft()
-  expect(saved.workflow.interaction).toEqual({ enabled: false, max_active_command_status: 4096 })
+  expect(saved.workflow.interaction).toEqual({ enabled: false, max_active_command_status: 12 })
 })
 
 test('Workflow saves interaction settings and command/result references through the editor', async () => {
