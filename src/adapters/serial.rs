@@ -1,4 +1,4 @@
-//! Serial Background RX and ordinary Foreground adapter. Serial Tool owns the transport session.
+//! Serial streaming RX/TX and ordinary Foreground adapter. Serial Tool owns the transport session.
 use crate::{
     run::ExecutionMode,
     serial_setup::{SerialSetup, SerialTransport, parse_tcp_endpoint},
@@ -323,6 +323,24 @@ pub fn validate_action(
 
 /// Returns file errors without changing Template contents. Includes nested loop bodies.
 pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String> {
+    fn check_path(step: &crate::workflow::Step, arguments: &Value, errors: &mut Vec<String>) {
+        let value = arguments.get("path").and_then(Value::as_str).unwrap_or("");
+        let path = Path::new(value);
+        let reason = if !path.is_absolute() || value.starts_with("\\\\") {
+            Some("path must be an absolute local file".to_owned())
+        } else {
+            match std::fs::metadata(path) {
+                Ok(meta) if !meta.is_file() || meta.len() == 0 => {
+                    Some("file must exist, be regular and nonempty".to_owned())
+                }
+                Ok(_) => std::fs::File::open(path).err().map(|e| e.to_string()),
+                Err(e) => Some(e.to_string()),
+            }
+        };
+        if let Some(reason) = reason {
+            errors.push(format!("Step {}: {value}: {reason}", step.id()));
+        }
+    }
     fn check(
         steps: &[crate::workflow::Step],
         instances: &[crate::tool_instance::ToolInstance],
@@ -350,23 +368,17 @@ pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String
                         .iter()
                         .any(|i| &i.id == target && i.tool == crate::tool::ToolId::serial()) =>
                 {
-                    let value = arguments.get("path").and_then(Value::as_str).unwrap_or("");
-                    let path = Path::new(value);
-                    let reason = if !path.is_absolute() || value.starts_with("\\\\") {
-                        Some("path must be an absolute local file".to_owned())
-                    } else {
-                        match std::fs::metadata(path) {
-                            Ok(meta) if !meta.is_file() || meta.len() == 0 => {
-                                Some("file must exist, be regular and nonempty".to_owned())
-                            }
-                            Ok(_) => std::fs::File::open(path).err().map(|e| e.to_string()),
-                            Err(e) => Some(e.to_string()),
-                        }
-                    };
-                    if let Some(reason) = reason {
-                        errors.push(format!("Step {}: {value}: {reason}", step.id()));
-                    }
+                    check_path(step, arguments, errors);
                 }
+                crate::workflow::StepKind::Interaction {
+                    operation:
+                        crate::interaction::InteractionOperation::Command {
+                            command: crate::interaction::BackgroundCommand::SerialSendFile,
+                            arguments: Some(arguments),
+                            ..
+                        },
+                    ..
+                } => check_path(step, arguments, errors),
                 _ => {}
             }
         }
@@ -380,16 +392,11 @@ pub fn send_file_path_errors(template: &crate::template::Template) -> Vec<String
     errors
 }
 
-/// No custom Job Tracker or request context: Serial settings are bound at Worker startup.
-pub fn run_action(
-    session: &crate::worker::WorkerSession,
-    action: &crate::workflow::ActionId,
-    arguments: &Value,
-    timeout: std::time::Duration,
-) -> Result<Value, String> {
-    validate_action(action.as_str(), arguments, &Default::default())?;
+/// Shared FG/BG validation and native argument encoding, before any TX.
+pub(crate) fn worker_arguments(action: &str, arguments: &Value) -> Result<Value, String> {
+    validate_action(action, arguments, &Default::default())?;
     let mut worker_args = serde_json::Map::new();
-    match action.as_str() {
+    match action {
         "send" | "query" => {
             let mode = arguments["tx_format"].as_str().ok_or("Missing TX mode")?;
             worker_args.insert(
@@ -403,7 +410,7 @@ pub fn run_action(
         "receive" => {}
         _ => return Err("Unsupported Serial Foreground command".into()),
     }
-    if action.as_str() == "query" {
+    if action == "query" {
         let bytes = delimiter_bytes(
             arguments["delimiter_format"]
                 .as_str()
@@ -417,24 +424,29 @@ pub fn run_action(
             Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
         );
     }
-    if matches!(action.as_str(), "receive" | "query")
+    if matches!(action, "receive" | "query")
         && let Some(value) = arguments.get("max_bytes")
     {
         worker_args.insert("max_bytes".into(), value.clone());
     }
+    Ok(Value::Object(worker_args))
+}
+
+/// Serial settings are bound at Worker startup.
+pub fn run_action(
+    session: &crate::worker::WorkerSession,
+    action: &crate::workflow::ActionId,
+    arguments: &Value,
+    timeout: std::time::Duration,
+) -> Result<Value, String> {
+    let worker_args = worker_arguments(action.as_str(), arguments)?;
     static NEXT_JOB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = format!(
         "orchestrator-serial-{}-{}",
         std::process::id(),
         NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
-    let terminal = session.run_async_job(
-        action.as_str(),
-        &Value::Object(worker_args),
-        None,
-        &id,
-        timeout,
-    )?;
+    let terminal = session.run_async_job(action.as_str(), &worker_args, None, &id, timeout)?;
     if terminal["state"] == "succeeded"
         && terminal["ok"] == true
         && terminal["error"].is_null()

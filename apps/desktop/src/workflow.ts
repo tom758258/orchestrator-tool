@@ -66,6 +66,8 @@ export type ToolActionStep = {
 export type InteractionSettings = { enabled: boolean; max_active_command_status: number }
 export type InteractionOperation =
   | { kind: 'command'; command: 'software-trigger'; wait_for_completion: boolean }
+  | { kind: 'command'; command: 'serial-send' | 'serial-send-file'; wait_for_completion: boolean;
+      arguments: Record<string, unknown>; bindings?: Record<string, InputValueWire> }
   | { kind: 'get-latest' }
   | { kind: 'wait-next' }
   | { kind: 'get-command-result'; source_step: string }

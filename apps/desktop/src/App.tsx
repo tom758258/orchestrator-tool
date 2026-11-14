@@ -1128,6 +1128,11 @@ function App() {
     }
     const id = nextStepId(preset.prefix, steps)
     const newStep = createPresetStep(preset.value, id, target ?? '')
+    if (newStep.type === 'bg-interaction' && newStep.operation.kind === 'command' &&
+      workflowDraft.tool_instances.find(instance => instance.id === workflowDraft.backgrounds?.find(b => b.id === target)?.tool_instance_id)?.tool === 'serial') {
+      newStep.operation = { kind: 'command', command: 'serial-send', wait_for_completion: false,
+        arguments: { tx_format: 'text', tx_value: '' } }
+    }
     updateSteps(current => {
       const currentParent = parentId === null ? null : allWorkflowSteps(current).find(step => step.id === parentId)
       const currentSiblings = currentParent?.type === 'if'
@@ -2932,6 +2937,8 @@ function App() {
                         </select>
                       </label>}
                       {selectedStep.type === 'bg-interaction' && <InteractionEditor step={selectedStep}
+                        key={`${templateUiGeneration}:${selectedStep.id}`}
+                        instances={workflowDraft.tool_instances}
                         steps={workflowDraft.workflow.steps} backgrounds={workflowDraft.backgrounds ?? []} disabled={workflowBusy}
                         onChange={next => updateStep(selectedStep.id, () => next)} />}
                       {selectedStep.type === 'background' && <>

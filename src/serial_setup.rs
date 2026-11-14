@@ -98,6 +98,30 @@ impl SerialSetup {
     }
 }
 
+/// Shared identity for Live Resource uniqueness and process-local reuse safety.
+pub(crate) fn resource_identity(
+    transport: SerialTransport,
+    resource: &str,
+) -> Result<String, String> {
+    let resource = resource.trim();
+    match transport {
+        SerialTransport::Serial => {
+            if parse_tcp_endpoint(resource).is_ok() {
+                return Err("UART requires a COM Port, not a TCP endpoint".into());
+            }
+            Ok(resource.to_ascii_uppercase())
+        }
+        SerialTransport::Tcp => {
+            let (host, port) = parse_tcp_endpoint(resource)?;
+            let host = host
+                .parse::<std::net::Ipv6Addr>()
+                .map(|address| address.to_string())
+                .unwrap_or_else(|_| host.to_ascii_lowercase());
+            Ok(format!("TCP::{host}::{port}"))
+        }
+    }
+}
+
 /// Parse the TCP device endpoint stored as one existing local Live Resource.
 /// IPv6 literals must be bracketed so the device port is unambiguous.
 pub(crate) fn parse_tcp_endpoint(resource: &str) -> Result<(String, u16), String> {

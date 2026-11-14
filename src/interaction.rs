@@ -38,6 +38,18 @@ pub enum InteractionOperation {
     Command {
         command: BackgroundCommand,
         wait_for_completion: bool,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "present_arguments"
+        )]
+        arguments: Option<Value>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            with = "crate::template::optional_bindings_wire"
+        )]
+        bindings: Option<std::collections::BTreeMap<String, crate::workflow::InputValue>>,
     },
     GetLatest,
     WaitNext,
@@ -46,10 +58,28 @@ pub enum InteractionOperation {
     },
 }
 
+fn present_arguments<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackgroundCommand {
     SoftwareTrigger,
+    SerialSend,
+    SerialSendFile,
+}
+
+impl BackgroundCommand {
+    pub(crate) fn native_name(self) -> &'static str {
+        match self {
+            Self::SoftwareTrigger => "software_trigger",
+            Self::SerialSend => "send",
+            Self::SerialSendFile => "send-file",
+        }
+    }
 }
 
 pub type CommandId = u64;
@@ -84,6 +114,8 @@ pub struct CommandStatus {
     pub error: Option<String>,
     interest: bool,
     dispatch_observer: bool,
+    #[serde(skip)]
+    result_identity_settled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -317,6 +349,7 @@ impl InteractionCore {
                     error: None,
                     interest,
                     dispatch_observer: true,
+                    result_identity_settled: false,
                 },
             );
             Ok(id)
@@ -401,8 +434,29 @@ impl InteractionCore {
         self.update(|s| {
             if let Some(status) = s.commands.get_mut(&id) {
                 status.interest = false;
+                if status.result_identity_settled && matches!(status.result, ResultState::Pending) {
+                    status.result = ResultState::Unrequested;
+                }
             }
             // Pending results stay retained until their identity is safely settled.
+            reclaim(s);
+        });
+    }
+
+    /// A correlated terminal settles identity even if the native result has not arrived.
+    /// Keep waiting for an interested Get; scope exit may safely release an unread slot.
+    pub(crate) fn settle_result_identity(&self, id: CommandId, generation: u64) {
+        self.update(|s| {
+            if let Some(status) = s
+                .commands
+                .get_mut(&id)
+                .filter(|v| v.generation == generation)
+            {
+                status.result_identity_settled = true;
+                if !status.interest && matches!(status.result, ResultState::Pending) {
+                    status.result = ResultState::Unrequested;
+                }
+            }
             reclaim(s);
         });
     }
@@ -603,12 +657,44 @@ pub(crate) fn validate_template(template: &crate::template::Template) -> Result<
                             format!("{}: Unknown Background {background_id}", step.id())
                         })?;
                     match operation {
-                        InteractionOperation::Command { .. } => {
-                            if !config.command_trigger {
-                                return Err(format!(
-                                    "{}: Software Trigger requires a Meters Software (Simple) Background with BG Command triggering",
-                                    step.id()
-                                ));
+                        InteractionOperation::Command {
+                            command,
+                            arguments,
+                            bindings,
+                            ..
+                        } => {
+                            if *command == BackgroundCommand::SoftwareTrigger {
+                                if arguments.is_some() || bindings.is_some() {
+                                    return Err(
+                                        "Software Trigger does not accept arguments or bindings"
+                                            .into(),
+                                    );
+                                }
+                                if !config.command_trigger {
+                                    return Err(format!(
+                                        "{}: Software Trigger requires a Meters Software (Simple) Background with BG Command triggering",
+                                        step.id()
+                                    ));
+                                }
+                            } else {
+                                let instance = template
+                                    .tool_instances()
+                                    .iter()
+                                    .find(|i| i.id == config.tool_instance_id)
+                                    .unwrap();
+                                if instance.serial_setup().is_none() {
+                                    return Err(format!(
+                                        "{}: Serial BG Command requires a Serial Background",
+                                        step.id()
+                                    ));
+                                }
+                                crate::adapters::serial::validate_action(
+                                    command.native_name(),
+                                    arguments
+                                        .as_ref()
+                                        .ok_or("Serial BG Command requires arguments")?,
+                                    bindings.as_ref().unwrap_or(&Default::default()),
+                                )?;
                             }
                             commands.insert(
                                 step.id().to_string(),

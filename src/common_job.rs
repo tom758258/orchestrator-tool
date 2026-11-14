@@ -159,6 +159,19 @@ impl JobTracker {
         self.jobs.get(job_id)
     }
 
+    pub(crate) fn jobs(&self) -> impl Iterator<Item = (&str, &TrackedJob)> {
+        self.jobs.iter().map(|(id, job)| (id.as_str(), job))
+    }
+
+    /// The dispatcher retires settled identities after ACK correlation and result publication.
+    pub(crate) fn retire(&mut self, job_id: &str) {
+        if let Some(job) = self.jobs.remove(job_id)
+            && let Some(worker_id) = job.worker_job_id
+        {
+            self.worker_ids.remove(&worker_id);
+        }
+    }
+
     pub fn has_conflicts(&self) -> bool {
         self.jobs.values().any(|job| !job.evidence.is_empty())
     }

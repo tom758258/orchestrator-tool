@@ -246,3 +246,79 @@ fn interaction_template_round_trip_and_rejects_old_or_unsupported_contracts() {
     escaped["workflow"]["steps"][0] = json!({"type":"for","id":"loop","variable":"i", "range":{"start":"0","stop":"2","step":"1"},"steps":[send]});
     assert!(Template::from_json_str(&escaped.to_string()).is_err());
 }
+
+#[test]
+fn serial_commands_reuse_fg_arguments_bindings_and_template_scope() {
+    let mut wire = template_wire();
+    wire["tool_instances"] =
+        json!([{"id":"serial","tool":"serial","setup":{"transport":"serial","baud":115200}}]);
+    wire["backgrounds"] = json!([{"id":"a","tool_instance_id":"serial","limit_count":null}]);
+    let op = json!({"kind":"command","command":"serial-send","wait_for_completion":true,
+        "arguments":{"tx_format":"hex-byte","tx_value":257},
+        "bindings":{"tx_value":{"source":"expression","left":{"source":"literal","value":257.8},"operator":"trunc"}}});
+    wire["workflow"]["steps"][0]["operation"] = op.clone();
+    let template = Template::from_json_str(&wire.to_string()).unwrap();
+    let saved: Value = serde_json::from_str(&template.to_json_string().unwrap()).unwrap();
+    assert_eq!(saved["workflow"]["steps"][0]["operation"], op);
+    assert_eq!(
+        Template::from_json_str(&saved.to_string()).unwrap(),
+        template
+    );
+    for bad in [
+        json!({"arguments":{"tx_format":"hex-byte","tx_value":1.5}}),
+        json!({"arguments":{"tx_format":"text","tx_value":4}}),
+        json!({"arguments":{"tx_format":"raw-hex","tx_value":"00ff"}}),
+        json!({"bindings":{"path":{"source":"literal","value":"/file"}}}),
+        json!({"bindings":{"tx_value":{"source":"variable","variable":"missing"}}}),
+        json!({"bindings":{"tx_value":{"source":"step-output","step_id":"get","pointer":"/result/tx_bytes"}}}),
+        json!({"arguments":null}),
+        json!({"command":"serial-query"}),
+        json!({"command":"software-trigger"}),
+    ] {
+        let mut invalid = wire.clone();
+        if bad.get("arguments").is_some() {
+            invalid["workflow"]["steps"][0]["operation"]
+                .as_object_mut()
+                .unwrap()
+                .remove("bindings");
+        }
+        for (key, value) in bad.as_object().unwrap() {
+            invalid["workflow"]["steps"][0]["operation"][key] = value.clone();
+        }
+        assert!(
+            Template::from_json_str(&invalid.to_string()).is_err(),
+            "{bad}"
+        );
+    }
+    let mut file = wire.clone();
+    file["workflow"]["steps"][0]["operation"] = json!({"kind":"command","command":"serial-send-file","wait_for_completion":false,"arguments":{"path":"/missing/file"}});
+    let nested = file["workflow"]["steps"].clone();
+    file["workflow"]["steps"] = json!([{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"1","step":"1"},"steps":nested}]);
+    let template = Template::from_json_str(&file.to_string()).unwrap();
+    assert_eq!(
+        orchestrator_tool::adapters::serial::send_file_path_errors(&template).len(),
+        1
+    );
+    let error = orchestrator_tool::run::run_workflow(
+        &template,
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        &Default::default(),
+        Duration::from_millis(10),
+        Duration::from_millis(10),
+        Duration::from_millis(10),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Serial Send File preflight failed")
+    );
+    file["workflow"]["steps"][0]["steps"][0]["operation"]["bindings"] =
+        json!({"path":{"source":"literal","value":"/another"}});
+    assert!(Template::from_json_str(&file.to_string()).is_err());
+    let mut meters = template_wire();
+    meters["workflow"]["steps"][0]["operation"]["arguments"] = json!({});
+    assert!(Template::from_json_str(&meters.to_string()).is_err());
+    meters["workflow"]["steps"][0]["operation"] = op;
+    assert!(Template::from_json_str(&meters.to_string()).is_err());
+}

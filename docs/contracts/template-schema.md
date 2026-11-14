@@ -365,7 +365,7 @@ and preserves existing Worker, Capture, summary and data-integrity checks.
 | Meters Software Simple, explicit command trigger | `software_trigger` control ACK; one validated sample with matching string `trigger_metadata.orchestrator_command_id` proves completion/result | Native sample |
 | Other supported Meters Background modes | Unsupported | Native sample |
 | Scopes numeric streaming | Unsupported | Native cycle; invalid measurements fail the Get |
-| Serial RX | Unsupported | Native RX event |
+| Serial streaming | `serial-send` / `serial-send-file` Async Job; native `job_finished` result | Native RX event |
 | Powers / Wavegen | Background unsupported | Unsupported |
 
 The Meters capability is based on meters-tool `56024a92ff34f957b5e35c10cf08605c9f08cc2d`
@@ -952,11 +952,54 @@ failed or stopped owning scope are not exported. Graceful Stop does not by
 itself mark a run as failed or cancelled. Already committed streaming CSV data
 is preserved after workflow failure or graceful Stop.
 
-## Serial Background RX-only (Template)
+## Serial Background RX and TX (Template)
 
 A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or a FIFO.
 
 Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--streaming` to produce RX without TX; Foreground Simulation retains `loopback-v1` without streaming. Live requires a separately saved and confirmed COM Port or TCP endpoint. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source. Foreground Serial actions are separately supported by ordinary non-streaming Workers.
+
+### Serial BG Send / Send File
+
+With FG/BG Interaction enabled and the Serial Worker ON, BG Command supports
+`serial-send` and `serial-send-file` on the same streaming Worker and transport
+session. No Serial-specific enable flag or Meters `command_trigger` is used.
+The existing dispatcher remains the only event consumer and shares the
+WorkerSession Job Tracker; RX capture, monitoring and Latest/Next remain RX-only.
+
+```json
+{"type":"bg-interaction","id":"tx","background_id":"serial-bg",
+ "operation":{"kind":"command","command":"serial-send","wait_for_completion":true,
+   "arguments":{"tx_format":"text","tx_value":"START"}},"timeout_ms":2000}
+```
+
+`arguments` and optional `bindings` belong inside `operation`. Send uses the FG
+Send argument and Binding contract, including dynamic `tx_value` truncation for
+Hex Byte. Send File uses `arguments: {"path": "<absolute worker-local path>"}`;
+file paths cannot be bound. The same file preflight runs before any Worker starts,
+including commands nested in IF/FOR/WHILE. Meters `software-trigger` retains its
+existing shape and rejects Serial arguments/bindings; Get operations reject them.
+
+HTTP 202 with `kind: "async_job"` means Accepted only. Correlation validates
+`run_id`, native `command`, client `job_id` and `worker_job_id`, including a
+terminal arriving before ACK. A successful terminal proves Completed; only the
+matching original JSONL `job_finished` proves Result Ready. A `last_job` status
+snapshot may confirm completion but never supplies or fabricates the native
+result. Get Command Result fails at its own deadline if the event is missing.
+It returns the entire event (for example `/result/tx_bytes` or
+`/result/bytes_written`); FG still returns its existing `result` object.
+Job failure fails the Run. Uncertain admission fails without retransmission.
+Settled Job identities are retired after ACK correlation and result interests;
+the most recent terminal remains available to check duplicate evidence.
+
+Serial TX arms process-local resource isolation before possible dispatch, even
+if ACK is lost or malformed. If Worker OFF cannot be confirmed, the same COM
+(case-insensitive) or normalized TCP host/port (including IPv6) cannot be reused
+by FG or BG in that application process, independent of executable or streaming
+arguments. Confirmed OFF releases isolation. Pure RX-only lifecycles do not arm
+this TX guard. There is no recovery UI or persistent isolation across restarts;
+operators must verify the external tool has safely stopped before restarting.
+TX completion does not establish DUT RX response or command execution. No Query,
+automatic TX/RX pairing, RX FIFO, command queue or Advanced Mode is introduced.
 
 ## Serial Foreground Tool Actions (Template)
 
@@ -967,11 +1010,11 @@ Serial Foreground uses the existing `tool-action` type and its `arguments` and o
 - `receive`: optional `arguments.max_bytes`, default 1024, range 1..=1048576. A successful Job returns raw `rx_hex` and `rx_bytes` as one Step Output.
 - `query`: TX follows the `send` rules, and `delimiter_format` (`text` or `hex`) plus `delimiter_value` specify a nonempty multi-byte delimiter. Text supports backslash-r, backslash-n and escaped backslashes; Hex accepts pairs of hexadecimal digits with ASCII whitespace. The decoded delimiter must not exceed `max_bytes`. Query returns raw `tx_hex`, `tx_bytes`, `rx_hex`, `rx_bytes`, `delimiter_hex`.
 
-Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background TX, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
+Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background Query/Receive, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
 
 
 ## Serial UART / TCP Client Transport (Template)
 
 A `serial` Tool Instance requires an explicit `setup.transport`: `serial` (UART) or `tcp`. New Desktop instances default to UART and save that choice explicitly. Optional TCP settings `connect_timeout_ms` (default 3000) and `io_timeout_ms` (default 1000) are retained even while UART is selected. Both must be positive. Switching Transport does not erase either set of communication settings.
 
-The COM Port or TCP device endpoint is an instance-scoped local Live Resource, never Template data. TCP resources use `host:port` (or `[IPv6]:port`) with device port 1..65535. The same TCP endpoint may not be assigned to two referenced Serial instances in one Workflow. TCP Live uses `--transport tcp --host ... --tcp-port ...` and its TCP-only timeouts, without UART startup options; TCP Simulation uses the existing Foreground `loopback-v1` or Background `periodic-rx-v1` profile without device Host or Port. Existing Foreground Actions and RX-only Background semantics do not change.
+The COM Port or TCP device endpoint is an instance-scoped local Live Resource, never Template data. TCP resources use `host:port` (or `[IPv6]:port`) with device port 1..65535. The same TCP endpoint may not be assigned to two referenced Serial instances in one Workflow. TCP Live uses `--transport tcp --host ... --tcp-port ...` and its TCP-only timeouts, without UART startup options; TCP Simulation uses the existing Foreground `loopback-v1` or Background `periodic-rx-v1` profile without device Host or Port. Existing Foreground Actions and Background RX semantics do not change.

@@ -314,3 +314,19 @@ test('Eight nested controls are allowed while a ninth is blocked', () => {
   assert.equal(canRelocateSteps(steps, ['moving'], 'level-7'), true)
   assert.equal(canRelocateSteps(steps, ['moving'], 'level-8'), false)
 })
+
+test('Copying nested Serial commands remaps TX bindings and Get Result sources', () => {
+  const source = loop('serial-loop', [
+    output('value'),
+    { type: 'bg-interaction', id: 'send', background_id: 'serial', timeout_ms: null,
+      operation: { kind: 'command', command: 'serial-send', wait_for_completion: false,
+        arguments: { tx_format: 'hex-byte' }, bindings: { tx_value: expression(ref('value'), literal) } } },
+    { type: 'bg-interaction', id: 'get', background_id: 'serial', timeout_ms: null,
+      operation: { kind: 'get-command-result', source_step: 'send' } },
+  ])
+  const pasted = pasteSteps([source], copySteps([source], selection('serial-loop')), singleSelection(null))
+  const body = pasted.steps[1].steps
+  assert.deepEqual(body[1].operation.bindings.tx_value, expression(ref('value-copy'), literal))
+  assert.equal(body[2].operation.source_step, 'send-copy')
+  assert.deepEqual(source.steps[1].operation.bindings.tx_value, expression(ref('value'), literal))
+})

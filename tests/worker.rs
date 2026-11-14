@@ -48,6 +48,8 @@ const FIXTURE_UTC: &str = "2026-10-23T10:00:00Z";
 
 #[path = "support/interaction.rs"]
 mod interaction_tests;
+#[path = "support/serial_tx.rs"]
+mod serial_tx_tests;
 
 #[derive(Default)]
 struct FixtureV3 {
@@ -375,6 +377,27 @@ fn main() {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     if arguments
         .first()
+        .is_some_and(|arg| arg == "--serial-tx-fixture")
+    {
+        serial_tx_tests::fixture(arguments[1].to_str().unwrap());
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--serial-tx-tests")
+    {
+        serial_tx_tests::contract(false);
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--serial-real-tx-tests")
+    {
+        serial_tx_tests::contract(true);
+        return;
+    }
+    if arguments
+        .first()
         .is_some_and(|arg| arg == "--interaction-fixture")
     {
         interaction_tests::fixture(arguments[1].to_str().unwrap());
@@ -502,6 +525,7 @@ fn main() {
     valid_ready_starts_worker_session();
     interaction_tests::contract(false);
     serial_background_rx_contract();
+    serial_tx_tests::contract(false);
     software_background_timer_contract();
     background_capture_and_termination_contract();
     background_workflow_stop_contract();

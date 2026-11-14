@@ -854,6 +854,18 @@ impl Workflow {
                             validate_input(value)?;
                         }
                     }
+                    StepKind::Interaction {
+                        operation:
+                            crate::interaction::InteractionOperation::Command {
+                                bindings: Some(bindings),
+                                ..
+                            },
+                        ..
+                    } => {
+                        for value in bindings.values() {
+                            validate_input(value)?;
+                        }
+                    }
                     StepKind::ShowMessage { fields, .. } => {
                         if fields.is_empty() || fields.len() > MAX_MESSAGE_FIELDS {
                             return Err(WorkflowError::InvalidMessageFields(step.id().clone()));
