@@ -368,12 +368,47 @@ impl Execution<'_> {
                             .ok_or("BG Interaction requires the Run controller".to_owned())
                             .and_then(|manager| {
                                 if let InteractionOperation::Command {
+                                    command,
+                                    arguments,
+                                    bindings,
                                     wait_for_completion,
-                                    ..
                                 } = operation
                                 {
+                                    let native_arguments = if *command
+                                        == crate::interaction::BackgroundCommand::SoftwareTrigger
+                                    {
+                                        Value::Null
+                                    } else {
+                                        let config = self
+                                            .template
+                                            .backgrounds()
+                                            .iter()
+                                            .find(|b| &b.id == background_id)
+                                            .unwrap();
+                                        let bindings =
+                                            bindings.as_ref().cloned().unwrap_or_default();
+                                        let mut arguments = resolve_tool_arguments(
+                                            arguments.as_ref().unwrap(),
+                                            &bindings,
+                                            &self.data,
+                                        )?;
+                                        truncate_dynamic_integer_argument(
+                                            &mut arguments,
+                                            &bindings,
+                                            self.template,
+                                            &config.tool_instance_id,
+                                            &crate::workflow::ActionId::new(command.native_name())
+                                                .unwrap(),
+                                        )?;
+                                        crate::adapters::serial::worker_arguments(
+                                            command.native_name(),
+                                            &arguments,
+                                        )?
+                                    };
                                     let id = manager.dispatch(
                                         background_id,
+                                        *command,
+                                        native_arguments,
                                         interest,
                                         *wait_for_completion,
                                         deadline,

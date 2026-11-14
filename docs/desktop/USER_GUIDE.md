@@ -838,10 +838,12 @@ First enable Background Streaming for the Tool Instance in Setup, then add
 **Worker ON** before interaction Steps. Interaction does not start a Worker
 automatically. Capture may remain OFF.
 
-- **BG Command**: currently supports Meters **Software (Simple)** only. In
+- **BG Command**: supports Meters **Software (Simple)** and Serial **Send / Send File**. For Meters, in
   Background Setup select **Trigger with BG Command**; this replaces the automatic
   timer. The Step succeeds when the Worker accepts the trigger. Select **Wait for
-  Completion** to wait for its measurement within the same Step.
+  Completion** to wait for its measurement within the same Step. For Serial, select
+  Send or Send File and configure TX using the same inputs as Foreground; no
+  additional enable switch is needed. Wait for Completion waits for the TX job.
 - **Get Latest**: returns the newest native Background event. Missing or invalid
   newest data fails the Step; it does not substitute an older valid reading.
 - **Wait Next**: waits for the first event arriving after the Step starts. The
@@ -858,7 +860,8 @@ the Get Step, then enter its **JSON Pointer**. BG Command itself supplies no dat
 output; Get Command Result resolves its invocation internally by source Step.
 Latest/Next also support existing
 Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
-Custom batches, Scopes and Serial. Powers and Wavegen do not support Background.
+Custom batches and Scopes. Serial Command/Result supports TX only; Latest/Next
+continue to return RX events. Powers and Wavegen do not support Background.
 
 **Step timeout (ms)** is optional; blank uses the action timeout. One deadline
 covers the whole Step. Each Background can retain one requested result; consume
@@ -1653,4 +1656,26 @@ Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negativ
 
 Query Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.
 
-Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background TX and Workflow RX FIFO are not available as Orchestrator actions.
+Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow RX FIFO are not available as Orchestrator actions.
+
+### Serial Send / Send File while Background RX is running
+
+Enable **FG/BG Interaction**, add **Worker ON**, then add a **BG Command** for
+the Serial Background. Select **Send** or **Send File**. Text, Hex Byte, TX Source,
+Calculation and file selection use the same rules as Serial Foreground. Send File
+is checked before any Worker starts, including when nested in a Loop or IF.
+Send and Send File use the same Worker and COM/TCP session while RX continues.
+Capture may stay OFF; enable it to retain RX data.
+
+Add **Get Command Result** and select the source BG Command. It returns the
+complete native `job_finished` event: use `/result/tx_bytes` for Send or
+`/result/bytes_written` for Send File. BG Command itself returns no data.
+A status snapshot can confirm TX completion, but Get fails at its deadline if the
+native event is missing. Completion does not mean the device replied or executed
+the transmitted command; Get Latest and Wait Next still return independent RX.
+
+Uncertain dispatch is never retried. If a Worker that attempted BG TX cannot be
+confirmed OFF, the application blocks reuse of the same COM/TCP endpoint by
+Foreground or Background. Verify the external Tool has safely stopped before
+restarting the application. Pure RX-only operation keeps its existing behavior.
+There is no Background Query, automatic TX/RX pairing or recovery screen.

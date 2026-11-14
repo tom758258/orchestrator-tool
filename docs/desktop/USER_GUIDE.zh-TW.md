@@ -711,9 +711,11 @@ Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本�
 先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
 **Worker ON**。啟用 Interaction 不會自動啟動 Worker；Capture 可以保持 OFF。
 
-- **BG Command**：目前僅支援 Meters **Software (Simple)**。在 Background Setup
+- **BG Command**：支援 Meters **Software (Simple)** 與 Serial **Send／Send File**。Meters 在 Background Setup
   勾選 **Trigger with BG Command**，以明確命令取代自動計時觸發。Worker 確認接受
   觸發後 Step 即成功；勾選 **Wait for Completion** 可在同一 Step 等待量測完成。
+  Serial 可選 Send 或 Send File，沿用前景 TX 輸入方式，不需額外開關；
+  Wait for Completion 等待該 TX Job 完成。
 - **Get Latest**：取得最新一筆完整原生 Background 事件。最新資料不存在或無效時
   Step 失敗，不會改用較舊的有效值。
 - **Wait Next**：等待 Step 開始後到達的第一筆事件；首筆無效即失敗。可等待尚在
@@ -726,8 +728,8 @@ Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Bindin
 使用 Meters 的 `/value`：選擇 **Previous step result**、指定 Get Step，再填入
 **JSON Pointer**。BG Command 本身不提供資料輸出；Get Command Result 依來源
 Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
-事件。Custom 批次、Scopes 與 Serial 不提供 Command／Result；Powers 與 Wavegen
-不支援 Background。
+事件。Custom 批次與 Scopes 不提供 Command／Result；Serial Command／Result
+僅支援 TX，Latest／Next 仍取得 RX。Powers 與 Wavegen 不支援 Background。
 
 **Step timeout (ms)** 可留白以使用 action timeout；整個 Step 共用一個期限。
 每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
@@ -1397,4 +1399,23 @@ Send／Query TX 可選 Text（僅接受字串，發送 UTF-8）或 Hex Byte（�
 
 Query Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
 
-Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。本次不提供 Serial run-sequence Workflow Action、Background TX 或 Workflow RX FIFO。
+Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow RX FIFO。
+
+### Background RX 執行中的 Serial Send／Send File
+
+啟用 **FG/BG Interaction**，加入 **Worker ON**，再新增指向 Serial Background
+的 **BG Command**。Command 可選 **Send** 或 **Send File**；Text、Hex Byte、
+TX Source、Calculation 與選檔沿用 Serial Foreground 規則。Send File 會在任何
+Worker 啟動前預檢，包含 Loop 或 IF 內的命令。Send／Send File 在同一 Worker、
+同一 COM／TCP Session 執行，RX 持續接收；Capture 可保持 OFF，需保存 RX 才開啟。
+
+加入 **Get Command Result** 並選擇來源 BG Command，取得完整原生
+`job_finished` 事件。Send 可用 `/result/tx_bytes`，Send File 可用
+`/result/bytes_written`；BG Command 本身不提供資料。Status Snapshot 只能確認
+TX 完成，若缺少原生事件，Get 會在自身期限到達時失敗。完成不表示裝置已回覆或
+已執行命令；Get Latest／Wait Next 仍取得獨立的 RX 事件。
+
+無法確認派送結果時不重送。曾嘗試 BG TX 的 Worker 若無法確認 OFF，同一程序內
+禁止 Foreground 或 Background 重用相同 COM／TCP Endpoint。重啟應用程式前，
+請先確認外部 Tool 已安全停止。純 RX-only 維持原有行為；不提供 Background Query、
+自動 TX／RX 配對或 Recovery 畫面。

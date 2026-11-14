@@ -1607,6 +1607,40 @@ enum InputValueWire {
     },
 }
 
+/// Reuse the FG InputValue wire contract inside BG command operations.
+pub(crate) mod optional_bindings_wire {
+    use super::*;
+
+    pub fn serialize<S: serde::Serializer>(
+        value: &Option<BTreeMap<String, InputValue>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value
+            .as_ref()
+            .map(|bindings| {
+                bindings
+                    .iter()
+                    .map(|(key, input)| (key, InputValueWire::from_input(input)))
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<BTreeMap<String, InputValue>>, D::Error> {
+        BTreeMap::<String, InputValueWire>::deserialize(deserializer)?
+            .into_iter()
+            .map(|(key, value)| {
+                input_from_wire(value)
+                    .map(|input| (key, input))
+                    .map_err(serde::de::Error::custom)
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(Some)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
 enum ExpressionOperandWire {

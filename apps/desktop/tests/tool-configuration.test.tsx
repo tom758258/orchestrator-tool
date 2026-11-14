@@ -91,6 +91,7 @@ beforeEach(() => {
         { measurement_name: 'voltage-dc', range_values: params.model === 'Saved Meter' ? [30] : [10] },
       ] }
       case 'check_live_preflight': return []
+      case 'check_serial_send_files': return []
       case 'refresh_powers_status': return { protection_tripped: params.executionMode === 'live', over_voltage_tripped: params.executionMode === 'live',
         over_current_tripped: false, channels: [{ channel: 1, output_enabled: false,
           over_voltage_tripped: params.executionMode === 'live', over_current_tripped: false }] }
@@ -291,6 +292,74 @@ test('Workflow saves interaction settings and command/result references through 
   const [command, get] = saved.workflow.steps
   expect(command.operation).toEqual({ kind: 'command', command: 'software-trigger', wait_for_completion: true })
   expect(get.operation).toEqual({ kind: 'get-command-result', source_step: command.id })
+})
+
+const serialBackgroundDraft: WorkflowDraft = { name: 'Serial interaction', tool_instances: [
+  { id: 'serial-1', tool: 'serial', setup: { transport: 'serial', baud: 115200,
+    data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000 } },
+], backgrounds: [{ id: 'serial-bg', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
+workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [
+  { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null,
+    operation: { kind: 'command', command: 'serial-send', wait_for_completion: true,
+      arguments: { tx_format: 'text', tx_value: 'START' } } },
+  { type: 'wait', id: 'other', duration_ms: 1 },
+] } }
+
+test('Serial command drafts survive Step selection and stay out of saved/replaced Templates', async () => {
+  tools.push(toolStatus('serial'))
+  newDraft = structuredClone(serialBackgroundDraft)
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand serial details' })
+  tab('Workflow')
+  click('Step 1: BG Command, send')
+  fireEvent.change(screen.getByLabelText('TX Value'), { target: { value: 'STOP' } })
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  fireEvent.change(screen.getByLabelText('Absolute File Path (Worker-local)'), { target: { value: '/tmp/payload.bin' } })
+  click('Step 2: Wait, other')
+  click('Step 1: BG Command, send')
+  expect((screen.getByLabelText('Absolute File Path (Worker-local)') as HTMLInputElement).value).toBe('/tmp/payload.bin')
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send' } })
+  expect((screen.getByLabelText('TX Value') as HTMLInputElement).value).toBe('STOP')
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  const expected = structuredClone(serialBackgroundDraft)
+  expected.workflow.steps[0] = { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null, operation: { kind: 'command',
+    command: 'serial-send-file', wait_for_completion: true, arguments: { path: '/tmp/payload.bin' } } }
+  expect(await savedDraft()).toEqual(expected)
+
+  newDraft = expected
+  loadedDraft = expected
+  for (const action of ['New Template', 'Open Template']) {
+    const previous = screen.getByLabelText('Absolute File Path (Worker-local)')
+    click(action)
+    await waitFor(() => expect(previous.isConnected).toBe(false))
+    click('Step 1: BG Command, send')
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send' } })
+    expect((screen.getByLabelText('TX Value') as HTMLInputElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('TX Value'), { target: { value: 'session-only' } })
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  }
+})
+
+test('opening a nested BG Send File Template displays the shared nonblocking file warning', async () => {
+  const file = { type: 'bg-interaction', id: 'file', background_id: 'serial-bg', timeout_ms: null,
+    operation: { kind: 'command', command: 'serial-send-file', wait_for_completion: true,
+      arguments: { path: '/tmp/missing-bg-payload.bin' } } } as const
+  loadedDraft = { ...structuredClone(serialBackgroundDraft), workflow: {
+    ...serialBackgroundDraft.workflow, steps: [
+      { type: 'for', id: 'loop', variable: 'i', range: { start: '0', stop: '1', step: '1' }, steps: [file] },
+    ],
+  } }
+  const fileError = 'Step file: /tmp/missing-bg-payload.bin: No such file or directory'
+  const nativeInvoke = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => command === 'check_serial_send_files'
+    ? [fileError] : nativeInvoke(command, args))
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  click('Open Template')
+  await screen.findByText(text => text.includes(fileError))
+  expect(invoke).toHaveBeenCalledWith('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) })
+  expect(await savedDraft()).toEqual(loadedDraft)
 })
 
 test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow Risk and known capacity in %s', async executionMode => {

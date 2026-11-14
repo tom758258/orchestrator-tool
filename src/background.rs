@@ -563,7 +563,13 @@ pub(crate) fn unique_file(
 }
 
 enum Command {
-    Interaction(u64, Instant, mpsc::SyncSender<Result<(), String>>),
+    Interaction(
+        u64,
+        crate::interaction::BackgroundCommand,
+        Value,
+        Instant,
+        mpsc::SyncSender<Result<(), String>>,
+    ),
     Action(
         BackgroundAction,
         bool,
@@ -579,6 +585,49 @@ fn quarantined_runtimes() -> &'static Mutex<std::collections::HashSet<String>> {
 }
 
 fn runtime_safety_key(spec: &WorkerLaunchSpec) -> String {
+    let option = |flag: &str| {
+        spec.arguments()
+            .windows(2)
+            .find(|args| args[0] == flag)
+            .map(|args| args[1].to_string_lossy().into_owned())
+    };
+    let serial = spec
+        .manifest()
+        .is_some_and(|m| m.tool_id() == &crate::tool::ToolId::serial())
+        || option("--baud").is_some()
+        || option("--transport").as_deref() == Some("tcp");
+    if serial {
+        if let Some(port) = option("--port") {
+            return format!(
+                "serial:{}",
+                crate::serial_setup::resource_identity(
+                    crate::serial_setup::SerialTransport::Serial,
+                    &port
+                )
+                .unwrap_or(port)
+            );
+        }
+        if let (Some(host), Some(port)) = (option("--host"), option("--tcp-port")) {
+            let resource = if host.contains(':') {
+                format!("[{host}]:{port}")
+            } else {
+                format!("{host}:{port}")
+            };
+            return format!(
+                "serial:{}",
+                crate::serial_setup::resource_identity(
+                    crate::serial_setup::SerialTransport::Tcp,
+                    &resource
+                )
+                .unwrap_or(resource)
+            );
+        }
+        if option("--mode").as_deref() == Some("simulate")
+            && (option("--baud").is_some() || option("--transport").as_deref() == Some("tcp"))
+        {
+            return format!("serial:simulate:{:?}", spec.executable());
+        }
+    }
     spec.arguments()
         .windows(2)
         .find(|args| args[0] == "--resource")
@@ -642,9 +691,12 @@ impl BackgroundManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch(
         &mut self,
         background: &str,
+        command: crate::interaction::BackgroundCommand,
+        arguments: Value,
         interest: bool,
         wait: bool,
         deadline: Instant,
@@ -680,7 +732,7 @@ impl BackgroundManager {
         let (tx, rx) = mpsc::sync_channel(1);
         if runtime
             .sender
-            .try_send(Command::Interaction(id, deadline, tx))
+            .try_send(Command::Interaction(id, command, arguments, deadline, tx))
             .is_err()
         {
             self.interaction.rejected(id);
@@ -960,6 +1012,9 @@ impl BackgroundManager {
                 pending_command: None,
                 command_source_active: false,
                 safety_key,
+                runtime_key: runtime_safety_key(&spec),
+                jobs: None,
+                next_job_poll: Instant::now(),
                 config: config.clone(),
                 expected_readings,
                 custom: matches!(&setup, BackgroundSetup::Meters(meters) if meters.trigger_mode.is_custom()),
@@ -996,6 +1051,7 @@ impl BackgroundManager {
                         }
                         let session = start_worker(&spec.clone().with_bounded_events(), startup)
                             .map_err(|e| e.to_string())?;
+                        dispatcher.jobs = Some(session.shared_job_tracker());
                         let adoption = &session.ready().features()["common.streaming"];
                         let expected_lifecycle = if scopes {
                             "deferred_start"
@@ -1214,6 +1270,9 @@ struct Dispatcher {
     pending_command: Option<u64>,
     command_source_active: bool,
     safety_key: Option<String>,
+    runtime_key: String,
+    jobs: Option<Arc<Mutex<crate::common_job::JobTracker>>>,
+    next_job_poll: Instant,
     config: BackgroundConfig,
     expected_readings: Option<usize>,
     custom: bool,
@@ -1240,11 +1299,19 @@ impl Dispatcher {
         &mut self,
         session: Option<&WorkerSession>,
         id: u64,
+        command: crate::interaction::BackgroundCommand,
+        arguments: Value,
         deadline: Instant,
     ) -> Result<(), String> {
         use crate::interaction::CommandState;
-        let reject = if !self.config.command_trigger {
-            Some("BG Command triggering is not enabled")
+        let serial_tx = command != crate::interaction::BackgroundCommand::SoftwareTrigger;
+        let reject = if (serial_tx && !self.serial) || (!serial_tx && !self.config.command_trigger)
+        {
+            Some("BG Command is unsupported by this Background")
+        } else if serial_tx
+            && !session.is_some_and(|s| s.supports_async_command(command.native_name()))
+        {
+            Some("Worker does not support the Serial Async Job")
         } else if self.pending_command.is_some() {
             Some("Background Command is busy")
         } else if Instant::now() >= deadline {
@@ -1261,9 +1328,22 @@ impl Dispatcher {
             return Err(error.into());
         }
         let session = session.unwrap();
+        if serial_tx {
+            self.retire_serial_jobs(false);
+        }
         let client_id = format!("interaction-{id}");
-        let request = json!({"schema_version":3,"command":"software_trigger","job_id":client_id,
-            "arguments":{"metadata":{"orchestrator_command_id":id.to_string()}}});
+        let native_command = command.native_name();
+        let request = json!({"schema_version":3,"command":native_command,"job_id":client_id,
+            "arguments":if serial_tx { arguments } else { json!({"metadata":{"orchestrator_command_id":id.to_string()}}) }});
+        if serial_tx {
+            session
+                .job_tracker()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .register(&client_id, native_command)?;
+            // Arm before the first possible TX, including lost or malformed ACKs.
+            self.safety_key = Some(self.runtime_key.clone());
+        }
         // HTTP admission must not own the dispatcher while Stop or a failure
         // needs it. Only this dispatcher consumes JSONL and updates Core. The
         // transport task sends once, has the original deadline, and cannot
@@ -1283,6 +1363,13 @@ impl Dispatcher {
                 let _ = tx.send(response);
             })
         {
+            if serial_tx {
+                session
+                    .job_tracker()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .retire(&client_id);
+            }
             self.interaction.rejected(id);
             return Err(error.to_string());
         }
@@ -1325,7 +1412,7 @@ impl Dispatcher {
                     &reply,
                     code,
                     session.ready().run_id(),
-                    "software_trigger",
+                    native_command,
                     &client_id,
                 ) {
                     Ok(reason)
@@ -1335,6 +1422,13 @@ impl Dispatcher {
                             .is_ok_and(|status| status.state == CommandState::Dispatching) =>
                     {
                         self.pending_command = None;
+                        if serial_tx {
+                            session
+                                .job_tracker()
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .retire(&client_id);
+                        }
                         self.interaction.rejected(id);
                         return Err(format!("BG Command rejected: {reason}"));
                     }
@@ -1346,11 +1440,26 @@ impl Dispatcher {
                 &reply,
                 code,
                 session.ready().run_id(),
-                "software_trigger",
+                native_command,
                 &client_id,
-                "control",
+                if serial_tx { "async_job" } else { "control" },
             )
-            .map(|_| ()),
+            .and_then(|worker_id| {
+                if serial_tx {
+                    let worker_id =
+                        worker_id.ok_or("Serial Async Job ACK missing worker_job_id")?;
+                    if session
+                        .job_tracker()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .accepted(&client_id, native_command, &worker_id)?
+                        == crate::common_job::JobObservation::Conflict
+                    {
+                        return Err("Serial Async Job ACK identity conflict".into());
+                    }
+                }
+                Ok(())
+            }),
             Err(error) => Err(error),
         };
         match admitted {
@@ -1543,6 +1652,9 @@ impl Dispatcher {
         self.failure.check()
     }
     fn event(&mut self, event: Value) -> Result<(), String> {
+        if self.serial {
+            self.serial_job_event(&event)?;
+        }
         let native = event.clone();
         let is_data = native["event"] == "sample" || native["event"] == "rx";
         let mut result = self.record_event(event);
@@ -1588,6 +1700,123 @@ impl Dispatcher {
             }
         }
         result
+    }
+
+    fn serial_job_event(&mut self, event: &Value) -> Result<(), String> {
+        if !matches!(event["event"].as_str(), Some("status" | "job_finished")) {
+            return Ok(());
+        }
+        let Some(jobs) = &self.jobs else {
+            return Ok(());
+        };
+        let terminals: Vec<_> = {
+            let mut jobs = jobs.lock().unwrap_or_else(|e| e.into_inner());
+            if event["event"] == "status" {
+                jobs.snapshot(event)?;
+            }
+            if jobs.has_conflicts() {
+                return Err("Conflicting Serial Job terminal identity".into());
+            }
+            jobs.jobs()
+                .filter_map(|(client, job)| {
+                    let id = client.strip_prefix("interaction-")?.parse::<u64>().ok()?;
+                    Some((id, job.terminal()?.clone()))
+                })
+                .collect()
+        };
+        for (id, terminal) in terminals {
+            let evidence = if event["event"] == "status" {
+                &event["last_job"]
+            } else {
+                event
+            };
+            if evidence["job_id"].as_str() == terminal.job_id.as_deref()
+                && evidence["result"] != terminal.result
+            {
+                return Err("Contradictory Serial Job result".into());
+            }
+            if event["event"] == "job_finished"
+                && event["job_id"].as_str() == terminal.job_id.as_deref()
+            {
+                // Never publish a last_job snapshot as an original JSONL event.
+                self.interaction
+                    .result(id, self.generation, Ok(event.clone()));
+            }
+            if terminal.state != "succeeded" {
+                let error = format!(
+                    "Serial {} Job {}: {}",
+                    terminal.command, terminal.state, terminal.error
+                );
+                let first_failure = self
+                    .interaction
+                    .command(id)
+                    .is_ok_and(|status| status.state != crate::interaction::CommandState::Failed);
+                self.interaction.observe(
+                    id,
+                    self.generation,
+                    crate::interaction::CommandState::Failed,
+                    Some(error.clone()),
+                );
+                if self.pending_command == Some(id) {
+                    self.pending_command = None;
+                }
+                // A valid failed Job fails the Run, but is not evidence that a
+                // subsequent, fully verified Worker OFF was unconfirmed.
+                if first_failure {
+                    self.fail(&error);
+                }
+                continue;
+            }
+            if !terminal.result.is_object() {
+                return Err("Serial Job success result must be an object".into());
+            }
+            // Settle before publishing Completed: the executor may immediately
+            // release Loop interest and reserve the next iteration's result.
+            self.interaction.settle_result_identity(id, self.generation);
+            self.interaction.observe(
+                id,
+                self.generation,
+                crate::interaction::CommandState::Completed,
+                None,
+            );
+            if self.pending_command == Some(id) {
+                self.pending_command = None;
+            }
+        }
+        Ok(())
+    }
+
+    fn retire_serial_jobs(&self, keep_latest: bool) {
+        let Some(jobs) = &self.jobs else {
+            return;
+        };
+        let mut jobs = jobs.lock().unwrap_or_else(|e| e.into_inner());
+        let latest = jobs
+            .jobs()
+            .filter_map(|(client, job)| {
+                job.terminal()?;
+                client.strip_prefix("interaction-")?.parse::<u64>().ok()
+            })
+            .max();
+        let settled: Vec<_> = jobs
+            .jobs()
+            .filter_map(|(client, job)| {
+                job.terminal()?;
+                let id = client.strip_prefix("interaction-")?.parse::<u64>().ok()?;
+                if keep_latest && latest == Some(id) {
+                    return None;
+                }
+                if let Ok(status) = self.interaction.command(id)
+                    && matches!(status.result, crate::interaction::ResultState::Pending)
+                {
+                    return None;
+                }
+                Some(client.to_owned())
+            })
+            .collect();
+        for client in settled {
+            jobs.retire(&client);
+        }
     }
 
     fn record_event(&mut self, mut event: Value) -> Result<(), String> {
@@ -1936,6 +2165,23 @@ impl Dispatcher {
         Ok(incomplete)
     }
     fn tick(&mut self, session: &WorkerSession, allow_trigger: bool) -> Result<(), String> {
+        if self.serial {
+            self.retire_serial_jobs(true);
+            if self.pending_command.is_some()
+                && Instant::now() >= self.next_job_poll
+                && !self.workflow_stop.is_requested()
+                && self.failure.check().is_ok()
+            {
+                self.next_job_poll = Instant::now() + Duration::from_millis(100);
+                if let Some(mut status) = session.job_status(Duration::from_millis(100))? {
+                    status["event"] = json!("status");
+                    self.serial_job_event(&status)?;
+                    if status["worker_state"] == "failed" || !status["fatal_error"].is_null() {
+                        return Err(format!("Serial Worker failed: {status}"));
+                    }
+                }
+            }
+        }
         let Some(timer) = &mut self.timer else {
             return Ok(());
         };
@@ -1989,8 +2235,9 @@ impl Dispatcher {
         let mut session = Some(session);
         loop {
             match receiver.try_recv() {
-                Ok(Command::Interaction(id, deadline, reply)) => {
-                    let result = self.dispatch_command(session.as_ref(), id, deadline);
+                Ok(Command::Interaction(id, command, arguments, deadline, reply)) => {
+                    let result =
+                        self.dispatch_command(session.as_ref(), id, command, arguments, deadline);
                     let _ = reply.send(result);
                 }
                 Ok(Command::Action(action, capture, deadline, reply)) => {
@@ -2149,6 +2396,69 @@ impl Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn serial_resource_guard_uses_same_endpoint_for_fg_and_bg() {
+        use crate::{
+            run::ExecutionMode,
+            serial_setup::{SerialSetup, SerialTransport},
+        };
+        let setup = SerialSetup::default();
+        let fg = crate::adapters::serial::foreground_worker_launch_spec(
+            Path::new("one/serial-tool"),
+            ExecutionMode::Live,
+            Some("com42"),
+            &setup,
+        )
+        .unwrap();
+        let bg = crate::adapters::serial::background_worker_launch_spec(
+            Path::new("two/serial-tool"),
+            ExecutionMode::Live,
+            Some("COM42"),
+            &setup,
+        )
+        .unwrap();
+        assert_eq!(runtime_safety_key(&fg), runtime_safety_key(&bg));
+        let tcp = SerialSetup {
+            transport: SerialTransport::Tcp,
+            ..setup.clone()
+        };
+        for (left, right) in [
+            ("Device.Local:5025", "device.local:05025"),
+            ("[2001:0db8:0:0::1]:5025", "[2001:db8::1]:5025"),
+        ] {
+            let fg = crate::adapters::serial::foreground_worker_launch_spec(
+                Path::new("one/serial-tool"),
+                ExecutionMode::Live,
+                Some(left),
+                &tcp,
+            )
+            .unwrap();
+            let bg = crate::adapters::serial::background_worker_launch_spec(
+                Path::new("two/serial-tool"),
+                ExecutionMode::Live,
+                Some(right),
+                &tcp,
+            )
+            .unwrap();
+            assert_eq!(runtime_safety_key(&fg), runtime_safety_key(&bg));
+            let key = runtime_safety_key(&bg);
+            quarantined_runtimes().lock().unwrap().insert(key.clone());
+            assert!(
+                check_runtime_reuse(&fg)
+                    .unwrap_err()
+                    .contains("reuse blocked")
+            );
+            quarantined_runtimes().lock().unwrap().remove(&key);
+        }
+        let sim = crate::adapters::serial::background_worker_launch_spec(
+            Path::new("one/serial-tool"),
+            ExecutionMode::Simulate,
+            None,
+            &setup,
+        )
+        .unwrap();
+        assert_ne!(runtime_safety_key(&sim), runtime_safety_key(&fg));
+    }
     use crate::{
         run::{ExecutionMode, RunOptions, run_workflow_streaming_controlled},
         template::Template,
@@ -2312,6 +2622,9 @@ mod tests {
                 pending_command: None,
                 command_source_active: false,
                 safety_key: None,
+                runtime_key: String::new(),
+                jobs: None,
+                next_job_poll: Instant::now(),
                 config,
                 expected_readings: Some(10),
                 custom: true,

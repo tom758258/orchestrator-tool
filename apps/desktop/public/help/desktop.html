@@ -788,10 +788,12 @@ Template format; older Templates without these settings cannot be loaded.</p>
 <strong>Worker ON</strong> before interaction Steps. Interaction does not start a Worker
 automatically. Capture may remain OFF.</p>
 <ul>
-<li><strong>BG Command</strong>: currently supports Meters <strong>Software (Simple)</strong> only. In
+<li><strong>BG Command</strong>: supports Meters <strong>Software (Simple)</strong> and Serial <strong>Send / Send File</strong>. For Meters, in
   Background Setup select <strong>Trigger with BG Command</strong>; this replaces the automatic
   timer. The Step succeeds when the Worker accepts the trigger. Select <strong>Wait for
-  Completion</strong> to wait for its measurement within the same Step.</li>
+  Completion</strong> to wait for its measurement within the same Step. For Serial, select
+  Send or Send File and configure TX using the same inputs as Foreground; no
+  additional enable switch is needed. Wait for Completion waits for the TX job.</li>
 <li><strong>Get Latest</strong>: returns the newest native Background event. Missing or invalid
   newest data fails the Step; it does not substitute an older valid reading.</li>
 <li><strong>Wait Next</strong>: waits for the first event arriving after the Step starts. The
@@ -808,7 +810,8 @@ the Get Step, then enter its <strong>JSON Pointer</strong>. BG Command itself su
 output; Get Command Result resolves its invocation internally by source Step.
 Latest/Next also support existing
 Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
-Custom batches, Scopes and Serial. Powers and Wavegen do not support Background.</p>
+Custom batches and Scopes. Serial Command/Result supports TX only; Latest/Next
+continue to return RX events. Powers and Wavegen do not support Background.</p>
 <p><strong>Step timeout (ms)</strong> is optional; blank uses the action timeout. One deadline
 covers the whole Step. Each Background can retain one requested result; consume
 it before sending another command whose result is needed. Busy or capacity
@@ -1479,7 +1482,25 @@ WebView2 is installed and up to date.</p>
 <p>Serial Foreground has four actions: Serial Send, Serial Send File, Serial Receive and Serial Query. These use an ordinary non-streaming Serial Worker. A Serial Tool Instance cannot be used for both Foreground and Background. The original Serial Background RX-only capture and monitoring are unchanged.</p>
 <p>Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negative integer, sending only its lowest eight bits). For example 4660 sends the single byte 34 in Hex Byte mode. Fixed fractional Hex Byte values fail validation. Dynamic numeric Hex Byte values are truncated toward zero before TX; negative results, invalid types and out-of-range values fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.</p>
 <p>Query Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.</p>
-<p>Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background TX and Workflow RX FIFO are not available as Orchestrator actions.</p>
+<p>Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow RX FIFO are not available as Orchestrator actions.</p>
+<h3 id="serial-send-send-file-while-background-rx-is-running">Serial Send / Send File while Background RX is running</h3>
+<p>Enable <strong>FG/BG Interaction</strong>, add <strong>Worker ON</strong>, then add a <strong>BG Command</strong> for
+the Serial Background. Select <strong>Send</strong> or <strong>Send File</strong>. Text, Hex Byte, TX Source,
+Calculation and file selection use the same rules as Serial Foreground. Send File
+is checked before any Worker starts, including when nested in a Loop or IF.
+Send and Send File use the same Worker and COM/TCP session while RX continues.
+Capture may stay OFF; enable it to retain RX data.</p>
+<p>Add <strong>Get Command Result</strong> and select the source BG Command. It returns the
+complete native <code>job_finished</code> event: use <code>/result/tx_bytes</code> for Send or
+<code>/result/bytes_written</code> for Send File. BG Command itself returns no data.
+A status snapshot can confirm TX completion, but Get fails at its deadline if the
+native event is missing. Completion does not mean the device replied or executed
+the transmitted command; Get Latest and Wait Next still return independent RX.</p>
+<p>Uncertain dispatch is never retried. If a Worker that attempted BG TX cannot be
+confirmed OFF, the application blocks reuse of the same COM/TCP endpoint by
+Foreground or Background. Verify the external Tool has safely stopped before
+restarting the application. Pure RX-only operation keeps its existing behavior.
+There is no Background Query, automatic TX/RX pairing or recovery screen.</p>
   </main>
   <script>
     (() => {

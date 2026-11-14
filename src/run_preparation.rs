@@ -125,26 +125,8 @@ fn validate_unique_live_resources(
             let setup = instance
                 .serial_setup()
                 .ok_or("Serial instance has no Serial setup")?;
-            match setup.transport {
-                crate::serial_setup::SerialTransport::Serial => {
-                    if crate::serial_setup::parse_tcp_endpoint(resource_key).is_ok() {
-                        return Err(format!(
-                            "{} UART requires a COM Port, not a TCP endpoint",
-                            instance.id
-                        ));
-                    }
-                    resource_key.to_ascii_uppercase()
-                }
-                crate::serial_setup::SerialTransport::Tcp => {
-                    let (host, port) = crate::serial_setup::parse_tcp_endpoint(resource_key)
-                        .map_err(|error| format!("{} TCP Live Resource: {error}", instance.id))?;
-                    let normalized_host = match host.parse::<std::net::Ipv6Addr>() {
-                        Ok(address) => address.to_string(),
-                        Err(_) => host.to_ascii_lowercase(),
-                    };
-                    format!("TCP::{normalized_host}::{port}")
-                }
-            }
+            crate::serial_setup::resource_identity(setup.transport, resource_key)
+                .map_err(|error| format!("{} Serial Live Resource: {error}", instance.id))?
         } else {
             resource_key.to_owned()
         };

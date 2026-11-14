@@ -163,7 +163,7 @@ pub struct WorkerSession {
     event_receiver: Option<Receiver<StdoutMessage>>,
     pending_events: Mutex<VecDeque<Value>>,
     manifest: Option<ToolManifest>,
-    jobs: Mutex<JobTracker>,
+    jobs: Arc<Mutex<JobTracker>>,
     evidence: Mutex<RunEvidence>,
     // JSONL transitions only; HTTP Status can be a stale snapshot.
     stream_state: Mutex<Option<String>>,
@@ -196,6 +196,37 @@ impl WorkerSession {
 
     pub fn job_tracker(&self) -> &Mutex<JobTracker> {
         &self.jobs
+    }
+
+    pub(crate) fn shared_job_tracker(&self) -> Arc<Mutex<JobTracker>> {
+        Arc::clone(&self.jobs)
+    }
+
+    pub(crate) fn supports_async_command(&self, command: &str) -> bool {
+        self.ready.features().get("common.async_jobs").is_some()
+            && self
+                .manifest
+                .as_ref()
+                .is_some_and(|m| m.command_kind(command) == Some("async_job"))
+    }
+
+    pub(crate) fn job_status(&self, timeout: Duration) -> Result<Option<Value>, String> {
+        // A lost read-only poll is not evidence of command failure. The Workflow
+        // deadline still bounds waiting, and the sole JSONL reader keeps running.
+        let status = match WorkerClient::new(&self.ready).status_with_timeout(timeout) {
+            Ok(status) => status,
+            Err(crate::worker_http::WorkerHttpError::Request(_)) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        common_v3::status(
+            &status,
+            self.ready.run_id(),
+            self.ready.origin(),
+            self.manifest.as_ref(),
+            self.ready.features(),
+            false,
+        )?;
+        Ok(Some(status))
     }
 
     fn mark_job_unconfirmed(&self, job_id: &str, reason: &str) -> Result<(), String> {
@@ -1386,7 +1417,7 @@ pub fn start_worker(
                 JobTracker::new(ready.run_id()).map_err(WorkerStartError::InvalidContract)?;
             Ok(WorkerSession {
                 manifest: spec.manifest().cloned(),
-                jobs: Mutex::new(tracker),
+                jobs: Arc::new(Mutex::new(tracker)),
                 evidence: Mutex::new(RunEvidence::default()),
                 stream_state: Mutex::new(None),
                 queue_overflow,

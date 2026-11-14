@@ -1,10 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { expect, test, vi } from 'vitest'
-import { InteractionEditor, InteractionSettingsEditor } from '../src/InteractionEditor'
+import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDrafts } from '../src/InteractionEditor'
 import InputValueEditor from '../src/InputValueEditor'
 import type { InputValueWire } from '../src/inputValue'
 import type { InteractionStep, WorkflowStep } from '../src/workflow'
+import type { ToolInstance } from '../src/ToolSetupEditor'
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/tmp/payload.bin') }))
 
 test('Interaction settings lock without Background and retain capacity through collapse', () => {
   function Settings({ hasBackground, disabled = false }: { hasBackground: boolean; disabled?: boolean }) {
@@ -67,6 +70,7 @@ test('Result editor offers earlier same-Background commands in legal Loop scopes
     { type: 'for', id: 'closed-loop', variable: 'i', range: { start: '0', stop: '1', step: '1' }, steps: [command('expired')] }, get, command('later')]
   const onChange = vi.fn()
   render(<InteractionEditor step={get} steps={steps} backgrounds={[{ id: 'bg', tool_instance_id: 'meter', live_monitor: false, limit_count: 1 }]}
+    savedCommands={{}} onSaveCommand={vi.fn()}
     disabled={false} onChange={onChange} />)
   const source = screen.getByLabelText('Source BG Command Step') as HTMLSelectElement
   expect(Array.from(source.options).map(option => option.value)).toEqual(['', 'outer'])
@@ -79,10 +83,59 @@ test('Result editor offers earlier same-Background commands in legal Loop scopes
 test('BG Command exposes optional completion wait and locks controls during a Run', () => {
   const step = command('send')
   const onChange = vi.fn()
-  const props = { step, steps: [step], backgrounds: [], onChange }
+  const props = { step, steps: [step], backgrounds: [], onChange, savedCommands: {}, onSaveCommand: vi.fn() }
   const view = render(<InteractionEditor {...props} disabled={false} />)
   fireEvent.click(screen.getByLabelText('Wait for Completion'))
   expect(onChange).toHaveBeenCalledWith({ ...step, operation: { ...step.operation, wait_for_completion: true } })
   view.rerender(<InteractionEditor {...props} disabled />)
   expect(screen.getByRole('group').hasAttribute('disabled')).toBe(true)
+})
+
+test('Serial BG Command reuses TX and file controls and retains settings across command switches', async () => {
+  const instance = { id: 'serial', tool: 'serial', setup: { transport: 'serial', baud: 115200 } } as ToolInstance
+  const original: InteractionStep = { ...command('send'), operation: { kind: 'command', command: 'serial-send',
+    wait_for_completion: true, arguments: { tx_format: 'text', tx_value: 'START' } } }
+  let saved = original
+  function Editor() {
+    const [step, setStep] = useState(original)
+    const [savedCommands, setSavedCommands] = useState<InteractionCommandDrafts>({})
+    return <InteractionEditor step={step} steps={[step]} instances={[instance]}
+      savedCommands={savedCommands} onSaveCommand={operation => setSavedCommands(current => ({ ...current, [operation.command]: operation }))}
+      backgrounds={[{ id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null }]}
+      disabled={false} onChange={value => { saved = value; setStep(value) }} />
+  }
+  render(<Editor />)
+  expect((screen.getByLabelText('TX Format') as HTMLSelectElement).value).toBe('text')
+  fireEvent.change(screen.getByLabelText('TX Value'), { target: { value: 'STOP' } })
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Browse File' }))
+  await vi.waitFor(() => expect((screen.getByLabelText('Absolute File Path (Worker-local)') as HTMLInputElement).value).toBe('/tmp/payload.bin'))
+  expect(saved.operation).toEqual({ kind: 'command', command: 'serial-send-file', wait_for_completion: true, arguments: { path: '/tmp/payload.bin' } })
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send' } })
+  expect((screen.getByLabelText('TX Value') as HTMLInputElement).value).toBe('STOP')
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  expect((screen.getByLabelText('Absolute File Path (Worker-local)') as HTMLInputElement).value).toBe('/tmp/payload.bin')
+})
+
+test('Changing Background preserves Serial inputs and shows an incompatible command', () => {
+  const original: InteractionStep = { ...command('send'), operation: { kind: 'command', command: 'serial-send',
+    wait_for_completion: false, arguments: { tx_format: 'hex-byte', tx_value: 257 } } }
+  const changed = vi.fn()
+  function Editor() {
+    const [step, setStep] = useState(original)
+    return <InteractionEditor step={step} steps={[step]} instances={[
+      { id: 'serial', tool: 'serial', setup: {} }, { id: 'meter', tool: 'meters', setup: {} },
+    ] as ToolInstance[]} backgrounds={[
+      { id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null },
+      { id: 'other', tool_instance_id: 'meter', live_monitor: false, limit_count: 1 },
+    ]} savedCommands={{}} onSaveCommand={vi.fn()} disabled={false} onChange={value => { changed(value); setStep(value) }} />
+  }
+  render(<Editor />)
+  fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'other' } })
+  expect(changed).toHaveBeenLastCalledWith({ ...original, background_id: 'other' })
+  expect(screen.getByRole('alert').textContent).toContain('does not match')
+  expect((screen.getByLabelText('TX Format') as HTMLSelectElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'bg' } })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect((screen.getByLabelText('TX Format') as HTMLSelectElement).value).toBe('hex-byte')
 })
