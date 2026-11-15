@@ -1,3 +1,4 @@
+import { presentationModules, useI18n, english } from './presentation-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -10,6 +11,7 @@ async function component(name, native = {}, source = fs.readFileSync(new URL(`..
   const modules = {}
   for (const [, path] of code.matchAll(/import .+? from "([^"]+)";/g)) {
     if (path === 'react') continue
+    if (path.startsWith('./i18n/')) { modules[path] = presentationModules(() => modules.react.useState)[path]; continue }
     if (path.startsWith('@tauri-apps/')) modules[path] = native
     else if (path === './useLivePreflight') modules[path] = {
       useLivePreflight: () => ({ status: 'passed', blocked: false, errors: [], reject: () => {} }),
@@ -60,11 +62,12 @@ function elements(root) {
   visit(root)
   return result
 }
-function text(node) {
-  if (Array.isArray(node)) return node.map(text).join('')
-  if (React.isValidElement(node)) return text(node.props.children)
+function rawText(node) {
+  if (Array.isArray(node)) return node.map(rawText).join('')
+  if (React.isValidElement(node)) return rawText(node.props.children)
   return node == null || typeof node === 'boolean' ? '' : String(node)
 }
+function text(node) { return rawText(node).replace(/\s+/g, ' ').trim() }
 const button = (view, label) => view.find(node => node.type === 'button' && text(node) === label)
 const candidates = select => elements(select).filter(node => node.type === 'option').map(node => node.props.value)
 const settle = () => new Promise(resolve => setImmediate(resolve))

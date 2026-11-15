@@ -1,3 +1,4 @@
+import { presentationModules, useI18n, english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
@@ -101,7 +102,7 @@ function loadingHarness(invoke) {
       })
     },
   }
-  const dependencies = { ...hooks, invoke, createPageChartData, chartRawOutputs, chartSupportsLive,
+  const dependencies = { ...hooks, useI18n, invoke, createPageChartData, chartRawOutputs, chartSupportsLive,
     statisticalRequestKey, chartLoadGroups, chartNeedsLoad, CHART_SERIES_CHUNK_ROWS: 25_000 }
   const render = new Function(...Object.keys(dependencies), loadingSource + '\nreturn ResultChart')
     (...Object.values(dependencies))
@@ -380,6 +381,7 @@ test('non-Line panels wait for completion without exporting or loading raw data'
     './chartStatistics': await import('../src/chartStatistics.ts'),
     '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') } }
   const { code } = await transformWithOxc(source, 'ResultChart.tsx', { jsx: { runtime: 'classic' } })
+  Object.assign(modules, presentationModules(() => modules.react.useState))
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
   const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)
@@ -420,6 +422,7 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
   '@tauri-apps/api/core': { invoke: () => assert.fail('Unexpected loading') },
   '@tauri-apps/plugin-dialog': { save: () => {} } }
   const { code } = await transformWithOxc(source, 'ResultChart.tsx', { jsx: { runtime: 'classic' } })
+  Object.assign(modules, presentationModules(() => modules.react.useState))
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
   const component = new Function('React', 'modules', `${body}; return ResultChart`)(React, modules)

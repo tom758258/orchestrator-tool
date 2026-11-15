@@ -2824,3 +2824,7 @@ textarea:disabled {
     padding: 12px 0 0;
   }
 }
+
+.locale-button { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
+.appearance-control { flex-wrap: wrap; }
+:lang(zh-TW) .action-button { word-break: keep-all; }

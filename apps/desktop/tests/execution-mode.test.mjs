@@ -13,7 +13,6 @@ test('capability queries select simulator identity only in Simulation', () => {
 })
 
 test('Live Resource remains stored for Live mode and saving it does not switch modes', () => {
-  assert.match(app, /Stored for Live mode\. Current execution mode is Simulation\./)
   const handler = app.slice(app.indexOf('const handleResource'), app.indexOf('const refreshPowersStatus'))
   assert.doesNotMatch(handler, /setExecutionMode/)
 })

@@ -1,3 +1,4 @@
+import { english, type Translate } from './i18n/index.ts'
 import type { AxisSettings, ChartPanel, MarkerStyleSettings } from './chartPanels.ts'
 
 type AxisDraft = Omit<AxisSettings, 'min' | 'max' | 'interval'> & {
@@ -78,21 +79,21 @@ export function chartTypeAxisTitles(draft: ChartSettingsDraft, nextType: ChartPa
   }
 }
 
-function parseAxis(axis: AxisDraft, label: string): AxisSettings | string {
+function parseAxis(axis: AxisDraft, label: string, t: Translate): AxisSettings | string {
   const numbers: Pick<AxisSettings, 'min' | 'max' | 'interval'> = {
     min: null, max: null, interval: null,
   }
   for (const field of ['min', 'max', 'interval'] as const) {
     const raw = axis[field].trim()
     const value = raw === '' ? null : Number(raw)
-    if (value !== null && !Number.isFinite(value)) return `${label} ${field} must be a finite number.`
+    if (value !== null && !Number.isFinite(value)) return t("chartValidation.mustBeAFiniteNumber", { value1: label, value2: t(`chartValidation.${field}`) })
     numbers[field] = value
   }
   if (numbers.min !== null && numbers.max !== null && numbers.min >= numbers.max) {
-    return `${label} minimum must be less than maximum.`
+    return t("chartValidation.minimumMustBeLessThanMaximum", { value1: label })
   }
   if (numbers.interval !== null && numbers.interval <= 0) {
-    return `${label} major unit must be greater than zero.`
+    return t("chartValidation.majorUnitMustBeGreaterThanZero", { value1: label })
   }
   return { ...axis, ...numbers }
 }
@@ -122,7 +123,7 @@ function inactiveHistogramValue(mode: ChartSettingsDraft['histogram']['mode'], r
   return raw.trim() !== '' && Number.isFinite(value) && value > 0 ? value : 0.5
 }
 
-function normalizedMarkerStyles(draft: ChartSettingsDraft):
+function normalizedMarkerStyles(draft: ChartSettingsDraft, t: Translate):
   { styles: ChartPanel['markerStyles'] } | { error: string } {
   const active = new Set<string>()
   if (draft.type === 'line') {
@@ -141,27 +142,27 @@ function normalizedMarkerStyles(draft: ChartSettingsDraft):
     const value = Number(text)
     const valid = text !== '' && Number.isFinite(value) && value > 0
     if (active.has(name) && !valid) {
-      return { error: `${name} marker size must be a finite number greater than zero.` }
+      return { error: t("chartValidation.namedMarkerSize", { value1: name }) }
     }
     styles[name] = { ...style, size: valid ? value : 4 }
   }
   return { styles }
 }
 
-export function validateChartSettingsDraft(draft: ChartSettingsDraft):
+export function validateChartSettingsDraft(draft: ChartSettingsDraft, t: Translate = english):
   { settings: Pick<ChartPanel, 'title' | 'type' | 'scatterXOutput' | 'scatter' | 'line' | 'markerStyles' | 'seriesColors' | 'showLegend' | 'legendPosition' | 'imageBackground' | 'showAllRawData' | 'zoom' | 'xAxis' | 'yAxis' | 'combo' | 'histogram' | 'boxPlot'>; error?: never } |
   { settings?: never; error: string } {
   const xAxis = draft.type === 'histogram' || draft.type === 'boxplot'
     ? normalizeInactiveAxis(draft.xAxis)
-    : parseAxis(draft.xAxis, draft.type === 'bar' ? 'Y Axis' : 'X Axis')
+    : parseAxis(draft.xAxis, draft.type === 'bar' ? t("chartValidation.yAxis") : t("chartValidation.xAxis"), t)
   if (typeof xAxis === 'string') return { error: xAxis }
-  const yAxis = parseAxis(draft.yAxis, draft.type === 'bar' ? 'X Axis' : 'Y Axis')
+  const yAxis = parseAxis(draft.yAxis, draft.type === 'bar' ? t("chartValidation.xAxis") : t("chartValidation.yAxis"), t)
   if (typeof yAxis === 'string') return { error: yAxis }
   const rightAxis = draft.type === 'combo'
-    ? parseAxis(draft.combo.rightAxis, 'Right Y Axis')
+    ? parseAxis(draft.combo.rightAxis, t("chartValidation.rightYAxis"), t)
     : normalizeInactiveAxis(draft.combo.rightAxis)
   if (typeof rightAxis === 'string') return { error: rightAxis }
-  const markerStyles = normalizedMarkerStyles(draft)
+  const markerStyles = normalizedMarkerStyles(draft, t)
   if ('error' in markerStyles) return { error: markerStyles.error }
   const markerText = draft.scatter.markerSize.trim()
   const markerValue = Number(markerText)
@@ -172,21 +173,21 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   const markerRequired = draft.type === 'scatter' && draft.scatter.display !== 'lines'
   const lineRequired = draft.type === 'scatter' && draft.scatter.display !== 'markers'
   if (markerRequired && markerSize === null) {
-    return { error: 'Marker size must be a finite number greater than zero.' }
+    return { error: t("chartValidation.markerSizeMustBeAFiniteNumber") }
   }
   if (lineRequired && lineWidth === null) {
-    return { error: 'Line width must be a finite number greater than zero.' }
+    return { error: t("chartValidation.lineWidthMustBeAFiniteNumber") }
   }
   const mode = draft.histogram.mode
   const parsedHistogramValue = mode === 'auto' ? null : Number(draft.histogram.value.trim())
   if (draft.type === 'histogram' && mode === 'count' &&
     (!Number.isInteger(parsedHistogramValue) || parsedHistogramValue! < 1 || parsedHistogramValue! > 200)) {
-    return { error: 'Histogram bin count must be an integer from 1 to 200.' }
+    return { error: t("chartValidation.histogramBinCountMustBeAnInteger") }
   }
   if (draft.type === 'histogram' && mode === 'width' &&
     (draft.histogram.value.trim() === '' || !Number.isFinite(parsedHistogramValue) ||
       parsedHistogramValue! <= 0)) {
-    return { error: 'Histogram bin width must be a finite number greater than zero.' }
+    return { error: t("chartValidation.histogramBinWidthMustBeAFinite") }
   }
   const histogramValue = draft.type === 'histogram'
     ? parsedHistogramValue : inactiveHistogramValue(mode, draft.histogram.value)
@@ -196,10 +197,10 @@ export function validateChartSettingsDraft(draft: ChartSettingsDraft):
   const stdDev = stdDevText === '' ? null : Number(stdDevText)
   if (draft.type === 'histogram') {
     if (mean !== null && !Number.isFinite(mean)) {
-      return { error: 'Normal curve mean must be a finite number.' }
+      return { error: t("chartValidation.normalCurveMeanMustBeAFinite") }
     }
     if (stdDev !== null && (!Number.isFinite(stdDev) || stdDev <= 0)) {
-      return { error: 'Normal curve standard deviation must be a finite number greater than zero.' }
+      return { error: t("chartValidation.normalCurveStandardDeviationMustBeA") }
     }
   }
   return { settings: { title: draft.title, type: draft.type, scatterXOutput: draft.scatterXOutput,

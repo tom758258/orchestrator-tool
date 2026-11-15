@@ -1,0 +1,23 @@
+export default {
+  "capability.normal": "normal",
+  "capability.average": "average",
+  "capability.high_resolution": "high resolution",
+  "capability.positive": "positive",
+  "capability.negative": "negative",
+  "capability.either": "either",
+  "capability.frequency": "Frequency",
+  "capability.period": "Period",
+  "capability.vpp": "Vp-p",
+  "capability.vrms": "Vrms",
+  "capability.vmax": "Vmax",
+  "capability.vmin": "Vmin",
+  "capability.vavg": "Vavg",
+  "capability.amplitude": "Amplitude",
+  "capability.rise_time": "Rise time",
+  "capability.fall_time": "Fall time",
+  "capability.duty_cycle": "Duty cycle",
+  "capability.mean": "Mean",
+  "capability.rms": "RMS",
+  "capability.count": "Count",
+  "capability.width": "Width"
+}

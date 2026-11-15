@@ -1,3 +1,5 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import type { OutputTimeFormat } from './outputTime'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { init, use, type EChartsType } from 'echarts/core'
@@ -31,6 +33,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   xTimeFormat?: OutputTimeFormat
   bounded?: BoundedChartData
 }) {
+  const { t } = useI18n()
   const container = useRef<HTMLDivElement>(null)
   const tooltip = useRef<HTMLDivElement>(null)
   const pointer = useRef<HTMLDivElement>(null)
@@ -74,8 +77,8 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
   [panel, data, data.version, width, visibleRange.min, visibleRange.max, isStatistical, changeSettings, bounded])
   const statistic = useMemo(() => statistical
     ? statisticalChartSeries(panel, statistical,
-      getComputedStyle(document.documentElement).getPropertyValue('--chart-series-1').trim()) : null,
-  [panel, statistical, themeRevision])
+      getComputedStyle(document.documentElement).getPropertyValue('--chart-series-1').trim(), t) : null,
+  [panel, statistical, themeRevision, t])
   const rendererSeries = useMemo(() => {
     if (statistic) return statistic.series
     if (panel.type === 'combo') return comboRendererSeries(panel, display,
@@ -180,7 +183,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
     const color = (token: string) => style.getPropertyValue(token).trim()
     const presentation = chartPresentationOptions(panel, display.length,
       { ink: color('--ink'), axis: color('--chart-axis'), grid: color('--chart-grid') },
-      fullDomain, rawIteration, statistic?.categories, legendSeriesColors, fitData, xTimeFormat)
+      fullDomain, rawIteration, statistic?.categories, legendSeriesColors, fitData, xTimeFormat, t)
     const range = zoomRange === null ? { start: 0, end: 100 }
       : { startValue: zoomRange.min, endValue: zoomRange.max }
     instance.current!.setOption({
@@ -201,7 +204,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       ] : [],
       series: rendererSeries,
     }, { notMerge: true })
-  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors, fitData, xTimeFormat])
+  }, [panel, themeRevision, fullDomain, supportsZoom, rawIteration, legendSeriesColors, fitData, xTimeFormat, t])
 
   useEffect(() => {
     instance.current!.setOption({ series: rendererSeries }, { replaceMerge: ['series'] })
@@ -254,7 +257,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
           xUnitsPerPixel, yUnitsPerPixel, SCATTER_HOVER_RADIUS, panel.scatter.display !== 'markers')
         if (hit === null) { hide(); return }
         // Scatter hover always reports an actual raw row; line displays never interpolate a synthetic value.
-        tip.textContent = [bounded?.hoverLabels[hit.rowIndex] ?? `Iteration ${rawIteration[hit.rowIndex]}`,
+        tip.textContent = [bounded?.hoverLabels[hit.rowIndex] ?? t("chartPlot.iteration", { value1: rawIteration[hit.rowIndex] }),
           ...(panel.scatterXOutput === null ? []
             : [`X ${panel.scatterXOutput} ${formatScatterX(scatterXValues[hit.rowIndex], xTimeFormat)}`]),
           ...rawSeries.map(series => `Y ${series.name} ${series.values[hit.rowIndex]}`)].join('\n')
@@ -301,7 +304,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       }
       if (index === null) { hide(); return }
       // Never use renderer points: each selected series reads the coherent raw prefix.
-      tip.textContent = [bounded?.hoverLabels[index] ?? `Iteration ${rawIteration[index]}`,
+      tip.textContent = [bounded?.hoverLabels[index] ?? t("chartPlot.iteration", { value1: rawIteration[index] }),
         ...rawSeries.map(series => `${series.name} ${series.values[index]}`)].join('\n')
       line.hidden = panel.type === 'bar'
       line.style.left = `${chart.convertToPixel({ xAxisIndex: 0 }, rawIteration[index])}px`
@@ -315,11 +318,11 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       zr.off('globalout', hide)
     }
   }, [panel.type, panel.scatter.display, panel.scatterXOutput, rawIteration, rawRowCount,
-    rawSeries, scatterXValues, xTimeFormat, bounded])
+    rawSeries, scatterXValues, xTimeFormat, bounded, t])
 
   return <><div className="result-chart-view">
     <div ref={container} className="result-chart-plot" role="img"
-      aria-label={`${panel.type} chart: ${panel.outputs.join(', ')}, ${statistical ? 'statistical projection' : `${rawRowCount} ${bounded ? 'displayed samples' : 'raw rows per series'}`}`} />
+      aria-label={t("chartPlot.chart", { value1: enumLabel(t, 'chartType', panel.type), value2: panel.outputs.join(', '), value3: statistical ? t("chartPlot.statisticalProjection") : t(bounded ? "chartPlot.displayedSamples" : "chartPlot.rawRows", { count: rawRowCount }) })} />
     <div ref={pointer} className="result-chart-pointer" hidden style={{
       top: chartGridTop(panel),
       bottom: chartGridBottom(panel),
@@ -330,7 +333,7 @@ export default function ChartPlot({ panel, data, numericNames, charts, statistic
       <button className="action-button" type="button" onClick={() => {
         instance.current?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
         setZoomRange(null)
-      }}>Reset Zoom</button>
+      }}>{t("chartPlot.resetZoom")}</button>
     </div>}
   </>
 }

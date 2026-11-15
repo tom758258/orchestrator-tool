@@ -1,3 +1,4 @@
+import { english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT, formatNumber, formatElapsedTime, formatOutputValue, formatTimestamp, formatTimestampMillis } from '../src/outputTime.ts'
@@ -295,12 +296,12 @@ test('Scatter hover formats the actual hit X only and retains raw Y and hit logi
     const tip = { textContent: '' }
     const line = { hidden: false }
     let hidden = false
-    const inspect = new Function('chart', 'scatterXValues', 'rawSeries', 'rawIteration', 'panel',
+    const inspect = new Function('t', 'chart', 'scatterXValues', 'rawSeries', 'rawIteration', 'panel',
       'xTimeFormat', 'tip', 'line', 'nearestScatterHover', 'formatScatterX', 'hide', 'positionTip',
       `let frame = null; let pending = { offsetX: ${x[0]}, offsetY: 12.3456789 };
       const rawRowCount = 2; const bounded = undefined; const yValues = rawSeries.map(series => series.values);
       const SCATTER_HOVER_RADIUS = 12; ${inspectSource}; return inspect;`)(
-      chart, x, rawSeries, new Float64Array([1, 2]), { scatterXOutput: 'Time', scatter: { display: 'markers' } },
+      english, chart, x, rawSeries, new Float64Array([1, 2]), { scatterXOutput: 'Time', scatter: { display: 'markers' } },
       timeFormat, tip, line, nearestScatterHover, formatScatterX, () => { hidden = true }, () => {})
     inspect()
     assert.equal(hidden, false)

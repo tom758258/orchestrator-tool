@@ -1,9 +1,11 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
 import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
-import { allWorkflowSteps, containerPath, MESSAGE_TARGET_LABELS } from './workflow'
+import { allWorkflowSteps, containerPath } from './workflow'
 import { expressionSummary } from './inputValue'
 
 export type SequenceDropTarget = { parentId: string | null; branch: StepBranch | null; index: number }
@@ -39,75 +41,6 @@ type SequenceEditorProps = {
   onSetAllExpanded: (expanded: boolean) => void
 }
 
-function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
-  switch (value.source) {
-    case 'elapsed-time':
-      return 'Elapsed time'
-    case 'timestamp':
-      return 'Timestamp'
-    case 'expression':
-      return expressionSummary(value)
-    case 'literal':
-      return JSON.stringify(value.value) ?? 'No value'
-    case 'variable':
-      return `Variable ${value.variable}`
-    case 'step-output':
-      return `${value.step_id} → ${value.pointer || '(root)'}`
-  }
-}
-
-function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
-  switch (step.type) {
-    case 'bg-interaction':
-      return `${step.background_id}${step.operation.kind === 'get-command-result' ? ' · ' + step.operation.source_step : ''}`
-    case 'background':
-      return `${step.background_id}${step.capture ? ' · simultaneous Capture' : ''}`
-    case 'for':
-      return `Step ${step.range.step} · ${step.steps.length} body steps`
-    case 'while':
-    case 'assert':
-    case 'if':
-      return expressionSummary(step)
-    case 'set-variable':
-      return `${step.variable} = ${valueSummary(step.value)}`
-    case 'output':
-      return `${step.name} = ${valueSummary(step.value)}`
-    case 'show-message':
-      return `${MESSAGE_TARGET_LABELS[step.target]} · ${step.fields.length} field${step.fields.length === 1 ? '' : 's'}`
-    case 'wait':
-      return `${step.duration_ms} ms`
-    case 'tool-action': {
-      if (instances.find(instance => instance.id === step.target)?.tool === 'powers') {
-        if (step.action === 'protection-status') {
-          return step.arguments.channel === 'all' ? 'All channels' : `CH${step.arguments.channel ?? '?'}`
-        }
-        const channel = step.bindings?.channel
-          ? 'Bound channel'
-          : `CH${step.arguments.channel ?? '?'}`
-        if (step.action === 'set-output') {
-          const setpoints = (['voltage', 'current'] as const).flatMap(name => {
-            const binding = step.bindings?.[name]
-            if (!binding && !Object.hasOwn(step.arguments, name)) return []
-            const label = name === 'voltage' ? '' : 'Current Limit '
-            const boundLabel = name === 'voltage' ? 'Voltage' : 'Current Limit'
-            if (!binding) return [`${label}${step.arguments[name]} ${name === 'voltage' ? 'V' : 'A'}`]
-            if (binding.source === 'literal') return [`${label}${valueSummary(binding)} ${name === 'voltage' ? 'V' : 'A'}`]
-            if (binding.source === 'variable') return [`${boundLabel} = ${binding.variable}`]
-            if (binding.source === 'expression') return [`${boundLabel} = ${expressionSummary(binding)}`]
-            return [`${boundLabel} = ${valueSummary(binding)}`]
-          })
-          return [channel, ...setpoints].join(' · ')
-        }
-        if (step.action === 'output-on' || step.action === 'output-off' || step.action === 'measure') {
-          return channel
-        }
-      }
-      const instance = instances.find(instance => instance.id === step.target)
-      return instance ? toolInstanceLabel(instance) : step.target
-    }
-  }
-}
-
 function SequenceEditor({
   steps,
   instances,
@@ -131,6 +64,76 @@ function SequenceEditor({
   onSetAllExpanded,
   paletteDropRef,
 }: SequenceEditorProps) {
+  function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
+    switch (value.source) {
+      case 'elapsed-time':
+        return t("sequenceEditor.elapsedTime")
+      case 'timestamp':
+        return t("sequenceEditor.timestamp")
+      case 'expression':
+        return expressionSummary(value)
+      case 'literal':
+        return JSON.stringify(value.value) ?? t("sequenceEditor.noValue")
+      case 'variable':
+        return t("sequenceEditor.variableReference", { value1: value.variable })
+      case 'step-output':
+        return `${value.step_id} → ${value.pointer || '(root)'}`
+    }
+  }
+
+  function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
+    switch (step.type) {
+      case 'bg-interaction':
+        return `${step.background_id}${step.operation.kind === 'get-command-result' ? ' · ' + step.operation.source_step : ''}`
+      case 'background':
+        return `${step.background_id}${step.capture ? t("sequenceEditor.simultaneousCapture") : ''}`
+      case 'for':
+        return t("sequenceEditor.forSummary", { value1: step.range.step, value2: step.steps.length })
+      case 'while':
+      case 'assert':
+      case 'if':
+        return expressionSummary(step)
+      case 'set-variable':
+        return `${step.variable} = ${valueSummary(step.value)}`
+      case 'output':
+        return `${step.name} = ${valueSummary(step.value)}`
+      case 'show-message':
+        return t("sequenceEditor.messageFields", { target: t(`messages.${step.target}`), count: step.fields.length })
+      case 'wait':
+        return `${step.duration_ms} ms`
+      case 'tool-action': {
+        if (instances.find(instance => instance.id === step.target)?.tool === 'powers') {
+          if (step.action === 'protection-status') {
+            return step.arguments.channel === 'all' ? t("sequenceEditor.allChannels") : `CH${step.arguments.channel ?? '?'}`
+          }
+          const channel = step.bindings?.channel
+            ? t("sequenceEditor.boundChannel")
+            : `CH${step.arguments.channel ?? '?'}`
+          if (step.action === 'set-output') {
+            const setpoints = (['voltage', 'current'] as const).flatMap(name => {
+              const binding = step.bindings?.[name]
+              if (!binding && !Object.hasOwn(step.arguments, name)) return []
+              const label = name === 'voltage' ? '' : t("sequenceEditor.currentLimit")
+              const boundLabel = name === 'voltage' ? t("sequenceEditor.voltage") : t("sequenceEditor.currentLimit2")
+              if (!binding) return [`${label}${step.arguments[name]} ${name === 'voltage' ? 'V' : 'A'}`]
+              if (binding.source === 'literal') return [`${label}${valueSummary(binding)} ${name === 'voltage' ? 'V' : 'A'}`]
+              if (binding.source === 'variable') return [`${boundLabel} = ${binding.variable}`]
+              if (binding.source === 'expression') return [`${boundLabel} = ${expressionSummary(binding)}`]
+              return [`${boundLabel} = ${valueSummary(binding)}`]
+            })
+            return [channel, ...setpoints].join(' · ')
+          }
+          if (step.action === 'output-on' || step.action === 'output-off' || step.action === 'measure') {
+            return channel
+          }
+        }
+        const instance = instances.find(instance => instance.id === step.target)
+        return instance ? toolInstanceLabel(instance) : step.target
+      }
+    }
+  }
+
+  const { t } = useI18n()
   const editorRef = useRef<HTMLElement>(null)
   const dragRef = useRef<{
     ids: string[]; id: string; pointerId: number; handle: HTMLButtonElement;
@@ -292,16 +295,16 @@ function SequenceEditor({
     const isTargetContainer = drop?.parentId === (parent?.id ?? null) && drop.branch === branch
     const dragging = paletteDragControl !== null || draggingIds.length > 0
     const locationLabel = parent
-      ? `${parent.type.toUpperCase()} ${parentOrder ?? parent.id} (${parent.id}) · ${branch ? branch.toUpperCase() : 'Body'}`
-      : 'Root Workflow'
+      ? `${parent.type.toUpperCase()} ${parentOrder ?? parent.id} (${parent.id}) · ${branch ? branch.toUpperCase() : t("sequenceEditor.body")}`
+      : t("sequenceEditor.rootWorkflow")
     const showEndZone = dragging && (paletteDragControl !== null
       ? !paletteDragControl || !parent || containerPath(steps, parent.id).length + 1 < 8
       : canRelocateSteps(steps, draggingIds, parent?.id ?? null, branch))
     return (
       <ol className={`sequence-steps${isTargetContainer ? ' sequence-drop-container-active' : ''}${isTargetContainer && drop?.index === siblings.length ? ' sequence-drop-end' : ''}`}
         data-step-container={parent?.id ?? ''} data-step-branch={branch ?? ''}
-        data-step-count={siblings.length} aria-label={parent ? `${branch ? branch.toUpperCase() : 'Body'} of ${parent.id}` : 'Root steps'}>
-        {siblings.length === 0 && parent && <li className="sequence-body-empty">No steps. Drop steps here or select this container and add from the palette.</li>}
+        data-step-count={siblings.length} aria-label={parent ? t("sequenceEditor.of", { value1: branch ? branch.toUpperCase() : t("sequenceEditor.body"), value2: parent.id }) : t("sequenceEditor.rootSteps")}>
+        {siblings.length === 0 && parent && <li className="sequence-body-empty">{t("sequenceEditor.noStepsDropStepsHereOrSelectThisContainer")}</li>}
         {siblings.map((step, index) => {
           const result = runResults?.find(result => result.step_id === step.id)
           const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
@@ -315,8 +318,8 @@ function SequenceEditor({
           const hiddenFailed = collapsed && children.some(child => runResults?.some(result =>
             result.step_id === child.id && (result.any_failed || result.status === 'failed')))
           const countLabel = step.type === 'if'
-            ? `THEN ${allWorkflowSteps(step.then_steps).length} · ELSE ${allWorkflowSteps(step.else_steps).length}`
-            : isContainer ? `${children.length} nested Steps` : null
+            ? t("sequenceEditor.tHENELSE", { value1: allWorkflowSteps(step.then_steps).length, value2: allWorkflowSteps(step.else_steps).length })
+            : isContainer ? t("sequenceEditor.nestedSteps", { value1: children.length }) : null
           let outputSummary: string | null = null
           if (!parent && result?.status === 'succeeded') {
             outputSummary = formatMeasurement(result.output)
@@ -328,10 +331,10 @@ function SequenceEditor({
               typeof result.output === 'boolean'
             )) {
               outputSummary = result.output_omitted && result.output === null
-                ? 'Preview omitted'
+                ? t("sequenceEditor.previewOmitted")
                 : `${JSON.stringify(result.output)}${result.output_omitted ? ' …' : ''}`
             } else if (result.output_omitted && outputSummary === null) {
-              outputSummary = 'Preview omitted'
+              outputSummary = t("sequenceEditor.previewOmitted")
             }
           }
 
@@ -341,11 +344,11 @@ function SequenceEditor({
                 data-step-drop-id={step.id}>
                 {isTargetContainer && drop?.index === index && (
                   <span className="sequence-drop-caption" role="status">
-                    ▸ {locationLabel} · {index === 0 ? 'Start' : `Before ${stepLabel(step)} (${step.id})`}
+                    ▸ {locationLabel} · {index === 0 ? t("sequenceEditor.start") : t("sequenceEditor.before", { value1: stepLabel(step), value2: step.id })}
                   </span>
                 )}
                 <button className="sequence-drag-handle" type="button" disabled={workflowBusy}
-                  aria-label={`Drag ${step.id} to reorder`} title="Drag to reorder Steps or move them between workflow levels"
+                  aria-label={t("sequenceEditor.dragToReorder", { value1: step.id })} title={t("sequenceEditor.dragToReorderStepsOrMoveThemBetweenWorkflow")}
                   onPointerDown={event => {
                     if (workflowBusy || event.button !== 0 || dragRef.current || palettePointRef.current) return
                     suppressClickRef.current = false
@@ -378,13 +381,13 @@ function SequenceEditor({
                     <circle cx="5" cy="9" r="1.5" /><circle cx="11" cy="9" r="1.5" />
                     <circle cx="5" cy="14" r="1.5" /><circle cx="11" cy="14" r="1.5" />
                   </svg>
-                  <span aria-hidden="true">Drag</span>
+                  <span aria-hidden="true">{t("sequenceEditor.drag")}</span>
                 </button>
                 <button
                   className={`sequence-step-card${validationIssue?.step_id === step.id ? ' sequence-step-invalid' : ''}`}
                   aria-invalid={validationIssue?.step_id === step.id || undefined}
                   type="button"
-                  aria-label={`Step ${order}: ${stepLabel(step)}, ${step.id}`}
+                  aria-label={t("sequenceEditor.step", { value1: order, value2: stepLabel(step), value3: step.id })}
                   aria-describedby={result ? `sequence-result-${step.id}` : undefined}
                   aria-pressed={selectedStepIds.includes(step.id)}
                   onClick={event => onSelectStep(step.id, { ctrlKey: event.ctrlKey, shiftKey: event.shiftKey })}
@@ -392,7 +395,7 @@ function SequenceEditor({
                   <span className="sequence-step-order">{order}</span>
                   <span className="sequence-step-identity">
                     <span className="sequence-step-label">{stepLabel(step)}
-                      {validationIssue?.step_id === step.id && <span className="sequence-validation-warning" role="img" aria-label="Validation warning" title={validationIssue.message}> ⚠</span>}
+                      {validationIssue?.step_id === step.id && <span className="sequence-validation-warning" role="img" aria-label={t("sequenceEditor.validationWarning")} title={validationIssue.message}> ⚠</span>}
                     </span>
                     {countLabel && collapsed && <span className="sequence-container-count">{countLabel}</span>}
                     <span className="sequence-step-summary" title={stepSummary(step, instances)}>
@@ -401,11 +404,11 @@ function SequenceEditor({
                     <code>{step.id}</code>
                     {result && (
                       <span id={`sequence-result-${step.id}`} className="sequence-step-result">
-                        <span className={`run-result-status run-result-${result.status}`}>
+                        <span className={`run-result-status run-result-${enumLabel(t, 'status', result.status)}`}>
                           <span aria-hidden="true">
                             {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
                           </span>{' '}
-                          {result.status}
+                          {enumLabel(t, 'status', result.status)}
                         </span>
                         {outputSummary !== null && (
                           <span className="sequence-step-output">{outputSummary}</span>
@@ -416,9 +419,9 @@ function SequenceEditor({
                 </button>
                 {isContainer && (
                   <button className="sequence-collapse-button" type="button"
-                    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${step.type.toUpperCase()} ${step.id}`}
+                    aria-label={`${collapsed ? t("sequenceEditor.expand") : t("sequenceEditor.collapse")} ${step.type.toUpperCase()} ${step.id}`}
                     aria-expanded={!collapsed}
-                    title={collapsed ? 'Expand nested Steps' : 'Collapse nested Steps'}
+                    title={collapsed ? t("sequenceEditor.expandNestedSteps") : t("sequenceEditor.collapseNestedSteps")}
                     onClick={() => onToggleContainer(step.id)}>
                     <span aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
                   </button>
@@ -426,27 +429,24 @@ function SequenceEditor({
               </div>
               {isContainer && collapsed && (hiddenSelected || hiddenInvalid || hiddenFailed) && (
                 <div className="sequence-hidden-status" role="status">
-                  {hiddenSelected && <span>Selected Step inside</span>}
-                  {hiddenInvalid && <span className="sequence-hidden-warning">Validation warning inside</span>}
-                  {hiddenFailed && <span className="sequence-hidden-warning">Failed Step inside</span>}
+                  {hiddenSelected && <span>{t("sequenceEditor.selectedStepInside")}</span>}
+                  {hiddenInvalid && <span className="sequence-hidden-warning">{t("sequenceEditor.validationWarningInside")}</span>}
+                  {hiddenFailed && <span className="sequence-hidden-warning">{t("sequenceEditor.failedStepInside")}</span>}
                 </div>
               )}
-              <div className="sequence-step-actions" role="group" aria-label={`Actions for ${step.id}`} data-step-drop-id={step.id}>
+              <div className="sequence-step-actions" role="group" aria-label={t("sequenceEditor.actionsFor", { value1: step.id })} data-step-drop-id={step.id}>
                 <button className="action-button" type="button"
                   disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], -1)}
                   onClick={() => onMoveStep(step.id, -1)}>
-                  Up
-                </button>
+                  {t("sequenceEditor.up")}</button>
                 <button className="action-button" type="button"
                   disabled={workflowBusy || !canMoveSteps(steps, selectedStepIds.includes(step.id) ? selectedStepIds : [step.id], 1)}
                   onClick={() => onMoveStep(step.id, 1)}>
-                  Down
-                </button>
+                  {t("sequenceEditor.down")}</button>
                 <button className="action-button action-button-danger" type="button"
                   disabled={workflowBusy}
                   onClick={() => onDeleteStep(step.id)}>
-                  Delete
-                </button>
+                  {t("sequenceEditor.delete")}</button>
               </div>
               {(step.type === 'for' || step.type === 'while') && !collapsed && (
                 <div className="sequence-nested-body">{renderSteps(step.steps, step, order)}</div>
@@ -464,16 +464,16 @@ function SequenceEditor({
                     return (
                       <div key={ifBranch} className="sequence-if-branch">
                         <div className="sequence-branch-heading">
-                          <h5>{ifBranch.toUpperCase()} ({branchChildren.length} Steps)</h5>
+                          <h5>{ifBranch.toUpperCase()} ({branchChildren.length} {t("sequenceEditor.steps")}</h5>
                           {(branchHiddenSelected || branchHiddenInvalid || branchHiddenFailed) && (
                             <span className="sequence-branch-status" role="status">
-                              {branchHiddenSelected ? 'Selected inside' : ''}
-                              {branchHiddenInvalid ? ' · Validation warning' : ''}
-                              {branchHiddenFailed ? ' · Failed Step' : ''}
+                              {branchHiddenSelected ? t("sequenceEditor.selectedInside") : ''}
+                              {branchHiddenInvalid ? t("sequenceEditor.validationWarning2") : ''}
+                              {branchHiddenFailed ? t("sequenceEditor.failedStep") : ''}
                             </span>
                           )}
                           <button type="button" className="sequence-branch-toggle"
-                            aria-label={`${branchCollapsed ? 'Expand' : 'Collapse'} ${ifBranch.toUpperCase()} of ${step.id}`}
+                            aria-label={t("sequenceEditor.of2", { value1: branchCollapsed ? t("sequenceEditor.expand") : t("sequenceEditor.collapse"), value2: ifBranch.toUpperCase(), value3: step.id })}
                             aria-expanded={!branchCollapsed}
                             onClick={() => onToggleBranch(step.id, ifBranch)}>
                             <span aria-hidden="true">{branchCollapsed ? '▸' : '▾'}</span>
@@ -492,9 +492,8 @@ function SequenceEditor({
           <li className={`sequence-drop-zone${isTargetContainer && drop?.index === siblings.length ? ' sequence-drop-zone-active' : ''}`}
             data-step-end-target="" data-step-container={parent?.id ?? ''} data-step-branch={branch ?? ''}
             data-step-count={siblings.length} role="presentation">
-            <span title={`${locationLabel} · End`} role={isTargetContainer && drop?.index === siblings.length ? 'status' : undefined}>
-              ▸ {locationLabel} · End
-            </span>
+            <span title={t("sequenceEditor.end", { value1: locationLabel })} role={isTargetContainer && drop?.index === siblings.length ? 'status' : undefined}>
+              ▸ {locationLabel} {t("sequenceEditor.end2")}</span>
           </li>
         )}
       </ol>
@@ -505,49 +504,47 @@ function SequenceEditor({
     <section ref={editorRef} className="sequence-editor" aria-labelledby="sequence-editor-title"
       data-step-density={density}>
       <div className="section-header sequence-header">
-        <h3 id="sequence-editor-title">Sequence</h3>
+        <h3 id="sequence-editor-title">{t("sequenceEditor.sequence")}</h3>
         <div className="sequence-header-actions">
           <button className="action-button action-button-danger" type="button"
             disabled={workflowBusy || steps.length === 0}
             onClick={onClearWorkflow}>
-            Clear Workflow
-          </button>
-          <label className="sequence-density-setting">Step height
-            <select aria-label="Step Display Density" value={density}
+            {t("sequenceEditor.clearWorkflow")}</button>
+          <label className="sequence-density-setting">{t("sequenceEditor.stepHeight")}<select aria-label={t("sequenceEditor.stepDisplayDensity")} value={density}
               onChange={event => onDensityChange(event.target.value as StepDensity)}>
-              <option value="compact">Compact</option>
-              <option value="standard">Standard</option>
-              <option value="comfortable">Comfortable</option>
+              <option value="compact">{t("sequenceEditor.compact")}</option>
+              <option value="standard">{t("sequenceEditor.standard")}</option>
+              <option value="comfortable">{t("sequenceEditor.comfortable")}</option>
             </select>
           </label>
         </div>
       </div>
       <div className="sequence-bulk-actions">
         <button className="action-button" type="button" disabled={!hasContainers}
-          onClick={() => onSetAllExpanded(true)}>Expand All</button>
+          onClick={() => onSetAllExpanded(true)}>{t("sequenceEditor.expandAll")}</button>
         <button className="action-button" type="button" disabled={!hasContainers}
-          onClick={() => onSetAllExpanded(false)}>Collapse All</button>
+          onClick={() => onSetAllExpanded(false)}>{t("sequenceEditor.collapseAll")}</button>
       </div>
       {steps.length === 0 ? (
         <div className="sequence-empty">
-          <h4>Create your first workflow</h4>
-          <p>Add steps from the palette to build a workflow. Configure each selected step in Properties.</p>
-          <h4>Examples</h4>
+          <h4>{t("sequenceEditor.createYourFirstWorkflow")}</h4>
+          <p>{t("sequenceEditor.addStepsFromThePaletteToBuildAWorkflow")}</p>
+          <h4>{t("sequenceEditor.examples")}</h4>
           <ul className="sequence-examples">
             <li>
-              <strong>Measure Only</strong>
-              <p>Meter Measure → Output</p>
-              <p>Take one measurement and publish the result.</p>
+              <strong>{t("sequenceEditor.measureOnly")}</strong>
+              <p>{t("sequenceEditor.meterMeasureOutput")}</p>
+              <p>{t("sequenceEditor.takeOneMeasurementAndPublishTheResult")}</p>
             </li>
             <li>
-              <strong>Power and Measure</strong>
-              <p>Power Set Output → Power Output ON → Wait → Meter Measure → Output → Power Output OFF</p>
-              <p>Power a DUT, wait for settling, measure it, then turn power off.</p>
+              <strong>{t("sequenceEditor.powerAndMeasure")}</strong>
+              <p>{t("sequenceEditor.powerSetOutputPowerOutputONWaitMeterMeasure")}</p>
+              <p>{t("sequenceEditor.powerADUTWaitForSettlingMeasureItThen")}</p>
             </li>
             <li>
-              <strong>Reuse a Variable</strong>
-              <p>Set Variable → Power Set Output</p>
-              <p>Define a value once and reuse it in a later step.</p>
+              <strong>{t("sequenceEditor.reuseAVariable")}</strong>
+              <p>{t("sequenceEditor.setVariablePowerSetOutput")}</p>
+              <p>{t("sequenceEditor.defineAValueOnceAndReuseItInA")}</p>
             </li>
           </ul>
         </div>

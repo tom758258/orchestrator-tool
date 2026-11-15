@@ -251,17 +251,7 @@ test('Histogram normal line uses bin centers, sample count and each actual width
   assert.notDeepEqual(override.data, line.data)
 })
 
-test('Chart Settings exposes required chart and marker controls', () => {
-  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
-  assert.match(source, /draft\.type === 'combo'[\s\S]*?Combo requires at least two selected Outputs\./)
-  assert.match(source, /draft\.type === 'histogram'[\s\S]*?Histogram uses exactly one Output\.[\s\S]*?Apply keeps the first selected Output\./)
-  assert.match(source, /draft\.type === 'line'[\s\S]*?<option value="line-markers">Line \+ markers<\/option>/)
-  assert.match(source, /Marker shape[\s\S]*?Circle[\s\S]*?Square[\s\S]*?Diamond[\s\S]*?Triangle/)
-  assert.match(source, /Marker fill[\s\S]*?Marker border/)
-  assert.match(source, /hasOwnProperty\.call\(draft\.markerStyles, name\)/)
-  assert.match(source, /hasOwnProperty\.call\(draft\.line\.series, name\)/)
-  assert.match(source, /hasOwnProperty\.call\(draft\.combo\.series, name\)/)
-})
+
 
 test('shared Output color preserves Auto and colors Scatter line/markers and Combo', () => {
   const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')

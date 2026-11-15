@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import { open } from '@tauri-apps/plugin-dialog'
 import InputValueEditor from './InputValueEditor'
 import type { InputValueWire } from './inputValue'
@@ -11,6 +12,7 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
   earlierVariables: string[]; disabled: boolean
   onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
 }) {
+  const { t } = useI18n()
   const change = (key: string, value: unknown) =>
     onChange({ ...step, arguments: { ...step.arguments, [key]: value } })
   const updateTx = (value: InputValueWire) => {
@@ -40,58 +42,58 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
   return <div className="step-properties-fields">
     {hasTx && <>
       <label className="step-property-field">
-        <span className="step-property-label">TX Format</span>
-        <select aria-label="TX Format" disabled={disabled} value={txFormat}
+        <span className="step-property-label">{t("serialActionEditor.tXFormat")}</span>
+        <select aria-label={t("serialActionEditor.tXFormat")} disabled={disabled} value={txFormat}
           onChange={event => changeMode(event.target.value)}>
-          <option value="text">Text (UTF-8 string)</option>
-          <option value="hex-byte">Hex Byte (one byte)</option>
+          <option value="text">{t("serialActionEditor.textUTF8String")}</option>
+          <option value="hex-byte">{t("serialActionEditor.hexByteOneByte")}</option>
         </select>
       </label>
       <p className="value-source-help">{txFormat === 'text'
-        ? 'Text sends UTF-8 bytes of a string only. "00FF" sends four ASCII characters, not 00 FF.'
-        : 'Hex Byte (Integer ≥ 0): fixed values must be integers. Dynamic numeric values (Variable, Calculation or Step Output) are truncated toward zero before sending; invalid types or out-of-range values fail without TX. High bytes are discarded (4660 → 34).'}</p>
+        ? t("serialActionEditor.textSendsUTF8BytesOfAStringOnly")
+        : t("serialActionEditor.hexByteInteger0FixedValuesMustBeIntegers")}</p>
       <InputValueEditor key={`${step.id}-tx`}
         value={txValue} literalDefault={txFormat === 'text' ? '' : 0}
         allowStringLiteral={txFormat === 'text'}
         numericCalculation={txFormat === 'hex-byte'}
-        sourceLabel="TX Source" literalLabel="TX Value"
+        sourceLabel={t("serialActionEditor.tXSource")} literalLabel={t("serialActionEditor.tXValue")}
         earlierSteps={earlierSteps} earlierVariables={earlierVariables}
         instances={instances} stepLabel={stepLabel} disabled={disabled}
         onChange={updateTx} />
     </>}
     {step.action === 'send-file' && <>
       <label className="step-property-field">
-        <span className="step-property-label">Absolute File Path (Worker-local)</span>
+        <span className="step-property-label">{t("serialActionEditor.absoluteFilePathWorkerLocal")}</span>
         <input type="text" disabled={disabled} value={String(step.arguments.path ?? '')}
           onChange={event => change('path', event.target.value)} />
       </label>
       <button type="button" className="action-button" disabled={disabled}
         onClick={async () => {
-          const picked = await open({ directory: false, multiple: false, title: 'Select Serial file to send' })
+          const picked = await open({ directory: false, multiple: false, title: t("serialActionEditor.selectSerialFileToSend") })
           if (typeof picked === 'string') change('path', picked)
-        }}>Browse File</button>
-      <p className="value-source-help">The absolute path is stored in the Template. Missing files warn on Template load and block Run before any Worker starts.</p>
+        }}>{t("serialActionEditor.browseFile")}</button>
+      <p className="value-source-help">{t("serialActionEditor.theAbsolutePathIsStoredInTheTemplateMissing")}</p>
     </>}
     {step.action === 'query' && <>
       <label className="step-property-field">
-        <span className="step-property-label">Delimiter Format</span>
-        <select aria-label="Delimiter Format" disabled={disabled}
+        <span className="step-property-label">{t("serialActionEditor.delimiterFormat")}</span>
+        <select aria-label={t("serialActionEditor.delimiterFormat")} disabled={disabled}
           value={String(step.arguments.delimiter_format ?? 'text')}
           onChange={event => change('delimiter_format', event.target.value)}>
-          <option value="text">Text</option>
-          <option value="hex">Hex Bytes</option>
+          <option value="text">{t("serialActionEditor.text")}</option>
+          <option value="hex">{t("serialActionEditor.hexBytes")}</option>
         </select>
       </label>
       <label className="step-property-field">
-        <span className="step-property-label">Delimiter Value</span>
+        <span className="step-property-label">{t("serialActionEditor.delimiterValue")}</span>
         <input type="text" disabled={disabled}
           value={String(step.arguments.delimiter_value ?? '')}
           onChange={event => change('delimiter_value', event.target.value)} />
       </label>
-      <p className="value-source-help">Delimiter may contain multiple bytes: Text supports \\r, \\n and \\\\ escapes; Hex accepts pairs of digits (e.g. 0D 0A). It is independent of TX Hex Byte.</p>
+      <p className="value-source-help">{t("serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN")}</p>
     </>}
     {(step.action === 'receive' || step.action === 'query') && <label className="step-property-field">
-      <span className="step-property-label">Max Bytes (1–1048576)</span>
+      <span className="step-property-label">{t("serialActionEditor.maxBytes11048576")}</span>
       <input type="number" min={1} max={1048576} step={1} disabled={disabled}
         value={Number(step.arguments.max_bytes ?? 1024)}
         onChange={event => {

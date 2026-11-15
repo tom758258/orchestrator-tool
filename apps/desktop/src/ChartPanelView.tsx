@@ -1,3 +1,5 @@
+import { uiMessage, useMessage } from './i18n/useMessage'
+import { useI18n } from './i18n/I18nProvider'
 import { useRef, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -15,10 +17,11 @@ export default function ChartPanelView({ panel, panels, onPanelsChange, charts, 
   running: boolean; hasRows: boolean; canExport: boolean; onSavingChange: (saving: boolean) => void
   children: ReactNode; rawLimit?: number; onSourceSettings?: () => void
 }) {
+  const { t } = useI18n()
   const [settings, setSettings] = useState(false)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
+  const [feedback, setFeedback] = useMessage()
   const number = panels.findIndex(item => item.id === panel.id) + 1
   async function saveImage() {
     if (savingRef.current) return
@@ -28,25 +31,25 @@ export default function ChartPanelView({ panel, panels, onPanelsChange, charts, 
       if (!destinationPath) return
       const pngBytes = await chartPng(charts.get(panel.id), panel)
       await invoke('save_chart_png', { destinationPath, pngBytes: Array.from(pngBytes) })
-      setFeedback('Chart image saved successfully.')
-    } catch (reason) { setFeedback('Could not save chart image: ' + String(reason)) }
+      setFeedback(uiMessage("chartPanelView.chartImageSavedSuccessfully"))
+    } catch (reason) { setFeedback(uiMessage("chartPanelView.couldNotSaveChartImageDiagnostic", { error: String(reason) })) }
     finally { savingRef.current = false; setSaving(false); onSavingChange(false) }
   }
-  return <Collapsible title={`Chart ${number}`} className="result-chart-panel" actions={<div className="result-chart-panel-actions">
-    <button className="action-button" type="button" disabled={saving || !canExport} onClick={() => void saveImage()}>Export PNG</button>
-    <button className="action-button" type="button" disabled={saving} onClick={() => setSettings(true)}>Settings</button>
+  return <Collapsible title={t("chartPanelView.chart", { value1: number })} className="result-chart-panel" actions={<div className="result-chart-panel-actions">
+    <button className="action-button" type="button" disabled={saving || !canExport} onClick={() => void saveImage()}>{t("chartPanelView.exportPNG")}</button>
+    <button className="action-button" type="button" disabled={saving} onClick={() => setSettings(true)}>{t("chartPanelView.settings")}</button>
     {onSourceSettings && <button className="action-button" type="button" disabled={saving}
-      onClick={onSourceSettings}>Source settings</button>}
-    <button className="action-button action-button-danger" type="button" aria-label={`Remove Chart ${number}`}
+      onClick={onSourceSettings}>{t("chartPanelView.sourceSettings")}</button>}
+    <button className="action-button action-button-danger" type="button" aria-label={t("chartPanelView.removeChart", { value1: number })}
       disabled={saving}
-      onClick={() => onPanelsChange(panels.filter(item => item.id !== panel.id))}>Remove</button>
+      onClick={() => onPanelsChange(panels.filter(item => item.id !== panel.id))}>{t("chartPanelView.remove")}</button>
   </div>}>
     <div className="result-chart-source-info">
-      <strong>Data source</strong>
+      <strong>{t("chartPanelView.dataSource")}</strong>
       <span className={`result-chart-source-badge ${panel.source ? 'result-chart-source-background' : 'result-chart-source-foreground'}`}>
-        {panel.source ? 'Background' : 'Foreground'}
+        {panel.source ? t("chartPanelView.background") : t("chartPanelView.foreground")}
       </span>
-      <span className="result-chart-page-badge">{panel.source ? `Source: ${panel.source.background_id}` : `Page: ${panel.page}`}</span>
+      <span className="result-chart-page-badge">{panel.source ? t("chartPanelView.source", { value1: panel.source.background_id }) : t("chartPanelView.page", { value1: panel.page })}</span>
     </div>
     {feedback && <p role="status">{feedback}</p>}
     <fieldset className="result-chart-controls" disabled={saving}>{children}</fieldset>

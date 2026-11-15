@@ -1,8 +1,8 @@
+import { useI18n } from './i18n/I18nProvider'
 import {
   MAX_MESSAGE_FIELDS,
   MAX_MESSAGE_TEXT_CHARS,
   MESSAGE_TARGETS,
-  MESSAGE_TARGET_LABELS,
   composeMessageText,
   limitMessageText,
 } from './workflow'
@@ -21,6 +21,7 @@ const outputField = (stepId: string, newline: boolean): MessageFieldWire =>
   ({ kind: 'output', step_id: stepId, pointer: '', newline })
 
 export default function ShowMessageEditor({ step, outputs, disabled, onChange }: Props) {
+  const { t } = useI18n()
   const updateField = (index: number, field: MessageFieldWire) => onChange({
     ...step,
     fields: step.fields.map((current, position) => position === index ? field : current),
@@ -41,53 +42,51 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
   return (
     <div className="show-message-editor">
       <label className="step-property-field">
-        <span className="step-property-label">Target Message</span>
+        <span className="step-property-label">{t("showMessageEditor.targetMessage")}</span>
         <select value={step.target} disabled={disabled}
           onChange={event => setTarget(event.target.value as MessageTargetWire)}>
           {MESSAGE_TARGETS.map(target => (
-            <option key={target} value={target}>{MESSAGE_TARGET_LABELS[target]}</option>
+            <option key={target} value={target}>{t(`messages.${target}`)}</option>
           ))}
         </select>
       </label>
 
       {step.fields.map((field, index) => (
         <fieldset className="show-message-field" key={index}>
-          <legend>Field {index + 1}</legend>
+          <legend>{t("showMessageEditor.field")}{index + 1}</legend>
           <label className="step-property-field">
-            <span className="step-property-label">Type</span>
+            <span className="step-property-label">{t("showMessageEditor.type")}</span>
             <select value={field.kind} disabled={disabled}
               onChange={event => updateField(index, replacesLast(
                 event.target.value === 'output'
                   ? outputField(outputs[0]?.id ?? '', field.newline)
                   : textField(field.kind === 'text' ? field.text : '', field.newline)))}>
-              <option value="text">String</option>
-              <option value="output" disabled={outputs.length === 0}>Output</option>
+              <option value="text">{t("showMessageEditor.string")}</option>
+              <option value="output" disabled={outputs.length === 0}>{t("showMessageEditor.output")}</option>
             </select>
           </label>
 
           {field.kind === 'text'
             ? <label className="step-property-field">
-                <span className="step-property-label">Text</span>
+                <span className="step-property-label">{t("showMessageEditor.text")}</span>
                 <input type="text" value={field.text} disabled={disabled}
                   onChange={event => updateField(index,
                     textField(limitMessageText(event.target.value, MAX_MESSAGE_TEXT_CHARS),
                       field.newline))} />
                 <span className="step-property-hint">
-                  {Array.from(field.text).length} / {MAX_MESSAGE_TEXT_CHARS} characters
-                </span>
+                  {Array.from(field.text).length} / {MAX_MESSAGE_TEXT_CHARS} {t("showMessageEditor.characters")}</span>
               </label>
             : <label className="step-property-field">
-                <span className="step-property-label">Output</span>
+                <span className="step-property-label">{t("showMessageEditor.output")}</span>
                 <select value={field.step_id} disabled={disabled || outputs.length === 0}
                   onChange={event => updateField(index,
                     outputField(event.target.value, field.newline))}>
-                  <option value="" disabled>Select an earlier Output...</option>
+                  <option value="" disabled>{t("showMessageEditor.selectAnEarlierOutput")}</option>
                   {outputs.map(output => <option key={output.id} value={output.id}>{output.name}</option>)}
                 </select>
                 {!outputs.some(output => output.id === field.step_id) && (
                   <p className="step-properties-empty">
-                    Reference preserved: {field.step_id} is not an eligible earlier Output. Validate to check it.
-                  </p>
+                    {t("showMessageEditor.referencePreserved")}{field.step_id} {t("showMessageEditor.isNotAnEligibleEarlierOutputValidateToCheck")}</p>
                 )}
               </label>}
 
@@ -96,22 +95,22 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
               <input type="checkbox" checked={field.newline} disabled={disabled}
                 onChange={event => updateField(index, { ...field,
                   newline: event.target.checked })} />
-              <span className="step-property-label">Newline after this field</span>
+              <span className="step-property-label">{t("showMessageEditor.newlineAfterThisField")}</span>
             </label>
           )}
           <button className="action-button" type="button" disabled={disabled || step.fields.length <= 1}
-            onClick={() => removeField(index)}>Delete Field</button>
+            onClick={() => removeField(index)}>{t("showMessageEditor.deleteField")}</button>
         </fieldset>
       ))}
 
       <button className="action-button" type="button" disabled={disabled || step.fields.length >= MAX_MESSAGE_FIELDS}
-        onClick={addField}>Add Field</button>
+        onClick={addField}>{t("showMessageEditor.addField")}</button>
       {step.fields.length >= MAX_MESSAGE_FIELDS && (
-        <p className="step-properties-empty">A Show Message step supports up to {MAX_MESSAGE_FIELDS} fields.</p>
+        <p className="step-properties-empty">{t("showMessageEditor.aShowMessageStepSupportsUpTo")}{MAX_MESSAGE_FIELDS} {t("showMessageEditor.fields")}</p>
       )}
 
       <div className="show-message-preview">
-        <span className="step-property-label">Message Preview</span>
+        <span className="step-property-label">{t("showMessageEditor.messagePreview")}</span>
         <pre>{composeMessageText(step.fields,
           stepId => outputs.find(output => output.id === stepId)?.name)}</pre>
       </div>

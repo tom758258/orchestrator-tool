@@ -1,3 +1,5 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import { scopesChannelNumbers, updateScopesAcquisition, updateScopesChannel } from './scopesSetup'
 import type { ScopesCapabilities, ScopesSetup, ScopesChannel } from './scopesSetup'
@@ -101,6 +103,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
   metersExecutableKey: string
   background?: BackgroundConfig
 }) {
+  const { t } = useI18n()
   const [capabilities, setCapabilities] = useState<{
     requestedModel: string | null | undefined
     metersExecutableKey: string
@@ -150,28 +153,27 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
     || meterCapabilities.trigger_modes.includes(triggerMode)
 
   const triggerOptions: { value: NonNullable<MetersSetup['trigger_mode']>; label: string }[] = [
-    { value: 'software', label: background ? 'Software' : 'Single' },
-    { value: 'immediate', label: 'Immediate' },
-    { value: 'external', label: 'External' },
-    { value: 'software-custom', label: 'Software Custom' },
-    { value: 'immediate-custom', label: 'Immediate Custom' },
-    { value: 'external-custom', label: 'External Custom' },
+    { value: 'software', label: background ? t("toolSetupEditor.software") : t("toolSetupEditor.single") },
+    { value: 'immediate', label: t("toolSetupEditor.immediate") },
+    { value: 'external', label: t("toolSetupEditor.external") },
+    { value: 'software-custom', label: t("toolSetupEditor.softwareCustom") },
+    { value: 'immediate-custom', label: t("toolSetupEditor.immediateCustom") },
+    { value: 'external-custom', label: t("toolSetupEditor.externalCustom") },
   ]
 
   return (
     <>
       <h4 className="powers-section-heading">
         <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} Measurement Setup`} onClick={() => setExpanded(!expanded)}>
+          aria-label={t("toolSetupEditor.measurementSetup", { value1: expanded ? t("toolSetupEditor.collapse") : t("toolSetupEditor.expand") })} onClick={() => setExpanded(!expanded)}>
           {expanded ? '−' : '+'}
-        </button>Measurement Setup
-      </h4>
+        </button>{t("toolSetupEditor.measurementSetup2")}</h4>
       <div hidden={!expanded}>
-      <p className="tool-setup-hint">Applied before the run starts.</p>
+      <p className="tool-setup-hint">{t("toolSetupEditor.appliedBeforeTheRunStarts")}</p>
       <div className="meters-setup-fields">
         <label className="step-property-field meters-setup-trigger-mode">
-          <span className="step-property-label">Trigger Mode</span>
-          <select aria-label="Trigger Mode" value={triggerMode} onChange={(event) => {
+          <span className="step-property-label">{t("toolSetupEditor.triggerMode")}</span>
+          <select aria-label={t("toolSetupEditor.triggerMode")} value={triggerMode} onChange={(event) => {
             const trigger_mode = event.target.value as NonNullable<MetersSetup['trigger_mode']>
             onChange({
               ...value,
@@ -181,38 +183,38 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
             {triggerOptions.filter(option => background || option.value === 'software').map(option => {
               const supported = meterCapabilities === null || meterCapabilities.trigger_modes.includes(option.value)
               return <option key={option.value} value={option.value} disabled={!supported}>
-                {option.label}{supported ? '' : ` (unsupported by ${meterCapabilities?.model})`}
+                {option.label}{supported ? '' : t("toolSetupEditor.unsupportedBy", { value1: meterCapabilities?.model })}
               </option>
             })}
-            {!background && triggerMode !== 'software' && <option value={triggerMode} disabled>{triggerMode} (requires Background)</option>}
+            {!background && triggerMode !== 'software' && <option value={triggerMode} disabled>{triggerMode} {t("toolSetupEditor.requiresBackground")}</option>}
           </select>
           {!background && triggerMode !== 'software' && <>
-            <span role="alert">Foreground Meters requires Single. Select Single or enable Background before running.</span>
+            <span role="alert">{t("toolSetupEditor.foregroundMetersRequiresSingleSelectSingleOrEnableBackground")}</span>
           </>}
           {!selectedModeSupported && (
-            <span className="tool-setup-hint">The selected model does not support this trigger mode.</span>
+            <span className="tool-setup-hint">{t("toolSetupEditor.theSelectedModelDoesNotSupportThisTriggerMode")}</span>
           )}
         </label>
 
         {externalMode && background && <>
-          <label className="step-property-field"><span className="step-property-label">Hardware Trigger Slope</span>
+          <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.hardwareTriggerSlope")}</span>
             <select value={meters.hw_trigger_slope ?? ''} onChange={event => onChange({ ...value, meters: {
               ...meters, hw_trigger_slope: event.target.value === '' ? null : event.target.value as 'pos' | 'neg',
-            } })}><option value="">Tool default</option><option value="pos">Positive</option><option value="neg">Negative</option></select>
+            } })}><option value="">{t("toolSetupEditor.toolDefault")}</option><option value="pos">{t("toolSetupEditor.positive")}</option><option value="neg">{t("toolSetupEditor.negative")}</option></select>
           </label>
-          <label className="step-property-field"><span className="step-property-label">Hardware Trigger Delay (s)</span>
+          <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.hardwareTriggerDelayS")}</span>
             <input type="number" min={0} step="any" value={meters.hw_trigger_delay_s ?? ''} onChange={event => onChange({ ...value, meters: {
               ...meters, hw_trigger_delay_s: event.target.value === '' ? null : Number(event.target.value),
             } })} />
           </label>
         </>}
         {background && customMode && <><label className="step-property-field">
-          <span className="step-property-label">Sample Count</span>
+          <span className="step-property-label">{t("toolSetupEditor.sampleCount")}</span>
           <input type="number" required min={1} max={sampleCountMax} step={1} value={sampleCount}
             onChange={event => onChange({ ...value, meters: { ...meters, sample_count: Number(event.target.value) } })} />
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Buffer Drain Size (optional)</span>
+          <span className="step-property-label">{t("toolSetupEditor.bufferDrainSizeOptional")}</span>
           <input type="number" min={1} max={bufferDrainMax} step={1} value={meters.buffer_drain_size ?? ''}
             onChange={event => onChange({ ...value, meters: {
               ...meters, buffer_drain_size: event.target.value === '' ? null : Number(event.target.value),
@@ -221,45 +223,45 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
         <label className="step-property-field step-property-checkbox meters-setup-overflow-risk">
           <input type="checkbox" checked={meters.allow_buffer_overflow_risk ?? false}
             onChange={event => onChange({ ...value, meters: { ...meters, allow_buffer_overflow_risk: event.target.checked } })} />
-          <span>Allow Buffer Overflow Risk</span>
+          <span>{t("toolSetupEditor.allowBufferOverflowRisk")}</span>
         </label></>}
 
         {background && customMode && <>
           {meterCapabilities && (
             <p className="meters-setup-summary">
-              {meterCapabilities.model} · Memory {formatInteger(meterCapabilities.reading_memory_limit)} · Planned triggers {plannedTriggerCount === null
+              {meterCapabilities.model} {t("toolSetupEditor.memory")}{formatInteger(meterCapabilities.reading_memory_limit)} {t("toolSetupEditor.plannedTriggers")}{plannedTriggerCount === null
                 ? 'unbounded'
                 : formatInteger(plannedTriggerCount)}
-              {plannedTriggerCount === null && '. Infinite acquisition requires Allow Buffer Overflow Risk.'}
+              {plannedTriggerCount === null && t("toolSetupEditor.infiniteAcquisitionRequiresAllowBufferOverflowRisk")}
             </p>
           )}
           {triggerCountOverflow && meterCapabilities && plannedTriggerCount !== null && (
             <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
-              <strong>Trigger count exceeds limit</strong>
-              <span>{formatInteger(plannedTriggerCount)} planned / {formatInteger(meterCapabilities.limits.trigger_count.max)} maximum.</span>
+              <strong>{t("toolSetupEditor.triggerCountExceedsLimit")}</strong>
+              <span>{formatInteger(plannedTriggerCount)} {t("toolSetupEditor.planned")}{formatInteger(meterCapabilities.limits.trigger_count.max)} {t("toolSetupEditor.maximum")}</span>
             </div>
           )}
           {meters.allow_buffer_overflow_risk
               ? <div className="meters-setup-feedback meters-setup-feedback-warning" role="status">
-                  <strong>High Buffer Overflow Risk Accepted</strong>
+                  <strong>{t("toolSetupEditor.highBufferOverflowRiskAccepted")}</strong>
                   {memoryOverflow && meterCapabilities && expectedReadings !== null && (
-                    <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity. Timely draining may still preserve all readings.</span>
+                    <span>{formatInteger(expectedReadings)} {t("toolSetupEditor.planned")}{formatInteger(meterCapabilities.reading_memory_limit)} {t("toolSetupEditor.capacityTimelyDrainingMayStillPreserveAllReadings")}</span>
                   )}
-                  <span>You accept possible unrecoverable data loss if acquisition outpaces draining, even below capacity. Lower NPLC can increase this risk.</span>
-                  <span>If samples are lost, a finite Custom acquisition may keep waiting after its planned triggers finish. The Worker may still respond to existing Stop controls; Stop cannot recover lost data.</span>
-                  <span>A successful finish does not guarantee complete data. Check the captured count, expected count, stop reason and data quality.</span>
-                  <span>Allow Risk does not ensure overflow monitoring is active. Without monitoring, overflow may go undetected.</span>
+                  <span>{t("toolSetupEditor.youAcceptPossibleUnrecoverableDataLossIfAcquisitionOutpaces")}</span>
+                  <span>{t("toolSetupEditor.ifSamplesAreLostAFiniteCustomAcquisitionMay")}</span>
+                  <span>{t("toolSetupEditor.aSuccessfulFinishDoesNotGuaranteeCompleteDataCheck")}</span>
+                  <span>{t("toolSetupEditor.allowRiskDoesNotEnsureOverflowMonitoringIsActive")}</span>
                 </div>
               : memoryOverflow && meterCapabilities && expectedReadings !== null && <div className="meters-setup-feedback meters-setup-feedback-blocking" role="alert">
-                  <strong>Reading memory exceeded</strong>
-                  <span>{formatInteger(expectedReadings)} planned / {formatInteger(meterCapabilities.reading_memory_limit)} capacity.</span>
-                  <span>Enable “Allow Buffer Overflow Risk” to proceed.</span>
+                  <strong>{t("toolSetupEditor.readingMemoryExceeded")}</strong>
+                  <span>{formatInteger(expectedReadings)} {t("toolSetupEditor.planned")}{formatInteger(meterCapabilities.reading_memory_limit)} {t("toolSetupEditor.capacity")}</span>
+                  <span>{t("toolSetupEditor.enableAllowBufferOverflowRiskToProceed")}</span>
                 </div>
           }
         </>}
 
         <label className="step-property-field">
-          <span className="step-property-label">Measurement</span>
+          <span className="step-property-label">{t("toolSetupEditor.measurement")}</span>
           <select value={meters.measurement} onChange={(event) => {
             const measurement = event.target.value as MetersSetup['measurement']
             onChange({ ...value, meters: {
@@ -270,87 +272,87 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
               current_terminal: measurement === 'current-dc' ? meters.current_terminal : null,
             } })
           }}>
-            <option value="voltage-dc">DC Voltage</option>
-            <option value="current-dc">DC Current</option>
+            <option value="voltage-dc">{t("toolSetupEditor.dCVoltage")}</option>
+            <option value="current-dc">{t("toolSetupEditor.dCCurrent")}</option>
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Range Mode</span>
+          <span className="step-property-label">{t("toolSetupEditor.rangeMode")}</span>
           <select value={meters.range_mode} onChange={(event) => onChange({
             ...value, meters: { ...meters, range_mode: event.target.value as MetersSetup['range_mode'] },
           })}>
-            <option value="auto">Auto</option>
-            <option value="manual">Manual</option>
+            <option value="auto">{t("toolSetupEditor.auto")}</option>
+            <option value="manual">{t("toolSetupEditor.manual")}</option>
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Manual Range ({meters.measurement === 'voltage-dc' ? 'V' : 'A'})</span>
+          <span className="step-property-label">{t("toolSetupEditor.manualRange")}{meters.measurement === 'voltage-dc' ? 'V' : 'A'})</span>
           {ranges !== undefined ? (
             <select required disabled={meters.range_mode !== 'manual'} value={meters.manual_range ?? ''}
               onChange={event => onChange({ ...value, meters: { ...meters, manual_range: Number(event.target.value) } })}>
-              {meters.manual_range === null && <option value="" disabled>Select a range...</option>}
+              {meters.manual_range === null && <option value="" disabled>{t("toolSetupEditor.selectARange")}</option>}
               {meters.manual_range !== null && !ranges.includes(meters.manual_range) && (
-                <option value={meters.manual_range} disabled>{formatRange(meters.manual_range, unit)} (unsupported; preserved)</option>
+                <option value={meters.manual_range} disabled>{formatRange(meters.manual_range, unit)} {t("toolSetupEditor.unsupportedPreserved")}</option>
               )}
               {ranges.map(range => <option key={range} value={range}>{formatRange(range, unit)}</option>)}
             </select>
           ) : (
             <select disabled value="">
-              <option value="">{currentCapabilities ? 'Range options unavailable' : 'Loading range options...'}</option>
+              <option value="">{currentCapabilities ? t("toolSetupEditor.rangeOptionsUnavailable") : t("toolSetupEditor.loadingRangeOptions")}</option>
             </select>
           )}
           {currentCapabilities && ranges === undefined && (
-            <span className="tool-setup-hint">Supported range options could not be loaded.</span>
+            <span className="tool-setup-hint">{t("toolSetupEditor.supportedRangeOptionsCouldNotBeLoaded")}</span>
           )}
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">NPLC</span>
+          <span className="step-property-label">{t("toolSetupEditor.nPLC")}</span>
           <select required value={meters.nplc} onChange={(event) => onChange({
             ...value, meters: { ...meters, nplc: Number(event.target.value) },
           })}>
-            {!hasStandardNplc && <option value={meters.nplc}>{meters.nplc} (current)</option>}
+            {!hasStandardNplc && <option value={meters.nplc}>{meters.nplc} {t("toolSetupEditor.current")}</option>}
             {METERS_NPLC_OPTIONS.map((nplc) => <option key={nplc} value={nplc}>{nplc}</option>)}
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Auto Zero</span>
+          <span className="step-property-label">{t("toolSetupEditor.autoZero")}</span>
           <select value={meters.auto_zero} onChange={(event) => onChange({
             ...value, meters: { ...meters, auto_zero: event.target.value as MetersSetup['auto_zero'] },
           })}>
-            <option value="on">On</option>
-            <option value="off">Off</option>
-            <option value="once">Once</option>
+            <option value="on">{t("toolSetupEditor.on")}</option>
+            <option value="off">{t("toolSetupEditor.off")}</option>
+            <option value="once">{t("toolSetupEditor.once")}</option>
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Input Impedance</span>
+          <span className="step-property-label">{t("toolSetupEditor.inputImpedance")}</span>
           <select disabled={meters.measurement !== 'voltage-dc'} value={meters.dcv_input_impedance ?? ''} onChange={(event) => onChange({
             ...value, meters: { ...meters, dcv_input_impedance: (event.target.value || null) as MetersSetup['dcv_input_impedance'] },
           })}>
-            <option value="">Not specified</option>
-            <option value="default">Default</option>
-            <option value="ten-megohm">10 MΩ</option>
-            <option value="auto">Auto</option>
+            <option value="">{t("toolSetupEditor.notSpecified")}</option>
+            <option value="default">{t("toolSetupEditor.default")}</option>
+            <option value="ten-megohm">{t("toolSetupEditor.10M")}</option>
+            <option value="auto">{t("toolSetupEditor.auto")}</option>
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">Current Terminal (optional)</span>
+          <span className="step-property-label">{t("toolSetupEditor.currentTerminalOptional")}</span>
           <select disabled={meters.measurement !== 'current-dc'} value={meters.current_terminal ?? ''} onChange={(event) => onChange({
             ...value, meters: { ...meters, current_terminal: event.currentTarget.value === '' ? null : Number(event.currentTarget.value) },
           })}>
-            <option value="">Not specified</option>
-            <option value="3">3 A terminal</option>
-            <option value="10">10 A terminal</option>
+            <option value="">{t("toolSetupEditor.notSpecified")}</option>
+            <option value="3">{t("toolSetupEditor.3ATerminal")}</option>
+            <option value="10">{t("toolSetupEditor.10ATerminal")}</option>
           </select>
         </label>
         <label className="step-property-field">
-          <span className="step-property-label">VM Comp Slope</span>
+          <span className="step-property-label">{t("toolSetupEditor.vMCompSlope")}</span>
           <select value={meters.vm_comp_slope ?? ''} onChange={(event) => onChange({
             ...value, meters: { ...meters, vm_comp_slope: (event.target.value || null) as MetersSetup['vm_comp_slope'] },
           })}>
-            <option value="">Not specified</option>
-            <option value="pos">Positive</option>
-            <option value="neg">Negative</option>
+            <option value="">{t("toolSetupEditor.notSpecified")}</option>
+            <option value="pos">{t("toolSetupEditor.positive")}</option>
+            <option value="neg">{t("toolSetupEditor.negative")}</option>
           </select>
         </label>
       </div>
@@ -367,6 +369,7 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   powersExecutableKey: string
   children?: ReactNode
 }) {
+  const { t } = useI18n()
   const [enabledEmptySetup, setEnabledEmptySetup] = useState<PowersSetup | null>(null)
   const protectionEnabled = value.protection !== undefined || enabledEmptySetup === value
   const changeSetting = (setup: PowersSetup) => {
@@ -395,28 +398,27 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
   return <div className="powers-protection-fields">
     <h4 className="powers-section-heading">
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} Protection Setup`} onClick={() => setExpanded(!expanded)}>
+        aria-label={t("toolSetupEditor.protectionSetup", { value1: expanded ? t("toolSetupEditor.collapse") : t("toolSetupEditor.expand") })} onClick={() => setExpanded(!expanded)}>
         {expanded ? '−' : '+'}
-      </button>Protection Setup
-    </h4>
+      </button>{t("toolSetupEditor.protectionSetup2")}</h4>
     <div hidden={!expanded}>
     <label className="powers-protection-toggle">
       <input type="checkbox" checked={protectionEnabled} onChange={event => {
         setEnabledEmptySetup(event.target.checked ? value : null)
         if (!event.target.checked) onChange({})
       }} />
-      <span>Use Protection Setup</span>
+      <span>{t("toolSetupEditor.useProtectionSetup")}</span>
     </label>
-    <p className="tool-setup-hint">Only changed values are stored. Unchanged leaves the instrument setting unchanged.</p>
-    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
-    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline protection capabilities...</p>}
-    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !capabilities && <p className="tool-setup-hint">Capability unavailable. Check the configured powers-tool.</p>}
-    {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">Protection configuration is unavailable for the current model.</p>}
+    <p className="tool-setup-hint">{t("toolSetupEditor.onlyChangedValuesAreStoredUnchangedLeavesTheInstrument")}</p>
+    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">{t("toolSetupEditor.capabilityUnavailableSelectOrRefreshASupportedLiveResource")}</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">{t("toolSetupEditor.loadingOfflineProtectionCapabilities")}</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !capabilities && <p className="tool-setup-hint">{t("toolSetupEditor.capabilityUnavailableCheckTheConfiguredPowersTool")}</p>}
+    {capabilities && !hasConfigurableProtection && <p className="tool-setup-hint">{t("toolSetupEditor.protectionConfigurationIsUnavailableForTheCurrentModel")}</p>}
     <div className="powers-table-scroll">
       <table className="powers-protection-table">
         <thead><tr>
-          <th scope="col">Channel</th><th scope="col">OVP Voltage (V)</th><th scope="col">OCP</th>
-          <th scope="col">OCP Delay (s)</th><th scope="col">OCP Delay Trigger</th>
+          <th scope="col">{t("toolSetupEditor.channel")}</th><th scope="col">{t("toolSetupEditor.oVPVoltageV")}</th><th scope="col">{t("toolSetupEditor.oCP")}</th>
+          <th scope="col">{t("toolSetupEditor.oCPDelayS")}</th><th scope="col">{t("toolSetupEditor.oCPDelayTrigger")}</th>
         </tr></thead>
         <tbody>{displayChannels.map(channel => {
           const record = channels.find(item => item.channel === channel) ?? { channel }
@@ -428,10 +430,10 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
           return <tr key={channel}>
             <th scope="row">{channel}
               {capabilities && !capabilities.channels.includes(channel) &&
-                <span className="tool-setup-hint">Unavailable; existing settings preserved.</span>}
+                <span className="tool-setup-hint">{t("toolSetupEditor.unavailableExistingSettingsPreserved")}</span>}
             </th>
             <td>
-              <input aria-label={`Channel ${channel} OVP Voltage (V)`} type="number" min={0} step="any" placeholder="Unchanged"
+              <input aria-label={t("toolSetupEditor.channelOVPVoltageV", { value1: channel })} type="number" min={0} step="any" placeholder={t("toolSetupEditor.unchanged")}
                 value={record.ovp_voltage ?? ''} disabled={!protectionEnabled || !supported('ovp_voltage')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
                     changeSetting(updatePowersProtectionSetting(value, channel, 'ovp_voltage',
@@ -439,19 +441,19 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                   }
                 }} />
               {record.ovp_voltage !== undefined && !supported('ovp_voltage') &&
-                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+                <span className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingValuePreserved")}</span>}
             </td>
             <td>
-              <select aria-label={`Channel ${channel} OCP`} value={record.ocp ?? ''} disabled={!protectionEnabled || !supported('ocp')}
+              <select aria-label={t("toolSetupEditor.channelOCP", { value1: channel })} value={record.ocp ?? ''} disabled={!protectionEnabled || !supported('ocp')}
                 onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp']))}>
-                <option value="">Unchanged</option><option value="on">On</option><option value="off">Off</option>
+                <option value="">{t("toolSetupEditor.unchanged")}</option><option value="on">{t("toolSetupEditor.on")}</option><option value="off">{t("toolSetupEditor.off")}</option>
               </select>
               {record.ocp !== undefined && !supported('ocp') &&
-                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+                <span className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingValuePreserved")}</span>}
             </td>
             <td>
-              <input aria-label={`Channel ${channel} OCP Delay (s)`} type="number" min={0} step="any" placeholder="Unchanged"
+              <input aria-label={t("toolSetupEditor.channelOCPDelayS", { value1: channel })} type="number" min={0} step="any" placeholder={t("toolSetupEditor.unchanged")}
                 value={record.ocp_delay ?? ''} disabled={!protectionEnabled || !supported('ocp_delay')} onChange={event => {
                   if (event.target.value === '' || Number.isFinite(Number(event.target.value))) {
                     changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay',
@@ -459,27 +461,27 @@ function PowersSetupFields({ value, onChange, modelId, executionMode, powersExec
                   }
                 }} />
               {record.ocp_delay !== undefined && !supported('ocp_delay') &&
-                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+                <span className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingValuePreserved")}</span>}
             </td>
             <td>
-              <select aria-label={`Channel ${channel} OCP Delay Trigger`} value={record.ocp_delay_trigger ?? ''}
+              <select aria-label={t("toolSetupEditor.channelOCPDelayTrigger", { value1: channel })} value={record.ocp_delay_trigger ?? ''}
                 disabled={!protectionEnabled || triggers.length === 0 || unsupportedTrigger}
                 onChange={event => changeSetting(updatePowersProtectionSetting(value, channel, 'ocp_delay_trigger',
                   (event.target.value || undefined) as PowersProtectionChannel['ocp_delay_trigger']))}>
-                <option value="">Unchanged</option>
+                <option value="">{t("toolSetupEditor.unchanged")}</option>
                 {(['setting-change', 'cc-transition'] as const).map(trigger =>
                   <option key={trigger} value={trigger} disabled={!triggers.includes(trigger)}>
-                    {trigger === 'setting-change' ? 'Setting Change' : 'CC Transition'}
+                    {trigger === 'setting-change' ? t("toolSetupEditor.settingChange") : t("toolSetupEditor.cCTransition")}
                   </option>)}
               </select>
               {unsupportedTrigger &&
-                <span className="tool-setup-hint">Unsupported by the current model; existing value preserved.</span>}
+                <span className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingValuePreserved")}</span>}
             </td>
           </tr>
         })}</tbody>
       </table>
     </div>
-    {value.protection && <p className="tool-setup-hint">Protection settings are configured for this Power instance. Add a Power Protection Status step and Assert if the Workflow should fail when a protection trip is detected.</p>}
+    {value.protection && <p className="tool-setup-hint">{t("toolSetupEditor.protectionSettingsAreConfiguredForThisPowerInstanceAdd")}</p>}
     {children}
     </div>
   </div>
@@ -489,6 +491,7 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
   value: ScopesSetup; onChange: (value: ScopesSetup) => void
   modelId: string | null | undefined; executionMode: ExecutionMode; scopesExecutableKey: string
 }) {
+  const { t } = useI18n()
   const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
   const key = JSON.stringify([executionMode, modelId, scopesExecutableKey])
   useEffect(() => {
@@ -514,32 +517,31 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
     <h4 className="powers-section-heading">
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={acquisitionExpanded}
         data-scopes-count-disclosure
-        aria-label={`${acquisitionExpanded ? 'Collapse' : 'Expand'} Acquisition Setup`} onClick={() => setAcquisitionExpanded(!acquisitionExpanded)}>
+        aria-label={t("toolSetupEditor.acquisitionSetup", { value1: acquisitionExpanded ? t("toolSetupEditor.collapse") : t("toolSetupEditor.expand") })} onClick={() => setAcquisitionExpanded(!acquisitionExpanded)}>
         {acquisitionExpanded ? '−' : '+'}
-      </button>Acquisition Setup
-    </h4>
+      </button>{t("toolSetupEditor.acquisitionSetup2")}</h4>
     <div hidden={!acquisitionExpanded}>
-    <p className="tool-setup-hint">Only changed values are stored. Unchanged leaves the instrument setting unchanged.</p>
-    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">Capability unavailable. Select or refresh a supported Live Resource.</p>}
-    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">Loading offline Scopes capabilities...</p>}
-    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !caps && <p className="tool-setup-hint">Capability unavailable: {loaded.error}</p>}
+    <p className="tool-setup-hint">{t("toolSetupEditor.onlyChangedValuesAreStoredUnchangedLeavesTheInstrument")}</p>
+    {executionMode === 'live' && !modelId && <p className="tool-setup-hint">{t("toolSetupEditor.capabilityUnavailableSelectOrRefreshASupportedLiveResource")}</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key !== key && <p className="tool-setup-hint">{t("toolSetupEditor.loadingOfflineScopesCapabilities")}</p>}
+    {(executionMode === 'simulate' || modelId) && loaded?.key === key && !caps && <p className="tool-setup-hint">{t("toolSetupEditor.capabilityUnavailable")}{loaded.error}</p>}
     <div className="scopes-acquisition-fields">
       <div>
-        <label>Acquisition Type<select aria-label="Acquisition Type" value={acquisition.acquisition_type ?? ''}
+        <label>{t("toolSetupEditor.acquisitionType")}<select aria-label={t("toolSetupEditor.acquisitionType")} value={acquisition.acquisition_type ?? ''}
           disabled={modes.length === 0} onChange={event => {
             const acquisition_type = (event.target.value || undefined) as typeof acquisition.acquisition_type
             onChange(updateScopesAcquisition(value, { acquisition_type,
               average_count: acquisition_type === 'average' ? acquisition.average_count : undefined }))
           }}>
-          <option value="">Unchanged</option>
+          <option value="">{t("toolSetupEditor.unchanged")}</option>
           {(['normal', 'average', 'high_resolution', 'peak'] as const).map(mode =>
-            <option key={mode} value={mode} disabled={!modes.includes(mode)}>{mode.replace('_', ' ')}</option>)}
+            <option key={mode} value={mode} disabled={!modes.includes(mode)}>{enumLabel(t, 'capability', mode)}</option>)}
         </select></label>
-        {unsupportedMode && <p className="tool-setup-hint">Unsupported by the current model; existing Acquisition Type preserved.</p>}
-        {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">Acquisition capability information is unavailable.</p>}
+        {unsupportedMode && <p className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingAcquisitionTypePreserved")}</p>}
+        {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">{t("toolSetupEditor.acquisitionCapabilityInformationIsUnavailable")}</p>}
       </div>
       <div>
-        <label>Average Count<input aria-label="Average Count" type="number" step={1} min={counts[0]} max={counts.at(-1)} placeholder="Unchanged"
+        <label>{t("toolSetupEditor.averageCount")}<input aria-label={t("toolSetupEditor.averageCount")} type="number" step={1} min={counts[0]} max={counts.at(-1)} placeholder={t("toolSetupEditor.unchanged")}
           value={countDraft ?? acquisition.average_count ?? ''} disabled={acquisition.acquisition_type !== 'average' || !modes.includes('average') || counts.length === 0}
           onChange={event => {
             setCountDraft(event.target.value)
@@ -553,43 +555,42 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
                 && event.currentTarget.closest('fieldset')?.contains(next)))) return
             setCountDraft(null)
           }} /></label>
-        <p className="tool-setup-hint">Requires Acquisition Type = Average.</p>
-        {counts.length > 0 && <p className="tool-setup-hint">Supported counts: {counts.length <= 16 ? counts.join(', ') : `${counts[0]}–${counts.at(-1)} (${counts.length} supported integers)`}.</p>}
-        {unsupportedCount && <p className="tool-setup-hint">Unsupported by the current model; existing Average Count preserved.</p>}
+        <p className="tool-setup-hint">{t("toolSetupEditor.requiresAcquisitionTypeAverage")}</p>
+        {counts.length > 0 && <p className="tool-setup-hint">{t("toolSetupEditor.supportedCounts")}{counts.length <= 16 ? counts.join(', ') : t("toolSetupEditor.supportedIntegers", { value1: counts[0], value2: counts.at(-1) ?? 0, value3: counts.length })}.</p>}
+        {unsupportedCount && <p className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingAverageCountPreserved")}</p>}
       </div>
     </div>
     </div>
     <h4 className="powers-section-heading">
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={channelsExpanded}
-        aria-label={`${channelsExpanded ? 'Collapse' : 'Expand'} Channel Configuration`} onClick={() => setChannelsExpanded(!channelsExpanded)}>
+        aria-label={t("toolSetupEditor.channelConfiguration", { value1: channelsExpanded ? t("toolSetupEditor.collapse") : t("toolSetupEditor.expand") })} onClick={() => setChannelsExpanded(!channelsExpanded)}>
         {channelsExpanded ? '−' : '+'}
-      </button>Channel Configuration
-    </h4>
+      </button>{t("toolSetupEditor.channelConfiguration2")}</h4>
     <div hidden={!channelsExpanded}>
     <div className="powers-table-scroll"><table className="powers-protection-table">
-      <thead><tr><th>Channel</th><th>Input Coupling</th><th>Probe Ratio</th><th>Bandwidth Limit</th><th>Waveform Invert</th><th>Channel Units</th></tr></thead>
+      <thead><tr><th>{t("toolSetupEditor.channel")}</th><th>{t("toolSetupEditor.inputCoupling")}</th><th>{t("toolSetupEditor.probeRatio")}</th><th>{t("toolSetupEditor.bandwidthLimit")}</th><th>{t("toolSetupEditor.waveformInvert")}</th><th>{t("toolSetupEditor.channelUnits")}</th></tr></thead>
       <tbody>{scopesChannelNumbers(caps, value).map(channel => {
         const record = value.channels?.find(item => item.channel === channel) ?? { channel }
         const supported = caps !== null && channel <= caps.analog_channels
         const select = (field: 'coupling' | 'bandwidth_limit' | 'invert' | 'units', label: string, options: [string, string][]) => <>
-          <select aria-label={`Channel ${channel} ${label}`} disabled={!supported}
+          <select aria-label={t("toolSetupEditor.channel2", { value1: channel, value2: label })} disabled={!supported}
             value={record[field] === undefined ? '' : String(record[field])} onChange={event => {
               const setting = event.target.value === '' ? undefined : ['bandwidth_limit', 'invert'].includes(field)
                 ? event.target.value === 'true' : event.target.value
               onChange(updateScopesChannel(value, channel, field, setting as ScopesChannel[typeof field]))
-            }}><option value="">Unchanged</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          {!supported && record[field] !== undefined && <span className="tool-setup-hint">Unavailable; existing value preserved.</span>}
+            }}><option value="">{t("toolSetupEditor.unchanged")}</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          {!supported && record[field] !== undefined && <span className="tool-setup-hint">{t("toolSetupEditor.unavailableExistingValuePreserved")}</span>}
         </>
-        return <tr key={channel}><th scope="row">{channel}{!supported && <span className="tool-setup-hint">Unavailable; existing settings preserved.</span>}</th>
-          <td>{select('coupling', 'Input Coupling', [['ac', 'AC'], ['dc', 'DC']])}</td>
-          <td><input aria-label={`Channel ${channel} Probe Ratio`} type="number" min={0} step="any" placeholder="Unchanged"
+        return <tr key={channel}><th scope="row">{channel}{!supported && <span className="tool-setup-hint">{t("toolSetupEditor.unavailableExistingSettingsPreserved")}</span>}</th>
+          <td>{select('coupling', t("toolSetupEditor.inputCoupling"), [['ac', 'AC'], ['dc', 'DC']])}</td>
+          <td><input aria-label={t("toolSetupEditor.channelProbeRatio", { value1: channel })} type="number" min={0} step="any" placeholder={t("toolSetupEditor.unchanged")}
             value={record.probe_ratio ?? ''} disabled={!supported} onChange={event => {
               if (event.target.value === '' || Number.isFinite(Number(event.target.value)))
                 onChange(updateScopesChannel(value, channel, 'probe_ratio', event.target.value === '' ? undefined : Number(event.target.value)))
-            }} />{!supported && record.probe_ratio !== undefined && <span className="tool-setup-hint">Unavailable; existing value preserved.</span>}</td>
-          <td>{select('bandwidth_limit', 'Bandwidth Limit', [['true', 'On'], ['false', 'Off']])}</td>
-          <td>{select('invert', 'Waveform Invert', [['true', 'On'], ['false', 'Off']])}</td>
-          <td>{select('units', 'Channel Units', [['volt', 'Volt'], ['amp', 'Amp']])}</td>
+            }} />{!supported && record.probe_ratio !== undefined && <span className="tool-setup-hint">{t("toolSetupEditor.unavailableExistingValuePreserved")}</span>}</td>
+          <td>{select('bandwidth_limit', t("toolSetupEditor.bandwidthLimit"), [['true', t("toolSetupEditor.on")], ['false', t("toolSetupEditor.off")]])}</td>
+          <td>{select('invert', t("toolSetupEditor.waveformInvert"), [['true', t("toolSetupEditor.on")], ['false', t("toolSetupEditor.off")]])}</td>
+          <td>{select('units', t("toolSetupEditor.channelUnits"), [['volt', t("toolSetupEditor.volt")], ['amp', t("toolSetupEditor.amp")]])}</td>
         </tr>
       })}</tbody>
     </table></div>
@@ -598,69 +599,52 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
 }
 
 function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: (v: SerialSetup) => void }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   const update = (change: Partial<SerialSetup>) => onChange({ ...value, ...change })
   const tcp = value.transport === 'tcp'
   return <>
     <h4 className="powers-section-heading">
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} Communication Setup`} onClick={() => setExpanded(!expanded)}>
+        aria-label={t("toolSetupEditor.communicationSetup", { value1: expanded ? t("toolSetupEditor.collapse") : t("toolSetupEditor.expand") })} onClick={() => setExpanded(!expanded)}>
         {expanded ? '−' : '+'}
-      </button>Communication Setup
-    </h4>
+      </button>{t("toolSetupEditor.communicationSetup2")}</h4>
     <div hidden={!expanded}>
     <div className="serial-setup-fields">
-    <label className="step-property-field"><span className="step-property-label">Transport</span>
-      <select aria-label="Transport" value={value.transport}
+    <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.transport")}</span>
+      <select aria-label={t("toolSetupEditor.transport")} value={value.transport}
         onChange={e => update({ transport: e.target.value as 'serial' | 'tcp' })}>
-        <option value="serial">UART (COM Port)</option>
-        <option value="tcp">TCP Client</option>
+        <option value="serial">{t("toolSetupEditor.uARTCOMPort")}</option>
+        <option value="tcp">{t("toolSetupEditor.tCPClient")}</option>
       </select></label>
     {tcp ? <>
-      <label className="step-property-field"><span className="step-property-label">Connect Timeout (ms)</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.connectTimeoutMs")}</span>
         <input type="number" min={1} step={1} value={value.connect_timeout_ms ?? 3000}
           onChange={e => update({ connect_timeout_ms: Number(e.target.value) })} /></label>
-      <label className="step-property-field"><span className="step-property-label">I/O Timeout (ms)</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.iOTimeoutMs")}</span>
         <input type="number" min={1} step={1} value={value.io_timeout_ms ?? 1000}
           onChange={e => update({ io_timeout_ms: Number(e.target.value) })} /></label>
     </> : <>
-      <label className="step-property-field"><span className="step-property-label">Baud Rate</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.baudRate")}</span>
         <input type="number" min={1} step={1} value={value.baud} onChange={e => update({ baud: Number(e.target.value) })} /></label>
-      <label className="step-property-field"><span className="step-property-label">Data Bits</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.dataBits")}</span>
         <select value={value.data_bits} onChange={e => update({ data_bits: Number(e.target.value) })}>
           {[5, 6, 7, 8].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
-      <label className="step-property-field"><span className="step-property-label">Parity</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.parity")}</span>
         <select value={value.parity} onChange={e => update({ parity: e.target.value as SerialSetup['parity'] })}>
-          <option value="none">None</option><option value="odd">Odd</option><option value="even">Even</option></select></label>
-      <label className="step-property-field"><span className="step-property-label">Stop Bits</span>
+          <option value="none">{t("toolSetupEditor.none")}</option><option value="odd">{t("toolSetupEditor.odd")}</option><option value="even">{t("toolSetupEditor.even")}</option></select></label>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.stopBits")}</span>
         <select value={value.stop_bits} onChange={e => update({ stop_bits: Number(e.target.value) })}>
           <option value={1}>1</option><option value={2}>2</option></select></label>
-      <label className="step-property-field"><span className="step-property-label">Flow Control</span>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.flowControl")}</span>
         <select value={value.flow_control} onChange={e => update({ flow_control: e.target.value as SerialSetup['flow_control'] })}>
-          <option value="none">None</option><option value="software">Software</option><option value="hardware">Hardware</option></select></label>
-      <label className="step-property-field"><span className="step-property-label">Timeout (ms)</span>
+          <option value="none">{t("toolSetupEditor.none")}</option><option value="software">{t("toolSetupEditor.software")}</option><option value="hardware">{t("toolSetupEditor.hardware")}</option></select></label>
+      <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.timeoutMs")}</span>
         <input type="number" min={0} step={1} value={value.timeout_ms} onChange={e => update({ timeout_ms: Number(e.target.value) })} /></label>
     </>}
     </div>
     </div>
   </>
-}
-
-function setupSummary(instance: ToolInstance, background?: BackgroundConfig): string {
-  const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
-  if (instance.tool === 'serial') return instance.setup.transport === 'tcp'
-    ? `Serial · TCP Client · ${instance.setup.io_timeout_ms ?? 1000} ms I/O timeout`
-    : `Serial · ${instance.setup.baud} baud · ${instance.setup.data_bits} bits`
-  if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? 'Protection Setup' : 'No protection settings configured'}`
-  if (instance.tool === 'scopes') return `${type} · ${instance.setup.acquisition ? 'Acquisition Setup' : 'Acquisition Unchanged'} · ${instance.setup.channels?.length ?? 0} configured channels`
-  if (instance.tool !== 'meters') return `${type} · No additional setup`
-  const meters = instance.setup
-  const voltage = meters.measurement === 'voltage-dc'
-  const range = meters.range_mode === 'auto' ? 'Auto Range'
-    : meters.manual_range !== null && Number.isFinite(meters.manual_range)
-      ? `Manual ${meters.manual_range} ${voltage ? 'V' : 'A'}` : 'Manual Range'
-  const trigger = ({ software: background ? 'Software' : 'Single', immediate: 'Immediate', external: 'External', 'software-custom': 'Software Custom', 'immediate-custom': 'Immediate Custom', 'external-custom': 'External Custom' } as const)[meters.trigger_mode ?? 'software']
-  return `${type} · ${trigger} · ${voltage ? 'DC Voltage' : 'DC Current'} · ${range} · NPLC ${meters.nplc}`
 }
 
 export default function ToolSetupEditor({ value, configuredToolTypes, steps, onChange, disabled, renderResource, renderPowersDeviceStatus, resourceIdentities, executionMode, metersExecutableKey, powersExecutableKey, scopesExecutableKey, backgrounds = [], onBackgroundsChange }: {
@@ -676,6 +660,24 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
   backgrounds?: BackgroundConfig[]
   onBackgroundsChange?: (value: BackgroundConfig[]) => void
 }) {
+  function setupSummary(instance: ToolInstance, background?: BackgroundConfig): string {
+    const type = instance.tool[0].toUpperCase() + instance.tool.slice(1)
+    if (instance.tool === 'serial') return instance.setup.transport === 'tcp'
+      ? t("toolSetupEditor.tcpSummary", { value1: instance.setup.io_timeout_ms ?? 1000 })
+      : t("toolSetupEditor.serialSummary", { value1: instance.setup.baud, value2: instance.setup.data_bits })
+    if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? t("toolSetupEditor.protectionSetup2") : t("toolSetupEditor.noProtectionSettingsConfigured")}`
+    if (instance.tool === 'scopes') return t("toolSetupEditor.scopeSummary", { type, acquisition: instance.setup.acquisition ? t("toolSetupEditor.acquisitionSetup") : t("toolSetupEditor.acquisitionUnchanged"), count: instance.setup.channels?.length ?? 0 })
+    if (instance.tool !== 'meters') return `${type} · ${t("toolSetupEditor.noAdditionalSetup")}`
+    const meters = instance.setup
+    const voltage = meters.measurement === 'voltage-dc'
+    const range = meters.range_mode === 'auto' ? t("toolSetupEditor.autoRange")
+      : meters.manual_range !== null && Number.isFinite(meters.manual_range)
+        ? t("toolSetupEditor.manualRangeSummary", { value1: meters.manual_range, value2: voltage ? 'V' : 'A' }) : t("toolSetupEditor.manualRange2")
+    const trigger = ({ software: background ? t("toolSetupEditor.software") : t("toolSetupEditor.single"), immediate: t("toolSetupEditor.immediate"), external: t("toolSetupEditor.external"), 'software-custom': t("toolSetupEditor.softwareCustom"), 'immediate-custom': t("toolSetupEditor.immediateCustom"), 'external-custom': t("toolSetupEditor.externalCustom") } as const)[meters.trigger_mode ?? 'software']
+    return `${type} · ${trigger} · ${voltage ? t("toolSetupEditor.dCVoltage") : t("toolSetupEditor.dCCurrent")} · ${range} · NPLC ${meters.nplc}`
+  }
+
+    const { t } = useI18n()
   const [collapsedIds, setCollapsedIds] = useState<string[]>([])
   useEffect(() => {
     setCollapsedIds(current => {
@@ -691,9 +693,9 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
     return counts
   }, {})
   return <section className="tool-setup" aria-labelledby="tool-setup-title">
-    <h3 id="tool-setup-title">Tool Setup</h3>
+    <h3 id="tool-setup-title">{t("toolSetupEditor.toolSetup")}</h3>
     {value.length > 0 && <section className="tool-instance-summary" aria-labelledby="tool-instance-summary-title">
-      <h4 id="tool-instance-summary-title">Tool Instance Summary</h4>
+      <h4 id="tool-instance-summary-title">{t("toolSetupEditor.toolInstanceSummary")}</h4>
       <dl className="tool-instance-counts">
         {Object.entries(instanceCounts).map(([type, count]) => <div key={type}>
           <dt>{type[0].toUpperCase() + type.slice(1)}</dt><dd>{count}</dd>
@@ -701,10 +703,10 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
       </dl>
     </section>}
     <fieldset disabled={disabled || !tool}>
-      <legend>Add Tool Instance</legend>
+      <legend>{t("toolSetupEditor.addToolInstance")}</legend>
       <div className="tool-setup-add-controls">
-      <select aria-label="Tool type" value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
-        {!tool && <option value="">No configured tools</option>}
+      <select aria-label={t("toolSetupEditor.toolType")} value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
+        {!tool && <option value="">{t("toolSetupEditor.noConfiguredTools")}</option>}
         {configuredToolTypes.map(type => <option key={type} value={type}>{type}</option>)}
       </select>
       <button type="button" className="action-button" onClick={() => {
@@ -723,10 +725,10 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
             : { id, tool, setup: {} }
         setCollapsedIds(current => current.filter(collapsedId => collapsedId !== id))
         onChange([...value, instance])
-      }}>Add Tool Instance</button>
+      }}>{t("toolSetupEditor.addToolInstance")}</button>
       </div>
     </fieldset>
-    {!tool && <p className="tool-setup-hint">Configure an external tool in Tools before adding a Tool Instance.</p>}
+    {!tool && <p className="tool-setup-hint">{t("toolSetupEditor.configureAnExternalToolInToolsBeforeAddingA")}</p>}
     {value.map(instance => {
       const collapsed = collapsedIds.includes(instance.id)
       const background = backgrounds.find(item => item.tool_instance_id === instance.id)
@@ -735,23 +737,22 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
         <legend>
           <button type="button" className="action-button tool-setup-toggle"
             data-scopes-count-disclosure={instance.tool === 'scopes' ? '' : undefined}
-            aria-expanded={!collapsed} aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${instance.id}`}
+            aria-expanded={!collapsed} aria-label={`${collapsed ? t("toolSetupEditor.expand") : t("toolSetupEditor.collapse")} ${instance.id}`}
             onClick={() => setCollapsedIds(current => collapsed
               ? current.filter(id => id !== instance.id) : [...current, instance.id])}>
             {collapsed ? '+' : '−'}
           </button>
           <span>{toolInstanceLabel(instance, false)}</span>
-          <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode)}</span>
+          <span className={`execution-mode-badge execution-mode-${executionMode}`}>{executionModeLabel(executionMode, t)}</span>
         </legend>
-        {instance.display_name?.trim() && <p className="tool-setup-hint">Instance ID: {instance.id}</p>}
+        {instance.display_name?.trim() && <p className="tool-setup-hint">{t("toolSetupEditor.instanceID")}{instance.id}</p>}
         {!configuredToolTypes.includes(instance.tool) && <p className="tool-setup-hint" role="status">
-          {instance.tool[0].toUpperCase() + instance.tool.slice(1)} is not configured in Tools.
-        </p>}
+          {instance.tool[0].toUpperCase() + instance.tool.slice(1)} {t("toolSetupEditor.isNotConfiguredInTools")}</p>}
         {collapsed && <p className="tool-setup-hint">{setupSummary(instance, background)}</p>}
         {/* Keep setup fields mounted so collapsing never discards local drafts or reloads capabilities. */}
         <div hidden={collapsed}>
           <label className="step-property-field">
-            <span className="step-property-label">Display Name (optional)</span>
+            <span className="step-property-label">{t("toolSetupEditor.displayNameOptional")}</span>
             <input type="text" disabled={disabled} value={instance.display_name ?? ''}
               onChange={event => {
                 if (disabled) return
@@ -764,7 +765,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                 if (display_name === instance.display_name) return
                 onChange(value.map(item => item.id === instance.id ? { ...item, display_name } : item))
               }} />
-            <span className="tool-setup-hint">Leave blank to use the default instance ID.</span>
+            <span className="tool-setup-hint">{t("toolSetupEditor.leaveBlankToUseTheDefaultInstanceID")}</span>
           </label>
           <p>{instance.tool[0].toUpperCase() + instance.tool.slice(1)}</p>
           {instance.tool === 'meters'
@@ -788,7 +789,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                   powersExecutableKey={powersExecutableKey}
                   onChange={setup => onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))}>
                   <div className="powers-device">
-                    <h4 className="powers-section-heading">Device</h4>
+                    <h4 className="powers-section-heading">{t("toolSetupEditor.device")}</h4>
                     {renderPowersDeviceStatus(instance)}
                   </div>
                 </PowersSetupFields>
@@ -800,18 +801,18 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
                 ? <SerialSetupFields value={instance.setup} onChange={setup =>
                     onChange(value.map(item => item.id === instance.id ? { ...instance, setup } : item))} />
               : <>
-                  <p>No additional setup</p>
+                  <p>{t("toolSetupEditor.noAdditionalSetup")}</p>
                   <p className="tool-setup-hint">{executionMode === 'simulate'
-                    ? 'Simulation selected. Orchestrator runtime actions for this Tool Type are not yet supported.'
-                    : 'Orchestrator runtime actions for this Tool Type are not yet supported.'}</p>
+                    ? t("toolSetupEditor.simulationSelectedOrchestratorRuntimeActionsForThisToolType")
+                    : t("toolSetupEditor.orchestratorRuntimeActionsForThisToolTypeAreNot")}</p>
                 </>}
           {onBackgroundsChange && <BackgroundSetup instance={instance} value={backgrounds} steps={steps} onChange={onBackgroundsChange}
             executionMode={executionMode} modelId={executionMode === 'live' ? resourceIdentities[instance.id]?.model_id : null}
             scopesExecutableKey={scopesExecutableKey} />}
           {renderResource(instance)}
           <button type="button" className="action-button action-button-danger" disabled={referenced || backgrounds.some(background => background.tool_instance_id === instance.id)}
-            onClick={() => onChange(value.filter(item => item.id !== instance.id))}>Remove Tool Instance</button>
-          {referenced && <p className="tool-setup-hint">Referenced by workflow steps. Remove those steps before removing this instance.</p>}
+            onClick={() => onChange(value.filter(item => item.id !== instance.id))}>{t("toolSetupEditor.removeToolInstance")}</button>
+          {referenced && <p className="tool-setup-hint">{t("toolSetupEditor.referencedByWorkflowStepsRemoveThoseStepsBeforeRemoving")}</p>}
         </div>
       </fieldset>
     })}

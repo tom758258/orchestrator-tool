@@ -30,13 +30,10 @@ test('Selected Page explicit CSV destination state is removed', () => {
 test('Streaming UI no longer offers Select CSV flows', () => {
   assert.doesNotMatch(panel, /Select CSV/)
   assert.doesNotMatch(panel, /Select a new CSV file/)
-  assert.match(panel, /Select Folder/)
 })
 
 test('Selected Page and All Pages share one folder selection', () => {
   assert.match(panel, /streamOutputFolder/)
-  assert.match(panel, /Default: <application folder>\/data/)
-  assert.match(panel, /Use Default/)
   assert.match(panel, /setStreamOutputFolder\(null\)/)
   assert.match(panel, /selectOutputFolder\(\)/)
   const folderPicker = source.slice(source.indexOf('async function selectOutputFolder'), source.indexOf('const handleExport'))

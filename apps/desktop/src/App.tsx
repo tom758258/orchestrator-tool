@@ -1,3 +1,6 @@
+import { uiMessage, useMessage } from './i18n/useMessage'
+import { useI18n } from './i18n/I18nProvider'
+import { english, type Translate } from './i18n/index.ts'
 import ScopesActionEditor from './ScopesActionEditor'
 import SerialActionEditor from './SerialActionEditor'
 import { useLivePreflight } from './useLivePreflight'
@@ -23,7 +26,6 @@ import { claimRunGate, isCurrentRunGeneration, lastRunWorkspaceState, prepareLas
 import FailureDetails from './FailureDetails'
 import WorkflowRunSummary from './WorkflowRunSummary'
 import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDrafts } from './InteractionEditor'
-import { INTERACTION_LABELS } from './workflow'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
 import BackgroundOutput from './BackgroundOutput'
@@ -36,7 +38,7 @@ import type { NumericDisplayFormat } from './outputTime'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
 import { COMPARISON_OPERATORS } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
-import { allWorkflowSteps, containerPath, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS, MESSAGE_TARGET_LABELS } from './workflow'
+import { allWorkflowSteps, containerPath, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow, StepBranch } from './workflow'
 import ShowMessageEditor from './ShowMessageEditor'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
@@ -128,20 +130,21 @@ function formatLiveResourceConfirmation(
   resource: string,
   backend: VisaBackend,
   identity: ResourceIdentity | null | undefined,
+  t: Translate = english,
 ): string {
   const lines = [`${instance.id} (${instance.tool})`]
   const name = deviceName(identity)
   const serial = identity?.serial?.trim()
   const modelId = identity?.model_id?.trim()
-  if (modelId) lines.push(`Model ID: ${modelId}`)
+  if (modelId) lines.push(t("app.modelId", { value1: modelId }))
   if (name) {
     lines.push(name)
   }
   if (serial) {
     lines.push(`S/N: ${serial}`)
   }
-  if (instance.tool === 'serial') lines.push(`${instance.setup.transport === 'tcp' ? 'TCP Endpoint' : 'COM Port'}: ${resource}`)
-  else lines.push(`Backend: ${backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA'}`, resource)
+  if (instance.tool === 'serial') lines.push(`${instance.setup.transport === 'tcp' ? t('app.tcpEndpoint') : t('app.comPort')}: ${resource}`)
+  else lines.push(t("app.backend", { value1: backend === '@py' ? 'PyVISA-py (@py)' : 'System VISA' }), resource)
   return lines.join('\n')
 }
 
@@ -178,6 +181,16 @@ type StepPresetOption = {
   tool?: ToolInstance['tool']
 }
 
+const STEP_CATEGORY_KEYS: Record<string, string> = {
+  "Workflow": "steps.category.workflow",
+  "Background Workflow": "steps.category.background",
+  "FG/BG Interaction": "steps.category.interaction",
+  "Meters": "steps.category.meters",
+  "Powers": "steps.category.powers",
+  "Scopes": "steps.category.scopes",
+  "Serial": "steps.category.serial"
+}
+
 const STEP_CATEGORIES = [
   { category: 'Workflow', tool: null },
   { category: 'Background Workflow', tool: null },
@@ -187,88 +200,6 @@ const STEP_CATEGORIES = [
   { category: 'Scopes', tool: 'scopes' },
   { category: 'Serial', tool: 'serial' },
 ] as const
-
-const STEP_PRESETS: StepPresetOption[] = [
-  ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: ['BG Command', 'Get Latest', 'Wait Next', 'Get Command Result'][index], prefix: value, category: 'FG/BG Interaction' })),
-  ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
-    label: `Background ${action.split('-').map(word => word === 'on' || word === 'off' ? word.toUpperCase() : word[0].toUpperCase()+word.slice(1)).join(' ')}`,
-    prefix: `background-${action}`, category: 'Background Workflow' })),
-  ...(['send', 'send-file', 'receive', 'query'] as const).map(action => ({
-    value: `serial-${action}` as StepPreset, label: `Serial ${action.split('-').map(word => word[0].toUpperCase() + word.slice(1)).join(' ')}`,
-    prefix: `serial-${action}`, category: 'Serial', tool: 'serial' as const,
-  })),
-  ...SCOPES_ACTIONS.map(([action, label]) => ({ value: `scope-${action}` as StepPreset, label, prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
-  { value: 'while', label: 'While', prefix: 'while', category: 'Workflow' },
-  { value: 'if', label: 'If / Else', prefix: 'if', category: 'Workflow' },
-  { value: 'for', label: 'For', prefix: 'for', category: 'Workflow' },
-  { value: 'set-variable', label: 'Set Variable', prefix: 'set-variable', category: 'Workflow' },
-  { value: 'output', label: 'Output', prefix: 'output', category: 'Workflow' },
-  { value: 'power-set-output', label: 'Power Set Output', prefix: 'power-set', category: 'Powers', tool: 'powers' },
-  { value: 'power-protection-status', label: 'Power Protection Status', prefix: 'power-protection', category: 'Powers', tool: 'powers' },
-  { value: 'power-measure', label: 'Power Measure', prefix: 'power-measure', category: 'Powers', tool: 'powers' },
-  { value: 'power-output-on', label: 'Power Output ON', prefix: 'power-on', category: 'Powers', tool: 'powers' },
-  { value: 'wait', label: 'Wait', prefix: 'wait', category: 'Workflow' },
-  { value: 'assert', label: 'Assert', prefix: 'assert', category: 'Workflow' },
-  { value: 'show-message', label: 'Show Message', prefix: 'show-message', category: 'Workflow' },
-  { value: 'meter-measure', label: 'Meter Measure', prefix: 'meter-read', category: 'Meters', tool: 'meters' },
-  { value: 'power-output-off', label: 'Power Output OFF', prefix: 'power-off', category: 'Powers', tool: 'powers' },
-]
-
-const TOOL_ACTION_LABELS: Record<string, string> = {
-  'serial/send': 'Serial Send',
-  'serial/send-file': 'Serial Send File',
-  'serial/receive': 'Serial Receive',
-  'serial/query': 'Serial Query',
-  ...Object.fromEntries(SCOPES_ACTIONS.map(([action, label]) => [`scopes/${action}`, label])),
-  'powers/set-output': 'Power Set Output',
-  'powers/protection-status': 'Power Protection Status',
-  'powers/measure': 'Power Measure',
-  'powers/output-on': 'Power Output ON',
-  'meters/measure': 'Meter Measure',
-  'powers/output-off': 'Power Output OFF',
-}
-
-const STEP_HELP: Record<string, string> = {
-  'scopes/autoscale': 'Keysight only. AutoScale may change channel, timebase, and trigger settings. It is a foreground Step, not a Background Streaming command.',
-  'serial/send': 'Send UTF-8 Text or one Hex Byte to the selected Serial instance.',
-  'serial/send-file': 'Send a Worker-local file. Run is blocked if the path is invalid.',
-  'serial/receive': 'Receive up to Max Bytes once; result contains rx_hex and rx_bytes.',
-  'serial/query': 'Send a byte or UTF-8 string and read until the specified delimiter.',
-  while: 'Repeat while a comparison is true. Max iterations is a safety limit, not expected work.',
-  if: 'Evaluate a comparison once and execute either THEN or ELSE. ELSE may be empty.',
-  for: 'Repeat these body steps over an exact decimal range. If, For and While can nest up to 8 levels.',
-  assert: 'Fail the Workflow when this comparison is false.',
-  'show-message': 'Write a message to the Messages Panel while the Workflow runs. It does not create an Output Page, a Popup, or an Assert.',
-  'set-variable': 'Save a value or calculation result so later steps can reuse it.',
-  output: 'Publish a value as a final Workflow result. This does not control a Power output.',
-  wait: 'Pause before running the next step. Useful for DUT or signal settling time.',
-  'powers/set-output': 'This step only configures the setpoints. Use Power Output ON separately to enable the output.',
-  'powers/protection-status': 'Power Protection Status reads the selected Power channel protection state without changing instrument settings. Use Protection Tripped with Assert when the Workflow should fail after detecting a protection trip.',
-  'powers/measure': 'Read the selected channel\'s actual Voltage (V) and Current (A) once. This foreground action does not change power output settings.',
-  'powers/output-on': 'Enable the selected Power channel.',
-  'powers/output-off': 'Disable the selected Power channel.',
-  'meters/measure': 'Acquire the next Meter reading or Custom batch using the trigger mode defined in Setup. The result can be used by later steps.',
-}
-
-const EXECUTABLE_LABELS: Record<string, string> = {
-  'not-configured': 'Not configured',
-  available: 'Available',
-  missing: 'Missing',
-  'not-file': 'Not a file',
-  error: 'Error',
-}
-
-const COMPATIBILITY_LABELS: Record<string, string> = {
-  compatible: 'Compatible',
-  incompatible: 'Incompatible',
-  'not-probed': '—',
-  error: 'Error',
-}
-
-const SOURCE_LABELS: Record<string, string> = {
-  configured: 'Configured',
-  'not-configured': 'Not configured',
-}
 
 function formatWorkerSchemas(versions: number[]): string {
   if (versions.length === 0) {
@@ -375,32 +306,6 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
   }
 }
 
-function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
-  if (step.type === 'bg-interaction') return INTERACTION_LABELS[step.operation.kind]
-  if (step.type === 'background') return `Background ${step.action.replace('-', ' ').toUpperCase()}`
-  if (step.type === 'while') return 'While'
-  if (step.type === 'if') return 'If / Else'
-  if (step.type === 'for') return `For ${step.variable} = ${step.range.start}..${step.range.stop}`
-  if (step.type === 'set-variable') {
-    return 'Set Variable'
-  }
-  if (step.type === 'output') {
-    return 'Output'
-  }
-  if (step.type === 'assert') {
-    return 'Assert'
-  }
-  if (step.type === 'show-message') {
-    return 'Show Message'
-  }
-  if (step.type === 'wait') {
-    return 'Wait'
-  }
-
-  const tool = instances.find(instance => instance.id === step.target)?.tool
-  return TOOL_ACTION_LABELS[`${tool}/${step.action}`] ?? `${step.target} / ${step.action}`
-}
-
 function numericArgument(step: ToolActionStep, name: string): number | '' {
   const value = step.arguments[name]
   return typeof value === 'number' && Number.isFinite(value) ? value : ''
@@ -473,14 +378,14 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
 }
 
 function LiveDeviceSetup({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   return <div className="live-resource">
     <h4>
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} Live Device`} onClick={() => setExpanded(!expanded)}>
+        aria-label={t("app.liveDevice", { value1: expanded ? t("app.collapse") : t("app.expand") })} onClick={() => setExpanded(!expanded)}>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
-      </button>Live Device
-    </h4>
+      </button>{t("app.liveDevice2")}</h4>
     <div hidden={!expanded}>{children}</div>
   </div>
 }
@@ -497,6 +402,115 @@ function readStepDensity(): StepDensity {
 }
 
 function App() {
+  const { locale, setLocale, t } = useI18n()
+  const STEP_PRESETS: StepPresetOption[] = [
+    ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: [t("app.bGCommand"), t("app.getLatest"), t("app.waitNext"), t("app.getCommandResult")][index], prefix: value, category: 'FG/BG Interaction' })),
+    ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
+      label: t(`steps.background.${action}`),
+      prefix: `background-${action}`, category: 'Background Workflow' })),
+    ...(['send', 'send-file', 'receive', 'query'] as const).map(action => ({
+      value: `serial-${action}` as StepPreset, label: t(`steps.serial.${action}`),
+      prefix: `serial-${action}`, category: 'Serial', tool: 'serial' as const,
+    })),
+    ...SCOPES_ACTIONS.map(([action]) => ({ value: `scope-${action}` as StepPreset, label: t(`steps.scope.${action}`), prefix: `scope-${action}`, category: 'Scopes', tool: 'scopes' as const })),
+    { value: 'while', label: t("app.while").trim(), prefix: 'while', category: 'Workflow' },
+    { value: 'if', label: t("app.ifElse"), prefix: 'if', category: 'Workflow' },
+    { value: 'for', label: t("app.for").trim(), prefix: 'for', category: 'Workflow' },
+    { value: 'set-variable', label: t("app.setVariable"), prefix: 'set-variable', category: 'Workflow' },
+    { value: 'output', label: t("app.output"), prefix: 'output', category: 'Workflow' },
+    { value: 'power-set-output', label: t("app.powerSetOutput"), prefix: 'power-set', category: 'Powers', tool: 'powers' },
+    { value: 'power-protection-status', label: t("app.powerProtectionStatus"), prefix: 'power-protection', category: 'Powers', tool: 'powers' },
+    { value: 'power-measure', label: t("app.powerMeasure"), prefix: 'power-measure', category: 'Powers', tool: 'powers' },
+    { value: 'power-output-on', label: t("app.powerOutputON"), prefix: 'power-on', category: 'Powers', tool: 'powers' },
+    { value: 'wait', label: t("app.wait"), prefix: 'wait', category: 'Workflow' },
+    { value: 'assert', label: t("app.assert"), prefix: 'assert', category: 'Workflow' },
+    { value: 'show-message', label: t("app.showMessage"), prefix: 'show-message', category: 'Workflow' },
+    { value: 'meter-measure', label: t("app.meterMeasure"), prefix: 'meter-read', category: 'Meters', tool: 'meters' },
+    { value: 'power-output-off', label: t("app.powerOutputOFF"), prefix: 'power-off', category: 'Powers', tool: 'powers' },
+  ]
+
+  const TOOL_ACTION_LABELS: Record<string, string> = {
+    'serial/send': t("app.serialSend"),
+    'serial/send-file': t("app.serialSendFile"),
+    'serial/receive': t("app.serialReceive"),
+    'serial/query': t("app.serialQuery"),
+    ...Object.fromEntries(SCOPES_ACTIONS.map(([action]) => [`scopes/${action}`, t(`steps.scope.${action}`)])),
+    'powers/set-output': t("app.powerSetOutput"),
+    'powers/protection-status': t("app.powerProtectionStatus"),
+    'powers/measure': t("app.powerMeasure"),
+    'powers/output-on': t("app.powerOutputON"),
+    'meters/measure': t("app.meterMeasure"),
+    'powers/output-off': t("app.powerOutputOFF"),
+  }
+
+  const STEP_HELP: Record<string, string> = {
+    'scopes/autoscale': t("app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger"),
+    'serial/send': t("app.sendUTF8TextOrOneHexByteTo"),
+    'serial/send-file': t("app.sendAWorkerLocalFileRunIsBlockedIf"),
+    'serial/receive': t("app.receiveUpToMaxBytesOnceResultContainsRx"),
+    'serial/query': t("app.sendAByteOrUTF8StringAndRead"),
+    while: t("app.repeatWhileAComparisonIsTrueMaxIterationsIs"),
+    if: t("app.evaluateAComparisonOnceAndExecuteEitherTHENOr"),
+    for: t("app.repeatTheseBodyStepsOverAnExactDecimalRange"),
+    assert: t("app.failTheWorkflowWhenThisComparisonIsFalse"),
+    'show-message': t("app.writeAMessageToTheMessagesPanelWhileThe"),
+    'set-variable': t("app.saveAValueOrCalculationResultSoLaterSteps"),
+    output: t("app.publishAValueAsAFinalWorkflowResultThis"),
+    wait: t("app.pauseBeforeRunningTheNextStepUsefulForDUT"),
+    'powers/set-output': t("app.thisStepOnlyConfiguresTheSetpointsUsePowerOutput"),
+    'powers/protection-status': t("app.powerProtectionStatusReadsTheSelectedPowerChannelProtection"),
+    'powers/measure': t("app.readTheSelectedChannelSActualVoltageVAnd"),
+    'powers/output-on': t("app.enableTheSelectedPowerChannel"),
+    'powers/output-off': t("app.disableTheSelectedPowerChannel"),
+    'meters/measure': t("app.acquireTheNextMeterReadingOrCustomBatchUsing"),
+  }
+
+  const EXECUTABLE_LABELS: Record<string, string> = {
+    'not-configured': t("app.notConfigured"),
+    available: t("app.available"),
+    missing: t("app.missing"),
+    'not-file': t("app.notAFile"),
+    error: t("app.error"),
+  }
+
+  const COMPATIBILITY_LABELS: Record<string, string> = {
+    compatible: t("app.compatible"),
+    incompatible: t("app.incompatible"),
+    'not-probed': '—',
+    error: t("app.error"),
+  }
+
+  const SOURCE_LABELS: Record<string, string> = {
+    configured: t("app.configured"),
+    'not-configured': t("app.notConfigured"),
+  }
+
+  function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
+    if (step.type === 'bg-interaction') return t(`steps.interaction.${step.operation.kind}`)
+    if (step.type === 'background') return t(`steps.background.${step.action}`)
+    if (step.type === 'while') return t("app.while")
+    if (step.type === 'if') return t("app.ifElse")
+    if (step.type === 'for') return t("app.forRange", { value1: step.variable, value2: step.range.start, value3: step.range.stop })
+    if (step.type === 'set-variable') {
+      return t("app.setVariable")
+    }
+    if (step.type === 'output') {
+      return t("app.output")
+    }
+    if (step.type === 'assert') {
+      return t("app.assert")
+    }
+    if (step.type === 'show-message') {
+      return t("app.showMessage")
+    }
+    if (step.type === 'wait') {
+      return t("app.wait")
+    }
+
+    const tool = instances.find(instance => instance.id === step.target)?.tool
+    return TOOL_ACTION_LABELS[`${tool}/${step.action}`] ?? `${step.target} / ${step.action}`
+  }
+
   const simulationSamples = useSimulationSamples()
   const [backgroundCsvEnabled, setBackgroundCsvEnabled] = useState(false)
   const [backgroundCsvMode, setBackgroundCsvMode] = useState<'values-only' | 'values-quality'>('values-only')
@@ -520,7 +534,7 @@ function App() {
   async function handleOpenHelp() {
     setHelpError(null)
     try {
-      await invoke('open_help', { theme: themePreference })
+      await invoke('open_help', { locale, theme: themePreference })
     } catch (message) {
       setHelpError(String(message))
     }
@@ -539,7 +553,7 @@ function App() {
     })()
   }, [])
 
-  const themeLabel = (value: string) => value[0].toUpperCase() + value.slice(1)
+  const themeLabel = (value: string) => t(`preferences.theme.${value}`)
   const nextThemeLabel = themeLabel(nextThemePreference(themePreference))
 
   useEffect(() => {
@@ -572,9 +586,9 @@ function App() {
   const [streamPage, setStreamPage] = useState('Results')
   const [streamAllPages, setStreamAllPages] = useState(false)
   const [scopesOutputFolder, setScopesOutputFolder] = useState<string | null>(null)
-  const [scopesOutputError, setScopesOutputError] = useState<string | null>(null)
+  const [scopesOutputError, setScopesOutputError] = useMessage()
   const [streamOutputFolder, setStreamOutputFolder] = useState<string | null>(null)
-  const [streamOutputFolderError, setStreamOutputFolderError] = useState<string | null>(null)
+  const [streamOutputFolderError, setStreamOutputFolderError] = useMessage()
   const [chartSaveCount, setChartSaveCount] = useState(0)
   const chartSaving = chartSaveCount > 0
   const handleChartSavingChange = useCallback((saving: boolean) => {
@@ -677,7 +691,7 @@ function App() {
   const [draftLoading, setDraftLoading] = useState(true)
   const [draftCreationError, setDraftCreationError] = useState<string | null>(null)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
-  const [validationError, setValidationError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useMessage()
   const [validationIssue, setValidationIssue] = useState<{ step_id: string | null; message: string } | null>(null)
   const validationGenerationRef = useRef(0)
   const clearValidation = useCallback(() => {
@@ -788,7 +802,7 @@ function App() {
   }, [workflowDraft])
   const [templateIoStatus, setTemplateIoStatus] = useState<TemplateIoStatus>('idle')
   const [templateIoError, setTemplateIoError] = useState<string | null>(null)
-  const [templateIoMessage, setTemplateIoMessage] = useState<string | null>(null)
+  const [templateIoMessage, setTemplateIoMessage] = useMessage()
   const livePreflight = useLivePreflight(executionMode, workflowDraft, savedResources, resourceDrafts,
     resourceIdentities, resourceIdentityDrafts, powersExecutableKey, scopesExecutableKey,
     loading || draftLoading || templateIoStatus === 'loading' || toolConfigBusy !== null, savedBackends, backendDrafts)
@@ -842,12 +856,12 @@ function App() {
     setLiveStartError(null)
     setShowLastRunError(false)
   }, [])
-  const [clearLastRunError, setClearLastRunError] = useState<string | null>(null)
+  const [clearLastRunError, setClearLastRunError] = useMessage()
   const [streamCsv, setStreamCsv] = useState(false)
   const [csvStreamStatus, setCsvStreamStatus] = useState<CsvStreamStatus | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
-  const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const [exportMessage, setExportMessage] = useMessage()
   useEffect(() => {
     let cancelled = false
     void Promise.all(powersModels.map(async modelId => {
@@ -881,14 +895,14 @@ function App() {
     : (runPageMetadata?.row_count ?? 0) > 0
   const latestExecution = runMetadata?.latest_execution
   const activeLoop = runStatus !== 'running' ? null : latestExecution?.for_iteration
-    ? { kind: 'For', id: latestExecution.for_iteration.for_step_id, index: latestExecution.for_iteration.iteration_index }
+    ? { kind: t("app.for"), id: latestExecution.for_iteration.for_step_id, index: latestExecution.for_iteration.iteration_index }
     : latestExecution?.while_iteration
-      ? { kind: 'While', id: latestExecution.while_iteration.while_step_id, index: latestExecution.while_iteration.iteration_index }
+      ? { kind: t("app.while"), id: latestExecution.while_iteration.while_step_id, index: latestExecution.while_iteration.iteration_index }
       : null
   const stopping = activeLoop !== null && stopRequest?.loopId === activeLoop.id && !stopRequest.error
-  const runningText = workflowStopping ? 'Stopping workflow… Waiting for the current operation and cleanup.' : activeLoop
-    ? `${activeLoop.kind} ${activeLoop.id} · Iteration ${activeLoop.index + 1} · ${stopping ? 'Stopping…' : 'Running'}`
-    : 'Running…'
+  const runningText = workflowStopping ? t("app.stoppingWorkflowWaitingForTheCurrentOperationAndCleanup") : activeLoop
+    ? t("app.loopRunning", { kind: activeLoop.kind, id: activeLoop.id, iteration: activeLoop.index + 1, status: stopping ? t("app.stopping") : t("app.running") })
+    : t("app.running2")
   const activeAncestors = activeLoop ? loopPath(runWorkflowSteps, activeLoop.id) : []
   const requestStop = async (loopId = activeLoop?.id) => {
     if (!loopId || stopping) return
@@ -904,20 +918,20 @@ function App() {
   const stopControls = <>
     {runStatus === 'running' && <button className="action-button action-button-danger" type="button"
       disabled={workflowStopping} onClick={requestWorkflowStop}>
-      {workflowStopping ? 'Stopping Workflow…' : 'Stop Workflow'}
+      {workflowStopping ? t("app.stoppingWorkflow") : t("app.stopWorkflow")}
     </button>}
     {activeLoop && <>
       {activeAncestors.map(loop => <button className="action-button action-button-danger" type="button" key={loop.id}
-        disabled={workflowStopping || (stopRequest !== null && !stopRequest.error)} onClick={() => void requestStop(loop.id)}>Stop {loop.id}</button>)}
+        disabled={workflowStopping || (stopRequest !== null && !stopRequest.error)} onClick={() => void requestStop(loop.id)}>{t("app.stop")}{loop.id}</button>)}
       <button className="action-button action-button-danger" type="button" onClick={() => void requestStop()} disabled={workflowStopping || (stopRequest !== null && !stopRequest.error)}>
-        {stopping ? 'Stopping…' : 'Stop'}
+        {stopping ? t("app.stopping") : t("app.stop")}
       </button>
     </>}
   </>
   const stopFeedback = <>
-    {workflowStopRequest?.error && <p className="error" role="alert">Workflow stop request failed: {workflowStopRequest.error}</p>}
-    {activeLoop && <p>Loop Stop finishes the current innermost iteration, then stops the selected loop.</p>}
-    {stopRequest?.error && <p className="error" role="alert">Stop request failed: {stopRequest.error}</p>}
+    {workflowStopRequest?.error && <p className="error" role="alert">{t("app.workflowStopRequestFailed")}{workflowStopRequest.error}</p>}
+    {activeLoop && <p>{t("app.loopStopFinishesTheCurrentInnermostIterationThenStops")}</p>}
+    {stopRequest?.error && <p className="error" role="alert">{t("app.stopRequestFailed")}{stopRequest.error}</p>}
   </>
   const displayedRun = runWorkflowSnapshot ? runMetadata : null
   const runWorkspace = lastRunWorkspaceState(!!runWorkflowSnapshot, runStatus === 'running', !!runMetadata)
@@ -1123,17 +1137,17 @@ function App() {
     const isControl = preset.value === 'for' || preset.value === 'while' || preset.value === 'if'
     if (isControl && parentId && containerPath(steps, parentId).length + 1 >= 8) return
     if (preset.value.startsWith('bg-') && !workflowDraft.workflow.interaction.enabled) {
-      setValidationError('Enable FG/BG Interaction in Workflow settings before adding an interaction Step.'); return
+      setValidationError(uiMessage("app.enableFGBGInteractionInWorkflowSettingsBeforeAdding")); return
     }
     const target = (preset.value.startsWith('background-') || preset.value.startsWith('bg-')) ? workflowDraft.backgrounds?.[0]?.id
       : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool &&
           !workflowDraft.backgrounds?.some(background => background.tool_instance_id === instance.id))?.id
     if ((preset.value.startsWith('background-') || preset.value.startsWith('bg-')) && !target) {
-      setValidationError('Configure a Background in Tool Setup before adding this action.')
+      setValidationError(uiMessage("app.configureABackgroundInToolSetupBeforeAddingThis"))
       return
     }
     if (preset.tool && !target) {
-      setValidationError(`Create a ${preset.tool} Tool Instance on the Setup tab before adding this action.`)
+      setValidationError(uiMessage("app.requireToolInstance", { value1: preset.tool }))
       return
     }
     const id = nextStepId(preset.prefix, steps)
@@ -1199,8 +1213,8 @@ function App() {
     }
 
     const approved = await confirm(
-      'Clear all workflow steps?\n\nThis action cannot be undone.',
-      { title: 'Clear Workflow', kind: 'warning', okLabel: 'Clear', cancelLabel: 'Cancel' },
+      t("app.clearWorkflowConfirm"),
+      { title: t("app.clearWorkflow"), kind: 'warning', okLabel: t("app.clear"), cancelLabel: t("app.cancel") },
     )
     if (!approved) {
       return
@@ -1209,7 +1223,7 @@ function App() {
     if (stepEditingBusyRef.current || runInFlightRef.current) return
     updateSteps(() => [])
     setSelectedStepId(null)
-  }, [updateSteps, workflowDraft])
+  }, [updateSteps, workflowDraft, t])
 
   const updateStep = useCallback(
     (stepId: string, update: (step: WorkflowStep) => WorkflowStep) => {
@@ -1352,7 +1366,7 @@ function App() {
       const path = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: 'JSON Template', extensions: ['json'] }],
+        filters: [{ name: t('app.jsonTemplate'), extensions: ['json'] }],
       })
       if (!path || Array.isArray(path)) {
         setTemplateIoStatus('idle')
@@ -1395,14 +1409,14 @@ function App() {
         ? await invoke<string[]>('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) }) ?? []
         : []
       setTemplateIoMessage(fileErrors.length > 0
-        ? `Template loaded. Serial Send File warning:\n${fileErrors.join('\n')}`
-        : 'Template loaded.')
+        ? uiMessage("app.templateFileWarning", { value1: fileErrors.join('\n') })
+        : uiMessage("app.templateLoaded"))
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
       setTemplateIoStatus('idle')
     }
-  }, [clearValidation, clearRunFeedback])
+  }, [clearValidation, clearRunFeedback, t])
 
   const handleSaveTemplate = useCallback(async () => {
     if (!workflowDraft) {
@@ -1414,7 +1428,7 @@ function App() {
     setTemplateIoMessage(null)
     try {
       const path = await save({
-        filters: [{ name: 'JSON Template', extensions: ['json'] }],
+        filters: [{ name: t('app.jsonTemplate'), extensions: ['json'] }],
       })
       if (!path) {
         setTemplateIoStatus('idle')
@@ -1429,13 +1443,13 @@ function App() {
       setStepSelection(current => reconcileSelection(canonicalDraft.workflow.steps, current))
       clearValidation()
       setValidationStatus('valid')
-      setTemplateIoMessage('Template saved.')
+      setTemplateIoMessage(uiMessage("app.templateSaved"))
       setTemplateIoStatus('idle')
     } catch (message) {
       setTemplateIoError(String(message))
       setTemplateIoStatus('idle')
     }
-  }, [workflowDraft, chartPanels, saveChartsWithTemplate, clearValidation])
+  }, [workflowDraft, chartPanels, saveChartsWithTemplate, clearValidation, t])
 
   const handleBrowseToolExecutable = useCallback(
     async (toolId: string) => {
@@ -1449,7 +1463,7 @@ function App() {
         const selected = await open({
           multiple: false,
           directory: false,
-          filters: [{ name: 'Executables', extensions: ['exe'] }],
+          filters: [{ name: t('app.executables'), extensions: ['exe'] }],
         })
         if (!selected || Array.isArray(selected)) {
           return
@@ -1462,7 +1476,7 @@ function App() {
         setToolConfigBusy(null)
       }
     },
-    [refresh, toolConfigBusy],
+    [refresh, toolConfigBusy, t],
   )
 
   const handleResetToolExecutable = useCallback(
@@ -1548,12 +1562,12 @@ function App() {
     if (powersOperationBusy !== null) return
     const approved = executionMode === 'simulate'
       ? await confirm(
-          `SIMULATION\n\nGenerate a Clear Protection plan for ${instanceId} Channel ${channel.channel}?\n\nNo hardware command will be executed.\nNo real protection latch will be changed.`,
-          { title: 'Generate Clear Plan', kind: 'info', okLabel: 'Generate Plan', cancelLabel: 'Cancel' },
+          t("app.simulationClearConfirmation", { value1: instanceId, value2: channel.channel }),
+          { title: t("app.generateClearPlan2"), kind: 'info', okLabel: t("app.generatePlan"), cancelLabel: t("app.cancel") },
         )
       : await confirm(
-          `Clear protection for ${instanceId} Channel ${channel.channel}?\n\nOVP: ${channel.over_voltage_tripped ? 'TRIPPED' : 'OK'}\nOCP: ${channel.over_current_tripped ? 'TRIPPED' : 'OK'}\n\nThis does not fix the cause of the trip.\nAll power outputs will be turned OFF first.\nThe selected protection latch will be cleared and output will remain OFF.`,
-          { title: 'Clear Protection', kind: 'warning', okLabel: 'Clear Protection', cancelLabel: 'Cancel' },
+          t("app.liveClearConfirmation", { value1: instanceId, value2: channel.channel, value3: channel.over_voltage_tripped ? t("app.tripped") : t("app.oK"), value4: channel.over_current_tripped ? t("app.tripped") : t("app.oK") }),
+          { title: t("app.clearProtection2"), kind: 'warning', okLabel: t("app.clearProtection2"), cancelLabel: t("app.cancel") },
         )
     if (!approved) return
     setPowersOperationBusy(instanceId)
@@ -1579,7 +1593,7 @@ function App() {
     } finally {
       setPowersOperationBusy(null)
     }
-  }, [executionMode, powersOperationBusy])
+  }, [executionMode, powersOperationBusy, t])
 
   const handleListResources = useCallback(async (instance: ToolInstance) => {
     if (toolConfigBusy !== null) return
@@ -1672,17 +1686,17 @@ function App() {
         confirmedResources[instance.id] = resource
         const backend = persistedBackends[instance.id] ?? 'system'
         confirmedBackends[instance.id] = backend
-        return formatLiveResourceConfirmation(instance, resource, backend, persistedIdentities[instance.id])
+        return formatLiveResourceConfirmation(instance, resource, backend, persistedIdentities[instance.id], t)
       })
-      const confirmation = [...resources, 'This workflow will run external tools in Live mode and may change power outputs.']
+      const confirmation = [...resources, t("app.thisWorkflowWillRunExternalToolsInLiveMode")]
       for (const instance of referenced) {
         if (instance.tool === 'meters' && instance.setup.measurement === 'current-dc' && instance.setup.current_terminal === 10) {
-          confirmation.push(`WARNING: ${instance.id}: Confirm that the measurement leads are physically connected to the instrument's 10 A current terminal.`)
+          confirmation.push(t("app.currentTerminalWarning", { value1: instance.id }))
         }
       }
       const approved = await confirm(
         confirmation.join('\n\n'),
-        { title: 'Live Execution', kind: 'warning', okLabel: 'Run Live', cancelLabel: 'Cancel' },
+        { title: t("app.liveExecution"), kind: 'warning', okLabel: t("app.runLive"), cancelLabel: t("app.cancel") },
       )
       if (!approved || validationGeneration !== validationGenerationRef.current) {
         return
@@ -1754,7 +1768,7 @@ function App() {
       releaseRunGate(runInFlightRef)
       setLiveConfirmationPending(false)
     }
-  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, serialCsvMode])
+  }, [resetWorkflowStop, validateTemplate, clearRunFeedback, livePreflight, scopesOutputFolder, resourceDrafts, backendDrafts, workflowDraft, chartSamplingOptions, chartFitData, receiveRunProgress, streamCsv, hasWorkflowOutputs, streamOutputFolder, streamingPage, streamAllPages, backgroundCsvEnabled, backgroundCsvTarget, backgroundCsvFolder, backgroundCsvMode, serialCsvMode, t])
 
   const runSimulation = useCallback(async () => {
     if (!workflowDraft || !claimRunGate(runInFlightRef)) {
@@ -1852,8 +1866,8 @@ function App() {
   const handleClearLastRun = useCallback(async () => {
     if (!runWorkflowSnapshot || workflowBusy) return
     const approved = await confirm(
-      'Clear the Last Run results?\n\nExecution Results and committed Output rows from the last run will be removed.\n\nThis action cannot be undone.',
-      { title: 'Clear Last Run', kind: 'warning', okLabel: 'Clear', cancelLabel: 'Cancel' },
+      t("app.clearRunConfirmation"),
+      { title: t("app.clearLastRun"), kind: 'warning', okLabel: t("app.clear"), cancelLabel: t("app.cancel") },
     )
     if (!approved) return
 
@@ -1880,30 +1894,30 @@ function App() {
       setExportMessage(null)
       setWorkflowChangedSinceRun(false)
     } catch (message) {
-      setClearLastRunError('Could not clear Last Run: ' + String(message))
+      setClearLastRunError(uiMessage("app.clearRunFailed", { error: String(message) }))
     }
-  }, [runWorkflowSnapshot, runMetadata, workflowBusy, saveChartsWithTemplate, clearRunFeedback])
+  }, [runWorkflowSnapshot, runMetadata, workflowBusy, saveChartsWithTemplate, clearRunFeedback, t])
 
   const csvStreamFeedback = csvStreamStatus && (
     <div className="csv-stream-feedback" role="status">
-      <strong>Streaming CSV</strong>
+      <strong>{t("app.streamingCSV")}</strong>
       <p>{csvStreamStatus.path}</p>
-      {csvStreamStatus.error ? <p className="error">CSV streaming failed: {csvStreamStatus.error}</p>
+      {csvStreamStatus.error ? <p className="error">{t("app.cSVStreamingFailed")}{csvStreamStatus.error}</p>
         : csvStreamStatus.finished && <p className={csvStreamStatus.workflow_succeeded ? 'validation-success' : 'feedback-warning'}>{csvStreamStatus.workflow_succeeded
-          ? 'CSV streamed successfully.'
+          ? t("app.cSVStreamedSuccessfully")
           : csvStreamStatus.rows > 0
-            ? `${runMetadata?.status === 'stopped' ? 'Workflow stopped.' : 'Workflow did not complete.'} Streamed CSV contains committed rows from this partial run.`
-            : `${runMetadata?.status === 'stopped' ? 'Workflow stopped.' : 'Workflow did not complete.'} No rows were streamed.`}</p>}
+            ? t("app.streamedCSVContainsCommittedRowsFromThisPartialRun", { value1: runMetadata?.status === 'stopped' ? t("app.workflowStopped") : t("app.workflowDidNotComplete") })
+            : t("app.noRowsWereStreamed", { value1: runMetadata?.status === 'stopped' ? t("app.workflowStopped") : t("app.workflowDidNotComplete") })}</p>}
     </div>
   )
 
   async function selectScopesOutputFolder() {
     setScopesOutputError(null)
     try {
-      const folder = await open({ directory: true, multiple: false, title: 'Select Scopes output folder' })
+      const folder = await open({ directory: true, multiple: false, title: t("app.selectScopesOutputFolder") })
       if (typeof folder === 'string') setScopesOutputFolder(folder)
     } catch (message) {
-      setScopesOutputError('Could not select Scopes output folder: ' + String(message))
+      setScopesOutputError(uiMessage("app.couldNotSelectScopesOutputFolderDiagnostic", { error: String(message) }))
     }
   }
 
@@ -1911,10 +1925,10 @@ function App() {
     setStreamOutputFolderError(null)
     setChoosingStreamOutputFolder(true)
     try {
-      const folder = await open({ directory: true, multiple: false, title: 'Select CSV output folder' })
+      const folder = await open({ directory: true, multiple: false, title: t("app.selectCSVOutputFolder") })
       if (typeof folder === 'string') setStreamOutputFolder(folder)
     } catch (message) {
-      setStreamOutputFolderError('Could not select CSV output folder: ' + String(message))
+      setStreamOutputFolderError(uiMessage("app.couldNotSelectCSVOutputFolderDiagnostic", { error: String(message) }))
     } finally {
       setChoosingStreamOutputFolder(false)
     }
@@ -1930,7 +1944,7 @@ function App() {
     setExportMessage(null)
     try {
       const selectedPath = exportAllPages && exportFormat === 'csv'
-        ? await open({ directory: true, multiple: false, title: 'Export all Pages as CSV' })
+        ? await open({ directory: true, multiple: false, title: t("app.exportAllPagesAsCSV") })
         : await save({ filters: [{ name: exportFormat.toUpperCase(), extensions: [exportFormat] }] })
       if (typeof selectedPath !== 'string') {
         return
@@ -1941,22 +1955,22 @@ function App() {
         page: exportAllPages ? null : runPage?.name,
         format: exportFormat,
       })
-      setExportMessage(partialRun ? 'Partial results exported successfully.' : 'Pages exported successfully.')
+      setExportMessage(partialRun ? uiMessage("app.partialResultsExportedSuccessfully") : uiMessage("app.pagesExportedSuccessfully"))
     } catch (message) {
       setExportError(String(message))
     } finally {
       setExporting(false)
     }
-  }, [runMetadata, hasRunOutputs, runExportable, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name, partialRun])
+  }, [runMetadata, hasRunOutputs, runExportable, hasExportableOutputRows, workflowBusy, exportAllPages, exportFormat, runPage?.name, partialRun, t])
 
   const selectedStep = allWorkflowSteps(workflowDraft?.workflow.steps ?? []).find(
     (step) => step.id === selectedStepId,
   )
   const outputNameError = selectedStep?.type === 'output'
     ? selectedStep.name.trim().length === 0
-      ? 'Output name must not be blank.'
+      ? t("app.outputNameMustNotBeBlank")
       : outputSteps.some((step) => step !== selectedStep && step.name === selectedStep.name)
-        ? 'Output name must be unique.'
+        ? t("app.outputNameMustBeUnique")
         : null
     : null
   const { earlierSteps, earlierVariables } = inputScope(workflowDraft?.workflow.steps ?? [], selectedStepId)
@@ -1978,7 +1992,7 @@ function App() {
   const insertionTargetLabel = addingToParent
     ? `${addingToParent.type.toUpperCase()} ${insertionTargetId}${addingToParent.type === 'if'
       ? ` → ${insertionContainer?.branch === 'else' ? 'ELSE' : 'THEN'}` : ''}`
-    : 'Root Workflow'
+    : t("app.rootWorkflow")
   const insertionDepth = addingToParent ? containerPath(workflowDraft?.workflow.steps ?? [], addingToParent.id).length + 1 : 0
   const selectedPalettePreset = STEP_PRESETS.find(preset => preset.value === selectedPaletteStep)
   const selectedPaletteLocked = selectedPalettePreset?.category === 'Background Workflow'
@@ -2009,17 +2023,17 @@ function App() {
     ? powersCapabilityChannels.models[selectedPowersModel] : undefined
   const selectedPowersChannels = selectedPowersCapabilities?.status === 'ready' ? selectedPowersCapabilities.channels : []
   const powersChannelHint = !selectedPowersModel
-    ? 'Channel capabilities unavailable. Select or refresh a supported Live Resource in Setup.'
-    : !selectedPowersCapabilities ? 'Loading channel capabilities...'
-    : selectedPowersCapabilities.status === 'error' ? 'Channel capabilities query failed. Check the configured powers-tool.'
-    : selectedPowersChannels.length === 0 ? 'No supported channels were returned for the current model.' : null
+    ? t("app.channelCapabilitiesUnavailableSelectOrRefreshASupportedLive")
+    : !selectedPowersCapabilities ? t("app.loadingChannelCapabilities")
+    : selectedPowersCapabilities.status === 'error' ? t("app.channelCapabilitiesQueryFailedCheckTheConfiguredPowersTool")
+    : selectedPowersChannels.length === 0 ? t("app.noSupportedChannelsWereReturnedForTheCurrentModel") : null
   const channelBound = selectedToolAction?.bindings?.channel !== undefined
   const savedChannel = selectedToolAction?.arguments.channel
   const savedChannelSupported = typeof savedChannel === 'number' && selectedPowersChannels.includes(savedChannel)
   const powersChannelSelector = selectedToolAction && <>
     <label className="step-property-field">
-      <span className="step-property-label">Channel</span>
-      <select aria-label="Channel" value={channelBound || savedChannel === undefined ? '' : String(savedChannel)}
+      <span className="step-property-label">{t("app.channel")}</span>
+      <select aria-label={t("app.channel")} value={channelBound || savedChannel === undefined ? '' : String(savedChannel)}
         disabled={workflowBusy || selectedPowersChannels.length === 0}
         onChange={event => {
           const channel = Number(event.target.value)
@@ -2027,21 +2041,21 @@ function App() {
             updateToolArgument(selectedToolAction.id, 'channel', channel)
           }
         }}>
-        <option value="" disabled>{channelBound ? 'Bound channel (preserved)' : 'Select a channel...'}</option>
+        <option value="" disabled>{channelBound ? t("app.boundChannelPreserved") : t("app.selectAChannel")}</option>
         {!channelBound && savedChannel !== undefined && !savedChannelSupported && (
           <option value={String(savedChannel)} disabled>
-            CH{String(savedChannel)} ({selectedPowersCapabilities?.status === 'ready' ? 'not supported' : 'unconfirmed'})
+            {t("app.cH")}{String(savedChannel)} ({selectedPowersCapabilities?.status === 'ready' ? t("app.notSupported") : t("app.unconfirmed")})
           </option>
         )}
-        {selectedPowersChannels.map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
+        {selectedPowersChannels.map(channel => <option key={channel} value={channel}>{t("app.cH")}{channel}</option>)}
       </select>
     </label>
     {powersChannelHint && <p className="value-source-help">{powersChannelHint}</p>}
     {channelBound
-      ? <p className="value-source-help">Channel binding preserved. Select a fixed channel to replace it.</p>
+      ? <p className="value-source-help">{t("app.channelBindingPreservedSelectAFixedChannelToReplace")}</p>
       : savedChannel !== undefined && !savedChannelSupported && <p className="value-source-help">
-          Saved channel {String(savedChannel)} preserved: {selectedPowersCapabilities?.status === 'ready'
-            ? 'not supported by the current model.' : 'support cannot be confirmed.'}
+          {t("app.savedChannel")}{String(savedChannel)} {t("app.preserved")}{selectedPowersCapabilities?.status === 'ready'
+            ? t("app.notSupportedByTheCurrentModel") : t("app.supportCannotBeConfirmed")}
         </p>}
   </>
 
@@ -2049,52 +2063,56 @@ function App() {
     <main className="app">
       <header className="app-header">
         <div className="app-brand">
-          <h1>Orchestrator Tool</h1>
+          <h1>{t("app.orchestratorTool")}</h1>
           {applicationVersion && (
-            <p className="app-version">v{applicationVersion}</p>
+            <p className="app-version">{t("app.v")}{applicationVersion}</p>
           )}
         </div>
         <div className="appearance-control">
-          <span>Appearance</span>
+          <button className="action-button locale-button" type="button"
+            aria-label={t('preferences.switchLanguage')} title={t('preferences.switchLanguage')}
+            onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" />
+            </svg>
+            {locale === 'en' ? 'English' : '繁體中文'}
+          </button>
+          <span>{t("app.appearance")}</span>
           <button className="action-button" type="button"
-            aria-label={`Switch theme to ${nextThemeLabel}`} title={`Switch theme to ${nextThemeLabel}`}
+            aria-label={t("app.switchThemeTo", { value1: nextThemeLabel })} title={t("app.switchThemeTo", { value1: nextThemeLabel })}
             onClick={() => setThemePreference(nextThemePreference)}>
             ◐ {themeLabel(themePreference)}
           </button>
         </div>
       </header>
 
-      <div className="template-toolbar" aria-label="Application actions">
+      <div className="template-toolbar" aria-label={t("app.applicationActions")}>
         <button
           className="action-button"
           type="button"
           onClick={() => void createDraft()}
           disabled={workflowBusy}
         >
-          New Template
-        </button>
+          {t("app.newTemplate")}</button>
         <button
           className="action-button"
           type="button"
           onClick={() => void handleLoadTemplate()}
           disabled={workflowBusy}
         >
-          Open Template
-        </button>
+          {t("app.openTemplate")}</button>
         <button
           className="action-button"
           type="button"
           onClick={() => void handleSaveTemplate()}
           disabled={!workflowDraft || workflowBusy}
         >
-          Save Template
-        </button>
+          {t("app.saveTemplate")}</button>
         <button className="action-button" type="button" onClick={() => void handleOpenHelp()}>
-          Help
-        </button>
-        <div className="execution-mode-control" aria-label="Desktop Execution Mode">
-          <span>Execution Mode</span>
-          <div className="execution-mode-options" role="group" aria-label="Execution Mode">
+          {t("app.help")}</button>
+        <div className="execution-mode-control" aria-label={t("app.desktopExecutionMode")}>
+          <span>{t("app.executionMode")}</span>
+          <div className="execution-mode-options" role="group" aria-label={t("app.executionMode")}>
             {(['simulate', 'live'] as const).map(mode => (
               <button
                 key={mode}
@@ -2108,7 +2126,7 @@ function App() {
                   setPowersStatuses({})
                 }}
               >
-                {mode === 'simulate' ? 'Simulation' : 'Live'}
+                {mode === 'simulate' ? t("app.simulation") : t("app.live")}
               </button>
             ))}
           </div>
@@ -2116,13 +2134,13 @@ function App() {
       </div>
 
       <p className={`execution-mode-banner execution-mode-${executionMode}`} role="status">
-        {executionModeLabel(executionMode)}
+        {executionModeLabel(executionMode, t)}
       </p>
 
-      {helpError && <p className="error" role="alert">Failed to open Help: {helpError}</p>}
+      {helpError && <p className="error" role="alert">{t("app.failedToOpenHelp")}{helpError}</p>}
 
-      {templateIoStatus === 'saving' && <p role="status">Saving…</p>}
-      {templateIoStatus === 'loading' && <p role="status">Loading…</p>}
+      {templateIoStatus === 'saving' && <p role="status">{t("app.saving")}</p>}
+      {templateIoStatus === 'loading' && <p role="status">{t("app.loading")}</p>}
 
       {templateIoMessage && templateIoStatus === 'idle' && (
         <p className="validation-success" role="status">
@@ -2132,19 +2150,19 @@ function App() {
 
       {templateIoError && (
         <p className="error" role="alert">
-          Template I/O failed: {templateIoError}
+          {t("app.templateIOFailed")}{templateIoError}
         </p>
       )}
 
-      {draftLoading && <p>Creating template draft…</p>}
+      {draftLoading && <p>{t("app.creatingTemplateDraft")}</p>}
 
       {draftCreationError && (
         <p className="error" role="alert">
-          Failed to create template draft: {draftCreationError}
+          {t("app.failedToCreateTemplateDraft")}{draftCreationError}
         </p>
       )}
 
-      <nav className="tabs" role="tablist" aria-label="Desktop sections">
+      <nav className="tabs" role="tablist" aria-label={t("app.desktopSections")}>
         <button
           id="tools-tab"
           className={`tab ${activeTab === 'tools' ? 'tab-active' : ''}`}
@@ -2155,8 +2173,7 @@ function App() {
           disabled={chartSaving}
           onClick={() => setActiveTab('tools')}
         >
-          Tools
-        </button>
+          {t("app.tools")}</button>
         <button
           id="setup-tab"
           className={`tab ${activeTab === 'setup' ? 'tab-active' : ''}`}
@@ -2167,8 +2184,7 @@ function App() {
           disabled={chartSaving}
           onClick={() => setActiveTab('setup')}
         >
-          Setup
-        </button>
+          {t("app.setup")}</button>
         <button
           id="workflow-tab"
           className={`tab ${activeTab === 'workflow' ? 'tab-active' : ''}`}
@@ -2179,8 +2195,7 @@ function App() {
           disabled={chartSaving}
           onClick={() => setActiveTab('workflow')}
         >
-          Workflow
-        </button>
+          {t("app.workflow")}</button>
         <button
           id="output-tab"
           className={`tab ${activeTab === 'output' ? 'tab-active' : ''}`}
@@ -2191,53 +2206,50 @@ function App() {
           disabled={chartSaving}
           onClick={() => setActiveTab('output')}
         >
-          Output
-        </button>
+          {t("app.output")}</button>
       </nav>
 
       {activeTab === 'tools' && (
         <section id="tools-panel" role="tabpanel" aria-labelledby="tools-tab">
           <div className="section-header">
-            <h2>External Tools</h2>
+            <h2>{t("app.externalTools")}</h2>
             <div className="tool-actions">
-              <label htmlFor="tool-to-add">Tool to add:</label>
+              <label htmlFor="tool-to-add">{t("app.toolToAdd")}</label>
               <select id="tool-to-add" value={selectedToolToAdd}
                 onChange={event => setToolToAdd(event.target.value)}
                 disabled={loading || toolConfigBusy !== null || workflowBusy || unconfiguredTools.length === 0}>
-                {unconfiguredTools.length === 0 && <option value="">No tools to add</option>}
+                {unconfiguredTools.length === 0 && <option value="">{t("app.noToolsToAdd")}</option>}
                 {unconfiguredTools.map(tool => <option key={tool.tool_id} value={tool.tool_id}>{tool.tool_id}</option>)}
               </select>
               <button className="action-button" type="button"
                 disabled={loading || toolConfigBusy !== null || workflowBusy || !selectedToolToAdd}
                 onClick={() => { if (selectedToolToAdd) void handleBrowseToolExecutable(selectedToolToAdd) }}>
-                Add...
-              </button>
+                {t("app.add")}</button>
               <button
                 className="action-button"
                 type="button"
                 onClick={() => void refresh()}
                 disabled={loading || toolConfigBusy !== null}
               >
-                Refresh
-              </button>
+                {t("app.refresh")}</button>
             </div>
           </div>
 
           {error && (
             <p className="error" role="alert">
-              Failed to load tool status: {error}
+              {t("app.failedToLoadToolStatus")}{error}
             </p>
           )}
 
           {toolConfigError && (
             <p className="error" role="alert">
-              Failed to update tool configuration: {toolConfigError}
+              {t("app.failedToUpdateToolConfiguration")}{toolConfigError}
             </p>
           )}
 
-          {loading && tools.length === 0 && !error && <p>Loading tool status…</p>}
+          {loading && tools.length === 0 && !error && <p>{t("app.loadingToolStatus")}</p>}
 
-          {!error && !loading && configuredTools.length === 0 && <p>No external tools configured.</p>}
+          {!error && !loading && configuredTools.length === 0 && <p>{t("app.noExternalToolsConfigured")}</p>}
 
           {!error && configuredTools.length > 0 && (
             <ul className="tool-list">
@@ -2247,7 +2259,7 @@ function App() {
                     <span>
                       <button type="button" className="action-button tool-setup-toggle"
                         aria-expanded={expandedToolIds.includes(tool.tool_id)}
-                        aria-label={`${expandedToolIds.includes(tool.tool_id) ? 'Collapse' : 'Expand'} ${tool.tool_id} details`}
+                        aria-label={t("app.details", { value1: expandedToolIds.includes(tool.tool_id) ? t("app.collapse") : t("app.expand"), value2: tool.tool_id })}
                         onClick={() => setExpandedToolIds(current => current.includes(tool.tool_id)
                           ? current.filter(id => id !== tool.tool_id) : [...current, tool.tool_id])}>
                         {expandedToolIds.includes(tool.tool_id) ? '−' : '+'}
@@ -2260,40 +2272,40 @@ function App() {
                   <div hidden={!expandedToolIds.includes(tool.tool_id)}>
                   <dl className="tool-details">
                     <div className="detail-row">
-                      <dt className="detail-label">Executable</dt>
+                      <dt className="detail-label">{t("app.executable")}</dt>
                       <dd className="detail-value">
                         {EXECUTABLE_LABELS[tool.executable_status] ?? tool.executable_status}
                       </dd>
                     </div>
                     <div className="detail-row">
-                      <dt className="detail-label">Compatibility</dt>
+                      <dt className="detail-label">{t("app.compatibility")}</dt>
                       <dd className={`detail-value compatibility-${tool.compatibility}`}>
                         {COMPATIBILITY_LABELS[tool.compatibility] ?? tool.compatibility}
                       </dd>
                     </div>
                     <div className="detail-row">
-                      <dt className="detail-label">Version</dt>
+                      <dt className="detail-label">{t("app.version")}</dt>
                       <dd className="detail-value">{tool.tool_version ?? '—'}</dd>
                     </div>
                     <div className="detail-row">
-                      <dt className="detail-label">Worker Schema</dt>
+                      <dt className="detail-label">{t("app.workerSchema")}</dt>
                       <dd className="detail-value">
                         {formatWorkerSchemas(tool.worker_schema_versions)}
                       </dd>
                     </div>
                     <div className="detail-row">
-                      <dt className="detail-label">Source</dt>
+                      <dt className="detail-label">{t("app.source")}</dt>
                       <dd className="detail-value">
                         {tool.source ? (SOURCE_LABELS[tool.source] ?? tool.source) : '—'}
                       </dd>
                     </div>
                     <div className="detail-row">
-                      <dt className="detail-label">Path</dt>
+                      <dt className="detail-label">{t("app.path")}</dt>
                       <dd className="detail-value tool-path">{tool.path ?? '—'}</dd>
                     </div>
                     {tool.reason && (
                       <div className="detail-row">
-                        <dt className="detail-label">Reason</dt>
+                        <dt className="detail-label">{t("app.reason")}</dt>
                         <dd className="detail-value tool-reason">{tool.reason}</dd>
                       </div>
                     )}
@@ -2305,16 +2317,14 @@ function App() {
                       onClick={() => void handleBrowseToolExecutable(tool.tool_id)}
                       disabled={toolConfigBusy !== null || workflowBusy || loading}
                     >
-                      Change Path...
-                    </button>
+                      {t("app.changePath")}</button>
                     <button
                       className="action-button"
                       type="button"
                       onClick={() => void handleResetToolExecutable(tool.tool_id)}
                       disabled={toolConfigBusy !== null || workflowBusy || loading}
                     >
-                      Remove Tool
-                    </button>
+                      {t("app.removeTool")}</button>
                   </div>
                   </div>
                 </li>
@@ -2326,12 +2336,12 @@ function App() {
 
         <section id="setup-panel" role="tabpanel" aria-labelledby="setup-tab" hidden={activeTab !== 'setup'}>
           <div className="section-header">
-            <h2>Setup</h2>
+            <h2>{t("app.setup")}</h2>
           </div>
-          {error && <p className="error" role="alert">Failed to load tool configuration: {error}</p>}
+          {error && <p className="error" role="alert">{t("app.failedToLoadToolConfiguration")}{error}</p>}
           {workflowDraft && (
             <>
-              {toolConfigError && <p className="error" role="alert">Failed to update tool configuration: {toolConfigError}</p>}
+              {toolConfigError && <p className="error" role="alert">{t("app.failedToUpdateToolConfiguration2")}{toolConfigError}</p>}
               <ToolSetupEditor
                 key={templateUiGeneration}
                 value={workflowDraft.tool_instances}
@@ -2375,53 +2385,53 @@ function App() {
                     capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
                   )
                   return <div className="live-resource powers-device-status">
-                    <h5>Device Status</h5>
-                    <p className="tool-setup-hint">Not saved in Template. Status is read only when you select Refresh Status; there is no background polling.</p>
+                    <h5>{t("app.deviceStatus")}</h5>
+                    <p className="tool-setup-hint">{t("app.notSavedInTemplateStatusIsReadOnlyWhen")}</p>
                     {executionMode === 'simulate'
-                      ? <p className="tool-setup-hint">Uses the simulator model. No saved Live Resource is required and no hardware I/O occurs.</p>
-                      : !resourceReady && <p className="tool-setup-hint">Save the Live Resource below before using Device Status in Live mode.</p>}
+                      ? <p className="tool-setup-hint">{t("app.usesTheSimulatorModelNoSavedLiveResourceIs")}</p>
+                      : !resourceReady && <p className="tool-setup-hint">{t("app.saveTheLiveResourceBelowBeforeUsingDeviceStatus")}</p>}
                     <button className="action-button" type="button"
                       disabled={!resourceReady || workflowBusy || operationBusy}
                       onClick={() => void refreshPowersStatus(instance.id)}>
-                      {deviceStatus?.operation === 'refresh' ? 'Refreshing...' : 'Refresh Status'}
+                      {deviceStatus?.operation === 'refresh' ? t("app.refreshing") : t("app.refreshStatus")}
                     </button>
-                    {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? 'Generating clear plan...' : 'Clearing protection...'}</p>}
+                    {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? t("app.generatingClearPlan") : t("app.clearingProtection")}</p>}
                     {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
                     {clearPlan !== null && <div className="simulation-plan-result" role="status">
-                      <strong>PLAN GENERATED · SIMULATION</strong>
-                      <p>NO HARDWARE I/O</p>
-                      <p>No real protection latch was changed.</p>
-                      <details><summary>Show Plan</summary>
-                        <strong>CLEAR PROTECTION PLAN · SIMULATION</strong>
+                      <strong>{t("app.pLANGENERATEDSIMULATION")}</strong>
+                      <p>{t("app.nOHARDWAREIO")}</p>
+                      <p>{t("app.noRealProtectionLatchWasChanged")}</p>
+                      <details><summary>{t("app.showPlan")}</summary>
+                        <strong>{t("app.cLEARPROTECTIONPLANSIMULATION")}</strong>
                         <dl className="tool-details">
-                          <div className="detail-row"><dt className="detail-label">Target</dt><dd className="detail-value">{instance.id} · Channel {clearPlan.channel}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">Safety</dt><dd className="detail-value">All power outputs will be turned OFF first</dd></div>
-                          <div className="detail-row"><dt className="detail-label">Action</dt><dd className="detail-value">Clear Channel {clearPlan.channel} protection</dd></div>
-                          <div className="detail-row"><dt className="detail-label">Final output</dt><dd className="detail-value">Remains OFF</dd></div>
-                          <div className="detail-row"><dt className="detail-label">Hardware I/O</dt><dd className="detail-value">None</dd></div>
+                          <div className="detail-row"><dt className="detail-label">{t("app.target")}</dt><dd className="detail-value">{instance.id} {t("app.channel2")}{clearPlan.channel}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">{t("app.safety")}</dt><dd className="detail-value">{t("app.allPowerOutputsWillBeTurnedOFFFirst")}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">{t("app.action")}</dt><dd className="detail-value">{t("app.clearChannel")}{clearPlan.channel} {t("app.protection")}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">{t("app.finalOutput")}</dt><dd className="detail-value">{t("app.remainsOFF")}</dd></div>
+                          <div className="detail-row"><dt className="detail-label">{t("app.hardwareIO")}</dt><dd className="detail-value">{t("app.none")}</dd></div>
                         </dl>
                       </details>
                     </div>}
-                    {deviceStatus?.clearCompleted && <p className="validation-success" role="status">Protection clear completed in LIVE mode. Real hardware was addressed and outputs remain OFF.</p>}
-                    <section className="powers-protection-summary" aria-label="Protection Summary">
-                      <h6>Protection Summary</h6>
+                    {deviceStatus?.clearCompleted && <p className="validation-success" role="status">{t("app.protectionClearCompletedInLIVEModeRealHardwareWas")}</p>}
+                    <section className="powers-protection-summary" aria-label={t("app.protectionSummary")}>
+                      <h6>{t("app.protectionSummary")}</h6>
                       <dl>
                         {([
-                          ['Protection', deviceStatus?.status?.protection_tripped, 'CLEAR'],
-                          ['OVP', deviceStatus?.status?.over_voltage_tripped, 'OK'],
-                          ['OCP', deviceStatus?.status?.over_current_tripped, 'OK'],
+                          [t("app.protection2"), deviceStatus?.status?.protection_tripped, t("app.cLEAR")],
+                          ['OVP', deviceStatus?.status?.over_voltage_tripped, t("app.oK")],
+                          ['OCP', deviceStatus?.status?.over_current_tripped, t("app.oK")],
                         ] as const).map(([label, tripped, clearLabel]) => <div key={label}>
                           <dt>{label}</dt>
                           <dd className={tripped === undefined ? 'powers-status-unknown'
                             : tripped ? 'powers-status-tripped' : 'powers-status-clear'}>
-                            {tripped === undefined ? '—' : tripped ? 'TRIPPED' : clearLabel}
+                            {tripped === undefined ? '—' : tripped ? t("app.tripped") : clearLabel}
                           </dd>
                         </div>)}
                       </dl>
                     </section>
                     <div className="powers-table-scroll">
                       <table className="powers-status-table">
-                        <thead><tr><th scope="col">Channel</th><th scope="col">Output</th><th scope="col">OVP</th><th scope="col">OCP</th><th scope="col">Action</th></tr></thead>
+                        <thead><tr><th scope="col">{t("app.channel")}</th><th scope="col">{t("app.output")}</th><th scope="col">{t("app.oVP")}</th><th scope="col">{t("app.oCP")}</th><th scope="col">{t("app.action")}</th></tr></thead>
                         <tbody>{statusChannels.map(channel => {
                           const status = deviceStatus?.status?.channels.find(record => record.channel === channel)
                           const canClear = executionMode === 'simulate'
@@ -2429,25 +2439,25 @@ function App() {
                             : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
                           return <tr key={channel}>
                             <th scope="row">{channel}</th>
-                            <td>{status ? status.output_enabled ? 'ON' : 'OFF' : '—'}</td>
-                            <td>{status ? status.over_voltage_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
-                            <td>{status ? status.over_current_tripped ? 'TRIPPED' : 'OK' : '—'}</td>
+                            <td>{status ? status.output_enabled ? t("app.oN") : t("app.oFF") : '—'}</td>
+                            <td>{status ? status.over_voltage_tripped ? t("app.tripped") : t("app.oK") : '—'}</td>
+                            <td>{status ? status.over_current_tripped ? t("app.tripped") : t("app.oK") : '—'}</td>
                             <td><button className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
                               disabled={!resourceReady || workflowBusy || operationBusy || toolConfigBusy !== null || !canClear}
                               onClick={() => void clearPowersProtection(instance.id, status ?? {
                                 channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
                               })}>
-                              {executionMode === 'simulate' ? 'Generate Clear Plan...' : 'Clear Protection...'}
+                              {executionMode === 'simulate' ? t("app.generateClearPlan") : t("app.clearProtection")}
                             </button></td>
                           </tr>
                         })}</tbody>
                       </table>
                     </div>
                     {deviceStatus?.status && <>
-                      {unresolved && <p className="error" role="alert">Protection remains tripped.</p>}
-                      {outputOn && <p className="error" role="alert">Warning: post-operation status reports an output is still ON.</p>}
+                      {unresolved && <p className="error" role="alert">{t("app.protectionRemainsTripped")}</p>}
+                      {outputOn && <p className="error" role="alert">{t("app.warningPostOperationStatusReportsAnOutputIsStill")}</p>}
                     </>}
-                    {executionMode === 'live' && <p className="tool-setup-hint">If remote clear is unsupported for this model, clear the protection latch from the instrument front panel, then use Refresh Status.</p>}
+                    {executionMode === 'live' && <p className="tool-setup-hint">{t("app.ifRemoteClearIsUnsupportedForThisModelClear")}</p>}
                   </div>
                 }}
                 renderResource={instance => (
@@ -2456,14 +2466,14 @@ function App() {
                       <LiveDeviceSetup>
                         <div className="live-device">
                           {deviceName(resourceIdentityDrafts[instance.id]) && <span>{deviceName(resourceIdentityDrafts[instance.id])}</span>}
-                          {resourceIdentityDrafts[instance.id]?.serial?.trim() && <span>S/N: {resourceIdentityDrafts[instance.id]?.serial?.trim()}</span>}
-                          <code>{resourceDrafts[instance.id] || 'No resource configured'}</code>
-                          <span className="tool-setup-hint">Last-known identity; not a connection check.</span>
+                          {resourceIdentityDrafts[instance.id]?.serial?.trim() && <span>{t("app.sN")}{resourceIdentityDrafts[instance.id]?.serial?.trim()}</span>}
+                          <code>{resourceDrafts[instance.id] || t("app.noResourceConfigured")}</code>
+                          <span className="tool-setup-hint">{t("app.lastKnownIdentityNotAConnectionCheck")}</span>
                         </div>
-                        <p className="tool-setup-hint">Stored locally; not included in Template. Save Resource to apply changes.</p>
-                        {executionMode === 'simulate' && <p className="tool-setup-hint">Stored for Live mode. Current execution mode is Simulation.</p>}
+                        <p className="tool-setup-hint">{t("app.storedLocallyNotIncludedInTemplateSaveResourceTo")}</p>
+                        {executionMode === 'simulate' && <p className="tool-setup-hint">{t("app.storedForLiveModeCurrentExecutionModeIsSimulation")}</p>}
                         {instance.tool !== 'serial' && <label className="step-property-field">
-                          <span className="step-property-label">VISA Backend</span>
+                          <span className="step-property-label">{t("app.vISABackend")}</span>
                           <select value={backendDrafts[instance.id] ?? 'system'}
                             disabled={toolConfigBusy !== null || workflowBusy || loading || powersOperationBusy !== null}
                             onChange={event => {
@@ -2479,13 +2489,13 @@ function App() {
                                 const next = { ...current }; delete next[instance.id]; return next
                               })
                             }}>
-                            <option value="system">System VISA</option>
-                            <option value="@py">PyVISA-py (@py)</option>
+                            <option value="system">{t("app.systemVISA")}</option>
+                            <option value="@py">{t("app.pyVISAPyPy")}</option>
                           </select>
                         </label>}
                         {instance.tool === 'serial' && instance.setup.transport === 'tcp' ? <>
                           <label className="step-property-field">
-                            <span className="step-property-label">TCP Host</span>
+                            <span className="step-property-label">{t("app.tCPHost")}</span>
                             <input type="text" value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').host}
                               disabled={toolConfigBusy !== null || workflowBusy || loading}
                               onChange={event => {
@@ -2497,7 +2507,7 @@ function App() {
                               }} />
                           </label>
                           <label className="step-property-field">
-                            <span className="step-property-label">TCP Port</span>
+                            <span className="step-property-label">{t("app.tCPPort")}</span>
                             <input type="number" min={1} max={65535} step={1}
                               value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').port}
                               disabled={toolConfigBusy !== null || workflowBusy || loading}
@@ -2509,9 +2519,9 @@ function App() {
                                 setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
                               }} />
                           </label>
-                          <p className="tool-setup-hint">Enter TCP Host and TCP Port and Save Resource before running Live. TCP does not use List Ports.</p>
+                          <p className="tool-setup-hint">{t("app.enterTCPHostAndTCPPortAndSaveResource")}</p>
                         </> : <label className="step-property-field">
-                          <span className="step-property-label">{instance.tool === 'serial' ? 'COM Port' : 'Live Resource'}</span>
+                          <span className="step-property-label">{instance.tool === 'serial' ? t("app.cOMPort") : t("app.liveResource")}</span>
                           <input
                             type="text"
                             value={resourceDrafts[instance.id] ?? ''}
@@ -2534,7 +2544,7 @@ function App() {
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleListResources(instance)}
                           >
-                            {instance.tool === 'serial' ? 'List Ports' : 'List Resources'}
+                            {instance.tool === 'serial' ? t("app.listPorts") : t("app.listResources")}
                           </button>}
                           <button
                             className="action-button"
@@ -2548,16 +2558,14 @@ function App() {
                               ))}
                             onClick={() => void handleResource(instance.id, false)}
                           >
-                            Save Resource
-                          </button>
+                            {t("app.saveResource")}</button>
                           <button
                             className="action-button"
                             type="button"
                             disabled={toolConfigBusy !== null || workflowBusy || loading}
                             onClick={() => void handleResource(instance.id, true)}
                           >
-                            Clear Resource
-                          </button>
+                            {t("app.clearResource")}</button>
                         </div>
                         {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveryErrors[instance.id] && (
                           <p className="error" role="alert">
@@ -2565,11 +2573,11 @@ function App() {
                           </p>
                         )}
                         {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveredResources[instance.id]?.length === 0 && (
-                          <p role="status">No live resources found.</p>
+                          <p role="status">{t("app.noLiveResourcesFound")}</p>
                         )}
                         {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && (discoveredResources[instance.id]?.length ?? 0) > 0 && (
                           <label className="step-property-field discovered-resources">
-                            <span className="step-property-label">Discovered Resources</span>
+                            <span className="step-property-label">{t("app.discoveredResources")}</span>
                             <select
                               value=""
                               disabled={toolConfigBusy !== null || workflowBusy || loading}
@@ -2591,7 +2599,7 @@ function App() {
                                 }
                               }}
                             >
-                              <option value="">Select discovered resource...</option>
+                              <option value="">{t("app.selectDiscoveredResource")}</option>
                               {discoveredResources[instance.id]?.map((candidate, index) => (
                                 <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
                               ))}
@@ -2613,7 +2621,7 @@ function App() {
       {activeTab === 'workflow' && (
         <section id="workflow-panel" role="tabpanel" aria-labelledby="workflow-tab" tabIndex={0} onKeyDown={handleStepClipboard}>
           <div className="section-header">
-            <h2>Workflow</h2>
+            <h2>{t("app.workflow")}</h2>
           </div>
 
           {workflowDraft && (
@@ -2635,24 +2643,22 @@ function App() {
                       <button type="button" className="collapsible-header"
                         aria-expanded={stepsExpanded}
                         onClick={() => setStepsExpanded(current => !current)}>
-                        Steps
-                        <span aria-hidden="true">{stepsExpanded ? '−' : '+'}</span>
+                        {t("app.steps")}<span aria-hidden="true">{stepsExpanded ? '−' : '+'}</span>
                       </button>
                     </h3>
                     {stepsExpanded && <>
-                    <div className="step-insertion-target" role="status" aria-label="Step insertion target">
-                      <span className="step-insertion-target-label">ADDING STEP TO</span>
+                    <div className="step-insertion-target" role="status" aria-label={t("app.stepInsertionTarget")}>
+                      <span className="step-insertion-target-label">{t("app.aDDINGSTEPTO")}</span>
                       <strong className="step-insertion-target-value">{insertionTargetLabel}</strong>
                     </div>
                     {addingToParent && <button className="action-button step-insertion-root-button" type="button" disabled={workflowBusy}
-                      onClick={() => setSelectedStepId(null)}>Set Target to Root</button>}
-                    <p className="step-palette-selected">Selected Step: <strong>{selectedPalettePreset?.label ?? 'None'}</strong></p>
+                      onClick={() => setSelectedStepId(null)}>{t("app.setTargetToRoot")}</button>}
+                    <p className="step-palette-selected">{t("app.selectedStep")}<strong>{selectedPalettePreset?.label ?? t("app.none")}</strong></p>
                     <button className="action-button action-button-primary step-palette-add" type="button"
                       disabled={!selectedPalettePreset || workflowBusy || selectedPaletteLocked || selectedPaletteTooDeep}
                       onClick={() => { if (selectedPalettePreset) addStep(selectedPalettePreset) }}>
-                      Add Step
-                    </button>
-                    <div className="step-palette-items step-palette-scroll" role="region" aria-label="Step categories" tabIndex={0}>
+                      {t("app.addStep")}</button>
+                    <div className="step-palette-items step-palette-scroll" role="region" aria-label={t("app.stepCategories")} tabIndex={0}>
                       {STEP_CATEGORIES.map(({ category, tool }) => {
                         const presets = STEP_PRESETS.filter(preset => preset.category === category)
                         const locked = category === 'Background Workflow' ? !workflowDraft.backgrounds?.length
@@ -2670,18 +2676,18 @@ function App() {
                               onClick={() => setExpandedStepCategories(current => ({
                                 ...current, [category]: !current[category],
                               }))}>
-                              {category}
+                              {t(STEP_CATEGORY_KEYS[category])}
                               <span aria-hidden="true">{locked ? '🔒' : expanded ? '−' : '+'}</span>
                             </button>
                           </h4>
                           {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
                             {category === 'Background Workflow'
-                               ? 'No Background binding. Enable a Background in Tool Setup.'
+                               ? t("app.noBackgroundBindingEnableABackgroundInToolSetup")
                                : category === 'FG/BG Interaction'
                                  ? !workflowDraft.backgrounds?.length
-                                   ? 'No Background binding. Enable Background Streaming in Setup.'
-                                   : 'Enable FG/BG Interaction in the Workflow sidebar.'
-                                 : `No ${category} Tool Instance. Add one in Setup.`}
+                                   ? t("app.noBackgroundBindingEnableBackgroundStreamingInSetup")
+                                   : t("app.enableFGBGInteractionInTheWorkflowSidebar")
+                                 : t("app.noToolInstanceAddOneInSetup", { value1: category })}
                           </p>}
                           {expanded && <div className="step-palette-items">
                             {presets.map((preset) => (
@@ -2744,17 +2750,16 @@ function App() {
                       aria-expanded={scopesOutputVisible}
                       aria-describedby={scopesOutputLocked ? 'scopes-output-hint' : undefined}
                       onClick={() => setScopesOutputExpanded(value => !value)}>
-                      Scopes File Output<span aria-hidden="true">{scopesOutputLocked ? '🔒' : scopesOutputVisible ? '−' : '+'}</span>
+                      {t("app.scopesFileOutput")}<span aria-hidden="true">{scopesOutputLocked ? '🔒' : scopesOutputVisible ? '−' : '+'}</span>
                     </button></h3>
                     {scopesOutputLocked && <p className="step-category-hint" id="scopes-output-hint">
-                      No Scopes Tool Instance. Add one in Setup.
-                    </p>}
+                      {t("app.noScopesToolInstanceAddOneInSetup")}</p>}
                     {scopesOutputVisible && <>
-                      <p className="tool-setup-hint">Capture CSV, metadata and screenshots use this folder. Each execution creates new files.</p>
-                      <span className="streaming-destination">{scopesOutputFolder ?? 'Default: Orchestrator application folder / data'}</span>
-                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectScopesOutputFolder()}>Select Folder</button>
+                      <p className="tool-setup-hint">{t("app.captureCSVMetadataAndScreenshotsUseThisFolderEach")}</p>
+                      <span className="streaming-destination">{scopesOutputFolder ?? t("app.defaultOrchestratorApplicationFolderData")}</span>
+                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectScopesOutputFolder()}>{t("app.selectFolder")}</button>
                       <button className="action-button" type="button" disabled={workflowBusy || scopesOutputFolder === null}
-                        onClick={() => { setScopesOutputFolder(null); setScopesOutputError(null) }}>Use Default</button>
+                        onClick={() => { setScopesOutputFolder(null); setScopesOutputError(null) }}>{t("app.useDefault")}</button>
                       {scopesOutputError && <p role="alert">{scopesOutputError}</p>}
                     </>}
                   </section>
@@ -2763,57 +2768,55 @@ function App() {
                       <button type="button" className="collapsible-header"
                         aria-expanded={streamingExpanded}
                         onClick={() => setStreamingExpanded(current => !current)}>
-                        CSV Export
-                        <span aria-hidden="true">{streamingExpanded ? '−' : '+'}</span>
+                        {t("app.cSVExport")}<span aria-hidden="true">{streamingExpanded ? '−' : '+'}</span>
                       </button>
                     </h3>
                     {streamingExpanded && <>
                     <label><input type="checkbox" checked={backgroundCsvEnabled} disabled={workflowBusy || !workflowDraft.backgrounds?.length}
-                      onChange={event => setBackgroundCsvEnabled(event.target.checked)} /> Stream Background CSV during Capture</label>
+                      onChange={event => setBackgroundCsvEnabled(event.target.checked)} /> {t("app.streamBackgroundCSVDuringCapture")}</label>
                     {backgroundCsvEnabled && <>
-                      <select aria-label="Background CSV selection" value={backgroundCsvTarget} disabled={workflowBusy} onChange={event => setBackgroundCsvTarget(event.target.value)}>
-                        <option value="all">All Backgrounds</option>{workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
+                      <select aria-label={t("app.backgroundCSVSelection")} value={backgroundCsvTarget} disabled={workflowBusy} onChange={event => setBackgroundCsvTarget(event.target.value)}>
+                        <option value="all">{t("app.allBackgrounds")}</option>{workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
                       </select>
-                      <label>Scopes CSV columns<select aria-label="Scopes Streaming CSV columns" value={backgroundCsvMode}
+                      <label>{t("app.scopesCSVColumns")}<select aria-label={t("app.scopesStreamingCSVColumns")} value={backgroundCsvMode}
                         disabled={workflowBusy} onChange={event => setBackgroundCsvMode(event.target.value as 'values-only' | 'values-quality')}>
-                        <option value="values-only">Values + units</option>
-                        <option value="values-quality">Values + units + validity + reason</option>
+                        <option value="values-only">{t("app.valuesUnits")}</option>
+                        <option value="values-quality">{t("app.valuesUnitsValidityReason")}</option>
                       </select></label>
-                        <label>Serial Streaming CSV Data<select aria-label="Serial Streaming CSV Data"
+                        <label>{t("app.serialStreamingCSVData")}<select aria-label={t("app.serialStreamingCSVData")}
                           value={serialCsvMode} disabled={workflowBusy}
                           onChange={event => setSerialCsvMode(event.target.value as 'hex' | 'text')}>
-                          <option value="hex">Hex</option><option value="text">Text (UTF-8)</option>
+                          <option value="hex">{t("app.hex")}</option><option value="text">{t("app.textUTF8")}</option>
                         </select></label>
-                      <p>{backgroundCsvFolder ?? 'Default: application folder / data'}</p>
+                      <p>{backgroundCsvFolder ?? t("app.defaultApplicationFolderData")}</p>
                       <button type="button" className="action-button" disabled={workflowBusy} onClick={() => void (async () => {
                         setChoosingStreamOutputFolder(true)
-                        try { const folder = await open({ directory: true, multiple: false, title: 'Background CSV folder' }); if (typeof folder === 'string') setBackgroundCsvFolder(folder); setBackgroundCsvError(null) }
+                        try { const folder = await open({ directory: true, multiple: false, title: t("app.backgroundCSVFolder") }); if (typeof folder === 'string') setBackgroundCsvFolder(folder); setBackgroundCsvError(null) }
                         catch (reason) { setBackgroundCsvError(String(reason)) }
                         finally { setChoosingStreamOutputFolder(false) }
-                      })()}>Select Background Folder</button>
-                      <button type="button" disabled={workflowBusy} onClick={() => setBackgroundCsvFolder(null)}>Use Default Background Folder</button>
+                      })()}>{t("app.selectBackgroundFolder")}</button>
+                      <button type="button" disabled={workflowBusy} onClick={() => setBackgroundCsvFolder(null)}>{t("app.useDefaultBackgroundFolder")}</button>
                       {backgroundCsvError && <p role="alert">{backgroundCsvError}</p>}
                     </>}
                     <label className="streaming-toggle">
                       <input type="checkbox" checked={streamCsv && hasWorkflowOutputs}
                         disabled={workflowBusy || !hasWorkflowOutputs}
                         onChange={event => setStreamCsv(event.target.checked)} />
-                      Stream CSV during run
-                    </label>
-                    {!hasWorkflowOutputs && <p>Streaming CSV requires at least one Output.</p>}
+                      {t("app.streamCSVDuringRun")}</label>
+                    {!hasWorkflowOutputs && <p>{t("app.streamingCSVRequiresAtLeastOneOutput")}</p>}
                     {streamCsv && hasWorkflowOutputs && <div className="streaming-fields">
-                      <select aria-label="CSV streaming mode" disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
+                      <select aria-label={t("app.cSVStreamingMode")} disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
                         onChange={event => setStreamAllPages(event.target.value === 'all')}>
-                        <option value="selected">Selected Page</option><option value="all">All Pages</option>
+                        <option value="selected">{t("app.selectedPage")}</option><option value="all">{t("app.allPages")}</option>
                       </select>
-                      {!streamAllPages && <select aria-label="Streaming Page" value={streamingPage} disabled={workflowBusy}
+                      {!streamAllPages && <select aria-label={t("app.streamingPage")} value={streamingPage} disabled={workflowBusy}
                         onChange={event => setStreamPage(event.target.value)}>{pages.map(page => <option key={page.name}>{page.name}</option>)}</select>}
-                      <span className="streaming-destination">{streamOutputFolder ?? 'Default: <application folder>/data'}</span>
-                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectOutputFolder()}>Select Folder</button>
+                      <span className="streaming-destination">{streamOutputFolder ?? t("app.defaultApplicationFolderData2")}</span>
+                      <button className="action-button" type="button" disabled={workflowBusy} onClick={() => void selectOutputFolder()}>{t("app.selectFolder")}</button>
                       {streamOutputFolder !== null && <button className="action-button" type="button" disabled={workflowBusy} onClick={() => {
                         setStreamOutputFolder(null)
                         setStreamOutputFolderError(null)
-                      }}>Use Default</button>}
+                      }}>{t("app.useDefault")}</button>}
                     </div>}
                     {streamCsv && hasWorkflowOutputs && streamOutputFolderError && (
                       <p className="error" role="alert">{streamOutputFolderError}</p>
@@ -2826,8 +2829,7 @@ function App() {
                       <button type="button" className="collapsible-header"
                         aria-expanded={chartOptionsExpanded}
                         onClick={() => setChartOptionsExpanded(current => !current)}>
-                        Chart Options
-                        <span aria-hidden="true">{chartOptionsExpanded ? '−' : '+'}</span>
+                        {t("app.chartOptions")}<span aria-hidden="true">{chartOptionsExpanded ? '−' : '+'}</span>
                       </button>
                     </h3>
                     {chartOptionsExpanded && <div className="chart-options-sections">
@@ -2836,27 +2838,24 @@ function App() {
                           <button type="button" className="step-category-header"
                             aria-expanded={chartSamplingExpanded}
                             onClick={() => setChartSamplingExpanded(current => !current)}>
-                            Sampling
-                            <span aria-hidden="true">{chartSamplingExpanded ? '−' : '+'}</span>
+                            {t("app.sampling")}<span aria-hidden="true">{chartSamplingExpanded ? '−' : '+'}</span>
                           </button>
                         </h4>
                         {chartSamplingExpanded && <fieldset className="chart-sampling-fields" disabled={workflowBusy}>
                           <label><input type="checkbox" checked={chartSamplingOptions.enabled}
                             onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
-                            Preserve Significant Changes</label>
-                          <label className="chart-sampling-threshold">Change Threshold (%)
-                            <input aria-label="Change Threshold (%)" type="number" min="0" step="any"
+                            {t("app.preserveSignificantChanges")}</label>
+                          <label className="chart-sampling-threshold">{t("app.changeThreshold")}<input aria-label={t("app.changeThreshold")} type="number" min="0" step="any"
                               disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
                               onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
                           </label>
                           <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
                             disabled={!chartSamplingOptions.enabled}
                             onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
-                            Show Significant Change Markers</label>
-                          <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Markers highlight only qualifying
-                            excursions; appearance: Chart Settings → Series. Show All Raw Data: General (may slow UI).</p>
+                            {t("app.showSignificantChangeMarkers")}</label>
+                          <p className="tool-setup-hint">{t("app.simulationAmpLiveLineChartsMarkersHighlightOnlyQualifying")}</p>
                           {chartThresholdInvalid && <p className="error" role="alert">
-                            Change Threshold must be a finite number greater than zero.</p>}
+                            {t("app.changeThresholdMustBeAFiniteNumberGreaterThan")}</p>}
                         </fieldset>}
                       </section>
                       <section className="chart-option-section">
@@ -2864,16 +2863,14 @@ function App() {
                           <button type="button" className="step-category-header"
                             aria-expanded={chartYAxisExpanded}
                             onClick={() => setChartYAxisExpanded(current => !current)}>
-                            Y-axis
-                            <span aria-hidden="true">{chartYAxisExpanded ? '−' : '+'}</span>
+                            {t("app.yAxis")}<span aria-hidden="true">{chartYAxisExpanded ? '−' : '+'}</span>
                           </button>
                         </h4>
                         {chartYAxisExpanded && <fieldset className="chart-y-axis-fields" disabled={workflowBusy}>
                           <label><input type="checkbox" checked={chartFitData}
                             onChange={event => setChartFitData(event.target.checked)} />
-                            Fit Data</label>
-                          <p className="tool-setup-hint">Simulation &amp; Live Line Charts. Auto Y-axis follows the data range
-                            without forcing zero; manual Minimum/Maximum in Chart Settings still apply.</p>
+                            {t("app.fitData")}</label>
+                          <p className="tool-setup-hint">{t("app.simulationAmpLiveLineChartsAutoYAxisFollows")}</p>
                         </fieldset>}
                       </section>
                     </div>}
@@ -2912,17 +2909,17 @@ function App() {
                 />
 
                 <section className="step-properties" aria-labelledby="step-properties-title">
-                  <h3 id="step-properties-title">Properties</h3>
+                  <h3 id="step-properties-title">{t("app.properties")}</h3>
                   {validationIssue?.step_id && selectedStepIds.includes(validationIssue.step_id) && (
                     <p className="error" role="alert">{validationIssue.message}</p>
                   )}
 
                   {selectedStepIds.length > 1 && (
-                    <p className="step-properties-empty">{selectedStepIds.length} steps selected. Select a single step to edit its properties.</p>
+                    <p className="step-properties-empty">{selectedStepIds.length} {t("app.stepsSelectedSelectASingleStepToEditIts")}</p>
                   )}
 
                   {selectedStepIds.length <= 1 && !selectedStep && (
-                    <p className="step-properties-empty">Select a step to edit its properties.</p>
+                    <p className="step-properties-empty">{t("app.selectAStepToEditItsProperties")}</p>
                   )}
 
                   {selectedStepIds.length === 1 && selectedStep && (
@@ -2934,12 +2931,12 @@ function App() {
                         )}
                       </div>
                       <div className="step-property-readonly">
-                        <span className="step-property-label">Step ID</span>
+                        <span className="step-property-label">{t("app.stepID")}</span>
                         <code className="workflow-step-id">{selectedStep.id}</code>
                       </div>
 
                       {selectedToolAction && <label className="step-property-field">
-                        <span className="step-property-label">Target instance</span>
+                        <span className="step-property-label">{t("app.targetInstance")}</span>
                         <select disabled={workflowBusy} value={selectedToolAction.target} onChange={event => {
                           const target = event.target.value
                           updateStep(selectedToolAction.id, step => step.type === 'tool-action' ? { ...step, target } : step)
@@ -2958,26 +2955,26 @@ function App() {
                         steps={workflowDraft.workflow.steps} backgrounds={workflowDraft.backgrounds ?? []} disabled={workflowBusy}
                         onChange={next => updateStep(selectedStep.id, () => next)} />}
                       {selectedStep.type === 'background' && <>
-                        <label>Background<select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
+                        <label>{t("app.background")}<select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
                           {workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id} · {background.tool_instance_id}</option>)}
                         </select></label>
                         {(selectedStep.action === 'worker-on' || selectedStep.action === 'worker-off') && <label><input type="checkbox" checked={selectedStep.capture} disabled={workflowBusy}
                           onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, capture: event.target.checked } : step)} />
-                          Simultaneous Capture {selectedStep.action === 'worker-on' ? 'ON' : 'OFF'}</label>}
-                        {selectedStep.action === 'worker-off' && <p>If Capture was already explicitly switched OFF, uncheck simultaneous Capture OFF. Repeated ON/OFF actions fail the step.</p>}
+                          {t("app.simultaneousCapture")}{selectedStep.action === 'worker-on' ? t("app.oN") : t("app.oFF")}</label>}
+                        {selectedStep.action === 'worker-off' && <p>{t("app.ifCaptureWasAlreadyExplicitlySwitchedOFFUncheckSimultaneous")}</p>}
                       </>}
                       {selectedStep.type === 'for' && <>
                         <label className="step-property-field">
-                          <span className="step-property-label">Loop variable</span>
+                          <span className="step-property-label">{t("app.loopVariable")}</span>
                           <input type="text" required pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                            title="Use lowercase letters, digits, and single hyphens between segments."
+                            title={t("app.useLowercaseLettersDigitsAndSingleHyphensBetweenSegments")}
                             value={selectedStep.variable} disabled={workflowBusy} onChange={event => {
                               const variable = event.target.value
                               updateStep(selectedStep.id, step => step.type === 'for' ? { ...step, variable } : step)
                             }} />
                         </label>
                         {(['start', 'stop', 'step'] as const).map(field => <label key={field} className="step-property-field">
-                          <span className="step-property-label">{field === 'start' ? 'Start' : field === 'stop' ? 'Stop' : 'Step'}</span>
+                          <span className="step-property-label">{field === 'start' ? t("app.start") : field === 'stop' ? t("app.stop") : t("app.step")}</span>
                           <input type="text" required value={selectedStep.range[field]} disabled={workflowBusy}
                             onChange={event => {
                               const value = event.target.value
@@ -2986,19 +2983,19 @@ function App() {
                             }} />
                         </label>)}
                         {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
-                          <p className="error">Loop variable and range fields must not be blank.</p>}
+                          <p className="error">{t("app.loopVariableAndRangeFieldsMustNotBeBlank")}</p>}
                       </>}
                       {selectedStep.type === 'set-variable' && selectedEnclosingForVariables.includes(selectedStep.variable) &&
-                        <p className="error">A body Set Variable cannot write an enclosing For loop variable.</p>}
+                        <p className="error">{t("app.aBodySetVariableCannotWriteAnEnclosingFor")}</p>}
                       {selectedStep.type === 'set-variable' && (
                         <>
                           <label className="step-property-field">
-                            <span className="step-property-label">Variable</span>
+                            <span className="step-property-label">{t("app.variable")}</span>
                             <input
                               type="text"
                               value={selectedStep.variable}
                               pattern="[a-z0-9]+(-[a-z0-9]+)*"
-                              title="Use lowercase letters, digits, and single hyphens between segments."
+                              title={t("app.useLowercaseLettersDigitsAndSingleHyphensBetweenSegments")}
                               disabled={workflowBusy}
                               onChange={(event) => {
                                 const variable = event.target.value
@@ -3014,7 +3011,7 @@ function App() {
                       {selectedStep.type === 'output' && (
                         <>
                           <label className="step-property-field">
-                            <span className="step-property-label">Output name</span>
+                            <span className="step-property-label">{t("app.outputName")}</span>
                             <input
                               type="text"
                               value={selectedStep.name}
@@ -3028,36 +3025,32 @@ function App() {
                             />
                           </label>
                           <label className="step-property-field">
-                            <span className="step-property-label">Existing compatible Page</span>
+                            <span className="step-property-label">{t("app.existingCompatiblePage")}</span>
                             <select value={selectedCompatiblePages.includes(selectedStep.page) ? selectedStep.page : ''}
                               disabled={workflowBusy}
                               onChange={event => {
                                 if (event.target.value) updateStep(selectedStep.id, step =>
                                   step.type === 'output' ? { ...step, page: event.target.value } : step)
                               }}>
-                              <option value="">Select existing Page...</option>
+                              <option value="">{t("app.selectExistingPage")}</option>
                               {selectedCompatiblePages.map(page => <option key={page} value={page}>{page}</option>)}
                             </select>
                           </label>
                           <label className="step-property-field">
-                            <span className="step-property-label">Page name</span>
+                            <span className="step-property-label">{t("app.pageName")}</span>
                             <input value={selectedStep.page} disabled={workflowBusy} aria-describedby="output-page-help"
                               onChange={event => updateStep(selectedStep.id, step => step.type === 'output' ? { ...step, page: event.target.value } : step)} />
                           </label>
                           <p id="output-page-help" className="value-source-help">
-                            A Page is an independent tabular dataset. Only Pages in the same loop scope can be shared.
-                            Choose an existing compatible Page, or enter a new name to create another Page in this scope
-                            (1-31 filename-safe characters).
-                          </p>
+                            {t("app.aPageIsAnIndependentTabularDatasetOnlyPages")}</p>
                           {pages.some(page => page.name === selectedStep.page && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
-                            <p className="error">This Page belongs to a different loop path. Choose another Page.</p>}
+                            <p className="error">{t("app.thisPageBelongsToADifferentLoopPathChoose")}</p>}
                           <p id="output-name-help" className="value-source-help">
-                            Editable column name used in Output Data, CSV/XLSX export, and Charts.
-                          </p>
+                            {t("app.editableColumnNameUsedInOutputDataCSVXLSX")}</p>
                           {outputNameError && (
                             <p id="output-name-error" className="step-property-error">{outputNameError}</p>
                           )}
-                          <p className="step-context-help">Choose the value this Output publishes.</p>
+                          <p className="step-context-help">{t("app.chooseTheValueThisOutputPublishes")}</p>
                         </>
                       )}
 
@@ -3094,7 +3087,7 @@ function App() {
                               (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, left } : step)}
                           />
                           <label className="step-property-field">
-                            <span className="step-property-label">Operator</span>
+                            <span className="step-property-label">{t("app.operator")}</span>
                             <select value={selectedStep.operator} disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
                                 (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, operator: event.target.value as ComparisonOperator } : step)}>
@@ -3115,25 +3108,25 @@ function App() {
                               (step.type === 'assert' || step.type === 'while' || step.type === 'if') ? { ...step, right } : step)}
                           />
                           {selectedStep.type === 'assert' && <label className="step-property-field">
-                            <span className="step-property-label">Failure message</span>
-                            <input type="text" value={selectedStep.message} placeholder="Assertion failed."
+                            <span className="step-property-label">{t("app.failureMessage")}</span>
+                            <input type="text" value={selectedStep.message} placeholder={t("app.assertionFailed")}
                               disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'assert' ? { ...step, message: event.target.value } : step)} />
                           </label>}
                           {selectedStep.type === 'while' && <div className="step-property-field">
-                            <span className="step-property-label">Iteration limit</span>
-                            <select aria-label="Iteration limit" value={selectedStep.max_iterations === null ? 'unlimited' : 'limited'} disabled={workflowBusy}
+                            <span className="step-property-label">{t("app.iterationLimit")}</span>
+                            <select aria-label={t("app.iterationLimit")} value={selectedStep.max_iterations === null ? 'unlimited' : 'limited'} disabled={workflowBusy}
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'while' ? { ...step, max_iterations: event.target.value === 'unlimited' ? null : 1000 } : step)}>
-                              <option value="limited">Max iterations</option>
-                              <option value="unlimited" disabled={Boolean(selectedParent)}>Unlimited</option>
+                              <option value="limited">{t("app.maxIterations")}</option>
+                              <option value="unlimited" disabled={Boolean(selectedParent)}>{t("app.unlimited")}</option>
                             </select>
                             {selectedStep.max_iterations === null ? (
-                              <span>Runs until the condition becomes false or the loop is stopped.</span>
+                              <span>{t("app.runsUntilTheConditionBecomesFalseOrTheLoop")}</span>
                             ) : <>
                               <input type="number" min="1" max={Number.MAX_SAFE_INTEGER} step="1"
-                                aria-label="Max iterations" value={selectedStep.max_iterations} disabled={workflowBusy}
+                                aria-label={t("app.maxIterations")} value={selectedStep.max_iterations} disabled={workflowBusy}
                                 onChange={event => {
                                   const limit = event.currentTarget.valueAsNumber
                                   if (!Number.isSafeInteger(limit) || limit <= 0) return
@@ -3141,26 +3134,26 @@ function App() {
                                     step.type === 'while' ? { ...step, max_iterations: limit } : step)
                                 }} />
                               {(!Number.isSafeInteger(selectedStep.max_iterations) || selectedStep.max_iterations <= 0) &&
-                                <span className="error">Max iterations must be a positive safe integer.</span>}
+                                <span className="error">{t("app.maxIterationsMustBeAPositiveSafeInteger")}</span>}
                             </>}
                           </div>}
                         </div>
                       )}
 
                       {selectedStep.type === 'if' && <label className="step-property-field">
-                        <span className="step-property-label">Add new Steps to</span>
-                        <select aria-label="If branch for new Steps" disabled={workflowBusy}
+                        <span className="step-property-label">{t("app.addNewStepsTo")}</span>
+                        <select aria-label={t("app.ifBranchForNewSteps")} disabled={workflowBusy}
                           value={preferredIfBranch.id === selectedStep.id ? preferredIfBranch.branch : 'then'}
                           onChange={event => setPreferredIfBranch({
                             id: selectedStep.id, branch: event.target.value as StepBranch,
                           })}>
-                          <option value="then">THEN</option>
-                          <option value="else">ELSE</option>
+                          <option value="then">{t("app.tHEN")}</option>
+                          <option value="else">{t("app.eLSE")}</option>
                         </select>
                       </label>}
                       {selectedStep.type === 'wait' && (
                         <label className="step-property-field">
-                          <span className="step-property-label">Duration (ms)</span>
+                          <span className="step-property-label">{t("app.durationMs")}</span>
                           <input
                             type="number"
                             min="0"
@@ -3215,7 +3208,7 @@ function App() {
                       {selectedToolAction && selectedAction === 'powers/protection-status' && (
                         <>
                           <label className="step-property-field">
-                            <span className="step-property-label">Channel selection</span>
+                            <span className="step-property-label">{t("app.channelSelection")}</span>
                             <select
                               value={!channelBound && savedChannel === 'all' ? 'all' : 'specific'}
                               disabled={workflowBusy}
@@ -3226,12 +3219,12 @@ function App() {
                                 }
                               }}
                             >
-                              <option value="all">All</option>
-                              <option value="specific" disabled={selectedPowersChannels.length === 0}>Specific channel</option>
+                              <option value="all">{t("app.all")}</option>
+                              <option value="specific" disabled={selectedPowersChannels.length === 0}>{t("app.specificChannel")}</option>
                             </select>
                           </label>
                           {channelBound || savedChannel !== 'all' ? powersChannelSelector : powersChannelHint && (
-                            <p className="value-source-help">Specific channel is unavailable. {powersChannelHint}</p>
+                            <p className="value-source-help">{t("app.specificChannelIsUnavailable")}{powersChannelHint}</p>
                           )}
                         </>
                       )}
@@ -3239,7 +3232,7 @@ function App() {
                       {selectedToolAction && selectedAction === 'powers/set-output' &&
                         (['voltage', 'current'] as const).map((name) => {
                             const active = hasPowerSetpoint(selectedToolAction, name)
-                            const label = name === 'voltage' ? 'Voltage' : 'Current Limit'
+                            const label = name === 'voltage' ? t("app.voltage") : t("app.currentLimit")
                             return <div className="step-properties-fields" key={`${selectedStep.id}-${name}`}>
                               {selectedAction === 'powers/set-output' && (
                                 <label className="step-property-field step-property-checkbox">
@@ -3249,18 +3242,18 @@ function App() {
                                       step.type === 'tool-action'
                                         ? togglePowerSetpoint(step, name, event.target.checked)
                                         : step)} />
-                                  <span className="step-property-label">Set {label}</span>
+                                  <span className="step-property-label">{t("app.set")}{label}</span>
                                 </label>
                               )}
                               {selectedAction === 'powers/set-output' && <p className="value-source-help">
                                 {name === 'voltage'
-                                  ? "Set the channel's output voltage. Uncheck to leave the existing voltage setting unchanged."
-                                  : 'Set the maximum allowed output current, not a forced output current. Uncheck to leave the existing limit unchanged.'}
+                                  ? t("app.setTheChannelSOutputVoltageUncheckToLeave")
+                                  : t("app.setTheMaximumAllowedOutputCurrentNotAForced")}
                               </p>}
                               {active && (
                                 <InputValueEditor
                                   value={selectedToolAction.bindings?.[name] ?? { source: 'literal', value: numericArgument(selectedToolAction, name) }}
-                                  sourceLabel={`${label} Source`}
+                                  sourceLabel={t("inputValueEditor.namedSource", { label })}
                                   literalLabel={`${label} (${name === 'voltage' ? 'V' : 'A'})`}
                                   literalDefault={powerSetpointLiteralDefault(selectedToolAction, name)}
                                   numericSetpoint
@@ -3276,7 +3269,7 @@ function App() {
                           })}
 
                       {selectedAction === 'meters/measure' && (
-                        <p className="step-properties-empty">No editable parameters.</p>
+                        <p className="step-properties-empty">{t("app.noEditableParameters")}</p>
                       )}
 
                       {selectedToolAction &&
@@ -3286,8 +3279,7 @@ function App() {
                         !selectedAction?.startsWith('scopes/') &&
                          !selectedAction?.startsWith('serial/') && (
                           <p className="step-properties-empty">
-                            No editable properties are available for this step.
-                          </p>
+                            {t("app.noEditablePropertiesAreAvailableForThisStep")}</p>
                         )}
                     </div>
                   )}
@@ -3300,32 +3292,30 @@ function App() {
                     <button type="button" className="collapsible-header"
                       aria-expanded={messagesExpanded}
                       onClick={() => setMessagesExpanded(current => !current)}>
-                      Messages
-                      <span aria-hidden="true">{messagesExpanded ? '−' : '+'}</span>
+                      {t("app.messages")}<span aria-hidden="true">{messagesExpanded ? '−' : '+'}</span>
                     </button>
                   </h3>
                   <p className="run-result-count">
-                    {messages.total.toLocaleString('en-US')} {messages.total === 1 ? 'message' : 'messages'} · oldest first
-                    {messages.discarded > 0 && messages.retained > 0 && ` · showing the most recent ${messages.retained.toLocaleString('en-US')}`}
+                    {t(messages.total === 1 ? 'app.messageCountOne' : 'app.messageCountMany', { count: messages.total.toLocaleString(locale) })} {t("app.oldestFirst")}{messages.discarded > 0 && messages.retained > 0 && t("app.showingTheMostRecent", { value1: messages.retained.toLocaleString(locale) })}
                   </p>
                   {messagesExpanded && <>
-                    <div className="last-run-page-tabs" role="tablist" aria-label="Messages">
+                    <div className="last-run-page-tabs" role="tablist" aria-label={t("app.messages")}>
                       {MESSAGE_TARGETS.map((target, index) => (
                         <button key={target} type="button" role="tab"
                           id={`message-tab-${index}`} aria-controls="run-messages-body"
                           aria-selected={target === messageTarget}
                           tabIndex={target === messageTarget ? 0 : -1}
                           onClick={() => setMessageTarget(target)}>
-                          {MESSAGE_TARGET_LABELS[target]}
+                          {t(`messages.${target}`)}
                         </button>
                       ))}
                     </div>
                     <div id="run-messages-body" role="tabpanel" aria-labelledby={`message-tab-${MESSAGE_TARGETS.indexOf(messageTarget)}`}>
                       {messages.items.length === 0
                         ? <p className="step-properties-empty">
-                            {messages.total > 0 ? 'Loading messages…' : 'No messages were produced by this run.'}
+                            {messages.total > 0 ? t("app.loadingMessages") : t("app.noMessagesWereProducedByThisRun")}
                           </p>
-                        : <ol className="run-message-list" aria-label={`${MESSAGE_TARGET_LABELS[messageTarget]} messages`}>
+                        : <ol className="run-message-list" aria-label={t("app.messages2", { value1: t(`messages.${messageTarget}`) })}>
                             {messages.items.map((text, index) => (
                               <li className="run-message" key={`${messageTarget}:${index}`}>
                                 <pre>{text}</pre>
@@ -3343,26 +3333,25 @@ function App() {
                     <button type="button" className="collapsible-header"
                       aria-expanded={executionsExpanded}
                       onClick={() => setExecutionsExpanded(current => !current)}>
-                      Last Run Execution Results {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}
+                      {t("app.lastRunExecutionResults")}{lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode, t)}</span>}
                       <span aria-hidden="true">{executionsExpanded ? '−' : '+'}</span>
                     </button>
                   </h3>
                   <p className="run-result-count">
-                    {executions.total.toLocaleString('en-US')} {executions.total === 1 ? 'execution' : 'executions'} · latest first
-                  </p>
+                    {t(executions.total === 1 ? 'app.executionCountOne' : 'app.executionCountMany', { count: executions.total.toLocaleString(locale) })} {t("app.latestFirst")}</p>
                   {executionsExpanded && <>
                   {executions.total > EXECUTION_WINDOW_SIZE && <div className="section-header">
                     <p aria-live="polite">
-                      Showing {executions.start.toLocaleString('en-US')}&ndash;{executions.end.toLocaleString('en-US')} of {executions.total.toLocaleString('en-US')}
+                      {t("app.showing")}{executions.start.toLocaleString(locale)}{t("app.ndash")}{executions.end.toLocaleString(locale)} {t("app.of")}{executions.total.toLocaleString(locale)}
                     </p>
                     <div className="result-chart-panel-actions">
                       <button className="action-button" type="button" disabled={!executions.hasNewer}
-                        onClick={() => setExecutionOffset(Math.max(0, executions.offset - EXECUTION_WINDOW_SIZE))}>Newer</button>
+                        onClick={() => setExecutionOffset(Math.max(0, executions.offset - EXECUTION_WINDOW_SIZE))}>{t("app.newer")}</button>
                       <button className="action-button" type="button" disabled={!executions.hasOlder}
-                        onClick={() => setExecutionOffset(executions.offset + EXECUTION_WINDOW_SIZE)}>Older</button>
+                        onClick={() => setExecutionOffset(executions.offset + EXECUTION_WINDOW_SIZE)}>{t("app.older")}</button>
                     </div>
                   </div>}
-                  <ol key={executions.offset} className="run-result-list" aria-label="Last Run Execution Results" tabIndex={0}>
+                  <ol key={executions.offset} className="run-result-list" aria-label={t("app.lastRunExecutionResults2")} tabIndex={0}>
                     {executions.items.map((result, executionIndex) => {
                       const resultStep = runStepsById.get(result.step_id)
                       const isOutput = resultStep?.type === 'output'
@@ -3371,19 +3360,19 @@ function App() {
                         ? null
                         : isOutput
                           ? result.output_omitted && result.output === null
-                            ? 'Preview omitted'
+                            ? t("app.previewOmitted")
                             : `${JSON.stringify(result.output)}${result.output_omitted ? ' …' : ''}`
                           : formattedMeasurement
                             ? `${formattedMeasurement}${result.output_omitted ? ' …' : ''}`
                             : result.output_omitted
-                              ? 'Preview omitted'
+                              ? t("app.previewOmitted")
                               : null
                       const statusLabel =
                         result.status === 'succeeded'
-                          ? 'Success'
+                          ? t("app.success")
                           : result.status === 'failed'
-                            ? 'Failed'
-                            : 'Cancelled'
+                            ? t("app.failed")
+                            : t("app.cancelled")
                       const statusMark =
                         result.status === 'succeeded'
                           ? '✓'
@@ -3402,8 +3391,8 @@ function App() {
                           <div className="run-result-content">
                             <div className="run-result-summary">
                               <code className="workflow-step-id">{result.step_id}</code>
-                              {result.for_iteration && <span>For {result.for_iteration.for_step_id} · Iteration {result.for_iteration.iteration_index + 1}</span>}
-                              {result.while_iteration && <span>While {result.while_iteration.while_step_id} · Iteration {result.while_iteration.iteration_index + 1}</span>}
+                              {result.for_iteration && <span>{t("app.for")}{result.for_iteration.for_step_id} {t("app.iteration")}{result.for_iteration.iteration_index + 1}</span>}
+                              {result.while_iteration && <span>{t("app.while")}{result.while_iteration.while_step_id} {t("app.iteration")}{result.while_iteration.iteration_index + 1}</span>}
                               <span className={`run-result-status run-result-${result.status}`}>
                                 {statusLabel}
                               </span>
@@ -3429,32 +3418,32 @@ function App() {
       {activeTab === 'output' && (
         <section id="output-panel" role="tabpanel" aria-labelledby="output-tab">
           <div className="section-header">
-            <h2>Output</h2>
+            <h2>{t("app.output")}</h2>
           </div>
           {stopControls}
           {stopFeedback}
           {csvStreamFeedback}
           {!hasWorkflowOutputs && !workflowDraft?.backgrounds?.length && (
             <>
-              <p>No workflow outputs defined.</p>
-              <p>Add Output steps to the Workflow to publish final result values.</p>
+              <p>{t("app.noWorkflowOutputsDefined")}</p>
+              <p>{t("app.addOutputStepsToTheWorkflowToPublishFinal")}</p>
             </>
           )}
           {!runWorkspace.visible ? (
             <>
-              <p>No run results yet.</p>
-              <p>Run the Workflow to view its outputs.</p>
+              <p>{t("app.noRunResultsYet")}</p>
+              <p>{t("app.runTheWorkflowToViewItsOutputs")}</p>
             </>
           ) : (
             <section aria-labelledby="last-run-title">
               <div className="section-header">
-                <h3 id="last-run-title">Last Run {lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode)}</span>}</h3>
+                <h3 id="last-run-title">{t("app.lastRun")}{lastRunExecutionMode && <span className={`execution-mode-badge execution-mode-${lastRunExecutionMode}`}>{executionModeLabel(lastRunExecutionMode, t)}</span>}</h3>
                 {runWorkflowSnapshot && <button className="action-button action-button-danger" type="button"
-                  disabled={workflowBusy} onClick={() => void handleClearLastRun()}>Clear Last Run</button>}
+                  disabled={workflowBusy} onClick={() => void handleClearLastRun()}>{t("app.clearLastRun")}</button>}
               </div>
               {clearLastRunError && <p className="error" role="alert">{clearLastRunError}</p>}
               {runStatus === 'running' && <p role="status">{runningText}</p>}
-              {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
+              {displayedRun?.status === 'stopped' && <p role="status">{t("app.runStopped")}</p>}
               {runWorkflowSnapshot && <OutputCharts key={`charts-${displayedRun?.run_id ?? 'starting'}`} runId={displayedRun?.run_id ?? null}
                 pages={runPages} metadata={displayedRun?.pages ?? []} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
                 currentDraftBackgrounds={workflowDraft?.backgrounds ?? null}
@@ -3467,40 +3456,37 @@ function App() {
                 runId={displayedRun?.run_id ?? null} backgrounds={runWorkflowSnapshot.backgrounds ?? []}
                 toolKinds={Object.fromEntries(runWorkflowSnapshot.tool_instances.map(instance => [instance.id, instance.tool]))}
                 running={runStatus === 'running'} />}
-              <Collapsible title="Foreground Output" framed>
+              <Collapsible title={t("app.foregroundOutput")} framed>
               {runPage && <div className="output-source-card">
-                <h4>Source</h4>
-                <label>Output Page
-                  <select value={runPage.name} disabled={chartSaving}
+                <h4>{t("app.source")}</h4>
+                <label>{t("app.outputPage")}<select value={runPage.name} disabled={chartSaving}
                     onChange={event => setSelectedRunPage(event.target.value)}>
                     {runPages.map(page => <option key={page.name} value={page.name}>{page.name}</option>)}
                   </select>
                 </label>
-                <p className="output-source-meta">Page {runPages.indexOf(runPage) + 1} of {runPages.length}</p>
-                <p className="output-source-help">Select an Output Page from this run to view its results.</p>
+                <p className="output-source-meta">{t("app.page")}{runPages.indexOf(runPage) + 1} {t("app.of")}{runPages.length}</p>
+                <p className="output-source-help">{t("app.selectAnOutputPageFromThisRunToView")}</p>
               </div>}
-              <div id="last-run-workspace" role="region" aria-label="Output Page results">
-                {!hasRunOutputs && <p>No workflow outputs were defined for this run.</p>}
+              <div id="last-run-workspace" role="region" aria-label={t("app.outputPageResults")}>
+                {!hasRunOutputs && <p>{t("app.noWorkflowOutputsWereDefinedForThisRun")}</p>}
                 {partialRun && <p className="feedback-warning" role="status">{runMetadata.pages.some(page => page.row_count > 0)
-                  ? 'Run did not fully complete. Committed rows are partial results and can be exported.'
-                  : 'Run did not fully complete. No committed output rows are available for export.'}</p>}
+                  ? t("app.runDidNotFullyCompleteCommittedRowsArePartial")
+                  : t("app.runDidNotFullyCompleteNoCommittedOutputRows")}</p>}
                 {displayedRun?.status === 'failed' && displayedRun.error && (
                   <div className="error" role="alert">
-                    <p className="failure-run-title">Run failed</p>
+                    <p className="failure-run-title">{t("app.runFailed")}</p>
                     <FailureDetails message={displayedRun.error} />
                   </div>
                 )}
-                {(runPageMetadata?.row_count ?? 0) === 0 && <p>No committed output rows.</p>}
+                {(runPageMetadata?.row_count ?? 0) === 0 && <p>{t("app.noCommittedOutputRows")}</p>}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <div className="numeric-display-settings">
-                  <label>Number display
-                    <select value={numericFormat.mode} onChange={event => setNumericFormat(current => ({
+                  <label>{t("app.numberDisplay")}<select value={numericFormat.mode} onChange={event => setNumericFormat(current => ({
                       ...current, mode: event.target.value as NumericDisplayFormat['mode'],
                     }))}>
-                      <option value="auto">Auto</option><option value="fixed">Fixed</option><option value="raw">Raw</option>
+                      <option value="auto">{t("app.auto")}</option><option value="fixed">{t("app.fixed")}</option><option value="raw">{t("app.raw")}</option>
                     </select>
                   </label>
-                  {numericFormat.mode === 'fixed' && <label>Decimal places
-                    <select value={numericFormat.decimalPlaces} onChange={event => setNumericFormat(current => ({
+                  {numericFormat.mode === 'fixed' && <label>{t("app.decimalPlaces")}<select value={numericFormat.decimalPlaces} onChange={event => setNumericFormat(current => ({
                       ...current, decimalPlaces: Number(event.target.value),
                     }))}>
                       {Array.from({ length: 13 }, (_, places) => <option key={places} value={places}>{places}</option>)}
@@ -3509,10 +3495,9 @@ function App() {
                 </div>}
                 {runPageMetadata && runPageMetadata.row_count > 0 && <PageResultSummary summaries={runPageMetadata.summaries} outputs={runOutputs} numericFormat={numericFormat} />}
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
-                  <Collapsible className="output-data" title="Output Data">
+                  <Collapsible className="output-data" title={t("app.outputData")}>
                     <p className="output-row-count">
-                      {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} · latest first
-                    </p>
+                      {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} {t("app.latestFirst")}</p>
                     <VirtualizedOutputTable key={`${displayedRun.run_id}:${runPage.name}`} runId={displayedRun.run_id} page={runPage.name}
                       rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
                       outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} numericFormat={numericFormat} />
@@ -3521,32 +3506,30 @@ function App() {
               </div>
 
           <div className="output-export-settings">
-            <h4>Export settings</h4>
+            <h4>{t("app.exportSettings")}</h4>
             <div className="output-export-controls">
-              <label>Pages
-                <select aria-label="Export Pages" disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
+              <label>{t("app.pages")}<select aria-label={t("app.exportPages")} disabled={workflowBusy} value={exportAllPages ? 'all' : 'current'}
                   onChange={event => setExportAllPages(event.target.value === 'all')}>
-                  <option value="current">Run Page</option><option value="all">All Run Pages</option>
+                  <option value="current">{t("app.runPage")}</option><option value="all">{t("app.allRunPages")}</option>
                 </select>
               </label>
-              <label>Format
-                <select aria-label="Export format" disabled={workflowBusy} value={exportFormat}
+              <label>{t("app.format")}<select aria-label={t("app.exportFormat")} disabled={workflowBusy} value={exportFormat}
                   onChange={event => setExportFormat(event.target.value as 'csv' | 'xlsx')}>
-                  <option value="csv">CSV</option><option value="xlsx">XLSX</option>
+                  <option value="csv">{t("app.cSV")}</option><option value="xlsx">{t("app.xLSX")}</option>
                 </select>
               </label>
               <button className="action-button" type="button" onClick={() => void handleExport()}
                 disabled={!hasRunOutputs || !runExportable || !hasExportableOutputRows || workflowBusy}>
-                {exporting ? 'Exporting…' : `Export ${partialRun ? 'Partial ' : ''}${exportFormat.toUpperCase()}`}
+                {exporting ? t("app.exporting") : t("app.export", { value1: partialRun ? t("app.partial") : '', value2: exportFormat.toUpperCase() })}
               </button>
             </div>
             <p className="output-export-help">{exportAllPages && exportFormat === 'csv'
-              ? 'Export all Output Pages as separate CSV files. Choose a destination folder.'
+              ? t("app.exportAllOutputPagesAsSeparateCSVFilesChoose")
               : exportAllPages
-                ? 'Export all Output Pages in one XLSX file. Choose a file name and location.'
-                : 'Export the selected Output Page. Choose a file name and location.'}</p>
+                ? t("app.exportAllOutputPagesInOneXLSXFileChoose")
+                : t("app.exportTheSelectedOutputPageChooseAFileName")}</p>
             {exportMessage && <p className="validation-success" role="status">{exportMessage}</p>}
-            {exportError && <p className="error" role="alert">Export failed: {exportError}</p>}
+            {exportError && <p className="error" role="alert">{t("app.exportFailed")}{exportError}</p>}
           </div>
               </Collapsible>
               {!!runWorkflowSnapshot?.backgrounds?.length && displayedRun && <BackgroundOutput key={`background-${displayedRun.run_id}`}

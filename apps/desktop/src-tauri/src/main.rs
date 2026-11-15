@@ -1414,23 +1414,55 @@ fn load_workflow_template(path: String) -> Result<String, String> {
     template.to_json_string().map_err(|error| error.to_string())
 }
 
-fn help_url(theme: &str) -> Result<tauri::WebviewUrl, String> {
-    match theme {
-        "system" | "light" | "dark" => Ok(tauri::WebviewUrl::App(
-            format!("help/desktop.html?theme={theme}").into(),
-        )),
-        _ => Err("Help theme must be system, light, or dark".to_owned()),
+fn help_url(locale: &str, theme: &str) -> Result<tauri::WebviewUrl, String> {
+    let page = match locale {
+        "en" => "desktop.html",
+        "zh-TW" => "desktop.zh-TW.html",
+        _ => return Err("Help locale must be en or zh-TW".to_owned()),
+    };
+    if !matches!(theme, "system" | "light" | "dark") {
+        return Err("Help theme must be system, light, or dark".to_owned());
     }
+    Ok(tauri::WebviewUrl::App(
+        format!("help/{page}?theme={theme}").into(),
+    ))
+}
+
+fn help_navigation_target(
+    main_url: &tauri::Url,
+    current_url: &tauri::Url,
+    url: &tauri::WebviewUrl,
+) -> Result<Option<tauri::Url>, String> {
+    let tauri::WebviewUrl::App(path) = url else {
+        return Err("Help requires an application asset".to_owned());
+    };
+    let target = main_url
+        .join(&format!("/{}", path.to_string_lossy()))
+        .map_err(|error| error.to_string())?;
+    // Keep the current chapter/scroll position when language and theme match.
+    Ok((current_url.origin() != target.origin()
+        || current_url.path() != target.path()
+        || current_url.query() != target.query())
+    .then_some(target))
 }
 
 #[tauri::command]
-async fn open_help(app: AppHandle, theme: String) -> Result<(), String> {
-    let url = help_url(&theme)?;
+async fn open_help(app: AppHandle, locale: String, theme: String) -> Result<(), String> {
+    let url = help_url(&locale, &theme)?;
     tauri::async_runtime::spawn_blocking(move || {
         // Serialize lookup and creation, including concurrent toolbar clicks.
         static HELP_WINDOW: Mutex<()> = Mutex::new(());
         let _guard = HELP_WINDOW.lock().map_err(|error| error.to_string())?;
         if let Some(window) = app.get_webview_window("help") {
+            let main_url = app
+                .get_webview_window("main")
+                .ok_or("Main window is unavailable")?
+                .url()
+                .map_err(|error| error.to_string())?;
+            let current_url = window.url().map_err(|error| error.to_string())?;
+            if let Some(target) = help_navigation_target(&main_url, &current_url, &url)? {
+                window.navigate(target).map_err(|error| error.to_string())?;
+            }
             window.show().map_err(|error| error.to_string())?;
             window.set_focus().map_err(|error| error.to_string())?;
         } else {
@@ -2024,9 +2056,10 @@ mod tests {
 mod regression_tests {
     use super::stored_run::StoredRuns;
     use super::{
-        create_workflow_draft, help_url, load_desktop_config_from_path, load_workflow_template,
-        reset_desktop_tool_executable, resolve_built_in_tool_id, save_chart_png,
-        save_workflow_template, set_desktop_tool_executable, validate_workflow_draft,
+        create_workflow_draft, help_navigation_target, help_url, load_desktop_config_from_path,
+        load_workflow_template, reset_desktop_tool_executable, resolve_built_in_tool_id,
+        save_chart_png, save_workflow_template, set_desktop_tool_executable,
+        validate_workflow_draft,
     };
     use orchestrator_tool::config::VisaBackend;
     use orchestrator_tool::{
@@ -2076,13 +2109,56 @@ mod regression_tests {
     fn help_url_accepts_only_supported_themes() {
         for theme in ["system", "light", "dark"] {
             assert_eq!(
-                help_url(theme).unwrap(),
+                help_url("en", theme).unwrap(),
                 tauri::WebviewUrl::App(format!("help/desktop.html?theme={theme}").into())
             );
         }
         for theme in ["", "Dark", "auto", "dark&url=https://example.com"] {
-            assert!(help_url(theme).is_err());
+            assert!(help_url("en", theme).is_err());
         }
+    }
+
+    #[test]
+    fn help_language_and_existing_window_navigation() {
+        let main = tauri::Url::parse("http://tauri.localhost/index.html").unwrap();
+        let current =
+            tauri::Url::parse("http://tauri.localhost/help/desktop.html?theme=dark#chapter")
+                .unwrap();
+        assert!(
+            help_navigation_target(&main, &current, &help_url("en", "dark").unwrap())
+                .unwrap()
+                .is_none()
+        );
+        for (locale, theme, expected) in [
+            ("zh-TW", "dark", "desktop.zh-TW.html?theme=dark"),
+            ("en", "light", "desktop.html?theme=light"),
+        ] {
+            let target = help_navigation_target(&main, &current, &help_url(locale, theme).unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                target.as_str(),
+                format!("http://tauri.localhost/help/{expected}")
+            );
+        }
+        for locale in [
+            "",
+            "zh-CN",
+            "../desktop.html",
+            "en?theme=light",
+            "zh-TW/../../file",
+        ] {
+            assert!(help_url(locale, "dark").is_err());
+        }
+        let external =
+            tauri::Url::parse("https://example.com/help/desktop.html?theme=dark").unwrap();
+        assert_eq!(
+            help_navigation_target(&main, &external, &help_url("en", "dark").unwrap())
+                .unwrap()
+                .unwrap()
+                .origin(),
+            main.origin()
+        );
     }
 
     #[test]

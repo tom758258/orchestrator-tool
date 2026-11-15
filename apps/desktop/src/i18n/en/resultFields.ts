@@ -1,0 +1,19 @@
+export default {
+  "resultFields.tXHex": "TX Hex",
+  "resultFields.tXBytes": "TX Bytes",
+  "resultFields.fileBytes": "File Bytes",
+  "resultFields.bytesWritten": "Bytes Written",
+  "resultFields.rXHex": "RX Hex",
+  "resultFields.rXBytes": "RX Bytes",
+  "resultFields.delimiterHex": "Delimiter Hex",
+  "resultFields.value": "Value",
+  "resultFields.unit": "Unit",
+  "resultFields.channel": "Channel",
+  "resultFields.item": "Item",
+  "resultFields.voltage": "Voltage",
+  "resultFields.current": "Current",
+  "resultFields.currentLimit": "Current Limit",
+  "resultFields.protectionTripped": "Protection Tripped",
+  "resultFields.overVoltageTripped": "Over Voltage Tripped",
+  "resultFields.overCurrentTripped": "Over Current Tripped"
+}

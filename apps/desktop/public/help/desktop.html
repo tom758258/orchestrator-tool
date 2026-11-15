@@ -23,11 +23,6 @@
 <body>
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
-    <nav class="help-languages" aria-label="Language">
-      <a href="desktop.html" hreflang="en" lang="en">English</a>
-      <span aria-hidden="true"> | </span>
-      <a href="desktop.zh-TW.html" hreflang="zh-TW" lang="zh-TW">繁體中文</a>
-    </nav>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
@@ -1416,7 +1411,17 @@ separate <code>New</code> button in the current UI.</p>
 </ul>
 <p>This separation keeps Templates portable while keeping executable paths,
 resources, and other machine/runtime state local to the Desktop installation.</p>
-<h2 id="13-theme">13. Theme</h2>
+<h2 id="13-language-and-appearance">13. Language and appearance</h2>
+<p>The globe button near <strong>Appearance</strong> shows <strong>English</strong> or <strong>繁體中文</strong>. Click it
+once to switch the entire Desktop immediately without losing your edits, run, or
+results. Your choice is remembered on this computer. On first launch, Traditional
+Chinese WebView languages (<code>zh-TW</code> or <code>zh-Hant</code>) select Traditional Chinese;
+other languages use English. Language and appearance are independent preferences
+and are not saved in Templates or exported data. Names and values you enter,
+technical identifiers, and original diagnostic details retain their contents.</p>
+<p><strong>Help</strong> opens the offline guide in the current Desktop language. After changing
+language or appearance, click <strong>Help</strong> again to update its existing window.
+The guide retains its chapter navigation and has no separate language selector.</p>
 <p>The <strong>Appearance</strong> control supports <strong>System</strong>, <strong>Light</strong>, and <strong>Dark</strong>. The
 theme choice is a Desktop preference. It is not part of the Template
 contract.</p>
@@ -1506,17 +1511,8 @@ There is no Background Query, automatic TX/RX pairing or recovery screen.</p>
     (() => {
       if (document.documentElement.lang === 'zh-TW') {
         document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
       }
-      const theme = new URLSearchParams(location.search).get('theme');
-      document.querySelectorAll('.help-languages a').forEach(link => {
-        if (['system', 'light', 'dark'].includes(theme)) {
-          link.setAttribute('href', link.getAttribute('href') + '?theme=' + theme);
-        }
-        if (link.hreflang === document.documentElement.lang) {
-          link.setAttribute('aria-current', 'page');
-        }
-      });
-
       const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
       const toc = document.getElementById('toc');
       const links = headings.map(heading => {

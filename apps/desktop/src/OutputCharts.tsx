@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { EChartsType } from 'echarts/core'
@@ -35,6 +36,7 @@ function useBackgroundOutput(runId: number | null, backgroundId: string | undefi
 function SerialLiveMonitor({ runId, background, running }: {
   runId: number; background: BackgroundConfig; running: boolean
 }) {
+  const { t } = useI18n()
   const { output, error } = useBackgroundOutput(runId, background.id, running)
   const [mode, setMode] = useState<SerialDataFormat>('hex')
   const display = useMemo(() => serialContinuousView(output?.monitor ?? [], mode), [output, mode])
@@ -55,25 +57,26 @@ function SerialLiveMonitor({ runId, background, running }: {
     const element = event.currentTarget
     followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 24
   }
-  return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
-    <section className="chart-info-summary" aria-label="Monitor info">
-      <h4>Monitor info</h4>
+  return <Collapsible title={t("outputCharts.liveMonitor", { value1: background.id })} className="result-chart-panel">
+    <section className="chart-info-summary" aria-label={t("outputCharts.monitorInfo")}>
+      <h4>{t("outputCharts.monitorInfo")}</h4>
       <dl>
-        <div><dt>Sample buffer</dt><dd>Latest bounded bytes</dd></div>
-        <div><dt>Capture</dt><dd>Independent</dd></div>
+        <div><dt>{t("outputCharts.sampleBuffer")}</dt><dd>{t("outputCharts.latestBoundedBytes")}</dd></div>
+        <div><dt>{t("outputCharts.capture")}</dt><dd>{t("outputCharts.independent")}</dd></div>
       </dl>
-      <p className="chart-info-note">Continuous Serial RX</p>
+      <p className="chart-info-note">{t("outputCharts.continuousSerialRX")}</p>
     </section>
-    <label>Display<select aria-label={`Serial Live Monitor Display ${background.id}`} value={mode}
+    <label>{t("outputCharts.display")}<select aria-label={t("outputCharts.serialLiveMonitorDisplay", { value1: background.id })} value={mode}
       onChange={event => setMode(event.target.value as SerialDataFormat)}>
-      <option value="hex">Hex</option><option value="text">Text (UTF-8)</option></select></label>
+      <option value="hex">{t("outputCharts.hex")}</option><option value="text">{t("outputCharts.textUTF8")}</option></select></label>
     {error && <p role="alert">{error}</p>}
-    <pre ref={rxView} className="serial-live-monitor" aria-label={`Serial RX ${background.id}`}
+    <pre ref={rxView} className="serial-live-monitor" aria-label={t("outputCharts.serialRX", { value1: background.id })}
       onScroll={handleRxScroll}>{display}</pre>
   </Collapsible>
 }
 
 function LiveMonitor({ runId, background, running }: { runId: number; background: BackgroundConfig; running: boolean }) {
+  const { t } = useI18n()
   const { output, error } = useBackgroundOutput(runId, background.id, running)
   const charts = useRef(new Map<number, EChartsType>())
   const fields = background.scopes_measurements ?? []
@@ -91,17 +94,17 @@ function LiveMonitor({ runId, background, running }: { runId: number; background
         timestamp_utc: sample.timestamp_utc, elapsed_s: sample.elapsed_s, unit: reading?.unit ?? sample.unit ?? '' }]
     })
     const x = points.map(point => point.x)
-    return backgroundPlotData(points, x.length ? { min: Math.min(...x), max: Math.max(...x) } : null)
-  }, [output, field])
-  return <Collapsible title={`Live Monitor: ${background.id}`} className="result-chart-panel">
-    <section className="chart-info-summary" aria-label="Monitor info">
-      <h4>Monitor info</h4>
+    return backgroundPlotData(points, x.length ? { min: Math.min(...x), max: Math.max(...x) } : null, t)
+  }, [output, field, t])
+  return <Collapsible title={t("outputCharts.liveMonitor", { value1: background.id })} className="result-chart-panel">
+    <section className="chart-info-summary" aria-label={t("outputCharts.monitorInfo")}>
+      <h4>{t("outputCharts.monitorInfo")}</h4>
       <dl>
-        <div><dt>Sample buffer</dt><dd>Latest 1,000 Worker samples</dd></div>
-        <div><dt>Capture</dt><dd>Independent</dd></div>
+        <div><dt>{t("outputCharts.sampleBuffer")}</dt><dd>{t("outputCharts.latest1000WorkerSamples")}</dd></div>
+        <div><dt>{t("outputCharts.capture")}</dt><dd>{t("outputCharts.independent")}</dd></div>
       </dl>
     </section>
-    {fields.length > 0 && <label>Measurement<select aria-label={'Live Monitor Measurement ' + background.id} value={field}
+    {fields.length > 0 && <label>{t("outputCharts.measurement")}<select aria-label={t("outputCharts.liveMonitorMeasurement") + background.id} value={field}
       onChange={event => setField(event.target.value)}>
       {fields.map(measurement => <option key={measurement.id} value={measurement.id}>{measurement.id}</option>)}
     </select></label>}
@@ -113,9 +116,10 @@ function LiveMonitor({ runId, background, running }: { runId: number; background
 export function LiveMonitors({ runId, backgrounds, toolKinds, running }: {
   runId: number | null; backgrounds: BackgroundConfig[]; toolKinds: Record<string, string>; running: boolean
 }) {
+  const { t } = useI18n()
   const enabled = backgrounds.filter(background => background.live_monitor)
   if (runId === null || enabled.length === 0) return null
-  return <Collapsible title="Live Monitors" className="live-monitors" framed>
+  return <Collapsible title={t("outputCharts.liveMonitors")} className="live-monitors" framed>
     <div className="result-charts-grid">
       {enabled.map(background => toolKinds[background.tool_instance_id] === 'serial'
         ? <SerialLiveMonitor key={background.id} runId={runId} background={background} running={running} />
@@ -134,6 +138,7 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
   saveChartsWithTemplate: boolean; onSaveChartsWithTemplateChange: (checked: boolean) => void
   selections: BackgroundChartSelections
 }) {
+  const { t } = useI18n()
   const [selectedSource, setSelectedSource] = useState('')
   const [selectedGround, setSelectedGround] = useState<'foreground' | 'background' | null>(null)
   // Keep source-specific loaders mounted once, while placing every Chart in panel order.
@@ -163,10 +168,10 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
     onPanelsChange(next)
   }
   const sources = [
-    ...pages.map(page => ({ key: `page:${page.name}`, label: `Foreground: ${page.name}`, page,
+    ...pages.map(page => ({ key: `page:${page.name}`, label: t("outputCharts.foregroundSource", { value1: page.name }), page,
       names: metadata.find(item => item.name === page.name)?.numeric_outputs ?? [] })),
     ...backgrounds.filter(background => toolKinds[background.tool_instance_id] !== 'serial')
-      .map(background => ({ key: `background:${background.id}`, label: `Background: ${background.id}`, background })),
+      .map(background => ({ key: `background:${background.id}`, label: t("outputCharts.backgroundSource", { value1: background.id }), background })),
   ]
 
   const foregroundSources = sources.filter(source => 'page' in source)
@@ -179,25 +184,25 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
   const availableSources = ground === 'foreground' ? foregroundSources : backgroundSources
   const selected = availableSources.find(source => source.key === selectedSource) ?? availableSources[0]
   const visiblePanels = panels.filter(panel => panel.source ? runId !== null : pages.some(page => page.name === panel.page))
-  return <Collapsible title="Charts" className="result-chart" framed headingActions={<div className="result-chart-header-actions">
+  return <Collapsible title={t("outputCharts.charts")} className="result-chart" framed headingActions={<div className="result-chart-header-actions">
     <label className="result-chart-template-option"><input type="checkbox" checked={saveChartsWithTemplate}
-      onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />Save charts with template</label>
-    <span>Charts: {panels.length} / {MAX_CHARTS}</span>
+      onChange={event => onSaveChartsWithTemplateChange(event.target.checked)} />{t("outputCharts.saveChartsWithTemplate")}</label>
+    <span>{t("outputCharts.charts2")}{panels.length} / {MAX_CHARTS}</span>
   </div>}>
     <div className="result-chart-create">
-      <h4>Chart settings</h4>
+      <h4>{t("outputCharts.chartSettings")}</h4>
       <div className="result-chart-create-row">
         <div className="result-chart-create-fields">
-          <label>Ground<select value={ground} onChange={event => {
+          <label>{t("outputCharts.ground")}<select value={ground} onChange={event => {
             setSelectedGround(event.target.value as 'foreground' | 'background')
             setSelectedSource('')
           }}>
-            <option value="foreground">Foreground</option>
-            <option value="background">Background</option>
+            <option value="foreground">{t("outputCharts.foreground")}</option>
+            <option value="background">{t("outputCharts.background")}</option>
           </select></label>
-          <label>Page<select value={selected?.key ?? ''} onChange={event => setSelectedSource(event.target.value)}
+          <label>{t("outputCharts.page")}<select value={selected?.key ?? ''} onChange={event => setSelectedSource(event.target.value)}
             disabled={availableSources.length === 0}>
-            {availableSources.length === 0 && <option value="">No available sources</option>}
+            {availableSources.length === 0 && <option value="">{t("outputCharts.noAvailableSources")}</option>}
             {availableSources.map(source => <option key={source.key} value={source.key}>
               {'page' in source ? source.page.name : source.background.id}
             </option>)}
@@ -210,14 +215,14 @@ export default function OutputCharts({ runId, pages, metadata, backgrounds, tool
               if (!selected) return
               updatePanels('background' in selected ? addBackgroundChartPanel(panels, selected.background.id, selected.background.scopes_measurements?.[0]?.id ?? 'value')
                 : addChartPanel(panels, selected.page.name, selected.names))
-            }}>+ Add Chart</button>
+            }}>{t("outputCharts.addChart")}</button>
         </div>
       </div>
-      <p className="result-chart-create-help">Choose Foreground or Background, then select a page or background source for the new chart.</p>
+      <p className="result-chart-create-help">{t("outputCharts.chooseForegroundOrBackgroundThenSelectAPageOr")}</p>
     </div>
-    {panels.length >= MAX_CHARTS && <p>Maximum 8 charts.</p>}
-    {panels.length === 0 && <p>No charts. Choose Ground and Page above, then Add Chart.</p>}
-    {error && <p role="alert">Could not load Background datasets: {error}</p>}
+    {panels.length >= MAX_CHARTS && <p>{t("outputCharts.maximum8Charts")}</p>}
+    {panels.length === 0 && <p>{t("outputCharts.noChartsChooseGroundAndPageAboveThenAdd")}</p>}
+    {error && <p role="alert">{t("outputCharts.couldNotLoadBackgroundDatasets")}{error}</p>}
     <div className="result-charts-grid">
       {visiblePanels.map(panel => <div className="result-chart-slot" key={panel.id} ref={slotRef(panel.id)}>
         {panel.source && runId !== null && <BackgroundChartPanel

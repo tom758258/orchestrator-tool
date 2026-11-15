@@ -1,0 +1,23 @@
+export default {
+  "workflowCanvas.success": "成功",
+  "workflowCanvas.failed": "失敗",
+  "workflowCanvas.cancelled": "已取消",
+  "workflowCanvas.earlier": "較早",
+  "workflowCanvas.later": "較晚",
+  "workflowCanvas.delete": "刪除",
+  "workflowCanvas.workflowCanvas": "工作流程畫布",
+  "workflowCanvas.noWorkflowStepsYet": "尚無工作流程步驟。",
+  "workflowCanvas.stepLabel": "步驟 {value1}：{value2}，{value3}",
+  "workflowCanvas.controls": "畫布控制",
+  "workflowCanvas.zoomIn": "放大",
+  "workflowCanvas.zoomOut": "縮小",
+  "workflowCanvas.fitView": "符合畫布範圍",
+  "workflowCanvas.nodeDescription": "按 Enter 或空白鍵選取節點，按 Escape 取消。",
+  "workflowCanvas.moveDescription": "按 Enter 或空白鍵選取節點，再使用方向鍵移動，按 Escape 取消。",
+  "workflowCanvas.nodeMoved": "已將選取的節點向{direction}移動。新位置，x：{x}，y：{y}",
+  "workflowCanvas.direction.up": "上",
+  "workflowCanvas.direction.down": "下",
+  "workflowCanvas.direction.left": "左",
+  "workflowCanvas.direction.right": "右",
+  "workflowCanvas.edge": "{from} 至 {to}"
+}
