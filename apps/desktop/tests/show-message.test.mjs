@@ -14,12 +14,10 @@ const output = (id, name) => ({ type: 'output', id, name, page: 'Results',
 test('Show Message is offered in the Workflow palette with its defaults', () => {
   assert.match(source, /case 'show-message':\s*\n\s*return \{ type: 'show-message', id, target: 'message-1', fields: \[\{ kind: 'text', text: '', newline: false \}\] \}/)
   assert.match(source, /STEP_HELP|show-message': 'Write a message to the Messages Panel/)
-  // The step is summarised in the sequence list, not only in Properties.
 })
 
 test('Show Message Target Message offers exactly three messages defaulting to Message 1', () => {
   assert.deepEqual(MESSAGE_TARGETS, ['message-1', 'message-2', 'message-3'])
-  // 1 to 10 fields: Add is capped and Delete keeps at least one field.
   // String text is limited to 256 Unicode characters, not 256 UTF-16 units.
   assert.match(editor, /limitMessageText\(event\.target\.value, MAX_MESSAGE_TEXT_CHARS\)/)
 })

@@ -26,7 +26,6 @@ test('R01 a fetched window is listed in production order, oldest first', () => {
   const panel = source.slice(source.indexOf('<section className="run-messages"'),
     source.indexOf('<section className="run-results"'))
   assert.doesNotMatch(panel, /latest first/)
-  // Execution Results keeps its own latest-first wording.
 })
 
 test('R01 a window that does not belong to the active run or tab is never shown', () => {

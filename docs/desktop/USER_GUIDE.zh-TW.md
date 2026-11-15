@@ -32,23 +32,23 @@ distribution，不包含在 orchestrator-tool 內。
 
 Desktop 目前的 tabs 是：
 
-- **Tools** — 設定各 Tool Type 的 executable path，檢查 availability 與
+- **工具（Tools）** — 設定各 Tool Type 的 executable path，檢查 availability 與
   compatibility。
-- **Setup** — 建立 Tool Instance、編輯各 instance 的 setup，並在支援時
+- **設定（Setup）** — 建立 Tool Instance、編輯各 instance 的 setup，並在支援時
   保存或清除 local Live Resource。
-- **Workflow** — 編輯有順序的 steps、驗證 Template、執行 Simulation 或
+- **工作流程（Workflow）** — 編輯有順序的 steps、驗證 Template、執行 Simulation 或
   Live、要求 graceful Stop，以及設定 CSV streaming。
-- **Output** — 檢視 Last Run、execution results、Output Pages、Charts、
+- **輸出（Output）** — 檢視 Last Run、execution results、Output Pages、Charts、
   Summary、Output Data，並進行 manual export。
 
-Application 另有 **Appearance** 控制項可切換 Desktop theme，toolbar 提供
-**New Template**、**Open Template**、**Save Template** 與 **Help**。Help 會在獨立的 application
+Application 另有 **外觀（Appearance）** 控制項可切換 Desktop theme，toolbar 提供
+**新增範本（New Template）**、**開啟範本（Open Template）**、**儲存範本（Save Template）** 與 **使用說明（Help）**。Help 會在獨立的 application
 window 開啟 bundled offline Desktop User Guide。
 
-全域 **Execution Mode** selector 控制整次 Desktop execution，不是各 Tool Instance
-各自選擇。Desktop 啟動時預設為 **Simulation**，New Template 或 Open Template
-後也會回到 Simulation。醒目的 **SIMULATION · NO HARDWARE I/O** 或
-**LIVE · REAL HARDWARE** 標示，以及每個 Tool Instance 上相同的 badge，會顯示
+全域 **執行模式（Execution Mode）** selector 控制整次 Desktop execution，不是各 Tool Instance
+各自選擇。Desktop 啟動時預設為 **模擬（Simulation）**，New Template 或 Open Template
+後也會回到 Simulation。醒目的 **模擬 · 無硬體 I/O（SIMULATION · NO HARDWARE I/O）** 或
+**真實硬體 · 實際硬體操作（LIVE · REAL HARDWARE）** 標示，以及每個 Tool Instance 上相同的 badge，會顯示
 目前 target。Workflow 或 manual external operation 執行期間 selector 會鎖定。
 Execution Mode 只屬於 session state，不會保存到 Template 或 local configuration。
 
@@ -60,11 +60,11 @@ Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。
 Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。
 
-在 **Tools** 的 **Tool to add** 選擇尚未配置的 Tool Type，按 **Add...**，
+在 **工具（Tools）** 的 **要加入的工具（Tool to add）** 選擇尚未配置的 Tool Type，按 **加入…（Add...）**，
 再選擇 external tool distribution 提供的真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
 是否符合預期 Tool Type 的 Worker compatibility。Tool ID 錯誤或 Worker 不相容
 的 path 會被拒絕，且不會取代原本有效的 path。取消 picker 不會變更設定。
-在 Tool card 使用 **Change Path...** 替換 path，或使用 **Remove Tool** 只移除
+在 Tool card 使用 **變更路徑…（Change Path...）** 替換 path，或使用 **移除工具（Remove Tool）** 只移除
 本機 executable configuration。移除 Tool 不會變更 Template instances 或
 Workflow steps；該 Tool Type 會回到 Add 候選。
 
@@ -72,9 +72,9 @@ Workflow steps；該 Tool Type 會回到 Add 候選。
 使用 **+ / −** 可獨立顯示或隱藏詳細資訊及 Change Path／Remove Tool 操作。
 Refresh 與切換頁籤會保留各卡片的展開／收合狀態。
 
-Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 **Missing**、
-**Not a file** 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
-Type 會出現在 Add 候選。全部未配置時顯示 **No external tools configured.**；
+Cards 只顯示已配置 executable path 的 Tool Type，即使 path 為 **不存在（Missing）**、
+**不是檔案（Not a file）** 或有 compatibility / manifest error，仍會顯示。未配置的 Tool
+Type 會出現在 Add 候選。全部未配置時顯示 **尚未設定外部工具。（No external tools configured.）**；
 全部已配置時停用 Add。Cards 顯示 availability、compatibility，並在可用時顯示原因。Desktop 不會搜尋
 `PATH`、Windows registry 或任意資料夾，也不會靜默 fallback 到其他 executable。
 
@@ -100,10 +100,10 @@ Streaming 預設收合，Live Device 預設展開。展開 Background Streaming 
 維持停用核取方塊並顯示原因。
 
 編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
-成功執行 **New Template** 或 **Open Template** 後恢復預設狀態，包含 External
+成功執行 **新增範本（New Template）** 或 **開啟範本（Open Template）** 後恢復預設狀態，包含 External
 Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
 
-**Add Tool Instance** 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
+**新增工具實例（Add Tool Instance）** 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
 對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。
 
@@ -179,12 +179,12 @@ connection state 已被即時確認。
 
 目前 Desktop 支援 **Meters**、**Powers** 與 **Scopes** 的 resource discovery。不要把
 unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
-列出可用 resources、選擇 resource、**Save Resource** 或 **Clear Resource**。
+列出可用 resources、選擇 resource、**儲存資源（Save Resource）** 或 **清除資源（Clear Resource）**。
 
 每個支援的 instance 都有獨立的 **VISA Backend**：**System VISA**（預設值，
 包含舊版設定）或 **PyVISA-py (@py)**。先選擇 backend，再按 **List Resources**。
 切換時會立即清空該 instance 的 resource 與 identity 草稿、discovery 結果與錯誤，
-以及舊的 Powers Device Status，不影響其他 instances。按下 **Save Resource** 前，
+以及舊的 Powers Device Status，不影響其他 instances。按下 **儲存資源（Save Resource）** 前，
 已保存的本機設定維持不變；按下後才一起保存 backend、resource 與 identity。
 切換後請重新列出或手動輸入 resource，再保存；不同 backend 的地址不會自動轉換或
 比對。未保存的變更會阻擋 Live run，並使先前的 Live Preflight 結果失效。
@@ -315,7 +315,7 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 
 - **Assert** — 檢查 condition，不成立時使 Workflow failure。
 - **Set Variable** — 建立或更新 Workflow variable。
-- **Output** — 將值發布為 final workflow result column，不控制 Powers output。
+- **輸出（Output）** — 將值發布為 final workflow result column，不控制 Powers output。
 - **Wait** — 等待指定時間。
 - **Tool Action** — 對設定好的 Tool Instance 執行 action，例如 Powers set、
   output action 或 Meters measurement。
@@ -323,7 +323,7 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **While** — 在 condition 為 true 時重複執行 body。
 - **If / Else** — 依 comparison 執行 THEN 或 ELSE，ELSE 可為空。
 
-**Steps** 分類依 **Workflow**、**Background Workflow**、**FG/BG Interaction**、
+**步驟（Steps）** 分類依 **工作流程（Workflow）**、**Background Workflow**、**FG/BG Interaction**、
 **Meters**、**Powers**、**Scopes**、**Serial** 排列。Workflow 永遠可用。
 Background Workflow 需要在 Setup 啟用 Background Binding；FG/BG Interaction
 還需要在 Workflow 左側勾選 **Enable FG/BG Interaction**。儀器分類需要
@@ -341,49 +341,49 @@ Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step prop
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
-在 **Steps** 中，點擊 Step 類型只會選取，不會立即加入 Workflow。
-**Selected Step** 與 **Add Step** 固定在可捲動的分類清單上方。
-未選取類型時 **Add Step** 停用；按下後才會將 Step 加入 **ADDING STEP TO**
+在 **步驟（Steps）** 中，點擊 Step 類型只會選取，不會立即加入 Workflow。
+**已選取的步驟（Selected Step）** 與 **新增步驟（Add Step）** 固定在可捲動的分類清單上方。
+未選取類型時 **新增步驟（Add Step）** 停用；按下後才會將 Step 加入 **ADDING STEP TO**
 顯示的目標位置。新增成功後會清除 Palette 的類型選取，但 Workflow 中
 新加入的 Step 仍保持選取，方便編輯。**Set Target to Root** 只切換
 新增目標，不會新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
 
-也可以從 **Steps** 將 Step 類型拖曳到 **Sequence** 指定位置，依滑鼠放開時的
+也可以從 **步驟（Steps）** 將 Step 類型拖曳到 **序列（Sequence）** 指定位置，依滑鼠放開時的
 落點新增，不使用 **ADDING STEP TO** 目標。可放在既有 Step 前後、Root 末端，
 或 IF 的 **THEN**／**ELSE**、FOR／WHILE Body（包括空白區塊）。放在無效位置
-不會新增 Step。新增成功後會選取新 Step，在 **Properties** 顯示設定，
+不會新增 Step。新增成功後會選取新 Step，在 **屬性（Properties）** 顯示設定，
 並清除 Palette 類型選取。Workflow 編輯忙碌時不可拖曳新增。
 
-**Validate**、**Run Simulation / Run Live**、**Stop Workflow** 與 active loop 的 **Stop** 控制項
-位於 Workflow summary 右上方，與 **Template**、**Steps** 資訊並排。驗證、
+**驗證（Validate）**、**執行模擬／執行真實硬體（Run Simulation / Run Live）**、**停止工作流程（Stop Workflow）** 與 active loop 的 **Stop** 控制項
+位於 Workflow summary 右上方，與 **Template**、**步驟（Steps）** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
-查看詳細 run 錯誤。視窗較窄時控制項會換行。**Clear Workflow** 仍位於
-**Sequence** header。
+查看詳細 run 錯誤。視窗較窄時控制項會換行。**清空工作流程（Clear Workflow）** 仍位於
+**序列（Sequence）** header。
 
-**Clear Workflow** 右側的 **Step Display Density** 下拉選單提供
+**清空工作流程（Clear Workflow）** 右側的 **Step Display Density** 下拉選單提供
 **Compact**、**Standard**（預設）及 **Comfortable**。顯示密度儲存在本機，
 不同 Template 共用，不會修改 Workflow 資料。
 
-在 **Sequence**，每個 **FOR**、**WHILE**、**IF** Step 都有獨立的展開／收合箭頭；
+在 **序列（Sequence）**，每個 **FOR**、**WHILE**、**IF** Step 都有獨立的展開／收合箭頭；
 **IF** 的 **THEN**、**ELSE** 也能分別收合。Sequence 標題下方提供
 **Expand All** 與 **Collapse All**。收合時隱藏子 Steps，但保留數量及必要的
 選取、驗證警告、執行失敗提示。切換頁籤會保留目前收合狀態；新建或開啟 Template
-會全部展開。拖曳到收合的容器前須先展開；使用 **Add Step** 成功新增後會展開目標。
+會全部展開。拖曳到收合的容器前須先展開；使用 **新增步驟（Add Step）** 成功新增後會展開目標。
 
 修改 Workflow steps、Tool Setup 的執行設定，或 Background Binding／Setup 時，
 Workflow summary 會立即隱藏上次 run failure 或 Live 啟動錯誤。即使沒有修改，
-按下 **Validate** 也會立即隱藏這些回饋。驗證會顯示自己的結果；**Valid** 不保證
+按下 **驗證（Validate）** 也會立即隱藏這些回饋。驗證會顯示自己的結果；**有效（Valid）** 不保證
 run 一定成功。新的 run 若失敗，仍會顯示該次錯誤與 **Technical details**。
 選取 step、切換 tab 或調整顯示選項會保留目前的錯誤回饋。
 
 這些操作會保留 Last Run 原本的狀態、診斷、Execution Results、已提交的 Output
-rows、Background datasets 與 partial export 能力。Failed Last Run 在 **Output**
+rows、Background datasets 與 partial export 能力。Failed Last Run 在 **輸出（Output）**
 中仍維持 Failed。Live Preflight failure 維持獨立回饋，表示 Live run 尚未開始。
 
-在 **Sequence** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
+在 **序列（Sequence）** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
 **Shift+Click** 從選取起點選取連續範圍。多選只限同一 sibling list：root
 steps，或同一個 For／While 的 body。在另一個 list 使用 Ctrl／Shift 點擊時，
-會改為該處的新選取。**Properties** 只可編輯單一 step；多選時顯示選取數量。
+會改為該處的新選取。**屬性（Properties）** 只可編輯單一 step；多選時顯示選取數量。
 
 拖曳 step 旁的 handle 可排序，也可在 Root、For Body 與 While Body 間搬移。
 拖到卡片上半部或下半部可插入其前方或後方；拖到 Body 空白處可加到最後，
@@ -413,7 +413,7 @@ Editor 禁止將控制區塊放入自己或其子孫，以及超過八層 If／F
 可編輯文字保留原生快捷鍵。Workflow busy 時仍可選取與 Copy，但 Drag、Up／Down、
 Cut、Delete 與 Paste 會停用。
 
-**Validate**、**Run Simulation** 與 **Run Live** 使用相同的 Core Template 驗證。
+**驗證（Validate）**、**執行模擬（Run Simulation）** 與 **執行真實硬體（Run Live）** 使用相同的 Core Template 驗證。
 失敗時保留整體錯誤訊息；若錯誤能可靠定位 Step，該卡片會有紅框與警告圖示，
 選取後可在 Properties 查看原因。無法可靠定位的錯誤只顯示整體訊息。
 修改 Workflow 後會清除舊標記，下次 Validate 或 Run 才重新檢查。
@@ -532,7 +532,7 @@ root 或沒有 For／While 祖先的 If 分支內。Body 不可為空，可包�
 loops，但不可再包含另一個 Unlimited While。
 
 Software Meters **Measure** 位於 Unlimited While，且 Simulation 無法預先推導
-來源大小時，**Run Simulation** 會顯示 Sample 警告。每個受影響 Instance 的
+來源大小時，**執行模擬（Run Simulation）** 會顯示 Sample 警告。每個受影響 Instance 的
 **SIM Max Samples** 預設 1,000，可輸入 1 到 1,000,000 的整數或按 Cancel。
 這是本次來源的啟動參數，不是 While 次數限制；不保存至 Template、Setup 或
 Step，也不影響 Live。每次新 Run 重新預設 1,000。來源耗盡後若流程仍要求
@@ -549,7 +549,7 @@ Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Ou
 
 ### 6.4 Stop Workflow 與迴圈 Stop
 
-Simulation 或 Live 顯示 Running 時，即可按 **Stop Workflow**，包含啟動期間
+Simulation 或 Live 顯示 Running 時，即可按 **停止工作流程（Stop Workflow）**，包含啟動期間
 及沒有迴圈的 Workflow。此操作會停止整個 Workflow：
 
 1. 正在執行的 Wait 會提早結束。其他動作、Worker 啟動與 Tool Setup 會完成
@@ -558,9 +558,9 @@ Simulation 或 Live 顯示 Running 時，即可按 **Stop Workflow**，包含啟
    Background Samples 會保留；未完成區塊中尚未提交的資料列會捨棄。
 3. Background Worker 先在既有時限內收尾並接收最後的 Samples，再執行
    Powers Safe-Off 與 Foreground Worker 關閉。清理完成前持續顯示
-   **Stopping Workflow…**。停止請求若失敗，畫面會顯示錯誤並允許重試。
+   **正在停止工作流程…（Stopping Workflow…）**。停止請求若失敗，畫面會顯示錯誤並允許重試。
 
-實際提早停止且清理成功時，結果為 **Run stopped**，與成功、失敗分開呈現。
+實際提早停止且清理成功時，結果為 **執行已停止（Run stopped）**，與成功、失敗分開呈現。
 真正的動作、資料完整性、CSV 或清理錯誤仍會使 Run 失敗。若 Workflow 已自然
 完成，晚到的停止請求不會改變成功結果。Stop 不提供暫停或繼續執行功能。
 
@@ -599,14 +599,14 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 就是輸出訊息：不是 Popup、不是 Assert，也不是 Output Page，因此不會為你的資料、CSV
 或 Charts 增加欄位。
 
-- **Target Message** 可選擇 **Message 1**、**Message 2** 或 **Message 3**，預設為
+- **目標訊息（Target Message）** 可選擇 **Message 1**、**Message 2** 或 **Message 3**，預設為
   Message 1。
 - **Content Fields** 構成訊息內容。每個 step 最少 1 個、最多 10 個 field，預設建立
-  1 個空白 String。可使用 **Add Field** 與 **Delete Field** 調整數量，Fields 依畫面
+  1 個空白 String。可使用 **新增欄位（Add Field）** 與 **刪除欄位（Delete Field）** 調整數量，Fields 依畫面
   順序串接。
 - **String** field 為自行輸入的文字，最多 256 個 Unicode 字元；以 code point 計算，
   因此 Emoji 等字元不會被提前截斷。
-- **Output** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
+- **輸出（Output）** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
   目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
   Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
   其他 step。Show Message 的 Output 必須是單一數值。若參考
@@ -614,7 +614,7 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 - **Newline** 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。
 
-**Message Preview** 會在編輯時顯示組合結果。Output field 以名稱作為佔位符號，因此不必
+**訊息預覽（Message Preview）** 會在編輯時顯示組合結果。Output field 以名稱作為佔位符號，因此不必
 先執行 Workflow 就能確認版面。以下設定：
 
 | Field | Type | Value | Newline |
@@ -690,8 +690,8 @@ Tool Instance。沒有時，標題會灰化並顯示鎖頭與 **No Scopes Tool I
 採用相同條件，不需要已保存的 Live Resource。鎖定或解鎖會保留已選資料夾及
 展開／收合狀態，並與 Scopes step 分類各自獨立。
 
-解鎖後可展開 **Scopes File Output**。**Select Folder** 選擇 Capture 與
-Screenshot 共用的資料夾；**Use Default** 回到 **Orchestrator application folder / data**。
+解鎖後可展開 **Scopes File Output**。**選取資料夾（Select Folder）** 選擇 Capture 與
+Screenshot 共用的資料夾；**使用預設值（Use Default）** 回到 **Orchestrator application folder / data**。
 此選擇只屬於本機 runtime state，不保存至 Template。Capture 產生 CSV 與 metadata
 JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop iteration 與後續 run，
 都會取得新的絕對檔案路徑，不覆蓋既有檔案。Job 失敗或缺少必要檔案會使 step 失敗。
@@ -751,7 +751,7 @@ Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值�
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
 使用 Validate；run 啟動時也會驗證 Template。
 
-在 Execution Mode 選擇 **Simulation**，並使用唯一的 **Run Simulation** button。
+在 Execution Mode 選擇 **模擬（Simulation）**，並使用唯一的 **執行模擬（Run Simulation）** button。
 Simulation 不需要 Live Resources，會使用 external Workers 的 simulate contract，
 不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
 powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
@@ -760,7 +760,7 @@ Sample 警告；Custom 模式僅供 Background 使用。
 
 ## 8. Run Live
 
-在 Execution Mode 選擇 **Live** 後，同一個 Run control 會變成 **Run Live**。
+在 Execution Mode 選擇 **真實硬體（Live）** 後，同一個 Run control 會變成 **執行真實硬體（Run Live）**。
 Desktop 會自動依每個 referenced instance 已保存的型號 Capability，檢查 Powers 與
 Scopes 的 Workflow 固定參數及 Setup。**Live Preflight: Checking** 表示檢查中，
 此時不能 Run；**Passed** 才能進入既有的 Live confirmation 流程。**Failed** 會以
@@ -860,7 +860,7 @@ Slope 與 Delay 設定會交給工具處理；Simulation 不驗證實體觸發�
   也不自動另做 Manual Export。
 - **Worker OFF**：釋放來源。「同時 Capture OFF」預設勾選；若先前已明確
   Capture OFF，請取消勾選。有限來源尚未達到設定筆數就執行 Worker OFF，
-  會使執行失敗；若要提早結束並保留部分資料，請使用 **Stop Workflow**。
+  會使執行失敗；若要提早結束並保留部分資料，請使用 **停止工作流程（Stop Workflow）**。
 
 重複 ON/OFF 會造成 Step Error。有限來源自然結束時會接收尾端資料並完成
 Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker OFF 是釋放
@@ -868,17 +868,17 @@ Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker O
 Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會清理尚在
 執行的 Worker，同時保留原有 Powers Safe-Off 行為。
 
-**Output** 同頁包含 **Charts**、有啟用 Monitor 才顯示的 **Live Monitors**、**Foreground Output**、**Background Output**，各自可收合。
+**輸出（Output）** 同頁包含 **圖表（Charts）**、有啟用 Monitor 才顯示的 **即時監視器（Live Monitors）**、**前景輸出（Foreground Output）**、**背景輸出（Background Output）**，各自可收合。
 只有 Background 的 Run 也能使用 Charts 與 Background Output。該次 Last Run 有
 Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏既有結果。
 Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Output Data 與匯出，
 與每張圖的選擇互相獨立。
 
-在 **Charts** 的 **Chart settings** 中，先選擇 **Ground**（Foreground 或 Background），
-再透過 **Page** 選擇前景 Output Page 或背景資料來源，最後按 **Add Chart**。
+在 **圖表（Charts）** 的 **Chart settings** 中，先選擇 **Ground**（Foreground 或 Background），
+再透過 **頁面（Page）** 選擇前景 Output Page 或背景資料來源，最後按 **新增圖表（+ Add Chart）**。
 每張圖表以不同顏色的 Foreground／Background 標籤與 Page／Background ID 顯示來源。
-**Save charts with template** 與圖表數量顯示在 Charts 區域右上角。所有 Foreground Page 與
-Background 圖表集中顯示。每張 Background Chart 有 **Export PNG**、**Settings**、
+**將圖表儲存於範本（Save charts with template）** 與圖表數量顯示在 Charts 區域右上角。所有 Foreground Page 與
+Background 圖表集中顯示。每張 Background Chart 有 **Export PNG**、**設定（Settings）**、
 **Source settings**、**Remove**。**Source settings** 以唯讀方式顯示已選擇的 Background，
 主要提供 **Capture Dataset** 與 **X-axis data**（Elapsed Time／Timestamp／Sample Index）；
 Scopes 另外保留 **Measurement**。Background 來源在建立 Chart 時指定，
@@ -898,10 +898,10 @@ Background X 軸使用實際的 Elapsed Time（秒）、Timestamp 或 Sample Ind
 完整 Dataset 保存與 CSV／XLSX 匯出不受繪圖上限影響。
 
 Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示設定，不會重建或改寫 Draft Binding。
-若啟用 **Save charts with template**，而圖表引用的 Background 已不在 Draft，Template Save
+若啟用 **將圖表儲存於範本（Save charts with template）**，而圖表引用的 Background 已不在 Draft，Template Save
 會被阻止並指出需修正的圖表。可移除該圖、選擇有效來源，或關閉保存圖表設定。
 
-Setup 啟用 **Live Monitor** 後，**Live Monitors** 會在 Charts 下方獨立顯示，
+Setup 啟用 **Live Monitor** 後，**即時監視器（Live Monitors）** 會在 Charts 下方獨立顯示，
 使用與 Charts 相同的外框與內部卡片樣式，兩區可各自收合；沒有啟用 Monitor 時整區隱藏。
 每張 Monitor 使用精簡的 **Monitor info** 說明：數值 Monitor 為最新 1,000 筆 Worker Samples
 的緩衝上限，Serial RX 則為最近的有限長度 Bytes；兩者皆獨立於 Capture。
@@ -915,7 +915,7 @@ Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的
 `no_loss_detected` 代表 Tool 的證據範圍，並非零遺失保證。
 
 Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
-本次 Run 的記憶體；新 Run 或 **Clear Last Run** 會釋放，沒有 History 或 Recovery
+本次 Run 的記憶體；新 Run 或 **清除上次執行（Clear Last Run）** 會釋放，沒有 History 或 Recovery
 Store。Background Samples 不提供給 Workflow Variables、Calculation、Assert
 或 ResultRows。
 
@@ -975,8 +975,8 @@ Run 後，Output 區域目前可顯示以下 visible sections：
   execution results 以 latest first 顯示並可分頁瀏覽。
 - **Messages** — Show Message step 在執行時寫入的文字。
 - **Last Run** — 目前 run 的 Output Pages 與 result workspace。
-- **Charts** — 集中顯示所有 Foreground／Background 圖表。
-- **Live Monitors** — 獨立顯示已啟用的監看卡片，位於 Charts 下方。
+- **圖表（Charts）** — 集中顯示所有 Foreground／Background 圖表。
+- **即時監視器（Live Monitors）** — 獨立顯示已啟用的監看卡片，位於 Charts 下方。
 - **Summary** — 適用時顯示 numeric Count、Min、Max 與 Avg。
 - **Output Data** — 所選 Page 的 committed rows，以 latest first 顯示。
 
@@ -986,7 +986,7 @@ Desktop 只在 memory 中保留一個 **Last Run**，沒有 Run History、databa
 storage。
 
 Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
-不會重新解讀 Last Run。Open Template 會清除 Last Run；**Clear Last Run**
+不會重新解讀 Last Run。Open Template 會清除 Last Run；**清除上次執行（Clear Last Run）**
 會移除目前 memory 中的 result 與 snapshot。
 
 Last Run 也會保存該次 run 開始時的 Execution Mode。之後切換目前 selector，
@@ -1010,7 +1010,7 @@ Charts、Live Monitors（有啟用才顯示）、Foreground Output、Background 
 
 Charts、Live Monitors、Foreground Output 與 Background Output 使用相同圓角外框，
 標題與收合按鈕嵌入框線，彼此獨立收合，且收合後仍保留外框與標題。
-Charts 收合時仍顯示 **Save charts with template** 與圖表數量。
+Charts 收合時仍顯示 **將圖表儲存於範本（Save charts with template）** 與圖表數量。
 
 **Last Run Execution Results** 與 **Messages** 的標題右側各有 `+ / −` 控制。兩者
 預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
@@ -1040,7 +1040,7 @@ execution record 維持既有 compact display。Instrument-specific 的 SCPI/VIS
 `…[truncated]`，且結尾仍保有自己的換行。
 
 訊息屬於產生它的那一次 run。run 正常結束、失敗或 graceful stop 都會保留當輪已產生的
-訊息。開始新一輪 run 會清空上一輪的訊息。**Clear Last Run**、New Template 與 Open
+訊息。開始新一輪 run 會清空上一輪的訊息。**清除上次執行（Clear Last Run）**、New Template 與 Open
 Template 都會一併清除訊息。訊息不會存檔，也無法 export。
 
 ### 10.4 Charts
@@ -1049,7 +1049,7 @@ Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬�
 可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
 最多 8 張額度。Foreground／Background Charts 依顯示的 Chart 編號排列，不會因來源不同而分組。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。
 
-Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with template**，
+Charts 預設只屬於目前 session。Charts 標題列新增 **將圖表儲存於範本（Save charts with template）**，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
 開啟含有 saved Foreground 或 Background Chart 設定的 Template 時，checkbox
 會自動勾選並還原設定，包含只有 Background 的 Template。沒有 saved Chart
@@ -1057,7 +1057,7 @@ Charts 預設只屬於目前 session。Charts 標題列新增 **Save charts with
 刪除所有圖表後，執行、Validate、切換 Page、儲存與載入都不會自動補回。
 已保存的有效圖表設定照常載入；Live Monitor 獨立運作，不占用圖表額度。
 取消勾選不會刪除目前畫面上的 Charts，只代表下一次 Save Template 不再保存它們。
-勾選狀態下執行 **Clear Last Run** 會保留 Chart 設定；一般未勾選的 session Charts
+勾選狀態下執行 **清除上次執行（Clear Last Run）** 會保留 Chart 設定；一般未勾選的 session Charts
 則維持原本清除行為。
 
 此選項只保存 Chart definitions 與設定，不會保存 run data、Run ID、目前互動操作產生的
@@ -1115,7 +1115,7 @@ numeric rows，即使 run 失敗，也可在 **Settings → General → Chart ty
 使用垂直分組長條；Bar 使用水平分組長條；XY Scatter 用來比較數值 X 與 Y
 的關係。
 
-Chart Settings 有五個 tabs：**General**、**Series**、**Axes**、**Analysis**
+Chart Settings 有五個 tabs：**一般（General）**、**資料系列（Series）**、**座標軸（Axes）**、**分析（Analysis）**
 與 **Export**。Series 包含各 Output 的 **Auto**／**Custom color**、Line 樣式、
 Scatter 設定，以及 Combo 的 Type／Axis。每個 Line Output 可選 **Line** 或
 **Line + markers**；Combo Output 可選 **Column**、**Line** 或
@@ -1170,7 +1170,7 @@ XY row。Bar、Histogram 與 Box & Whisker 不提供 hover inspection。Iteratio
 Page 的 row sequence；Chart 與 CSV 按 chronological 順序，**Output Data** 則以 latest
 first 顯示。
 
-**Settings** 可設定圖表標題、**Show legend**、**Legend position**（Top、Bottom、
+**設定（Settings）** 可設定圖表標題、**Show legend**、**Legend position**（Top、Bottom、
 Left、Right），以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
 若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。Combo
@@ -1210,14 +1210,14 @@ Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 
 就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
 新 run 的資料尚未可用時，Line 顯示 **Waiting for run data**，不顯示上一 run
 的 plot，也不載入 chart data；資料可用後才開始即時更新。
-**+ Add Chart** 仍建立 Line chart。**Open Template** 會以該 Template 的 saved
+**+ Add Chart** 仍建立 Line chart。**開啟範本（Open Template）** 會以該 Template 的 saved
 Charts 取代目前的 Chart configuration；若沒有 saved Charts，則不會還原 persisted
-Chart configuration，且 **Save charts with template** 為未勾選。開啟含 saved Charts
+Chart configuration，且 **將圖表儲存於範本（Save charts with template）** 為未勾選。開啟含 saved Charts
 的 Template 後，可直接 Run Simulation，以還原的 definitions 與設定顯示新結果，
 不需重新設定 Chart。建立新的 blank Template 會清除 Chart configuration。
-**Clear Last Run** 會清除 Last Run data；**Save charts with template** 未勾選時，
+**清除上次執行（Clear Last Run）** 會清除 Last Run data；**將圖表儲存於範本（Save charts with template）** 未勾選時，
 也會清除 session Charts，勾選時則保留 Chart configuration。只有啟用
-**Save charts with template** 時，Chart settings 才會成為 Template data。
+**將圖表儲存於範本（Save charts with template）** 時，Chart settings 才會成為 Template data。
 
 ### 10.5 Data 與 Summary
 
@@ -1279,8 +1279,8 @@ incomplete termination 之前已 committed 的 rows 仍可 manual export；仍�
 
 Application 啟動時會建立 blank `Untitled` draft。目前 UI 沒有獨立的 `New` button。
 
-- **Open Template** 載入既有 Template。
-- **Save Template** 保存目前 Template。
+- **開啟範本（Open Template）** 載入既有 Template。
+- **儲存範本（Save Template）** 保存目前 Template。
 
 Template 會保存：
 
@@ -1288,7 +1288,7 @@ Template 會保存：
 - Tool Instances
 - Tool setup
 - Workflow
-- 可選的 saved Chart definitions/settings，僅在 **Save charts with template**
+- 可選的 saved Chart definitions/settings，僅在 **將圖表儲存於範本（Save charts with template）**
   啟用時保存
 
 Template 不會保存：
@@ -1328,7 +1328,7 @@ preference，不屬於 Template contract。
 
 ### Tool shows Not configured
 
-在 **Tools** 的 **Tool to add** 選擇 Tool Type，再使用 **Add...** 配置正確的
+在 **工具（Tools）** 的 **要加入的工具（Tool to add）** 選擇 Tool Type，再使用 **加入…（Add...）** 配置正確的
 external executable。
 
 ### Selected executable is rejected
@@ -1338,17 +1338,17 @@ Tool Type 的 executable。
 
 ### Executable shows Missing or Not a file
 
-已保存的 path 不存在，或不是一個 file。請使用 **Change Path...** 選擇目前的
+已保存的 path 不存在，或不是一個 file。請使用 **變更路徑…（Change Path...）** 選擇目前的
 executable；Desktop 不會靜默搜尋替代檔案。
 
 ### Live Resource is missing
 
-在 **Setup** 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
+在 **設定（Setup）** 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
 保存。
 
 ### Live Resource changes are unsaved
 
-使用 **Save Resource**，再重新開始 Live，讓 confirmation 使用已保存的 backend、
+使用 **儲存資源（Save Resource）**，再重新開始 Live，讓 confirmation 使用已保存的 backend、
 resource 與 identity。切換 backend 會清空草稿，請重新列出或輸入 resource 再保存。
 
 ### Duplicate Live Resource
