@@ -357,10 +357,10 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 **驗證（Validate）**、**執行模擬／執行真實硬體（Run Simulation / Run Live）**、**停止工作流程（Stop Workflow）** 與 active loop 的 **Stop** 控制項
 位於 Workflow summary 右上方，與 **Template**、**步驟（Steps）** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
-查看詳細 run 錯誤。視窗較窄時控制項會換行。**清空工作流程（Clear Workflow）** 仍位於
+查看詳細 run 錯誤。視窗較窄時控制項會換行。**清除工作流程（Clear Workflow）** 仍位於
 **序列（Sequence）** header。
 
-**清空工作流程（Clear Workflow）** 右側的 **Step Display Density** 下拉選單提供
+**清除工作流程（Clear Workflow）** 右側的 **Step Display Density** 下拉選單提供
 **Compact**、**Standard**（預設）及 **Comfortable**。顯示密度儲存在本機，
 不同 Template 共用，不會修改 Workflow 資料。
 
