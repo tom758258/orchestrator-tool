@@ -387,21 +387,26 @@ types are:
 - **While** — repeat a body while a condition remains true.
 - **If / Else** — run either THEN or ELSE once based on a comparison; ELSE may be empty.
 
-The **Steps** categories appear in this order: **Workflow**,
+The **Steps** categories keep this fixed relative order: **Workflow**,
 **Background Workflow**, **FG/BG Interaction**, **Meters**, **Powers**, **Scopes**,
-**Serial**. Workflow is always available. Background Workflow requires a Background
-binding in Setup; FG/BG Interaction additionally requires **Enable FG/BG Interaction**
-in the Workflow sidebar. Instrument categories require a matching Tool Instance in
-the Template. Locked categories show a lock and reason and cannot expand. Adding
-or removing bindings or instances updates the locks without deleting existing
-Steps. Live Resources, executable configuration, capabilities, and Execution
-Mode do not affect these locks.
+**Serial**. Available categories appear first. Locked categories are moved to
+**Unavailable categories (N)** at the bottom of the list. This group starts
+collapsed; expand it to see each locked category and its existing reason. When
+no categories are locked, the group is hidden. Workflow is always available.
+Background Workflow requires a Background binding in Setup; FG/BG Interaction
+also requires **Enable FG/BG Interaction** in the Workflow sidebar. Instrument
+categories require a matching Tool Instance in the Template. Locked categories
+cannot expand or be selected. Adding or removing bindings or instances updates
+the grouping without deleting existing Steps. Live Resources, executable
+configuration, capabilities, and Execution Mode do not affect these locks.
 
 Click an available category header to expand or collapse it independently.
 Expanded categories show **−**; collapsed categories show **+** and hide their
-step buttons. Available categories start expanded when the app opens. This
-state is not saved in Templates. **Scopes File Output** remains a separate panel
-with its own expand/collapse state and uses the same Scopes Tool Instance lock.
+step buttons. Available categories start expanded when the app opens; changing
+availability does not erase their individual expand/collapse choices. A successful
+New or Open Template resets the unavailable group to collapsed. UI expansion
+states are not saved in Templates. **Scopes File Output** remains a separate
+panel with its own expand/collapse state and the same Scopes Instance lock.
 
 Steps can be placed in the root workflow, loop bodies, or If branches. Use the step
 properties area to edit the selected step. Use Validate when you want to
@@ -409,13 +414,14 @@ check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
 
-In **Steps**, click a step type to select it; clicking does not insert it.
-**Selected Step** and **Add Step** stay above the scrollable categories.
-**Add Step** is disabled until a type is selected. Press it to insert into
-the location shown by **ADDING STEP TO**. After insertion the palette selection
-clears, while the inserted Workflow step remains selected for editing.
-**Set Target to Root** switches the destination without inserting a step.
-Creating or opening a Template also clears the palette selection.
+In **Steps**, hover over any available step type to see its short native
+tooltip describing the action. Click a step type to select it; clicking does
+not insert it. **Selected Step** and **Add Step** stay above the scrollable
+categories. **Add Step** is disabled until a type is selected. Press it to
+insert into the location shown by **ADDING STEP TO**. After insertion the
+palette selection clears, while the inserted Workflow step remains selected
+for editing. **Set Target to Root** switches the destination without inserting
+a step. Creating or opening a Template also clears the palette selection.
 
 Alternatively, drag a Step type from **Steps** into **Sequence** to insert it at the
 drop position, independently of the **ADDING STEP TO** target. Drop before or

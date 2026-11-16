@@ -231,25 +231,38 @@ async function toolsView(initial, draft = template, source, local = {}) {
   return { render, calls, updates, pick(value, invalid = false) { picked = value; reject = invalid } }
 }
 
+const allCategoryNames = ['Workflow', 'Background Workflow', 'FG/BG Interaction', 'Meters', 'Powers', 'Scopes', 'Serial']
 const categoryNames = ['Workflow', 'Meters', 'Powers', 'Scopes']
-const categorySections = app => app.render().filter(node => node.type === 'section' && categoryNames.includes(node.key)
+const paletteCategorySections = app => app.render().filter(node => node.type === 'section' && allCategoryNames.includes(node.key)
   && elements(node).some(child => child.props.className === 'step-category-header'))
+const categorySections = app => categoryNames.map(name => paletteCategorySections(app).find(section => section.key === name)).filter(Boolean)
 const categoryHeader = section => elements(section).find(node => node.props.className === 'step-category-header')
 const categorySteps = section => elements(section).filter(node => node.props.className === 'action-button step-palette-button')
+const unavailableGroup = app => app.render().find(node => node.props.className === 'step-category-unavailable')
+const unavailableHeader = app => elements(unavailableGroup(app)).find(node => node.type === 'button'
+  && node.props.className === 'step-category-header')
 
 function assertCategories(app, unlocked) {
+  const group = unavailableGroup(app)
+  assert.ok(group, 'some categories should remain unavailable in these fixtures')
+  const header = unavailableHeader(app)
+  assert.ok(text(header).includes(`Unavailable categories (${6 - unlocked.length})`))
+  if (!header.props['aria-expanded']) header.props.onClick()
+  const expectedAvailable = categoryNames.filter(name => name === 'Workflow' || unlocked.includes(name))
+  assert.deepEqual(paletteCategorySections(app).map(section => section.key),
+    [...expectedAvailable, ...allCategoryNames.filter(name => !expectedAvailable.includes(name))])
   const sections = categorySections(app)
   assert.deepEqual(sections.map(section => section.key), categoryNames)
   for (const section of sections) {
-    const header = categoryHeader(section)
+    const category = categoryHeader(section)
     const locked = section.key !== 'Workflow' && !unlocked.includes(section.key)
-    assert.equal(header.props.disabled, locked, section.key)
+    assert.equal(category.props.disabled, locked, section.key)
     if (locked) {
-      assert.equal(header.props['aria-expanded'], false, section.key)
+      assert.equal(category.props['aria-expanded'], false, section.key)
       assert.equal(categorySteps(section).length, 0, section.key)
-      const hint = elements(section).find(node => node.props.id === header.props['aria-describedby'])
+      const hint = elements(section).find(node => node.props.id === category.props['aria-describedby'])
       assert.equal(text(hint), `No ${section.key} Tool Instance. Add one in Setup.`)
-      assert.ok(text(header).includes('🔒'))
+      assert.ok(text(category).includes('🔒'))
     }
   }
   return sections
@@ -259,6 +272,8 @@ test('Background Workflow palette locks only when Background bindings are missin
   const empty = await toolsView([status('serial')], { tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } })
   button(empty.render(), 'Workflow').props.onClick()
   const category = app => app.render().find(node => node.type === 'section' && node.key === 'Background Workflow')
+  assert.equal(unavailableHeader(empty).props['aria-expanded'], false)
+  unavailableHeader(empty).props.onClick()
   assert.equal(categoryHeader(category(empty)).props.disabled, true)
   assert.ok(text(category(empty)).includes('No Background binding'))
   const draft = { tool_instances: [{ id: 'serial-1', tool: 'serial', setup: { baud: 115200 } }],
@@ -335,11 +350,16 @@ test('Steps categories update immediately through Setup add/remove and preserve 
   assertCategories(app, ['Meters', 'Powers', 'Scopes'])
   remove('powers-2')
   assertCategories(app, ['Meters', 'Scopes'])
+  categoryHeader(categorySections(app)[3]).props.onClick()
+  assert.equal(categoryHeader(categorySections(app)[3]).props['aria-expanded'], false)
   remove('scopes-1')
   assertCategories(app, ['Meters'])
   add('scopes')
   sections = assertCategories(app, ['Meters', 'Scopes'])
-  assert.equal(categoryHeader(sections[3]).props['aria-expanded'], true)
+  assert.equal(categoryHeader(sections[3]).props['aria-expanded'], false,
+    'moving between groups preserves the category collapse choice')
+  categoryHeader(sections[3]).props.onClick()
+  assert.equal(categoryHeader(categorySections(app)[3]).props['aria-expanded'], true)
   categorySteps(sections[1])[0].props.onClick()
   assert.equal(setup().steps.length, 0)
   assert.equal(button(app.render(), 'Add Step').props.disabled, false)
@@ -381,6 +401,57 @@ test('Steps categories use loaded Template instances despite unavailable executa
   assert.deepEqual(setup.steps, original.workflow.steps)
   assert.deepEqual(template, original)
   assert.equal(button(app.render(), 'Simulation').props['aria-pressed'], true)
+})
+
+test('Unavailable categories collapse by default and reset only after successful New/Open Template', async () => {
+  const app = await toolsView([status('scopes')],
+    { tool_instances: [{ id: 'scopes-1', tool: 'scopes', setup: {} }],
+      workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } })
+  button(app.render(), 'Workflow').props.onClick()
+  assert.equal(unavailableHeader(app).props['aria-expanded'], false)
+  assert.equal(paletteCategorySections(app).map(section => section.key).join(','),
+    'Workflow,Scopes')
+  unavailableHeader(app).props.onClick()
+  assert.equal(unavailableHeader(app).props['aria-expanded'], true)
+  button(app.render(), 'New Template').props.onClick()
+  await settle()
+  assert.equal(unavailableHeader(app).props['aria-expanded'], false)
+  unavailableHeader(app).props.onClick()
+  app.pick(null)
+  button(app.render(), 'Open Template').props.onClick()
+  await settle()
+  assert.equal(unavailableHeader(app).props['aria-expanded'], true, 'cancelled Open keeps UI state')
+  app.pick('existing-template.json')
+  button(app.render(), 'Open Template').props.onClick()
+  await settle()
+  assert.equal(unavailableHeader(app).props['aria-expanded'], false)
+})
+
+test('All available categories hide the unavailable group and expose bilingual Step hints', async () => {
+  const draft = {
+    tool_instances: ['meters', 'powers', 'scopes', 'serial'].map(tool =>
+      ({ id: `${tool}-1`, tool, setup: {} })),
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
+    workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [] },
+  }
+  const app = await toolsView(['meters', 'powers', 'scopes', 'serial'].map(tool => status(tool)), draft)
+  button(app.render(), 'Workflow').props.onClick()
+  assert.equal(unavailableGroup(app), undefined)
+  assert.deepEqual(paletteCategorySections(app).map(section => section.key), allCategoryNames)
+  const steps = app.render().filter(node => node.props.className === 'action-button step-palette-button')
+  assert.equal(steps.length, 37)
+  assert.ok(steps.every(node => typeof node.props.title === 'string' && node.props.title.length > 0
+    && !node.props.title.startsWith('steps.hint.')))
+  const { catalogues, translate } = await import('../src/i18n/index.ts')
+  for (const [key, english] of Object.entries(catalogues.en).filter(([key]) => key.startsWith('steps.hint.'))) {
+    assert.ok(english.trim())
+    assert.notEqual(translate('zh-TW', key), english, key)
+    assert.ok(!translate('zh-TW', key).startsWith('steps.hint.'))
+  }
+  assert.equal(Object.keys(catalogues.en).filter(key => key.startsWith('steps.hint.')).length, 37)
+  steps.find(node => text(node) === 'Scope Measure').props.onClick()
+  assert.equal(button(app.render(), 'Add Step').props.disabled, false)
+  assert.deepEqual(app.render().find(node => node.type === 'ToolSetupEditor').props.steps, [])
 })
 
 test('Tools cards and Add candidates use configuration status, including broken executables', async () => {

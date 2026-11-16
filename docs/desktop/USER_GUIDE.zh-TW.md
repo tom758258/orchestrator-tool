@@ -324,30 +324,37 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 - **While** — 在 condition 為 true 時重複執行 body。
 - **If / Else** — 依 comparison 執行 THEN 或 ELSE，ELSE 可為空。
 
-**步驟（Steps）** 分類依 **工作流程（Workflow）**、**Background Workflow**、**FG/BG Interaction**、
-**Meters**、**Powers**、**Scopes**、**Serial** 排列。Workflow 永遠可用。
-Background Workflow 需要在 Setup 啟用 Background Binding；FG/BG Interaction
-還需要在 Workflow 左側勾選 **啟用前景／背景互動（Enable FG/BG Interaction）**。儀器分類需要
-Template 內有對應的 Tool Instance。缺少條件時分類顯示鎖頭及原因，
-不可展開；新增或移除 Binding、Tool Instance 會更新鎖定狀態，
-但不會刪除已存在的 Steps。Live Resource、EXE 配置、capabilities 與
-Execution Mode 都不影響這些分類的鎖定條件。
+**步驟（Steps）** 分類在各群組內維持原本順序：**工作流程（Workflow）**、
+**Background Workflow**、**FG/BG Interaction**、**Meters**、**Powers**、
+**Scopes**、**Serial**。可用分類優先顯示，鎖定分類集中放到最下方的
+**不可用分類（N）** 區塊。這個區塊預設收合；展開後可查看各鎖定分類及原有原因。
+若沒有鎖定分類，區塊會隱藏。Workflow 永遠可用。Background Workflow
+需要在 Setup 啟用 Background Binding；FG/BG Interaction 還需要在
+Workflow 左側勾選 **啟用前景／背景互動（Enable FG/BG Interaction）**。
+儀器分類需要 Template 內有對應的 Tool Instance。鎖定分類不能展開或選取；
+新增或移除 Binding、Tool Instance 會更新分組，但不會刪除既有 Steps。
+Live Resource、EXE 配置、capabilities 與 Execution Mode
+都不影響這些分類的鎖定條件。
 
-點擊可用分類的標題，可獨立展開或收合該分類。展開時顯示 **−**；收合時顯示 **+**
-並隱藏該分類的 step buttons。App 開啟時可用分類預設展開；此狀態不會保存於
-Template。**Scopes File Output** 維持獨立面板及自己的展開／收合狀態，
+點擊可用分類的標題，可獨立展開或收合該分類。展開時顯示 **−**；
+收合時顯示 **+** 並隱藏該分類的步驟按鈕。App 開啟時可用分類預設展開；
+分類的可用狀態改變不會清除各自的展開／收合選擇。成功新增或開啟
+Template 後，不可用分類區塊重新收合。UI 收合狀態不會儲存於 Template。
+**Scopes File Output** 維持獨立面板及自己的展開／收合狀態，
 並採用相同的 Scopes Tool Instance 鎖定條件。
 
 Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 
-在 **步驟（Steps）** 中，點擊 Step 類型只會選取，不會立即加入 Workflow。
-**已選取的步驟（Selected Step）** 與 **新增步驟（Add Step）** 固定在可捲動的分類清單上方。
-未選取類型時 **新增步驟（Add Step）** 停用；按下後才會將 Step 加入 **ADDING STEP TO**
-顯示的目標位置。新增成功後會清除 Palette 的類型選取，但 Workflow 中
-新加入的 Step 仍保持選取，方便編輯。**Set Target to Root** 只切換
-新增目標，不會新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
+在 **步驟（Steps）** 中，滑鼠停留於可用的 Step 按鈕上，可透過原生
+提示視窗查看該步驟的簡短功能說明。點擊 Step 類型只會選取，不會立即加入
+Workflow。**已選取的步驟（Selected Step）** 與 **新增步驟（Add Step）**
+固定在可捲動的分類清單上方。未選取類型時 **新增步驟（Add Step）**
+停用；按下後才會將 Step 加入 **ADDING STEP TO** 顯示的目標位置。
+新增成功後會清除 Palette 的類型選取，但 Workflow 中新加入的 Step
+仍保持選取，方便編輯。**Set Target to Root** 只切換新增目標，不會
+新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
 
 也可以從 **步驟（Steps）** 將 Step 類型拖曳到 **序列（Sequence）** 指定位置，依滑鼠放開時的
 落點新增，不使用 **ADDING STEP TO** 目標。可放在既有 Step 前後、Root 末端，

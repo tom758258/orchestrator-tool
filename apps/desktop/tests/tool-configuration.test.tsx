@@ -314,6 +314,10 @@ test('Interaction panel and Step category follow Background binding and opt-in',
   const categories = () => within(screen.getByRole('region', { name: 'Step categories' }))
   const interactionCategory = () => categories().getByRole('button', { name: 'FG/BG Interaction' }) as HTMLButtonElement
   const bgCategory = () => categories().getByRole('button', { name: 'Background Workflow' }) as HTMLButtonElement
+  const unavailable = () => categories().getByRole('button', { name: /Unavailable categories \(\d+\)/ })
+  expect(unavailable().getAttribute('aria-expanded')).toBe('false')
+  expect(categories().queryByRole('button', { name: 'FG/BG Interaction' })).toBeNull()
+  fireEvent.click(unavailable())
   expect(interactionCategory().disabled).toBe(true)
   expect(bgCategory().disabled).toBe(true)
   const panelButton = screen.getByRole('button', { name: 'Expand FG/BG Interaction' }) as HTMLButtonElement

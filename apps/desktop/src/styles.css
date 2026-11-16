@@ -527,6 +527,11 @@ body {
   cursor: default;
 }
 
+.step-category-unavailable {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
 .step-category-hint {
   color: var(--muted);
   font-size: 0.85rem;
