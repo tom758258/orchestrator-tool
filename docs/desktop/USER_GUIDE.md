@@ -769,6 +769,15 @@ requires explicit reselection; options never change saved values automatically.
 Scopes validates final model support.
 A queued job counts as complete only after Scopes reports its terminal result.
 
+**Scope Single Wait** starts a single acquisition and waits finitely for its trigger.
+**Trigger Timeout (ms)** defaults to **5000** and **Poll Interval (ms)** to
+**100**; both are fixed positive integers, and Poll Interval cannot exceed
+Trigger Timeout. There is no Force Trigger option. A confirmed trigger timeout
+is a successful Step with `/outcome` = `timeout` and `/timed_out` = `true`;
+use those fields in the existing IF/ELSE. Instrument, Worker, and cancellation
+errors still fail the Step. A timed-out trigger does not mean capture succeeded,
+and Orchestrator does not automatically force, stop, or reset the instrument.
+
 Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
 **Channel** dropdown; Edge Trigger uses **Source Channel**. Options are **CH1**,
 **CH2**, etc., from offline Scopes capabilities. Simulation uses simulator
