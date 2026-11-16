@@ -2,6 +2,7 @@ export default {
   "capability.normal": "normal",
   "capability.average": "average",
   "capability.high_resolution": "high resolution",
+  "capability.peak": "peak",
   "capability.positive": "positive",
   "capability.negative": "negative",
   "capability.either": "either",

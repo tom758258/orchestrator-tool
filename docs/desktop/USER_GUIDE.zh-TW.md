@@ -298,7 +298,8 @@ Protection 都不可使用。若該型號不支援 remote clear，請從儀器 f
 Scopes Setup 為選用設定。新的 instance 所有欄位都是 **Unchanged**。
 **Acquisition Setup** 與 **Channel Configuration** 預設收合，可分別使用標題旁的
 **+ / −** 獨立操作。收合會保留設定，Live Resource 維持在兩個群組之外。
-Acquisition Type 可選 Normal、Average、High Resolution 或 Peak；只有選擇 Average
+**擷取類型（Acquisition Type）** 可選 **一般（Normal）**、**平均（Average）**、
+**高解析度（High Resolution）** 或 **峰值偵測（Peak）**；只有選擇 **平均（Average）**
 時才能編輯 Average Count。各通道列提供 Input Coupling、Probe Ratio、Bandwidth
 Limit、Waveform Invert 與 Channel Units。只保存及套用明確指定的值；留白或選擇
 Unchanged 不會送出設定命令。
@@ -326,7 +327,7 @@ Workflow editor 用來建立有順序的 steps。目前的 step types 是：
 **步驟（Steps）** 分類依 **工作流程（Workflow）**、**Background Workflow**、**FG/BG Interaction**、
 **Meters**、**Powers**、**Scopes**、**Serial** 排列。Workflow 永遠可用。
 Background Workflow 需要在 Setup 啟用 Background Binding；FG/BG Interaction
-還需要在 Workflow 左側勾選 **Enable FG/BG Interaction**。儀器分類需要
+還需要在 Workflow 左側勾選 **啟用前景／背景互動（Enable FG/BG Interaction）**。儀器分類需要
 Template 內有對應的 Tool Instance。缺少條件時分類顯示鎖頭及原因，
 不可展開；新增或移除 Binding、Tool Instance 會更新鎖定狀態，
 但不會刪除已存在的 Steps。Live Resource、EXE 配置、capabilities 與
@@ -360,13 +361,13 @@ step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Liv
 查看詳細 run 錯誤。視窗較窄時控制項會換行。**清除工作流程（Clear Workflow）** 仍位於
 **序列（Sequence）** header。
 
-**清除工作流程（Clear Workflow）** 右側的 **Step Display Density** 下拉選單提供
-**Compact**、**Standard**（預設）及 **Comfortable**。顯示密度儲存在本機，
+**清除工作流程（Clear Workflow）** 右側的 **步驟顯示密度（Step Display Density）** 下拉選單提供
+**精簡（Compact）**、**標準（Standard）**（預設）及 **寬鬆（Comfortable）**。顯示密度儲存在本機，
 不同 Template 共用，不會修改 Workflow 資料。
 
 在 **序列（Sequence）**，每個 **FOR**、**WHILE**、**IF** Step 都有獨立的展開／收合箭頭；
 **IF** 的 **THEN**、**ELSE** 也能分別收合。Sequence 標題下方提供
-**Expand All** 與 **Collapse All**。收合時隱藏子 Steps，但保留數量及必要的
+**全部展開（Expand All）** 與 **全部收合（Collapse All）**。收合時隱藏子 Steps，但保留數量及必要的
 選取、驗證警告、執行失敗提示。切換頁籤會保留目前收合狀態；新建或開啟 Template
 會全部展開。拖曳到收合的容器前須先展開；使用 **新增步驟（Add Step）** 成功新增後會展開目標。
 
@@ -702,7 +703,7 @@ JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop itera
 Workflow 左側最下方、**Chart Options** 下方的 **FG/BG Interaction**
 設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
 在 Setup 啟用 Background Streaming 後，才能展開並勾選
-**Enable FG/BG Interaction** 以解鎖互動 Steps。移除最後一個未被
+**啟用前景／背景互動（Enable FG/BG Interaction）** 以解鎖互動 Steps。移除最後一個未被
 Step 引用的 Background Binding 時會關閉 Interaction，但保留容量數值。
 **Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
 Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。兩項設定都會隨
@@ -1316,7 +1317,7 @@ machine/runtime state 保留在 Desktop local configuration。
 數值、技術識別碼及原始診斷詳細資料會保留原樣。
 
 「使用說明（Help）」依目前 Desktop 語言開啟離線指南。變更語言或外觀後，再按一次
-「使用說明」即可更新已開啟的視窗。指南保留章節導覽，不另設語言切換。
+「使用說明」即可更新已開啟的視窗，視窗標題也會跟隨所選語言。指南保留章節導覽，不另設語言切換。
 繁中介面常用操作為「新增範本（New Template）」、「開啟範本（Open Template）」、
 「儲存範本（Save Template）」、「工具（Tools）」、「設定（Setup）」、
 「工作流程（Workflow）」與「輸出（Output）」。本文保留部分英文操作名稱供對照。

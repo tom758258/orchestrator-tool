@@ -230,6 +230,8 @@ export default {
   "app.messages2": "{value1} 的內容",
   "app.lastRunExecutionResults": "上次執行的步驟結果 ",
   "app.latestFirst": " · 最新優先",
+  "app.outputRowCountOne": "{count} 個資料列",
+  "app.outputRowCountOther": "{count} 個資料列",
   "app.showing": "顯示 ",
   "app.ndash": "–",
   "app.of": " ／ ",

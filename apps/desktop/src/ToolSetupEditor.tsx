@@ -230,7 +230,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
           {meterCapabilities && (
             <p className="meters-setup-summary">
               {meterCapabilities.model} {t("toolSetupEditor.memory")}{formatInteger(meterCapabilities.reading_memory_limit)} {t("toolSetupEditor.plannedTriggers")}{plannedTriggerCount === null
-                ? 'unbounded'
+                ? t("toolSetupEditor.unboundedTriggerCount")
                 : formatInteger(plannedTriggerCount)}
               {plannedTriggerCount === null && t("toolSetupEditor.infiniteAcquisitionRequiresAllowBufferOverflowRisk")}
             </p>
@@ -666,7 +666,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
       ? t("toolSetupEditor.tcpSummary", { value1: instance.setup.io_timeout_ms ?? 1000 })
       : t("toolSetupEditor.serialSummary", { value1: instance.setup.baud, value2: instance.setup.data_bits })
     if (instance.tool === 'powers') return `${type} · ${instance.setup.protection ? t("toolSetupEditor.protectionSetup2") : t("toolSetupEditor.noProtectionSettingsConfigured")}`
-    if (instance.tool === 'scopes') return t("toolSetupEditor.scopeSummary", { type, acquisition: instance.setup.acquisition ? t("toolSetupEditor.acquisitionSetup") : t("toolSetupEditor.acquisitionUnchanged"), count: instance.setup.channels?.length ?? 0 })
+    if (instance.tool === 'scopes') return t("toolSetupEditor.scopeSummary", { type, acquisition: instance.setup.acquisition ? t("toolSetupEditor.acquisitionSetup2") : t("toolSetupEditor.acquisitionUnchanged"), count: instance.setup.channels?.length ?? 0 })
     if (instance.tool !== 'meters') return `${type} · ${t("toolSetupEditor.noAdditionalSetup")}`
     const meters = instance.setup
     const voltage = meters.measurement === 'voltage-dc'

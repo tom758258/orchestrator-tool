@@ -17,6 +17,7 @@ export default {
   "toolSetupEditor.allowBufferOverflowRisk": "Allow Buffer Overflow Risk",
   "toolSetupEditor.memory": " · Memory ",
   "toolSetupEditor.plannedTriggers": " · Planned triggers ",
+  "toolSetupEditor.unboundedTriggerCount": "unbounded",
   "toolSetupEditor.infiniteAcquisitionRequiresAllowBufferOverflowRisk": ". Infinite acquisition requires Allow Buffer Overflow Risk.",
   "toolSetupEditor.triggerCountExceedsLimit": "Trigger count exceeds limit",
   "toolSetupEditor.planned": " planned / ",

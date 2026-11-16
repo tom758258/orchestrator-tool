@@ -17,6 +17,7 @@ export default {
   "toolSetupEditor.allowBufferOverflowRisk": "允許緩衝區溢位風險",
   "toolSetupEditor.memory": " · 記憶體 ",
   "toolSetupEditor.plannedTriggers": " · 預計觸發次數 ",
+  "toolSetupEditor.unboundedTriggerCount": "無上限",
   "toolSetupEditor.infiniteAcquisitionRequiresAllowBufferOverflowRisk": "。無限擷取需要允許緩衝區溢位風險。",
   "toolSetupEditor.triggerCountExceedsLimit": "觸發次數超過上限",
   "toolSetupEditor.planned": " 預計／ ",

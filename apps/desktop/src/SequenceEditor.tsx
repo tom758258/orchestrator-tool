@@ -404,7 +404,7 @@ function SequenceEditor({
                     <code>{step.id}</code>
                     {result && (
                       <span id={`sequence-result-${step.id}`} className="sequence-step-result">
-                        <span className={`run-result-status run-result-${enumLabel(t, 'status', result.status)}`}>
+                        <span className={`run-result-status run-result-${result.status}`}>
                           <span aria-hidden="true">
                             {result.status === 'succeeded' ? '✓' : result.status === 'failed' ? '✕' : '–'}
                           </span>{' '}

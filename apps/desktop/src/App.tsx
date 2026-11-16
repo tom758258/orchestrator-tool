@@ -3497,7 +3497,7 @@ function App() {
                 {displayedRun && runPage && runPageMetadata && runPageMetadata.row_count > 0 && (
                   <Collapsible className="output-data" title={t("app.outputData")}>
                     <p className="output-row-count">
-                      {runPageMetadata.row_count} {runPageMetadata.row_count === 1 ? 'row' : 'rows'} {t("app.latestFirst")}</p>
+                      {t(runPageMetadata.row_count === 1 ? "app.outputRowCountOne" : "app.outputRowCountOther", { count: runPageMetadata.row_count })}{t("app.latestFirst")}</p>
                     <VirtualizedOutputTable key={`${displayedRun.run_id}:${runPage.name}`} runId={displayedRun.run_id} page={runPage.name}
                       rowCount={runPageMetadata.row_count} revision={runPageMetadata.revision}
                       outputs={runOutputs} iterationRows={runPageMetadata.iteration_rows} numericFormat={numericFormat} />

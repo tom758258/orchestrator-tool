@@ -1449,6 +1449,11 @@ fn help_navigation_target(
 #[tauri::command]
 async fn open_help(app: AppHandle, locale: String, theme: String) -> Result<(), String> {
     let url = help_url(&locale, &theme)?;
+    let title = if locale == "zh-TW" {
+        "Orchestrator Tool 使用說明"
+    } else {
+        "Orchestrator Tool Help"
+    };
     tauri::async_runtime::spawn_blocking(move || {
         // Serialize lookup and creation, including concurrent toolbar clicks.
         static HELP_WINDOW: Mutex<()> = Mutex::new(());
@@ -1463,11 +1468,12 @@ async fn open_help(app: AppHandle, locale: String, theme: String) -> Result<(), 
             if let Some(target) = help_navigation_target(&main_url, &current_url, &url)? {
                 window.navigate(target).map_err(|error| error.to_string())?;
             }
+            window.set_title(title).map_err(|error| error.to_string())?;
             window.show().map_err(|error| error.to_string())?;
             window.set_focus().map_err(|error| error.to_string())?;
         } else {
             tauri::WebviewWindowBuilder::new(&app, "help", url)
-                .title("Orchestrator Tool Help")
+                .title(title)
                 .inner_size(1200.0, 800.0)
                 .resizable(true)
                 .build()

@@ -230,6 +230,8 @@ export default {
   "app.messages2": "{value1} messages",
   "app.lastRunExecutionResults": "Last Run Execution Results ",
   "app.latestFirst": " · latest first",
+  "app.outputRowCountOne": "{count} row",
+  "app.outputRowCountOther": "{count} rows",
   "app.showing": "Showing ",
   "app.ndash": "–",
   "app.of": " of ",

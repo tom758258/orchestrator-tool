@@ -2,6 +2,7 @@ export default {
   "capability.normal": "一般",
   "capability.average": "平均",
   "capability.high_resolution": "高解析度",
+  "capability.peak": "峰值偵測",
   "capability.positive": "正向",
   "capability.negative": "負向",
   "capability.either": "任一方向",

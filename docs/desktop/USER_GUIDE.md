@@ -1568,6 +1568,7 @@ technical identifiers, and original diagnostic details retain their contents.
 
 **Help** opens the offline guide in the current Desktop language. After changing
 language or appearance, click **Help** again to update its existing window.
+The window title follows the selected language as well.
 The guide retains its chapter navigation and has no separate language selector.
 
 The **Appearance** control supports **System**, **Light**, and **Dark**. The
