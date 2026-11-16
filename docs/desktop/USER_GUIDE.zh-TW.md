@@ -655,6 +655,14 @@ Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical
 已儲存值。最終型號支援仍由 Scopes 驗證。
 Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。
 
+**Scope Single Wait（單次觸發等待）** 啟動單次擷取，並在有限時間內等待觸發完成。
+**Trigger Timeout (ms)** 預設為 **5000**，**Poll Interval (ms)** 預設為 **100**；
+兩者只能是固定正整數，且 Poll Interval 不可大於 Trigger Timeout。
+此 Action 不提供 Force Trigger 選項。已確認的正常觸發逾時會作為成功 Step，
+可利用 `/outcome` = `timeout` 或 `/timed_out` = `true` 進行既有的 IF／ELSE 判斷。
+儀器、Worker 或取消等真正錯誤仍使 Step 失敗。觸發逾時不代表擷取成功，
+Orchestrator 也不會自動強制觸發、停止擷取或重設儀器。
+
 Channel Display、Channel Scale、Channel Offset 與 Measure 使用固定的 **Channel**
 下拉選單；Edge Trigger 使用 **Source Channel**。選項依 Scopes 離線 Capabilities
 顯示為 **CH1**、**CH2** 等。Simulation 使用模擬器通道；Live 使用目標 instance
