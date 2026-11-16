@@ -55,6 +55,7 @@ type ToolIdentity = {
 export type CuratedResultField = {
   label: string
   pointer: string
+  hint?: string
 }
 
 export const CUSTOM_RESULT = 'custom'
@@ -66,6 +67,11 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
   'serial/query': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' },
     { label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' },
     { label: "resultFields.delimiterHex", pointer: '/delimiter_hex' }],
+  'scopes/single-wait': [
+    { label: "resultFields.outcome", pointer: '/outcome', hint: "resultFields.outcomeHint" },
+    { label: "resultFields.timedOut", pointer: '/timed_out', hint: "resultFields.timedOutHint" },
+    { label: "resultFields.captureAllowed", pointer: '/capture_allowed', hint: "resultFields.captureAllowedHint" },
+  ],
   'scopes/measure': [
     { label: "resultFields.value", pointer: '/value' },
     { label: "resultFields.unit", pointer: '/unit' },
@@ -87,9 +93,9 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
     { label: "resultFields.currentLimit", pointer: '/request/arguments/current' },
   ],
   'powers/protection-status': [
-    { label: "resultFields.protectionTripped", pointer: '/protection_tripped' },
-    { label: "resultFields.overVoltageTripped", pointer: '/over_voltage_tripped' },
-    { label: "resultFields.overCurrentTripped", pointer: '/over_current_tripped' },
+    { label: "resultFields.protectionTripped", pointer: '/protection_tripped', hint: "resultFields.protectionTrippedHint" },
+    { label: "resultFields.overVoltageTripped", pointer: '/over_voltage_tripped', hint: "resultFields.overVoltageTrippedHint" },
+    { label: "resultFields.overCurrentTripped", pointer: '/over_current_tripped', hint: "resultFields.overCurrentTrippedHint" },
   ],
 }
 
@@ -106,7 +112,7 @@ export function curatedResultFields(
 ): readonly CuratedResultField[] {
   if (step?.type !== 'tool-action') return []
   const tool = instances.find(instance => instance.id === step.target)?.tool
-  return (ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []).map(field => ({ ...field, label: t(field.label) }))
+  return (ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []).map(field => ({ ...field, label: t(field.label), ...(field.hint && { hint: t(field.hint) }) }))
 }
 
 export function resultSelection(pointer: string, fields: readonly CuratedResultField[]): string {

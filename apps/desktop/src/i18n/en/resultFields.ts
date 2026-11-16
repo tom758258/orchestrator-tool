@@ -6,6 +6,9 @@ export default {
   "resultFields.rXHex": "RX Hex",
   "resultFields.rXBytes": "RX Bytes",
   "resultFields.delimiterHex": "Delimiter Hex",
+  "resultFields.outcome": "Outcome",
+  "resultFields.timedOut": "Timed Out",
+  "resultFields.captureAllowed": "Capture Allowed",
   "resultFields.value": "Value",
   "resultFields.unit": "Unit",
   "resultFields.channel": "Channel",
@@ -15,5 +18,11 @@ export default {
   "resultFields.currentLimit": "Current Limit",
   "resultFields.protectionTripped": "Protection Tripped",
   "resultFields.overVoltageTripped": "Over Voltage Tripped",
-  "resultFields.overCurrentTripped": "Over Current Tripped"
+  "resultFields.overCurrentTripped": "Over Current Tripped",
+  "resultFields.outcomeHint": "String — natural: trigger completed; timeout: trigger wait expired. In IF/ELSE compare with a String.",
+  "resultFields.timedOutHint": "Boolean — true: trigger timed out; false: no timeout. In IF/ELSE compare with a Boolean.",
+  "resultFields.captureAllowedHint": "Boolean — true: capture permitted; false: capture not permitted. This does not mean a waveform was saved.",
+  "resultFields.protectionTrippedHint": "Boolean — true: over-voltage or over-current protection tripped; false: no trip reported.",
+  "resultFields.overVoltageTrippedHint": "Boolean — true: over-voltage protection tripped; false: not tripped.",
+  "resultFields.overCurrentTrippedHint": "Boolean — true: over-current protection tripped; false: not tripped."
 }

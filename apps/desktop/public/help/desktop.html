@@ -547,6 +547,7 @@ current protection has tripped. Powers Tool validates actual model support.</p>
 Status. Select <strong>Previous step result → Protection Tripped</strong> on the left,
 <code>==</code> as the operator, and <strong>Boolean → False</strong> on the right. Status alone does
 not stop the Workflow, clear protection, or modify the power supply.</p>
+<p>For IF/ELSE, the three Protection Status result fields are Boolean: true means the corresponding protection has tripped, and false means it has not. Choose Boolean on the other side of the comparison; selecting a result does not change the other operand.</p>
 <h3 id="62-for">6.2 For</h3>
 <p>Configure a For step with <strong>Start</strong>, <strong>Stop</strong>, <strong>Step</strong>, a loop variable, and a
 body.</p>
@@ -722,6 +723,15 @@ capabilities, or empty lists disable selection. An invalid or unconfirmed value
 requires explicit reselection; options never change saved values automatically.
 Scopes validates final model support.
 A queued job counts as complete only after Scopes reports its terminal result.</p>
+<p><strong>Scope Single Wait</strong> starts a single acquisition and waits finitely for its trigger.
+<strong>Trigger Timeout (ms)</strong> defaults to <strong>5000</strong> and <strong>Poll Interval (ms)</strong> to
+<strong>100</strong>; both are fixed positive integers, and Poll Interval cannot exceed
+Trigger Timeout. There is no Force Trigger option. A confirmed trigger timeout
+is a successful Step with <code>/outcome</code> = <code>timeout</code> and <code>/timed_out</code> = <code>true</code>;
+use those fields in the existing IF/ELSE. Instrument, Worker, and cancellation
+errors still fail the Step. A timed-out trigger does not mean capture succeeded,
+and Orchestrator does not automatically force, stop, or reset the instrument.</p>
+<p>The Single Wait Result selector shows comparison types and values: Outcome is String (natural means trigger completed; timeout means trigger wait expired); Timed Out and Capture Allowed are Boolean (true or false). Choose the matching type on the other side of IF/ELSE; selecting a result does not change the other operand.</p>
 <p>Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
 <strong>Channel</strong> dropdown; Edge Trigger uses <strong>Source Channel</strong>. Options are <strong>CH1</strong>,
 <strong>CH2</strong>, etc., from offline Scopes capabilities. Simulation uses simulator

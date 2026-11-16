@@ -499,13 +499,14 @@ fn main() {
 
     if arguments.first().is_some_and(|arg| arg == "--scopes-tests") {
         scopes_worker_protocol_cases();
+        scopes_single_wait_timeout_branches_and_instrument_error_fails();
         scopes_setup_failure_stops_workflow();
         powers_and_meters_workflow_executes_end_to_end();
         powers_protection_setup_lifecycle();
         partial_startup_failure_shuts_down_started_worker();
         invalid_ready_protocol_is_rejected();
         non_2xx_http_response_is_rejected();
-        println!("Scopes protocol/setup and directly affected regression checks passed (7 groups)");
+        println!("Scopes protocol/setup and directly affected regression checks passed (8 groups)");
         return;
     }
 
@@ -565,6 +566,7 @@ fn main() {
     meters_single_shutdown_waits_for_exit_after_stop_failure();
     meters_single_outputs_preserve_staging();
     scopes_worker_protocol_cases();
+    scopes_single_wait_timeout_branches_and_instrument_error_fails();
     scopes_setup_failure_stops_workflow();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
@@ -3853,6 +3855,13 @@ fn run_scopes_fixture(scenario: &str) {
                     assert_eq!(command["command"], "channel-invert");
                     assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
                 }
+                if scenario.starts_with("scopes-single-wait-") {
+                    assert_eq!(command["command"], "single-wait");
+                    assert_eq!(
+                        command["arguments"],
+                        json!({"trigger_timeout_ms":3000,"trigger_poll_interval_ms":100})
+                    );
+                }
                 if scenario == "scopes-rejected" {
                     write_response(request.stream, 429, &json!({"schema_version":3,"status":"rejected",
                         "command":command["command"],"job_id":command["job_id"],"reason":"queue_full"}).to_string());
@@ -3862,15 +3871,42 @@ fn run_scopes_fixture(scenario: &str) {
                     "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":"job-1"}).to_string());
                 if scenario == "scopes-timeout" { continue; }
                 thread::sleep(Duration::from_millis(50));
-                let failed = matches!(scenario, "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed");
+                let single_wait = scenario.starts_with("scopes-single-wait-");
+                let instrument_error = scenario == "scopes-single-wait-instrument-error";
+                let failed = single_wait
+                    || matches!(
+                        scenario,
+                        "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed"
+                    );
                 let cancelled = scenario == "scopes-cancelled";
+                let result = if single_wait {
+                    json!({
+                        "operation":"single-wait", "outcome":"timeout",
+                        "timed_out":true, "forced":false,
+                        "force_on_timeout":false, "capture_allowed":false,
+                        "error":null, "system_error":{
+                            "code":if instrument_error {-222} else {0},
+                            "is_error":instrument_error
+                        }
+                    })
+                } else {
+                    json!({"value":3.3,"unit":"V"})
+                };
+                let error = if single_wait {
+                    json!({"category":"execution","code":"job_failed",
+                        "message":"job failed","details":{}})
+                } else if failed || cancelled {
+                    json!({"message":"fixture failure"})
+                } else {
+                    json!(null)
+                };
                 print_json_line(&json!({"schema_version":3,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
                     "command":command["command"],"job_id":command["job_id"],
                     "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
                     "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
-                    "ok":!failed && !cancelled,"exit_code":if failed || cancelled {3} else {0},
-                    "error":if failed || cancelled {json!({"message":"fixture failure"})} else {json!(null)},
-                    "result":{"value":3.3,"unit":"V"},"files":[]}).to_string());
+                    "ok":!failed && !cancelled,
+                    "exit_code":if single_wait {1} else if failed || cancelled {3} else {0},
+                    "error":error, "result":result,"files":[]}).to_string());
             }
             "/stop" => { write_response(request.stream, 200, r#"{"ok":true}"#); return; }
             other => panic!("unexpected Scopes request {other}"),
@@ -4045,6 +4081,83 @@ fn scopes_worker_protocol_cases() {
             );
         } else {
             assert!(shutdown.unwrap().success(), "scenario: {scenario}");
+        }
+    }
+}
+
+fn scopes_single_wait_timeout_branches_and_instrument_error_fails() {
+    let template = Template::from_json_str(
+        &json!({
+            "name":"Scope timeout branch",
+            "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+                "steps":[
+                    {"type":"tool-action","id":"trigger","target":"scope",
+                     "action":"single-wait","arguments":{
+                         "trigger_timeout_ms":3000,"trigger_poll_interval_ms":100
+                     }},
+                    {"type":"if","id":"choose",
+                     "left":{"source":"step-output","step_id":"trigger","pointer":"/timed_out"},
+                     "operator":"equal","right":{"source":"literal","value":true},
+                     "then_steps":[{"type":"wait","id":"timeout-path","duration_ms":0}],
+                     "else_steps":[{"type":"wait","id":"natural-path","duration_ms":0}]}
+                ]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    for (scenario, clean) in [
+        ("scopes-single-wait-timeout", true),
+        ("scopes-single-wait-instrument-error", false),
+    ] {
+        let run = run_simulated_workflow(
+            &template,
+            &HashMap::from([(
+                ToolInstanceId::new("scope").unwrap(),
+                fixture_spec(scenario),
+            )]),
+            Duration::from_secs(5),
+            Duration::from_millis(5),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let executions = run.step_executions();
+        if clean {
+            assert!(matches!(
+                executions[0].outcome(),
+                StepOutcome::Succeeded { output }
+                    if output["outcome"] == "timeout" && output["timed_out"] == true
+            ));
+            assert!(
+                executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "timeout-path")
+            );
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "natural-path")
+            );
+            assert!(
+                executions
+                    .iter()
+                    .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
+            );
+        } else {
+            assert!(matches!(
+                executions[0].outcome(),
+                StepOutcome::Failed { .. }
+            ));
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "choose")
+            );
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "timeout-path")
+            );
         }
     }
 }

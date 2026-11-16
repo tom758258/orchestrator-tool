@@ -52,6 +52,7 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   const { t } = useI18n()
   const [customPointer, setCustomPointer] = useState(() => resultSelection(value.pointer, fields) === CUSTOM_RESULT)
   const result = customPointer ? CUSTOM_RESULT : resultSelection(value.pointer, fields)
+  const hint = fields.find(field => field.pointer === result)?.hint
 
   return (
     <>
@@ -66,6 +67,7 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
           <option value={CUSTOM_RESULT}>{t("inputValueEditor.customPointer")}</option>
         </select>
       </label>
+      {hint && <p className="value-source-help">{hint}</p>}
       {result === CUSTOM_RESULT && (
         <>
           <label className="step-property-field">

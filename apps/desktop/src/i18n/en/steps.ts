@@ -5,6 +5,7 @@ export default {
   "steps.scope.timebase-scale": "Scope Timebase Scale",
   "steps.scope.timebase-position": "Scope Timebase Position",
   "steps.scope.trigger-edge": "Scope Edge Trigger",
+  "steps.scope.single-wait": "Scope Single Wait",
   "steps.scope.measure": "Scope Measure",
   "steps.scope.capture": "Scope Capture",
   "steps.scope.screenshot": "Scope Screenshot",

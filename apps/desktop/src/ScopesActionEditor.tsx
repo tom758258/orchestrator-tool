@@ -115,6 +115,19 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
       if (!Object.keys(bindings).length) delete next.bindings
       onChange(next)
     }} />
+  const singleWaitInteger = (key: string, label: string, fallback: number) => {
+    const saved = step.arguments[key]
+    return <label className="step-property-field">
+      <span className="step-property-label">{label}</span>
+      <input type="number" min={1} step={1} disabled={disabled}
+        aria-label={label}
+        value={saved === undefined ? fallback : typeof saved === 'number' || typeof saved === 'string' ? saved : ''}
+        onChange={event => {
+          const value = event.currentTarget.valueAsNumber
+          if (Number.isSafeInteger(value) && value > 0) changeFixed(key, value)
+        }} />
+    </label>
+  }
   const channel = step.action.startsWith('channel-') || step.action === 'measure'
   const autoScaleAvailable = caps?.autoscale_supported === true
   const savedAutoChannels = step.arguments.source_channel
@@ -145,6 +158,11 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
     {step.action === 'trigger-edge' && <>
       {channelSelector('source_channel', t("scopesActionEditor.sourceChannel"))}{numeric('level', t("scopesActionEditor.levelV"), 0)}
       {capabilityChoice('slope', t("scopesActionEditor.slope"), caps?.trigger_edge_slopes ?? [])}
+    </>}
+    {step.action === 'single-wait' && <>
+      {singleWaitInteger('trigger_timeout_ms', t("scopesActionEditor.triggerTimeoutMs"), 5000)}
+      {singleWaitInteger('trigger_poll_interval_ms', t("scopesActionEditor.pollIntervalMs"), 100)}
+      <p className="tool-setup-hint">{t("scopesActionEditor.singleWaitTimeoutHint")}</p>
     </>}
     {step.action === 'measure' && capabilityChoice('item', t("scopesActionEditor.measurementItem"), caps?.direct_measurement_items ?? [])}
     {step.action === 'autoscale' && <>

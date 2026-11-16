@@ -4,11 +4,14 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
+import ScopesActionEditor from '../src/ScopesActionEditor'
+import { ExpressionOperandEditor } from '../src/InputValueEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
+import type { ExpressionOperandWire } from '../src/inputValue'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
-import type { BackgroundConfig, WorkflowStep } from '../src/workflow'
+import type { BackgroundConfig, ToolActionStep, WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
@@ -25,6 +28,82 @@ const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
 const empty: WorkflowDraft = { ...original, tool_instances: [] }
 const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
   measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
+
+
+test('Scope Single Wait shows fixed integer inputs without force or capability queries', () => {
+  let step: ToolActionStep = { type: 'tool-action', id: 'trigger', target: 'scopes-1',
+    action: 'single-wait', arguments: { trigger_timeout_ms: 5000, trigger_poll_interval_ms: 100 } }
+  const changes = vi.fn((next: ToolActionStep) => { step = next })
+  const view = () => <ScopesActionEditor step={step} instances={[]} earlierSteps={[]}
+    earlierVariables={[]} disabled={false} onChange={changes} stepLabel={item => item.id}
+    executionMode="simulate" modelId={undefined} scopesExecutableKey="scopes.exe" />
+  const { rerender } = render(view())
+  const trigger = screen.getByRole('spinbutton', { name: 'Trigger Timeout (ms)' }) as HTMLInputElement
+  const poll = screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }) as HTMLInputElement
+  expect(trigger.value).toBe('5000')
+  expect(poll.value).toBe('100')
+  expect(screen.queryByRole('checkbox', { name: /Force Trigger/i })).toBeNull()
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('get_scopes_capabilities', expect.anything())
+  fireEvent.change(trigger, { target: { value: '12000' } })
+  rerender(view())
+  expect(step.arguments.trigger_timeout_ms).toBe(12000)
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }), { target: { value: '250' } })
+  rerender(view())
+  expect(step.arguments.trigger_poll_interval_ms).toBe(250)
+  const count = changes.mock.calls.length
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }), { target: { value: '-1' } })
+  expect(changes).toHaveBeenCalledTimes(count)
+  expect(step.arguments).toEqual({ trigger_timeout_ms: 12000, trigger_poll_interval_ms: 250 })
+  expect(step.bindings).toBeUndefined()
+})
+
+test('status Result hints show comparison types and values without rewriting IF operands', () => {
+  const scope: ToolActionStep = { type: 'tool-action', id: 'single', target: 'scopes-1', action: 'single-wait', arguments: {} }
+  const power: ToolActionStep = { type: 'tool-action', id: 'protection', target: 'powers-1', action: 'protection-status', arguments: {} }
+  const cases = [
+    [scope, '/outcome', /String.*natural.*timeout/],
+    [scope, '/timed_out', /Boolean.*true.*false/],
+    [scope, '/capture_allowed', /Boolean.*true.*false/],
+    [power, '/protection_tripped', /Boolean.*true.*false/],
+    [power, '/over_voltage_tripped', /Boolean.*true.*false/],
+    [power, '/over_current_tripped', /Boolean.*true.*false/],
+  ] as const
+  for (const [step, pointer, hint] of cases) {
+    const onChange = vi.fn()
+    const { unmount } = render(<ExpressionOperandEditor side="Left"
+      value={{ source: 'step-output', step_id: step.id, pointer }}
+      onChange={onChange} disabled={false} earlierSteps={[step]}
+      instances={original.tool_instances} earlierVariables={[]} stepLabel={item => item.id} />)
+    expect(screen.getByText(hint)).toBeTruthy()
+    expect(onChange).not.toHaveBeenCalled()
+    unmount()
+  }
+
+  let value: ExpressionOperandWire = { source: 'step-output', step_id: 'single', pointer: '/outcome' }
+  const onChange = vi.fn((next: ExpressionOperandWire) => { value = next })
+  const view = () => <ExpressionOperandEditor side="Left" value={value} onChange={onChange}
+    disabled={false} earlierSteps={[scope]} instances={original.tool_instances}
+    earlierVariables={[]} stepLabel={item => item.id} />
+  const { rerender, unmount } = render(view())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Result' }), { target: { value: '/timed_out' } })
+  rerender(view())
+  expect(value).toEqual({ source: 'step-output', step_id: 'single', pointer: '/timed_out' })
+  expect(screen.getByText(/Boolean.*true.*false/)).toBeTruthy()
+  expect(screen.queryByText(/String.*natural.*timeout/)).toBeNull()
+  const calls = onChange.mock.calls.length
+  fireEvent.change(screen.getByRole('combobox', { name: 'Result' }), { target: { value: 'custom' } })
+  expect(onChange).toHaveBeenCalledTimes(calls)
+  expect(screen.queryByText(/Boolean.*true.*false/)).toBeNull()
+  unmount()
+
+  const { unmount: closeZh } = render(<I18nProvider initialLanguage="zh-TW">
+    <ExpressionOperandEditor side="Left" value={{ source: 'step-output', step_id: 'single', pointer: '/outcome' }}
+      onChange={vi.fn()} disabled={false} earlierSteps={[scope]} instances={original.tool_instances}
+      earlierVariables={[]} stepLabel={item => item.id} />
+  </I18nProvider>)
+  expect(screen.getByText(/String.*natural.*timeout/)).toBeTruthy()
+  closeZh()
+})
 
 test.each(['root', 'nested', 'unreferenced'])('Background binding removal respects %s references', kind => {
   const action: WorkflowStep = { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: false }
