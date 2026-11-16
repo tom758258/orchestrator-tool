@@ -3898,7 +3898,7 @@ fn run_scopes_fixture(scenario: &str) {
                 } else if failed || cancelled {
                     json!({"message":"fixture failure"})
                 } else {
-                    Value::Null
+                    json!(null)
                 };
                 print_json_line(&json!({"schema_version":3,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
                     "command":command["command"],"job_id":command["job_id"],
