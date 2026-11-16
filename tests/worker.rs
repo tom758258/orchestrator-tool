@@ -4128,16 +4128,36 @@ fn scopes_single_wait_timeout_branches_and_instrument_error_fails() {
                 StepOutcome::Succeeded { output }
                     if output["outcome"] == "timeout" && output["timed_out"] == true
             ));
-            assert!(executions.iter().any(|step| step.step_id().as_str() == "timeout-path"));
-            assert!(!executions.iter().any(|step| step.step_id().as_str() == "natural-path"));
-            assert!(executions.iter().all(|step| matches!(
-                step.outcome(),
-                StepOutcome::Succeeded { .. }
-            )));
+            assert!(
+                executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "timeout-path")
+            );
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "natural-path")
+            );
+            assert!(
+                executions
+                    .iter()
+                    .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
+            );
         } else {
-            assert!(matches!(executions[0].outcome(), StepOutcome::Failed { .. }));
-            assert!(!executions.iter().any(|step| step.step_id().as_str() == "choose"));
-            assert!(!executions.iter().any(|step| step.step_id().as_str() == "timeout-path"));
+            assert!(matches!(
+                executions[0].outcome(),
+                StepOutcome::Failed { .. }
+            ));
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "choose")
+            );
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == "timeout-path")
+            );
         }
     }
 }
