@@ -3859,7 +3859,7 @@ fn run_scopes_fixture(scenario: &str) {
                     assert_eq!(command["command"], "single-wait");
                     assert_eq!(
                         command["arguments"],
-                        json!({"trigger_timeout_ms":100,"trigger_poll_interval_ms":10})
+                        json!({"trigger_timeout_ms":3000,"trigger_poll_interval_ms":100})
                     );
                 }
                 if scenario == "scopes-rejected" {
@@ -4093,7 +4093,7 @@ fn scopes_single_wait_timeout_branches_and_instrument_error_fails() {
                 "steps":[
                     {"type":"tool-action","id":"trigger","target":"scope",
                      "action":"single-wait","arguments":{
-                         "trigger_timeout_ms":100,"trigger_poll_interval_ms":10
+                         "trigger_timeout_ms":3000,"trigger_poll_interval_ms":100
                      }},
                     {"type":"if","id":"choose",
                      "left":{"source":"step-output","step_id":"trigger","pointer":"/timed_out"},
