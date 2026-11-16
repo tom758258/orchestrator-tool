@@ -1,3 +1,13 @@
+import type { Translate } from './i18n/index.ts'
+const sourceHelp = (t: Translate) => ({
+  'elapsed-time': t("inputValueEditor.elapsedTimeSinceWorkflowExecutionStartedInSeconds"),
+  timestamp: t("inputValueEditor.currentUTC0800TimestampWithMillisecondPrecision"),
+  literal: t("inputValueEditor.enterAValueDirectly"),
+  variable: t("inputValueEditor.useAnAvailableVariableOrTheEnclosingForLoop"),
+  'step-output': t("inputValueEditor.useDataProducedByAnEarlierStep"),
+  expression: t("inputValueEditor.calculateAValueFromFixedValuesVariablesOrPrevious"),
+})
+import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
 import { useState } from 'react'
 import {
@@ -24,14 +34,7 @@ type ReferenceOptions = {
   allowStringLiteral?: boolean
 }
 
-const SOURCE_HELP = {
-  'elapsed-time': 'Elapsed time since Workflow execution started, in seconds.',
-  timestamp: 'Current UTC+08:00 timestamp with millisecond precision.',
-  literal: 'Enter a value directly.',
-  variable: 'Use an available variable or the enclosing For loop variable.',
-  'step-output': 'Use data produced by an earlier step.',
-  expression: 'Calculate a value from fixed values, variables, or previous step results.',
-}
+
 
 type OperandEditorProps = ReferenceOptions & {
   value: ExpressionOperandWire
@@ -46,57 +49,59 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   fields: readonly CuratedResultField[]
   disabled: boolean
 }) {
+  const { t } = useI18n()
   const [customPointer, setCustomPointer] = useState(() => resultSelection(value.pointer, fields) === CUSTOM_RESULT)
   const result = customPointer ? CUSTOM_RESULT : resultSelection(value.pointer, fields)
 
   return (
     <>
       <label className="step-property-field">
-        <span className="step-property-label">Result</span>
+        <span className="step-property-label">{t("inputValueEditor.result")}</span>
         <select value={result} disabled={disabled} onChange={(event) => {
           const pointer = event.target.value
           setCustomPointer(pointer === CUSTOM_RESULT)
           if (pointer !== CUSTOM_RESULT) onChange({ ...value, pointer })
         }}>
           {fields.map(field => <option key={field.pointer} value={field.pointer}>{field.label}</option>)}
-          <option value={CUSTOM_RESULT}>Custom pointer...</option>
+          <option value={CUSTOM_RESULT}>{t("inputValueEditor.customPointer")}</option>
         </select>
       </label>
       {result === CUSTOM_RESULT && (
         <>
           <label className="step-property-field">
-            <span className="step-property-label">JSON Pointer</span>
+            <span className="step-property-label">{t("inputValueEditor.jSONPointer")}</span>
             <input type="text" value={value.pointer} disabled={disabled}
               onChange={(event) => onChange({ ...value, pointer: event.target.value })} />
           </label>
-          <p className="value-source-help">Use a JSON Pointer such as /value. Leave empty for the complete result.</p>
+          <p className="value-source-help">{t("inputValueEditor.useAJSONPointerSuchAsValueLeaveEmpty")}</p>
         </>
       )}
     </>
   )
 }
 
-function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel = 'Value', allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
+  const { t } = useI18n()
   switch (value.source) {
     case 'literal':
       return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') || (allowStringLiteral && typeof value.value === 'string') ? (
         <>
           {(allowBooleanLiteral || allowStringLiteral) && <label className="step-property-field">
-            <span className="step-property-label">Value type</span>
+            <span className="step-property-label">{t("inputValueEditor.valueType")}</span>
             <select value={typeof value.value === 'boolean' ? 'boolean' : typeof value.value === 'string' ? 'string' : 'number'} disabled={disabled}
               onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'boolean' ? false : event.target.value === 'string' ? '' : 0 })}>
-              <option value="number">Number</option>
-              {allowBooleanLiteral && <option value="boolean">Boolean</option>}
-              {allowStringLiteral && <option value="string">String</option>}
+              <option value="number">{t("inputValueEditor.number")}</option>
+              {allowBooleanLiteral && <option value="boolean">{t("inputValueEditor.boolean")}</option>}
+              {allowStringLiteral && <option value="string">{t("inputValueEditor.string")}</option>}
             </select>
           </label>}
           <label className="step-property-field">
-            <span className="step-property-label">{literalLabel}</span>
+            <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
             {typeof value.value === 'boolean' ? (
               <select value={String(value.value)} disabled={disabled}
                 onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'true' })}>
-                <option value="true">True</option>
-                <option value="false">False</option>
+                <option value="true">{t("inputValueEditor.true")}</option>
+                <option value="false">{t("inputValueEditor.false")}</option>
               </select>
             ) : typeof value.value === 'string' ? (
               <input type="text" value={value.value} disabled={disabled}
@@ -113,51 +118,50 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
       ) : (
         <>
           <p className="step-properties-empty">
-            Value preserved (fixed value type is not editable here): {JSON.stringify(value.value)}
+            {t("inputValueEditor.valuePreservedFixedValueTypeIsNotEditableHere")}{JSON.stringify(value.value)}
           </p>
           <button className="action-button" type="button" disabled={disabled}
             onClick={() => onChange({ source: 'literal', value: 0 })}>
-            Replace with numeric fixed value
-          </button>
+            {t("inputValueEditor.replaceWithNumericFixedValue")}</button>
         </>
       )
     case 'variable':
       return (
         <>
           <label className="step-property-field">
-            <span className="step-property-label">Referenced Variable</span>
+            <span className="step-property-label">{t("inputValueEditor.referencedVariable")}</span>
             <select value={earlierVariables.includes(value.variable) ? value.variable : ''}
               disabled={disabled || earlierVariables.length === 0}
               onChange={(event) => onChange({ source: 'variable', variable: event.target.value })}>
-              <option value="" disabled>Select an available variable...</option>
+              <option value="" disabled>{t("inputValueEditor.selectAnAvailableVariable")}</option>
               {earlierVariables.map((variable) => <option key={variable} value={variable}>{variable}</option>)}
             </select>
           </label>
           {!earlierVariables.includes(value.variable) && (
-            <p className="step-properties-empty">Reference preserved: {value.variable} is not among the variable suggestions for this scope.</p>
+            <p className="step-properties-empty">{t("inputValueEditor.referencePreserved")}{value.variable} {t("inputValueEditor.isNotAmongTheVariableSuggestionsForThisScope")}</p>
           )}
         </>
       )
     case 'step-output': {
       const candidates = stepOutputCandidates(earlierSteps)
       const previousStep = earlierSteps.find((step) => step.id === value.step_id)
-      const fields = curatedResultFields(previousStep, instances)
+      const fields = curatedResultFields(previousStep, instances, t)
       return (
         <>
           <label className="step-property-field">
-            <span className="step-property-label">Step</span>
+            <span className="step-property-label">{t("inputValueEditor.step")}</span>
             <select value={candidates.some((step) => step.id === value.step_id) ? value.step_id : ''}
               disabled={disabled || candidates.length === 0}
               onChange={(event) => {
                 const step = candidates.find(candidate => candidate.id === event.target.value)
                 if (step) onChange(stepOutputReference(step, instances))
               }}>
-              <option value="" disabled>Select an earlier step...</option>
+              <option value="" disabled>{t("inputValueEditor.selectAnEarlierStep")}</option>
               {candidates.map((step) => <option key={step.id} value={step.id}>{stepLabel(step)} ({step.id})</option>)}
             </select>
           </label>
           {!candidates.some((step) => step.id === value.step_id) && (
-            <p className="step-properties-empty">Reference preserved: {value.step_id} is not an eligible earlier result-producing step. Validate to check it.</p>
+            <p className="step-properties-empty">{t("inputValueEditor.referencePreserved")}{value.step_id} {t("inputValueEditor.isNotAnEligibleEarlierResultProducingStepValidate")}</p>
           )}
           <ResultPathEditor key={value.step_id} value={value} onChange={onChange}
             fields={fields} disabled={disabled} />
@@ -168,12 +172,13 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
 }
 
 function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false }: ReferenceOptions) {
+  const { t } = useI18n()
   const hasStepOutput = stepOutputCandidates(earlierSteps).length > 0
   return (
     <>
-      <option value="literal">Fixed value</option>
-      <option value="variable" disabled={earlierVariables.length === 0}>Variable</option>
-      {!numericSetpoint && <option value="step-output" disabled={!hasStepOutput}>Previous step result</option>}
+      <option value="literal">{t("inputValueEditor.fixedValue")}</option>
+      <option value="variable" disabled={earlierVariables.length === 0}>{t("inputValueEditor.variable")}</option>
+      {!numericSetpoint && <option value="step-output" disabled={!hasStepOutput}>{t("inputValueEditor.previousStepResult")}</option>}
     </>
   )
 }
@@ -187,16 +192,17 @@ function defaultOperand(source: string, references: ReferenceOptions, literal: n
 }
 
 export function ExpressionOperandEditor({ value, onChange, side, allowBooleanLiteral = false, ...references }: OperandEditorProps & { side: 'Left' | 'Right' }) {
+  const { t } = useI18n()
   return (
-    <div className="step-properties-fields" role="group" aria-label={`${side} operand`}>
+    <div className="step-properties-fields" role="group" aria-label={t("inputValueEditor.operand", { value1: side === 'Left' ? t("inputValueEditor.left") : t("inputValueEditor.right") })}>
       <label className="step-property-field">
-        <span className="step-property-label">{side} Source</span>
+        <span className="step-property-label">{t("inputValueEditor.namedSource", { label: side === 'Left' ? t("inputValueEditor.left") : t("inputValueEditor.right") })}</span>
         <select value={value.source} disabled={references.disabled}
           onChange={(event) => onChange(defaultOperand(event.target.value, references))}>
           <SourceOptions {...references} />
         </select>
       </label>
-      <p className="value-source-help">{SOURCE_HELP[value.source]}</p>
+      <p className="value-source-help">{sourceHelp(t)[value.source]}</p>
       <OperandEditor {...references} value={value} onChange={onChange} allowBooleanLiteral={allowBooleanLiteral} />
     </div>
   )
@@ -212,8 +218,11 @@ type InputValueEditorProps = ReferenceOptions & {
   literalDefault?: number | string
 }
 
-export default function InputValueEditor({ value, onChange, sourceLabel = 'Value Source', literalLabel,
+export default function InputValueEditor({ value, onChange, sourceLabel, literalLabel,
   timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, numericCalculation = false, allowStringLiteral = false, ...references }: InputValueEditorProps) {
+  const { t } = useI18n()
+
+
   const operandEditor = (side: 'left' | 'right') => value.source === 'expression' &&
     (side === 'left' || !Object.hasOwn(UNARY_OPERATORS, value.operator)) && (
     <ExpressionOperandEditor {...references} numericSetpoint={numericSetpoint} side={side === 'left' ? 'Left' : 'Right'} value={value[side] ?? { source: 'literal', value: 0 }}
@@ -223,7 +232,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
   return (
     <>
       <label className="step-property-field">
-        <span className="step-property-label">{sourceLabel}</span>
+        <span className="step-property-label">{sourceLabel ?? t("inputValueEditor.valueSource")}</span>
         <select value={value.source} disabled={references.disabled}
           onChange={(event) => onChange(event.target.value === 'expression'
             ? { source: 'expression', left: { source: 'literal', value: 0 }, operator: 'add', right: { source: 'literal', value: 0 } }
@@ -231,45 +240,45 @@ export default function InputValueEditor({ value, onChange, sourceLabel = 'Value
               ? { source: event.target.value }
               : defaultOperand(event.target.value, references, literalDefault))}>
           <SourceOptions {...references} numericSetpoint={numericSetpoint} />
-          <option value="expression">Calculation</option>
+          <option value="expression">{t("inputValueEditor.calculation")}</option>
           {!numericSetpoint && <>
-            <option value="elapsed-time">Elapsed time</option>
-            <option value="timestamp">Timestamp</option>
+            <option value="elapsed-time">{t("inputValueEditor.elapsedTime")}</option>
+            <option value="timestamp">{t("inputValueEditor.timestamp")}</option>
           </>}
         </select>
       </label>
       <p className="value-source-help">{numericSetpoint && value.source === 'expression'
-        ? 'Calculate a numeric value from fixed numbers or variables.' : SOURCE_HELP[value.source]}</p>
-      {numericSetpoint && <p className="value-source-help">Number (decimals allowed); the instrument still validates its supported range.</p>}
+        ? t("inputValueEditor.calculateANumericValueFromFixedNumbersOrVariables") : sourceHelp(t)[value.source]}</p>
+      {numericSetpoint && <p className="value-source-help">{t("inputValueEditor.numberDecimalsAllowedTheInstrumentStillValidatesItsSupported")}</p>}
       {value.source === 'elapsed-time' && timeFormat?.kind === 'elapsed-time' && onTimeFormatChange && <>
         <label className="step-property-field">
-          <span className="step-property-label">Time Format</span>
+          <span className="step-property-label">{t("inputValueEditor.timeFormat")}</span>
           <select value={timeFormat.format} disabled={references.disabled}
             onChange={event => onTimeFormatChange({ kind: 'elapsed-time', format: event.target.value as ElapsedTimeFormat })}>
-            {Object.entries(ELAPSED_TIME_FORMATS).map(([format, label]) => <option key={format} value={format}>{label}</option>)}
+            {Object.keys(ELAPSED_TIME_FORMATS).map(format => <option key={format} value={format}>{t(`timeFormat.${format}`)}</option>)}
           </select>
         </label>
-        <p className="value-source-help">XLSX time cells are numeric: Seconds uses seconds; other formats use Excel days. CSV retains raw seconds.</p>
+        <p className="value-source-help">{t("inputValueEditor.xLSXTimeCellsAreNumericSecondsUsesSecondsOther")}</p>
       </>}
       {value.source === 'timestamp' && timeFormat?.kind === 'timestamp' && onTimeFormatChange && <>
         <label className="step-property-field step-property-checkbox">
           <input type="checkbox" checked={timeFormat.include_date} disabled={references.disabled}
             onChange={event => onTimeFormatChange({ ...timeFormat, include_date: event.target.checked })} />
-          <span className="step-property-label">Include Date</span>
+          <span className="step-property-label">{t("inputValueEditor.includeDate")}</span>
         </label>
         <label className="step-property-field step-property-checkbox">
           <input type="checkbox" checked={timeFormat.include_utc_offset} disabled={references.disabled}
             onChange={event => onTimeFormatChange({ ...timeFormat, include_utc_offset: event.target.checked })} />
-          <span className="step-property-label">Include UTC Offset</span>
+          <span className="step-property-label">{t("inputValueEditor.includeUTCOffset")}</span>
         </label>
-        <p className="value-source-help">Hiding Date or UTC Offset affects display only. XLSX retains the full numeric date/time; CSV retains the full ISO timestamp.</p>
+        <p className="value-source-help">{t("inputValueEditor.hidingDateOrUTCOffsetAffectsDisplayOnlyXLSX")}</p>
       </>}
       {value.source === 'expression' ? (
-        <div className="step-properties-fields" role="group" aria-label="Calculation">
-          <span className="step-property-label">Calculation</span>
+        <div className="step-properties-fields" role="group" aria-label={t("inputValueEditor.calculation")}>
+          <span className="step-property-label">{t("inputValueEditor.calculation")}</span>
           {operandEditor('left')}
           <label className="step-property-field">
-            <span className="step-property-label">Operator</span>
+            <span className="step-property-label">{t("inputValueEditor.operator")}</span>
             <select value={value.operator} disabled={references.disabled}
               onChange={(event) => {
                 const operator = event.target.value as typeof value.operator

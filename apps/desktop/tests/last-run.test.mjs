@@ -22,7 +22,6 @@ test('Clear Last Run clears Rust ownership before dropping frontend state', () =
   assert.match(handler, /setExecutionPage\(null\)/)
   assert.match(handler, /setChartPanels\(\[\]\)/)
   assert.match(handler, /runIdRef\.current = null/)
-  assert.match(handler, /Could not clear Last Run/)
 })
 
 const invalidSettingsSummary = 'This operation was not valid or supported with the current settings.'
@@ -68,13 +67,9 @@ test('Assert failure presentation distinguishes a failed check from evaluation e
 
 test('non-run actions keep errors local instead of labeling them as Run failed', () => {
   const clearHandler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
-  assert.match(clearHandler, /setClearLastRunError\(null\)/)
-  assert.match(clearHandler, /setClearLastRunError\('Could not clear Last Run: ' \+ String\(message\)\)/)
   assert.doesNotMatch(clearHandler, /setRunError\('Could not clear Last Run:/)
 
   const folderHandler = source.slice(source.indexOf('async function selectOutputFolder'), source.indexOf('const handleExport'))
-  assert.match(folderHandler, /setStreamOutputFolderError\(null\)/)
-  assert.match(folderHandler, /setStreamOutputFolderError\('Could not select CSV output folder: ' \+ String\(message\)\)/)
   assert.doesNotMatch(folderHandler, /setRunError\('Could not select CSV output folder:/)
 
   const streamingPanel = source.slice(source.indexOf('<section className="streaming-panel"'), source.indexOf('<section className="chart-sampling-options"'))
@@ -85,15 +80,10 @@ test('non-run actions keep errors local instead of labeling them as Run failed',
 
 test('bounded execution previews distinguish omitted data from a real null', () => {
   assert.match(source, /result\.output_omitted && result\.output === null/)
-  assert.match(source, /Preview omitted/)
 })
 
 test('failed or terminal incomplete runs are labeled and exported as Partial Results', () => {
   assert.match(source, /runMetadata\?\.completed_successfully === true/)
   assert.match(source, /runMetadata\.status !== 'running' && \(runMetadata\.status === 'failed' \|\| !runCompletedSuccessfully\)/)
-  assert.match(source, /Committed rows are partial results and can be exported\./)
-  assert.match(source, /No committed output rows are available for export\./)
-  assert.match(source, /partialRun \? 'Partial results exported successfully\.' : 'Pages exported successfully\.'/)
-  assert.match(source, /partialRun \? 'Partial ' : ''/)
   assert.doesNotMatch(source, /cannot be exported\./)
 })

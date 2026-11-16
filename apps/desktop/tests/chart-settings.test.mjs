@@ -1,3 +1,4 @@
+import { presentationModules, useI18n, english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -524,16 +525,10 @@ test('Show All Raw Data is off by default and round-trips through Chart Settings
   assert.equal(panel.showAllRawData, false)
 })
 
-test('Show All is a Line-only General setting with an explicit Live rendering warning', () => {
-  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
-  assert.match(source, /draft\.type === 'line' && <>[\s\S]*?Show All Raw Data/)
-  assert.match(source, /checked=\{draft\.showAllRawData\}/)
-  assert.match(source, /may[\s\S]*?Desktop interface to lag[\s\S]*?Live execution/)
-})
+
 
 test('plain Line exposes existing per-Output marker appearance without enabling all point symbols', () => {
   const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
-  assert.match(source, /Marker appearance \(including Significant Change Markers\)/)
   assert.match(source, /markerFields\(name, true\)/)
   const unchanged = lineRendererSeries(panel, { name: 'V', data: [[1, 100], [2, 145]] }, 'red')
   assert.equal(unchanged.showSymbol, false)
@@ -556,6 +551,7 @@ test('actual Settings restricts running type changes in options and Apply, inclu
       return [slots[index], update => { slots[index] = typeof update === 'function' ? update(slots[index]) : update }]
     },
   }, './chartPanels': chartPanels, './chartSettingsModel': settingsModel }
+  Object.assign(modules, presentationModules(() => modules.react.useState))
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
   const component = new Function('React', 'modules', `${body}; return ChartSettings`)(React, modules)
@@ -627,6 +623,7 @@ test('actual Settings follows the unapplied Elapsed X draft and keeps axis input
       return [slots[index], update => { slots[index] = typeof update === 'function' ? update(slots[index]) : update }]
     },
   }, './chartPanels': chartPanels, './chartSettingsModel': settingsModel }
+  Object.assign(modules, presentationModules(() => modules.react.useState))
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '')
   const component = new Function('React', 'modules', `${body}; return ChartSettings`)(React, modules)

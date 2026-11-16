@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { EChartsType } from 'echarts/core'
@@ -13,6 +14,7 @@ type Selection = { backgroundId: string; datasetId: string }
 export type BackgroundChartSelections = Map<number, Selection>
 
 function SourceSettingsDialog({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  const { t } = useI18n()
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const element = dialog.current!
@@ -20,15 +22,15 @@ function SourceSettingsDialog({ children, onClose }: { children: ReactNode; onCl
     return () => { if (element.open) element.close() }
   }, [])
   return <dialog ref={dialog} className="chart-settings-dialog source-settings-dialog"
-    aria-label="Source settings" onClose={event => {
+    aria-label={t("backgroundChartPanel.sourceSettings")} onClose={event => {
       // StrictMode effect cleanup may queue a close event before showModal reopens.
       if (!event.currentTarget.open && event.currentTarget.isConnected) onClose()
     }}>
     <div className="chart-settings-content">
-      <h3>Source settings</h3>
+      <h3>{t("backgroundChartPanel.sourceSettings")}</h3>
       {children}
       <div className="chart-settings-actions">
-        <button className="action-button" type="button" onClick={onClose}>Close</button>
+        <button className="action-button" type="button" onClick={onClose}>{t("backgroundChartPanel.close")}</button>
       </div>
     </div>
   </dialog>
@@ -41,6 +43,7 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
   datasets: BackgroundDataset[]; running: boolean
   selections: BackgroundChartSelections; onSavingChange: (saving: boolean) => void
 }) {
+  const { t } = useI18n()
   const source = panel.source!
   const charts = useRef(new Map<number, EChartsType>())
   const pendingQuery = useRef<Promise<BackgroundChartSeries> | null>(null)
@@ -98,23 +101,22 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
     void query()
     return () => { cancelled = true; clearTimeout(timer) }
   }, [runId, source.background_id, source.field, source.x_axis, datasetId, panel.type, panel.showAllRawData, minimum, maximum, running, waiting])
-  const bounded = useMemo(() => ({ ...backgroundPlotData(series?.points ?? [], series?.domain ?? null), onRangeChange }), [series, onRangeChange])
+  const bounded = useMemo(() => ({ ...backgroundPlotData(series?.points ?? [], series?.domain ?? null, t), onRangeChange }), [series, onRangeChange, t])
   return <ChartPanelView panel={panel} panels={panels} onPanelsChange={onPanelsChange} charts={charts.current}
     numericNames={['value']} running={running} hasRows={(series?.total_count ?? 0) > 0}
     rawLimit={series?.raw_limit} canExport={!waiting && !error && !!series?.returned_count && !series.raw_limit_exceeded}
     onSavingChange={onSavingChange} onSourceSettings={() => setSourceSettingsOpen(true)}>
     {sourceSettingsOpen && <SourceSettingsDialog onClose={() => setSourceSettingsOpen(false)}>
     <div className="result-chart-source-info source-settings-source">
-      <strong>Data source</strong>
-      <span className="result-chart-source-badge result-chart-source-background">Background</span>
-      <span className="result-chart-page-badge">Source: {source.background_id}</span>
+      <strong>{t("backgroundChartPanel.dataSource")}</strong>
+      <span className="result-chart-source-badge result-chart-source-background">{t("backgroundChartPanel.background")}</span>
+      <span className="result-chart-page-badge">{t("backgroundChartPanel.source")}{source.background_id}</span>
     </div>
-    <p className="chart-settings-help">Choose a captured dataset and the X-axis data used by this chart. The Background source was selected when this Chart was created.</p>
+    <p className="chart-settings-help">{t("backgroundChartPanel.chooseACapturedDatasetAndTheXAxisData")}</p>
     {!sourceIsValid && <>
-      <p role="alert">This Background is no longer available in the current Draft or Last Run. {validBackgrounds.length
-        ? 'Reassign it to a valid Background below.' : 'Remove this Chart or restore an available source for a future run.'}</p>
-      {validBackgrounds.length > 0 && <label className="chart-settings-field">Reassign source
-        <select value="" onChange={event => {
+      <p role="alert">{t("backgroundChartPanel.thisBackgroundIsNoLongerAvailableInTheCurrent")}{validBackgrounds.length
+        ? t("backgroundChartPanel.reassignItToAValidBackgroundBelow") : t("backgroundChartPanel.removeThisChartOrRestoreAnAvailableSourceFor")}</p>
+      {validBackgrounds.length > 0 && <label className="chart-settings-field">{t("backgroundChartPanel.reassignSource")}<select value="" onChange={event => {
           const backgroundId = event.target.value
           if (!backgroundId) return
           selectDataset(null)
@@ -122,17 +124,16 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
             background_id: backgroundId, field: validBackgrounds.find(background => background.id === backgroundId)
               ?.scopes_measurements?.[0]?.id ?? 'value' } } : item))
         }}>
-          <option value="">Choose an available Background</option>
+          <option value="">{t("backgroundChartPanel.chooseAnAvailableBackground")}</option>
           {validBackgrounds.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
         </select>
       </label>}
     </>}
-    <label className="chart-settings-field">Capture Dataset<select value={datasetId ?? ''} onChange={event => selectDataset(event.target.value || null)}>
-      <option value="">Waiting for captured data</option>
-      {available.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.id} · {dataset.row_count} samples</option>)}
+    <label className="chart-settings-field">{t("backgroundChartPanel.captureDataset")}<select value={datasetId ?? ''} onChange={event => selectDataset(event.target.value || null)}>
+      <option value="">{t("backgroundChartPanel.waitingForCapturedData")}</option>
+      {available.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.id} · {dataset.row_count} {t("backgroundChartPanel.samples")}</option>)}
     </select></label>
-    {fields.length > 0 && <label className="chart-settings-field">Measurement
-      <select aria-label="Background Chart Measurement" value={source.field} onChange={event => {
+    {fields.length > 0 && <label className="chart-settings-field">{t("backgroundChartPanel.measurement")}<select aria-label={t("backgroundChartPanel.backgroundChartMeasurement")} value={source.field} onChange={event => {
         setRange(null); setSeries(null)
         onPanelsChange(panels.map(item => item.id === panel.id
           ? { ...item, source: { ...source, field: event.target.value } } : item))
@@ -140,31 +141,31 @@ export default function BackgroundChartPanel({ panel, panels, onPanelsChange, ru
         {fields.map(field => <option key={field.id} value={field.id}>{field.id}</option>)}
       </select>
     </label>}
-    <label className="chart-settings-field">X-axis data<select value={source.x_axis} onChange={event => {
+    <label className="chart-settings-field">{t("backgroundChartPanel.xAxisData")}<select value={source.x_axis} onChange={event => {
       const axis = event.target.value as typeof source.x_axis
       if (axis === source.x_axis) return
       setRange(null); setSeries(null)
       onPanelsChange(panels.map(item => item.id === panel.id ? { ...item, source: { ...source, x_axis: axis },
         xAxis: { ...item.xAxis, min: null, max: null, interval: null,
           title: item.xAxis.title === backgroundAxisTitle(source.x_axis) ? backgroundAxisTitle(axis) : item.xAxis.title } } : item))
-    }}><option value="elapsed">Elapsed Time</option><option value="timestamp">Timestamp</option><option value="index">Sample Index</option></select></label>
+    }}><option value="elapsed">{t("backgroundChartPanel.elapsedTime")}</option><option value="timestamp">{t("backgroundChartPanel.timestamp")}</option><option value="index">{t("backgroundChartPanel.sampleIndex")}</option></select></label>
     </SourceSettingsDialog>}
-    {waiting ? <p role="status">Waiting for run to finish. Only Line updates during a run.</p>
-      : !datasetId ? <p role="status">Waiting for captured data.</p>
+    {waiting ? <p role="status">{t("backgroundChartPanel.waitingForRunToFinishOnlyLineUpdatesDuring")}</p>
+      : !datasetId ? <p role="status">{t("backgroundChartPanel.waitingForCapturedData2")}</p>
       : <>
-        {error && <p role="alert">Could not prepare chart: {error}</p>}
-        {series && <section className="chart-info-summary" aria-label="Data summary">
-          <h4>Data summary</h4>
+        {error && <p role="alert">{t("backgroundChartPanel.couldNotPrepareChart")}{error}</p>}
+        {series && <section className="chart-info-summary" aria-label={t("backgroundChartPanel.dataSummary")}>
+          <h4>{t("backgroundChartPanel.dataSummary")}</h4>
           <dl>
-            <div><dt>Total samples</dt><dd>{series.total_count.toLocaleString()}</dd></div>
-            <div><dt>In range</dt><dd>{series.visible_count.toLocaleString()}</dd></div>
-            <div><dt>Plotted</dt><dd>{series.returned_count.toLocaleString()}</dd></div>
+            <div><dt>{t("backgroundChartPanel.totalSamples")}</dt><dd>{series.total_count.toLocaleString()}</dd></div>
+            <div><dt>{t("backgroundChartPanel.inRange")}</dt><dd>{series.visible_count.toLocaleString()}</dd></div>
+            <div><dt>{t("backgroundChartPanel.plotted")}</dt><dd>{series.returned_count.toLocaleString()}</dd></div>
           </dl>
           {!series.raw_limit_exceeded && <p className="chart-info-note">{series.sampled
-            ? 'Representative samples' : 'All visible samples plotted'}</p>}
+            ? t("backgroundChartPanel.representativeSamples") : t("backgroundChartPanel.allVisibleSamplesPlotted")}</p>}
         </section>}
-        {series?.raw_limit_exceeded && <p role="alert">This range contains {series.visible_count.toLocaleString()} samples; Show All Raw Data supports at most {series.raw_limit.toLocaleString()}. Narrow Zoom or turn off Show All Raw Data.</p>}
-        {!series && !error && <p role="status">Preparing chart data...</p>}
+        {series?.raw_limit_exceeded && <p role="alert">{t("backgroundChartPanel.thisRangeContains")}{series.visible_count.toLocaleString()} {t("backgroundChartPanel.samplesShowAllRawDataSupportsAtMost")}{series.raw_limit.toLocaleString()}{t("backgroundChartPanel.narrowZoomOrTurnOffShowAllRawData")}</p>}
+        {!series && !error && <p role="status">{t("backgroundChartPanel.preparingChartData")}</p>}
         <ChartPlot key={`${runId}:${source.background_id}:${source.field}:${datasetId}:${source.x_axis}`} panel={panel} data={EMPTY_DATA}
           numericNames={['value']} charts={charts.current} bounded={bounded} />
       </>}

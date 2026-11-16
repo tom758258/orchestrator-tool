@@ -1,3 +1,5 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import InputValueEditor from './InputValueEditor'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -13,6 +15,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   disabled: boolean; onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
   executionMode: ExecutionMode; modelId: string | null | undefined; scopesExecutableKey: string
 }) {
+  const { t } = useI18n()
   const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
   const capabilityModelId = executionMode === 'live' ? modelId : undefined
   const key = JSON.stringify([executionMode, capabilityModelId, scopesExecutableKey, step.target])
@@ -29,9 +32,9 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   const caps = loaded?.key === key ? loaded.value : null
   const channels = Array.from({ length: caps?.analog_channels ?? 0 }, (_, i) => i + 1)
   const capabilityHint = executionMode === 'live' && !capabilityModelId
-    ? 'Capability unavailable. Select or refresh a supported Live Resource.'
-    : loaded?.key !== key ? 'Loading offline Scopes capabilities...'
-    : !caps ? `Capability unavailable: ${loaded.error}` : null
+    ? t("scopesActionEditor.capabilityUnavailableSelectOrRefreshASupportedLiveResource")
+    : loaded?.key !== key ? t("scopesActionEditor.loadingOfflineScopesCapabilities")
+    : !caps ? t("scopesActionEditor.capabilityUnavailable", { value1: loaded.error ?? '' }) : null
   const formats = caps?.screenshot_formats ?? []
   const format = String(step.arguments.format ?? 'png')
   const change = (key: string, value: unknown) => onChange({ ...step, arguments: { ...step.arguments, [key]: value } })
@@ -63,15 +66,15 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
             const value = Number(event.target.value)
             if (!disabled && channels.includes(value)) changeFixed(key, value)
           }}>
-          <option value="" disabled>{bound ? 'Bound channel (preserved)' : 'Select a channel...'}</option>
+          <option value="" disabled>{bound ? t("scopesActionEditor.boundChannelPreserved") : t("scopesActionEditor.selectAChannel")}</option>
           {!bound && saved !== undefined && !supported && <option value={String(saved)} disabled>
-            CH{String(saved)} ({caps ? 'not supported' : 'unconfirmed'})
+            {t("scopesActionEditor.cH")}{String(saved)} ({caps ? t("scopesActionEditor.notSupported") : t("scopesActionEditor.unconfirmed")})
           </option>}
-          {channels.map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
+          {channels.map(channel => <option key={channel} value={channel}>{t("scopesActionEditor.cH")}{channel}</option>)}
         </select></label>
-      {bound ? <p className="tool-setup-hint">Channel binding preserved. Select a fixed channel to replace it.</p>
+      {bound ? <p className="tool-setup-hint">{t("scopesActionEditor.channelBindingPreservedSelectAFixedChannelToReplace")}</p>
         : saved !== undefined && !supported && <p className="tool-setup-hint">
-          Saved channel {String(saved)} preserved: {caps ? 'not supported by the current model.' : 'support cannot be confirmed.'}
+          {t("scopesActionEditor.savedChannel")}{String(saved)} {t("scopesActionEditor.preserved")}{caps ? t("scopesActionEditor.notSupportedByTheCurrentModel") : t("scopesActionEditor.supportCannotBeConfirmed")}
         </p>}
     </>
   }
@@ -86,22 +89,22 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
             const value = options.find(option => String(option) === event.target.value)
             if (!disabled && value !== undefined) changeFixed(key, value)
           }}>
-          <option value="" disabled>Select {label.toLowerCase()}...</option>
+          <option value="" disabled>{t("scopesActionEditor.select")}{label.toLowerCase()}...</option>
           {options.map(option => <option key={option} value={option}>
             {key === 'item' && typeof option === 'string'
-              ? option === 'vpp' ? 'Vp-p' : option.replace(/[a-z]/i, letter => letter.toUpperCase())
-              : option}
+              ? enumLabel(t, 'capability', option) === option ? option.replace(/[a-z]/i, letter => letter.toUpperCase()) : enumLabel(t, 'capability', option)
+              : typeof option === 'string' ? enumLabel(t, 'capability', option) : option}
           </option>)}
         </select>
       </label>
-      {options.length === 0 && <p className="tool-setup-hint">{label} options are unavailable.</p>}
-      {!valid && <p className="tool-setup-hint">{label} is invalid or unconfirmed. Select a supported fixed value.</p>}
+      {options.length === 0 && <p className="tool-setup-hint">{label} {t("scopesActionEditor.optionsAreUnavailable")}</p>}
+      {!valid && <p className="tool-setup-hint">{label} {t("scopesActionEditor.isInvalidOrUnconfirmedSelectASupportedFixedValue")}</p>}
     </>
   }
   const numeric = (key: string, label: string, fallback: number) => <InputValueEditor key={`${step.id}-${key}`}
     value={step.bindings?.[key] ?? { source: 'literal', value: step.arguments[key] as number ?? fallback }}
     numericSetpoint
-    sourceLabel={`${label} Source`} literalLabel={label} literalDefault={fallback}
+    sourceLabel={t("inputValueEditor.namedSource", { label })} literalLabel={label} literalDefault={fallback}
     earlierSteps={earlierSteps} earlierVariables={earlierVariables} instances={instances} stepLabel={stepLabel} disabled={disabled}
     onChange={(value: InputValueWire) => {
       const bindings = { ...step.bindings }
@@ -127,99 +130,98 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
   const selectedChannels: number[] = captureSupported && !captureBound ? [...new Set(savedChannels)] : []
   return <>
     {channelAction && capabilityHint && <p className="tool-setup-hint">{capabilityHint}</p>}
-    {channelAction && caps && channels.length === 0 && <p className="tool-setup-hint">No supported channels were returned for the current model.</p>}
-    {channel && channelSelector('channel', 'Channel')}
-    {step.action === 'channel-display' && <label className="step-property-field"><span className="step-property-label">Display</span>
+    {channelAction && caps && channels.length === 0 && <p className="tool-setup-hint">{t("scopesActionEditor.noSupportedChannelsWereReturnedForTheCurrentModel")}</p>}
+    {channel && channelSelector('channel', t("scopesActionEditor.channel"))}
+    {step.action === 'channel-display' && <label className="step-property-field"><span className="step-property-label">{t("scopesActionEditor.display")}</span>
       <select value={step.arguments.off === true ? 'off' : 'on'} disabled={disabled} onChange={event => {
         const arguments_ = { ...step.arguments }; delete arguments_.on; delete arguments_.off; delete arguments_.query
         arguments_[event.target.value] = true
         onChange({ ...step, arguments: arguments_ })
-      }}><option value="on">On</option><option value="off">Off</option></select></label>}
-    {step.action === 'channel-scale' && numeric('volts_per_division', 'Volts per Division', 1)}
-    {step.action === 'channel-offset' && numeric('volts', 'Offset (V)', 0)}
-    {step.action === 'timebase-scale' && numeric('seconds_per_division', 'Seconds per Division', 0.001)}
-    {step.action === 'timebase-position' && numeric('seconds', 'Position (s)', 0)}
+      }}><option value="on">{t("scopesActionEditor.on")}</option><option value="off">{t("scopesActionEditor.off")}</option></select></label>}
+    {step.action === 'channel-scale' && numeric('volts_per_division', t("scopesActionEditor.voltsPerDivision"), 1)}
+    {step.action === 'channel-offset' && numeric('volts', t("scopesActionEditor.offsetV"), 0)}
+    {step.action === 'timebase-scale' && numeric('seconds_per_division', t("scopesActionEditor.secondsPerDivision"), 0.001)}
+    {step.action === 'timebase-position' && numeric('seconds', t("scopesActionEditor.positionS"), 0)}
     {step.action === 'trigger-edge' && <>
-      {channelSelector('source_channel', 'Source Channel')}{numeric('level', 'Level (V)', 0)}
-      {capabilityChoice('slope', 'Slope', caps?.trigger_edge_slopes ?? [])}
+      {channelSelector('source_channel', t("scopesActionEditor.sourceChannel"))}{numeric('level', t("scopesActionEditor.levelV"), 0)}
+      {capabilityChoice('slope', t("scopesActionEditor.slope"), caps?.trigger_edge_slopes ?? [])}
     </>}
-    {step.action === 'measure' && capabilityChoice('item', 'Measurement Item', caps?.direct_measurement_items ?? [])}
+    {step.action === 'measure' && capabilityChoice('item', t("scopesActionEditor.measurementItem"), caps?.direct_measurement_items ?? [])}
     {step.action === 'autoscale' && <>
-      <p className="tool-setup-hint">AutoScale is a foreground-only operation for supported Keysight scopes. It may change channel display and scale, timebase, and trigger settings; no settings are restored automatically.</p>
-      {caps && !autoScaleAvailable && <p className="tool-setup-hint">AutoScale is not supported by this model. Choose a supported Keysight Live Resource.</p>}
+      <p className="tool-setup-hint">{t("scopesActionEditor.autoScaleIsAForegroundOnlyOperationForSupportedKeysight")}</p>
+      {caps && !autoScaleAvailable && <p className="tool-setup-hint">{t("scopesActionEditor.autoScaleIsNotSupportedByThisModelChooseA")}</p>}
       <div className="step-property-field">
-        <span className="step-property-label">Source Channels (optional)</span>
+        <span className="step-property-label">{t("scopesActionEditor.sourceChannelsOptional")}</span>
         {channels.map(channel => <label key={channel} className="step-property-checkbox">
-          <input type="checkbox" aria-label={`AutoScale CH${channel}`} checked={selectedAutoChannels.includes(channel)}
+          <input type="checkbox" aria-label={t("scopesActionEditor.autoScaleCH", { value1: channel })} checked={selectedAutoChannels.includes(channel)}
             disabled={disabled || !autoScaleAvailable} onChange={event => {
               if (disabled || !autoScaleAvailable || !channels.includes(channel)) return
               const next = event.target.checked ? [...new Set([...selectedAutoChannels, channel])]
                 : selectedAutoChannels.filter(value => value !== channel)
               changeOptional('source_channel', next.length ? next.sort((a, b) => a - b) : undefined)
-            }} />CH{channel}
+            }} />{t("scopesActionEditor.cH")}{channel}
         </label>)}
       </div>
       {savedAutoChannels !== undefined && !autoChannelsValid && <p className="tool-setup-hint">
-        Saved AutoScale channels {JSON.stringify(savedAutoChannels)} are unsupported or invalid; the stored value is preserved until explicitly replaced.
-      </p>}
-      <label className="step-property-field"><span className="step-property-label">Acquire Mode</span>
-        <select aria-label="AutoScale Acquire Mode"
+        {t("scopesActionEditor.savedAutoScaleChannels")}{JSON.stringify(savedAutoChannels)} {t("scopesActionEditor.areUnsupportedOrInvalidTheStoredValueIsPreserved")}</p>}
+      <label className="step-property-field"><span className="step-property-label">{t("scopesActionEditor.acquireMode")}</span>
+        <select aria-label={t("scopesActionEditor.autoScaleAcquireMode")}
           value={step.arguments.acquire_mode === 'normal' || step.arguments.acquire_mode === 'current'
             ? step.arguments.acquire_mode : ''}
           disabled={disabled || !autoScaleAvailable}
           onChange={event => changeOptional('acquire_mode', event.target.value || undefined)}>
-          <option value="">Not specified</option>
-          <option value="normal">Normal</option><option value="current">Current</option>
+          <option value="">{t("scopesActionEditor.notSpecified")}</option>
+          <option value="normal">{t("scopesActionEditor.normal")}</option><option value="current">{t("scopesActionEditor.current")}</option>
         </select>
       </label>
-      <label className="step-property-field"><span className="step-property-label">Channels Mode</span>
-        <select aria-label="AutoScale Channels Mode"
+      <label className="step-property-field"><span className="step-property-label">{t("scopesActionEditor.channelsMode")}</span>
+        <select aria-label={t("scopesActionEditor.autoScaleChannelsMode")}
           value={step.arguments.channels === 'all' || step.arguments.channels === 'displayed'
             ? step.arguments.channels : ''}
           disabled={disabled || !autoScaleAvailable}
           onChange={event => changeOptional('channels', event.target.value || undefined)}>
-          <option value="">Not specified</option>
-          <option value="all">All</option><option value="displayed">Displayed</option>
+          <option value="">{t("scopesActionEditor.notSpecified")}</option>
+          <option value="all">{t("scopesActionEditor.all")}</option><option value="displayed">{t("scopesActionEditor.displayed")}</option>
         </select>
       </label>
       {((step.arguments.acquire_mode !== undefined && !['normal', 'current'].includes(String(step.arguments.acquire_mode)))
         || (step.arguments.channels !== undefined && !['all', 'displayed'].includes(String(step.arguments.channels)))) &&
-        <p className="tool-setup-hint">Unsupported saved AutoScale option preserved. Select a valid value to replace it.</p>}
+        <p className="tool-setup-hint">{t("scopesActionEditor.unsupportedSavedAutoScaleOptionPreservedSelectAValidValue")}</p>}
     </>}
     {step.action === 'capture' && <>
-      <div className="step-property-field"><span className="step-property-label">Channels</span>
+      <div className="step-property-field"><span className="step-property-label">{t("scopesActionEditor.channels")}</span>
         {channels.map(channel => <label key={channel} className="step-property-checkbox">
-          <input type="checkbox" aria-label={`Capture CH${channel}`} checked={selectedChannels.includes(channel)}
+          <input type="checkbox" aria-label={t("scopesActionEditor.captureCH", { value1: channel })} checked={selectedChannels.includes(channel)}
             disabled={disabled || (selectedChannels.length === 1 && selectedChannels.includes(channel))} onChange={event => {
               if (disabled || !channels.includes(channel)) return
               const next = event.target.checked ? [...new Set([...selectedChannels, channel])]
                 : selectedChannels.filter(value => value !== channel)
               if (next.length) changeFixed('channel', next.sort((a, b) => a - b))
-            }} />CH{channel}
+            }} />{t("scopesActionEditor.cH")}{channel}
         </label>)}
       </div>
-      {captureBound ? <p className="tool-setup-hint">Channel binding preserved. Select fixed channels to replace it.</p>
+      {captureBound ? <p className="tool-setup-hint">{t("scopesActionEditor.channelBindingPreservedSelectFixedChannelsToReplaceIt")}</p>
         : !captureSupported && <p className="tool-setup-hint">
-          Saved Capture channels {JSON.stringify(savedChannels) ?? '(unset)'} preserved: {caps
-            ? 'invalid or not supported by the current model. Select channels to replace them.' : 'support cannot be confirmed.'}
+          {t("scopesActionEditor.savedCaptureChannels")}{JSON.stringify(savedChannels) ?? t("scopesActionEditor.unset")} {t("scopesActionEditor.preserved")}{caps
+            ? t("scopesActionEditor.invalidOrNotSupportedByTheCurrentModelSelect") : t("scopesActionEditor.supportCannotBeConfirmed")}
         </p>}
-      {capabilityChoice('points', 'Points', caps?.capture_point_options ?? [])}
-      <p className="tool-setup-hint">CSV and metadata are saved in Scopes File Output. Every execution creates new files.</p>
+      {capabilityChoice('points', t("scopesActionEditor.points"), caps?.capture_point_options ?? [])}
+      <p className="tool-setup-hint">{t("scopesActionEditor.cSVAndMetadataAreSavedInScopesFileOutput")}</p>
     </>}
     {step.action === 'screenshot' && <>
-      <label className="step-property-field"><span className="step-property-label">Image Format</span>
-        <select aria-label="Image Format" value={format} disabled={disabled || formats.length === 0} onChange={event => {
+      <label className="step-property-field"><span className="step-property-label">{t("scopesActionEditor.imageFormat")}</span>
+        <select aria-label={t("scopesActionEditor.imageFormat")} value={format} disabled={disabled || formats.length === 0} onChange={event => {
           if (!disabled && formats.includes(event.target.value)) change('format', event.target.value)
         }}>
-          <option value="png" disabled={!formats.includes('png')}>PNG</option>
-          <option value="bmp" disabled={!formats.includes('bmp')}>BMP</option>
-          <option value="bmp8bit" disabled={!formats.includes('bmp8bit')}>BMP 8-bit</option>
+          <option value="png" disabled={!formats.includes('png')}>{t("scopesActionEditor.pNG")}</option>
+          <option value="bmp" disabled={!formats.includes('bmp')}>{t("scopesActionEditor.bMP")}</option>
+          <option value="bmp8bit" disabled={!formats.includes('bmp8bit')}>{t("scopesActionEditor.bMP8Bit")}</option>
           {!['png', 'bmp', 'bmp8bit'].includes(format) && <option value={format} disabled>{format}</option>}
         </select></label>
       {capabilityHint && <p className="tool-setup-hint">{capabilityHint}</p>}
-      {caps && formats.length === 0 && <p className="tool-setup-hint">Screenshot formats are unavailable for the current model.</p>}
-      {caps && !formats.includes(format) && <p className="tool-setup-hint">Unsupported by the current model; existing Image Format preserved.</p>}
-      <p className="tool-setup-hint">The image is saved in Scopes File Output. Scopes validates the format against the selected model.</p>
+      {caps && formats.length === 0 && <p className="tool-setup-hint">{t("scopesActionEditor.screenshotFormatsAreUnavailableForTheCurrentModel")}</p>}
+      {caps && !formats.includes(format) && <p className="tool-setup-hint">{t("scopesActionEditor.unsupportedByTheCurrentModelExistingImageFormatPreserved")}</p>}
+      <p className="tool-setup-hint">{t("scopesActionEditor.theImageIsSavedInScopesFileOutputScopes")}</p>
     </>}
   </>
 }

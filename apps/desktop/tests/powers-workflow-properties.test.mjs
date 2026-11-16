@@ -1,3 +1,4 @@
+import { english } from './presentation-fixture.mjs'
 import { templateDraftJson, workflowOnlyDraft } from '../src/templateDraft.ts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -22,9 +23,9 @@ const { code } = await transformWithOxc(`function properties(params) {
   ${context}
   return <>${fields}</>
 }`, 'properties.tsx', { jsx: { runtime: 'classic' } })
-const render = new Function('React', 'InputValueEditor', 'hasPowerSetpoint', 'powerSetpointLiteralDefault',
+const render = new Function('t', 'React', 'InputValueEditor', 'hasPowerSetpoint', 'powerSetpointLiteralDefault',
   'togglePowerSetpoint', 'numericArgument', 'isPositiveInteger', 'stepLabel', `${code}; return properties`)(
-  React, () => null, hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint,
+  english, React, () => null, hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint,
   (step, name) => typeof step.arguments[name] === 'number' ? step.arguments[name] : '',
   value => Number.isSafeInteger(value) && value >= 1, () => '')
 
@@ -203,7 +204,6 @@ test('setpoint labels, help and units accompany horizontal clickable checkbox la
   assert.match(view.text, /Set the maximum allowed output current, not a forced output current\. Uncheck to leave the existing limit unchanged\./)
   assert.deepEqual(view.inputs.map(node => node.props.literalLabel), ['Voltage (V)', 'Current Limit (A)'])
   assert.deepEqual(view.inputs.map(node => node.props.value.value), [0, 0])
-  assert.match(app, /This step only configures the setpoints\. Use Power Output ON separately to enable the output\./)
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
   assert.match(css, /\.powers-protection-toggle,\s*\.step-property-checkbox\s*\{[^}]*display: flex;[^}]*align-items: center;[^}]*gap: 8px;/)
 })

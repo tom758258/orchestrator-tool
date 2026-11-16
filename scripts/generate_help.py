@@ -26,10 +26,20 @@ HTML_WARNING = "<!-- Generated file. Do not edit directly. -->"
 class HelpLinks(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.languages = {}
+        self.lang = None
+        self.ids = set()
+        self.fragments = []
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if tag == "html":
+            self.lang = attrs.get("lang")
+        if "id" in attrs:
+            if attrs["id"] in self.ids:
+                raise ValueError("Duplicate Help element ID")
+            self.ids.add(attrs["id"])
+        if "hreflang" in attrs or "help-languages" in attrs.get("class", "").split():
+            raise ValueError("Help language is selected by the Desktop application")
         if tag != "a" or "href" not in attrs:
             return
         href = attrs["href"]
@@ -37,8 +47,10 @@ class HelpLinks(HTMLParser):
         if not url.netloc and url.scheme not in ("https", "http"):
             if unquote(url.path).lower().endswith(".md"):
                 raise ValueError(f"Repository-local Markdown link is not allowed: {href}")
-        if "hreflang" in attrs:
-            self.languages[attrs["hreflang"]] = href
+        if href.startswith("#"):
+            self.fragments.append(unquote(href[1:]))
+        elif not url.netloc and not url.scheme and url.path and url.path not in FILES:
+            raise ValueError(f"Unknown local Help link: {href}")
 
 
 def render(source, lang, template):
@@ -58,9 +70,12 @@ def render(source, lang, template):
         raise ValueError("Unexpanded template placeholder in Help output")
     links = HelpLinks()
     links.feed(result)
-    expected = {lang: name for _, name, lang in SOURCES}
-    if links.languages != expected:
-        raise ValueError(f"Help language links must point to {expected}")
+    if lang not in {locale for _, _, locale in SOURCES} or links.lang != lang:
+        raise ValueError("Help HTML language must match its source locale")
+    if not all(fragment in links.ids for fragment in links.fragments):
+        raise ValueError("Help contains an unresolved chapter link")
+    if not {"toc", "toc-title", "help-content"}.issubset(links.ids):
+        raise ValueError("Help must retain its chapter navigation and content")
     return result
 
 
@@ -88,7 +103,7 @@ def check():
                 generated / name
             ).read_text(encoding="utf-8"):
                 raise ValueError(f"Help bundle is out of sync: {name}; run python scripts/generate_help.py")
-    print("Help bundle is synchronized; pages, language links, placeholders, and CSS verified.")
+    print("Help bundle is synchronized; pages, locales, chapter links, placeholders, and CSS verified.")
 
 
 def main():

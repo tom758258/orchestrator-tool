@@ -1,3 +1,4 @@
+import { english, type Translate } from './i18n/index.ts'
 import type { BoundedChartData } from './chartData'
 
 export type BackgroundReading = { value: number | null; unit: string | null; valid: boolean; reason: string | null }
@@ -17,7 +18,7 @@ export type BackgroundChartSeries = { total_count: number; visible_count: number
   sampled: boolean; raw_limit: number; raw_limit_exceeded: boolean; domain: { min: number; max: number } | null;
   points: BackgroundChartPoint[] }
 
-export function backgroundPlotData(points: BackgroundChartPoint[], domain: BoundedChartData['domain']): BoundedChartData {
+export function backgroundPlotData(points: BackgroundChartPoint[], domain: BoundedChartData['domain'], t: Translate = english): BoundedChartData {
   return { x: Float64Array.from(points, point => point.x), values: Float64Array.from(points, point => point.value), domain,
-    hoverLabels: points.map(point => `Sample ${point.sample_index}\n${point.timestamp_utc}\nElapsed ${point.elapsed_s} s · ${point.unit}`) }
+    hoverLabels: points.map(point => t('chartPlot.sampleHover', { index: point.sample_index, timestamp: point.timestamp_utc, elapsed: point.elapsed_s, unit: point.unit })) }
 }

@@ -1,3 +1,4 @@
+import { presentationModules, useI18n, english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
@@ -130,6 +131,7 @@ async function valueEditor(component = 'InputValueEditor') {
   const { code } = await transformWithOxc(source, 'InputValueEditor.tsx', { jsx: { runtime: 'classic' } })
   const modules = { react: { useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}] },
     './inputValue': inputValue, './outputTime': outputTime }
+  Object.assign(modules, presentationModules(() => modules.react.useState))
   const body = code.replace(/import (.+?) from "([^"]+)";/g,
     (_, names, path) => `const ${names} = modules[${JSON.stringify(path)}];`).replace(/export default /g, '').replace(/export /g, '')
   const render = new Function('React', 'modules', `${body}; return { InputValueEditor, ExpressionOperandEditor }`)(React, modules)[component]

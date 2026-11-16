@@ -19,6 +19,15 @@ class HelpGenerationTests(unittest.TestCase):
         self.assertIn('<pre><code class="language-text">', rendered)
         self.assertIn("<table>", rendered)
 
+    def test_each_locale_keeps_navigation_without_a_language_selector(self):
+        for locale in ("en", "zh-TW"):
+            with self.subTest(locale=locale):
+                page = render("# Guide\n\n## Chapter\n\n[Chapter](#chapter)", locale, self.template)
+                self.assertIn(f'<html lang="{locale}">', page)
+                self.assertIn('id="toc"', page)
+                self.assertNotIn('help-languages', page)
+                self.assertNotIn('hreflang=', page)
+
     def test_local_markdown_links_are_rejected_but_public_urls_are_retained(self):
         for link in (
             "[local](../README.md)",
@@ -31,12 +40,17 @@ class HelpGenerationTests(unittest.TestCase):
         url = "https://example.com/README.md"
         self.assertIn(url, render(f"# Guide\n\n[Public]({url})", "en", self.template))
 
-    def test_template_and_language_link_errors_are_rejected(self):
+    def test_template_locale_and_navigation_errors_are_rejected(self):
         for template in (
             self.template.replace("{{content}}", ""),
             self.template + "{{title}}",
             self.template + "{{unknown}}",
-            self.template.replace('href="desktop.zh-TW.html"', 'href="missing.html"'),
+            self.template.replace('lang="{{lang}}"', 'lang="wrong"'),
+            self.template.replace('id="toc"', 'id="missing"'),
+            self.template + '<a href="#missing">Missing</a>',
+            self.template + '<a href="missing.html">Missing</a>',
+            self.template + '<nav class="help-languages"></nav>',
+            self.template + '<a href="desktop.html" hreflang="en">English</a>',
         ):
             with self.subTest(template=template), self.assertRaises(ValueError):
                 render("# Guide", "en", template)

@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import type { OutputStep } from './workflow'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -32,6 +33,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
   changeSettings?: ChartChangeSettings | null
   fitData?: boolean
 }) {
+  const { t } = useI18n()
   const plots = useRef(new Map<number, EChartsType>())
   const [dataVersion, setDataVersion] = useState(0)
   const [statistical, setStatistical] = useState<Record<number, StatisticalState>>({})
@@ -182,7 +184,7 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
           running={running} hasRows={rowCount > 0} onSavingChange={onSavingChange}
           canExport={!waiting && selectedOutputs.length > 0 && analysisReady && enoughOutputs}>
           <fieldset className="result-chart-outputs" disabled={waiting}>
-            <legend>Outputs</legend>
+            <legend>{t("resultChart.outputs")}</legend>
             {numericNames.map(name => <label key={name}>
               <input type={panel.type === 'histogram' ? 'radio' : 'checkbox'}
                 name={panel.type === 'histogram' ? `histogram-output-${panel.id}` : undefined}
@@ -197,14 +199,14 @@ export default function ResultChart({ runId, revision, rowCount, numericNames, t
             </label>)}
           </fieldset>
           {waiting ? <div className="result-chart-waiting" role="status">
-            <p>Waiting for run to finish</p>
-            <p>This chart does not support live updates. It will update automatically when the run finishes.</p>
-          </div> : waitingForRunData ? <p role="status">Waiting for run data</p>
-            : selectedOutputs.length === 0 ? <p>Select at least one Output to display this chart.</p>
-            : !enoughOutputs ? <p>Select at least two Outputs for Combo.</p>
+            <p>{t("resultChart.waitingForRunToFinish")}</p>
+            <p>{t("resultChart.thisChartDoesNotSupportLiveUpdatesItWill")}</p>
+          </div> : waitingForRunData ? <p role="status">{t("resultChart.waitingForRunData")}</p>
+            : selectedOutputs.length === 0 ? <p>{t("resultChart.selectAtLeastOneOutputToDisplayThisChart")}</p>
+            : !enoughOutputs ? <p>{t("resultChart.selectAtLeastTwoOutputsForCombo")}</p>
               : isStatistical && statisticState?.key === statisticKey && statisticState.error
-                ? <p role="alert">Could not prepare chart: {statisticState.error}</p>
-                : !analysisReady ? <p role="status">Preparing chart data...</p> : (
+                ? <p role="alert">{t("resultChart.couldNotPrepareChart")}{statisticState.error}</p>
+                : !analysisReady ? <p role="status">{t("resultChart.preparingChartData")}</p> : (
             <ChartPlot panel={visiblePanel}
               data={data ?? EMPTY_DATA} numericNames={numericNames} charts={plots.current}
               statistical={isStatistical ? statisticState?.response : undefined}

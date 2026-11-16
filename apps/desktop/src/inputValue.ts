@@ -1,3 +1,4 @@
+import { english, type Translate } from './i18n/index.ts'
 // Mirrors the Core Template wire representation; operands cannot contain expressions.
 export type ExpressionOperandWire =
   | { source: 'literal'; value: unknown }
@@ -59,36 +60,36 @@ export type CuratedResultField = {
 export const CUSTOM_RESULT = 'custom'
 
 const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[]>> = {
-  'serial/send': [{ label: 'TX Hex', pointer: '/tx_hex' }, { label: 'TX Bytes', pointer: '/tx_bytes' }],
-  'serial/send-file': [{ label: 'File Bytes', pointer: '/file_bytes' }, { label: 'Bytes Written', pointer: '/bytes_written' }],
-  'serial/receive': [{ label: 'RX Hex', pointer: '/rx_hex' }, { label: 'RX Bytes', pointer: '/rx_bytes' }],
-  'serial/query': [{ label: 'RX Hex', pointer: '/rx_hex' }, { label: 'RX Bytes', pointer: '/rx_bytes' },
-    { label: 'TX Hex', pointer: '/tx_hex' }, { label: 'TX Bytes', pointer: '/tx_bytes' },
-    { label: 'Delimiter Hex', pointer: '/delimiter_hex' }],
+  'serial/send': [{ label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' }],
+  'serial/send-file': [{ label: "resultFields.fileBytes", pointer: '/file_bytes' }, { label: "resultFields.bytesWritten", pointer: '/bytes_written' }],
+  'serial/receive': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' }],
+  'serial/query': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' },
+    { label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' },
+    { label: "resultFields.delimiterHex", pointer: '/delimiter_hex' }],
   'scopes/measure': [
-    { label: 'Value', pointer: '/value' },
-    { label: 'Unit', pointer: '/unit' },
-    { label: 'Channel', pointer: '/channel' },
-    { label: 'Item', pointer: '/item' },
+    { label: "resultFields.value", pointer: '/value' },
+    { label: "resultFields.unit", pointer: '/unit' },
+    { label: "resultFields.channel", pointer: '/channel' },
+    { label: "resultFields.item", pointer: '/item' },
   ],
   'meters/measure': [
-    { label: 'Value', pointer: '/value' },
-    { label: 'Unit', pointer: '/unit' },
+    { label: "resultFields.value", pointer: '/value' },
+    { label: "resultFields.unit", pointer: '/unit' },
   ],
   'powers/measure': [
-    { label: 'Voltage', pointer: '/data/measurements/voltage' },
-    { label: 'Current', pointer: '/data/measurements/current' },
-    { label: 'Channel', pointer: '/data/channel' },
+    { label: "resultFields.voltage", pointer: '/data/measurements/voltage' },
+    { label: "resultFields.current", pointer: '/data/measurements/current' },
+    { label: "resultFields.channel", pointer: '/data/channel' },
   ],
   'powers/set-output': [
-    { label: 'Channel', pointer: '/request/arguments/channel' },
-    { label: 'Voltage', pointer: '/request/arguments/voltage' },
-    { label: 'Current Limit', pointer: '/request/arguments/current' },
+    { label: "resultFields.channel", pointer: '/request/arguments/channel' },
+    { label: "resultFields.voltage", pointer: '/request/arguments/voltage' },
+    { label: "resultFields.currentLimit", pointer: '/request/arguments/current' },
   ],
   'powers/protection-status': [
-    { label: 'Protection Tripped', pointer: '/protection_tripped' },
-    { label: 'Over Voltage Tripped', pointer: '/over_voltage_tripped' },
-    { label: 'Over Current Tripped', pointer: '/over_current_tripped' },
+    { label: "resultFields.protectionTripped", pointer: '/protection_tripped' },
+    { label: "resultFields.overVoltageTripped", pointer: '/over_voltage_tripped' },
+    { label: "resultFields.overCurrentTripped", pointer: '/over_current_tripped' },
   ],
 }
 
@@ -101,10 +102,11 @@ export function stepOutputCandidates<T extends StepOutputCandidate>(steps: reado
 export function curatedResultFields(
   step: StepOutputCandidate | undefined,
   instances: readonly ToolIdentity[],
+  t: Translate = english,
 ): readonly CuratedResultField[] {
   if (step?.type !== 'tool-action') return []
   const tool = instances.find(instance => instance.id === step.target)?.tool
-  return ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []
+  return (ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []).map(field => ({ ...field, label: t(field.label) }))
 }
 
 export function resultSelection(pointer: string, fields: readonly CuratedResultField[]): string {

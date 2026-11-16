@@ -1,3 +1,4 @@
+import { english, type Translate } from './i18n/index.ts'
 import { formatElapsedTime, formatTimestampMillis, type OutputTimeFormat } from './outputTime.ts'
 import { chartSupportsZoom, comboSeriesSettings, lineSeriesSettings, markerStyleSettings, seriesColor,
   type AxisSettings, type ChartPanel, type MarkerShape } from './chartPanels.ts'
@@ -187,12 +188,22 @@ export function formatScatterX(value: number, timeFormat?: OutputTimeFormat): st
 
 export function chartPresentationOptions(panel: ChartPanel, _seriesCount: number, colors: ChartColors,
   fullDomain?: { min: number; max: number }, iterations?: Float64Array, categories?: string[],
-  seriesColors: Record<string, string> = {}, fitData = false, xTimeFormat?: OutputTimeFormat) {
+  seriesColors: Record<string, string> = {}, fitData = false, xTimeFormat?: OutputTimeFormat, t: Translate = english) {
   const hasLegend = chartHasLegend(panel)
   const visual = chartVisualOptions(colors)
   const layout = chartLayout(panel)
-  const xAxis = panel.type === 'bar' ? panel.yAxis : panel.xAxis
-  const yAxis = panel.type === 'bar' ? panel.xAxis : panel.yAxis
+  // Localize automatic display titles without writing language into saved settings.
+  // Output names used for Scatter/Histogram and custom axis titles stay as entered.
+  const automaticX = panel.source ? { elapsed: ['Elapsed Time (s)', 'elapsedTitle'],
+    timestamp: ['Timestamp', 'timestampTitle'], index: ['Sample Index', 'sampleIndexTitle'] }[panel.source.x_axis]
+    : !['histogram', 'boxplot'].includes(panel.type) && !(panel.type === 'scatter' && panel.scatterXOutput !== null)
+      ? ['Iteration', 'iterationTitle'] : undefined
+  const localizedX = automaticX && panel.xAxis.title === automaticX[0]
+    ? { ...panel.xAxis, title: t('chartPlot.' + automaticX[1]) } : panel.xAxis
+  const localizedY = panel.type === 'histogram' && panel.yAxis.title === 'Count'
+    ? { ...panel.yAxis, title: t('chartPlot.countTitle') } : panel.yAxis
+  const xAxis = panel.type === 'bar' ? localizedY : localizedX
+  const yAxis = panel.type === 'bar' ? localizedX : localizedY
   return {
     title: { text: panel.title, left: 'center' as const, top: 8,
       textStyle: { ...visual.title.textStyle, fontSize: 16 } },

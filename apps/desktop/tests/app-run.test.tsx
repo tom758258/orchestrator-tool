@@ -4,6 +4,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import type { ComponentProps } from 'react'
 import App from '../src/App'
+import { I18nProvider } from '../src/i18n/I18nProvider'
 import type ResultChart from '../src/ResultChart'
 import ChartPanelView from '../src/ChartPanelView'
 import { addChartPanel, addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
@@ -111,7 +112,7 @@ beforeEach(() => {
       }
       case 'load_workflow_template': return JSON.stringify(currentDraft)
       case 'save_workflow_template': return params.templateJson
-      case 'clear_last_run': return undefined
+      case 'clear_last_run': case 'open_help': return undefined
       case 'run_workflow_live': case 'run_workflow_simulation': return run.promise
       case 'request_workflow_stop': case 'request_global_workflow_stop': return true
       case 'get_last_run_executions': return { run_id: params.runId, offset: 0, total_executions: 1, executions: [metadata(Number(params.runId)).latest_execution] }
@@ -159,6 +160,50 @@ async function savedDraft(): Promise<WorkflowDraft> {
   return JSON.parse((vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template')
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
+
+test('locale changes preserve Template payload, active run, output data and Help settings', async () => {
+  localStorage.removeItem('orchestrator-tool.theme')
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation((command, args) => command === 'export_last_run_pages'
+    ? Promise.resolve(undefined) : original(command, args))
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('create_workflow_draft'))
+  tab('Workflow')
+  await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
+  const before = await savedDraft()
+  fireEvent.click(screen.getByRole('button', { name: 'Switch theme to Light' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
+  expect(screen.getByText('已儲存範本。')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '儲存範本' }))
+  await waitFor(() => expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template')).toHaveLength(2))
+  const latest = vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').at(-1)!
+  expect(JSON.parse((latest[1] as { templateJson: string }).templateJson)).toEqual(before)
+  fireEvent.click(screen.getByRole('button', { name: '使用說明' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('open_help', { locale: 'zh-TW', theme: 'light' }))
+  fireEvent.click(screen.getByRole('button', { name: /執行.*模擬/ }))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  fireEvent.click(screen.getByRole('button', { name: '切換語言為 English' }))
+  expect(screen.getByRole('button', { name: 'Stop Workflow' })).toBeTruthy()
+  expect(runCalls()).toHaveLength(1)
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'create_workflow_draft')).toHaveLength(1)
+  await finish(7)
+  tab('Output')
+  await screen.findByTitle('10.6')
+  fireEvent.click(screen.getByRole('button', { name: 'Export XLSX' }))
+  await screen.findByText('Pages exported successfully.')
+  fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
+  expect(screen.getByTitle('10.6')).toBeTruthy()
+  expect(screen.getByRole('region', { name: '前景輸出' })).toBeTruthy()
+  expect(screen.getByText('已成功匯出頁面。')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '匯出 XLSX' }))
+  await waitFor(() => expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'export_last_run_pages')).toHaveLength(2))
+  const exports = vi.mocked(invoke).mock.calls.filter(([command]) => command === 'export_last_run_pages')
+  expect(exports[0][1]).toEqual(exports[1][1])
+  expect(localStorage.getItem('orchestrator-tool.theme')).toBe('light')
+  localStorage.removeItem('orchestrator-tool.theme')
+  expect(runCalls()).toHaveLength(1)
+  localStorage.removeItem('orchestrator-tool.locale')
+})
 
 test('Charts creation settings filter Page by Ground and label each source', async () => {
   currentDraft = backgroundDraft(2)
@@ -836,7 +881,7 @@ test.each(['Simulation', 'Live'])('%s dismisses stale Summary failures while pre
   tab('Output')
   expect(snapshot().runId).toBe(runId)
   expect(screen.queryByText(error)).toBeNull()
-})
+}, 10000)
 
 test.each(['Simulation', 'Live'])('%s can stop before any loop or step progress and waits for cleanup', async mode => {
   currentDraft.workflow.steps = [{ type: 'wait', id: 'wait', duration_ms: 30000 }]

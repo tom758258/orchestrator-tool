@@ -1,3 +1,4 @@
+import { useI18n } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -34,8 +35,8 @@ function harness() {
     queries.push({ command, args, ...query })
     return query.promise
   }
-  const hook = new Function('useEffect', 'useState', 'invoke', 'allWorkflowSteps', 'setTimeout', 'clearTimeout',
-    `${body}; return useLivePreflight`)(useEffect, useState, invoke, allWorkflowSteps,
+  const hook = new Function('useI18n', 'useEffect', 'useState', 'invoke', 'allWorkflowSteps', 'setTimeout', 'clearTimeout',
+    `${body}; return useLivePreflight`)(useI18n, useEffect, useState, invoke, allWorkflowSteps,
     callback => { const timer = { callback }; timers.push(timer); return timer }, timer => { timer.cancelled = true })
   const draft = { tool_instances: [{ id: 'power', tool: 'powers', setup: {} }], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
     { type: 'tool-action', id: 'off', target: 'power', action: 'output-off', arguments: { channel: 1 } },

@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import { useCallback, useMemo, type ReactNode } from 'react'
 import {
   Background,
@@ -83,6 +84,7 @@ function WorkflowCanvas({
   onMoveStep,
   onDeleteStep,
 }: WorkflowCanvasProps) {
+  const { t } = useI18n()
   const nodes = useMemo<WorkflowCanvasNode[]>(
     () =>
       steps.map((step, index) => ({
@@ -116,10 +118,10 @@ function WorkflowCanvas({
                 >
                   <span>
                     {step.result.status === 'succeeded'
-                      ? 'Success'
+                      ? t("workflowCanvas.success")
                       : step.result.status === 'failed'
-                        ? 'Failed'
-                        : 'Cancelled'}
+                        ? t("workflowCanvas.failed")
+                        : t("workflowCanvas.cancelled")}
                   </span>
                   {step.result.measurement && (
                     <span className="workflow-canvas-node-measurement">
@@ -139,8 +141,7 @@ function WorkflowCanvas({
                   }}
                   disabled={index === 0 || workflowBusy}
                 >
-                  Earlier
-                </button>
+                  {t("workflowCanvas.earlier")}</button>
                 <button
                   className="action-button"
                   type="button"
@@ -150,8 +151,7 @@ function WorkflowCanvas({
                   }}
                   disabled={index === steps.length - 1 || workflowBusy}
                 >
-                  Later
-                </button>
+                  {t("workflowCanvas.later")}</button>
                 <button
                   className="action-button action-button-danger"
                   type="button"
@@ -161,20 +161,19 @@ function WorkflowCanvas({
                   }}
                   disabled={workflowBusy}
                 >
-                  Delete
-                </button>
+                  {t("workflowCanvas.delete")}</button>
               </div>
             </div>
           ),
         },
-        ariaLabel: `Step ${index + 1}: ${step.label}, ${step.id}`,
+        ariaLabel: t("workflowCanvas.stepLabel", { value1: index + 1, value2: step.label, value3: step.id }),
         connectable: false,
         deletable: false,
         selected: selectedStepId === step.id,
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
       })),
-    [onDeleteStep, onMoveStep, positions, selectedStepId, steps, workflowBusy],
+    [onDeleteStep, onMoveStep, positions, selectedStepId, steps, workflowBusy, t],
   )
 
   const edges = useMemo<Edge[]>(
@@ -185,7 +184,7 @@ function WorkflowCanvas({
           id: `linear:${step.id}:${nextStep.id}`,
           source: step.id,
           target: nextStep.id,
-          ariaLabel: `${step.id} to ${nextStep.id}`,
+          ariaLabel: t('workflowCanvas.edge', { from: step.id, to: nextStep.id }),
           deletable: false,
           focusable: false,
           markerEnd: { type: MarkerType.ArrowClosed },
@@ -193,7 +192,7 @@ function WorkflowCanvas({
           selectable: false,
         }
       }),
-    [steps],
+    [steps, t],
   )
 
   const handleNodesChange = useCallback(
@@ -212,9 +211,20 @@ function WorkflowCanvas({
   )
 
   return (
-    <div className="workflow-canvas" role="region" aria-label="Workflow canvas">
+    <div className="workflow-canvas" role="region" aria-label={t("workflowCanvas.workflowCanvas")}>
       <ReactFlow
         key={layoutRevision}
+        ariaLabelConfig={{
+          'controls.ariaLabel': t('workflowCanvas.controls'),
+          'controls.zoomIn.ariaLabel': t('workflowCanvas.zoomIn'),
+          'controls.zoomOut.ariaLabel': t('workflowCanvas.zoomOut'),
+          'controls.fitView.ariaLabel': t('workflowCanvas.fitView'),
+          'node.a11yDescription.default': t('workflowCanvas.nodeDescription'),
+          'node.a11yDescription.keyboardDisabled': t('workflowCanvas.moveDescription'),
+          'node.a11yDescription.ariaLiveMessage': ({ direction, x, y }) => t('workflowCanvas.nodeMoved', {
+            direction: t(`workflowCanvas.direction.${direction}`), x, y,
+          }),
+        }}
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
@@ -231,7 +241,7 @@ function WorkflowCanvas({
         <Controls showInteractive={false} />
       </ReactFlow>
 
-      {steps.length === 0 && <p className="workflow-canvas-empty">No workflow steps yet.</p>}
+      {steps.length === 0 && <p className="workflow-canvas-empty">{t("workflowCanvas.noWorkflowStepsYet")}</p>}
     </div>
   )
 }

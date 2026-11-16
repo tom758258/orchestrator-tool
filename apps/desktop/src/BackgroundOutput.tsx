@@ -1,3 +1,5 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -8,13 +10,16 @@ import { serialEventViews, type SerialDataFormat } from './serialDisplay'
 import { formatNumber, type NumericDisplayFormat } from './outputTime'
 
 type SummaryColumn = 'count' | 'min' | 'max' | 'avg' | 'valid' | 'invalid'
-const summaryLabels: Record<SummaryColumn, string> = { count: 'Count', min: 'Min', max: 'Max', avg: 'Avg', valid: 'Valid', invalid: 'Invalid' }
+
 
 export default function BackgroundOutput({ runId, backgrounds, running, onExportingChange, numericFormat, onNumericFormatChange }: {
   runId: number; backgrounds: BackgroundConfig[]; running: boolean
   onExportingChange?: (value: boolean) => void
   numericFormat: NumericDisplayFormat; onNumericFormatChange: (format: NumericDisplayFormat) => void
 }) {
+  const { t } = useI18n()
+  const summaryLabels: Record<SummaryColumn, string> = { count: t("backgroundOutput.count"), min: t("backgroundOutput.min"), max: t("backgroundOutput.max"), avg: t("backgroundOutput.avg"), valid: t("backgroundOutput.valid"), invalid: t("backgroundOutput.invalid") }
+
   const [background, setBackground] = useState(backgrounds[0]?.id ?? '')
   const [datasetId, setDatasetId] = useState<string | null>(null)
   const [output, setOutput] = useState<Output | null>(null)
@@ -72,56 +77,52 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
   async function exportData() {
     setExporting(true); onExportingChange?.(true); setError(null); setExported([])
     try {
-      const folder = await open({ directory: true, multiple: false, title: 'Export Background datasets' })
+      const folder = await open({ directory: true, multiple: false, title: t("backgroundOutput.exportBackgroundDatasets") })
       if (typeof folder !== 'string') return
       setExported(await invoke<string[]>('export_background_datasets', { runId, datasetIds: selected.map(item => item.id),
         outputFolder: folder, format, scopesMode, serialFormat: serialMode, rowsPerFile: format !== 'xlsx' ? 300000 : Number(rowsPerFile) }))
     } catch (reason) { setError(String(reason)) }
     finally { setExporting(false); onExportingChange?.(false) }
   }
-  return <Collapsible className="background-output" title="Background Output" framed>
+  return <Collapsible className="background-output" title={t("backgroundOutput.backgroundOutput")} framed>
     <div className="output-source-card">
-      <h4>Source</h4>
+      <h4>{t("backgroundOutput.source")}</h4>
       <div className="output-source-fields">
-        <label>Background
-          <select value={background} disabled={exporting}
+        <label>{t("backgroundOutput.background")}<select value={background} disabled={exporting}
             onChange={event => { setBackground(event.target.value); setDatasetId(null); setOutput(null); setOffset(0) }}>
             {backgrounds.map(config => <option key={config.id} value={config.id}>{config.id} · {config.tool_instance_id}</option>)}
           </select>
         </label>
-        <label>Capture Dataset
-          <select aria-label="Background Dataset" value={datasetId ?? ''} disabled={exporting}
+        <label>{t("backgroundOutput.captureDataset")}<select aria-label={t("backgroundOutput.backgroundDataset")} value={datasetId ?? ''} disabled={exporting}
             onChange={event => { setDatasetId(event.target.value || null); setOutput(null); setOffset(0) }}>
-            <option value="">Select Dataset</option>
+            <option value="">{t("backgroundOutput.selectDataset")}</option>
             {datasets.map(item => <option key={item.id} value={item.id}>
-              {item.id} · {item.row_count} {item.tool_kind === 'serial' ? 'RX events' : 'samples'} · {item.status}
+              {item.id} · {item.row_count} {item.tool_kind === 'serial' ? t("backgroundOutput.rXEvents") : t("backgroundOutput.samples")} · {enumLabel(t, 'status', item.status)}
             </option>)}
           </select>
         </label>
       </div>
-      <p className="output-source-help">Select a Background and Capture Dataset from this run to view its results.</p>
+      <p className="output-source-help">{t("backgroundOutput.selectABackgroundAndCaptureDatasetFromThisRun")}</p>
       <p className="output-source-meta" role="status">
-        Worker: {worker?.state ?? 'off'}{worker?.stream_state ? ' · Source: ' + worker.stream_state : ''}
+        {t("backgroundOutput.worker")}{enumLabel(t, 'status', worker?.state ?? 'off')}{worker?.stream_state ? t("backgroundOutput.source2") + enumLabel(t, 'status', worker.stream_state) : ''}
       </p>
       {worker?.error && <p role="alert">{worker.error}</p>}
     </div>
     {dataset && <>
       {!serial && <div className="numeric-display-settings">
-        <label>Number display
-          <select aria-label="Background Number display" value={numericFormat.mode}
+        <label>{t("backgroundOutput.numberDisplay")}<select aria-label={t("backgroundOutput.backgroundNumberDisplay")} value={numericFormat.mode}
             onChange={event => onNumericFormatChange({ ...numericFormat, mode: event.target.value as NumericDisplayFormat['mode'] })}>
-            <option value="auto">Auto</option><option value="fixed">Fixed</option><option value="raw">Raw</option>
+            <option value="auto">{t("backgroundOutput.auto")}</option><option value="fixed">{t("backgroundOutput.fixed")}</option><option value="raw">{t("backgroundOutput.raw")}</option>
           </select>
         </label>
-        {numericFormat.mode === 'fixed' && <label>Decimal places
-          <select aria-label="Background Decimal places" value={numericFormat.decimalPlaces}
+        {numericFormat.mode === 'fixed' && <label>{t("backgroundOutput.decimalPlaces")}<select aria-label={t("backgroundOutput.backgroundDecimalPlaces")} value={numericFormat.decimalPlaces}
             onChange={event => onNumericFormatChange({ ...numericFormat, decimalPlaces: Number(event.target.value) })}>
             {Array.from({ length: 13 }, (_, places) => <option key={places} value={places}>{places}</option>)}
           </select>
         </label>}
       </div>}
-      <Collapsible className="page-result-summary" title="Summary" actions={!serial && <details className="summary-columns">
-        <summary>Columns ▾</summary>
+      <Collapsible className="page-result-summary" title={t("backgroundOutput.summary")} actions={!serial && <details className="summary-columns">
+        <summary>{t("backgroundOutput.columns")}</summary>
         <div>{availableColumns.map(column => <label key={column}>
           <input type="checkbox" checked={summaryColumns.includes(column)}
             onChange={event => setSummaryColumns(current => event.target.checked
@@ -130,46 +131,45 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
         </label>)}</div>
       </details>}>
         <p className="output-row-count">
-          {dataset.row_count} {serial ? 'RX events' : 'samples'} · {dataset.status} · Quality: {dataset.quality}
+          {dataset.row_count} {serial ? t("backgroundOutput.rXEvents") : t("backgroundOutput.samples")} · {enumLabel(t, 'status', dataset.status)} {t("backgroundOutput.quality")}{enumLabel(t, 'status', dataset.quality)}
         </p>
         <div className="output-table-scroll">
-          {serial ? <table className="output-table" aria-label="Background Result Summary">
-            <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+          {serial ? <table className="output-table" aria-label={t("backgroundOutput.backgroundResultSummary")}>
+            <thead><tr><th>{t("backgroundOutput.metric")}</th><th>{t("backgroundOutput.value")}</th></tr></thead>
             <tbody>
-              <tr><th scope="row">RX events</th><td>{dataset.row_count}</td></tr>
-              <tr><th scope="row">Captured bytes</th><td>{dataset.rx_bytes ?? 0}</td></tr>
+              <tr><th scope="row">{t("backgroundOutput.rXEvents")}</th><td>{dataset.row_count}</td></tr>
+              <tr><th scope="row">{t("backgroundOutput.capturedBytes")}</th><td>{dataset.rx_bytes ?? 0}</td></tr>
             </tbody>
-          </table> : <table className="output-table" aria-label="Background Result Summary">
-            <thead><tr><th>Output</th>{visibleColumns.map(column => <th key={column}>{summaryLabels[column]}</th>)}</tr></thead>
-            <tbody>{(fields.length ? fields : ['Value']).map(field => <tr key={field}>
+          </table> : <table className="output-table" aria-label={t("backgroundOutput.backgroundResultSummary")}>
+            <thead><tr><th>{t("backgroundOutput.output")}</th>{visibleColumns.map(column => <th key={column}>{summaryLabels[column]}</th>)}</tr></thead>
+            <tbody>{(fields.length ? fields : [t("backgroundOutput.value")]).map(field => <tr key={field}>
               <th scope="row">{field}</th>
               {visibleColumns.map(column => <td key={column}>{summaryValue(column, fields.length ? field : undefined)}</td>)}
             </tr>)}</tbody>
           </table>}
         </div>
-        {dataset.csv_path && <p>Streaming CSV: {dataset.csv_path}</p>}
+        {dataset.csv_path && <p>{t("backgroundOutput.streamingCSV")}{dataset.csv_path}</p>}
         {dataset.error && <p role="alert">{dataset.error}</p>}
       </Collapsible>
-      <Collapsible title="Output Data" className="output-data">
+      <Collapsible title={t("backgroundOutput.outputData")} className="output-data">
         <p className="output-row-count">
-          {dataset.row_count} {serial ? 'RX events' : 'samples'} · rows {dataset.row_count ? offset + 1 : 0}–{Math.min(offset + 100, dataset.row_count)} of {dataset.row_count}
+          {dataset.row_count} {serial ? t("backgroundOutput.rXEvents") : t("backgroundOutput.samples")} {t("backgroundOutput.rows")}{dataset.row_count ? offset + 1 : 0}–{Math.min(offset + 100, dataset.row_count)} {t("backgroundOutput.of")}{dataset.row_count}
         </p>
-        {serial && <label>Serial Data View
-          <select aria-label="Serial Data View" value={serialMode} onChange={event => setSerialMode(event.target.value as SerialDataFormat)}>
-            <option value="hex">Hex</option><option value="text">Text (UTF-8)</option>
+        {serial && <label>{t("backgroundOutput.serialDataView")}<select aria-label={t("backgroundOutput.serialDataView")} value={serialMode} onChange={event => setSerialMode(event.target.value as SerialDataFormat)}>
+            <option value="hex">{t("backgroundOutput.hex")}</option><option value="text">{t("backgroundOutput.textUTF8")}</option>
           </select>
         </label>}
-        <div className="output-table-scroll"><table className="output-table background-data-table" aria-label="Background Output Data">
-          <thead><tr><th>Timestamp</th><th>Elapsed (s)</th><th>{serial ? 'RX Event' : 'Sample'}</th>
-            {serial ? <><th>Data</th><th>Bytes</th></> : fields.length
-              ? fields.map(field => <th key={field}>{field}</th>) : <><th>Value</th><th>Unit</th></>}
+        <div className="output-table-scroll"><table className="output-table background-data-table" aria-label={t("backgroundOutput.backgroundOutputData")}>
+          <thead><tr><th>{t("backgroundOutput.timestamp")}</th><th>{t("backgroundOutput.elapsedS")}</th><th>{serial ? t("backgroundOutput.rXEvent") : t("backgroundOutput.sample")}</th>
+            {serial ? <><th>{t("backgroundOutput.data")}</th><th>{t("backgroundOutput.bytes")}</th></> : fields.length
+              ? fields.map(field => <th key={field}>{field}</th>) : <><th>{t("backgroundOutput.value")}</th><th>{t("backgroundOutput.unit")}</th></>}
           </tr></thead>
           <tbody>{output?.rows.map((sample, index) => <tr key={offset + index}>
             <td>{sample.timestamp_utc}</td><td>{sample.elapsed_s}</td><td>{sample.captured}</td>
             {serial ? <><td className="serial-rx-data">{serialViews[index]}</td><td>{sample.rx_bytes ?? 0}</td></>
               : fields.length ? fields.map(field => {
                 const reading = sample.values?.[field]
-                return <td key={field} title={reading?.valid === false ? reading.reason ?? 'Invalid measurement' : reading?.unit ?? ''}>
+                return <td key={field} title={reading?.valid === false ? reading.reason ?? t("backgroundOutput.invalidMeasurement") : reading?.unit ?? ''}>
                   {reading?.valid && reading.value != null ? formatNumber(reading.value, numericFormat) : '—'}
                   {reading?.unit ? ' ' + reading.unit : ''}
                 </td>
@@ -178,51 +178,46 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
         </table></div>
         {dataset.row_count > 100 && <div className="background-data-pagination">
           <button className="action-button" type="button" disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - 100))}>Previous</button>
-          <span>Page {Math.floor(offset / 100) + 1} of {Math.ceil(dataset.row_count / 100)}</span>
+            onClick={() => setOffset(Math.max(0, offset - 100))}>{t("backgroundOutput.previous")}</button>
+          <span>{t("backgroundOutput.page")}{Math.floor(offset / 100) + 1} {t("backgroundOutput.of")}{Math.ceil(dataset.row_count / 100)}</span>
           <button className="action-button" type="button" disabled={offset + 100 >= dataset.row_count}
-            onClick={() => setOffset(offset + 100)}>Next</button>
+            onClick={() => setOffset(offset + 100)}>{t("backgroundOutput.next")}</button>
         </div>}
       </Collapsible>
     </>}
     <div className="output-export-settings">
-      <h4>Export settings</h4>
+      <h4>{t("backgroundOutput.exportSettings")}</h4>
       <div className="output-export-controls">
-        <label>Datasets
-          <select aria-label="Export datasets" value={all ? 'all' : 'selected'} onChange={event => setAll(event.target.value === 'all')}>
-            <option value="selected">Selected Dataset</option><option value="all">All Datasets</option>
+        <label>{t("backgroundOutput.datasets")}<select aria-label={t("backgroundOutput.exportDatasets")} value={all ? 'all' : 'selected'} onChange={event => setAll(event.target.value === 'all')}>
+            <option value="selected">{t("backgroundOutput.selectedDataset")}</option><option value="all">{t("backgroundOutput.allDatasets")}</option>
           </select>
         </label>
-        <label>Format
-          <select aria-label="Background export format" value={format}
+        <label>{t("backgroundOutput.format")}<select aria-label={t("backgroundOutput.backgroundExportFormat")} value={format}
             onChange={event => setFormat(event.target.value as 'csv' | 'xlsx' | 'bin')}>
-            <option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="bin">BIN (Serial RX)</option>
+            <option value="csv">{t("backgroundOutput.cSV")}</option><option value="xlsx">{t("backgroundOutput.xLSX")}</option><option value="bin">{t("backgroundOutput.bINSerialRX")}</option>
           </select>
         </label>
-        {hasScopesDataset && <label>Scopes export columns
-          <select aria-label="Scopes export columns" value={scopesMode}
+        {hasScopesDataset && <label>{t("backgroundOutput.scopesExportColumns")}<select aria-label={t("backgroundOutput.scopesExportColumns")} value={scopesMode}
             onChange={event => setScopesMode(event.target.value as 'values-only' | 'values-quality')}>
-            <option value="values-only">Values + units</option>
-            <option value="values-quality">Values + units + validity + reason</option>
+            <option value="values-only">{t("backgroundOutput.valuesUnits")}</option>
+            <option value="values-quality">{t("backgroundOutput.valuesUnitsValidityReason")}</option>
           </select>
         </label>}
-        {format === 'xlsx' && <label>Samples per XLSX file
-          <input type="number" min={1} max={1048575} step={1} value={rowsPerFile}
+        {format === 'xlsx' && <label>{t("backgroundOutput.samplesPerXLSXFile")}<input type="number" min={1} max={1048575} step={1} value={rowsPerFile}
             onChange={event => setRowsPerFile(event.target.value)} />
         </label>}
         <button className="action-button" type="button" disabled={running || exporting || selected.length === 0 || (format === 'bin' && !binAllowed)
           || (format === 'xlsx' && !validRows)} onClick={() => void exportData()}>
-          {exporting ? 'Exporting…' : `Export ${format.toUpperCase()}`}
+          {exporting ? t("backgroundOutput.exporting") : t("backgroundOutput.export", { value1: format.toUpperCase() })}
         </button>
       </div>
-      <p className="output-export-help">Export the selected or all datasets. Choose a destination folder; full datasets are exported, not only visible rows.</p>
-      {format === 'bin' && !binAllowed && <p role="alert">BIN requires Serial-only selected datasets.</p>}
+      <p className="output-export-help">{t("backgroundOutput.exportTheSelectedOrAllDatasetsChooseADestination")}</p>
+      {format === 'bin' && !binAllowed && <p role="alert">{t("backgroundOutput.bINRequiresSerialOnlySelectedDatasets")}</p>}
       {format === 'xlsx' && large && <p role="status">
-        More than 300,000 samples. XLSX export may take time; data will be split into files using the count above.
-      </p>}
-      {format === 'xlsx' && !validRows && <p role="alert">Enter 1 to 1,048,575 samples per file.</p>}
+        {t("backgroundOutput.moreThan300000SamplesXLSXExportMayTake")}</p>}
+      {format === 'xlsx' && !validRows && <p role="alert">{t("backgroundOutput.enter1To1048575SamplesPerFile")}</p>}
       {error && <p role="alert">{error}</p>}
-      {exported.length > 0 && <p role="status">Exported: {exported.join(', ')}</p>}
+      {exported.length > 0 && <p role="status">{t("backgroundOutput.exported")}{exported.join(', ')}</p>}
     </div>
   </Collapsible>
 }

@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import type { ReactNode } from 'react'
 import FailureDetails from './FailureDetails'
 import { allWorkflowSteps, type RunMetadataDto } from './workflow'
@@ -32,16 +33,17 @@ export default function WorkflowRunSummary({
   displayedRun, showLastRunError, livePreflight, liveStartError, validateDraft, runSelectedMode,
   stopControls, stopFeedback,
 }: Props) {
+  const { t } = useI18n()
   return (
     <>
       <div className="workflow-summary-header">
         <dl className="workflow-details">
           <div className="detail-row">
-            <dt className="detail-label">Template</dt>
+            <dt className="detail-label">{t("workflowRunSummary.template")}</dt>
             <dd className="detail-value">{workflowDraft.name}</dd>
           </div>
           <div className="detail-row">
-            <dt className="detail-label">Steps</dt>
+            <dt className="detail-label">{t("workflowRunSummary.steps")}</dt>
             <dd className="detail-value">{allWorkflowSteps(workflowDraft.workflow.steps).length}</dd>
           </div>
         </dl>
@@ -52,7 +54,7 @@ export default function WorkflowRunSummary({
             onClick={() => void validateDraft()}
             disabled={workflowBusy}
           >
-            {validationStatus === 'validating' ? 'Validating…' : 'Validate'}
+            {validationStatus === 'validating' ? t("workflowRunSummary.validating") : t("workflowRunSummary.validate")}
           </button>
           <button
             className="action-button action-button-primary"
@@ -60,45 +62,44 @@ export default function WorkflowRunSummary({
             onClick={() => void runSelectedMode()}
             disabled={workflowBusy || toolConfigBusy !== null || loading || chartThresholdInvalid || livePreflight.blocked}
           >
-            Run {executionMode === 'simulate' ? 'Simulation' : 'Live'}
+            {t("workflowRunSummary.run")}{executionMode === 'simulate' ? t("workflowRunSummary.simulation") : t("workflowRunSummary.live")}
           </button>
           {stopControls}
         </div>
       </div>
       {stopFeedback}
-      {executionMode === 'live' && livePreflight.status === 'checking' && <p role="status">Live Preflight: Checking…</p>}
-      {executionMode === 'live' && livePreflight.status === 'passed' && <p className="validation-success" role="status">Live Preflight: Passed</p>}
+      {executionMode === 'live' && livePreflight.status === 'checking' && <p role="status">{t("workflowRunSummary.livePreflightChecking")}</p>}
+      {executionMode === 'live' && livePreflight.status === 'passed' && <p className="validation-success" role="status">{t("workflowRunSummary.livePreflightPassed")}</p>}
       {executionMode === 'live' && livePreflight.status === 'failed' && <div className="error" role="alert">
-        <p>Live Preflight failed — Live run has not started.</p>
+        <p>{t("workflowRunSummary.livePreflightFailedLiveRunHasNotStarted")}</p>
         {livePreflight.errors.map((error, index) => <p key={index}>{error}</p>)}
       </div>}
       {executionMode === 'live' && liveStartError && <div className="error" role="alert">
-        <p>Live run did not start</p><FailureDetails message={liveStartError} />
+        <p>{t("workflowRunSummary.liveRunDidNotStart")}</p><FailureDetails message={liveStartError} />
       </div>}
       {runStatus === 'running' && <p role="status">{runningText}</p>}
-      {displayedRun?.status === 'stopped' && <p role="status">Run stopped</p>}
+      {displayedRun?.status === 'stopped' && <p role="status">{t("workflowRunSummary.runStopped")}</p>}
 
       {validationStatus === 'valid' && (
         <p className="validation-success" role="status">
-          Valid
-        </p>
+          {t("workflowRunSummary.valid")}</p>
       )}
 
       {validationError && (
         <p className="error" role="alert">
-          Validation failed: {validationError}
+          {t("workflowRunSummary.validationFailed")}{validationError}
         </p>
       )}
 
       {runError && (
         <div className="error" role="alert">
-          <p className="failure-run-title">Run failed</p>
+          <p className="failure-run-title">{t("workflowRunSummary.runFailed")}</p>
           <FailureDetails message={runError} />
         </div>
       )}
       {showLastRunError && displayedRun?.status === 'failed' && displayedRun.error && displayedRun.error !== runError && (
         <div className="error" role="alert">
-          <p className="failure-run-title">Run failed</p>
+          <p className="failure-run-title">{t("workflowRunSummary.runFailed")}</p>
           <FailureDetails message={displayedRun.error} />
         </div>
       )}

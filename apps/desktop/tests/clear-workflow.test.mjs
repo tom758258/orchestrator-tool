@@ -1,3 +1,4 @@
+import { english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -52,7 +53,7 @@ function harness(approved) {
   let selectedStepId = 'output-1'
   let selection = { ids: ['output-1'], active: 'output-1', anchor: 'output-1' }
   const confirmations = []
-  const context = {
+  const context = { t: english,
     workflowDraft: draft,
     stepEditingBusyRef: { current: false },
     runInFlightRef: { current: false },

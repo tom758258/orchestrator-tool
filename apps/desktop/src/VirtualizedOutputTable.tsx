@@ -1,3 +1,4 @@
+import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -33,6 +34,7 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   iterationRows: boolean
   numericFormat: NumericDisplayFormat
 }) {
+  const { t } = useI18n()
   const scroll = useRef<HTMLDivElement>(null)
   const header = useRef<HTMLTableSectionElement>(null)
   const previousRowCountRef = useRef(rowCount)
@@ -140,13 +142,13 @@ export default function VirtualizedOutputTable({ runId, page, rowCount, revision
   const columnCount = outputs.length + (iterationRows ? 1 : 0)
   const pendingRows = Math.max(0, displayRange.end - displayRange.start - items.length)
 
-  return <div ref={scroll} className="output-table-scroll" role="region" aria-label="Last Run outputs" tabIndex={0}
+  return <div ref={scroll} className="output-table-scroll" role="region" aria-label={t("virtualizedOutputTable.lastRunOutputs")} tabIndex={0}
     onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
     <table className="output-table" aria-labelledby="output-data-title" aria-rowcount={displayRowCount + 1}
       style={{ '--output-row-height': `${OUTPUT_ROW_HEIGHT}px` } as CSSProperties}>
       <thead ref={header}>
         <tr aria-rowindex={1}>
-          {iterationRows && <th scope="col">Iteration</th>}
+          {iterationRows && <th scope="col">{t("virtualizedOutputTable.iteration")}</th>}
           {outputs.map(step => <th key={step.id} scope="col">{step.name}</th>)}
         </tr>
       </thead>

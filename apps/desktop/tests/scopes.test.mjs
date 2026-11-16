@@ -1,3 +1,4 @@
+import { presentationModules, useI18n, english } from './presentation-fixture.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -34,6 +35,7 @@ async function componentEditor(file, component, invoke) {
     },
   }
   for (const [, path] of code.matchAll(/import .+? from "([^"]+)";/g)) {
+    if (path.startsWith('./i18n/')) { modules[path] = presentationModules(() => modules.react.useState)[path]; continue }
     if (path === './InputValueEditor') modules[path] = 'InputValueEditor'
     else if (path === './BackgroundSetup') modules[path] = 'BackgroundSetup'
     else if (path.startsWith('.')) modules[path] = await import(`../src/${path}.ts`)

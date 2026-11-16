@@ -1,0 +1,23 @@
+export default {
+  "workflowCanvas.success": "Success",
+  "workflowCanvas.failed": "Failed",
+  "workflowCanvas.cancelled": "Cancelled",
+  "workflowCanvas.earlier": "Earlier",
+  "workflowCanvas.later": "Later",
+  "workflowCanvas.delete": "Delete",
+  "workflowCanvas.workflowCanvas": "Workflow canvas",
+  "workflowCanvas.noWorkflowStepsYet": "No workflow steps yet.",
+  "workflowCanvas.stepLabel": "Step {value1}: {value2}, {value3}",
+  "workflowCanvas.controls": "Control Panel",
+  "workflowCanvas.zoomIn": "Zoom In",
+  "workflowCanvas.zoomOut": "Zoom Out",
+  "workflowCanvas.fitView": "Fit View",
+  "workflowCanvas.nodeDescription": "Press enter or space to select a node. Press escape to cancel.",
+  "workflowCanvas.moveDescription": "Press enter or space to select a node. Use the arrow keys to move it and escape to cancel.",
+  "workflowCanvas.nodeMoved": "Moved selected node {direction}. New position, x: {x}, y: {y}",
+  "workflowCanvas.direction.up": "up",
+  "workflowCanvas.direction.down": "down",
+  "workflowCanvas.direction.left": "left",
+  "workflowCanvas.direction.right": "right",
+  "workflowCanvas.edge": "{from} to {to}"
+}

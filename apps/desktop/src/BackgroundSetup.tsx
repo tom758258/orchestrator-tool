@@ -1,3 +1,5 @@
+import { enumLabel } from './i18n/presentation'
+import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { allWorkflowSteps, type BackgroundConfig, type ScopesMeasurement, type WorkflowStep } from './workflow'
@@ -9,6 +11,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
   instance: ToolInstance; value: BackgroundConfig[]; steps: WorkflowStep[]; onChange: (value: BackgroundConfig[]) => void
   executionMode?: ExecutionMode; modelId?: string | null; scopesExecutableKey?: string
 }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
   const config = value.find(background => background.tool_instance_id === instance.id)
   const supported = instance.tool === 'meters' || instance.tool === 'scopes' || instance.tool === 'serial'
@@ -50,12 +53,11 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
   return <section className="background-setup">
     <h4>
       <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} Background Streaming`} onClick={() => setExpanded(!expanded)}>
+        aria-label={t("backgroundSetup.backgroundStreaming", { value1: expanded ? t("backgroundSetup.collapse") : t("backgroundSetup.expand") })} onClick={() => setExpanded(!expanded)}>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
-      </button>Background Streaming
-    </h4>
+      </button>{t("backgroundSetup.backgroundStreaming2")}</h4>
     <div hidden={!expanded}>
-    {!supported && <p>Unsupported. Background Streaming requires Meters, Scopes or Serial.</p>}
+    {!supported && <p>{t("backgroundSetup.unsupportedBackgroundStreamingRequiresMetersScopesOrSerial")}</p>}
     <label><input type="checkbox" checked={Boolean(config)} disabled={(!supported && !config) || Boolean(referenced)} onChange={event => {
       if (!event.target.checked) { onChange(value.filter(item => item !== config)); return }
       let index = 1
@@ -65,55 +67,55 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
         ...(scopes ? { scopes_measurements: [{ id: 'ch1_frequency', channel: 1, item: 'frequency' }], scopes_interval_seconds: 1 }
           : software ? { timer_interval_ms: 1000 } : {}),
       }])
-    }} /> Enable Background Streaming</label>
+    }} /> {t("backgroundSetup.enableBackgroundStreaming")}</label>
     {config && <>
-      <p>Background: <code>{config.id}</code>. Use Worker and Capture actions to control this instance.</p>
-      {foregroundReferenced && <p role="alert">This instance still has Foreground actions. Remove those actions or use another instance before running.</p>}
-      {!serial && <label>Source<select aria-label={config.id + ' source'} value={config.limit_count === null ? 'infinite' : 'finite'}
+      <p>{t("backgroundSetup.background")}<code>{config.id}</code>{t("backgroundSetup.useWorkerAndCaptureActionsToControlThisInstance")}</p>
+      {foregroundReferenced && <p role="alert">{t("backgroundSetup.thisInstanceStillHasForegroundActionsRemoveThoseActions")}</p>}
+      {!serial && <label>{t("backgroundSetup.source")}<select aria-label={config.id + t("backgroundSetup.source2")} value={config.limit_count === null ? 'infinite' : 'finite'}
         onChange={event => update({ limit_count: event.target.value === 'infinite' ? null : 1000 })}>
-        <option value="finite">Finite</option><option value="infinite">Infinite</option>
+        <option value="finite">{t("backgroundSetup.finite")}</option><option value="infinite">{t("backgroundSetup.infinite")}</option>
       </select></label>}
-      {!serial && config.limit_count !== null && <label>{custom ? 'Trigger Count' : scopes ? 'Cycles' : 'Max Samples'}<input type="number" min={1} max={1000000} step={1} value={config.limit_count}
+      {!serial && config.limit_count !== null && <label>{custom ? t("backgroundSetup.triggerCount") : scopes ? t("backgroundSetup.cycles") : t("backgroundSetup.maxSamples")}<input type="number" min={1} max={1000000} step={1} value={config.limit_count}
         onChange={event => update({ limit_count: Number(event.target.value) })} /></label>}
-      {custom && <p>Each trigger records Sample Count readings. Infinite acquisition requires Allow Buffer Overflow Risk.</p>}
+      {custom && <p>{t("backgroundSetup.eachTriggerRecordsSampleCountReadingsInfiniteAcquisitionRequires")}</p>}
       {mode === 'software' && <label><input type="checkbox" checked={config.command_trigger ?? false}
         onChange={event => update({ command_trigger: event.target.checked, timer_interval_ms: event.target.checked ? null : 1000 })} />
-        Trigger with BG Command</label>}
-      {config.command_trigger && <p>Enable FG/BG Interaction in Workflow settings. Worker ON waits for BG Command; the timer is disabled. Use Wait for Completion or Get Command Result before another command.</p>}
-      {software && !config.command_trigger && <label>Timer Interval (ms)<input type="number" required min={1} step={1} value={config.timer_interval_ms ?? ''}
+        {t("backgroundSetup.triggerWithBGCommand")}</label>}
+      {config.command_trigger && <p>{t("backgroundSetup.enableFGBGInteractionInWorkflowSettingsWorkerON")}</p>}
+      {software && !config.command_trigger && <label>{t("backgroundSetup.timerIntervalMs")}<input type="number" required min={1} step={1} value={config.timer_interval_ms ?? ''}
         onChange={event => update({ timer_interval_ms: Number(event.target.value) })} /></label>}
-      {software && !config.command_trigger && <p>The first trigger is sent when ready. Each later trigger waits this interval after the previous measurement completes.</p>}
-      {serial && <p>Serial RX runs continuously until Worker OFF, with no finite count or trigger.</p>}
+      {software && !config.command_trigger && <p>{t("backgroundSetup.theFirstTriggerIsSentWhenReadyEachLater")}</p>}
+      {serial && <p>{t("backgroundSetup.serialRXRunsContinuouslyUntilWorkerOFFWithNo")}</p>}
       {scopes && <>
-        <label>Measure interval (seconds)<input type="number" min={0} max={86400} step="any" required
+        <label>{t("backgroundSetup.measureIntervalSeconds")}<input type="number" min={0} max={86400} step="any" required
           value={config.scopes_interval_seconds ?? 1}
           onChange={event => update({ scopes_interval_seconds: Number(event.target.value) })} /></label>
-        <p>Wait after each complete Measure cycle. Channels are read sequentially; this is not a fixed sample rate.</p>
-        <h5>Measurements</h5>
+        <p>{t("backgroundSetup.waitAfterEachCompleteMeasureCycleChannelsAreRead")}</p>
+        <h5>{t("backgroundSetup.measurements")}</h5>
         {measurements.map((row, index) => <div key={row.id} className="tool-setup-add-controls">
-          <label>Channel<select aria-label={'Measurement ' + (index + 1) + ' channel'} value={row.channel}
+          <label>{t("backgroundSetup.channel")}<select aria-label={t("backgroundSetup.measurement") + (index + 1) + t("backgroundSetup.channel2")} value={row.channel}
             onChange={event => changeMeasurement(index, { channel: Number(event.target.value) })}>
             {Array.from({ length: Math.max(channels, row.channel) }, (_, i) => i + 1)
-              .map(channel => <option key={channel} value={channel}>CH{channel}</option>)}
+              .map(channel => <option key={channel} value={channel}>{t("backgroundSetup.cH")}{channel}</option>)}
           </select></label>
-          <label>Item<select aria-label={'Measurement ' + (index + 1) + ' item'} value={row.item}
+          <label>{t("backgroundSetup.item")}<select aria-label={t("backgroundSetup.measurement") + (index + 1) + t("backgroundSetup.item2")} value={row.item}
             onChange={event => changeMeasurement(index, { item: event.target.value })}>
             {!items.includes(row.item) && <option value={row.item}>{row.item}</option>}
-            {items.map(item => <option value={item} key={item}>{item}</option>)}
+            {items.map(item => <option value={item} key={item}>{enumLabel(t, 'capability', item)}</option>)}
           </select></label>
           <button type="button" disabled={measurements.length === 1} onClick={() => update({
             scopes_measurements: measurements.filter((_, i) => i !== index),
-          })}>Remove</button>
+          })}>{t("backgroundSetup.remove")}</button>
         </div>)}
         <button type="button" className="action-button" onClick={() => {
           const item = items[0] ?? 'frequency'
           update({ scopes_measurements: [...measurements, { id: uniqueId(1, item), channel: 1, item }] })
-        }}>+ Add Measurement</button>
+        }}>{t("backgroundSetup.addMeasurement")}</button>
       </>}
-      <label><input type="checkbox" checked={config.live_monitor} onChange={event => update({ live_monitor: event.target.checked })} /> Live Monitor</label>
-      <p>{serial ? 'Live Monitor shows a bounded continuous RX Hex/Text view independently of Capture.'
-      : 'Live Monitor keeps the latest 1,000 samples as a Line. It does not record or export data.'}</p>
-      {referenced && <p>Remove Background actions before turning off Background use.</p>}
+      <label><input type="checkbox" checked={config.live_monitor} onChange={event => update({ live_monitor: event.target.checked })} /> {t("backgroundSetup.liveMonitor")}</label>
+      <p>{serial ? t("backgroundSetup.liveMonitorShowsABoundedContinuousRXHexText")
+      : t("backgroundSetup.liveMonitorKeepsTheLatest1000SamplesAs")}</p>
+      {referenced && <p>{t("backgroundSetup.removeBackgroundActionsBeforeTurningOffBackgroundUse")}</p>}
     </>}
     </div>
   </section>

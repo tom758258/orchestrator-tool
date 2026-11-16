@@ -22,11 +22,6 @@
 <body>
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
-    <nav class="help-languages" aria-label="Language">
-      <a href="desktop.html" hreflang="en" lang="en">English</a>
-      <span aria-hidden="true"> | </span>
-      <a href="desktop.zh-TW.html" hreflang="zh-TW" lang="zh-TW">繁體中文</a>
-    </nav>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
@@ -37,17 +32,8 @@
     (() => {
       if (document.documentElement.lang === 'zh-TW') {
         document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
       }
-      const theme = new URLSearchParams(location.search).get('theme');
-      document.querySelectorAll('.help-languages a').forEach(link => {
-        if (['system', 'light', 'dark'].includes(theme)) {
-          link.setAttribute('href', link.getAttribute('href') + '?theme=' + theme);
-        }
-        if (link.hreflang === document.documentElement.lang) {
-          link.setAttribute('aria-current', 'page');
-        }
-      });
-
       const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
       const toc = document.getElementById('toc');
       const links = headings.map(heading => {
