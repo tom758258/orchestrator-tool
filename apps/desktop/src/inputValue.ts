@@ -74,6 +74,7 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
   ],
   'scopes/measure': [
     { label: "resultFields.value", pointer: '/value' },
+    { label: "resultFields.valid", pointer: '/valid', hint: "resultFields.validHint" },
     { label: "resultFields.unit", pointer: '/unit' },
     { label: "resultFields.channel", pointer: '/channel' },
     { label: "resultFields.item", pointer: '/item' },

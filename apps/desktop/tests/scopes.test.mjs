@@ -125,7 +125,10 @@ test('Scopes exposes exactly the agreed actions and structured Measure output re
   for (const [action] of SCOPES_ACTIONS) {
     assert.ok(!['csv', 'meta', 'output', 'query_hardcopy', 'model', 'resource'].some(key => key in scopesActionArguments(action)))
   }
-  assert.deepEqual(curatedResultFields({ type: 'tool-action', target: 'scope', action: 'measure' }, [{ id: 'scope', tool: 'scopes' }]).map(field => field.pointer), ['/value', '/unit', '/channel', '/item'])
+  assert.deepEqual(curatedResultFields({ type: 'tool-action', target: 'scope', action: 'measure' }, [{ id: 'scope', tool: 'scopes' }]).map(field => field.pointer), ['/value', '/valid', '/unit', '/channel', '/item'])
+  const measureValid = curatedResultFields({ type: 'tool-action', target: 'scope', action: 'measure' }, [{ id: 'scope', tool: 'scopes' }]).find(field => field.pointer === '/valid')
+  assert.equal(measureValid.label, 'Valid')
+  assert.match(measureValid.hint, /Boolean.*false.*invalid measurement sentinel/)
   assert.deepEqual(curatedResultFields({ type: 'tool-action', target: 'scope', action: 'single-wait' }, [{ id: 'scope', tool: 'scopes' }]).map(field => field.pointer), ['/outcome', '/timed_out', '/capture_allowed'])
 })
 
