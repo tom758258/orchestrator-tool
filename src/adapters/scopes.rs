@@ -418,7 +418,6 @@ fn run_command(
     terminal_result(&terminal, command, arguments)
 }
 
-
 pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, String> {
     let fields = arguments
         .as_object()
@@ -440,7 +439,9 @@ pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, S
     let trigger_timeout = positive("trigger_timeout_ms", 5000)?;
     let poll_interval = positive("trigger_poll_interval_ms", 100)?;
     if poll_interval > trigger_timeout {
-        return Err("Scopes single-wait trigger_poll_interval_ms must not exceed trigger_timeout_ms".into());
+        return Err(
+            "Scopes single-wait trigger_poll_interval_ms must not exceed trigger_timeout_ms".into(),
+        );
     }
     Ok(trigger_timeout)
 }
