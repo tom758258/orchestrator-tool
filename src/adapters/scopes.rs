@@ -423,7 +423,10 @@ pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, S
         .as_object()
         .ok_or("Scopes single-wait arguments must be an object")?;
     for key in fields.keys() {
-        if !matches!(key.as_str(), "trigger_timeout_ms" | "trigger_poll_interval_ms") {
+        if !matches!(
+            key.as_str(),
+            "trigger_timeout_ms" | "trigger_poll_interval_ms"
+        ) {
             return Err(format!("unsupported Scopes single-wait parameter {key}"));
         }
     }
@@ -454,7 +457,9 @@ fn expected_single_wait_timeout(event: &Value) -> bool {
         || event["exit_code"].as_i64() != Some(1)
         || error["category"] != "execution"
         || error["code"] != "job_failed"
-        || !error["details"].as_object().is_some_and(|details| details.is_empty())
+        || !error["details"]
+            .as_object()
+            .is_some_and(|details| details.is_empty())
         || result["operation"] != "single-wait"
         || result["outcome"] != "timeout"
         || result["timed_out"] != true
@@ -472,8 +477,12 @@ fn expected_single_wait_timeout(event: &Value) -> bool {
     // Legacy Tektronix status may have only the raw and numeric SESR fields.
     let tek_ok = status["raw"].as_str().is_some_and(|raw| !raw.is_empty())
         && status["value"].as_u64().is_some()
-        && status.get("is_error").is_none_or(|value| value.as_bool() == Some(false))
-        && status.get("complete").is_none_or(|value| value.as_bool() == Some(true));
+        && status
+            .get("is_error")
+            .is_none_or(|value| value.as_bool() == Some(false))
+        && status
+            .get("complete")
+            .is_none_or(|value| value.as_bool() == Some(true));
     system_ok || tek_ok
 }
 
@@ -1023,7 +1032,10 @@ mod tests {
             event["result"]
         );
         let mut tek = event.clone();
-        tek["result"].as_object_mut().unwrap().remove("system_error");
+        tek["result"]
+            .as_object_mut()
+            .unwrap()
+            .remove("system_error");
         tek["result"]["post_command_status"] = json!({"value":0,"raw":"0"});
         assert_eq!(
             terminal_result(&tek, "single-wait", &json!({})).unwrap(),
@@ -1034,8 +1046,11 @@ mod tests {
             ("state", json!("cancelled")),
             ("ok", json!(true)),
             ("exit_code", json!(3)),
-            ("error", json!({"category":"execution","code":"job_failed","message":"failed",
-                              "details":{"domain_error":{"message":"instrument error"}}})),
+            (
+                "error",
+                json!({"category":"execution","code":"job_failed","message":"failed",
+                              "details":{"domain_error":{"message":"instrument error"}}}),
+            ),
             ("result", json!({"outcome":"timeout"})),
         ] {
             invalid[path] = replacement;
