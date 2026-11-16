@@ -429,7 +429,7 @@ test('All available categories hide the unavailable group and expose bilingual S
     backgrounds: [{ id: 'background-1', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
     workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [] },
   }
-  const app = await toolsView(['meters', 'powers', 'scopes', 'serial'].map(status), draft)
+  const app = await toolsView(['meters', 'powers', 'scopes', 'serial'].map(tool => status(tool)), draft)
   button(app.render(), 'Workflow').props.onClick()
   assert.equal(unavailableGroup(app), undefined)
   assert.deepEqual(paletteCategorySections(app).map(section => section.key), allCategoryNames)
