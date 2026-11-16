@@ -5,6 +5,7 @@ export default {
   "steps.scope.timebase-scale": "示波器時基刻度",
   "steps.scope.timebase-position": "示波器時基位置",
   "steps.scope.trigger-edge": "示波器邊緣觸發",
+  "steps.scope.single-wait": "示波器單次觸發等待",
   "steps.scope.measure": "示波器量測",
   "steps.scope.capture": "示波器擷取",
   "steps.scope.screenshot": "示波器螢幕截圖",
