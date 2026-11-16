@@ -483,7 +483,10 @@ fn expected_single_wait_timeout(event: &Value) -> bool {
         && status
             .get("complete")
             .is_none_or(|value| value.as_bool() == Some(true));
-    system_ok || tek_ok
+    // Neither clean status may override an explicit error from the other.
+    (system_ok || tek_ok)
+        && (result["system_error"].is_null() || system_ok)
+        && (status.is_null() || tek_ok)
 }
 
 fn terminal_result(event: &Value, command: &str, arguments: &Value) -> Result<Value, String> {
@@ -1077,6 +1080,13 @@ mod tests {
             );
             invalid = event.clone();
         }
+        let mut conflicting = event.clone();
+        conflicting["result"]["post_command_status"] = json!({"raw":"0","value":0});
+        conflicting["result"]["system_error"] = json!({"code":-222,"is_error":true});
+        assert!(terminal_result(&conflicting, "single-wait", &json!({})).is_err());
+        conflicting["result"]["system_error"] = json!({"code":0,"is_error":false});
+        conflicting["result"]["post_command_status"]["is_error"] = json!(true);
+        assert!(terminal_result(&conflicting, "single-wait", &json!({})).is_err());
         assert!(terminal_result(&event, "measure", &json!({})).is_err());
         let mut natural = event;
         natural["state"] = json!("succeeded");
