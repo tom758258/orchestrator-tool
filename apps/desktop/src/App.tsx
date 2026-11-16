@@ -2015,53 +2015,6 @@ function App() {
   const selectedAction = selectedToolAction
     ? `${workflowDraft?.tool_instances.find(instance => instance.id === selectedToolAction.target)?.tool}/${selectedToolAction.action}`
     : null
-  const selectedPowersAction =
-    selectedAction === 'powers/set-output' ||
-    selectedAction === 'powers/measure' ||
-    selectedAction === 'powers/output-on' ||
-    selectedAction === 'powers/output-off'
-  const selectedPowersModel = executionMode === 'simulate' ? 'simulator'
-    : selectedToolAction ? resourceIdentityDrafts[selectedToolAction.target]?.model_id : undefined
-  const selectedPowersCapabilities = powersCapabilityChannels?.key === powersCapabilityKey && selectedPowersModel
-    ? powersCapabilityChannels.models[selectedPowersModel] : undefined
-  const selectedPowersChannels = selectedPowersCapabilities?.status === 'ready' ? selectedPowersCapabilities.channels : []
-  const powersChannelHint = !selectedPowersModel
-    ? t("app.channelCapabilitiesUnavailableSelectOrRefreshASupportedLive")
-    : !selectedPowersCapabilities ? t("app.loadingChannelCapabilities")
-    : selectedPowersCapabilities.status === 'error' ? t("app.channelCapabilitiesQueryFailedCheckTheConfiguredPowersTool")
-    : selectedPowersChannels.length === 0 ? t("app.noSupportedChannelsWereReturnedForTheCurrentModel") : null
-  const channelBound = selectedToolAction?.bindings?.channel !== undefined
-  const savedChannel = selectedToolAction?.arguments.channel
-  const savedChannelSupported = typeof savedChannel === 'number' && selectedPowersChannels.includes(savedChannel)
-  const powersChannelSelector = selectedToolAction && <>
-    <label className="step-property-field">
-      <span className="step-property-label">{t("app.channel")}</span>
-      <select aria-label={t("app.channel")} value={channelBound || savedChannel === undefined ? '' : String(savedChannel)}
-        disabled={workflowBusy || selectedPowersChannels.length === 0}
-        onChange={event => {
-          const channel = Number(event.target.value)
-          if (isPositiveInteger(channel) && selectedPowersChannels.includes(channel)) {
-            updateToolArgument(selectedToolAction.id, 'channel', channel)
-          }
-        }}>
-        <option value="" disabled>{channelBound ? t("app.boundChannelPreserved") : t("app.selectAChannel")}</option>
-        {!channelBound && savedChannel !== undefined && !savedChannelSupported && (
-          <option value={String(savedChannel)} disabled>
-            {t("app.cH")}{String(savedChannel)} ({selectedPowersCapabilities?.status === 'ready' ? t("app.notSupported") : t("app.unconfirmed")})
-          </option>
-        )}
-        {selectedPowersChannels.map(channel => <option key={channel} value={channel}>{t("app.cH")}{channel}</option>)}
-      </select>
-    </label>
-    {powersChannelHint && <p className="value-source-help">{powersChannelHint}</p>}
-    {channelBound
-      ? <p className="value-source-help">{t("app.channelBindingPreservedSelectAFixedChannelToReplace")}</p>
-      : savedChannel !== undefined && !savedChannelSupported && <p className="value-source-help">
-          {t("app.savedChannel")}{String(savedChannel)} {t("app.preserved")}{selectedPowersCapabilities?.status === 'ready'
-            ? t("app.notSupportedByTheCurrentModel") : t("app.supportCannotBeConfirmed")}
-        </p>}
-  </>
-
   const paletteCategories = STEP_CATEGORIES.map(({ category, tool }) => ({
     category,
     locked: category === 'Background Workflow' ? !workflowDraft?.backgrounds?.length
@@ -2154,6 +2107,53 @@ function App() {
 
     })
   }
+
+  const selectedPowersAction =
+    selectedAction === 'powers/set-output' ||
+    selectedAction === 'powers/measure' ||
+    selectedAction === 'powers/output-on' ||
+    selectedAction === 'powers/output-off'
+  const selectedPowersModel = executionMode === 'simulate' ? 'simulator'
+    : selectedToolAction ? resourceIdentityDrafts[selectedToolAction.target]?.model_id : undefined
+  const selectedPowersCapabilities = powersCapabilityChannels?.key === powersCapabilityKey && selectedPowersModel
+    ? powersCapabilityChannels.models[selectedPowersModel] : undefined
+  const selectedPowersChannels = selectedPowersCapabilities?.status === 'ready' ? selectedPowersCapabilities.channels : []
+  const powersChannelHint = !selectedPowersModel
+    ? t("app.channelCapabilitiesUnavailableSelectOrRefreshASupportedLive")
+    : !selectedPowersCapabilities ? t("app.loadingChannelCapabilities")
+    : selectedPowersCapabilities.status === 'error' ? t("app.channelCapabilitiesQueryFailedCheckTheConfiguredPowersTool")
+    : selectedPowersChannels.length === 0 ? t("app.noSupportedChannelsWereReturnedForTheCurrentModel") : null
+  const channelBound = selectedToolAction?.bindings?.channel !== undefined
+  const savedChannel = selectedToolAction?.arguments.channel
+  const savedChannelSupported = typeof savedChannel === 'number' && selectedPowersChannels.includes(savedChannel)
+  const powersChannelSelector = selectedToolAction && <>
+    <label className="step-property-field">
+      <span className="step-property-label">{t("app.channel")}</span>
+      <select aria-label={t("app.channel")} value={channelBound || savedChannel === undefined ? '' : String(savedChannel)}
+        disabled={workflowBusy || selectedPowersChannels.length === 0}
+        onChange={event => {
+          const channel = Number(event.target.value)
+          if (isPositiveInteger(channel) && selectedPowersChannels.includes(channel)) {
+            updateToolArgument(selectedToolAction.id, 'channel', channel)
+          }
+        }}>
+        <option value="" disabled>{channelBound ? t("app.boundChannelPreserved") : t("app.selectAChannel")}</option>
+        {!channelBound && savedChannel !== undefined && !savedChannelSupported && (
+          <option value={String(savedChannel)} disabled>
+            {t("app.cH")}{String(savedChannel)} ({selectedPowersCapabilities?.status === 'ready' ? t("app.notSupported") : t("app.unconfirmed")})
+          </option>
+        )}
+        {selectedPowersChannels.map(channel => <option key={channel} value={channel}>{t("app.cH")}{channel}</option>)}
+      </select>
+    </label>
+    {powersChannelHint && <p className="value-source-help">{powersChannelHint}</p>}
+    {channelBound
+      ? <p className="value-source-help">{t("app.channelBindingPreservedSelectAFixedChannelToReplace")}</p>
+      : savedChannel !== undefined && !savedChannelSupported && <p className="value-source-help">
+          {t("app.savedChannel")}{String(savedChannel)} {t("app.preserved")}{selectedPowersCapabilities?.status === 'ready'
+            ? t("app.notSupportedByTheCurrentModel") : t("app.supportCannotBeConfirmed")}
+        </p>}
+  </>
 
   return (
     <main className="app">
