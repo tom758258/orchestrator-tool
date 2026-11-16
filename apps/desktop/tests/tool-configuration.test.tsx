@@ -5,8 +5,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import ScopesActionEditor from '../src/ScopesActionEditor'
+import { ExpressionOperandEditor } from '../src/InputValueEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
+import type { ExpressionOperandWire } from '../src/inputValue'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
 import type { BackgroundConfig, ToolActionStep, WorkflowStep } from '../src/workflow'
@@ -53,6 +55,54 @@ test('Scope Single Wait shows fixed integer inputs without force or capability q
   expect(changes).toHaveBeenCalledTimes(count)
   expect(step.arguments).toEqual({ trigger_timeout_ms: 12000, trigger_poll_interval_ms: 250 })
   expect(step.bindings).toBeUndefined()
+})
+
+test('status Result hints show comparison types and values without rewriting IF operands', () => {
+  const scope: ToolActionStep = { type: 'tool-action', id: 'single', target: 'scopes-1', action: 'single-wait', arguments: {} }
+  const power: ToolActionStep = { type: 'tool-action', id: 'protection', target: 'powers-1', action: 'protection-status', arguments: {} }
+  const cases = [
+    [scope, '/outcome', /String.*natural.*timeout/],
+    [scope, '/timed_out', /Boolean.*true.*false/],
+    [scope, '/capture_allowed', /Boolean.*true.*false/],
+    [power, '/protection_tripped', /Boolean.*true.*false/],
+    [power, '/over_voltage_tripped', /Boolean.*true.*false/],
+    [power, '/over_current_tripped', /Boolean.*true.*false/],
+  ] as const
+  for (const [step, pointer, hint] of cases) {
+    const onChange = vi.fn()
+    const { unmount } = render(<ExpressionOperandEditor side="Left"
+      value={{ source: 'step-output', step_id: step.id, pointer }}
+      onChange={onChange} disabled={false} earlierSteps={[step]}
+      instances={original.tool_instances} earlierVariables={[]} stepLabel={item => item.id} />)
+    expect(screen.getByText(hint)).toBeTruthy()
+    expect(onChange).not.toHaveBeenCalled()
+    unmount()
+  }
+
+  let value: ExpressionOperandWire = { source: 'step-output', step_id: 'single', pointer: '/outcome' }
+  const onChange = vi.fn((next: ExpressionOperandWire) => { value = next })
+  const view = () => <ExpressionOperandEditor side="Left" value={value} onChange={onChange}
+    disabled={false} earlierSteps={[scope]} instances={original.tool_instances}
+    earlierVariables={[]} stepLabel={item => item.id} />
+  const { rerender, unmount } = render(view())
+  fireEvent.change(screen.getByRole('combobox', { name: 'Result' }), { target: { value: '/timed_out' } })
+  rerender(view())
+  expect(value).toEqual({ source: 'step-output', step_id: 'single', pointer: '/timed_out' })
+  expect(screen.getByText(/Boolean.*true.*false/)).toBeTruthy()
+  expect(screen.queryByText(/String.*natural.*timeout/)).toBeNull()
+  const calls = onChange.mock.calls.length
+  fireEvent.change(screen.getByRole('combobox', { name: 'Result' }), { target: { value: 'custom' } })
+  expect(onChange).toHaveBeenCalledTimes(calls)
+  expect(screen.queryByText(/Boolean.*true.*false/)).toBeNull()
+  unmount()
+
+  const { unmount: closeZh } = render(<I18nProvider initialLanguage="zh-TW">
+    <ExpressionOperandEditor side="Left" value={{ source: 'step-output', step_id: 'single', pointer: '/outcome' }}
+      onChange={vi.fn()} disabled={false} earlierSteps={[scope]} instances={original.tool_instances}
+      earlierVariables={[]} stepLabel={item => item.id} />
+  </I18nProvider>)
+  expect(screen.getByText(/String.*natural.*timeout/)).toBeTruthy()
+  closeZh()
 })
 
 test.each(['root', 'nested', 'unreferenced'])('Background binding removal respects %s references', kind => {

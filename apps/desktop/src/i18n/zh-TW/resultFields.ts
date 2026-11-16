@@ -18,5 +18,11 @@ export default {
   "resultFields.currentLimit": "電流上限",
   "resultFields.protectionTripped": "保護已觸發",
   "resultFields.overVoltageTripped": "過電壓保護已觸發",
-  "resultFields.overCurrentTripped": "過電流保護已觸發"
+  "resultFields.overCurrentTripped": "過電流保護已觸發",
+  "resultFields.outcomeHint": "String：natural＝正常完成觸發；timeout＝等待觸發逾時。IF／ELSE 另一側請選 String。",
+  "resultFields.timedOutHint": "Boolean：true＝觸發等待逾時；false＝未逾時。IF／ELSE 另一側請選 Boolean。",
+  "resultFields.captureAllowedHint": "Boolean：true＝允許擷取；false＝不允許擷取。不代表波形已儲存。",
+  "resultFields.protectionTrippedHint": "Boolean：true＝過電壓或過電流保護已觸發；false＝未回報觸發。",
+  "resultFields.overVoltageTrippedHint": "Boolean：true＝過電壓保護已觸發；false＝未觸發。",
+  "resultFields.overCurrentTrippedHint": "Boolean：true＝過電流保護已觸發；false＝未觸發。"
 }

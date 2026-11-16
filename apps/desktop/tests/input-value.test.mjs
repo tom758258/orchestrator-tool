@@ -78,11 +78,13 @@ test('Powers Set Output defaults to its required Channel result', () => {
 })
 
 test('Power Protection Status defaults to Protection Tripped', () => {
-  assert.deepEqual(curatedResultFields(powerProtectionStatus, instances), [
+  const fields = curatedResultFields(powerProtectionStatus, instances)
+  assert.deepEqual(fields.map(({ label, pointer }) => ({ label, pointer })), [
     { label: 'Protection Tripped', pointer: '/protection_tripped' },
     { label: 'Over Voltage Tripped', pointer: '/over_voltage_tripped' },
     { label: 'Over Current Tripped', pointer: '/over_current_tripped' },
   ])
+  assert.ok(fields.every(field => field.hint?.includes('Boolean')))
   assert.deepEqual(stepOutputReference(powerProtectionStatus, instances), {
     source: 'step-output', step_id: 'protection-1', pointer: '/protection_tripped',
   })

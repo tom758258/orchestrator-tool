@@ -456,6 +456,7 @@ protection 任一觸發，Protection Tripped 即為 true。實際型號支援由
 左側選 <strong>Previous step result → Protection Tripped</strong>，運算子選 <code>==</code>，右側選
 <strong>Boolean → False</strong>。Status 本身不會停止 Workflow、清除 protection 或修改電源
 供應器。</p>
+<p>在 IF／ELSE 中，三個 Protection Status 結果都是 Boolean：true 代表對應保護已觸發，false 代表未觸發。比較的另一側請選 Boolean；選取 Result 欄位不會自動修改比較值。</p>
 <h3 id="62-for">6.2 For</h3>
 <p>For step 具有 <strong>Start</strong>、<strong>Stop</strong>、<strong>Step</strong>、loop variable 與 body。</p>
 <ul>
@@ -615,6 +616,7 @@ Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。</p>
 可利用 <code>/outcome</code> = <code>timeout</code> 或 <code>/timed_out</code> = <code>true</code> 進行既有的 IF／ELSE 判斷。
 儀器、Worker 或取消等真正錯誤仍使 Step 失敗。觸發逾時不代表擷取成功，
 Orchestrator 也不會自動強制觸發、停止擷取或重設儀器。</p>
+<p>選取 Single Wait 的 Result 欄位後，會顯示資料型別與比較值：Outcome 是 String（natural＝正常完成觸發，timeout＝等待逾時）；Timed Out 與 Capture Allowed 是 Boolean（true 或 false）。IF／ELSE 的另一側請選相同型別；選取欄位不會自動修改比較值。</p>
 <p>Channel Display、Channel Scale、Channel Offset 與 Measure 使用固定的 <strong>Channel</strong>
 下拉選單；Edge Trigger 使用 <strong>Source Channel</strong>。選項依 Scopes 離線 Capabilities
 顯示為 <strong>CH1</strong>、<strong>CH2</strong> 等。Simulation 使用模擬器通道；Live 使用目標 instance

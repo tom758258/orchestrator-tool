@@ -599,6 +599,8 @@ Status. Select **Previous step result → Protection Tripped** on the left,
 `==` as the operator, and **Boolean → False** on the right. Status alone does
 not stop the Workflow, clear protection, or modify the power supply.
 
+For IF/ELSE, the three Protection Status result fields are Boolean: true means the corresponding protection has tripped, and false means it has not. Choose Boolean on the other side of the comparison; selecting a result does not change the other operand.
+
 ### 6.2 For
 
 Configure a For step with **Start**, **Stop**, **Step**, a loop variable, and a
@@ -777,6 +779,8 @@ is a successful Step with `/outcome` = `timeout` and `/timed_out` = `true`;
 use those fields in the existing IF/ELSE. Instrument, Worker, and cancellation
 errors still fail the Step. A timed-out trigger does not mean capture succeeded,
 and Orchestrator does not automatically force, stop, or reset the instrument.
+
+The Single Wait Result selector shows comparison types and values: Outcome is String (natural means trigger completed; timeout means trigger wait expired); Timed Out and Capture Allowed are Boolean (true or false). Choose the matching type on the other side of IF/ELSE; selecting a result does not change the other operand.
 
 Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
 **Channel** dropdown; Edge Trigger uses **Source Channel**. Options are **CH1**,
