@@ -3975,7 +3975,10 @@ mod tests {
             json!({"extra": true}),
         ] {
             wire["workflow"]["steps"][0]["arguments"] = args.clone();
-            assert!(Template::from_json_str(&wire.to_string()).is_err(), "{args}");
+            assert!(
+                Template::from_json_str(&wire.to_string()).is_err(),
+                "{args}"
+            );
         }
         wire["workflow"]["steps"][0]["arguments"] = json!({});
         for source in [
