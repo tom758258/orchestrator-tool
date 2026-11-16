@@ -549,8 +549,8 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
             if (average_count === undefined || counts.includes(average_count)) onChange(updateScopesAcquisition(value, { ...acquisition, average_count }))
           }} onBlur={event => {
             const next = event.relatedTarget
-            // Hiding this editor is UI navigation, not abandoning an incomplete count.
-            if (next && next instanceof HTMLElement && (next.matches('[role="tab"]')
+            // UI navigation and language changes do not abandon an incomplete count.
+            if (next && next instanceof HTMLElement && (next.matches('[role="tab"], [data-locale-switch]')
               || (next.matches('[data-scopes-count-disclosure][aria-expanded="true"]')
                 && event.currentTarget.closest('fieldset')?.contains(next)))) return
             setCountDraft(null)

@@ -2069,7 +2069,7 @@ function App() {
           )}
         </div>
         <div className="appearance-control">
-          <button className="action-button locale-button" type="button"
+          <button className="action-button locale-button" type="button" data-locale-switch
             aria-label={t('preferences.switchLanguage')} title={t('preferences.switchLanguage')}
             onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">

@@ -11,7 +11,7 @@ export default {
   "serialActionEditor.text": "文字",
   "serialActionEditor.hexBytes": "十六進位位元組",
   "serialActionEditor.delimiterValue": "分隔符值",
-  "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "分隔符可包含多個位元組：文字支援 \\\\\\\\r、\\\\\\\\n 與 \\\\\\\\\\\\\\\\ 跳脫；十六進位接受數字配對（例如 0D 0A）。此設定獨立於 TX 十六進位位元組。",
+  "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "分隔符可包含多個位元組：文字支援 \\r、\\n 與 \\\\ 跳脫；十六進位接受數字配對（例如 0D 0A）。此設定獨立於 TX 十六進位位元組。",
   "serialActionEditor.maxBytes11048576": "最大位元組數（1–1048576）",
   "serialActionEditor.tXSource": "TX 來源",
   "serialActionEditor.tXValue": "TX 數值",

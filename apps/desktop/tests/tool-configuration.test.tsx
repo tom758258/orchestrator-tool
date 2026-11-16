@@ -4,6 +4,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
+import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
@@ -212,7 +213,7 @@ function focusClick(control: HTMLElement) {
   fireEvent.click(control)
 }
 async function mount() {
-  render(<App />)
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
   await screen.findByRole('button', { name: 'Expand powers details' })
   tab('Setup')
   await waitFor(() => expect((screen.getByRole('button', { name: 'Add Tool Instance' }) as HTMLButtonElement).disabled).toBe(false))
@@ -554,22 +555,30 @@ test('Setup preserves independent groups, local drafts and protection data throu
     item.id === 'powers-1' ? { ...item, display_name: 'Bench power' } : item) })
 })
 
-test.each(['Acquisition Setup', 'Scopes instance', 'Tools tab'])('Average Count survives focus transfer to %s before hiding and accepts a completed value', async target => {
+test.each(['Acquisition Setup', 'Scopes instance', 'Tools tab', 'Language switch'])('Average Count survives focus transfer to %s and accepts a completed value', async target => {
   await mount()
   click('Expand Acquisition Setup')
   const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
   act(() => count.focus())
   fireEvent.change(count, { target: { value: '1' } })
   const control = target === 'Tools tab' ? screen.getByRole('tab', { name: 'Tools' })
+    : target === 'Language switch' ? screen.getByRole('button', { name: 'Switch language to 繁體中文' })
     : screen.getByRole('button', { name: target === 'Scopes instance' ? 'Collapse scopes-1' : 'Collapse Acquisition Setup' })
   const events: string[] = []
   count.addEventListener('blur', () => events.push('blur'), { once: true })
   control.addEventListener('click', () => events.push('click'), { once: true })
   focusClick(control)
   expect(events).toEqual(['blur', 'click'])
-  expect(screen.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
-  if (target === 'Tools tab') tab('Setup')
-  else click(target === 'Scopes instance' ? 'Expand scopes-1' : 'Expand Acquisition Setup')
+  if (target === 'Language switch') {
+    expect(screen.getByRole('spinbutton', { name: '平均次數' })).toBe(count)
+    expect(count.value).toBe('1')
+    act(() => count.focus())
+    focusClick(screen.getByRole('button', { name: '切換語言為 English' }))
+  } else {
+    expect(screen.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
+    if (target === 'Tools tab') tab('Setup')
+    else click(target === 'Scopes instance' ? 'Expand scopes-1' : 'Expand Acquisition Setup')
+  }
   expect(count.value).toBe('1')
   expect(await savedDraft()).toEqual(original) // An incomplete draft never becomes a formal setting.
   act(() => count.focus())

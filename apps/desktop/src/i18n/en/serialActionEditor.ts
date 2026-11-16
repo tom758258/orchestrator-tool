@@ -11,7 +11,7 @@ export default {
   "serialActionEditor.text": "Text",
   "serialActionEditor.hexBytes": "Hex Bytes",
   "serialActionEditor.delimiterValue": "Delimiter Value",
-  "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "Delimiter may contain multiple bytes: Text supports \\\\r, \\\\n and \\\\\\\\ escapes; Hex accepts pairs of digits (e.g. 0D 0A). It is independent of TX Hex Byte.",
+  "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "Delimiter may contain multiple bytes: Text supports \\r, \\n and \\\\ escapes; Hex accepts pairs of digits (e.g. 0D 0A). It is independent of TX Hex Byte.",
   "serialActionEditor.maxBytes11048576": "Max Bytes (1–1048576)",
   "serialActionEditor.tXSource": "TX Source",
   "serialActionEditor.tXValue": "TX Value",
