@@ -4,11 +4,12 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
+import ScopesActionEditor from '../src/ScopesActionEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
-import type { BackgroundConfig, WorkflowStep } from '../src/workflow'
+import type { BackgroundConfig, ToolActionStep, WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
@@ -25,6 +26,34 @@ const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
 const empty: WorkflowDraft = { ...original, tool_instances: [] }
 const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
   measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
+
+
+test('Scope Single Wait shows fixed integer inputs without force or capability queries', () => {
+  let step: ToolActionStep = { type: 'tool-action', id: 'trigger', target: 'scopes-1',
+    action: 'single-wait', arguments: { trigger_timeout_ms: 5000, trigger_poll_interval_ms: 100 } }
+  const changes = vi.fn((next: ToolActionStep) => { step = next })
+  const view = () => <ScopesActionEditor step={step} instances={[]} earlierSteps={[]}
+    earlierVariables={[]} disabled={false} onChange={changes} stepLabel={item => item.id}
+    executionMode="simulate" modelId={undefined} scopesExecutableKey="scopes.exe" />
+  const { rerender } = render(view())
+  const trigger = screen.getByRole('spinbutton', { name: 'Trigger Timeout (ms)' }) as HTMLInputElement
+  const poll = screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }) as HTMLInputElement
+  expect(trigger.value).toBe('5000')
+  expect(poll.value).toBe('100')
+  expect(screen.queryByText(/Force Trigger/i)).toBeNull()
+  expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('get_scopes_capabilities', expect.anything())
+  fireEvent.change(trigger, { target: { value: '12000' } })
+  rerender(view())
+  expect(step.arguments.trigger_timeout_ms).toBe(12000)
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }), { target: { value: '250' } })
+  rerender(view())
+  expect(step.arguments.trigger_poll_interval_ms).toBe(250)
+  const count = changes.mock.calls.length
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }), { target: { value: '-1' } })
+  expect(changes).toHaveBeenCalledTimes(count)
+  expect(step.arguments).toEqual({ trigger_timeout_ms: 12000, trigger_poll_interval_ms: 250 })
+  expect(step.bindings).toBeUndefined()
+})
 
 test.each(['root', 'nested', 'unreferenced'])('Background binding removal respects %s references', kind => {
   const action: WorkflowStep = { type: 'background', id: 'on', background_id: 'background-1', action: 'worker-on', capture: false }
