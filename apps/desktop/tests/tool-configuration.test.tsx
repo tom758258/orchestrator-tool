@@ -40,7 +40,7 @@ test('Scope Single Wait shows fixed integer inputs without force or capability q
   const poll = screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }) as HTMLInputElement
   expect(trigger.value).toBe('5000')
   expect(poll.value).toBe('100')
-  expect(screen.queryByText(/Force Trigger/i)).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: /Force Trigger/i })).toBeNull()
   expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('get_scopes_capabilities', expect.anything())
   fireEvent.change(trigger, { target: { value: '12000' } })
   rerender(view())
