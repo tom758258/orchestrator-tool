@@ -471,8 +471,8 @@ fn expected_single_wait_timeout(event: &Value) -> bool {
     // Legacy Tektronix status may have only the raw and numeric SESR fields.
     let tek_ok = status["raw"].as_str().is_some_and(|raw| !raw.is_empty())
         && status["value"].as_u64().is_some()
-        && status.get("is_error").is_none_or(|value| value == false)
-        && status.get("complete").is_none_or(|value| value == true);
+        && status.get("is_error").is_none_or(|value| value.as_bool() == Some(false))
+        && status.get("complete").is_none_or(|value| value.as_bool() == Some(true));
     system_ok || tek_ok
 }
 
