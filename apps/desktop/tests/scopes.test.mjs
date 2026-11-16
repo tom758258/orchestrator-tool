@@ -118,13 +118,15 @@ test('Scopes missing Live model and failed capabilities disable controls with a 
 })
 
 test('Scopes exposes exactly the agreed actions and structured Measure output references', () => {
-  assert.deepEqual(SCOPES_ACTIONS.map(([action]) => action), ['channel-display', 'channel-scale', 'channel-offset', 'timebase-scale', 'timebase-position', 'trigger-edge', 'measure', 'capture', 'screenshot', 'autoscale'])
+  assert.deepEqual(SCOPES_ACTIONS.map(([action]) => action), ['channel-display', 'channel-scale', 'channel-offset', 'timebase-scale', 'timebase-position', 'trigger-edge', 'single-wait', 'measure', 'capture', 'screenshot', 'autoscale'])
   assert.deepEqual(scopesActionArguments('capture'), { channel: [1], points: 1000 })
   assert.deepEqual(scopesActionArguments('autoscale'), {})
+  assert.deepEqual(scopesActionArguments('single-wait'), { trigger_timeout_ms: 5000, trigger_poll_interval_ms: 100 })
   for (const [action] of SCOPES_ACTIONS) {
     assert.ok(!['csv', 'meta', 'output', 'query_hardcopy', 'model', 'resource'].some(key => key in scopesActionArguments(action)))
   }
   assert.deepEqual(curatedResultFields({ type: 'tool-action', target: 'scope', action: 'measure' }, [{ id: 'scope', tool: 'scopes' }]).map(field => field.pointer), ['/value', '/unit', '/channel', '/item'])
+  assert.deepEqual(curatedResultFields({ type: 'tool-action', target: 'scope', action: 'single-wait' }, [{ id: 'scope', tool: 'scopes' }]).map(field => field.pointer), ['/outcome', '/timed_out', '/capture_allowed'])
 })
 
 test('Scopes Acquisition groups each control with its own hints in exactly two fields', async () => {
@@ -295,7 +297,7 @@ test('Scopes Channel actions request capabilities while Timebase actions do not'
     const props = screenshotProps({ step: { ...screenshotProps().step, action, arguments: scopesActionArguments(action) } })
     const before = calls.length
     assert.equal(control(render(props), 'Image Format'), undefined)
-    assert.equal(calls.length - before, action.startsWith('timebase-') ? 0 : 1)
+    assert.equal(calls.length - before, action.startsWith('timebase-') || action === 'single-wait' ? 0 : 1)
     await settle()
   }
 })
