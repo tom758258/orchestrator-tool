@@ -114,7 +114,7 @@ existing launch and Worker requests, but do not maintain a second capability
 database. Unsupported or evolving tool contracts must be reported rather than
 guessed.
 
-Scopes supports optional acquisition/channel Setup and nine selected Worker
+Scopes supports optional acquisition/channel Setup and selected Worker
 actions. Its adapter validates startup identity, correlates terminal jobs, and
 assigns runtime artifact paths; instrument-specific validation remains external.
 Wavegen may be represented as a Tool Instance, but its runtime actions remain
