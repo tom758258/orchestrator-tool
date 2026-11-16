@@ -3904,7 +3904,8 @@ fn run_scopes_fixture(scenario: &str) {
                     "command":command["command"],"job_id":command["job_id"],
                     "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
                     "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
-                    "ok":!failed && !cancelled,"exit_code":if single_wait {1} else if failed || cancelled {3} else {0},
+                    "ok":!failed && !cancelled,
+                    "exit_code":if single_wait {1} else if failed || cancelled {3} else {0},
                     "error":error, "result":result,"files":[]}).to_string());
             }
             "/stop" => { write_response(request.stream, 200, r#"{"ok":true}"#); return; }
