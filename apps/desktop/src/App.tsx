@@ -607,6 +607,7 @@ function App() {
   const [expandedStepCategories, setExpandedStepCategories] = useState<Record<string, boolean>>({
     Workflow: true, 'Background Workflow': true, 'FG/BG Interaction': true, Powers: true, Meters: true, Scopes: true, Serial: true,
   })
+  const [unavailableCategoriesExpanded, setUnavailableCategoriesExpanded] = useState(false)
   const [stepsExpanded, setStepsExpanded] = useState(true)
   const [selectedPaletteStep, setSelectedPaletteStep] = useState<StepPreset | null>(null)
   const sequenceEditorRef = useRef<SequenceEditorHandle>(null)
@@ -1031,6 +1032,7 @@ function App() {
       setWorkflowDraft(workflowOnlyDraft(draft))
       setInteractionCommandDrafts({})
       setTemplateUiGeneration(current => current + 1)
+      setUnavailableCategoriesExpanded(false)
       setExpandedToolIds([])
       setCollapsedStepIds(new Set())
       setCollapsedBranches(new Set())
@@ -1382,6 +1384,7 @@ function App() {
       setWorkflowDraft(workflowOnlyDraft(loadedDraft))
       setInteractionCommandDrafts({})
       setTemplateUiGeneration(current => current + 1)
+      setUnavailableCategoriesExpanded(false)
       setExpandedToolIds([])
       setCollapsedStepIds(new Set())
       setCollapsedBranches(new Set())
@@ -2059,6 +2062,99 @@ function App() {
         </p>}
   </>
 
+  const paletteCategories = STEP_CATEGORIES.map(({ category, tool }) => ({
+    category,
+    locked: category === 'Background Workflow' ? !workflowDraft?.backgrounds?.length
+      : category === 'FG/BG Interaction'
+        ? !workflowDraft?.backgrounds?.length || !workflowDraft?.workflow.interaction.enabled
+        : tool !== null && !workflowDraft?.tool_instances.some(instance => instance.tool === tool),
+  }))
+  const availablePaletteCategories = paletteCategories.filter(item => !item.locked)
+  const unavailablePaletteCategories = paletteCategories.filter(item => item.locked)
+
+  function renderPaletteCategories(categories: typeof paletteCategories) {
+    return categories.map(({ category, locked }) => {
+                        const presets = STEP_PRESETS.filter(preset => preset.category === category)
+                        const expanded = !locked && expandedStepCategories[category]
+                        return (
+                        <section key={category}>
+                          <h4>
+                            <button type="button" className="step-category-header"
+                              disabled={locked}
+                              aria-expanded={expanded}
+                              aria-describedby={locked ? `step-category-${category}-hint` : undefined}
+                              onClick={() => setExpandedStepCategories(current => ({
+                                ...current, [category]: !current[category],
+                              }))}>
+                              {t(STEP_CATEGORY_KEYS[category])}
+                              <span aria-hidden="true">{locked ? '🔒' : expanded ? '−' : '+'}</span>
+                            </button>
+                          </h4>
+                          {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
+                            {category === 'Background Workflow'
+                               ? t("app.noBackgroundBindingEnableABackgroundInToolSetup")
+                               : category === 'FG/BG Interaction'
+                                 ? !workflowDraft.backgrounds?.length
+                                   ? t("app.noBackgroundBindingEnableBackgroundStreamingInSetup")
+                                   : t("app.enableFGBGInteractionInTheWorkflowSidebar")
+                                 : t("app.noToolInstanceAddOneInSetup", { value1: category })}
+                          </p>}
+                          {expanded && <div className="step-palette-items">
+                            {presets.map((preset) => (
+                              <button
+                                key={preset.value}
+                                className="action-button step-palette-button"
+                                type="button"
+                                title={t(`steps.hint.${preset.value}`)}
+                                aria-pressed={selectedPaletteStep === preset.value}
+                                onPointerDown={event => {
+                                  if (workflowBusy || event.button !== 0 || paletteDragRef.current) return
+                                  suppressPaletteClickRef.current = null
+                                  event.currentTarget.setPointerCapture(event.pointerId)
+                                  paletteDragRef.current = {
+                                    preset: preset.value, pointerId: event.pointerId, handle: event.currentTarget,
+                                    startX: event.clientX, startY: event.clientY, started: false,
+                                  }
+                                }}
+                                onPointerMove={event => {
+                                  const drag = paletteDragRef.current
+                                  if (!drag || drag.pointerId !== event.pointerId || workflowBusy) return
+                                  if (!drag.started && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
+                                    drag.started = true
+                                  }
+                                  if (drag.started) sequenceEditorRef.current?.updatePaletteDrop(event.clientX, event.clientY,
+                                    drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if')
+                                }}
+                                onPointerUp={event => {
+                                  const drag = paletteDragRef.current
+                                  if (!drag || drag.pointerId !== event.pointerId) return
+                                  const location = drag.started && !workflowBusy
+                                    ? sequenceEditorRef.current?.finishPaletteDrop(event.clientX, event.clientY,
+                                        drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if') : null
+                                  if (drag.started) suppressPaletteClickRef.current = drag.preset
+                                  finishPaletteDrag()
+                                  if (location) insertStepAt(preset, location)
+                                }}
+                                onPointerCancel={finishPaletteDrag}
+                                onLostPointerCapture={finishPaletteDrag}
+                                onClick={event => {
+                                  if (event?.detail === 0 || suppressPaletteClickRef.current !== preset.value) {
+                                    setSelectedPaletteStep(preset.value)
+                                  }
+                                  suppressPaletteClickRef.current = null
+                                }}
+                                disabled={workflowBusy}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>}
+                        </section>
+                        )
+
+    })
+  }
+
   return (
     <main className="app">
       <header className="app-header">
@@ -2659,88 +2755,22 @@ function App() {
                       onClick={() => { if (selectedPalettePreset) addStep(selectedPalettePreset) }}>
                       {t("app.addStep")}</button>
                     <div className="step-palette-items step-palette-scroll" role="region" aria-label={t("app.stepCategories")} tabIndex={0}>
-                      {STEP_CATEGORIES.map(({ category, tool }) => {
-                        const presets = STEP_PRESETS.filter(preset => preset.category === category)
-                        const locked = category === 'Background Workflow' ? !workflowDraft.backgrounds?.length
-                          : category === 'FG/BG Interaction'
-                            ? !workflowDraft.backgrounds?.length || !workflowDraft.workflow.interaction.enabled
-                            : tool !== null && !workflowDraft.tool_instances.some(instance => instance.tool === tool)
-                        const expanded = !locked && expandedStepCategories[category]
-                        return (
-                        <section key={category}>
+                      {renderPaletteCategories(availablePaletteCategories)}
+                      {unavailablePaletteCategories.length > 0 && (
+                        <section className="step-category-unavailable">
                           <h4>
                             <button type="button" className="step-category-header"
-                              disabled={locked}
-                              aria-expanded={expanded}
-                              aria-describedby={locked ? `step-category-${category}-hint` : undefined}
-                              onClick={() => setExpandedStepCategories(current => ({
-                                ...current, [category]: !current[category],
-                              }))}>
-                              {t(STEP_CATEGORY_KEYS[category])}
-                              <span aria-hidden="true">{locked ? '🔒' : expanded ? '−' : '+'}</span>
+                              aria-expanded={unavailableCategoriesExpanded}
+                              onClick={() => setUnavailableCategoriesExpanded(current => !current)}>
+                              {t('steps.category.unavailable', { value1: unavailablePaletteCategories.length })}
+                              <span aria-hidden="true">{unavailableCategoriesExpanded ? '−' : '+'}</span>
                             </button>
                           </h4>
-                          {locked && <p className="step-category-hint" id={`step-category-${category}-hint`}>
-                            {category === 'Background Workflow'
-                               ? t("app.noBackgroundBindingEnableABackgroundInToolSetup")
-                               : category === 'FG/BG Interaction'
-                                 ? !workflowDraft.backgrounds?.length
-                                   ? t("app.noBackgroundBindingEnableBackgroundStreamingInSetup")
-                                   : t("app.enableFGBGInteractionInTheWorkflowSidebar")
-                                 : t("app.noToolInstanceAddOneInSetup", { value1: category })}
-                          </p>}
-                          {expanded && <div className="step-palette-items">
-                            {presets.map((preset) => (
-                              <button
-                                key={preset.value}
-                                className="action-button step-palette-button"
-                                type="button"
-                                aria-pressed={selectedPaletteStep === preset.value}
-                                onPointerDown={event => {
-                                  if (workflowBusy || event.button !== 0 || paletteDragRef.current) return
-                                  suppressPaletteClickRef.current = null
-                                  event.currentTarget.setPointerCapture(event.pointerId)
-                                  paletteDragRef.current = {
-                                    preset: preset.value, pointerId: event.pointerId, handle: event.currentTarget,
-                                    startX: event.clientX, startY: event.clientY, started: false,
-                                  }
-                                }}
-                                onPointerMove={event => {
-                                  const drag = paletteDragRef.current
-                                  if (!drag || drag.pointerId !== event.pointerId || workflowBusy) return
-                                  if (!drag.started && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
-                                    drag.started = true
-                                  }
-                                  if (drag.started) sequenceEditorRef.current?.updatePaletteDrop(event.clientX, event.clientY,
-                                    drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if')
-                                }}
-                                onPointerUp={event => {
-                                  const drag = paletteDragRef.current
-                                  if (!drag || drag.pointerId !== event.pointerId) return
-                                  const location = drag.started && !workflowBusy
-                                    ? sequenceEditorRef.current?.finishPaletteDrop(event.clientX, event.clientY,
-                                        drag.preset === 'for' || drag.preset === 'while' || drag.preset === 'if') : null
-                                  if (drag.started) suppressPaletteClickRef.current = drag.preset
-                                  finishPaletteDrag()
-                                  if (location) insertStepAt(preset, location)
-                                }}
-                                onPointerCancel={finishPaletteDrag}
-                                onLostPointerCapture={finishPaletteDrag}
-                                onClick={event => {
-                                  if (event?.detail === 0 || suppressPaletteClickRef.current !== preset.value) {
-                                    setSelectedPaletteStep(preset.value)
-                                  }
-                                  suppressPaletteClickRef.current = null
-                                }}
-                                disabled={workflowBusy}
-                              >
-                                {preset.label}
-                              </button>
-                            ))}
+                          {unavailableCategoriesExpanded && <div className="step-palette-items">
+                            {renderPaletteCategories(unavailablePaletteCategories)}
                           </div>}
                         </section>
-                        )
-                      })}
+                      )}
                     </div>
                     </>}
                   </section>
