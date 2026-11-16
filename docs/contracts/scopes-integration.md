@@ -55,6 +55,7 @@ bindings. Instrument validation remains external.
 | `timebase-scale` | `seconds_per_division` |
 | `timebase-position` | `seconds` |
 | `trigger-edge` | `source_channel`, `level`, `slope` |
+| `single-wait` | optional fixed `trigger_timeout_ms` (5000), `trigger_poll_interval_ms` (100) |
 | `measure` | `channel`, `item` |
 | `capture` | `channel` array, `points` |
 | `screenshot` | `format` |
@@ -76,11 +77,28 @@ Calculation sources only; Calculation operands are numeric literals or Variables
 These restrictions also apply inside For and While bodies. Scopes remains
 responsible for runtime values and final model support.
 
+Single Wait is a Foreground-only acquisition-control Step. Its optional
+`trigger_timeout_ms` and `trigger_poll_interval_ms` arguments must be fixed
+positive integers, with the poll interval no larger than the trigger timeout.
+Bindings, force-on-timeout and other arguments are not accepted. Orchestrator
+does not issue a force-trigger command. It gives this Action the caller's action
+timeout plus the trigger timeout to allow Worker overhead; other Action
+deadlines are unchanged. A matching Worker failed terminal with exit code 1
+is treated as a successful Step only when the complete trigger result confirms
+an unforced `timeout` without result/domain/instrument errors. Keysight uses
+the Scopes Worker `result.system_error` status; Tektronix uses its checked
+`result.post_command_status`. Missing or null `system_error` is never proof of
+a clean Keysight status. A real Worker deadline, cancellation, or other error
+still fails the Step. The original result remains available to IF/ELSE, including
+`/outcome`, `/timed_out` and `/capture_allowed`. This does not imply that a
+waveform was captured, and no reset, retry or stop command is added.
+
 Measure returns Scopes' structured result, including `value`, `unit`, `channel`,
 and `item`, for ordinary Output/Assert/dataflow. Orchestrator does not infer
 measurement units from channel Setup. HTTP 202 only admits a job. Completion
 requires a matching schema/run/job/worker-job/command terminal event, succeeded
-state, `ok: true`, and zero exit code. Rejection, failure, cancellation, malformed
+state, `ok: true`, and zero exit code, except for the confirmed Single Wait
+trigger-timeout result described above. Rejection, failure, cancellation, malformed
 correlation, disconnection, and timeout fail the action with diagnostics.
 
 AutoScale is a Foreground-only Tool Action admitted by Orchestrator only for
