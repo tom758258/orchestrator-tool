@@ -66,6 +66,11 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
   'serial/query': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' },
     { label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' },
     { label: "resultFields.delimiterHex", pointer: '/delimiter_hex' }],
+  'scopes/single-wait': [
+    { label: "resultFields.outcome", pointer: '/outcome' },
+    { label: "resultFields.timedOut", pointer: '/timed_out' },
+    { label: "resultFields.captureAllowed", pointer: '/capture_allowed' },
+  ],
   'scopes/measure': [
     { label: "resultFields.value", pointer: '/value' },
     { label: "resultFields.unit", pointer: '/unit' },
