@@ -827,6 +827,16 @@ fn validate_tool_action_parameters(
                     }
                 }
                 if *tool == ToolId::scopes() {
+                    if action.as_str() == "single-wait" {
+                        if !bindings.is_empty() {
+                            return Err(error(
+                                "bindings",
+                                "Single Wait parameters must be fixed; bindings are not supported",
+                            ));
+                        }
+                        crate::adapters::scopes::validate_single_wait_arguments(arguments)
+                            .map_err(|reason| error("arguments", &reason))?;
+                    }
                     if action.as_str() == "autoscale" {
                         if !bindings.is_empty() {
                             return Err(error(
@@ -3930,6 +3940,51 @@ mod tests {
         let error = Template::from_json_str(&wire.to_string()).unwrap_err();
         assert!(error.to_string().contains("unknown tool instance target"));
         assert!(error.to_string().contains("missing-instance"));
+    }
+
+    #[test]
+    fn scopes_single_wait_template_accepts_only_fixed_time_arguments() {
+        let mut wire = json!({
+            "name": "Scope Single Wait",
+            "tool_instances": [{"id":"scope","tool":"scopes","setup":{}}],
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+                "steps":[{"type":"tool-action","id":"wait-trigger","target":"scope",
+                          "action":"single-wait","arguments":{}}]}
+        });
+        for args in [
+            json!({}),
+            json!({"trigger_timeout_ms": 5000}),
+            json!({"trigger_timeout_ms": 8000, "trigger_poll_interval_ms": 100}),
+            json!({"trigger_timeout_ms": 100, "trigger_poll_interval_ms": 100}),
+        ] {
+            wire["workflow"]["steps"][0]["arguments"] = args;
+            let parsed = Template::from_json_str(&wire.to_string()).unwrap();
+            assert_eq!(
+                Template::from_json_str(&parsed.to_json_string().unwrap()).unwrap(),
+                parsed
+            );
+        }
+        for args in [
+            json!({"trigger_timeout_ms": 0}),
+            json!({"trigger_timeout_ms": -1}),
+            json!({"trigger_timeout_ms": 10.5}),
+            json!({"trigger_timeout_ms": "5000"}),
+            json!({"trigger_poll_interval_ms": 0}),
+            json!({"trigger_poll_interval_ms": 6000}),
+            json!({"force_trigger_on_timeout": false}),
+            json!({"extra": true}),
+        ] {
+            wire["workflow"]["steps"][0]["arguments"] = args.clone();
+            assert!(Template::from_json_str(&wire.to_string()).is_err(), "{args}");
+        }
+        wire["workflow"]["steps"][0]["arguments"] = json!({});
+        for source in [
+            json!({"source":"literal","value":5000}),
+            json!({"source":"variable","variable":"delay"}),
+        ] {
+            wire["workflow"]["steps"][0]["bindings"] = json!({"trigger_timeout_ms":source});
+            assert!(Template::from_json_str(&wire.to_string()).is_err());
+        }
     }
 
     #[test]
