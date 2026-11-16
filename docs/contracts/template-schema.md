@@ -464,7 +464,7 @@ External modes optionally accept `hw_trigger_slope` (`pos` or `neg`) and
 other modes do not forward these fields. The Tool validates its hardware limits.
 
 Declaring a Wavegen instance does not imply that its runtime actions are
-supported. Scopes supports the ten Foreground actions documented in its integration reference.
+supported. Scopes supports the selected Foreground actions documented in its integration reference.
 
 ## Workflow steps
 
@@ -518,6 +518,14 @@ parameters and general workflow dataflow retain their existing source rules.
 Desktop choices come from Scopes capabilities; Core does not maintain
 general model allowlists, and Scopes validates final model support. The
 AutoScale Keysight-only restriction below is a specific Orchestrator policy.
+
+Scopes `single-wait` accepts optional fixed positive integer
+`trigger_timeout_ms` (default 5000) and `trigger_poll_interval_ms`
+(default 100). The poll interval must not exceed the trigger timeout. Extra
+arguments (including `force_trigger_on_timeout`) and all bindings are
+rejected. The original result can be referenced by later steps; a confirmed
+trigger timeout is a successful Step result, not a Workflow failure.
+Invalid Worker or instrument failures remain failures.
 
 Scopes `autoscale` uses the Tool Action shape.
 Its optional fixed arguments are `source_channel` (a nonempty array of distinct
