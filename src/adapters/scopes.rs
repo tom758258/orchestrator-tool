@@ -18,7 +18,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -418,11 +418,70 @@ fn run_command(
     terminal_result(&terminal, command, arguments)
 }
 
+
+pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, String> {
+    let fields = arguments
+        .as_object()
+        .ok_or("Scopes single-wait arguments must be an object")?;
+    for key in fields.keys() {
+        if !matches!(key.as_str(), "trigger_timeout_ms" | "trigger_poll_interval_ms") {
+            return Err(format!("unsupported Scopes single-wait parameter {key}"));
+        }
+    }
+    let positive = |key: &str, default: u64| -> Result<u64, String> {
+        match fields.get(key) {
+            None => Ok(default),
+            Some(value) => value
+                .as_u64()
+                .filter(|number| *number > 0)
+                .ok_or_else(|| format!("Scopes single-wait {key} must be a positive integer")),
+        }
+    };
+    let trigger_timeout = positive("trigger_timeout_ms", 5000)?;
+    let poll_interval = positive("trigger_poll_interval_ms", 100)?;
+    if poll_interval > trigger_timeout {
+        return Err("Scopes single-wait trigger_poll_interval_ms must not exceed trigger_timeout_ms".into());
+    }
+    Ok(trigger_timeout)
+}
+
+fn expected_single_wait_timeout(event: &Value) -> bool {
+    let result = &event["result"];
+    let error = &event["error"];
+    if event["state"] != "failed"
+        || event["ok"] != false
+        || event["exit_code"].as_i64() != Some(1)
+        || error["category"] != "execution"
+        || error["code"] != "job_failed"
+        || !error["details"].as_object().is_some_and(|details| details.is_empty())
+        || result["operation"] != "single-wait"
+        || result["outcome"] != "timeout"
+        || result["timed_out"] != true
+        || result["forced"] != false
+        || result["force_on_timeout"] != false
+        || result["capture_allowed"] != false
+        || result.get("error") != Some(&Value::Null)
+    {
+        return false;
+    }
+    let system_ok = result["system_error"]["is_error"] == false
+        && result["system_error"]["code"].as_i64() == Some(0);
+    let status = &result["post_command_status"];
+    // Scopes' Tektronix CLI performs the native status check before returning.
+    // Legacy Tektronix status may have only the raw and numeric SESR fields.
+    let tek_ok = status["raw"].as_str().is_some_and(|raw| !raw.is_empty())
+        && status["value"].as_u64().is_some()
+        && status.get("is_error").is_none_or(|value| value == false)
+        && status.get("complete").is_none_or(|value| value == true);
+    system_ok || tek_ok
+}
+
 fn terminal_result(event: &Value, command: &str, arguments: &Value) -> Result<Value, String> {
-    if event["state"] != "succeeded"
-        || event["ok"] != true
-        || event["exit_code"].as_i64() != Some(0)
-        || !event["error"].is_null()
+    if !(command == "single-wait" && expected_single_wait_timeout(event))
+        && (event["state"] != "succeeded"
+            || event["ok"] != true
+            || event["exit_code"].as_i64() != Some(0)
+            || !event["error"].is_null())
     {
         let state = event["state"].as_str().unwrap_or("unknown");
         let mut message = format!("Scopes {command} ended with {state:?}");
@@ -590,6 +649,7 @@ pub const ACTIONS: &[&str] = &[
     "timebase-scale",
     "timebase-position",
     "trigger-edge",
+    "single-wait",
     "measure",
     "capture",
     "screenshot",
@@ -613,8 +673,18 @@ pub fn run_action(
     if matches!(command, "capture" | "screenshot") {
         prepare_file_arguments(command, &mut arguments, output_folder)?;
     }
-    // Screenshot transport alone may take ten seconds, before artifact writing.
+    // The trigger wait belongs to Scopes; the caller timeout covers Worker overhead.
     let timeout = match command {
+        "single-wait" => {
+            let trigger_ms = validate_single_wait_arguments(&arguments)?;
+            let deadline = timeout
+                .checked_add(Duration::from_millis(trigger_ms))
+                .ok_or("Scopes single-wait action timeout overflow")?;
+            if Instant::now().checked_add(deadline).is_none() {
+                return Err("Scopes single-wait action deadline is not representable".into());
+            }
+            deadline
+        }
         "capture" | "screenshot" => timeout.max(Duration::from_secs(30)),
         "autoscale" => timeout.max(Duration::from_secs(60)),
         _ => timeout,
@@ -903,6 +973,107 @@ mod tests {
                 "Scopes measure ended with \"failed\" (exit code 3)"
             );
         }
+    }
+
+    #[test]
+    fn scopes_single_wait_fixed_arguments_and_deadline_inputs() {
+        assert_eq!(validate_single_wait_arguments(&json!({})).unwrap(), 5000);
+        assert_eq!(
+            validate_single_wait_arguments(&json!({
+                "trigger_timeout_ms": 12000, "trigger_poll_interval_ms": 500
+            }))
+            .unwrap(),
+            12000
+        );
+        for invalid in [
+            json!({"trigger_timeout_ms": 0}),
+            json!({"trigger_timeout_ms": -1}),
+            json!({"trigger_timeout_ms": 1.5}),
+            json!({"trigger_timeout_ms": "5000"}),
+            json!({"trigger_poll_interval_ms": 0}),
+            json!({"trigger_poll_interval_ms": 6000}),
+            json!({"force_trigger_on_timeout": false}),
+            json!({"other": true}),
+        ] {
+            assert!(
+                validate_single_wait_arguments(&invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn scopes_single_wait_only_confirmed_trigger_timeout_succeeds() {
+        let result = json!({
+            "operation":"single-wait", "outcome":"timeout", "timed_out":true,
+            "forced":false, "force_on_timeout":false, "capture_allowed":false,
+            "error":null, "system_error":{"code":0,"is_error":false},
+            "poll_count":3, "elapsed_ms":5000.0
+        });
+        let event = json!({
+            "event":"job_finished", "state":"failed", "ok":false,
+            "exit_code":1,
+            "error":{"category":"execution","code":"job_failed",
+                     "message":"job failed","details":{}},
+            "result":result
+        });
+        assert_eq!(
+            terminal_result(&event, "single-wait", &json!({})).unwrap(),
+            event["result"]
+        );
+        let mut tek = event.clone();
+        tek["result"].as_object_mut().unwrap().remove("system_error");
+        tek["result"]["post_command_status"] = json!({"value":0,"raw":"0"});
+        assert_eq!(
+            terminal_result(&tek, "single-wait", &json!({})).unwrap(),
+            tek["result"]
+        );
+        let mut invalid = event.clone();
+        for (path, replacement) in [
+            ("state", json!("cancelled")),
+            ("ok", json!(true)),
+            ("exit_code", json!(3)),
+            ("error", json!({"category":"execution","code":"job_failed","message":"failed",
+                              "details":{"domain_error":{"message":"instrument error"}}})),
+            ("result", json!({"outcome":"timeout"})),
+        ] {
+            invalid[path] = replacement;
+            assert!(
+                terminal_result(&invalid, "single-wait", &json!({})).is_err(),
+                "{path}: {invalid}"
+            );
+            invalid = event.clone();
+        }
+        for (path, replacement) in [
+            ("outcome", json!("unknown")),
+            ("timed_out", json!(false)),
+            ("forced", json!(true)),
+            ("force_on_timeout", json!(true)),
+            ("capture_allowed", json!(true)),
+            ("error", json!("instrument error")),
+            ("system_error", json!(null)),
+            ("system_error", json!({"code":-222,"is_error":true})),
+        ] {
+            invalid["result"][path] = replacement;
+            assert!(
+                terminal_result(&invalid, "single-wait", &json!({})).is_err(),
+                "{path}: {invalid}"
+            );
+            invalid = event.clone();
+        }
+        assert!(terminal_result(&event, "measure", &json!({})).is_err());
+        let mut natural = event;
+        natural["state"] = json!("succeeded");
+        natural["ok"] = json!(true);
+        natural["exit_code"] = json!(0);
+        natural["error"] = Value::Null;
+        natural["result"]["outcome"] = json!("natural");
+        natural["result"]["timed_out"] = json!(false);
+        natural["result"]["capture_allowed"] = json!(true);
+        assert_eq!(
+            terminal_result(&natural, "single-wait", &json!({})).unwrap(),
+            natural["result"]
+        );
     }
     #[test]
     fn scopes_terminal_empty_or_missing_error_message_falls_back() {
