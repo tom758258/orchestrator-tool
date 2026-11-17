@@ -124,22 +124,43 @@ body {
 .app-version {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .appearance-control {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.header-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   color: var(--muted);
   font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.header-control > .action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  min-width: 116px;
+  white-space: nowrap;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 600;
-  letter-spacing: -0.035em;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
 
 .tabs {
@@ -795,6 +816,28 @@ textarea:disabled {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+}
+
+.template-toolbar {
+  align-items: flex-end;
+}
+
+.template-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolbar-group-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.template-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Borderless group inside the Chart Sampling Options panel; the fieldset only
@@ -2831,5 +2874,4 @@ textarea:disabled {
 }
 
 .locale-button { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
-.appearance-control { flex-wrap: wrap; }
 :lang(zh-TW) .action-button { word-break: keep-all; }
