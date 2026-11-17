@@ -1698,6 +1698,12 @@ Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negativ
 
 Query Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.
 
+Receive reads once, up to Max Bytes; it does not wait for exactly that many bytes. Query sends TX and reads until the Delimiter. On a completed read the Step Result retains `/rx_hex` (a hex String, not a Byte Array) and `/rx_bytes` (a Number), and adds `/outcome = completed` and `/timed_out = false`. Use Set Variable with Previous step result to save either field; individual bytes cannot currently be split or parsed by the Workflow.
+
+Receive and Query use the UART `timeout_ms` or TCP `io_timeout_ms` from Serial Setup. A confirmed Read Timeout normally succeeds as a Workflow Step with `/outcome = timeout`, `/timed_out = true`, `/partial_rx_hex` (String) and `/partial_rx_bytes` (Number, 0 when nothing arrived). Set Variable, Assert and IF/ELSE can inspect these results. Check **Fail on Read Timeout** to fail the Step instead. A timeout result does not itself mean that the MCU passed the test.
+
+After a Query Read Timeout, the Ordinary Worker removes only the partial RX already reported from its internal session buffer. It does not flush the device or OS RX queue, so delayed responses can still arrive later. A read limit, disconnection, other I/O error, Worker failure, or unconfirmed action deadline still fails. Text TX requires a String (Timestamp is an ISO-8601 String); Hex Byte TX requires a Number and sends only the low byte (Elapsed Time is seconds as a Number). RX Hex Strings cannot be sent directly as raw multiple bytes.
+
 Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow RX FIFO are not available as Orchestrator actions.
 
 ### Serial Send / Send File while Background RX is running

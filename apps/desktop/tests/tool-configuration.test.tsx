@@ -424,6 +424,64 @@ test('Serial command drafts survive Step selection and stay out of saved/replace
   }
 })
 
+test('Serial timeout controls and Assert String literals persist through Workflow save/open', async () => {
+  tools.push(toolStatus('serial'))
+  const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
+    transport: 'serial', baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1,
+    flow_control: 'none', timeout_ms: 1000,
+  } }
+  newDraft = { name: 'Serial timeout editor', tool_instances: [serial],
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
+      { type: 'tool-action', id: 'query-1', target: 'serial-1', action: 'query',
+        arguments: { tx_format: 'text', tx_value: 'REA', delimiter_format: 'hex',
+          delimiter_value: '0D0A', max_bytes: 32 } },
+      { type: 'tool-action', id: 'receive-1', target: 'serial-1', action: 'receive',
+        arguments: { max_bytes: 32 } },
+      { type: 'assert', id: 'assert-1',
+        left: { source: 'literal', value: 0 }, operator: 'equal',
+        right: { source: 'literal', value: 0 }, message: 'RX mismatch' },
+    ] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand serial details' })
+  tab('Workflow')
+  click('Step 1: Serial Query, query-1')
+  const queryFlag = screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement
+  expect(queryFlag.checked).toBe(false)
+  fireEvent.click(queryFlag)
+  expect(queryFlag.checked).toBe(true)
+  click('Step 2: Serial Receive, receive-1')
+  expect((screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement).checked).toBe(false)
+
+  click('Step 3: Assert, assert-1')
+  const left = within(screen.getByRole('group', { name: /Left/ }))
+  const right = within(screen.getByRole('group', { name: /Right/ }))
+  fireEvent.change(right.getByRole('combobox', { name: 'Value type' }), { target: { value: 'string' } })
+  fireEvent.change(right.getByRole('textbox', { name: 'Value' }), { target: { value: '524541' } })
+  fireEvent.change(left.getByRole('combobox', { name: 'Value type' }), { target: { value: 'string' } })
+  fireEvent.change(left.getByRole('textbox', { name: 'Value' }), { target: { value: 'temporary' } })
+  fireEvent.change(left.getByRole('combobox', { name: 'Left Source' }), { target: { value: 'step-output' } })
+  fireEvent.change(left.getByRole('combobox', { name: 'Result' }), { target: { value: '/partial_rx_hex' } })
+  expect((right.getByRole('textbox', { name: 'Value' }) as HTMLInputElement).value).toBe('524541')
+
+  const saved = await savedDraft()
+  const [query, receive, assertion] = saved.workflow.steps
+  expect(query.arguments.fail_on_read_timeout).toBe(true)
+  expect(receive.arguments.fail_on_read_timeout).toBeUndefined()
+  expect(assertion.left).toEqual({ source: 'step-output', step_id: 'query-1', pointer: '/partial_rx_hex' })
+  expect(assertion.right).toEqual({ source: 'literal', value: '524541' })
+
+  loadedDraft = saved
+  click('Open Template')
+  await screen.findByText('Template loaded.')
+  click('Step 1: Serial Query, query-1')
+  expect((screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement).checked).toBe(true)
+  click('Step 3: Assert, assert-1')
+  const reloadedLeft = within(screen.getByRole('group', { name: /Left/ }))
+  const reloadedRight = within(screen.getByRole('group', { name: /Right/ }))
+  expect((reloadedLeft.getByRole('combobox', { name: 'Result' }) as HTMLSelectElement).value).toBe('/partial_rx_hex')
+  expect((reloadedRight.getByRole('textbox', { name: 'Value' }) as HTMLInputElement).value).toBe('524541')
+})
+
 test('opening a nested BG Send File Template displays the shared nonblocking file warning', async () => {
   const file = { type: 'bg-interaction', id: 'file', background_id: 'serial-bg', timeout_ms: null,
     operation: { kind: 'command', command: 'serial-send-file', wait_for_completion: true,

@@ -821,6 +821,117 @@ mod tests {
         std::fs::remove_file(file).unwrap();
     }
 
+    // Opt-in cross-repository contract check. Use the serial-tool Worker from PR #29:
+    // ORCHESTRATOR_TEST_SERIAL_EXECUTABLE=/path/to/serial-tool
+    // cargo test --locked --lib serial_real_worker_timeout_workflow_simulation -- --ignored
+    #[test]
+    #[ignore = "requires matching external serial-tool; loopback SIM, no physical hardware"]
+    fn serial_real_worker_timeout_workflow_simulation() {
+        use crate::{run::run_workflow, workflow::StepOutcome};
+        use std::time::Duration;
+
+        let executable = std::fs::canonicalize(
+            std::env::var_os("ORCHESTRATOR_TEST_SERIAL_EXECUTABLE")
+                .expect("Set ORCHESTRATOR_TEST_SERIAL_EXECUTABLE to serial-tool PR #29 binary"),
+        )
+        .unwrap();
+        let template = Template::from_json_str(
+            &serde_json::json!({
+                "name": "Serial timeout workflow SIM",
+                "tool_instances": [{"id":"serial-1","tool":"serial",
+                    "setup":{"transport":"serial","baud":115200,"timeout_ms":100}}],
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
+                    "steps": [
+                        {"type":"tool-action","id":"partial-query","target":"serial-1",
+                            "action":"query","arguments":{"tx_format":"text","tx_value":"REA",
+                                "delimiter_format":"hex","delimiter_value":"0D0A",
+                                "max_bytes":32}},
+                        {"type":"set-variable","id":"save-partial","variable":"partial",
+                            "value":{"source":"step-output","step_id":"partial-query",
+                                "pointer":"/partial_rx_hex"}},
+                        {"type":"if","id":"timeout-branch",
+                            "left":{"source":"step-output","step_id":"partial-query",
+                                "pointer":"/timed_out"},
+                            "operator":"equal","right":{"source":"literal","value":true},
+                            "then_steps":[{"type":"assert","id":"assert-partial",
+                                "left":{"source":"variable","variable":"partial"},
+                                "operator":"equal",
+                                "right":{"source":"literal","value":"524541"},
+                                "message":"Partial RX mismatch"}],
+                            "else_steps":[{"type":"assert","id":"unexpected-completion",
+                                "left":{"source":"literal","value":0},
+                                "operator":"equal","right":{"source":"literal","value":1},
+                                "message":"Expected Read Timeout"}]},
+                        {"type":"tool-action","id":"next-receive","target":"serial-1",
+                            "action":"receive","arguments":{"max_bytes":32}},
+                        {"type":"assert","id":"no-replayed-bytes",
+                            "left":{"source":"step-output","step_id":"next-receive",
+                                "pointer":"/partial_rx_bytes"},
+                            "operator":"equal","right":{"source":"literal","value":0},
+                            "message":"Timed-out Query bytes were read twice"}
+                    ]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut config = Config::default();
+        config.set_executable_path(&ToolId::serial(), &executable);
+        let specs = prepare_worker_launch_specs(
+            &template,
+            ExecutionMode::Simulate,
+            executable.parent().unwrap(),
+            &config,
+        )
+        .unwrap();
+        let result = run_workflow(
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+            Duration::from_secs(8),
+        )
+        .unwrap();
+        let steps = result.step_executions();
+        assert!(
+            steps
+                .iter()
+                .all(|step| matches!(step.outcome(), StepOutcome::Succeeded { .. }))
+        );
+        let outcome = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id().as_str() == id)
+                .expect("expected step must execute")
+                .outcome()
+        };
+        assert!(matches!(
+            outcome("partial-query"),
+            StepOutcome::Succeeded { output }
+                if output["outcome"] == "timeout" && output["timed_out"] == true
+                    && output["partial_rx_hex"] == "524541" && output["partial_rx_bytes"] == 3
+        ));
+        assert!(matches!(
+            outcome("next-receive"),
+            StepOutcome::Succeeded { output }
+                if output["outcome"] == "timeout" && output["timed_out"] == true
+                    && output["partial_rx_hex"] == "" && output["partial_rx_bytes"] == 0
+        ));
+        assert!(matches!(
+            outcome("assert-partial"),
+            StepOutcome::Succeeded { .. }
+        ));
+        assert!(matches!(
+            outcome("no-replayed-bytes"),
+            StepOutcome::Succeeded { .. }
+        ));
+        assert!(
+            !steps
+                .iter()
+                .any(|step| step.step_id().as_str() == "unexpected-completion")
+        );
+    }
+
     // Optional real serial-tool binary; excluded from default cargo test.
     // ORCHESTRATOR_TEST_SERIAL_EXECUTABLE=/path/to/serial-tool
     // cargo test --locked --lib serial_real_worker_rx_only_simulation -- --ignored

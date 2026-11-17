@@ -90,6 +90,20 @@ test('Power Protection Status defaults to Protection Tripped', () => {
   })
 })
 
+test('Serial read results expose timeout and partial RX pointers', () => {
+  const serialInstances = [{ id: 'serial-1', tool: 'serial' }]
+  for (const action of ['receive', 'query']) {
+    const step = { type: 'tool-action', id: 'rx-1', target: 'serial-1', action }
+    const fields = curatedResultFields(step, serialInstances)
+    assert.deepEqual(fields.filter(field =>
+      ['/outcome', '/timed_out', '/partial_rx_hex', '/partial_rx_bytes'].includes(field.pointer)
+    ).map(field => field.pointer),
+    ['/outcome', '/timed_out', '/partial_rx_hex', '/partial_rx_bytes'])
+    assert.ok(fields.filter(field => field.pointer.startsWith('/partial_')).every(field => field.hint))
+    assert.equal(stepOutputReference(step, serialInstances).pointer, '/rx_hex')
+  }
+})
+
 test('known and custom pointers select without rewriting the pointer', () => {
   const fields = curatedResultFields(powerSetOutput, instances)
   assert.equal(resultSelection('/request/arguments/channel', fields), '/request/arguments/channel')

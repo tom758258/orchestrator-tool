@@ -229,13 +229,14 @@ pub fn validate_action(
     let keys: &[&str] = match action {
         "send" => &["tx_format", "tx_value"],
         "send-file" => &["path"],
-        "receive" => &["max_bytes"],
+        "receive" => &["max_bytes", "fail_on_read_timeout"],
         "query" => &[
             "tx_format",
             "tx_value",
             "delimiter_format",
             "delimiter_value",
             "max_bytes",
+            "fail_on_read_timeout",
         ],
         _ => return Err(format!("Unsupported Serial Foreground action {action}")),
     };
@@ -248,6 +249,11 @@ pub fn validate_action(
         if key != "tx_value" || !matches!(action, "send" | "query") {
             return Err(format!("Unsupported Serial binding {key}"));
         }
+    }
+    if let Some(flag) = obj.get("fail_on_read_timeout")
+        && !flag.is_boolean()
+    {
+        return Err("fail_on_read_timeout must be a Boolean".into());
     }
     if matches!(action, "send" | "query") {
         let format = obj
@@ -447,27 +453,260 @@ pub fn run_action(
         NEXT_JOB.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let terminal = session.run_async_job(action.as_str(), &worker_args, None, &id, timeout)?;
+    workflow_result(action.as_str(), arguments, &terminal)
+}
+
+/// Only confirmed ordinary read timeouts can become successful Workflow Steps.
+/// The Serial Worker still reports the native job as failed.
+fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<Value, String> {
+    let read_action = matches!(action, "receive" | "query");
     if terminal["state"] == "succeeded"
         && terminal["ok"] == true
         && terminal["error"].is_null()
         && terminal["result"].is_object()
     {
-        Ok(terminal["result"].clone())
-    } else {
-        Err(format!(
-            "Serial {} failed: {}",
-            action,
-            terminal["error"]["message"]
-                .as_str()
-                .unwrap_or("unconfirmed Job failure")
-        ))
+        let mut result = terminal["result"].clone();
+        if read_action {
+            result["outcome"] = Value::String("completed".into());
+            result["timed_out"] = Value::Bool(false);
+        }
+        return Ok(result);
     }
+
+    let error = &terminal["error"];
+    if read_action
+        && arguments
+            .get("fail_on_read_timeout")
+            .and_then(Value::as_bool)
+            != Some(true)
+        && terminal["state"] == "failed"
+        && terminal["ok"] == false
+        && terminal["result"].is_null()
+        && error["category"] == "execution"
+        && matches!(error["code"].as_str(), Some("serial_error" | "tcp_error"))
+        && error["details"]["reason"] == "read_timeout"
+    {
+        let hex = terminal["partial_hex"]
+            .as_str()
+            .ok_or("Serial Read Timeout missing partial_hex")?;
+        let bytes = terminal["partial_bytes"]
+            .as_u64()
+            .ok_or("Serial Read Timeout missing partial_bytes")?;
+        if !hex.len().is_multiple_of(2)
+            || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || (hex.len() / 2) as u64 != bytes
+        {
+            return Err("Serial Read Timeout partial RX length or hex is invalid".into());
+        }
+        return Ok(serde_json::json!({
+            "outcome": "timeout",
+            "timed_out": true,
+            "partial_rx_hex": hex,
+            "partial_rx_bytes": bytes,
+        }));
+    }
+    Err(format!(
+        "Serial {} failed: {}",
+        action,
+        error["message"]
+            .as_str()
+            .unwrap_or("unconfirmed Job failure")
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    fn timeout_terminal(hex: &str, bytes: u64) -> Value {
+        json!({
+            "state": "failed",
+            "ok": false,
+            "result": null,
+            "error": {
+                "category": "execution",
+                "code": "serial_error",
+                "message": "read timed out",
+                "details": {"reason": "read_timeout"},
+            },
+            "partial_hex": hex,
+            "partial_bytes": bytes,
+        })
+    }
+
+    #[test]
+    fn timeout_result_converts_only_confirmed_serial_read_timeout() {
+        let terminal = timeout_terminal("524541", 3);
+        assert_eq!(
+            workflow_result("query", &json!({}), &terminal).unwrap(),
+            json!({
+                "outcome": "timeout",
+                "timed_out": true,
+                "partial_rx_hex": "524541",
+                "partial_rx_bytes": 3,
+            })
+        );
+        assert!(
+            workflow_result("query", &json!({"fail_on_read_timeout": true}), &terminal).is_err()
+        );
+        let mut empty = timeout_terminal("", 0);
+        empty["error"]["code"] = json!("tcp_error");
+        assert_eq!(
+            workflow_result("receive", &json!({}), &empty).unwrap(),
+            json!({
+                "outcome": "timeout",
+                "timed_out": true,
+                "partial_rx_hex": "",
+                "partial_rx_bytes": 0,
+            })
+        );
+
+        let mut wrong = terminal.clone();
+        wrong["error"]["details"] = json!({});
+        wrong["error"]["message"] = json!("read_timeout");
+        assert!(workflow_result("query", &json!({}), &wrong).is_err());
+        wrong["error"]["code"] = json!("read_limit_exceeded");
+        wrong["error"]["details"] = json!({"reason": "read_timeout"});
+        assert!(workflow_result("query", &json!({}), &wrong).is_err());
+
+        let mut invalid = terminal.clone();
+        invalid["partial_bytes"] = json!(2);
+        assert!(workflow_result("query", &json!({}), &invalid).is_err());
+        invalid["partial_bytes"] = json!(3);
+        invalid["partial_hex"] = json!("G25441");
+        assert!(workflow_result("query", &json!({}), &invalid).is_err());
+
+        let mut unconfirmed = terminal;
+        unconfirmed["state"] = json!("running");
+        assert!(workflow_result("query", &json!({}), &unconfirmed).is_err());
+    }
+
+    #[test]
+    fn converted_partial_rx_flows_to_variable_and_string_assert_expression() {
+        use crate::{
+            data_context::DataContext,
+            workflow::{
+                Expression, ExpressionOperand, ExpressionOperator, InputValue, StepId,
+                StepOutputReference, VariableId,
+            },
+        };
+
+        let mut context = DataContext::new();
+        let step_id = StepId::new("query-one").unwrap();
+        context.set_step_output(
+            step_id.clone(),
+            workflow_result("query", &json!({}), &timeout_terminal("524541", 3)).unwrap(),
+        );
+        let partial = context
+            .resolve(&InputValue::StepOutput(StepOutputReference::new(
+                step_id.clone(),
+                "/partial_rx_hex",
+            )))
+            .unwrap();
+        assert_eq!(partial, json!("524541"));
+        let variable = VariableId::new("mcu-response").unwrap();
+        context.set_variable(variable.clone(), partial);
+        let compare = InputValue::Expression(Expression::new(
+            ExpressionOperand::Variable(variable),
+            ExpressionOperator::Equal,
+            ExpressionOperand::Literal(json!("524541")),
+        ));
+        assert_eq!(context.resolve(&compare).unwrap(), json!(true));
+        assert_eq!(
+            context
+                .resolve(&InputValue::StepOutput(StepOutputReference::new(
+                    step_id,
+                    "/timed_out",
+                )))
+                .unwrap(),
+            json!(true)
+        );
+    }
+
+    #[test]
+    fn normal_serial_result_preserves_native_rx_and_query_fields() {
+        let terminal = json!({
+            "state": "succeeded",
+            "ok": true,
+            "error": null,
+            "result": {"rx_hex": "4849", "rx_bytes": 2, "tx_bytes": 1},
+        });
+        assert_eq!(
+            workflow_result("query", &json!({}), &terminal).unwrap(),
+            json!({
+                "outcome": "completed",
+                "timed_out": false,
+                "rx_hex": "4849",
+                "rx_bytes": 2,
+                "tx_bytes": 1,
+            })
+        );
+        assert_eq!(
+            workflow_result("send", &json!({}), &terminal).unwrap(),
+            terminal["result"]
+        );
+    }
+
+    #[test]
+    fn fail_on_read_timeout_is_validated_and_never_forwarded_to_worker() {
+        let mut args = json!({"max_bytes": 32, "fail_on_read_timeout": false});
+        assert_eq!(
+            worker_arguments("receive", &args).unwrap(),
+            json!({"max_bytes": 32})
+        );
+        args["fail_on_read_timeout"] = json!(true);
+        assert_eq!(
+            worker_arguments("receive", &args).unwrap(),
+            json!({"max_bytes": 32})
+        );
+        args["fail_on_read_timeout"] = json!("false");
+        assert!(validate_action("receive", &args, &Default::default()).is_err());
+        assert!(
+            validate_action(
+                "send",
+                &json!({"tx_format": "text", "tx_value": "OK", "fail_on_read_timeout": false}),
+                &Default::default(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn serial_timeout_setting_round_trips_and_missing_flag_uses_new_default() {
+        for setting in [None, Some(false), Some(true)] {
+            let mut arguments = json!({"max_bytes": 32});
+            if let Some(value) = setting {
+                arguments["fail_on_read_timeout"] = json!(value);
+            }
+            let wire = json!({
+                "name": "Serial read",
+                "tool_instances": [{
+                    "id": "serial-one",
+                    "tool": "serial",
+                    "setup": {"transport": "serial", "baud": 115200}
+                }],
+                "workflow": {
+                    "interaction": {"enabled": false, "max_active_command_status": 4096},
+                    "steps": [{
+                        "type": "tool-action",
+                        "id": "serial-read",
+                        "target": "serial-one",
+                        "action": "receive",
+                        "arguments": arguments,
+                    }]
+                }
+            });
+            let parsed = crate::template::Template::from_json_str(&wire.to_string()).unwrap();
+            let saved: Value = serde_json::from_str(&parsed.to_json_string().unwrap()).unwrap();
+            let stored = &saved["workflow"]["steps"][0]["arguments"];
+            assert_eq!(stored["fail_on_read_timeout"].as_bool(), setting);
+            assert_eq!(
+                workflow_result("receive", stored, &timeout_terminal("", 0)).is_err(),
+                setting == Some(true)
+            );
+        }
+    }
+
     #[test]
     fn foreground_launch_is_ordinary_worker() {
         let setup = SerialSetup::default();

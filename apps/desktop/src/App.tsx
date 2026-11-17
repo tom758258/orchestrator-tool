@@ -234,8 +234,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
   if (preset.startsWith('serial-')) {
     const action = preset.slice(7)
     const arguments_: Record<string, unknown> = action === 'send-file' ? { path: '' }
-      : action === 'receive' ? { max_bytes: 1024 }
-      : action === 'query' ? { tx_format: 'text', tx_value: '', delimiter_format: 'text', delimiter_value: '\\r\\n', max_bytes: 1024 }
+      : action === 'receive' ? { max_bytes: 1024, fail_on_read_timeout: false }
+      : action === 'query' ? { tx_format: 'text', tx_value: '', delimiter_format: 'text', delimiter_value: '\\r\\n', max_bytes: 1024, fail_on_read_timeout: false }
       : { tx_format: 'text', tx_value: '' }
     return { type: 'tool-action', id, target, action, arguments: arguments_ }
   }
@@ -3121,7 +3121,7 @@ function App() {
                         <div key={selectedStep.id} className="step-properties-fields">
                           <ExpressionOperandEditor
                             allowBooleanLiteral
-                            allowStringLiteral={selectedStep.type !== 'assert'}
+                            allowStringLiteral
                             side="Left" value={selectedStep.left}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
@@ -3142,7 +3142,7 @@ function App() {
                           </label>
                           <ExpressionOperandEditor
                             allowBooleanLiteral
-                            allowStringLiteral={selectedStep.type !== 'assert'}
+                            allowStringLiteral
                             side="Right" value={selectedStep.right}
                             earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
