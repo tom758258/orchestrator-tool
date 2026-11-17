@@ -90,6 +90,20 @@ test('Power Protection Status defaults to Protection Tripped', () => {
   })
 })
 
+test('Serial read results expose timeout and partial RX pointers', () => {
+  const serialInstances = [{ id: 'serial-1', tool: 'serial' }]
+  for (const action of ['receive', 'query']) {
+    const step = { type: 'tool-action', id: 'rx-1', target: 'serial-1', action }
+    const fields = curatedResultFields(step, serialInstances)
+    assert.deepEqual(fields.filter(field =>
+      ['/outcome', '/timed_out', '/partial_rx_hex', '/partial_rx_bytes'].includes(field.pointer)
+    ).map(field => field.pointer),
+    ['/outcome', '/timed_out', '/partial_rx_hex', '/partial_rx_bytes'])
+    assert.ok(fields.filter(field => field.pointer.startsWith('/partial_')).every(field => field.hint))
+    assert.equal(stepOutputReference(step, serialInstances).pointer, '/rx_hex')
+  }
+})
+
 test('known and custom pointers select without rewriting the pointer', () => {
   const fields = curatedResultFields(powerSetOutput, instances)
   assert.equal(resultSelection('/request/arguments/channel', fields), '/request/arguments/channel')
@@ -212,6 +226,24 @@ test('unary Calculation edits and preserves Serial numeric sources', async () =>
   const serialNodes = render({ value: unary, numericCalculation: true })
   assert.ok(fieldOptions(serialNodes, 'Value Source').includes('step-output'))
   assert.equal(fieldOptions(serialNodes, 'Operator').includes('equal'), false)
+})
+
+test('operand editor supports String literals for Assert on either side', async () => {
+  const render = await valueEditor('ExpressionOperandEditor')
+  for (const side of ['Left', 'Right']) {
+    let changed
+    const nodes = render({ side, allowBooleanLiteral: true, allowStringLiteral: true,
+      value: { source: 'literal', value: 0 }, onChange: value => { changed = value } })
+    assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean', 'string'])
+    const type = nodes.find(node => node.type === 'select' && node.props.value === 'number')
+    type.props.onChange({ target: { value: 'string' } })
+    assert.deepEqual(changed, { source: 'literal', value: '' })
+    const edit = render({ side, allowStringLiteral: true, value: changed,
+      onChange: value => { changed = value } })
+    const text = edit.find(node => node.type === 'input' && node.props.value === '')
+    text.props.onChange({ target: { value: '524541' } })
+    assert.deepEqual(changed, { source: 'literal', value: '524541' })
+  }
 })
 
 test('actual Assert and While operand editor retains boolean literals and step results', async () => {
