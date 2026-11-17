@@ -649,7 +649,7 @@ Double: 6000
 
 Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
 Horizontal Position（示波器水平軸位置）、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
-Channel Scale、Channel Offset、Timebase Scale、Horizontal Position（示波器水平軸位置） 與 Edge Trigger Level
+Channel Scale、Channel Offset、Timebase Scale、Horizontal Position（示波器水平軸位置）與 Edge Trigger Level
 只允許數值 **Fixed value**、**Variable** 或 **Calculation** 設定值。
 Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
 或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
@@ -1434,7 +1434,7 @@ Steps Palette 將 Background Worker ON/OFF 與 Background Capture ON/OFF 獨立�
 
 Serial Foreground 提供 Serial Send、Serial Send File、Serial Receive、Serial Query 四個 Actions，使用一般非 Streaming Serial Worker。同一 Serial Tool Instance 不可同時作為 Foreground 與 Background。既有 Serial Background RX-only Capture／Monitor 不變。
 
-Send／Query TX 可選 Text（僅接受 String，發送 UTF-8）或單一位元組（整數輸入）（接受非負整數，僅發送最低 8 bits）。例如數值 4660 在 單一位元組 模式僅發送 34。單一位元組 固定小數在 Validate 時拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
+Send／Query TX 可選 Text（僅接受 String，發送 UTF-8）或單一位元組（整數輸入；固定值須為非負整數，僅發送最低 8 bits）。例如在「單一位元組」模式輸入數值 4660，僅會發送 34。固定值若有小數，會在 Validate 時被拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
 
 RX Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max RX Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
 
