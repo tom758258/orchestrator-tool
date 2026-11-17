@@ -513,37 +513,64 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
 mod tests {
     use super::*;
     use serde_json::json;
+    fn timeout_terminal(hex: &str, bytes: u64) -> Value {
+        json!({
+            "state": "failed",
+            "ok": false,
+            "result": null,
+            "error": {
+                "category": "execution",
+                "code": "serial_error",
+                "message": "read timed out",
+                "details": {"reason": "read_timeout"},
+            },
+            "partial_hex": hex,
+            "partial_bytes": bytes,
+        })
+    }
+
     #[test]
     fn timeout_result_converts_only_confirmed_serial_read_timeout() {
-        let terminal = json!({"state":"failed","ok":false,"result":null,
-            "error":{"category":"execution","code":"serial_error",
-                "message":"read timed out","details":{"reason":"read_timeout"}},
-            "partial_hex":"524541","partial_bytes":3});
-        assert_eq!(workflow_result("query", &json!({}), &terminal).unwrap(),
-            json!({"outcome":"timeout","timed_out":true,
-                "partial_rx_hex":"524541","partial_rx_bytes":3}));
-        assert!(workflow_result("query", &json!({"fail_on_read_timeout":true}), &terminal).is_err());
-        let mut empty = terminal.clone();
-        empty["partial_hex"] = json!("");
-        empty["partial_bytes"] = json!(0);
+        let terminal = timeout_terminal("524541", 3);
+        assert_eq!(
+            workflow_result("query", &json!({}), &terminal).unwrap(),
+            json!({
+                "outcome": "timeout",
+                "timed_out": true,
+                "partial_rx_hex": "524541",
+                "partial_rx_bytes": 3,
+            })
+        );
+        assert!(
+            workflow_result("query", &json!({"fail_on_read_timeout": true}), &terminal).is_err()
+        );
+        let mut empty = timeout_terminal("", 0);
         empty["error"]["code"] = json!("tcp_error");
-        assert_eq!(workflow_result("receive", &json!({}), &empty).unwrap(),
-            json!({"outcome":"timeout","timed_out":true,
-                "partial_rx_hex":"","partial_rx_bytes":0}));
+        assert_eq!(
+            workflow_result("receive", &json!({}), &empty).unwrap(),
+            json!({
+                "outcome": "timeout",
+                "timed_out": true,
+                "partial_rx_hex": "",
+                "partial_rx_bytes": 0,
+            })
+        );
 
         let mut wrong = terminal.clone();
         wrong["error"]["details"] = json!({});
         wrong["error"]["message"] = json!("read_timeout");
         assert!(workflow_result("query", &json!({}), &wrong).is_err());
         wrong["error"]["code"] = json!("read_limit_exceeded");
-        wrong["error"]["details"] = json!({"reason":"read_timeout"});
+        wrong["error"]["details"] = json!({"reason": "read_timeout"});
         assert!(workflow_result("query", &json!({}), &wrong).is_err());
-        let mut bad_partial = terminal.clone();
-        bad_partial["partial_bytes"] = json!(2);
-        assert!(workflow_result("query", &json!({}), &bad_partial).is_err());
-        bad_partial["partial_bytes"] = json!(3);
-        bad_partial["partial_hex"] = json!("G25441");
-        assert!(workflow_result("query", &json!({}), &bad_partial).is_err());
+
+        let mut invalid = terminal.clone();
+        invalid["partial_bytes"] = json!(2);
+        assert!(workflow_result("query", &json!({}), &invalid).is_err());
+        invalid["partial_bytes"] = json!(3);
+        invalid["partial_hex"] = json!("G25441");
+        assert!(workflow_result("query", &json!({}), &invalid).is_err());
+
         let mut unconfirmed = terminal;
         unconfirmed["state"] = json!("running");
         assert!(workflow_result("query", &json!({}), &unconfirmed).is_err());
@@ -558,19 +585,19 @@ mod tests {
                 StepOutputReference, VariableId,
             },
         };
-        let terminal = json!({"state":"failed","ok":false,"result":null,
-            "error":{"category":"execution","code":"serial_error","message":"read timeout",
-                "details":{"reason":"read_timeout"}},
-            "partial_hex":"524541","partial_bytes":3});
+
         let mut context = DataContext::new();
         let step_id = StepId::new("query-one").unwrap();
         context.set_step_output(
             step_id.clone(),
-            workflow_result("query", &json!({}), &terminal).unwrap(),
+            workflow_result("query", &json!({}), &timeout_terminal("524541", 3)).unwrap(),
         );
-        let partial = context.resolve(&InputValue::StepOutput(
-            StepOutputReference::new(step_id.clone(), "/partial_rx_hex"),
-        )).unwrap();
+        let partial = context
+            .resolve(&InputValue::StepOutput(StepOutputReference::new(
+                step_id.clone(),
+                "/partial_rx_hex",
+            )))
+            .unwrap();
         assert_eq!(partial, json!("524541"));
         let variable = VariableId::new("mcu-response").unwrap();
         context.set_variable(variable.clone(), partial);
@@ -580,31 +607,63 @@ mod tests {
             ExpressionOperand::Literal(json!("524541")),
         ));
         assert_eq!(context.resolve(&compare).unwrap(), json!(true));
-        assert_eq!(context.resolve(&InputValue::StepOutput(
-            StepOutputReference::new(step_id, "/timed_out"),
-        )).unwrap(), json!(true));
+        assert_eq!(
+            context
+                .resolve(&InputValue::StepOutput(StepOutputReference::new(
+                    step_id,
+                    "/timed_out",
+                )))
+                .unwrap(),
+            json!(true)
+        );
     }
 
     #[test]
     fn normal_serial_result_preserves_native_rx_and_query_fields() {
-        let terminal = json!({"state":"succeeded","ok":true,"error":null,
-            "result":{"rx_hex":"4849","rx_bytes":2,"tx_bytes":1}});
-        assert_eq!(workflow_result("query", &json!({}), &terminal).unwrap(),
-            json!({"outcome":"completed","timed_out":false,
-                "rx_hex":"4849","rx_bytes":2,"tx_bytes":1}));
-        assert_eq!(workflow_result("send", &json!({}), &terminal).unwrap(), terminal["result"]);
+        let terminal = json!({
+            "state": "succeeded",
+            "ok": true,
+            "error": null,
+            "result": {"rx_hex": "4849", "rx_bytes": 2, "tx_bytes": 1},
+        });
+        assert_eq!(
+            workflow_result("query", &json!({}), &terminal).unwrap(),
+            json!({
+                "outcome": "completed",
+                "timed_out": false,
+                "rx_hex": "4849",
+                "rx_bytes": 2,
+                "tx_bytes": 1,
+            })
+        );
+        assert_eq!(
+            workflow_result("send", &json!({}), &terminal).unwrap(),
+            terminal["result"]
+        );
     }
 
     #[test]
     fn fail_on_read_timeout_is_validated_and_never_forwarded_to_worker() {
-        let mut args = json!({"max_bytes":32,"fail_on_read_timeout":false});
-        assert_eq!(worker_arguments("receive", &args).unwrap(), json!({"max_bytes":32}));
+        let mut args = json!({"max_bytes": 32, "fail_on_read_timeout": false});
+        assert_eq!(
+            worker_arguments("receive", &args).unwrap(),
+            json!({"max_bytes": 32})
+        );
         args["fail_on_read_timeout"] = json!(true);
-        assert_eq!(worker_arguments("receive", &args).unwrap(), json!({"max_bytes":32}));
+        assert_eq!(
+            worker_arguments("receive", &args).unwrap(),
+            json!({"max_bytes": 32})
+        );
         args["fail_on_read_timeout"] = json!("false");
         assert!(validate_action("receive", &args, &Default::default()).is_err());
-        assert!(validate_action("send", &json!({"tx_format":"text",
-            "tx_value":"OK","fail_on_read_timeout":false}), &Default::default()).is_err());
+        assert!(
+            validate_action(
+                "send",
+                &json!({"tx_format": "text", "tx_value": "OK", "fail_on_read_timeout": false}),
+                &Default::default(),
+            )
+            .is_err()
+        );
     }
 
     #[test]
