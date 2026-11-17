@@ -779,6 +779,38 @@ body {
   font-weight: 500;
 }
 
+/* Constrain FG/BG Step controls without changing the other property editors. */
+.interaction-step-fieldset {
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.interaction-step-fieldset > legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.interaction-step-fields {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.interaction-step-fields > .step-properties-fields {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.interaction-step-fields select,
+.interaction-step-fields input:not([type='checkbox']) {
+  width: 100%;
+}
+
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {

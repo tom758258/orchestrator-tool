@@ -139,3 +139,21 @@ test('Changing Background preserves Serial inputs and shows an incompatible comm
   expect(screen.queryByRole('alert')).toBeNull()
   expect((screen.getByLabelText('TX Format') as HTMLSelectElement).value).toBe('hex-byte')
 })
+
+test('Serial Get Command Result explanation only appears for that operation', () => {
+  const instance = { id: 'serial', tool: 'serial', setup: {} } as ToolInstance
+  const background = [{ id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null }]
+  const original: InteractionStep = { ...command('send'), operation: { kind: 'command', command: 'serial-send',
+    wait_for_completion: false, arguments: { tx_format: 'text', tx_value: 'PING' } } }
+  const props = { steps: [original], instances: [instance], backgrounds: background,
+    savedCommands: {}, onSaveCommand: vi.fn(), disabled: false, onChange: vi.fn() }
+  const hint = /Get Command Result returns the complete native job_finished event/
+  const view = render(<InteractionEditor {...props} step={original} />)
+  expect(screen.queryByText(hint)).toBeNull()
+  view.rerender(<InteractionEditor {...props} step={{ ...original, operation: { kind: 'get-latest' } }} />)
+  expect(screen.queryByText(hint)).toBeNull()
+  view.rerender(<InteractionEditor {...props} step={{ ...original, operation: { kind: 'wait-next' } }} />)
+  expect(screen.queryByText(hint)).toBeNull()
+  view.rerender(<InteractionEditor {...props} step={{ ...original, operation: { kind: 'get-command-result', source_step: 'send' } }} />)
+  expect(screen.getByText(hint)).toBeTruthy()
+})
