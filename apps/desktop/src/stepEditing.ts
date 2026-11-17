@@ -158,6 +158,16 @@ export function deleteSteps(steps: WorkflowStep[], ids: readonly string[]): Work
   return mapWorkflowSteps(steps, step => ids.includes(step.id) ? null : step)
 }
 
+function renameStepReferenceInOperand(value: ExpressionOperandWire, oldId: string, newId: string): ExpressionOperandWire {
+  return value.source === 'step-output' && value.step_id === oldId ? { ...value, step_id: newId } : value
+}
+
+export function renameStepReferenceInInput(value: InputValueWire, oldId: string, newId: string): InputValueWire {
+  const operand = (item: ExpressionOperandWire) => renameStepReferenceInOperand(item, oldId, newId)
+  return value.source === 'expression'
+    ? { ...value, left: operand(value.left), ...(value.right ? { right: operand(value.right) } : {}) }
+    : value.source === 'step-output' ? operand(value) : value
+}
 
 export type RenameStepIdError = 'not-found' | 'invalid' | 'duplicate'
 
@@ -170,12 +180,8 @@ export function renameStepId(steps: WorkflowStep[], oldId: string, newId: string
   if (newId === oldId) return { steps, error: null }
   if (existing.some(step => step.id === newId)) return { steps, error: 'duplicate' }
 
-  const operand = (value: ExpressionOperandWire): ExpressionOperandWire =>
-    value.source === 'step-output' && value.step_id === oldId
-      ? { ...value, step_id: newId } : value
-  const input = (value: InputValueWire): InputValueWire => value.source === 'expression'
-    ? { ...value, left: operand(value.left), ...(value.right ? { right: operand(value.right) } : {}) }
-    : value.source === 'step-output' ? operand(value) : value
+  const operand = (value: ExpressionOperandWire) => renameStepReferenceInOperand(value, oldId, newId)
+  const input = (value: InputValueWire) => renameStepReferenceInInput(value, oldId, newId)
   const renamed = mapWorkflowSteps(steps, step => {
     const next = step.id === oldId ? { ...step, id: newId } : step
     switch (next.type) {

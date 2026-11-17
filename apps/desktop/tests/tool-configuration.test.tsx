@@ -1136,6 +1136,34 @@ test('Step ID editor rejects invalid names, supports cancel, and updates BG Comm
   expect(saved.workflow.steps[1].operation.source_step).toBe('send-renamed')
 })
 
+test('Step ID rename updates a saved Serial BG Send binding when switching commands back', async () => {
+  tools.push(toolStatus('serial'))
+  const source: WorkflowStep = { type: 'bg-interaction', id: 'latest', background_id: 'serial-bg',
+    timeout_ms: null, operation: { kind: 'get-latest' } }
+  const command: WorkflowStep = { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null,
+    operation: { kind: 'command', command: 'serial-send', wait_for_completion: true,
+      arguments: { tx_format: 'text', tx_value: 'unchanged' },
+      bindings: { tx_value: { source: 'step-output', step_id: 'latest', pointer: '/value' } } } }
+  newDraft = { ...structuredClone(serialBackgroundDraft),
+    workflow: { ...serialBackgroundDraft.workflow, steps: [source, command] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand serial details' })
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: /Step 2.*send/ }))
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  fireEvent.click(screen.getByRole('button', { name: /Step 1.*latest/ }))
+  click('Edit Step ID')
+  fireEvent.change(screen.getByRole('textbox', { name: 'Step ID' }), { target: { value: 'latest-new' } })
+  click('Save Step ID')
+  fireEvent.click(screen.getByRole('button', { name: /Step 2.*send/ }))
+  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send' } })
+  const saved = await savedDraft()
+  expect(saved.workflow.steps[0].id).toBe('latest-new')
+  const operation = saved.workflow.steps[1].operation
+  expect(operation.bindings.tx_value).toEqual({ source: 'step-output', step_id: 'latest-new', pointer: '/value' })
+  expect(operation.arguments.tx_value).toBe('unchanged')
+})
+
 test('Background Step Palette shows complete tooltips with compact visible names', async () => {
   newDraft = { ...original, tool_instances: [{ ...backgroundMeter }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1 }],

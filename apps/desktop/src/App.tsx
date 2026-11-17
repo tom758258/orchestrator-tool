@@ -12,7 +12,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor, { type SequenceEditorHandle, type SequenceDropTarget, type StepDensity } from './SequenceEditor'
-import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, renameStepId, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
+import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, renameStepId, renameStepReferenceInInput, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import OutputCharts, { LiveMonitors } from './OutputCharts'
 import Collapsible from './Collapsible'
@@ -1242,7 +1242,6 @@ function App() {
     [updateSteps],
   )
 
-
   const saveEditedStepId = useCallback((oldId: string) => {
     if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) return
     const result = renameStepId(workflowDraft.workflow.steps, oldId, stepIdDraft)
@@ -1264,9 +1263,18 @@ function App() {
         ? `${stepIdDraft}${key.slice(oldId.length)}` : key)))
       setPreferredIfBranch(current => current.id === oldId ? { ...current, id: stepIdDraft } : current)
       setInteractionCommandDrafts(current => {
-        if (!(oldId in current)) return current
-        const { [oldId]: draft, ...remaining } = current
-        return { ...remaining, [stepIdDraft]: draft }
+        const renamed: Record<string, InteractionCommandDrafts> = {}
+        for (const [id, commands] of Object.entries(current)) {
+          renamed[id === oldId ? stepIdDraft : id] = Object.fromEntries(Object.entries(commands).map(([kind, operation]) => [
+            kind,
+            operation.command === 'software-trigger' || !operation.bindings ? operation : {
+              ...operation,
+              bindings: Object.fromEntries(Object.entries(operation.bindings).map(([key, value]) =>
+                [key, renameStepReferenceInInput(value, oldId, stepIdDraft)])),
+            },
+          ]))
+        }
+        return renamed
       })
       if (pastedStepIdsRef.current.delete(oldId)) pastedStepIdsRef.current.add(stepIdDraft)
     }
