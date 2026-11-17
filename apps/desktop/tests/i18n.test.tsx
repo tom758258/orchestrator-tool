@@ -96,7 +96,7 @@ test('localized failures retain original diagnostics and display helpers retain 
   const en = curatedResultFields(step, instances)
   const zh = curatedResultFields(step, instances, t)
   expect(zh.map(field => field.pointer)).toEqual(en.map(field => field.pointer))
-  expect(zh[0].label).toBe('TX 十六進位')
+  expect(zh[0].label).toBe('TX 資料（Hex 字串）')
   const draft = createChartSettingsDraft(addChartPanel([], 'custom Page', ['custom Output'])[0])
   expect(validateChartSettingsDraft(draft, t).settings).toEqual(validateChartSettingsDraft(draft).settings)
   draft.scatter.markerSize = 'invalid'
