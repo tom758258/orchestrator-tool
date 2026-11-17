@@ -758,8 +758,8 @@ or While loop always reports the current iteration, never a previous one.
 ### 6.7 Scopes actions and File Output
 
 The Scopes group offers Channel Display, Channel Scale, Channel Offset,
-Timebase Scale, Timebase Position, Edge Trigger, Measure, Capture, Screenshot, and
-AutoScale. Channel Scale, Channel Offset, Timebase Scale, Timebase Position,
+Timebase Scale, Horizontal Position, Edge Trigger, Measure, Capture, Screenshot, and
+AutoScale. Channel Scale, Channel Offset, Timebase Scale, Horizontal Position,
 and Edge Trigger Level allow only numeric **Fixed value**, **Variable**, or
 **Calculation** setpoints. Calculation operands are fixed numbers or variables,
 with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
@@ -1686,7 +1686,7 @@ Worker ON and Worker OFF control the continuous RX source. Capture ON and Captur
 
 Serial RX Live Monitor keeps the Hex/Text received-data pane at a fixed height with its own scrollbar. Incoming data follows the bottom until you scroll up to inspect buffered bytes; scrolling back to the bottom resumes automatic following. Switching Hex/Text returns to the latest data. This is a bounded Monitor view, not a substitute for Capture.
 
-Choose Hex or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.
+Choose Hex Bytes or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.
 
 Serial does not offer numeric Charts. Worker shutdown validates stream termination, summary, EOF and exit status. Serial data quality remains unknown without stronger loss evidence; actual Worker and CSV errors still fail the run.
 
@@ -1694,22 +1694,22 @@ The Steps palette groups Background Worker ON/OFF and Background Capture ON/OFF 
 
 Serial Foreground has four actions: Serial Send, Serial Send File, Serial Receive and Serial Query. These use an ordinary non-streaming Serial Worker. A Serial Tool Instance cannot be used for both Foreground and Background. The original Serial Background RX-only capture and monitoring are unchanged.
 
-Send and Query TX support Text (UTF-8 string only) and Hex Byte (one non-negative integer, sending only its lowest eight bits). For example 4660 sends the single byte 34 in Hex Byte mode. Fixed fractional Hex Byte values fail validation. Dynamic numeric Hex Byte values are truncated toward zero before TX; negative results, invalid types and out-of-range values fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.
+Send and Query TX support Text (UTF-8 string) and Single Byte (Integer Input). In Single Byte mode, a non-negative integer sends only its lowest eight bits. For example 4660 sends the single byte 34 in Single Byte mode. Fixed fractional Single Byte values fail validation. Dynamic numeric Single Byte values are truncated toward zero before TX; negative results, invalid types and out-of-range values fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.
 
-Query Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.
+RX Delimiter is separate from TX mode and supports multi-byte Text or Hex; Text recognizes backslash-r, backslash-n and escaped backslash. Receive and Query support Max RX Bytes from 1 through 1048576, default 1024. Receive/Query outputs include raw rx_hex and rx_bytes fields usable by later Steps.
 
-Receive reads once, up to Max Bytes; it does not wait for exactly that many bytes. Query sends TX and reads until the Delimiter. On a completed read the Step Result retains `/rx_hex` (a hex String, not a Byte Array) and `/rx_bytes` (a Number), and adds `/outcome = completed` and `/timed_out = false`. Use Set Variable with Previous step result to save either field; individual bytes cannot currently be split or parsed by the Workflow.
+Receive reads once, up to Max RX Bytes; it does not wait for exactly that many bytes. Query sends TX and reads until the Delimiter. On a completed read the Step Result exposes RX Data (Hex String) at `/rx_hex` (a hex String, not a Byte Array) and `/rx_bytes` (a Number), and adds `/outcome = completed` and `/timed_out = false`. Use Set Variable with Previous step result to save either field; individual bytes cannot currently be split or parsed by the Workflow.
 
-Receive and Query use the UART `timeout_ms` or TCP `io_timeout_ms` from Serial Setup. A confirmed Read Timeout normally succeeds as a Workflow Step with `/outcome = timeout`, `/timed_out = true`, `/partial_rx_hex` (String) and `/partial_rx_bytes` (Number, 0 when nothing arrived). Set Variable, Assert and IF/ELSE can inspect these results. Check **Fail on Read Timeout** to fail the Step instead. A timeout result does not itself mean that the MCU passed the test.
+Receive and Query use the UART `timeout_ms` or TCP `io_timeout_ms` from Serial Setup. A confirmed Read Timeout normally succeeds as a Workflow Step with `/outcome = timeout`, `/timed_out = true`, `/partial_rx_hex` (String) and `/partial_rx_bytes` (Number, 0 when nothing arrived). Set Variable, Assert and IF/ELSE can inspect these results. Check **Fail on Read Timeout** to fail the Step instead. A timeout result does not itself mean that the MCU passed the test. Partial RX data may be incomplete, but received bytes are not necessarily corrupted.
 
-After a Query Read Timeout, the Ordinary Worker removes only the partial RX already reported from its internal session buffer. It does not flush the device or OS RX queue, so delayed responses can still arrive later. A read limit, disconnection, other I/O error, Worker failure, or unconfirmed action deadline still fails. Text TX requires a String (Timestamp is an ISO-8601 String); Hex Byte TX requires a Number and sends only the low byte (Elapsed Time is seconds as a Number). RX Hex Strings cannot be sent directly as raw multiple bytes.
+After a Query Read Timeout, the Ordinary Worker removes only the partial RX already reported from its internal session buffer. It does not flush the device or OS RX queue, so delayed responses can still arrive later. A read limit, disconnection, other I/O error, Worker failure, or unconfirmed action deadline still fails. Text TX requires a String (Timestamp is an ISO-8601 String); Single Byte TX requires a Number and sends only the low byte (Elapsed Time is seconds as a Number). RX Data (Hex String) cannot be sent directly as raw multiple bytes.
 
 Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow RX FIFO are not available as Orchestrator actions.
 
 ### Serial Send / Send File while Background RX is running
 
 Enable **FG/BG Interaction**, add **Worker ON**, then add a **BG Command** for
-the Serial Background. Select **Send** or **Send File**. Text, Hex Byte, TX Source,
+the Serial Background. Select **Send** or **Send File**. Text, Single Byte, TX Data Source,
 Calculation and file selection use the same rules as Serial Foreground. Send File
 is checked before any Worker starts, including when nested in a Loop or IF.
 Send and Send File use the same Worker and COM/TCP session while RX continues.

@@ -520,7 +520,8 @@ body {
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding-right: 4px;
+  /* Reserve space for the focus outline at every scroll viewport edge. */
+  padding: 5px;
 }
 
 .step-palette-scroll:focus-visible {

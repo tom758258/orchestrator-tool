@@ -100,6 +100,8 @@ test('Serial read results expose timeout and partial RX pointers', () => {
     ).map(field => field.pointer),
     ['/outcome', '/timed_out', '/partial_rx_hex', '/partial_rx_bytes'])
     assert.ok(fields.filter(field => field.pointer.startsWith('/partial_')).every(field => field.hint))
+    assert.match(fields.find(field => field.pointer === '/rx_hex')?.hint ?? '', /String/)
+    assert.match(fields.find(field => field.pointer === '/rx_bytes')?.hint ?? '', /Number/)
     assert.equal(stepOutputReference(step, serialInstances).pointer, '/rx_hex')
   }
 })
@@ -234,7 +236,7 @@ test('actual Assert and While operand editor retains boolean literals and step r
   const nodes = render({ side: 'Left', allowBooleanLiteral: true,
     value: { source: 'literal', value: true }, onChange: value => { changed = value } })
   assert.deepEqual(fieldOptions(nodes, 'Left Source'), ['literal', 'variable', 'step-output'])
-  assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean'])
+  assert.deepEqual(fieldOptions(nodes, 'Value Type'), ['number', 'boolean'])
   const boolean = nodes.find(node => node.type === 'select' && node.props.value === 'true')
   assert.ok(boolean)
   boolean.props.onChange({ target: { value: 'false' } })
@@ -362,7 +364,7 @@ test('While and If operand editors allow String literals without changing Assert
   let changed
   const nodes = render({ side: 'Right', allowBooleanLiteral: true, allowStringLiteral: true,
     value: { source: 'literal', value: 'READY' }, onChange: value => { changed = value } })
-  assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean', 'string'])
+  assert.deepEqual(fieldOptions(nodes, 'Value Type'), ['number', 'boolean', 'string'])
   const value = nodes.find(node => node.type === 'input' && node.props.value === 'READY')
   assert.ok(value)
   value.props.onChange({ target: { value: 'WAITING' } })

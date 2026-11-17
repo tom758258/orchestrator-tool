@@ -621,9 +621,11 @@ function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: 
       <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.connectTimeoutMs")}</span>
         <input type="number" min={1} step={1} value={value.connect_timeout_ms ?? 3000}
           onChange={e => update({ connect_timeout_ms: Number(e.target.value) })} /></label>
+      <p className="tool-setup-hint">{t("toolSetupEditor.tcpConnectTimeoutHelp")}</p>
       <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.iOTimeoutMs")}</span>
         <input type="number" min={1} step={1} value={value.io_timeout_ms ?? 1000}
           onChange={e => update({ io_timeout_ms: Number(e.target.value) })} /></label>
+      <p className="tool-setup-hint">{t("toolSetupEditor.tcpIOTimeoutHelp")}</p>
     </> : <>
       <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.baudRate")}</span>
         <input type="number" min={1} step={1} value={value.baud} onChange={e => update({ baud: Number(e.target.value) })} /></label>
@@ -641,6 +643,7 @@ function SerialSetupFields({ value, onChange }: { value: SerialSetup; onChange: 
           <option value="none">{t("toolSetupEditor.none")}</option><option value="software">{t("toolSetupEditor.software")}</option><option value="hardware">{t("toolSetupEditor.hardware")}</option></select></label>
       <label className="step-property-field"><span className="step-property-label">{t("toolSetupEditor.timeoutMs")}</span>
         <input type="number" min={0} step={1} value={value.timeout_ms} onChange={e => update({ timeout_ms: Number(e.target.value) })} /></label>
+      <p className="tool-setup-hint">{t("toolSetupEditor.uartIOTimeoutHelp")}</p>
     </>}
     </div>
     </div>

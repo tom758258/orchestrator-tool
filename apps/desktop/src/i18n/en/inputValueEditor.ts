@@ -3,7 +3,7 @@ export default {
   "inputValueEditor.customPointer": "Custom pointer...",
   "inputValueEditor.jSONPointer": "JSON Pointer",
   "inputValueEditor.useAJSONPointerSuchAsValueLeaveEmpty": "Use a JSON Pointer such as /value. Leave empty for the complete result.",
-  "inputValueEditor.valueType": "Value type",
+  "inputValueEditor.valueType": "Value Type",
   "inputValueEditor.number": "Number",
   "inputValueEditor.boolean": "Boolean",
   "inputValueEditor.string": "String",

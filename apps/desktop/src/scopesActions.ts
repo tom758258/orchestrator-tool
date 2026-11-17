@@ -1,7 +1,7 @@
 export const SCOPES_ACTIONS = [
   ['channel-display', 'Scope Channel Display'], ['channel-scale', 'Scope Channel Scale'],
   ['channel-offset', 'Scope Channel Offset'], ['timebase-scale', 'Scope Timebase Scale'],
-  ['timebase-position', 'Scope Timebase Position'], ['trigger-edge', 'Scope Edge Trigger'],
+  ['timebase-position', 'Scope Horizontal Position'], ['trigger-edge', 'Scope Edge Trigger'],
   ['single-wait', 'Scope Single Wait'], ['measure', 'Scope Measure'], ['capture', 'Scope Capture'], ['screenshot', 'Scope Screenshot'],
   ['autoscale', 'Scope AutoScale'],
 ] as const
