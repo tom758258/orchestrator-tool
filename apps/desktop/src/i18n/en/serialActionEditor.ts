@@ -13,6 +13,11 @@ export default {
   "serialActionEditor.delimiterValue": "Delimiter Value",
   "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "Delimiter may contain multiple bytes: Text supports \\r, \\n and \\\\ escapes; Hex accepts pairs of digits (e.g. 0D 0A). It is independent of TX Hex Byte.",
   "serialActionEditor.maxBytes11048576": "Max Bytes (1–1048576)",
+  "serialActionEditor.failOnReadTimeout": "Fail on Read Timeout",
+  "serialActionEditor.failOnReadTimeoutHelp": "Off (default): confirmed Read Timeout returns a Step Result for Assert / IF/ELSE. On: Read Timeout fails the Step. Other errors always fail.",
+  "serialActionEditor.rxResultHelp": "Receive reads once, up to Max Bytes. Query reads until its delimiter. Complete data uses RX Hex/Bytes; Read Timeout uses Partial RX Hex/Bytes. RX Hex is a String, not a Byte array.",
+  "serialActionEditor.textSourceTypes": "Text TX requires a String. A Timestamp is an ISO-8601 String; Elapsed Time is a Number and cannot be sent as Text without conversion.",
+  "serialActionEditor.hexSourceTypes": "Hex Byte TX requires a Number and sends only its low byte. Elapsed Time is seconds (Number); Timestamp and RX Hex are Strings and cannot be sent as one Hex Byte.",
   "serialActionEditor.tXSource": "TX Source",
   "serialActionEditor.tXValue": "TX Value",
   "serialActionEditor.selectSerialFileToSend": "Select Serial file to send"

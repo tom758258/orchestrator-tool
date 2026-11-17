@@ -13,6 +13,11 @@ export default {
   "serialActionEditor.delimiterValue": "分隔符值",
   "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "分隔符可包含多個位元組：文字支援 \\r、\\n 與 \\\\ 跳脫；十六進位接受數字配對（例如 0D 0A）。此設定獨立於 TX 十六進位位元組。",
   "serialActionEditor.maxBytes11048576": "最大位元組數（1–1048576）",
+  "serialActionEditor.failOnReadTimeout": "讀取逾時時使步驟失敗",
+  "serialActionEditor.failOnReadTimeoutHelp": "預設不勾選：已確認讀取逾時會回傳 Step Result 供 Assert／IF／ELSE 使用；勾選則使步驟失敗。其他錯誤仍會失敗。",
+  "serialActionEditor.rxResultHelp": "Receive 單次讀取，最多 Max Bytes；Query 讀到指定分隔符。正常使用 RX Hex／Bytes，逾時使用部分 RX Hex／Bytes。RX Hex 是 String，不是 Byte Array。",
+  "serialActionEditor.textSourceTypes": "Text TX 需要 String。Timestamp 是 ISO-8601 字串；Elapsed Time 是秒數（Number），不能直接當文字傳送。",
+  "serialActionEditor.hexSourceTypes": "Hex Byte TX 需要 Number，只送最低 1 Byte。Elapsed Time 是數值秒數；Timestamp 與 RX Hex 是 String，不能直接當成單一 Hex Byte 傳送。",
   "serialActionEditor.tXSource": "TX 來源",
   "serialActionEditor.tXValue": "TX 數值",
   "serialActionEditor.selectSerialFileToSend": "選取要傳送的 Serial 檔案"
