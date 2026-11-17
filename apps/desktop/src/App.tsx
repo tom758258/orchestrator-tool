@@ -12,7 +12,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { effectiveTheme, nextThemePreference, readThemePreference, writeThemePreference } from './theme'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import SequenceEditor, { type SequenceEditorHandle, type SequenceDropTarget, type StepDensity } from './SequenceEditor'
-import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
+import { canMoveSteps, copySteps, deleteSteps, isEditableTarget, moveSteps, pasteSteps, reconcileSelection, renameStepId, renameStepReferenceInInput, relocateSteps, replaceSiblings, selectAllSteps, selectStep, singleSelection, stepClipboardShortcut, stepContainer } from './stepEditing'
 import type { StepSelection } from './stepEditing'
 import OutputCharts, { LiveMonitors } from './OutputCharts'
 import Collapsible from './Collapsible'
@@ -176,6 +176,7 @@ type StepPreset =
 type StepPresetOption = {
   value: StepPreset
   label: string
+  fullLabel?: string
   prefix: string
   category: string
   tool?: ToolInstance['tool']
@@ -406,7 +407,7 @@ function App() {
   const STEP_PRESETS: StepPresetOption[] = [
     ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: [t("app.bGCommand"), t("app.getLatest"), t("app.waitNext"), t("app.getCommandResult")][index], prefix: value, category: 'FG/BG Interaction' })),
     ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
-      label: t(`steps.background.${action}`),
+      label: t(`steps.palette.background-${action}`), fullLabel: t(`steps.background.${action}`),
       prefix: `background-${action}`, category: 'Background Workflow' })),
     ...(['send', 'send-file', 'receive', 'query'] as const).map(action => ({
       value: `serial-${action}` as StepPreset, label: t(`steps.serial.${action}`),
@@ -723,8 +724,15 @@ function App() {
     }
   }, [validationStatus])
   const [stepSelection, setStepSelection] = useState<StepSelection>(() => singleSelection(null))
+  const [editingStepId, setEditingStepId] = useState<string | null>(null)
+  const [stepIdDraft, setStepIdDraft] = useState('')
+  const [stepIdEditError, setStepIdEditError] = useState<string | null>(null)
   const selection = reconcileSelection(workflowDraft?.workflow.steps ?? [], stepSelection)
   const { active: selectedStepId, ids: selectedStepIds } = selection
+  useEffect(() => {
+    setEditingStepId(null)
+    setStepIdEditError(null)
+  }, [selectedStepId])
   const setSelectedStepId = useCallback((id: string | null) => setStepSelection(singleSelection(id)), [])
   const [preferredIfBranch, setPreferredIfBranch] = useState<{ id: string; branch: StepBranch }>({ id: '', branch: 'then' })
 
@@ -1233,6 +1241,46 @@ function App() {
     },
     [updateSteps],
   )
+
+  const saveEditedStepId = useCallback((oldId: string) => {
+    if (!workflowDraft || stepEditingBusyRef.current || runInFlightRef.current) return
+    const result = renameStepId(workflowDraft.workflow.steps, oldId, stepIdDraft)
+    if (result.error) {
+      setStepIdEditError(result.error === 'duplicate' ? t("app.duplicateStepID")
+        : result.error === 'invalid' ? t("app.invalidStepID") : t("app.missingStepID"))
+      return
+    }
+    if (result.steps !== workflowDraft.workflow.steps) {
+      updateSteps(() => result.steps)
+      const mapped = (id: string | null) => id === oldId ? stepIdDraft : id
+      setStepSelection(current => ({
+        ids: current.ids.map(id => mapped(id)!),
+        active: mapped(current.active),
+        anchor: mapped(current.anchor),
+      }))
+      setCollapsedStepIds(current => new Set([...current].map(id => mapped(id)!)))
+      setCollapsedBranches(current => new Set([...current].map(key => key.startsWith(`${oldId}:`)
+        ? `${stepIdDraft}${key.slice(oldId.length)}` : key)))
+      setPreferredIfBranch(current => current.id === oldId ? { ...current, id: stepIdDraft } : current)
+      setInteractionCommandDrafts(current => {
+        const renamed: Record<string, InteractionCommandDrafts> = {}
+        for (const [id, commands] of Object.entries(current)) {
+          renamed[id === oldId ? stepIdDraft : id] = Object.fromEntries(Object.entries(commands).map(([kind, operation]) => [
+            kind,
+            operation.command === 'software-trigger' || !operation.bindings ? operation : {
+              ...operation,
+              bindings: Object.fromEntries(Object.entries(operation.bindings).map(([key, value]) =>
+                [key, renameStepReferenceInInput(value, oldId, stepIdDraft)])),
+            },
+          ]))
+        }
+        return renamed
+      })
+      if (pastedStepIdsRef.current.delete(oldId)) pastedStepIdsRef.current.add(stepIdDraft)
+    }
+    setEditingStepId(null)
+    setStepIdEditError(null)
+  }, [workflowDraft, stepIdDraft, updateSteps, t])
 
   const updateToolArgument = useCallback(
     (stepId: string, name: string, value: number | 'all') => {
@@ -2058,7 +2106,7 @@ function App() {
                 key={preset.value}
                 className="action-button step-palette-button"
                 type="button"
-                title={t(`steps.hint.${preset.value}`)}
+                title={`${preset.fullLabel ?? preset.label}\n${t(`steps.hint.${preset.value}`)}`}
                 aria-pressed={selectedPaletteStep === preset.value}
                 onPointerDown={event => {
                   if (workflowBusy || event.button !== 0 || paletteDragRef.current) return
@@ -2976,7 +3024,43 @@ function App() {
                       </div>
                       <div className="step-property-readonly">
                         <span className="step-property-label">{t("app.stepID")}</span>
-                        <code className="workflow-step-id">{selectedStep.id}</code>
+                        {editingStepId === selectedStep.id ? <>
+                          <div className="step-id-editor">
+                            <input type="text" autoFocus aria-label={t("app.stepID")} value={stepIdDraft}
+                              disabled={workflowBusy} onChange={event => {
+                                setStepIdDraft(event.target.value)
+                                setStepIdEditError(null)
+                              }} onKeyDown={event => {
+                                if (event.key === 'Enter') { event.preventDefault(); saveEditedStepId(selectedStep.id) }
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  setEditingStepId(null)
+                                  setStepIdEditError(null)
+                                }
+                              }} />
+                            <button type="button" className="step-id-icon-button"
+                              aria-label={t("app.saveStepID")} title={t("app.saveStepID")} disabled={workflowBusy}
+                              onClick={() => saveEditedStepId(selectedStep.id)}>✓</button>
+                            <button type="button" className="step-id-icon-button"
+                              aria-label={t("app.cancelStepID")} title={t("app.cancelStepID")}
+                              onClick={() => { setEditingStepId(null); setStepIdEditError(null) }}>×</button>
+                          </div>
+                          {stepIdEditError && <p className="step-property-error" role="alert">{stepIdEditError}</p>}
+                        </> : <div className="step-id-display">
+                          <code className="workflow-step-id">{selectedStep.id}</code>
+                          <button type="button" className="step-id-icon-button"
+                            disabled={workflowBusy} aria-label={t("app.editStepID")} title={t("app.editStepID")}
+                            onClick={() => {
+                              setStepIdDraft(selectedStep.id)
+                              setStepIdEditError(null)
+                              setEditingStepId(selectedStep.id)
+                            }}>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M4 20h4l11-11-4-4L4 16v4Z" /><path d="m13 7 4 4" />
+                            </svg>
+                          </button>
+                        </div>}
                       </div>
 
                       {selectedToolAction && <label className="step-property-field">

@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import {
   canMoveSteps, canRelocateSteps, copySteps, deleteSteps, moveSteps, pasteSteps, reconcileSelection, relocateSteps, selectAllSteps,
-  reorderSteps, selectStep, singleSelection, stepClipboardShortcut,
+  reorderSteps, renameStepId, selectStep, singleSelection, stepClipboardShortcut,
 } from '../src/stepEditing.ts'
 import { allWorkflowSteps, loopPath } from '../src/workflow.ts'
 
@@ -329,4 +329,76 @@ test('Copying nested Serial commands remaps TX bindings and Get Result sources',
   assert.deepEqual(body[1].operation.bindings.tx_value, expression(ref('value-copy'), literal))
   assert.equal(body[2].operation.source_step, 'send-copy')
   assert.deepEqual(source.steps[1].operation.bindings.tx_value, expression(ref('value'), literal))
+})
+
+test('Step ID rename rejects missing, invalid, or duplicate IDs without changing the draft', () => {
+  const steps = [wait('first'), loop('outer', [wait('nested')])]
+  const original = structuredClone(steps)
+  for (const [oldId, newId, error] of [
+    ['absent', 'new-id', 'not-found'], ['first', '', 'invalid'], ['first', 'Bad ID', 'invalid'],
+    ['first', 'bad--id', 'invalid'], ['first', 'outer', 'duplicate'], ['first', 'nested', 'duplicate'],
+  ]) {
+    const result = renameStepId(steps, oldId, newId)
+    assert.equal(result.error, error)
+    assert.equal(result.steps, steps)
+  }
+  assert.equal(renameStepId(steps, 'first', 'first').steps, steps)
+  assert.deepEqual(steps, original)
+})
+
+test('Step ID rename updates nested typed references and leaves other IDs and literals intact', () => {
+  const bg = { type: 'bg-interaction', id: 'send', background_id: 'background-1', timeout_ms: null,
+    operation: { kind: 'command', command: 'serial-send', wait_for_completion: false,
+      arguments: { tx_value: 'send' }, bindings: { tx_value: expression(ref('send'), ref('other')) } } }
+  const steps = [
+    bg,
+    { type: 'bg-interaction', id: 'result', background_id: 'background-1', timeout_ms: null,
+      operation: { kind: 'get-command-result', source_step: 'send' } },
+    { type: 'tool-action', id: 'tool', target: 'meter', action: 'measure', arguments: { text: 'send' },
+      bindings: { direct: ref('send'), calculated: expression(ref('send'), ref('other')) } },
+    { type: 'set-variable', id: 'variable', variable: 'send', value: expression(ref('send'), literal) },
+    output('published', 'Results', 'send', ref('send')),
+    { type: 'assert', id: 'check', left: ref('send'), right: { source: 'literal', value: 'send' },
+      operator: 'equal', message: 'send' },
+    { type: 'show-message', id: 'message', target: 'message-1', fields: [
+      { kind: 'output', step_id: 'send', pointer: '/value', newline: true },
+      { kind: 'text', text: 'send', newline: false },
+    ] },
+    loop('outer', [
+      { type: 'while', id: 'while', left: ref('send'), right: ref('other'),
+        operator: 'equal', max_iterations: 1, steps: [wait('nested')] },
+      { type: 'if', id: 'choose', left: ref('send'), right: ref('other'),
+        operator: 'equal', then_steps: [output('in-then', 'Results', 'then', ref('send'))],
+        else_steps: [output('in-else', 'Results', 'else', ref('other'))] },
+    ]),
+  ]
+  const snapshot = structuredClone(steps)
+  const { steps: renamed, error } = renameStepId(steps, 'send', 'send-new')
+  assert.equal(error, null)
+  const byId = Object.fromEntries(allWorkflowSteps(renamed).map(step => [step.id, step]))
+  assert.equal(byId['send-new'].operation.arguments.tx_value, 'send')
+  assert.deepEqual(byId['send-new'].operation.bindings.tx_value, expression(ref('send-new'), ref('other')))
+  assert.equal(byId.result.operation.source_step, 'send-new')
+  assert.deepEqual(byId.tool.bindings.direct, ref('send-new'))
+  assert.deepEqual(byId.tool.bindings.calculated, expression(ref('send-new'), ref('other')))
+  assert.equal(byId.tool.arguments.text, 'send')
+  assert.equal(byId.variable.variable, 'send')
+  assert.deepEqual(byId.variable.value, expression(ref('send-new'), literal))
+  assert.equal(byId.published.name, 'send')
+  assert.deepEqual(byId.published.value, ref('send-new'))
+  assert.deepEqual(byId.check.left, ref('send-new'))
+  assert.equal(byId.check.right.value, 'send')
+  assert.equal(byId.check.message, 'send')
+  assert.equal(byId.message.fields[0].step_id, 'send-new')
+  assert.equal(byId.message.fields[1].text, 'send')
+  assert.deepEqual(byId.while.left, ref('send-new'))
+  assert.deepEqual(byId.choose.left, ref('send-new'))
+  assert.deepEqual(byId['in-then'].value, ref('send-new'))
+  assert.deepEqual(byId['in-else'].value, ref('other'))
+  assert.deepEqual(steps, snapshot, 'input workflow must not be mutated')
+
+  const nested = renameStepId(renamed, 'nested', 'nested-new')
+  assert.equal(nested.error, null)
+  assert.ok(allWorkflowSteps(nested.steps).some(step => step.id === 'nested-new'))
+  assert.ok(!allWorkflowSteps(nested.steps).some(step => step.id === 'nested'))
 })

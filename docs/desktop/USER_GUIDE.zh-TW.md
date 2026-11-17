@@ -347,6 +347,7 @@ Template 後，不可用分類區塊重新收合。UI 收合狀態不會儲存�
 Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
+在屬性（Properties）的步驟 ID 旁按鉛筆可重新命名；按 Enter 或儲存套用，按 Esc 或取消放棄。ID 只能使用小寫英文字母、數字及區段間的單一連字號，且在整個 Workflow 中不可重複。重新命名會同步更新其他步驟對該 ID 的引用；Workflow 忙碌時不可編輯。
 
 在 **步驟（Steps）** 中，滑鼠停留於可用的 Step 按鈕上，可透過原生
 提示視窗查看該步驟的簡短功能說明。點擊 Step 類型只會選取，不會立即加入
@@ -356,6 +357,7 @@ Workflow。**已選取的步驟（Selected Step）** 與 **新增步驟（Add St
 新增成功後會清除 Palette 的類型選取，但 Workflow 中新加入的 Step
 仍保持選取，方便編輯。**Set Target to Root** 只切換新增目標，不會
 新增 Step。建立或開啟 Template 也會清除 Palette 的選取。
+所有 Step Palette 按鈕採相同的單行高度。過長名稱會縮短或顯示省略號；滑鼠提示仍提供完整名稱與功能說明。
 
 也可以從 **步驟（Steps）** 將 Step 類型拖曳到 **序列（Sequence）** 指定位置，依滑鼠放開時的
 落點新增，不使用 **ADDING STEP TO** 目標。可放在既有 Step 前後、Root 末端，
