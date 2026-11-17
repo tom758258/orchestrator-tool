@@ -561,8 +561,14 @@ body {
 
 .step-palette-button {
   width: 100%;
+  height: 42px;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 7px 10px;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .step-palette-button[aria-pressed='true'] {
@@ -707,6 +713,47 @@ body {
 .workflow-step-id {
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.step-id-display,
+.step-id-editor {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.step-id-display {
+  justify-content: space-between;
+}
+
+.step-id-editor input {
+  min-width: 0;
+  flex: 1;
+}
+
+.step-id-icon-button {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.step-id-icon-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.step-id-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .step-properties {

@@ -415,6 +415,7 @@ properties area to edit the selected step. Use Validate when you want to
 check the current Template before running; Simulation and Live also validate
 the Template when the run starts, so pressing Validate first is useful but is
 not a separate run prerequisite.
+Use the pencil beside Step ID in Properties to rename a step. Press Enter or Save to apply; Escape or Cancel discards the edit. IDs must use lowercase letters, digits, and single hyphens between segments and be unique throughout the Workflow. Renaming also updates references to that step. Editing is unavailable while the Workflow is busy.
 
 In **Steps**, hover over any available step type to see its short native
 tooltip describing the action. Click a step type to select it; clicking does
@@ -424,6 +425,7 @@ insert into the location shown by **ADDING STEP TO**. After insertion the
 palette selection clears, while the inserted Workflow step remains selected
 for editing. **Set Target to Root** switches the destination without inserting
 a step. Creating or opening a Template also clears the palette selection.
+All Step Palette buttons use a consistent single-line height. Long labels are shortened or truncated; their native tooltip preserves the full name and action description.
 
 Alternatively, drag a Step type from **Steps** into **Sequence** to insert it at the
 drop position, independently of the **ADDING STEP TO** target. Drop before or

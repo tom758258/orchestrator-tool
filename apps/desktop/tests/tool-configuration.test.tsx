@@ -1099,3 +1099,54 @@ test('Serial TCP Live Device saves Host and Port without COM discovery', async (
   expect(calls().some(([command, args]) => command === 'set_live_resource'
     && (args as { instanceId: string }).instanceId === 'serial-1')).toBe(true)
 })
+
+test('Step ID editor rejects invalid names, supports cancel, and updates BG Command references on save', async () => {
+  const command: WorkflowStep = { type: 'bg-interaction', id: 'send', background_id: 'background-1', timeout_ms: null,
+    operation: { kind: 'command', command: 'software-trigger', wait_for_completion: false } }
+  const result: WorkflowStep = { type: 'bg-interaction', id: 'get', background_id: 'background-1', timeout_ms: null,
+    operation: { kind: 'get-command-result', source_step: 'send' } }
+  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
+    workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [command, result] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: /Step 1.*send/ }))
+  click('Edit Step ID')
+  const idField = screen.getByRole('textbox', { name: 'Step ID' }) as HTMLInputElement
+  fireEvent.change(idField, { target: { value: 'Invalid ID' } })
+  click('Save Step ID')
+  expect(screen.getByText('Use lowercase letters, digits, and single hyphens between segments.')).toBeTruthy()
+  fireEvent.change(idField, { target: { value: 'get' } })
+  click('Save Step ID')
+  expect(screen.getByText('Step ID must be unique across the entire Workflow.')).toBeTruthy()
+  fireEvent.change(idField, { target: { value: 'temporary-id' } })
+  fireEvent.keyDown(idField, { key: 'Escape' })
+  expect(screen.queryByRole('textbox', { name: 'Step ID' })).toBeNull()
+  expect(screen.getByRole('button', { name: /Step 1.*send/ }).getAttribute('aria-pressed')).toBe('true')
+  click('Edit Step ID')
+  const changed = screen.getByRole('textbox', { name: 'Step ID' })
+  fireEvent.change(changed, { target: { value: 'send-renamed' } })
+  fireEvent.keyDown(changed, { key: 'Enter' })
+  expect(screen.getByRole('button', { name: /Step 1.*send-renamed/ }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: /Step 2.*get/ }))
+  expect((screen.getByLabelText('Source BG Command Step') as HTMLSelectElement).value).toBe('send-renamed')
+  const saved = await savedDraft()
+  expect(saved.workflow.steps[0].id).toBe('send-renamed')
+  expect(saved.workflow.steps[1].operation.source_step).toBe('send-renamed')
+})
+
+test('Background Step Palette shows complete tooltips with compact visible names', async () => {
+  newDraft = { ...original, tool_instances: [{ ...backgroundMeter }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1 }],
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  const palette = within(screen.getByRole('region', { name: 'Step categories' }))
+  const workerOff = palette.getByRole('button', { name: 'Background Worker OFF' })
+  expect(workerOff.getAttribute('title')).toContain('Background Worker OFF')
+  expect(workerOff.getAttribute('title')).toContain('Stop the selected background Worker.')
+  fireEvent.click(workerOff)
+  expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(false)
+})

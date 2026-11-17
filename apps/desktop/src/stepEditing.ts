@@ -158,6 +158,62 @@ export function deleteSteps(steps: WorkflowStep[], ids: readonly string[]): Work
   return mapWorkflowSteps(steps, step => ids.includes(step.id) ? null : step)
 }
 
+
+export type RenameStepIdError = 'not-found' | 'invalid' | 'duplicate'
+
+/** Rename one Step and its typed references without altering unrelated IDs or literal values. */
+export function renameStepId(steps: WorkflowStep[], oldId: string, newId: string):
+  { steps: WorkflowStep[]; error: RenameStepIdError | null } {
+  const existing = allWorkflowSteps(steps)
+  if (!existing.some(step => step.id === oldId)) return { steps, error: 'not-found' }
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(newId)) return { steps, error: 'invalid' }
+  if (newId === oldId) return { steps, error: null }
+  if (existing.some(step => step.id === newId)) return { steps, error: 'duplicate' }
+
+  const operand = (value: ExpressionOperandWire): ExpressionOperandWire =>
+    value.source === 'step-output' && value.step_id === oldId
+      ? { ...value, step_id: newId } : value
+  const input = (value: InputValueWire): InputValueWire => value.source === 'expression'
+    ? { ...value, left: operand(value.left), ...(value.right ? { right: operand(value.right) } : {}) }
+    : value.source === 'step-output' ? operand(value) : value
+  const renamed = mapWorkflowSteps(steps, step => {
+    const next = step.id === oldId ? { ...step, id: newId } : step
+    switch (next.type) {
+      case 'bg-interaction': {
+        const operation = next.operation
+        if (operation.kind === 'get-command-result' && operation.source_step === oldId) {
+          return { ...next, operation: { ...operation, source_step: newId } }
+        }
+        if (operation.kind === 'command' && operation.command !== 'software-trigger' && operation.bindings) {
+          return { ...next, operation: { ...operation, bindings: Object.fromEntries(
+            Object.entries(operation.bindings).map(([key, value]) => [key, input(value)]),
+          ) } }
+        }
+        return next
+      }
+      case 'set-variable':
+      case 'output':
+        return { ...next, value: input(next.value) }
+      case 'assert':
+      case 'while':
+      case 'if':
+        return { ...next, left: operand(next.left), right: operand(next.right) }
+      case 'show-message':
+        return { ...next, fields: next.fields.map(field =>
+          field.kind === 'output' && field.step_id === oldId
+            ? { ...field, step_id: newId } : field) }
+      case 'tool-action':
+        return next.bindings
+          ? { ...next, bindings: Object.fromEntries(
+            Object.entries(next.bindings).map(([key, value]) => [key, input(value)]),
+          ) } : next
+      default:
+        return next
+    }
+  })
+  return { steps: renamed, error: null }
+}
+
 export function copySteps(steps: readonly WorkflowStep[], selection: StepSelection): WorkflowStep[] {
   const current = reconcileSelection(steps, selection)
   if (!current.active) return []
