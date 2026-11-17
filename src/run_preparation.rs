@@ -917,9 +917,19 @@ mod tests {
                 if output["outcome"] == "timeout" && output["timed_out"] == true
                     && output["partial_rx_hex"] == "" && output["partial_rx_bytes"] == 0
         ));
-        assert!(matches!(outcome("assert-partial"), StepOutcome::Succeeded { .. }));
-        assert!(matches!(outcome("no-replayed-bytes"), StepOutcome::Succeeded { .. }));
-        assert!(!steps.iter().any(|step| step.step_id().as_str() == "unexpected-completion"));
+        assert!(matches!(
+            outcome("assert-partial"),
+            StepOutcome::Succeeded { .. }
+        ));
+        assert!(matches!(
+            outcome("no-replayed-bytes"),
+            StepOutcome::Succeeded { .. }
+        ));
+        assert!(
+            !steps
+                .iter()
+                .any(|step| step.step_id().as_str() == "unexpected-completion")
+        );
     }
 
     // Optional real serial-tool binary; excluded from default cargo test.
