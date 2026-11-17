@@ -667,6 +667,42 @@ mod tests {
     }
 
     #[test]
+    fn serial_timeout_setting_round_trips_and_missing_flag_uses_new_default() {
+        for setting in [None, Some(false), Some(true)] {
+            let mut arguments = json!({"max_bytes": 32});
+            if let Some(value) = setting {
+                arguments["fail_on_read_timeout"] = json!(value);
+            }
+            let wire = json!({
+                "name": "Serial read",
+                "tool_instances": [{
+                    "id": "serial-one",
+                    "tool": "serial",
+                    "setup": {"transport": "serial", "baud": 115200}
+                }],
+                "workflow": {
+                    "interaction": {"enabled": false, "max_active_command_status": 4096},
+                    "steps": [{
+                        "type": "tool-action",
+                        "id": "serial-read",
+                        "target": "serial-one",
+                        "action": "receive",
+                        "arguments": arguments,
+                    }]
+                }
+            });
+            let parsed = crate::template::Template::from_json_str(&wire.to_string()).unwrap();
+            let saved: Value = serde_json::from_str(&parsed.to_json_string().unwrap()).unwrap();
+            let stored = &saved["workflow"]["steps"][0]["arguments"];
+            assert_eq!(stored["fail_on_read_timeout"].as_bool(), setting);
+            assert_eq!(
+                workflow_result("receive", stored, &timeout_terminal("", 0)).is_err(),
+                setting == Some(true)
+            );
+        }
+    }
+
+    #[test]
     fn foreground_launch_is_ordinary_worker() {
         let setup = SerialSetup::default();
         let spec = foreground_worker_launch_spec(
