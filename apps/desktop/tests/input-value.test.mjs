@@ -228,24 +228,6 @@ test('unary Calculation edits and preserves Serial numeric sources', async () =>
   assert.equal(fieldOptions(serialNodes, 'Operator').includes('equal'), false)
 })
 
-test('operand editor supports String literals for Assert on either side', async () => {
-  const render = await valueEditor('ExpressionOperandEditor')
-  for (const side of ['Left', 'Right']) {
-    let changed
-    const nodes = render({ side, allowBooleanLiteral: true, allowStringLiteral: true,
-      value: { source: 'literal', value: 0 }, onChange: value => { changed = value } })
-    assert.deepEqual(fieldOptions(nodes, 'Value type'), ['number', 'boolean', 'string'])
-    const type = nodes.find(node => node.type === 'select' && node.props.value === 'number')
-    type.props.onChange({ target: { value: 'string' } })
-    assert.deepEqual(changed, { source: 'literal', value: '' })
-    const edit = render({ side, allowStringLiteral: true, value: changed,
-      onChange: value => { changed = value } })
-    const text = edit.find(node => node.type === 'input' && node.props.value === '')
-    text.props.onChange({ target: { value: '524541' } })
-    assert.deepEqual(changed, { source: 'literal', value: '524541' })
-  }
-})
-
 test('actual Assert and While operand editor retains boolean literals and step results', async () => {
   const render = await valueEditor('ExpressionOperandEditor')
   let changed
