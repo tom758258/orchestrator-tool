@@ -49,6 +49,9 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
           <option value="hex-byte">{t("serialActionEditor.hexByteOneByte")}</option>
         </select>
       </label>
+      <p className="value-source-help">{t(txFormat === 'text'
+        ? "serialActionEditor.textSourceTypes"
+        : "serialActionEditor.hexSourceTypes")}</p>
       <p className="value-source-help">{txFormat === 'text'
         ? t("serialActionEditor.textSendsUTF8BytesOfAStringOnly")
         : t("serialActionEditor.hexByteInteger0FixedValuesMustBeIntegers")}</p>
@@ -101,5 +104,15 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
           if (Number.isInteger(value)) change('max_bytes', value)
         }} />
     </label>}
+    {(step.action === 'receive' || step.action === 'query') && <>
+      <label className="step-property-field step-property-checkbox">
+        <input type="checkbox" disabled={disabled}
+          checked={step.arguments.fail_on_read_timeout === true}
+          onChange={event => change('fail_on_read_timeout', event.target.checked)} />
+        <span className="step-property-label">{t("serialActionEditor.failOnReadTimeout")}</span>
+      </label>
+      <p className="value-source-help">{t("serialActionEditor.failOnReadTimeoutHelp")}</p>
+      <p className="value-source-help">{t("serialActionEditor.rxResultHelp")}</p>
+    </>}
   </div>
 }
