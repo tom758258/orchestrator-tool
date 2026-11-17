@@ -61,16 +61,16 @@ export type CuratedResultField = {
 export const CUSTOM_RESULT = 'custom'
 
 const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[]>> = {
-  'serial/send': [{ label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' }],
-  'serial/send-file': [{ label: "resultFields.fileBytes", pointer: '/file_bytes' }, { label: "resultFields.bytesWritten", pointer: '/bytes_written' }],
-  'serial/receive': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' },
+  'serial/send': [{ label: "resultFields.tXHex", pointer: '/tx_hex', hint: "resultFields.tXHexHint" }, { label: "resultFields.tXBytes", pointer: '/tx_bytes', hint: "resultFields.tXBytesHint" }],
+  'serial/send-file': [{ label: "resultFields.fileBytes", pointer: '/file_bytes', hint: "resultFields.fileBytesHint" }, { label: "resultFields.bytesWritten", pointer: '/bytes_written' }],
+  'serial/receive': [{ label: "resultFields.rXHex", pointer: '/rx_hex', hint: "resultFields.rXHexHint" }, { label: "resultFields.rXBytes", pointer: '/rx_bytes', hint: "resultFields.rXBytesHint" },
     { label: "resultFields.serialOutcome", pointer: '/outcome', hint: "resultFields.serialOutcomeHint" },
     { label: "resultFields.serialTimedOut", pointer: '/timed_out', hint: "resultFields.serialTimedOutHint" },
     { label: "resultFields.partialRXHex", pointer: '/partial_rx_hex', hint: "resultFields.partialRXHexHint" },
     { label: "resultFields.partialRXBytes", pointer: '/partial_rx_bytes', hint: "resultFields.partialRXBytesHint" }],
-  'serial/query': [{ label: "resultFields.rXHex", pointer: '/rx_hex' }, { label: "resultFields.rXBytes", pointer: '/rx_bytes' },
-    { label: "resultFields.tXHex", pointer: '/tx_hex' }, { label: "resultFields.tXBytes", pointer: '/tx_bytes' },
-    { label: "resultFields.delimiterHex", pointer: '/delimiter_hex' },
+  'serial/query': [{ label: "resultFields.rXHex", pointer: '/rx_hex', hint: "resultFields.rXHexHint" }, { label: "resultFields.rXBytes", pointer: '/rx_bytes', hint: "resultFields.rXBytesHint" },
+    { label: "resultFields.tXHex", pointer: '/tx_hex', hint: "resultFields.tXHexHint" }, { label: "resultFields.tXBytes", pointer: '/tx_bytes', hint: "resultFields.tXBytesHint" },
+    { label: "resultFields.delimiterHex", pointer: '/delimiter_hex', hint: "resultFields.delimiterHexHint" },
     { label: "resultFields.serialOutcome", pointer: '/outcome', hint: "resultFields.serialOutcomeHint" },
     { label: "resultFields.serialTimedOut", pointer: '/timed_out', hint: "resultFields.serialTimedOutHint" },
     { label: "resultFields.partialRXHex", pointer: '/partial_rx_hex', hint: "resultFields.partialRXHexHint" },

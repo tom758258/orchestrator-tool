@@ -159,6 +159,7 @@ export default function BackgroundOutput({ runId, backgrounds, running, onExport
             <option value="hex">{t("backgroundOutput.hex")}</option><option value="text">{t("backgroundOutput.textUTF8")}</option>
           </select>
         </label>}
+        {serial && <p className="value-source-help">{t("backgroundOutput.serialDisplayHelp")} {t("backgroundOutput.rxEventHelp")}</p>}
         <div className="output-table-scroll"><table className="output-table background-data-table" aria-label={t("backgroundOutput.backgroundOutputData")}>
           <thead><tr><th>{t("backgroundOutput.timestamp")}</th><th>{t("backgroundOutput.elapsedS")}</th><th>{serial ? t("backgroundOutput.rXEvent") : t("backgroundOutput.sample")}</th>
             {serial ? <><th>{t("backgroundOutput.data")}</th><th>{t("backgroundOutput.bytes")}</th></> : fields.length

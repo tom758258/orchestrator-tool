@@ -648,8 +648,8 @@ Double: 6000
 ### 6.7 Scopes actions 與 File Output
 
 Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
-Timebase Position、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
-Channel Scale、Channel Offset、Timebase Scale、Timebase Position 與 Edge Trigger Level
+Horizontal Position（示波器水平軸位置）、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
+Channel Scale、Channel Offset、Timebase Scale、Horizontal Position（示波器水平軸位置） 與 Edge Trigger Level
 只允許數值 **Fixed value**、**Variable** 或 **Calculation** 設定值。
 Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
 或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
@@ -1426,7 +1426,7 @@ Worker ON／Worker OFF 控制持續 RX 來源；Capture ON／Capture OFF 可分�
 
 Serial RX Live Monitor 的 Hex／Text 接收資料區固定高度並有獨立捲軸。收到新資料時會自動追蹤底部；手動向上捲動可查看緩衝區內的舊資料，不會被新資料拉走，捲回底部即恢復自動追蹤。切換 Hex／Text 會回到最新資料。此處只顯示有限的 Monitor 緩衝資料，不能取代 Capture。
 
-Hex 與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。
+Hex 位元組顯示與 Text（UTF-8）只切換顯示，不修改原始 Bytes。Serial Background 可手動匯出 CSV、XLSX 或 BIN；BIN 依接收順序寫入純原始 Bytes，沒有標頭、分隔符或時間戳記，也不能匯出 Meters／Scopes 數值 Dataset。原有 Streaming Background CSV 仍可選用 Serial 顯示格式。
 
 Serial 不提供 Numeric Charts。Worker 停止時仍核對 Stream 終止、Summary、EOF 和 Process Exit；若沒有更強的無遺失證據，Serial 資料品質保持 unknown，Worker／CSV 錯誤仍會使 Run Failed。
 
@@ -1434,23 +1434,23 @@ Steps Palette 將 Background Worker ON/OFF 與 Background Capture ON/OFF 獨立�
 
 Serial Foreground 提供 Serial Send、Serial Send File、Serial Receive、Serial Query 四個 Actions，使用一般非 Streaming Serial Worker。同一 Serial Tool Instance 不可同時作為 Foreground 與 Background。既有 Serial Background RX-only Capture／Monitor 不變。
 
-Send／Query TX 可選 Text（僅接受字串，發送 UTF-8）或 Hex Byte（僅接受非負整數，一次發送最低 8 bits 的一個 Byte）。例如數值 4660 在 Hex Byte 模式僅發送 34。Hex Byte 固定小數在 Validate 時拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
+Send／Query TX 可選 Text（僅接受 String，發送 UTF-8）或單一位元組（整數輸入）（接受非負整數，僅發送最低 8 bits）。例如數值 4660 在 單一位元組 模式僅發送 34。單一位元組 固定小數在 Validate 時拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
 
-Query Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
+RX Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max RX Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
 
-Receive 只讀取一次，最多 Max Bytes，不會等待湊滿指定長度；Query 先發送 TX，再讀取到指定 Delimiter。正常讀取的 Step Result 保留 `/rx_hex`（Hex 字串，非 Byte Array）與 `/rx_bytes`（Number），並增加 `/outcome = completed`、`/timed_out = false`。透過 Set Variable 的 Previous step result 可以保存這些欄位；目前 Workflow 尚不能直接拆解或解析各個 Byte。
+Receive 只讀取一次，最多 Max RX Bytes，不會等待湊滿指定長度；Query 先發送 TX，再讀取到指定 Delimiter。正常讀取時，Step Result 的「RX 資料（Hex 字串）」對應 `/rx_hex`（Hex 字串，非 Byte Array）與 `/rx_bytes`（Number），並增加 `/outcome = completed`、`/timed_out = false`。透過 Set Variable 的 Previous step result 可以保存這些欄位；目前 Workflow 尚不能直接拆解或解析各個 Byte。
 
-Receive／Query 沿用 Serial Setup 的 UART `timeout_ms` 或 TCP `io_timeout_ms`。已確認的 Read Timeout 預設使 Workflow Step 成功並回傳 `/outcome = timeout`、`/timed_out = true`、`/partial_rx_hex`（String）及 `/partial_rx_bytes`（Number，完全沒收到為 0）。Set Variable、Assert、IF／ELSE 可繼續使用結果。勾選 **Fail on Read Timeout** 才讓該 Step 失敗；逾時結果本身不代表 MCU 測試通過。
+Receive／Query 沿用 Serial Setup 的 UART `timeout_ms` 或 TCP `io_timeout_ms`。已確認的 Read Timeout 預設使 Workflow Step 成功並回傳 `/outcome = timeout`、`/timed_out = true`、`/partial_rx_hex`（String）及 `/partial_rx_bytes`（Number，完全沒收到為 0）。Set Variable、Assert、IF／ELSE 可繼續使用結果。勾選 **Fail on Read Timeout** 才讓該 Step 失敗；逾時結果本身不代表 MCU 測試通過。部分 RX 資料可能殘缺，但已收到的位元組不一定損毀。
 
-Query 發生 Read Timeout 後，Ordinary Worker 只會移除內部 Session Buffer 中已回報的 Partial RX，不清空 OS／裝置 RX 佇列，因此延遲到達的回覆仍可能影響下一次讀取。超過讀取上限、斷線、其他 I/O 錯誤、Worker 故障或無法確認的 Action Deadline 仍會失敗。Text TX 需要 String（Timestamp 為 ISO-8601 字串）；Hex Byte TX 需要 Number 且只送最低一個 Byte（Elapsed Time 為秒數 Number）。RX Hex String 不能直接當成多個原始 Bytes 重新傳送。
+Query 發生 Read Timeout 後，Ordinary Worker 只會移除內部 Session Buffer 中已回報的 Partial RX，不清空 OS／裝置 RX 佇列，因此延遲到達的回覆仍可能影響下一次讀取。超過讀取上限、斷線、其他 I/O 錯誤、Worker 故障或無法確認的 Action Deadline 仍會失敗。Text TX 需要 String（Timestamp 為 ISO-8601 字串）；單一位元組 TX 需要 Number 且只送最低一個 Byte（Elapsed Time 為秒數 Number）。RX 資料（Hex 字串）不能直接當成多個原始 Bytes 重新傳送。
 
 Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow RX FIFO。
 
 ### Background RX 執行中的 Serial Send／Send File
 
 啟用 **FG/BG Interaction**，加入 **Worker ON**，再新增指向 Serial Background
-的 **BG Command**。Command 可選 **Send** 或 **Send File**；Text、Hex Byte、
-TX Source、Calculation 與選檔沿用 Serial Foreground 規則。Send File 會在任何
+的 **BG Command**。Command 可選 **Send** 或 **Send File**；Text、單一位元組、
+傳送資料來源、Calculation 與選檔沿用 Serial Foreground 規則。Send File 會在任何
 Worker 啟動前預檢，包含 Loop 或 IF 內的命令。Send／Send File 在同一 Worker、
 同一 COM／TCP Session 執行，RX 持續接收；Capture 可保持 OFF，需保存 RX 才開啟。
 
