@@ -94,12 +94,29 @@ still fails the Step. The original result remains available to IF/ELSE, includin
 waveform was captured, and no reset, retry or stop command is added.
 
 Measure returns Scopes' structured result, including `value`, `unit`, `channel`,
-and `item`, for ordinary Output/Assert/dataflow. Orchestrator does not infer
-measurement units from channel Setup. HTTP 202 only admits a job. Completion
-requires a matching schema/run/job/worker-job/command terminal event, succeeded
-state, `ok: true`, and zero exit code, except for the confirmed Single Wait
-trigger-timeout result described above. Rejection, failure, cancellation, malformed
-correlation, disconnection, and timeout fail the action with diagnostics.
+`item`, and `valid`, for ordinary Output/Assert/dataflow. Orchestrator does not infer
+measurement units from channel Setup. HTTP 202 only admits a job. Normal
+completion requires a matching schema/run/job/worker-job/command terminal event,
+succeeded state, `ok: true`, and zero exit code.
+
+The only Measure exception is a confirmed invalid measurement sentinel: a
+matching Worker terminal with `state=failed`, `ok=false`, exit code 1,
+the normal `execution/job_failed` wrapper without domain errors, and a
+structured result with `valid=false`, `value=null`, and
+`reason="invalid measurement sentinel"`. Keysight requires a clean
+`system_error` (code 0, no error). Tektronix requires a complete native
+`post_command_status` with source `tektronix-sesr`, a nonempty raw
+checkpoint, status value 0, and no events. Tektronix may set the native
+`is_error` flag merely because the measurement is invalid; the
+clean status checkpoint is independently required. Missing or conflicting
+instrument evidence is not accepted. Only this confirmed invalid result is
+exposed as a successful Step preserving Scopes' original `/valid=false`
+and `/value=null` for IF/ELSE; no Worker job state or exit code is rewritten.
+This is Foreground-only and adds no retry, trigger, or instrument reconfiguration.
+
+A confirmed Single Wait trigger-timeout is the other existing exception.
+Other rejection, failure, cancellation, malformed correlation, disconnection,
+and timeout conditions fail the action with diagnostics.
 
 AutoScale is a Foreground-only Tool Action admitted by Orchestrator only for
 the registered Keysight DSOX2004A, DSOX3024A, DSOX4024A, and DSOX4034A

@@ -489,8 +489,47 @@ fn expected_single_wait_timeout(event: &Value) -> bool {
         && (status.is_null() || tek_ok)
 }
 
+fn expected_measure_invalid(event: &Value) -> bool {
+    let result = &event["result"];
+    let error = &event["error"];
+    if event["state"] != "failed"
+        || event["ok"] != false
+        || event["exit_code"].as_i64() != Some(1)
+        || error["category"] != "execution"
+        || error["code"] != "job_failed"
+        || !error["details"]
+            .as_object()
+            .is_some_and(|details| details.is_empty())
+        || result["valid"] != false
+        || result.get("value") != Some(&Value::Null)
+        || result["reason"] != "invalid measurement sentinel"
+        || result.get("error").is_some_and(|error| !error.is_null())
+    {
+        return false;
+    }
+
+    let system_ok = result["system_error"]["code"].as_i64() == Some(0)
+        && result["system_error"]["is_error"] == false;
+    let status = &result["post_command_status"];
+    // Tektronix may report is_error=true solely because the measurement is
+    // invalid. Its native, completed SESR checkpoint must still be clean.
+    let tek_ok = status["source"] == "tektronix-sesr"
+        && status["raw"].as_str().is_some_and(|raw| !raw.is_empty())
+        && status["value"].as_u64() == Some(0)
+        && status["complete"] == true
+        && status["is_error"].as_bool().is_some()
+        && status["events"]
+            .as_array()
+            .is_some_and(|events| events.is_empty());
+    // Neither status can override conflicting evidence from the other.
+    (system_ok || tek_ok)
+        && (result["system_error"].is_null() || system_ok)
+        && (status.is_null() || tek_ok)
+}
+
 fn terminal_result(event: &Value, command: &str, arguments: &Value) -> Result<Value, String> {
     if !(command == "single-wait" && expected_single_wait_timeout(event))
+        && !(command == "measure" && expected_measure_invalid(event))
         && (event["state"] != "succeeded"
             || event["ok"] != true
             || event["exit_code"].as_i64() != Some(0)
@@ -947,6 +986,91 @@ mod tests {
         );
         assert!(cli_error_detail("list-resources", error.to_string().as_bytes()).is_none());
     }
+    #[test]
+    fn scopes_measure_only_clean_invalid_sentinel_is_branchable() {
+        let event = json!({
+            "event":"job_finished", "state":"failed", "ok":false, "exit_code":1,
+            "error":{"category":"execution","code":"job_failed",
+                     "message":"job failed","details":{}},
+            "result":{
+                "item":"vpp","channel":1,"value":null,"unit":"V",
+                "valid":false,"raw_value":"9.9E+37",
+                "reason":"invalid measurement sentinel",
+                "system_error":{"code":0,"is_error":false}
+            }
+        });
+        assert_eq!(
+            terminal_result(&event, "measure", &json!({})).unwrap(),
+            event["result"]
+        );
+        assert!(terminal_result(&event, "single-wait", &json!({})).is_err());
+
+        let mut tek = event.clone();
+        tek["result"]
+            .as_object_mut()
+            .unwrap()
+            .remove("system_error");
+        // Native SESR is clean; Scopes marks is_error because the value is invalid.
+        tek["result"]["post_command_status"] = json!({
+            "source":"tektronix-sesr", "raw":"0", "value":0,
+            "complete":true, "events":[], "is_error":true
+        });
+        assert_eq!(
+            terminal_result(&tek, "measure", &json!({})).unwrap(),
+            tek["result"]
+        );
+
+        for (field, replacement) in [
+            ("state", json!("cancelled")),
+            ("ok", json!(true)),
+            ("exit_code", json!(3)),
+            (
+                "error",
+                json!({"category":"execution","code":"job_failed",
+                    "message":"instrument failed",
+                    "details":{"domain_error":{"message":"instrument failed"}}}),
+            ),
+        ] {
+            let mut altered = event.clone();
+            altered[field] = replacement;
+            assert!(terminal_result(&altered, "measure", &json!({})).is_err());
+        }
+        for (field, replacement) in [
+            ("valid", json!(true)),
+            ("value", json!(0)),
+            ("reason", json!("unsupported measurement")),
+            ("system_error", json!(null)),
+            ("system_error", json!({"code":-222,"is_error":true})),
+            ("error", json!({"message":"unexpected domain error"})),
+        ] {
+            let mut altered = event.clone();
+            altered["result"][field] = replacement;
+            assert!(terminal_result(&altered, "measure", &json!({})).is_err());
+        }
+        let mut missing = event.clone();
+        missing["result"]
+            .as_object_mut()
+            .unwrap()
+            .remove("system_error");
+        assert!(terminal_result(&missing, "measure", &json!({})).is_err());
+
+        for (field, replacement) in [
+            ("source", json!("unknown")),
+            ("raw", json!("")),
+            ("value", json!(4)),
+            ("complete", json!(false)),
+            ("events", json!([{"code":123,"category":"error"}])),
+            ("is_error", json!(null)),
+        ] {
+            let mut altered = tek.clone();
+            altered["result"]["post_command_status"][field] = replacement;
+            assert!(terminal_result(&altered, "measure", &json!({})).is_err());
+        }
+        let mut conflicting = tek;
+        conflicting["result"]["system_error"] = json!({"code":-222,"is_error":true});
+        assert!(terminal_result(&conflicting, "measure", &json!({})).is_err());
+    }
+
     #[test]
     fn scopes_terminal_measure_failure_uses_result_reason() {
         let event = json!({"event":"job_finished","state":"failed","ok":false,"exit_code":3,

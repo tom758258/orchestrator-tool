@@ -500,13 +500,14 @@ fn main() {
     if arguments.first().is_some_and(|arg| arg == "--scopes-tests") {
         scopes_worker_protocol_cases();
         scopes_single_wait_timeout_branches_and_instrument_error_fails();
+        scopes_measure_invalid_branches_only_when_confirmed();
         scopes_setup_failure_stops_workflow();
         powers_and_meters_workflow_executes_end_to_end();
         powers_protection_setup_lifecycle();
         partial_startup_failure_shuts_down_started_worker();
         invalid_ready_protocol_is_rejected();
         non_2xx_http_response_is_rejected();
-        println!("Scopes protocol/setup and directly affected regression checks passed (8 groups)");
+        println!("Scopes protocol/setup and directly affected regression checks passed (9 groups)");
         return;
     }
 
@@ -567,6 +568,7 @@ fn main() {
     meters_single_outputs_preserve_staging();
     scopes_worker_protocol_cases();
     scopes_single_wait_timeout_branches_and_instrument_error_fails();
+    scopes_measure_invalid_branches_only_when_confirmed();
     scopes_setup_failure_stops_workflow();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
@@ -3855,6 +3857,10 @@ fn run_scopes_fixture(scenario: &str) {
                     assert_eq!(command["command"], "channel-invert");
                     assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
                 }
+                if scenario.starts_with("scopes-measure-") {
+                    assert_eq!(command["command"], "measure");
+                    assert_eq!(command["arguments"], json!({"channel":1,"item":"vpp"}));
+                }
                 if scenario.starts_with("scopes-single-wait-") {
                     assert_eq!(command["command"], "single-wait");
                     assert_eq!(
@@ -3872,8 +3878,11 @@ fn run_scopes_fixture(scenario: &str) {
                 if scenario == "scopes-timeout" { continue; }
                 thread::sleep(Duration::from_millis(50));
                 let single_wait = scenario.starts_with("scopes-single-wait-");
-                let instrument_error = scenario == "scopes-single-wait-instrument-error";
+                let measure = scenario.starts_with("scopes-measure-");
+                let measure_invalid = measure && scenario != "scopes-measure-valid";
+                let instrument_error = scenario.ends_with("-instrument-error");
                 let failed = single_wait
+                    || measure_invalid
                     || matches!(
                         scenario,
                         "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed"
@@ -3889,10 +3898,20 @@ fn run_scopes_fixture(scenario: &str) {
                             "is_error":instrument_error
                         }
                     })
+                } else if measure {
+                    json!({
+                        "item":"vpp","channel":1,"unit":"V",
+                        "value":if measure_invalid {json!(null)} else {json!(3.3)},
+                        "valid":!measure_invalid,
+                        "raw_value":if measure_invalid {"9.9E+37"} else {"3.3"},
+                        "reason":if measure_invalid {json!("invalid measurement sentinel")} else {json!(null)},
+                        "system_error":{"code":if instrument_error {-222} else {0},
+                                        "is_error":instrument_error}
+                    })
                 } else {
                     json!({"value":3.3,"unit":"V"})
                 };
-                let error = if single_wait {
+                let error = if single_wait || measure_invalid {
                     json!({"category":"execution","code":"job_failed",
                         "message":"job failed","details":{}})
                 } else if failed || cancelled {
@@ -3905,7 +3924,7 @@ fn run_scopes_fixture(scenario: &str) {
                     "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
                     "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
                     "ok":!failed && !cancelled,
-                    "exit_code":if single_wait {1} else if failed || cancelled {3} else {0},
+                    "exit_code":if single_wait || measure_invalid {1} else if failed || cancelled {3} else {0},
                     "error":error, "result":result,"files":[]}).to_string());
             }
             "/stop" => { write_response(request.stream, 200, r#"{"ok":true}"#); return; }
@@ -4158,6 +4177,78 @@ fn scopes_single_wait_timeout_branches_and_instrument_error_fails() {
                     .iter()
                     .any(|step| step.step_id().as_str() == "timeout-path")
             );
+        }
+    }
+}
+
+fn scopes_measure_invalid_branches_only_when_confirmed() {
+    let template = Template::from_json_str(
+        &json!({
+            "name":"Scope Measure validity branch",
+            "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+                "steps":[
+                    {"type":"tool-action","id":"reading","target":"scope",
+                     "action":"measure","arguments":{"channel":1,"item":"vpp"}},
+                    {"type":"if","id":"choose",
+                     "left":{"source":"step-output","step_id":"reading","pointer":"/valid"},
+                     "operator":"equal","right":{"source":"literal","value":false},
+                     "then_steps":[{"type":"wait","id":"invalid-path","duration_ms":0}],
+                     "else_steps":[{"type":"wait","id":"valid-path","duration_ms":0}]}
+                ]}
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    for (scenario, expected_valid) in [
+        ("scopes-measure-valid", Some(true)),
+        ("scopes-measure-invalid", Some(false)),
+        ("scopes-measure-instrument-error", None),
+    ] {
+        let run = run_simulated_workflow(
+            &template,
+            &HashMap::from([(
+                ToolInstanceId::new("scope").unwrap(),
+                fixture_spec(scenario),
+            )]),
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let executions = run.step_executions();
+        if let Some(valid) = expected_valid {
+            assert!(matches!(
+                executions[0].outcome(),
+                StepOutcome::Succeeded { output }
+                    if output["valid"] == valid
+                       && output["value"].is_null() == !valid
+            ));
+            let chosen = if valid { "valid-path" } else { "invalid-path" };
+            let skipped = if valid { "invalid-path" } else { "valid-path" };
+            assert!(
+                executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == chosen)
+            );
+            assert!(
+                !executions
+                    .iter()
+                    .any(|step| step.step_id().as_str() == skipped)
+            );
+        } else {
+            assert!(matches!(
+                executions[0].outcome(),
+                StepOutcome::Failed { .. }
+            ));
+            for branch in ["choose", "valid-path", "invalid-path"] {
+                assert!(
+                    !executions
+                        .iter()
+                        .any(|step| step.step_id().as_str() == branch)
+                );
+            }
         }
     }
 }

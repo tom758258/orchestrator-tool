@@ -765,6 +765,14 @@ general Output, Set Variable, Assert, and While sources remain available.
 Each of these five Scopes setpoints is required, supplied by a fixed value or binding.
 Measure exposes Value, Unit, Channel, and Item for Output or Assert.
 
+Foreground Measure also offers Valid (`/valid`) for IF/ELSE. A measurement
+with a usable value returns `true`. A confirmed invalid measurement sentinel
+with clean instrument status completes as a successful Step with `/valid` =
+`false` and `/value` = `null`. In IF/ELSE choose Previous step result → Valid
+and compare it with Boolean false. All other invalid responses, instrument or
+Worker errors, and cancellation still fail the Step. Invalid data does not
+prove that no waveform exists; Orchestrator does not retry automatically.
+
 **Measurement Item**, trigger **Slope**, and Capture **Points** are fixed dropdowns
 from the current Scopes capabilities. Measurement items and slopes save canonical
 strings; Measurement Item capitalizes the first English letter for display,

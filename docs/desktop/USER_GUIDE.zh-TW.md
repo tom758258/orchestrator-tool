@@ -655,6 +655,12 @@ Calculation 的運算元只允許固定數值或變數，運算子只允許 Add�
 仍保有原有來源能力。Measure 的 Value、Unit、Channel 與 Item 可供 Output 或 Assert 使用。
 這五個 Scopes 設定值皆為必填，須提供固定數值或 binding。
 
+Foreground Measure 另提供 Valid（`/valid`）供 IF／ELSE 判斷。取得有效數值時為
+`true`；僅在確認是無效量測 sentinel、且儀器狀態正常時，Step 仍會成功完成並回傳
+`/valid` = `false`、`/value` = `null`。在 IF／ELSE 選 Previous step result →
+Valid，與 Boolean false 比較。其他無效回應、儀器或 Worker 錯誤以及取消仍會使
+Step 失敗。無效量測不代表儀器完全沒有波形，Orchestrator 也不會自動重試。
+
 **Measurement Item**、Trigger **Slope** 與 Capture **Points** 都是依目前 Scopes
 Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical 字串；Measurement Item
 顯示時將第一個英文字母大寫，`vpp` 顯示為 **Vp-p**，儲存值仍為 `vpp`。Points 儲存
