@@ -550,6 +550,42 @@ mod tests {
     }
 
     #[test]
+    fn converted_partial_rx_flows_to_variable_and_string_assert_expression() {
+        use crate::{
+            data_context::DataContext,
+            workflow::{
+                Expression, ExpressionOperand, ExpressionOperator, InputValue, StepId,
+                StepOutputReference, VariableId,
+            },
+        };
+        let terminal = json!({"state":"failed","ok":false,"result":null,
+            "error":{"category":"execution","code":"serial_error","message":"read timeout",
+                "details":{"reason":"read_timeout"}},
+            "partial_hex":"524541","partial_bytes":3});
+        let mut context = DataContext::new();
+        let step_id = StepId::new("query-one").unwrap();
+        context.set_step_output(
+            step_id.clone(),
+            workflow_result("query", &json!({}), &terminal).unwrap(),
+        );
+        let partial = context.resolve(&InputValue::StepOutput(
+            StepOutputReference::new(step_id.clone(), "/partial_rx_hex"),
+        )).unwrap();
+        assert_eq!(partial, json!("524541"));
+        let variable = VariableId::new("mcu-response").unwrap();
+        context.set_variable(variable.clone(), partial);
+        let compare = InputValue::Expression(Expression::new(
+            ExpressionOperand::Variable(variable),
+            ExpressionOperator::Equal,
+            ExpressionOperand::Literal(json!("524541")),
+        ));
+        assert_eq!(context.resolve(&compare).unwrap(), json!(true));
+        assert_eq!(context.resolve(&InputValue::StepOutput(
+            StepOutputReference::new(step_id, "/timed_out"),
+        )).unwrap(), json!(true));
+    }
+
+    #[test]
     fn normal_serial_result_preserves_native_rx_and_query_fields() {
         let terminal = json!({"state":"succeeded","ok":true,"error":null,
             "result":{"rx_hex":"4849","rx_bytes":2,"tx_bytes":1}});
