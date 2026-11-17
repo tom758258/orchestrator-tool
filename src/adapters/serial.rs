@@ -475,7 +475,10 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
 
     let error = &terminal["error"];
     if read_action
-        && arguments.get("fail_on_read_timeout").and_then(Value::as_bool) != Some(true)
+        && arguments
+            .get("fail_on_read_timeout")
+            .and_then(Value::as_bool)
+            != Some(true)
         && terminal["state"] == "failed"
         && terminal["ok"] == false
         && terminal["result"].is_null()
@@ -505,7 +508,9 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
     Err(format!(
         "Serial {} failed: {}",
         action,
-        error["message"].as_str().unwrap_or("unconfirmed Job failure")
+        error["message"]
+            .as_str()
+            .unwrap_or("unconfirmed Job failure")
     ))
 }
 
