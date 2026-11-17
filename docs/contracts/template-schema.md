@@ -1018,6 +1018,24 @@ Serial Foreground uses the existing `tool-action` type and its `arguments` and o
 - `receive`: optional `arguments.max_bytes`, default 1024, range 1..=1048576. A successful Job returns raw `rx_hex` and `rx_bytes` as one Step Output.
 - `query`: TX follows the `send` rules, and `delimiter_format` (`text` or `hex`) plus `delimiter_value` specify a nonempty multi-byte delimiter. Text supports backslash-r, backslash-n and escaped backslashes; Hex accepts pairs of hexadecimal digits with ASCII whitespace. The decoded delimiter must not exceed `max_bytes`. Query returns raw `tx_hex`, `tx_bytes`, `rx_hex`, `rx_bytes`, `delimiter_hex`.
 
+For `receive` and `query`, optional Boolean `arguments.fail_on_read_timeout`
+defaults to `false` even for Templates that omit the field; no legacy/migration
+path is used. This flag belongs to Orchestrator and is not forwarded to the
+Serial Worker. Only a confirmed native ordinary Worker Read Timeout
+(`job_finished` state `failed`, execution error code `serial_error` or
+`tcp_error`, with `error.details.reason = "read_timeout"`) can be converted
+into a succeeded Workflow Step when `fail_on_read_timeout` is false.
+A successful read keeps its native result fields and adds
+`outcome: "completed"` and `timed_out: false`; a converted timeout adds
+`outcome: "timeout"`, `timed_out: true`, `partial_rx_hex` (hex String),
+and `partial_rx_bytes` (Number, including zero). Complete `rx_hex` /
+`rx_bytes` are not emitted for timeout, and partial fields are not emitted
+for normal completion. Ordinary Worker Query timeouts consume only partial RX
+already reported from the Serial Tool session's internal buffer, without
+flushing OS/device RX. ReadLimitExceeded, transport failures, unconfirmed
+Job terminals, cancellation, and generic action deadline expiry still fail;
+there is no automatic retry or TX/RX matching.
+
 Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background Query/Receive, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
 
 
