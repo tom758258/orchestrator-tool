@@ -124,7 +124,8 @@ body {
 .app-version {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .appearance-control {
@@ -156,9 +157,10 @@ body {
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 600;
-  letter-spacing: -0.035em;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
 
 .tabs {
