@@ -48,9 +48,11 @@ The Desktop tabs are:
 - **Output** — inspect the Last Run, execution results, Output Pages, Charts,
   Summary, Output Data, and manual exports.
 
-The application also has an **Appearance** control for the Desktop theme and
-toolbar actions for **New Template**, **Open Template**, **Save Template**, and **Help**. Help
-opens the bundled offline Desktop User Guide in a separate application window.
+The top-right controls provide **Appearance**, **Language**, and **Help**.
+**New Template**, **Open Template**, and **Save Template** are grouped under
+**Template** on the left of the next row, while **Execution Mode** remains on
+the right. Help opens the bundled offline Desktop User Guide in a separate
+application window.
 
 The global **Execution Mode** selector controls the whole Desktop execution,
 not individual Tool Instances. Desktop starts in **Simulation**, and New

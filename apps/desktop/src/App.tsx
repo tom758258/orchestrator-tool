@@ -2164,48 +2164,62 @@ function App() {
             <p className="app-version">{t("app.v")}{applicationVersion}</p>
           )}
         </div>
-        <div className="appearance-control">
-          <button className="action-button locale-button" type="button" data-locale-switch
-            aria-label={t('preferences.switchLanguage')} title={t('preferences.switchLanguage')}
-            onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" />
-            </svg>
-            {locale === 'en' ? 'English' : '繁體中文'}
-          </button>
-          <span>{t("app.appearance")}</span>
-          <button className="action-button" type="button"
-            aria-label={t("app.switchThemeTo", { value1: nextThemeLabel })} title={t("app.switchThemeTo", { value1: nextThemeLabel })}
-            onClick={() => setThemePreference(nextThemePreference)}>
-            ◐ {themeLabel(themePreference)}
-          </button>
+        <div className="appearance-control" role="group" aria-label={t("app.interfacePreferences")}>
+          <div className="header-control">
+            <span>{t("app.appearance")}</span>
+            <button className="action-button" type="button"
+              aria-label={t("app.switchThemeTo", { value1: nextThemeLabel })} title={t("app.switchThemeTo", { value1: nextThemeLabel })}
+              onClick={() => setThemePreference(nextThemePreference)}>
+              ◐ {themeLabel(themePreference)}
+            </button>
+          </div>
+          <div className="header-control">
+            <span>{t("app.language")}</span>
+            <button className="action-button locale-button" type="button" data-locale-switch
+              aria-label={t('preferences.switchLanguage')} title={t('preferences.switchLanguage')}
+              onClick={() => setLocale(locale === 'en' ? 'zh-TW' : 'en')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" />
+              </svg>
+              {locale === 'en' ? 'English' : '繁體中文'}
+            </button>
+          </div>
+          <div className="header-control">
+            <span>{t("app.helpSection")}</span>
+            <button className="action-button" type="button" onClick={() => void handleOpenHelp()}>
+              {t("app.help")}
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="template-toolbar" aria-label={t("app.applicationActions")}>
-        <button
-          className="action-button"
-          type="button"
-          onClick={() => void createDraft()}
-          disabled={workflowBusy}
-        >
-          {t("app.newTemplate")}</button>
-        <button
-          className="action-button"
-          type="button"
-          onClick={() => void handleLoadTemplate()}
-          disabled={workflowBusy}
-        >
-          {t("app.openTemplate")}</button>
-        <button
-          className="action-button"
-          type="button"
-          onClick={() => void handleSaveTemplate()}
-          disabled={!workflowDraft || workflowBusy}
-        >
-          {t("app.saveTemplate")}</button>
-        <button className="action-button" type="button" onClick={() => void handleOpenHelp()}>
-          {t("app.help")}</button>
+      <div className="template-toolbar" role="group" aria-label={t("app.applicationActions")}>
+        <div className="template-actions" role="group" aria-label={t("app.templateActions")}>
+          <span className="toolbar-group-label">{t("app.templateActions")}</span>
+          <div className="template-action-buttons">
+            <button
+              className="action-button"
+              type="button"
+              onClick={() => void createDraft()}
+              disabled={workflowBusy}
+            >
+              {t("app.newTemplate")}</button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() => void handleLoadTemplate()}
+              disabled={workflowBusy}
+            >
+              {t("app.openTemplate")}</button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() => void handleSaveTemplate()}
+              disabled={!workflowDraft || workflowBusy}
+            >
+              {t("app.saveTemplate")}</button>
+          </div>
+        </div>
         <div className="execution-mode-control" aria-label={t("app.desktopExecutionMode")}>
           <span>{t("app.executionMode")}</span>
           <div className="execution-mode-options" role="group" aria-label={t("app.executionMode")}>

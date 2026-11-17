@@ -41,9 +41,10 @@ Desktop 目前的 tabs 是：
 - **輸出（Output）** — 檢視 Last Run、execution results、Output Pages、Charts、
   Summary、Output Data，並進行 manual export。
 
-Application 另有 **外觀（Appearance）** 控制項可切換 Desktop theme，toolbar 提供
-**新增範本（New Template）**、**開啟範本（Open Template）**、**儲存範本（Save Template）** 與 **使用說明（Help）**。Help 會在獨立的 application
-window 開啟 bundled offline Desktop User Guide。
+畫面右上角依序提供 **外觀**、**語言** 與 **說明**。下一列左側的
+**Template／範本** 集中 **新增範本**、**開啟範本** 與 **儲存範本**；
+**執行模式** 維持在右側。點擊 **使用說明** 會在獨立的應用程式視窗開啟
+內建的離線 Desktop 使用指南。
 
 全域 **執行模式（Execution Mode）** selector 控制整次 Desktop execution，不是各 Tool Instance
 各自選擇。Desktop 啟動時預設為 **模擬（Simulation）**，New Template 或 Open Template

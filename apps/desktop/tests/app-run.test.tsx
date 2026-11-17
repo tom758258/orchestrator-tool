@@ -161,6 +161,22 @@ async function savedDraft(): Promise<WorkflowDraft> {
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
 
+test('top controls keep preferences, Template actions and Execution Mode in their intended groups', async () => {
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('create_workflow_draft'))
+  const preferences = screen.getByRole('group', { name: 'Interface preferences' })
+  expect(within(preferences).getByText('Appearance')).toBeTruthy()
+  expect(within(preferences).getByText('Language')).toBeTruthy()
+  expect(within(preferences).getByRole('button', { name: 'Help' })).toBeTruthy()
+  const toolbar = screen.getByRole('group', { name: 'Application actions' })
+  const template = within(toolbar).getByRole('group', { name: 'Template' })
+  for (const name of ['New Template', 'Open Template', 'Save Template']) {
+    expect(within(template).getByRole('button', { name })).toBeTruthy()
+  }
+  expect(within(toolbar).getByRole('group', { name: 'Execution Mode' })).toBeTruthy()
+  expect(within(toolbar).queryByRole('button', { name: 'Help' })).toBeNull()
+})
+
 test('locale changes preserve Template payload, active run, output data and Help settings', async () => {
   localStorage.removeItem('orchestrator-tool.theme')
   const original = vi.mocked(invoke).getMockImplementation()!
