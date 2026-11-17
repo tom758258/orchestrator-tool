@@ -64,13 +64,14 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
     return s.type === 'bg-interaction' && s.operation.kind === 'command' && s.background_id === step.background_id &&
       sourceScope.every((id, index) => scope[index] === id)
   })
-  return <fieldset disabled={disabled}>
+  return <fieldset className="interaction-step-fieldset" disabled={disabled}>
     <legend>{t("interactionEditor.backgroundInteraction")}</legend>
-    <label>{t("interactionEditor.background")}<select value={step.background_id} onChange={event => onChange({ ...step, background_id: event.target.value })}>
+    <div className="step-properties-fields interaction-step-fields">
+    <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.background")}</span><select value={step.background_id} onChange={event => onChange({ ...step, background_id: event.target.value })}>
       {backgrounds.map(b => <option key={b.id} value={b.id}>{b.id} · {b.tool_instance_id}</option>)}
     </select></label>
     {step.operation.kind === 'command' && <>
-      <label>{t("interactionEditor.command")}<select value={step.operation.command} onChange={event => selectCommand(event.target.value as 'software-trigger' | 'serial-send' | 'serial-send-file')}>
+      <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.command")}</span><select value={step.operation.command} onChange={event => selectCommand(event.target.value as 'software-trigger' | 'serial-send' | 'serial-send-file')}>
         {!supported && <option value={step.operation.command}>{step.operation.command} {t("interactionEditor.unsupportedBackground")}</option>}
         {tool === 'serial' && <><option value="serial-send">{t("interactionEditor.send")}</option><option value="serial-send-file">{t("interactionEditor.sendFile")}</option></>}
         {tool === 'meters' && <option value="software-trigger">{t("interactionEditor.softwareTrigger")}</option>}
@@ -85,18 +86,19 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
         disabled={disabled || !supported} stepLabel={value => value.id}
         onChange={value => onChange({ ...step, operation: { ...operation, arguments: value.arguments,
           bindings: value.bindings } })} />}
-      <label><input type="checkbox" checked={step.operation.wait_for_completion} onChange={event => {
+      <label className="step-property-field step-property-checkbox"><input type="checkbox" checked={step.operation.wait_for_completion} onChange={event => {
         if (step.operation.kind === 'command') onChange({ ...step, operation: { ...step.operation, wait_for_completion: event.target.checked } })
-      }} />{t("interactionEditor.waitForCompletion")}</label>
+      }} /><span className="step-property-label">{t("interactionEditor.waitForCompletion")}</span></label>
     </>}
-    {step.operation.kind === 'get-command-result' && <label>{t("interactionEditor.sourceBGCommandStep")}<select value={step.operation.source_step}
+    {step.operation.kind === 'get-command-result' && <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.sourceBGCommandStep")}</span><select value={step.operation.source_step}
       onChange={event => onChange({ ...step, operation: { kind: 'get-command-result', source_step: event.target.value } })}>
       <option value="">{t("interactionEditor.selectABGCommandStep")}</option>
       {sources.map(source => <option key={source.id} value={source.id}>{source.id}</option>)}
     </select></label>}
-    <label>{t("interactionEditor.stepTimeoutMs")}<input type="number" min={1} step={1} placeholder={t("interactionEditor.useActionTimeout")}
+    <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.stepTimeoutMs")}</span><input type="number" min={1} step={1} placeholder={t("interactionEditor.useActionTimeout")}
       value={step.timeout_ms ?? ''} onChange={event => onChange({ ...step, timeout_ms: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-    <p>{t("interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe")}</p>
-    {tool === 'serial' && <p>{t("interactionEditor.getCommandResultReturnsTheCompleteNativeJobFinished")}</p>}
+    <p className="value-source-help">{t("interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe")}</p>
+    {tool === 'serial' && operation.kind === 'get-command-result' && <p className="value-source-help">{t("interactionEditor.getCommandResultReturnsTheCompleteNativeJobFinished")}</p>}
+    </div>
   </fieldset>
 }

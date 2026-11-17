@@ -2999,13 +2999,13 @@ function App() {
                         steps={workflowDraft.workflow.steps} backgrounds={workflowDraft.backgrounds ?? []} disabled={workflowBusy}
                         onChange={next => updateStep(selectedStep.id, () => next)} />}
                       {selectedStep.type === 'background' && <>
-                        <label>{t("app.background")}<select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
+                        <label className="step-property-field"><span className="step-property-label">{t("app.background")}</span><select value={selectedStep.background_id} disabled={workflowBusy} onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, background_id: event.target.value } : step)}>
                           {workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id} · {background.tool_instance_id}</option>)}
                         </select></label>
-                        {(selectedStep.action === 'worker-on' || selectedStep.action === 'worker-off') && <label><input type="checkbox" checked={selectedStep.capture} disabled={workflowBusy}
+                        {(selectedStep.action === 'worker-on' || selectedStep.action === 'worker-off') && <label className="step-property-field step-property-checkbox"><input type="checkbox" checked={selectedStep.capture} disabled={workflowBusy}
                           onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, capture: event.target.checked } : step)} />
-                          {t("app.simultaneousCapture")}{selectedStep.action === 'worker-on' ? t("app.oN") : t("app.oFF")}</label>}
-                        {selectedStep.action === 'worker-off' && <p>{t("app.ifCaptureWasAlreadyExplicitlySwitchedOFFUncheckSimultaneous")}</p>}
+                          <span className="step-property-label">{t("app.simultaneousCapture")}{selectedStep.action === 'worker-on' ? t("app.oN") : t("app.oFF")}</span></label>}
+                        {selectedStep.action === 'worker-off' && <p className="value-source-help">{t("app.ifCaptureWasAlreadyExplicitlySwitchedOFFUncheckSimultaneous")}</p>}
                       </>}
                       {selectedStep.type === 'for' && <>
                         <label className="step-property-field">
