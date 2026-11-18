@@ -2378,7 +2378,7 @@ function App() {
                 onChange={event => setToolToAdd(event.target.value)}
                 disabled={loading || toolConfigBusy !== null || workflowBusy || unconfiguredTools.length === 0}>
                 {unconfiguredTools.length === 0 && <option value="">{t("app.noToolsToAdd")}</option>}
-                {unconfiguredTools.map(tool => <option key={tool.tool_id} value={tool.tool_id}>{tool.tool_id}</option>)}
+                {unconfiguredTools.map(tool => <option key={tool.tool_id} value={tool.tool_id}>{tool.tool_id[0].toUpperCase() + tool.tool_id.slice(1)}</option>)}
               </select>
               </div>
               <button className="action-button" type="button"

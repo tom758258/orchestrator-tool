@@ -28,7 +28,7 @@ export default {
   "scopesActionEditor.triggerTimeoutMs": "Trigger Timeout (ms)",
   "scopesActionEditor.pollIntervalMs": "Poll Interval (ms)",
   "scopesActionEditor.singleWaitTimeoutHint": "A normal trigger timeout is a successful Step result; use Outcome or Timed Out in IF/ELSE. No force trigger is sent.",
-  "scopesActionEditor.autoScaleIsAForegroundOnlyOperationForSupportedKeysight": "AutoScale is a foreground-only operation for supported Keysight scopes. It may change channel display and scale, timebase, and trigger settings; no settings are restored automatically.",
+  "scopesActionEditor.autoScaleIsAForegroundOnlyOperationForSupportedKeysight": "AutoScale is a foreground-only operation for supported Keysight scopes. It may change channel display and scale, horizontal scale, and trigger settings; no settings are restored automatically.",
   "scopesActionEditor.autoScaleIsNotSupportedByThisModelChooseA": "AutoScale is not supported by this model. Choose a supported Keysight Live Resource.",
   "scopesActionEditor.sourceChannelsOptional": "Source Channels (optional)",
   "scopesActionEditor.autoScaleCH": "AutoScale CH{value1}",

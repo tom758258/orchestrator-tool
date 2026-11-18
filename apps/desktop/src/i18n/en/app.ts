@@ -314,7 +314,7 @@ export default {
   "app.serialSendFile": "Serial Send File",
   "app.serialReceive": "Serial Receive",
   "app.serialQuery": "Serial Query",
-  "app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger": "Keysight only. AutoScale may change channel, timebase, and trigger settings. It is a foreground Step, not a Background Streaming command.",
+  "app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger": "Keysight only. AutoScale may change channel, horizontal scale, and trigger settings. It is a foreground Step, not a Background Streaming command.",
   "app.sendUTF8TextOrOneHexByteTo": "Send UTF-8 text or a single byte (integer input) to the selected Serial instance.",
   "app.sendAWorkerLocalFileRunIsBlockedIf": "Send a Worker-local file. Run is blocked if the path is invalid.",
   "app.receiveUpToMaxBytesOnceResultContainsRx": "Receives Serial data without sending TX, using the selected receive mode. Completed reads provide RX Hex and the received byte count; optional UTF-8 decoding also provides RX Text.",

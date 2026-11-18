@@ -263,7 +263,12 @@ test('Scopes Screenshot preserves unsupported saved values on missing models and
   assert.ok(JSON.stringify(view).includes('Select or refresh a supported Live Resource'))
   const option = elements(control(view, 'Image Format')).find(node => node.type === 'option' && node.props.value === 'legacy-format')
   assert.equal(option.props.disabled, true)
-  assert.equal(option.props.children, 'legacy-format')
+  assert.equal(option.props.children, 'Legacy-format')
+  const numericProps = { ...props, step: { ...props.step, arguments: { ...props.step.arguments, format: '10legacy' } } }
+  const numericView = render(numericProps)
+  const numericOption = elements(control(numericView, 'Image Format')).find(node => node.type === 'option' && node.props.value === '10legacy')
+  assert.equal(numericOption.props.disabled, true)
+  assert.equal(numericOption.props.children, '10Legacy')
   const next = { ...props, modelId: caps.model_id }
   render(next); await settle()
   view = render(next)
@@ -693,7 +698,8 @@ for (const [action, key, label, capabilityField, initial, replacement] of capabi
     assert.equal(control(view, label).type, 'select')
     assert.deepEqual(choiceOptions(control(view, label)), caps[capabilityField])
     assert.deepEqual(elements(control(view, label)).filter(node => node.type === 'option' && !node.props.disabled)
-      .map(node => node.props.children), label === 'Measurement Item' ? ['Vp-p', 'Frequency'] : caps[capabilityField])
+      .map(node => node.props.children), label === 'Measurement Item' ? ['Vp-p', 'Frequency']
+      : label === 'Slope' ? ['Positive', 'Negative'] : caps[capabilityField])
     assert.ok(!view.some(node => node.props.literalLabel === label))
     const original = structuredClone(step)
     control(view, label).props.onChange({ target: { value: 'unsupported' } })

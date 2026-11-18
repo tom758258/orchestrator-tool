@@ -72,7 +72,7 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
     </select></label>
     {step.operation.kind === 'command' && <>
       <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.command")}</span><select value={step.operation.command} onChange={event => selectCommand(event.target.value as 'software-trigger' | 'serial-send' | 'serial-send-file')}>
-        {!supported && <option value={step.operation.command}>{step.operation.command} {t("interactionEditor.unsupportedBackground")}</option>}
+        {!supported && <option value={step.operation.command}>{step.operation.command.replace(/[a-z]/i, letter => letter.toUpperCase())} {t("interactionEditor.unsupportedBackground")}</option>}
         {tool === 'serial' && <><option value="serial-send">{t("interactionEditor.send")}</option><option value="serial-send-file">{t("interactionEditor.sendFile")}</option></>}
         {tool === 'meters' && <option value="software-trigger">{t("interactionEditor.softwareTrigger")}</option>}
       </select></label>

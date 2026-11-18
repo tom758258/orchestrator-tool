@@ -1,4 +1,4 @@
-import { enumLabel } from './i18n/presentation'
+import { optionLabel } from './i18n/presentation'
 import { useI18n } from './i18n/I18nProvider'
 import { toolInstanceLabel } from './toolInstanceLabel'
 import { scopesChannelNumbers, updateScopesAcquisition, updateScopesChannel } from './scopesSetup'
@@ -186,7 +186,7 @@ function MetersSetupFields({ value, onChange, model, executionMode, metersExecut
                 {option.label}{supported ? '' : t("toolSetupEditor.unsupportedBy", { value1: meterCapabilities?.model })}
               </option>
             })}
-            {!background && triggerMode !== 'software' && <option value={triggerMode} disabled>{triggerMode} {t("toolSetupEditor.requiresBackground")}</option>}
+            {!background && triggerMode !== 'software' && <option value={triggerMode} disabled>{triggerOptions.find(option => option.value === triggerMode)?.label ?? triggerMode.replace(/^[a-z]/, letter => letter.toUpperCase())} {t("toolSetupEditor.requiresBackground")}</option>}
           </select>
           {!background && triggerMode !== 'software' && <>
             <span role="alert">{t("toolSetupEditor.foregroundMetersRequiresSingleSelectSingleOrEnableBackground")}</span>
@@ -535,7 +535,7 @@ function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExec
           }}>
           <option value="">{t("toolSetupEditor.unchanged")}</option>
           {(['normal', 'average', 'high_resolution', 'peak'] as const).map(mode =>
-            <option key={mode} value={mode} disabled={!modes.includes(mode)}>{enumLabel(t, 'capability', mode)}</option>)}
+            <option key={mode} value={mode} disabled={!modes.includes(mode)}>{optionLabel(t, 'capability', mode)}</option>)}
         </select></label>
         {unsupportedMode && <p className="tool-setup-hint">{t("toolSetupEditor.unsupportedByTheCurrentModelExistingAcquisitionTypePreserved")}</p>}
         {caps && caps.acquisition_modes === null && <p className="tool-setup-hint">{t("toolSetupEditor.acquisitionCapabilityInformationIsUnavailable")}</p>}
@@ -712,7 +712,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
       <label htmlFor="tool-instance-type" className="step-property-label">{t("toolSetupEditor.selectToolType")}</label>
       <select id="tool-instance-type" aria-label={t("toolSetupEditor.toolType")} value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
         {!tool && <option value="">{t("toolSetupEditor.noConfiguredTools")}</option>}
-        {configuredToolTypes.map(type => <option key={type} value={type}>{type}</option>)}
+        {configuredToolTypes.map(type => <option key={type} value={type}>{type[0].toUpperCase() + type.slice(1)}</option>)}
       </select>
       </div>
       <button type="button" className="action-button" onClick={() => {

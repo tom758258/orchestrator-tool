@@ -6,6 +6,7 @@ export default {
   "capability.positive": "正向",
   "capability.negative": "負向",
   "capability.either": "任一方向",
+  "capability.alternate": "交替",
   "capability.frequency": "頻率",
   "capability.period": "週期",
   "capability.vpp": "峰對峰電壓",

@@ -153,6 +153,9 @@ test('Changing Background preserves Serial inputs and shows an incompatible comm
   render(<Editor />)
   fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'other' } })
   expect(changed).toHaveBeenLastCalledWith({ ...original, background_id: 'other' })
+  const incompatibleCommand = screen.getByLabelText('Command') as HTMLSelectElement
+  expect(incompatibleCommand.value).toBe('serial-send')
+  expect(incompatibleCommand.selectedOptions[0]?.textContent).toMatch(/^Serial-send\s+\(unsupported Background\)$/)
   expect(screen.getByRole('alert').textContent).toContain('does not match')
   expect((screen.getByLabelText('TX Format') as HTMLSelectElement).disabled).toBe(true)
   fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'bg' } })
