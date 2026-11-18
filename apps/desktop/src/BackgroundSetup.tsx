@@ -1,4 +1,4 @@
-import { enumLabel } from './i18n/presentation'
+import { optionLabel } from './i18n/presentation'
 import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -100,8 +100,8 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
           </select></label>
           <label>{t("backgroundSetup.item")}<select aria-label={t("backgroundSetup.measurement") + (index + 1) + t("backgroundSetup.item2")} value={row.item}
             onChange={event => changeMeasurement(index, { item: event.target.value })}>
-            {!items.includes(row.item) && <option value={row.item}>{row.item}</option>}
-            {items.map(item => <option value={item} key={item}>{enumLabel(t, 'capability', item)}</option>)}
+            {!items.includes(row.item) && <option value={row.item}>{optionLabel(t, 'capability', row.item)}</option>}
+            {items.map(item => <option value={item} key={item}>{optionLabel(t, 'capability', item)}</option>)}
           </select></label>
           <button type="button" disabled={measurements.length === 1} onClick={() => update({
             scopes_measurements: measurements.filter((_, i) => i !== index),

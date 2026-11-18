@@ -10,6 +10,7 @@ import { I18nProvider, useI18n } from '../src/i18n/I18nProvider'
 import { catalogues, translate } from '../src/i18n'
 import { detectBrowserLocale, LOCALE_STORAGE_KEY, persistLocale, resolveInitialLocale } from '../src/i18n/locale'
 import { locales } from '../src/i18n/locales'
+import { enumLabel, optionLabel } from '../src/i18n/presentation'
 import { uiMessage, useMessage } from '../src/i18n/useMessage'
 import FailureDetails from '../src/FailureDetails'
 import { curatedResultFields } from '../src/inputValue'
@@ -57,6 +58,30 @@ test('translation falls back to English, interpolates data once and retains unkn
   finally { catalogues['zh-TW'] = saved }
   expect(translate('zh-TW', 'missing.key')).toBe('missing.key')
   expect(translate('zh-TW', 'app.requireToolInstance', { value1: '<meters>{value2}' })).toContain('<meters>{value2}')
+})
+
+test('choice labels localize and capitalize English without changing enum values', () => {
+  const en = (key: string) => translate('en', key)
+  const zh = (key: string) => translate('zh-TW', key)
+  for (const [value, english, chinese] of [
+    ['positive', 'Positive', '正向'],
+    ['negative', 'Negative', '負向'],
+    ['either', 'Either', '任一方向'],
+    ['alternate', 'Alternate', '交替'],
+    ['normal', 'Normal', '一般'],
+    ['average', 'Average', '平均'],
+    ['high_resolution', 'High Resolution', '高解析度'],
+    ['peak', 'Peak', '峰值偵測'],
+  ]) {
+    expect(optionLabel(en, 'capability', value)).toBe(english)
+    expect(optionLabel(zh, 'capability', value)).toBe(chinese)
+  }
+  expect(optionLabel(en, 'capability', 'custom_mode')).toBe('Custom_mode')
+  expect(optionLabel(zh, 'capability', 'custom_mode')).toBe('Custom_mode')
+  expect(enumLabel(en, 'status', 'running')).toBe('running')
+  expect(translate('en', 'steps.scope.timebase-scale')).toBe('Scope Horizontal Scale')
+  expect(translate('zh-TW', 'steps.scope.timebase-scale')).toBe('示波器水平軸刻度')
+  expect(translate('zh-TW', 'steps.scope.timebase-position')).toBe('示波器水平軸位置')
 })
 
 test('switching retains editor state and feedback, updates html language, and remembers the choice', () => {

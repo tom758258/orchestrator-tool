@@ -1,4 +1,4 @@
-import { enumLabel } from './i18n/presentation'
+import { optionLabel } from './i18n/presentation'
 import { useI18n } from './i18n/I18nProvider'
 import InputValueEditor from './InputValueEditor'
 import { useEffect, useState } from 'react'
@@ -91,9 +91,7 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
           }}>
           <option value="" disabled>{t("scopesActionEditor.select")}{label.toLowerCase()}...</option>
           {options.map(option => <option key={option} value={option}>
-            {key === 'item' && typeof option === 'string'
-              ? enumLabel(t, 'capability', option) === option ? option.replace(/[a-z]/i, letter => letter.toUpperCase()) : enumLabel(t, 'capability', option)
-              : typeof option === 'string' ? enumLabel(t, 'capability', option) : option}
+            {typeof option === 'string' ? optionLabel(t, 'capability', option) : option}
           </option>)}
         </select>
       </label>
@@ -234,7 +232,7 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
           <option value="png" disabled={!formats.includes('png')}>{t("scopesActionEditor.pNG")}</option>
           <option value="bmp" disabled={!formats.includes('bmp')}>{t("scopesActionEditor.bMP")}</option>
           <option value="bmp8bit" disabled={!formats.includes('bmp8bit')}>{t("scopesActionEditor.bMP8Bit")}</option>
-          {!['png', 'bmp', 'bmp8bit'].includes(format) && <option value={format} disabled>{format}</option>}
+          {!['png', 'bmp', 'bmp8bit'].includes(format) && <option value={format} disabled>{format.replace(/^[a-z]/, letter => letter.toUpperCase())}</option>}
         </select></label>
       {capabilityHint && <p className="tool-setup-hint">{capabilityHint}</p>}
       {caps && formats.length === 0 && <p className="tool-setup-hint">{t("scopesActionEditor.screenshotFormatsAreUnavailableForTheCurrentModel")}</p>}

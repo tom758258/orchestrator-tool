@@ -649,9 +649,9 @@ Double: 6000
 
 ### 6.7 Scopes actions 與 File Output
 
-Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Timebase Scale、
+Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Horizontal Scale（示波器水平軸刻度）、
 Horizontal Position（示波器水平軸位置）、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
-Channel Scale、Channel Offset、Timebase Scale、Horizontal Position（示波器水平軸位置）與 Edge Trigger Level
+Channel Scale、Channel Offset、Horizontal Scale（示波器水平軸刻度）、Horizontal Position（示波器水平軸位置）與 Edge Trigger Level
 只允許數值 **Fixed value**、**Variable** 或 **Calculation** 設定值。
 Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
 或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While

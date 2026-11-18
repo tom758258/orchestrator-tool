@@ -314,7 +314,7 @@ export default {
   "app.serialSendFile": "Serial 傳送檔案",
   "app.serialReceive": "Serial 接收",
   "app.serialQuery": "Serial 查詢",
-  "app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger": "僅限 Keysight。自動調整可能變更通道、時基與觸發設定。這是前景步驟，不是背景串流命令。",
+  "app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger": "僅限 Keysight。自動調整可能變更通道、水平軸刻度與觸發設定。這是前景步驟，不是背景串流命令。",
   "app.sendUTF8TextOrOneHexByteTo": "傳送 UTF-8 文字或單一位元組（整數輸入）至選取的 Serial 實例。",
   "app.sendAWorkerLocalFileRunIsBlockedIf": "傳送 Worker 本機檔案。路徑無效時會阻擋執行。",
   "app.receiveUpToMaxBytesOnceResultContainsRx": "不發送 TX，依選擇的接收模式讀取 Serial 資料。接收完成後可取得 RX Hex 與實際接收 Bytes 數量；啟用 UTF-8 時可額外取得 RX Text。",

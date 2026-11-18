@@ -57,6 +57,29 @@ test('Scope Single Wait shows fixed integer inputs without force or capability q
   expect(step.bindings).toBeUndefined()
 })
 
+test.each([
+  ['en', 'Slope', ['Positive', 'Negative', 'Either', 'Alternate']],
+  ['zh-TW', '斜率', ['正向', '負向', '任一方向', '交替']],
+] as const)('Scope slope choices render in %s and keep their original values', async (locale, field, labels) => {
+  const step: ToolActionStep = { type: 'tool-action', id: 'trigger', target: 'scopes-1',
+    action: 'trigger-edge', arguments: { source_channel: 1, level: 0, slope: 'positive' } }
+  const onChange = vi.fn()
+  vi.mocked(invoke).mockResolvedValueOnce({
+    analog_channels: 2, trigger_edge_slopes: ['positive', 'negative', 'either', 'alternate'],
+  })
+  render(<I18nProvider initialLanguage={locale}><ScopesActionEditor step={step}
+    instances={[]} earlierSteps={[]} earlierVariables={[]} disabled={false}
+    onChange={onChange} stepLabel={item => item.id} executionMode="simulate"
+    modelId={undefined} scopesExecutableKey="scopes.exe" /></I18nProvider>)
+  const slope = screen.getByRole('combobox', { name: field }) as HTMLSelectElement
+  await waitFor(() => expect(slope.disabled).toBe(false))
+  expect([...slope.options].filter(option => option.value).map(option => option.textContent)).toEqual([...labels])
+  fireEvent.change(slope, { target: { value: 'alternate' } })
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+    arguments: expect.objectContaining({ slope: 'alternate' }),
+  }))
+})
+
 test('status Result hints show comparison types and values without rewriting IF operands', () => {
   const scope: ToolActionStep = { type: 'tool-action', id: 'single', target: 'scopes-1', action: 'single-wait', arguments: {} }
   const power: ToolActionStep = { type: 'tool-action', id: 'protection', target: 'powers-1', action: 'protection-status', arguments: {} }
@@ -211,6 +234,9 @@ test('all Tool instances place Background Streaming between tool setup and Live 
     renderResource={item => <h4>Live Device {item.id}</h4>} renderPowersDeviceStatus={() => null} />)
   const headings = { meters: 'Measurement Setup', powers: 'Protection Setup', scopes: 'Channel Configuration',
     serial: 'Communication Setup', wavegen: 'No additional setup' }
+  const toolTypes = screen.getByRole('combobox', { name: 'Tool type' }) as HTMLSelectElement
+  expect([...toolTypes.options].find(option => option.value === 'scopes')?.textContent).toBe('Scopes')
+  expect([...toolTypes.options].find(option => option.value === 'meters')?.textContent).toBe('Meters')
   for (const item of instances) {
     const card = instance(item.id)
     const setup = card.getByText(headings[item.tool])
