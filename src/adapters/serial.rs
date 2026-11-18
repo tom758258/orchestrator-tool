@@ -554,8 +554,10 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
             result["outcome"] = Value::String("completed".into());
             result["timed_out"] = Value::Bool(false);
             if arguments["enable_rx_text"] == true {
-                let hex = result["rx_hex"].as_str().ok_or("Serial RX hex is missing")?;
-                result["rx_text"] = decode_rx_text(hex)?;
+                let rx_text = decode_rx_text(
+                    result["rx_hex"].as_str().ok_or("Serial RX hex is missing")?
+                )?;
+                result["rx_text"] = rx_text;
             }
         }
         return Ok(result);
