@@ -1438,13 +1438,15 @@ Serial Foreground 提供 Serial Send、Serial Send File、Serial Receive、Seria
 
 Send／Query TX 可選 Text（僅接受 String，發送 UTF-8）或單一位元組（整數輸入；固定值須為非負整數，僅發送最低 8 bits）。例如在「單一位元組」模式輸入數值 4660，僅會發送 34。固定值若有小數，會在 Validate 時被拒絕。Variable／Calculation／Step Output 的動態數值在執行時先朝零捨去小數；轉換後為負數、型別錯誤或超出範圍時，該 Step Failed，且不傳送資料。支援 Fixed Value、Variable、前面 Step Output；Set Variable 的固定值可選 String。Text 不會將十六進位文字視為原始 Binary Bytes。
 
-RX Delimiter 獨立支援多 Byte Text／Hex；Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive／Query 的 Max RX Bytes 為 1～1048576，預設 1024，回傳 Raw rx_hex／rx_bytes，後續 Step 可引用。
+RX Delimiter 與 TX 格式互相獨立；Until Delimiter 模式支援多 Byte Text／Hex，Text 可使用反斜線 r、反斜線 n 與跳脫反斜線。Receive 完全不發送 TX；Query 先發送 TX 再接收。舊 Receive Template 預設 Single Read；舊 Query Template 預設 Until Delimiter。
 
-Receive 只讀取一次，最多 Max RX Bytes，不會等待湊滿指定長度；Query 先發送 TX，再讀取到指定 Delimiter。正常讀取時，Step Result 的「RX 資料（Hex 字串）」對應 `/rx_hex`（Hex 字串，非 Byte Array）與 `/rx_bytes`（Number），並增加 `/outcome = completed`、`/timed_out = false`。透過 Set Variable 的 Previous step result 可以保存這些欄位；目前 Workflow 尚不能直接拆解或解析各個 Byte。
+Receive 提供 Single Read（底層只讀取一次）、Until Delimiter（結果包含結束標記）、Fixed Length（累積達 Expected RX Bytes）、Idle Gap（達到資料靜默間隔）四種模式。Query 提供 Delimiter、Fixed Length、Idle Gap，不提供 Single Read。第一次選擇 Fixed Length／Idle Gap 時，Expected RX Bytes／Idle Gap (ms) 預設空白，必須輸入正整數。Fixed Length 的 Expected RX Bytes 同時是目標與讀取上限；其他模式使用 Max RX Bytes（1～1048576，預設 1024），此值是上限而非必須讀滿的長度。Delimiter 或 Idle Gap 尚未完成就達上限時，Step Failed。
 
-Receive／Query 沿用 Serial Setup 的 UART `timeout_ms` 或 TCP `io_timeout_ms`。已確認的 Read Timeout 預設使 Workflow Step 成功並回傳 `/outcome = timeout`、`/timed_out = true`、`/partial_rx_hex`（String）及 `/partial_rx_bytes`（Number，完全沒收到為 0）。Set Variable、Assert、IF／ELSE 可繼續使用結果。勾選 **Fail on Read Timeout** 才讓該 Step 失敗；逾時結果本身不代表 MCU 測試通過。部分 RX 資料可能殘缺，但已收到的位元組不一定損毀。
+正常接收保留 `/rx_hex`（Hex String）、`/rx_bytes`（Number）、`/outcome = completed`、`/timed_out = false`。勾選 **Enable RX Text (UTF-8)** 後額外提供 `/rx_text`（String 或 null），結果包含 Delimiter。無效 UTF-8 回傳 null，不影響接收成功，也不移除原始 Hex／Bytes。IF／ELSE、Assert、Set Variable 可使用上述欄位；Workflow 不會自動解析個別 Binary Bytes。
 
-Query 發生 Read Timeout 後，Ordinary Worker 只會移除內部 Session Buffer 中已回報的 Partial RX，不清空 OS／裝置 RX 佇列，因此延遲到達的回覆仍可能影響下一次讀取。超過讀取上限、斷線、其他 I/O 錯誤、Worker 故障或無法確認的 Action Deadline 仍會失敗。Text TX 需要 String（Timestamp 為 ISO-8601 字串）；單一位元組 TX 需要 Number 且只送最低一個 Byte（Elapsed Time 為秒數 Number）。RX 資料（Hex 字串）不能直接當成多個原始 Bytes 重新傳送。
+Receive／Query 使用 Serial Setup 的 UART `timeout_ms` 或 TCP `io_timeout_ms`。Idle Gap 在首個 Byte 前使用 Read Timeout，收到資料後則依最後一次接收時間獨立計算靜默間隔。Delimiter／Fixed Length 在條件滿足或底層 Read Timeout 前持續接收，不另設整筆 RX Timeout。未勾選 **Fail on Read Timeout** 時，已確認的 Read Timeout 回傳 `/outcome = timeout`、`/timed_out = true`、`/partial_rx_hex` 和 `/partial_rx_bytes`；啟用 UTF-8 時額外提供 `/partial_rx_text`（String 或 null）。勾選 Fail on Read Timeout 則讓 Step Failed。Timeout Result 不代表回覆完整或 MCU 測試通過。
+
+普通 Worker Receive／Query 遇到 Read Timeout 或 ReadLimitExceeded 時，只消費 Session Buffer 中已回報的 Partial RX，保留未回報的後續 Bytes。不會清空 OS／設備 RX 佇列；前一次延遲到達的資料可能被下一次 Receive／Query 讀到，使用者必須自行確認後續資料有效性。ReadLimitExceeded、斷線、其他 I/O 錯誤、Worker 失敗與 Action Deadline 到期仍會造成 Step Failed。Text TX 需要 String；單一位元組 TX 需要 Number 且只送最低 Byte。RX Hex String 不能直接當作多 Byte 原始 TX。
 
 Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow RX FIFO。
 
