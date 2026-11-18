@@ -727,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires external serial-tool; ordinary loopback SIM, no physical device"]
+    #[ignore = "requires matching serial-tool Worker; ordinary loopback SIM, no physical device"]
     fn serial_real_worker_foreground_simulation() {
         run_serial_real_worker_foreground_simulation("serial");
     }
@@ -775,6 +775,29 @@ mod tests {
                         "action": "query", "arguments": {"tx_format": "text",
                             "tx_value": "END\r\n", "delimiter_format": "hex",
                             "delimiter_value": "0D 0A", "max_bytes": 128}},
+                    {"type": "tool-action", "id": "send-for-delimited", "target": "serial-1",
+                        "action": "send", "arguments": {"tx_format": "text", "tx_value": "OK\r\n"}},
+                    {"type": "tool-action", "id": "receive-delimited", "target": "serial-1",
+                        "action": "receive", "arguments": {"receive_mode": "delimiter",
+                            "delimiter_format": "hex", "delimiter_value": "0D 0A",
+                            "max_bytes": 32, "enable_rx_text": true}},
+                    {"type": "tool-action", "id": "query-fixed", "target": "serial-1",
+                        "action": "query", "arguments": {"tx_format": "text", "tx_value": "FG",
+                            "receive_mode": "fixed", "expected_bytes": 2, "enable_rx_text": true}},
+                    {"type": "tool-action", "id": "query-idle", "target": "serial-1",
+                        "action": "query", "arguments": {"tx_format": "text", "tx_value": "HI",
+                            "receive_mode": "idle", "idle_gap_ms": 20,
+                            "max_bytes": 32, "enable_rx_text": true}},
+                    {"type": "tool-action", "id": "send-for-fixed", "target": "serial-1",
+                        "action": "send", "arguments": {"tx_format": "text", "tx_value": "JK"}},
+                    {"type": "tool-action", "id": "receive-fixed", "target": "serial-1",
+                        "action": "receive", "arguments": {"receive_mode": "fixed",
+                            "expected_bytes": 2, "enable_rx_text": true}},
+                    {"type": "tool-action", "id": "send-for-idle", "target": "serial-1",
+                        "action": "send", "arguments": {"tx_format": "text", "tx_value": "LM"}},
+                    {"type": "tool-action", "id": "receive-idle", "target": "serial-1",
+                        "action": "receive", "arguments": {"receive_mode": "idle",
+                            "idle_gap_ms": 20, "max_bytes": 32, "enable_rx_text": true}},
                     {"type": "tool-action", "id": "send-file", "target": "serial-1",
                         "action": "send-file",
                         "arguments": {"path": file.to_string_lossy()}}
@@ -801,7 +824,7 @@ mod tests {
             Duration::from_secs(8),
         )
         .unwrap();
-        assert_eq!(result.step_executions().len(), 7);
+        assert_eq!(result.step_executions().len(), 15);
         assert!(
             result
                 .step_executions()
@@ -816,7 +839,22 @@ mod tests {
             StepOutcome::Succeeded { output } if output["rx_hex"] == "05" && output["rx_bytes"] == 1));
         assert!(matches!(result.step_executions()[5].outcome(),
             StepOutcome::Succeeded { output } if output["rx_hex"] == "454e440d0a" && output["delimiter_hex"] == "0d0a"));
-        assert!(matches!(result.step_executions()[6].outcome(),
+        assert!(matches!(result.step_executions()[7].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "4f4b0d0a"
+                && output["rx_bytes"] == 4 && output["rx_text"] == "OK\r\n"));
+        assert!(matches!(result.step_executions()[8].outcome(),
+            StepOutcome::Succeeded { output } if output["tx_hex"] == "4647"
+                && output["rx_bytes"] == 2 && output["rx_text"] == "FG"));
+        assert!(matches!(result.step_executions()[9].outcome(),
+            StepOutcome::Succeeded { output } if output["tx_hex"] == "4849"
+                && output["rx_bytes"] == 2 && output["rx_text"] == "HI"));
+        assert!(matches!(result.step_executions()[11].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "4a4b"
+                && output["rx_bytes"] == 2 && output["rx_text"] == "JK"));
+        assert!(matches!(result.step_executions()[13].outcome(),
+            StepOutcome::Succeeded { output } if output["rx_hex"] == "4c4d"
+                && output["rx_bytes"] == 2 && output["rx_text"] == "LM"));
+        assert!(matches!(result.step_executions()[14].outcome(),
             StepOutcome::Succeeded { output } if output["file_bytes"] == 3 && output["bytes_written"] == 3));
         std::fs::remove_file(file).unwrap();
     }

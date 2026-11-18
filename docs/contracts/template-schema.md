@@ -1015,8 +1015,36 @@ Serial Foreground uses the existing `tool-action` type and its `arguments` and o
 
 - `send`: `arguments.tx_format` is `text` or `hex-byte`; `tx_value` is either a fixed argument or a binding. Text accepts a string and sends its UTF-8 bytes. Hex Byte accepts a non-negative exact integer, sending one low byte (`4660` sends `34`). Fixed fractional inputs fail validation. Dynamically bound numeric inputs are truncated toward zero before dispatch, while negative results, invalid types and out-of-range values fail the consuming Step without TX. Unsupported modes remain invalid. The User Interface stores logical values, not the native `tx_hex`.
 - `send-file`: `arguments.path` is an absolute path on the Worker host. The Template retains it even if unavailable; missing, unreadable, empty or non-local paths are reported on load and block Run before any Worker is started. It is never inlined or copied into the Template.
-- `receive`: optional `arguments.max_bytes`, default 1024, range 1..=1048576. A successful Job returns raw `rx_hex` and `rx_bytes` as one Step Output.
-- `query`: TX follows the `send` rules, and `delimiter_format` (`text` or `hex`) plus `delimiter_value` specify a nonempty multi-byte delimiter. Text supports backslash-r, backslash-n and escaped backslashes; Hex accepts pairs of hexadecimal digits with ASCII whitespace. The decoded delimiter must not exceed `max_bytes`. Query returns raw `tx_hex`, `tx_bytes`, `rx_hex`, `rx_bytes`, `delimiter_hex`.
+- `receive`: never transmits. Optional `arguments.receive_mode` selects
+  `single` (default for old Templates), `delimiter`, `fixed`, or `idle`.
+  `single` performs one read; `delimiter` waits for a nonempty multi-byte
+  ending marker; `fixed` accumulates exactly `expected_bytes`; `idle`
+  completes after a quiet gap following initial RX.
+- `query`: TX follows `send` rules, then RX uses optional `receive_mode`
+  of `delimiter` (default for old Templates), `fixed`, or `idle`. The
+  `single` mode is invalid for Query. Query retains native `tx_hex` and
+  `tx_bytes`, and returns `delimiter_hex` only in delimiter mode.
+- Delimiter mode requires `delimiter_format` (`text` or `hex`) and
+  `delimiter_value`. Text supports backslash-r, backslash-n, and escaped
+  backslash; Hex accepts hexadecimal digit pairs with ASCII whitespace.
+  The delimiter must fit within `max_bytes` and is included in the RX
+  results. `max_bytes` defaults to 1024, range `1..=1048576`, and applies
+  to single, delimiter and idle modes.
+- Fixed Length requires `expected_bytes`, a positive integer in
+  `1..=1048576`, without a separate Max RX Bytes setting. Idle Gap
+  requires `idle_gap_ms`, a positive integer at most `4294967295`;
+  the first byte uses transport Read Timeout, and subsequent arrival gaps
+  are measured independently. Both new numeric fields start blank in
+  the Desktop editor and must be explicitly filled before Validate/Run.
+  Unused mode-specific settings may remain saved when switching modes
+  but are not forwarded to the Worker or validated as active settings.
+- Both actions return native `rx_hex` (String) and `rx_bytes` (Number)
+  for normal completion. Optional Boolean `enable_rx_text`, default false,
+  additionally exposes `rx_text` (String or null) on completed reads or
+  `partial_rx_text` on converted Read Timeout. Decoding uses strict UTF-8;
+  invalid UTF-8 yields null without changing receive success or losing
+  original Hex/Bytes. No parser, trim, byte-array conversion or implicit
+  encoding fallback is introduced.
 
 For `receive` and `query`, optional Boolean `arguments.fail_on_read_timeout`
 defaults to `false` even for Templates that omit the field; no legacy/migration
@@ -1030,11 +1058,15 @@ A successful read keeps its native result fields and adds
 `outcome: "timeout"`, `timed_out: true`, `partial_rx_hex` (hex String),
 and `partial_rx_bytes` (Number, including zero). Complete `rx_hex` /
 `rx_bytes` are not emitted for timeout, and partial fields are not emitted
-for normal completion. Ordinary Worker Query timeouts consume only partial RX
-already reported from the Serial Tool session's internal buffer, without
-flushing OS/device RX. ReadLimitExceeded, transport failures, unconfirmed
-Job terminals, cancellation, and generic action deadline expiry still fail;
-there is no automatic retry or TX/RX matching.
+for normal completion. Ordinary Worker Receive/Query timeouts and ReadLimitExceeded consume only
+the already reported partial RX from the Serial Tool session's internal
+buffer, retaining unreported trailing data and without flushing OS/device
+RX. Delayed bytes from an earlier operation may reach a later Receive/Query;
+operators must verify subsequent RX validity. A successful Idle Gap is
+`completed`, not `timeout`. ReadLimitExceeded (including an idle-mode
+read cap), transport failures, unconfirmed Job terminals, cancellation, and
+generic action deadline expiry still fail; there is no automatic retry or
+TX/RX matching.
 
 Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background Query/Receive, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
 

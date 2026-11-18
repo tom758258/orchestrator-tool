@@ -107,6 +107,22 @@ test('Serial read results expose timeout and partial RX pointers', () => {
 })
 
 
+test('Serial UTF-8 fields appear only for explicitly enabled foreground RX', () => {
+  const devices = [{ id: 'serial-1', tool: 'serial' }]
+  for (const action of ['receive', 'query']) {
+    const base = { type: 'tool-action', id: 'rx-1', target: 'serial-1', action }
+    const defaultFields = curatedResultFields(base, devices)
+    assert.equal(defaultFields.some(field => field.pointer === '/rx_text'), false)
+    const enabledFields = curatedResultFields({
+      ...base, arguments: { enable_rx_text: true },
+    }, devices)
+    assert.ok(enabledFields.find(field => field.pointer === '/rx_text')?.hint)
+    assert.ok(enabledFields.find(field => field.pointer === '/partial_rx_text')?.hint)
+    assert.ok(enabledFields.some(field => field.pointer === '/rx_bytes'))
+    assert.ok(enabledFields.some(field => field.pointer === '/partial_rx_bytes'))
+  }
+})
+
 test('Background Get Latest and Wait Next offer actual tool result fields', () => {
   const devices = [...instances, { id: 'serial-1', tool: 'serial' }, { id: 'scope-1', tool: 'scopes' }]
   const backgrounds = [

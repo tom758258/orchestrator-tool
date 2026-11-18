@@ -229,7 +229,16 @@ pub fn validate_action(
     let keys: &[&str] = match action {
         "send" => &["tx_format", "tx_value"],
         "send-file" => &["path"],
-        "receive" => &["max_bytes", "fail_on_read_timeout"],
+        "receive" => &[
+            "max_bytes",
+            "fail_on_read_timeout",
+            "receive_mode",
+            "delimiter_format",
+            "delimiter_value",
+            "expected_bytes",
+            "idle_gap_ms",
+            "enable_rx_text",
+        ],
         "query" => &[
             "tx_format",
             "tx_value",
@@ -237,6 +246,10 @@ pub fn validate_action(
             "delimiter_value",
             "max_bytes",
             "fail_on_read_timeout",
+            "receive_mode",
+            "expected_bytes",
+            "idle_gap_ms",
+            "enable_rx_text",
         ],
         _ => return Err(format!("Unsupported Serial Foreground action {action}")),
     };
@@ -250,11 +263,30 @@ pub fn validate_action(
             return Err(format!("Unsupported Serial binding {key}"));
         }
     }
-    if let Some(flag) = obj.get("fail_on_read_timeout")
-        && !flag.is_boolean()
-    {
-        return Err("fail_on_read_timeout must be a Boolean".into());
+    for key in ["fail_on_read_timeout", "enable_rx_text"] {
+        if obj.get(key).is_some_and(|value| !value.is_boolean()) {
+            return Err(format!("{key} must be a Boolean"));
+        }
     }
+    let rx_mode = if matches!(action, "receive" | "query") {
+        let default = if action == "receive" {
+            "single"
+        } else {
+            "delimiter"
+        };
+        let mode = match obj.get("receive_mode") {
+            None => default,
+            Some(value) => value.as_str().ok_or("receive_mode must be a String")?,
+        };
+        if !matches!(mode, "single" | "delimiter" | "fixed" | "idle")
+            || (action == "query" && mode == "single")
+        {
+            return Err("Unsupported Serial receive mode".into());
+        }
+        mode
+    } else {
+        ""
+    };
     if matches!(action, "send" | "query") {
         let format = obj
             .get("tx_format")
@@ -302,26 +334,46 @@ pub fn validate_action(
             .ok_or("Missing Send File path")?;
         let _ = path; // Path is validated by the separate non-destructive file preflight.
     }
-    let max = obj
-        .get("max_bytes")
-        .map(|v| v.as_u64())
-        .unwrap_or(Some(1024))
-        .ok_or("max_bytes must be an integer")?;
-    if !(1..=1_048_576).contains(&max) {
-        return Err("max_bytes must be 1..=1048576".into());
-    }
-    if action == "query" {
-        let mode = obj
-            .get("delimiter_format")
-            .and_then(Value::as_str)
-            .ok_or("Missing delimiter mode")?;
-        let text = obj
-            .get("delimiter_value")
-            .and_then(Value::as_str)
-            .ok_or("Missing delimiter value")?;
-        let bytes = delimiter_bytes(mode, text)?;
-        if bytes.is_empty() || bytes.len() > max as usize {
-            return Err("Delimiter must contain 1..=max_bytes bytes".into());
+    if matches!(action, "receive" | "query") {
+        if rx_mode == "fixed" {
+            let expected = obj
+                .get("expected_bytes")
+                .and_then(Value::as_u64)
+                .ok_or("Expected RX Bytes is required and must be a positive integer")?;
+            if !(1..=1_048_576).contains(&expected) {
+                return Err("Expected RX Bytes must be 1..=1048576".into());
+            }
+        } else {
+            let max = obj
+                .get("max_bytes")
+                .map(Value::as_u64)
+                .unwrap_or(Some(1024))
+                .ok_or("max_bytes must be an integer")?;
+            if !(1..=1_048_576).contains(&max) {
+                return Err("max_bytes must be 1..=1048576".into());
+            }
+            if rx_mode == "delimiter" {
+                let format = obj
+                    .get("delimiter_format")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing delimiter mode")?;
+                let value = obj
+                    .get("delimiter_value")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing delimiter value")?;
+                let bytes = delimiter_bytes(format, value)?;
+                if bytes.is_empty() || bytes.len() > max as usize {
+                    return Err("Delimiter must contain 1..=max_bytes bytes".into());
+                }
+            }
+            if rx_mode == "idle" {
+                let gap = obj
+                    .get("idle_gap_ms")
+                    .and_then(Value::as_u64)
+                    .filter(|gap| *gap > 0 && *gap <= u32::MAX as u64)
+                    .ok_or("Idle Gap (ms) is required and must be a positive integer")?;
+                let _ = gap;
+            }
         }
     }
     Ok(())
@@ -416,24 +468,47 @@ pub(crate) fn worker_arguments(action: &str, arguments: &Value) -> Result<Value,
         "receive" => {}
         _ => return Err("Unsupported Serial Foreground command".into()),
     }
-    if action == "query" {
-        let bytes = delimiter_bytes(
-            arguments["delimiter_format"]
-                .as_str()
-                .ok_or("Missing delimiter mode")?,
-            arguments["delimiter_value"]
-                .as_str()
-                .ok_or("Missing delimiter value")?,
-        )?;
-        worker_args.insert(
-            "delimiter_hex".into(),
-            Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
-        );
-    }
-    if matches!(action, "receive" | "query")
-        && let Some(value) = arguments.get("max_bytes")
-    {
-        worker_args.insert("max_bytes".into(), value.clone());
+    if matches!(action, "receive" | "query") {
+        let mode = arguments
+            .get("receive_mode")
+            .and_then(Value::as_str)
+            .unwrap_or(if action == "receive" {
+                "single"
+            } else {
+                "delimiter"
+            });
+        if arguments.get("receive_mode").is_some() {
+            worker_args.insert("receive_mode".into(), Value::String(mode.into()));
+        }
+        match mode {
+            "delimiter" => {
+                let bytes = delimiter_bytes(
+                    arguments["delimiter_format"]
+                        .as_str()
+                        .ok_or("Missing delimiter mode")?,
+                    arguments["delimiter_value"]
+                        .as_str()
+                        .ok_or("Missing delimiter value")?,
+                )?;
+                worker_args.insert(
+                    "delimiter_hex".into(),
+                    Value::String(bytes.iter().map(|byte| format!("{byte:02x}")).collect()),
+                );
+            }
+            "fixed" => {
+                worker_args.insert("expected_bytes".into(), arguments["expected_bytes"].clone());
+            }
+            "idle" => {
+                worker_args.insert("idle_gap_ms".into(), arguments["idle_gap_ms"].clone());
+            }
+            "single" => {}
+            _ => return Err("Unsupported Serial receive mode".into()),
+        }
+        if mode != "fixed"
+            && let Some(value) = arguments.get("max_bytes")
+        {
+            worker_args.insert("max_bytes".into(), value.clone());
+        }
     }
     Ok(Value::Object(worker_args))
 }
@@ -456,6 +531,24 @@ pub fn run_action(
     workflow_result(action.as_str(), arguments, &terminal)
 }
 
+fn decode_rx_text(hex: &str) -> Result<Value, String> {
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Invalid Serial RX hex for UTF-8 decoding".into());
+    }
+    let bytes: Vec<u8> = hex
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+            u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).expect("validated hex pair")
+        })
+        .collect();
+    Ok(String::from_utf8(bytes)
+        .map(Value::String)
+        .unwrap_or(Value::Null))
+}
+
 /// Only confirmed ordinary read timeouts can become successful Workflow Steps.
 /// The Serial Worker still reports the native job as failed.
 fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<Value, String> {
@@ -469,6 +562,14 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
         if read_action {
             result["outcome"] = Value::String("completed".into());
             result["timed_out"] = Value::Bool(false);
+            if arguments["enable_rx_text"] == true {
+                let rx_text = decode_rx_text(
+                    result["rx_hex"]
+                        .as_str()
+                        .ok_or("Serial RX hex is missing")?,
+                )?;
+                result["rx_text"] = rx_text;
+            }
         }
         return Ok(result);
     }
@@ -498,12 +599,16 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
         {
             return Err("Serial Read Timeout partial RX length or hex is invalid".into());
         }
-        return Ok(serde_json::json!({
+        let mut result = serde_json::json!({
             "outcome": "timeout",
             "timed_out": true,
             "partial_rx_hex": hex,
             "partial_rx_bytes": bytes,
-        }));
+        });
+        if arguments["enable_rx_text"] == true {
+            result["partial_rx_text"] = decode_rx_text(hex)?;
+        }
+        return Ok(result);
     }
     Err(format!(
         "Serial {} failed: {}",
@@ -644,6 +749,110 @@ mod tests {
         assert_eq!(
             workflow_result("send", &json!({}), &terminal).unwrap(),
             terminal["result"]
+        );
+    }
+
+    #[test]
+    fn optional_utf8_rx_preserves_raw_bytes_and_decodes_partial_timeouts() {
+        let completed = json!({
+            "state": "succeeded",
+            "ok": true,
+            "error": null,
+            "result": {"rx_hex": "4f4be5a5bd0d0a", "rx_bytes": 7},
+        });
+        let args = json!({"enable_rx_text": true});
+        let result = workflow_result("receive", &args, &completed).unwrap();
+        assert_eq!(result["rx_text"], "OK好\r\n");
+        assert_eq!(result["rx_bytes"], 7);
+        assert_eq!(result["rx_hex"], "4f4be5a5bd0d0a");
+        assert!(
+            workflow_result("receive", &json!({}), &completed)
+                .unwrap()
+                .get("rx_text")
+                .is_none()
+        );
+
+        let mut invalid = completed;
+        invalid["result"]["rx_hex"] = json!("00ffa5");
+        invalid["result"]["rx_bytes"] = json!(3);
+        assert_eq!(
+            workflow_result("query", &args, &invalid).unwrap()["rx_text"],
+            Value::Null
+        );
+        let timeout =
+            workflow_result("query", &args, &timeout_terminal("424f4f5420524541", 8)).unwrap();
+        assert_eq!(timeout["partial_rx_text"], "BOOT REA");
+        assert_eq!(timeout["partial_rx_bytes"], 8);
+        assert_eq!(
+            workflow_result("receive", &args, &timeout_terminal("ff", 1)).unwrap()["partial_rx_text"],
+            Value::Null
+        );
+        assert!(
+            workflow_result(
+                "query",
+                &json!({"enable_rx_text": true, "fail_on_read_timeout": true}),
+                &timeout_terminal("42", 1)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rx_modes_validate_required_fields_and_forward_only_active_arguments() {
+        let delimiter = json!({
+            "receive_mode": "delimiter",
+            "delimiter_format": "text",
+            "delimiter_value": "\\r\\n",
+            "max_bytes": 64,
+            "enable_rx_text": true,
+        });
+        assert_eq!(
+            worker_arguments("receive", &delimiter).unwrap(),
+            json!({"receive_mode": "delimiter", "delimiter_hex": "0d0a", "max_bytes": 64})
+        );
+        let fixed = json!({
+            "tx_format": "text",
+            "tx_value": "GO",
+            "receive_mode": "fixed",
+            "expected_bytes": 4,
+            "max_bytes": 999,
+            "delimiter_format": "text",
+            "delimiter_value": "",
+        });
+        assert_eq!(
+            worker_arguments("query", &fixed).unwrap(),
+            json!({"tx_hex": "474f", "receive_mode": "fixed", "expected_bytes": 4})
+        );
+        let idle = json!({"receive_mode": "idle", "idle_gap_ms": 20, "max_bytes": 32});
+        assert_eq!(
+            worker_arguments("receive", &idle).unwrap(),
+            json!({"receive_mode": "idle", "idle_gap_ms": 20, "max_bytes": 32})
+        );
+        for bad in [
+            json!({"receive_mode": "fixed"}),
+            json!({"receive_mode": "fixed", "expected_bytes": 0}),
+            json!({"receive_mode": "fixed", "expected_bytes": 1.5}),
+            json!({"receive_mode": "idle"}),
+            json!({"receive_mode": "idle", "idle_gap_ms": 0}),
+            json!({"receive_mode": "unknown"}),
+            json!({"enable_rx_text": "true"}),
+        ] {
+            assert!(
+                validate_action("receive", &bad, &Default::default()).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(
+            validate_action(
+                "query",
+                &json!({"tx_format": "text", "tx_value": "GO", "receive_mode": "single"}),
+                &Default::default(),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            worker_arguments("receive", &json!({"max_bytes": 128})).unwrap(),
+            json!({"max_bytes": 128})
         );
     }
 

@@ -44,6 +44,7 @@ type StepOutputCandidate = {
   type: string
   target?: string
   action?: string
+  arguments?: Record<string, unknown>
   background_id?: string
   operation?: { kind: string; command?: string; source_step?: string }
 }
@@ -137,6 +138,14 @@ export function curatedResultFields(
   if (step?.type === 'tool-action') {
     const tool = instances.find(instance => instance.id === step.target)?.tool
     fields = ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []
+    if (tool === 'serial' && (step.action === 'receive' || step.action === 'query') &&
+      step.arguments?.enable_rx_text === true) {
+      fields = [
+        ...fields,
+        { label: "resultFields.rXText", pointer: '/rx_text', hint: "resultFields.rXTextHint" },
+        { label: "resultFields.partialRXText", pointer: '/partial_rx_text', hint: "resultFields.partialRXTextHint" },
+      ]
+    }
   } else if (step?.type === 'bg-interaction') {
     const background = backgrounds.find(item => item.id === step.background_id)
     const tool = instances.find(instance => instance.id === background?.tool_instance_id)?.tool

@@ -1,4 +1,8 @@
 export default {
+  "resultFields.rXText": "RX 文字（UTF-8）",
+  "resultFields.partialRXText": "部分 RX 文字（UTF-8）",
+  "resultFields.rXTextHint": "String 或 null：啟用 UTF-8 後，正常接收結果的文字內容；無效 UTF-8 為 null，原始 Bytes 仍保留。",
+  "resultFields.partialRXTextHint": "String 或 null：啟用 UTF-8 後，轉換 Read Timeout 的部分接收文字；資料可能不完整。",
   "resultFields.tXHex": "TX 資料（Hex 字串）",
   "resultFields.tXBytes": "TX 資料長度（Bytes）",
   "resultFields.fileBytes": "檔案大小（Bytes）",
