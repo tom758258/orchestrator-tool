@@ -742,6 +742,90 @@ mod tests {
     }
 
     #[test]
+    fn optional_utf8_rx_preserves_raw_bytes_and_decodes_partial_timeouts() {
+        let completed = json!({
+            "state": "succeeded",
+            "ok": true,
+            "error": null,
+            "result": {"rx_hex": "4f4be5a5bd0d0a", "rx_bytes": 7},
+        });
+        let args = json!({"enable_rx_text": true});
+        let result = workflow_result("receive", &args, &completed).unwrap();
+        assert_eq!(result["rx_text"], "OK好\\r\\n");
+        assert_eq!(result["rx_bytes"], 7);
+        assert_eq!(result["rx_hex"], "4f4be5a5bd0d0a");
+        assert!(workflow_result("receive", &json!({}), &completed).unwrap()
+            .get("rx_text").is_none());
+
+        let mut invalid = completed;
+        invalid["result"]["rx_hex"] = json!("00ffa5");
+        invalid["result"]["rx_bytes"] = json!(3);
+        assert_eq!(workflow_result("query", &args, &invalid).unwrap()["rx_text"], Value::Null);
+        let timeout = workflow_result("query", &args, &timeout_terminal("424f4f5420524541", 8))
+            .unwrap();
+        assert_eq!(timeout["partial_rx_text"], "BOOT REA");
+        assert_eq!(timeout["partial_rx_bytes"], 8);
+        assert_eq!(workflow_result("receive", &args, &timeout_terminal("ff", 1)).unwrap()
+            ["partial_rx_text"], Value::Null);
+        assert!(workflow_result(
+            "query",
+            &json!({"enable_rx_text": true, "fail_on_read_timeout": true}),
+            &timeout_terminal("42", 1)
+        ).is_err());
+    }
+
+    #[test]
+    fn rx_modes_validate_required_fields_and_forward_only_active_arguments() {
+        let delimiter = json!({
+            "receive_mode": "delimiter",
+            "delimiter_format": "text",
+            "delimiter_value": "\\r\\n",
+            "max_bytes": 64,
+            "enable_rx_text": true,
+        });
+        assert_eq!(
+            worker_arguments("receive", &delimiter).unwrap(),
+            json!({"receive_mode": "delimiter", "delimiter_hex": "0d0a", "max_bytes": 64})
+        );
+        let fixed = json!({
+            "tx_format": "text",
+            "tx_value": "GO",
+            "receive_mode": "fixed",
+            "expected_bytes": 4,
+            "max_bytes": 999,
+            "delimiter_format": "text",
+            "delimiter_value": "",
+        });
+        assert_eq!(
+            worker_arguments("query", &fixed).unwrap(),
+            json!({"tx_hex": "474f", "receive_mode": "fixed", "expected_bytes": 4})
+        );
+        let idle = json!({"receive_mode": "idle", "idle_gap_ms": 20, "max_bytes": 32});
+        assert_eq!(
+            worker_arguments("receive", &idle).unwrap(),
+            json!({"receive_mode": "idle", "idle_gap_ms": 20, "max_bytes": 32})
+        );
+        for bad in [
+            json!({"receive_mode": "fixed"}),
+            json!({"receive_mode": "fixed", "expected_bytes": 0}),
+            json!({"receive_mode": "fixed", "expected_bytes": 1.5}),
+            json!({"receive_mode": "idle"}),
+            json!({"receive_mode": "idle", "idle_gap_ms": 0}),
+            json!({"receive_mode": "unknown"}),
+            json!({"enable_rx_text": "true"}),
+        ] {
+            assert!(validate_action("receive", &bad, &Default::default()).is_err(), "{bad}");
+        }
+        assert!(validate_action(
+            "query",
+            &json!({"tx_format": "text", "tx_value": "GO", "receive_mode": "single"}),
+            &Default::default(),
+        ).is_err());
+        assert_eq!(worker_arguments("receive", &json!({"max_bytes": 128})).unwrap(),
+            json!({"max_bytes": 128}));
+    }
+
+    #[test]
     fn fail_on_read_timeout_is_validated_and_never_forwarded_to_worker() {
         let mut args = json!({"max_bytes": 32, "fail_on_read_timeout": false});
         assert_eq!(
