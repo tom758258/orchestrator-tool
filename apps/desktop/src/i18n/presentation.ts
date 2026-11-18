@@ -10,5 +10,5 @@ export function enumLabel(t: Translate, group: string, value: string): string {
 
 // Capitalize only labels shown for UI choices; keep enum values and diagnostics intact.
 export function optionLabel(t: Translate, group: string, value: string): string {
-  return enumLabel(t, group, value).replace(/^[a-z]/, letter => letter.toUpperCase())
+  return enumLabel(t, group, value).replace(/[a-z]/i, letter => letter.toUpperCase())
 }

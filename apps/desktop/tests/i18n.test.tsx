@@ -77,6 +77,8 @@ test('choice labels localize and capitalize English without changing enum values
     expect(optionLabel(zh, 'capability', value)).toBe(chinese)
   }
   expect(optionLabel(en, 'capability', 'custom_mode')).toBe('Custom_mode')
+  expect(optionLabel(en, 'capability', '10percent')).toBe('10Percent')
+  expect(optionLabel(en, 'capability', 'vpp')).toBe('Vp-p')
   expect(optionLabel(zh, 'capability', 'custom_mode')).toBe('Custom_mode')
   expect(enumLabel(en, 'status', 'running')).toBe('running')
   expect(translate('en', 'steps.scope.timebase-scale')).toBe('Scope Horizontal Scale')
