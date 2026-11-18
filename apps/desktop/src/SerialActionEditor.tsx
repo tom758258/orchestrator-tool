@@ -39,7 +39,11 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
     onChange({ ...step, arguments: args })
   }
   const hasTx = step.action === 'send' || step.action === 'query'
+  const hasRx = step.action === 'receive' || step.action === 'query'
+  const receiveMode = String(step.arguments.receive_mode ??
+    (step.action === 'receive' ? 'single' : 'delimiter'))
   return <div className="step-properties-fields">
+    <p className="value-source-help">{t(`serialActionEditor.stepHelp.${step.action}`)}</p>
     {hasTx && <>
       <label className="step-property-field">
         <span className="step-property-label">{t("serialActionEditor.tXFormat")}</span>
@@ -77,7 +81,20 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
         }}>{t("serialActionEditor.browseFile")}</button>
       <p className="value-source-help">{t("serialActionEditor.theAbsolutePathIsStoredInTheTemplateMissing")}</p>
     </>}
-    {step.action === 'query' && <>
+    {hasRx && <>
+      <label className="step-property-field">
+        <span className="step-property-label">{t("serialActionEditor.receiveMode")}</span>
+        <select aria-label={t("serialActionEditor.receiveMode")} disabled={disabled} value={receiveMode}
+          onChange={event => change('receive_mode', event.target.value)}>
+          {step.action === 'receive' && <option value="single">{t("serialActionEditor.mode.single")}</option>}
+          <option value="delimiter">{t("serialActionEditor.mode.delimiter")}</option>
+          <option value="fixed">{t("serialActionEditor.mode.fixed")}</option>
+          <option value="idle">{t("serialActionEditor.mode.idle")}</option>
+        </select>
+      </label>
+      <p className="value-source-help">{t(`serialActionEditor.modeHelp.${receiveMode}`)}</p>
+    </>}
+    {hasRx && receiveMode === 'delimiter' && <>
       <label className="step-property-field">
         <span className="step-property-label">{t("serialActionEditor.delimiterFormat")}</span>
         <select aria-label={t("serialActionEditor.delimiterFormat")} disabled={disabled}
@@ -95,7 +112,27 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
       </label>
       <p className="value-source-help">{t("serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN")}</p>
     </>}
-    {(step.action === 'receive' || step.action === 'query') && <>
+    {hasRx && receiveMode === 'fixed' && <>
+      <label className="step-property-field">
+        <span className="step-property-label">{t("serialActionEditor.expectedRXBytes")}</span>
+        <input type="number" min={1} max={1048576} step={1} disabled={disabled}
+          value={step.arguments.expected_bytes == null ? '' : String(step.arguments.expected_bytes)}
+          onChange={event => change('expected_bytes', event.currentTarget.value === ''
+            ? null : Number(event.currentTarget.value))} />
+      </label>
+      <p className="value-source-help">{t("serialActionEditor.expectedRXBytesHelp")}</p>
+    </>}
+    {hasRx && receiveMode === 'idle' && <>
+      <label className="step-property-field">
+        <span className="step-property-label">{t("serialActionEditor.idleGapMs")}</span>
+        <input type="number" min={1} step={1} disabled={disabled}
+          value={step.arguments.idle_gap_ms == null ? '' : String(step.arguments.idle_gap_ms)}
+          onChange={event => change('idle_gap_ms', event.currentTarget.value === ''
+            ? null : Number(event.currentTarget.value))} />
+      </label>
+      <p className="value-source-help">{t("serialActionEditor.idleGapHelp")}</p>
+    </>}
+    {hasRx && receiveMode !== 'fixed' && <>
       <label className="step-property-field">
         <span className="step-property-label">{t("serialActionEditor.maxBytes11048576")}</span>
         <input type="number" min={1} max={1048576} step={1} disabled={disabled}
@@ -105,10 +142,18 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
             if (Number.isInteger(value)) change('max_bytes', value)
           }} />
       </label>
-      <p className="value-source-help">{t(step.action === 'receive'
-        ? "serialActionEditor.receiveReadHelp" : "serialActionEditor.queryReadHelp")}</p>
+      <p className="value-source-help">{t("serialActionEditor.maxRXBytesHelp")}</p>
     </>}
-    {(step.action === 'receive' || step.action === 'query') && <>
+    {hasRx && <>
+      <label className="step-property-field step-property-checkbox">
+        <input type="checkbox" disabled={disabled}
+          checked={step.arguments.enable_rx_text === true}
+          onChange={event => change('enable_rx_text', event.target.checked)} />
+        <span className="step-property-label">{t("serialActionEditor.enableRXText")}</span>
+      </label>
+      <p className="value-source-help">{t("serialActionEditor.enableRXTextHelp")}</p>
+    </>}
+    {hasRx && <>
       <label className="step-property-field step-property-checkbox">
         <input type="checkbox" disabled={disabled}
           checked={step.arguments.fail_on_read_timeout === true}
