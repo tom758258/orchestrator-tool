@@ -1708,9 +1708,13 @@ textarea:disabled {
 
 .tool-setup-add-controls {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.tool-setup-add-instance-controls {
+  align-items: flex-end;
 }
 
 .tool-setup-tool-choice {

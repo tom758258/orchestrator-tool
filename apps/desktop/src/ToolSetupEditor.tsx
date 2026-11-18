@@ -707,7 +707,7 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
     </section>}
     <fieldset disabled={disabled || !tool}>
       <legend>{t("toolSetupEditor.addToolInstance")}</legend>
-      <div className="tool-setup-add-controls">
+      <div className="tool-setup-add-controls tool-setup-add-instance-controls">
       <div className="tool-setup-tool-choice">
       <label htmlFor="tool-instance-type" className="step-property-label">{t("toolSetupEditor.selectToolType")}</label>
       <select id="tool-instance-type" aria-label={t("toolSetupEditor.toolType")} value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
