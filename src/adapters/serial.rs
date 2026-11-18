@@ -751,7 +751,7 @@ mod tests {
         });
         let args = json!({"enable_rx_text": true});
         let result = workflow_result("receive", &args, &completed).unwrap();
-        assert_eq!(result["rx_text"], "OK好\\r\\n");
+        assert_eq!(result["rx_text"], "OK好\r\n");
         assert_eq!(result["rx_bytes"], 7);
         assert_eq!(result["rx_hex"], "4f4be5a5bd0d0a");
         assert!(workflow_result("receive", &json!({}), &completed).unwrap()
