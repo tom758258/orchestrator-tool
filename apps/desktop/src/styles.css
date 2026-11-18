@@ -356,8 +356,14 @@ body {
 }
 
 .section-header .tool-actions {
-  align-items: center;
+  align-items: flex-end;
   margin-top: 0;
+}
+
+.tool-action-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .workflow-summary {
@@ -1705,6 +1711,16 @@ textarea:disabled {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.tool-setup-add-instance-controls {
+  align-items: flex-end;
+}
+
+.tool-setup-tool-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .meters-setup-toggle {

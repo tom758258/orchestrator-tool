@@ -61,7 +61,7 @@ Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。
 Executable path 屬於 Tool Type，由同一 Tool Type 的所有 Tool Instances 共用；
 個別 Tool Instance 不會各自保存一份 executable path。
 
-在 **工具（Tools）** 的 **要加入的工具（Tool to add）** 選擇尚未配置的 Tool Type，按 **加入…（Add...）**，
+在 **工具（Tools）** 的 **選擇要加入的工具（Select tool to add）** 選擇尚未配置的 Tool Type，按 **加入工具（Add Tool）**，
 再選擇 external tool distribution 提供的真正 executable。Desktop 會在保存 path 前驗證 executable manifest，以及它
 是否符合預期 Tool Type 的 Worker compatibility。Tool ID 錯誤或 Worker 不相容
 的 path 會被拒絕，且不會取代原本有效的 path。取消 picker 不會變更設定。
@@ -104,7 +104,7 @@ Streaming 預設收合，Live Device 預設展開。展開 Background Streaming 
 成功執行 **新增範本（New Template）** 或 **開啟範本（Open Template）** 後恢復預設狀態，包含 External
 Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
 
-**新增工具實例（Add Tool Instance）** 只提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
+**新增工具實例（Add Tool Instance）** 透過 **工具類型（可下拉選擇）** 提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
 對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。
 
@@ -754,7 +754,7 @@ Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本�
   IF 分支跳過來源時 Get 會失敗，不會拿其他命令的結果替代。
 
 Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Binding 或 Output
-使用 Meters 的 `/value`：選擇 **Previous step result**、指定 Get Step，再填入
+使用 Meters 的 `/value`：選擇 **Previous step result**、指定 Get Step，再從 **結果** 選擇常用欄位；其他欄位可透過 **自訂指標…** 輸入
 **JSON Pointer**。BG Command 本身不提供資料輸出；Get Command Result 依來源
 Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
 事件。Custom 批次與 Scopes 不提供 Command／Result；Serial Command／Result
@@ -1357,7 +1357,7 @@ preference，不屬於 Template contract。
 
 ### Tool shows Not configured
 
-在 **工具（Tools）** 的 **要加入的工具（Tool to add）** 選擇 Tool Type，再使用 **加入…（Add...）** 配置正確的
+在 **工具（Tools）** 的 **選擇要加入的工具（Select tool to add）** 選擇 Tool Type，再使用 **加入工具（Add Tool）** 配置正確的
 external executable。
 
 ### Selected executable is rejected

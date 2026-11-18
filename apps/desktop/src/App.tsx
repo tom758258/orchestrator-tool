@@ -2372,13 +2372,15 @@ function App() {
           <div className="section-header">
             <h2>{t("app.externalTools")}</h2>
             <div className="tool-actions">
-              <label htmlFor="tool-to-add">{t("app.toolToAdd")}</label>
+              <div className="tool-action-choice">
+              <label className="step-property-label" htmlFor="tool-to-add">{t("app.toolToAdd")}</label>
               <select id="tool-to-add" value={selectedToolToAdd}
                 onChange={event => setToolToAdd(event.target.value)}
                 disabled={loading || toolConfigBusy !== null || workflowBusy || unconfiguredTools.length === 0}>
                 {unconfiguredTools.length === 0 && <option value="">{t("app.noToolsToAdd")}</option>}
                 {unconfiguredTools.map(tool => <option key={tool.tool_id} value={tool.tool_id}>{tool.tool_id}</option>)}
               </select>
+              </div>
               <button className="action-button" type="button"
                 disabled={loading || toolConfigBusy !== null || workflowBusy || !selectedToolToAdd}
                 onClick={() => { if (selectedToolToAdd) void handleBrowseToolExecutable(selectedToolToAdd) }}>
@@ -3190,7 +3192,7 @@ function App() {
                           timeFormat={selectedStep.type === 'output' ? selectedStep.time_format : undefined}
                           onTimeFormatChange={selectedStep.type === 'output' ? format => updateStep(selectedStep.id, step =>
                             step.type === 'output' ? { ...step, time_format: format } : step) : undefined}
-                          earlierSteps={earlierSteps}
+                          earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []}
                           instances={workflowDraft.tool_instances}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           earlierVariables={earlierVariables}
@@ -3207,7 +3209,7 @@ function App() {
                             allowBooleanLiteral
                             allowStringLiteral
                             side="Left" value={selectedStep.left}
-                            earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+                            earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
@@ -3228,7 +3230,7 @@ function App() {
                             allowBooleanLiteral
                             allowStringLiteral
                             side="Right" value={selectedStep.right}
-                            earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+                            earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
                             stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                             disabled={workflowBusy}
@@ -3317,7 +3319,7 @@ function App() {
 
                       {selectedToolAction && selectedAction?.startsWith('serial/') && (
                         <SerialActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
-                          earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
+                          earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           onChange={serialStep => updateStep(selectedToolAction.id, () => serialStep)} />
                       )}
@@ -3325,7 +3327,7 @@ function App() {
                         <ScopesActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
                           executionMode={executionMode} scopesExecutableKey={scopesExecutableKey}
                           modelId={executionMode === 'live' ? resourceIdentityDrafts[selectedToolAction.target]?.model_id : undefined}
-                          earlierSteps={earlierSteps} earlierVariables={earlierVariables} disabled={workflowBusy}
+                          earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           onChange={next => updateStep(selectedToolAction.id, () => next)} />
                       )}
@@ -3385,7 +3387,7 @@ function App() {
                                   literalLabel={`${label} (${name === 'voltage' ? 'V' : 'A'})`}
                                   literalDefault={powerSetpointLiteralDefault(selectedToolAction, name)}
                                   numericSetpoint
-                                  earlierSteps={earlierSteps}
+                                  earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []}
                                   instances={workflowDraft.tool_instances}
                                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                                   earlierVariables={earlierVariables}

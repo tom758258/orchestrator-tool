@@ -106,6 +106,60 @@ test('Serial read results expose timeout and partial RX pointers', () => {
   }
 })
 
+
+test('Background Get Latest and Wait Next offer actual tool result fields', () => {
+  const devices = [...instances, { id: 'serial-1', tool: 'serial' }, { id: 'scope-1', tool: 'scopes' }]
+  const backgrounds = [
+    { id: 'meter-bg', tool_instance_id: 'meter-1' },
+    { id: 'serial-bg', tool_instance_id: 'serial-1' },
+    { id: 'scope-bg', tool_instance_id: 'scope-1', scopes_measurements: [{ id: 'ch1_frequency' }, { id: 'ch2_vpp' }] },
+  ]
+  const get = (id, background_id, kind = 'get-latest') => ({
+    type: 'bg-interaction', id, background_id, operation: { kind },
+  })
+  const meter = get('latest-meter', 'meter-bg')
+  assert.deepEqual(curatedResultFields(meter, devices, english, backgrounds).map(field => field.label),
+    ['Value', 'Unit'])
+  assert.equal(stepOutputReference(meter, devices, backgrounds).pointer, '/value')
+  const serial = get('next-serial', 'serial-bg', 'wait-next')
+  assert.deepEqual(curatedResultFields(serial, devices, english, backgrounds).map(field => field.pointer),
+    ['/rx_hex', '/rx_bytes'])
+  assert.equal(stepOutputReference(serial, devices, backgrounds).pointer, '/rx_hex')
+  const scope = get('latest-scope', 'scope-bg')
+  assert.deepEqual(curatedResultFields(scope, devices, english, backgrounds).map(field => field.pointer), [
+    '/values/ch1_frequency/value', '/values/ch1_frequency/valid', '/values/ch1_frequency/unit',
+    '/values/ch2_vpp/value', '/values/ch2_vpp/valid', '/values/ch2_vpp/unit',
+  ])
+  assert.equal(stepOutputReference(scope, devices, backgrounds).pointer, '/values/ch1_frequency/value')
+  assert.deepEqual(curatedResultFields(get('unknown', 'missing'), devices, english, backgrounds), [])
+})
+
+test('Background Get Command Result respects source command and nested native payload', () => {
+  const devices = [...instances, { id: 'serial-1', tool: 'serial' }]
+  const backgrounds = [{ id: 'serial-bg', tool_instance_id: 'serial-1' }, { id: 'meter-bg', tool_instance_id: 'meter-1' }]
+  const source = (id, background_id, command) => ({
+    type: 'bg-interaction', id, background_id, operation: { kind: 'command', command },
+  })
+  const get = (background_id, source_step) => ({
+    type: 'bg-interaction', id: 'get-result', background_id,
+    operation: { kind: 'get-command-result', source_step },
+  })
+  const send = source('send', 'serial-bg', 'serial-send')
+  const file = source('file', 'serial-bg', 'serial-send-file')
+  const trigger = source('trigger', 'meter-bg', 'software-trigger')
+  assert.deepEqual(curatedResultFields(get('serial-bg', 'send'), devices, english, backgrounds, [send])
+    .map(field => field.pointer), ['/result/tx_hex', '/result/tx_bytes'])
+  assert.deepEqual(curatedResultFields(get('serial-bg', 'file'), devices, english, backgrounds, [file])
+    .map(field => field.pointer), ['/result/file_bytes', '/result/bytes_written'])
+  assert.deepEqual(curatedResultFields(get('meter-bg', 'trigger'), devices, english, backgrounds, [trigger])
+    .map(field => field.pointer), ['/value', '/unit'])
+  assert.equal(stepOutputReference(get('serial-bg', 'file'), devices, backgrounds, [file]).pointer, '/result/file_bytes')
+  assert.deepEqual(curatedResultFields(get('serial-bg', 'trigger'), devices, english, backgrounds, [trigger]), [])
+  assert.deepEqual(curatedResultFields(get('serial-bg', 'absent'), devices, english, backgrounds, [send]), [])
+  assert.equal(resultSelection('/result/private',
+    curatedResultFields(get('serial-bg', 'send'), devices, english, backgrounds, [send])), CUSTOM_RESULT)
+})
+
 test('known and custom pointers select without rewriting the pointer', () => {
   const fields = curatedResultFields(powerSetOutput, instances)
   assert.equal(resultSelection('/request/arguments/channel', fields), '/request/arguments/channel')

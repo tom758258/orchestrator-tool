@@ -707,11 +707,14 @@ export default function ToolSetupEditor({ value, configuredToolTypes, steps, onC
     </section>}
     <fieldset disabled={disabled || !tool}>
       <legend>{t("toolSetupEditor.addToolInstance")}</legend>
-      <div className="tool-setup-add-controls">
-      <select aria-label={t("toolSetupEditor.toolType")} value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
+      <div className="tool-setup-add-controls tool-setup-add-instance-controls">
+      <div className="tool-setup-tool-choice">
+      <label htmlFor="tool-instance-type" className="step-property-label">{t("toolSetupEditor.selectToolType")}</label>
+      <select id="tool-instance-type" aria-label={t("toolSetupEditor.toolType")} value={tool} onChange={event => setTool(event.target.value as ToolInstance['tool'])}>
         {!tool && <option value="">{t("toolSetupEditor.noConfiguredTools")}</option>}
         {configuredToolTypes.map(type => <option key={type} value={type}>{type}</option>)}
       </select>
+      </div>
       <button type="button" className="action-button" onClick={() => {
         if (!tool) return
         let n = 1

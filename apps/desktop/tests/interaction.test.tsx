@@ -64,6 +64,26 @@ test('Binding and Output value editor can select native Get results and their JS
   }
 })
 
+test('Background Meters Get result uses the existing Value and Unit dropdown', () => {
+  const latest: InteractionStep = { ...command('latest'), operation: { kind: 'get-latest' } }
+  function Editor() {
+    const [value, setValue] = useState<InputValueWire>({
+      source: 'step-output', step_id: 'latest', pointer: '/value',
+    })
+    return <InputValueEditor value={value} onChange={setValue} earlierSteps={[latest]}
+      instances={[{ id: 'meter-1', tool: 'meters', setup: {} } as ToolInstance]}
+      backgrounds={[{ id: 'bg', tool_instance_id: 'meter-1', live_monitor: false, limit_count: 3 }]}
+      earlierVariables={[]} stepLabel={step => step.id} disabled={false} />
+  }
+  render(<Editor />)
+  const result = screen.getByLabelText('Result') as HTMLSelectElement
+  expect(Array.from(result.options).map(option => option.textContent)).toEqual(['Value', 'Unit', 'Custom pointer...'])
+  expect(result.value).toBe('/value')
+  fireEvent.change(result, { target: { value: '/unit' } })
+  expect(result.value).toBe('/unit')
+  expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
+})
+
 test('Result editor offers earlier same-Background commands in legal Loop scopes', () => {
   const get: InteractionStep = { type: 'bg-interaction', id: 'get', background_id: 'bg', timeout_ms: null, operation: { kind: 'get-command-result', source_step: '' } }
   const steps: WorkflowStep[] = [command('outer'), command('other-background', 'other'),

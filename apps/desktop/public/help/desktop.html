@@ -89,8 +89,8 @@ Workflow actions described below.</p>
 <p>Executable paths belong to a Tool Type. They are shared by all Tool Instances
 of that type; an individual Tool Instance does not store its own executable
 path.</p>
-<p>In <strong>Tools</strong>, select an unconfigured Tool Type under <strong>Tool to add</strong>, choose
-<strong>Add...</strong>, and select the actual executable supplied by the external tool
+<p>In <strong>Tools</strong>, select an unconfigured Tool Type under <strong>Select tool to add</strong>, choose
+<strong>Add Tool</strong>, and select the actual executable supplied by the external tool
 distribution. Desktop validates the executable's manifest
 and Worker compatibility for the expected Tool Type before saving the path. A
 path with the wrong Tool ID or incompatible Worker is rejected, and an
@@ -132,7 +132,7 @@ Unsupported Tool Types keep this checkbox disabled and show an explanation.</p>
 collapsing an outer instance. Successful <strong>New Template</strong> or <strong>Open Template</strong>
 restores the default states, including External Tools cards. These UI states
 are not saved in the Template or local settings.</p>
-<p><strong>Add Tool Instance</strong> offers only Tool Types configured in Tools, including
+<p><strong>Add Tool Instance</strong> has a <strong>Tool type (select from list)</strong> dropdown that offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
 is not locally configured, with a warning that disappears after configuration.</p>
@@ -828,7 +828,7 @@ automatically. Capture may remain OFF.</p>
 </ul>
 <p>Get Steps expose the complete native event as Step Output, for example Meters
 <code>/value</code> in an existing Binding or Output: choose <strong>Previous step result</strong>, select
-the Get Step, then enter its <strong>JSON Pointer</strong>. BG Command itself supplies no data
+the Get Step, then choose a common field under <strong>Result</strong>, or use <strong>Custom pointer...</strong> to enter a <strong>JSON Pointer</strong>. BG Command itself supplies no data
 output; Get Command Result resolves its invocation internally by source Step.
 Latest/Next also support existing
 Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
@@ -1455,7 +1455,7 @@ theme choice is a Desktop preference. It is not part of the Template
 contract.</p>
 <h2 id="14-common-problems">14. Common problems</h2>
 <h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
-<p>In <strong>Tools</strong>, select the Tool Type under <strong>Tool to add</strong> and use <strong>Add...</strong> to
+<p>In <strong>Tools</strong>, select the Tool Type under <strong>Select tool to add</strong> and use <strong>Add Tool</strong> to
 configure the correct external executable.</p>
 <h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
 <p>The executable may have the wrong manifest Tool ID or an incompatible Worker.
