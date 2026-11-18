@@ -1,4 +1,8 @@
 export default {
+  "resultFields.rXText": "RX Text (UTF-8)",
+  "resultFields.partialRXText": "Partial RX Text (UTF-8)",
+  "resultFields.rXTextHint": "String or null — UTF-8 decoded RX for completed reads when enabled. Invalid UTF-8 returns null; raw RX bytes remain available.",
+  "resultFields.partialRXTextHint": "String or null — UTF-8 decoded partial RX on a converted Read Timeout when enabled; the response is incomplete.",
   "resultFields.tXHex": "TX Data (Hex String)",
   "resultFields.tXBytes": "TX Length (Bytes)",
   "resultFields.fileBytes": "File Size (Bytes)",
