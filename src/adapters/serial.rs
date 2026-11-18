@@ -269,12 +269,14 @@ pub fn validate_action(
         }
     }
     let rx_mode = if matches!(action, "receive" | "query") {
-        let default = if action == "receive" { "single" } else { "delimiter" };
+        let default = if action == "receive" {
+            "single"
+        } else {
+            "delimiter"
+        };
         let mode = match obj.get("receive_mode") {
             None => default,
-            Some(value) => value
-                .as_str()
-                .ok_or("receive_mode must be a String")?,
+            Some(value) => value.as_str().ok_or("receive_mode must be a String")?,
         };
         if !matches!(mode, "single" | "delimiter" | "fixed" | "idle")
             || (action == "query" && mode == "single")
@@ -470,7 +472,11 @@ pub(crate) fn worker_arguments(action: &str, arguments: &Value) -> Result<Value,
         let mode = arguments
             .get("receive_mode")
             .and_then(Value::as_str)
-            .unwrap_or(if action == "receive" { "single" } else { "delimiter" });
+            .unwrap_or(if action == "receive" {
+                "single"
+            } else {
+                "delimiter"
+            });
         if arguments.get("receive_mode").is_some() {
             worker_args.insert("receive_mode".into(), Value::String(mode.into()));
         }
@@ -531,13 +537,16 @@ fn decode_rx_text(hex: &str) -> Result<Value, String> {
     }
     let bytes: Vec<u8> = hex
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
-            u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16)
-                .expect("validated hex pair")
+            u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).expect("validated hex pair")
         })
         .collect();
-    Ok(String::from_utf8(bytes).map(Value::String).unwrap_or(Value::Null))
+    Ok(String::from_utf8(bytes)
+        .map(Value::String)
+        .unwrap_or(Value::Null))
 }
 
 /// Only confirmed ordinary read timeouts can become successful Workflow Steps.
@@ -555,7 +564,9 @@ fn workflow_result(action: &str, arguments: &Value, terminal: &Value) -> Result<
             result["timed_out"] = Value::Bool(false);
             if arguments["enable_rx_text"] == true {
                 let rx_text = decode_rx_text(
-                    result["rx_hex"].as_str().ok_or("Serial RX hex is missing")?
+                    result["rx_hex"]
+                        .as_str()
+                        .ok_or("Serial RX hex is missing")?,
                 )?;
                 result["rx_text"] = rx_text;
             }
@@ -754,24 +765,36 @@ mod tests {
         assert_eq!(result["rx_text"], "OK好\r\n");
         assert_eq!(result["rx_bytes"], 7);
         assert_eq!(result["rx_hex"], "4f4be5a5bd0d0a");
-        assert!(workflow_result("receive", &json!({}), &completed).unwrap()
-            .get("rx_text").is_none());
+        assert!(
+            workflow_result("receive", &json!({}), &completed)
+                .unwrap()
+                .get("rx_text")
+                .is_none()
+        );
 
         let mut invalid = completed;
         invalid["result"]["rx_hex"] = json!("00ffa5");
         invalid["result"]["rx_bytes"] = json!(3);
-        assert_eq!(workflow_result("query", &args, &invalid).unwrap()["rx_text"], Value::Null);
-        let timeout = workflow_result("query", &args, &timeout_terminal("424f4f5420524541", 8))
-            .unwrap();
+        assert_eq!(
+            workflow_result("query", &args, &invalid).unwrap()["rx_text"],
+            Value::Null
+        );
+        let timeout =
+            workflow_result("query", &args, &timeout_terminal("424f4f5420524541", 8)).unwrap();
         assert_eq!(timeout["partial_rx_text"], "BOOT REA");
         assert_eq!(timeout["partial_rx_bytes"], 8);
-        assert_eq!(workflow_result("receive", &args, &timeout_terminal("ff", 1)).unwrap()
-            ["partial_rx_text"], Value::Null);
-        assert!(workflow_result(
-            "query",
-            &json!({"enable_rx_text": true, "fail_on_read_timeout": true}),
-            &timeout_terminal("42", 1)
-        ).is_err());
+        assert_eq!(
+            workflow_result("receive", &args, &timeout_terminal("ff", 1)).unwrap()["partial_rx_text"],
+            Value::Null
+        );
+        assert!(
+            workflow_result(
+                "query",
+                &json!({"enable_rx_text": true, "fail_on_read_timeout": true}),
+                &timeout_terminal("42", 1)
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -814,15 +837,23 @@ mod tests {
             json!({"receive_mode": "unknown"}),
             json!({"enable_rx_text": "true"}),
         ] {
-            assert!(validate_action("receive", &bad, &Default::default()).is_err(), "{bad}");
+            assert!(
+                validate_action("receive", &bad, &Default::default()).is_err(),
+                "{bad}"
+            );
         }
-        assert!(validate_action(
-            "query",
-            &json!({"tx_format": "text", "tx_value": "GO", "receive_mode": "single"}),
-            &Default::default(),
-        ).is_err());
-        assert_eq!(worker_arguments("receive", &json!({"max_bytes": 128})).unwrap(),
-            json!({"max_bytes": 128}));
+        assert!(
+            validate_action(
+                "query",
+                &json!({"tx_format": "text", "tx_value": "GO", "receive_mode": "single"}),
+                &Default::default(),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            worker_arguments("receive", &json!({"max_bytes": 128})).unwrap(),
+            json!({"max_bytes": 128})
+        );
     }
 
     #[test]
