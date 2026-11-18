@@ -264,6 +264,11 @@ test('Scopes Screenshot preserves unsupported saved values on missing models and
   const option = elements(control(view, 'Image Format')).find(node => node.type === 'option' && node.props.value === 'legacy-format')
   assert.equal(option.props.disabled, true)
   assert.equal(option.props.children, 'Legacy-format')
+  const numericProps = { ...props, step: { ...props.step, arguments: { ...props.step.arguments, format: '10legacy' } } }
+  const numericView = render(numericProps)
+  const numericOption = elements(control(numericView, 'Image Format')).find(node => node.type === 'option' && node.props.value === '10legacy')
+  assert.equal(numericOption.props.disabled, true)
+  assert.equal(numericOption.props.children, '10Legacy')
   const next = { ...props, modelId: caps.model_id }
   render(next); await settle()
   view = render(next)
