@@ -44,7 +44,14 @@ type StepOutputCandidate = {
   type: string
   target?: string
   action?: string
-  operation?: { kind: string }
+  background_id?: string
+  operation?: { kind: string; command?: string; source_step?: string }
+}
+
+type BackgroundIdentity = {
+  id: string
+  tool_instance_id: string
+  scopes_measurements?: readonly { id: string }[]
 }
 
 type ToolIdentity = {
@@ -114,14 +121,53 @@ export function stepOutputCandidates<T extends StepOutputCandidate>(steps: reado
   ))
 }
 
+const BACKGROUND_SAMPLE_FIELDS = {
+  meters: ACTION_RESULT_FIELDS['meters/measure'],
+  serial: ACTION_RESULT_FIELDS['serial/receive'].slice(0, 2).map(({ label, pointer }) => ({ label, pointer })),
+} as const
+
 export function curatedResultFields(
   step: StepOutputCandidate | undefined,
   instances: readonly ToolIdentity[],
   t: Translate = english,
+  backgrounds: readonly BackgroundIdentity[] = [],
+  earlierSteps: readonly StepOutputCandidate[] = [],
 ): readonly CuratedResultField[] {
-  if (step?.type !== 'tool-action') return []
-  const tool = instances.find(instance => instance.id === step.target)?.tool
-  return (ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []).map(field => ({ ...field, label: t(field.label), ...(field.hint && { hint: t(field.hint) }) }))
+  let fields: readonly CuratedResultField[] = []
+  if (step?.type === 'tool-action') {
+    const tool = instances.find(instance => instance.id === step.target)?.tool
+    fields = ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []
+  } else if (step?.type === 'bg-interaction') {
+    const background = backgrounds.find(item => item.id === step.background_id)
+    const tool = instances.find(instance => instance.id === background?.tool_instance_id)?.tool
+    const kind = step.operation?.kind
+    if (kind === 'get-latest' || kind === 'wait-next') {
+      if (tool === 'meters' || tool === 'serial') {
+        fields = BACKGROUND_SAMPLE_FIELDS[tool]
+      } else if (tool === 'scopes') {
+        return (background?.scopes_measurements ?? []).flatMap(measurement => [
+          { label: `${measurement.id} · ${t('resultFields.value')}`, pointer: `/values/${measurement.id}/value` },
+          { label: `${measurement.id} · ${t('resultFields.valid')}`, pointer: `/values/${measurement.id}/valid` },
+          { label: `${measurement.id} · ${t('resultFields.unit')}`, pointer: `/values/${measurement.id}/unit` },
+        ])
+      }
+    } else if (kind === 'get-command-result') {
+      const source = earlierSteps.find(item => item.id === step.operation?.source_step)
+      if (source?.type === 'bg-interaction' && source.background_id === step.background_id &&
+        source.operation?.kind === 'command') {
+        if (tool === 'meters' && source.operation.command === 'software-trigger') {
+          fields = BACKGROUND_SAMPLE_FIELDS.meters
+        } else if (tool === 'serial') {
+          const action = source.operation.command === 'serial-send' ? 'serial/send'
+            : source.operation.command === 'serial-send-file' ? 'serial/send-file' : null
+          fields = action ? (ACTION_RESULT_FIELDS[action] ?? []).map(field => ({
+            ...field, pointer: `/result${field.pointer}`,
+          })) : []
+        }
+      }
+    }
+  }
+  return fields.map(field => ({ ...field, label: t(field.label), ...(field.hint && { hint: t(field.hint) }) }))
 }
 
 export function resultSelection(pointer: string, fields: readonly CuratedResultField[]): string {
@@ -131,11 +177,13 @@ export function resultSelection(pointer: string, fields: readonly CuratedResultF
 export function stepOutputReference(
   step: StepOutputCandidate,
   instances: readonly ToolIdentity[],
+  backgrounds: readonly BackgroundIdentity[] = [],
+  earlierSteps: readonly StepOutputCandidate[] = [],
 ): Extract<ExpressionOperandWire, { source: 'step-output' }> {
   return {
     source: 'step-output',
     step_id: step.id,
-    pointer: curatedResultFields(step, instances)[0]?.pointer ?? '',
+    pointer: curatedResultFields(step, instances, english, backgrounds, earlierSteps)[0]?.pointer ?? '',
   }
 }
 

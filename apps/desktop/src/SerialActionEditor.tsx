@@ -3,12 +3,12 @@ import { open } from '@tauri-apps/plugin-dialog'
 import InputValueEditor from './InputValueEditor'
 import type { InputValueWire } from './inputValue'
 import type { ToolInstance } from './ToolSetupEditor'
-import type { ToolActionStep, WorkflowStep } from './workflow'
+import type { BackgroundConfig, ToolActionStep, WorkflowStep } from './workflow'
 
 /** Editor only: Serial encoding and job validation are owned by Core. */
-export default function SerialActionEditor({ step, instances, earlierSteps, earlierVariables,
+export default function SerialActionEditor({ step, instances, backgrounds, earlierSteps, earlierVariables,
   disabled, onChange, stepLabel }: {
-  step: ToolActionStep; instances: ToolInstance[]; earlierSteps: WorkflowStep[]
+  step: ToolActionStep; instances: ToolInstance[]; backgrounds?: readonly BackgroundConfig[]; earlierSteps: WorkflowStep[]
   earlierVariables: string[]; disabled: boolean
   onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
 }) {
@@ -61,7 +61,7 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
         numericCalculation={txFormat === 'hex-byte'}
         sourceLabel={t("serialActionEditor.tXSource")} literalLabel={t("serialActionEditor.tXValue")}
         earlierSteps={earlierSteps} earlierVariables={earlierVariables}
-        instances={instances} stepLabel={stepLabel} disabled={disabled}
+        instances={instances} backgrounds={backgrounds} stepLabel={stepLabel} disabled={disabled}
         onChange={updateTx} />
     </>}
     {step.action === 'send-file' && <>
@@ -95,15 +95,19 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
       </label>
       <p className="value-source-help">{t("serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN")}</p>
     </>}
-    {(step.action === 'receive' || step.action === 'query') && <label className="step-property-field">
-      <span className="step-property-label">{t("serialActionEditor.maxBytes11048576")}</span>
-      <input type="number" min={1} max={1048576} step={1} disabled={disabled}
-        value={Number(step.arguments.max_bytes ?? 1024)}
-        onChange={event => {
-          const value = event.currentTarget.valueAsNumber
-          if (Number.isInteger(value)) change('max_bytes', value)
-        }} />
-    </label>}
+    {(step.action === 'receive' || step.action === 'query') && <>
+      <label className="step-property-field">
+        <span className="step-property-label">{t("serialActionEditor.maxBytes11048576")}</span>
+        <input type="number" min={1} max={1048576} step={1} disabled={disabled}
+          value={Number(step.arguments.max_bytes ?? 1024)}
+          onChange={event => {
+            const value = event.currentTarget.valueAsNumber
+            if (Number.isInteger(value)) change('max_bytes', value)
+          }} />
+      </label>
+      <p className="value-source-help">{t(step.action === 'receive'
+        ? "serialActionEditor.receiveReadHelp" : "serialActionEditor.queryReadHelp")}</p>
+    </>}
     {(step.action === 'receive' || step.action === 'query') && <>
       <label className="step-property-field step-property-checkbox">
         <input type="checkbox" disabled={disabled}
@@ -112,7 +116,6 @@ export default function SerialActionEditor({ step, instances, earlierSteps, earl
         <span className="step-property-label">{t("serialActionEditor.failOnReadTimeout")}</span>
       </label>
       <p className="value-source-help">{t("serialActionEditor.failOnReadTimeoutHelp")}</p>
-      <p className="value-source-help">{t("serialActionEditor.rxResultHelp")}</p>
     </>}
   </div>
 }

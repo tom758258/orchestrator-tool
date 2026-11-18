@@ -82,7 +82,7 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
         key={step.id} step={{ type: 'tool-action', id: step.id, target: instanceId ?? '',
           action: operation.command === 'serial-send' ? 'send' : 'send-file', arguments: operation.arguments,
           ...(operation.bindings ? { bindings: operation.bindings } : {}) }}
-        instances={instances} earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+        instances={instances} backgrounds={backgrounds} earlierSteps={earlierSteps} earlierVariables={earlierVariables}
         disabled={disabled || !supported} stepLabel={value => value.id}
         onChange={value => onChange({ ...step, operation: { ...operation, arguments: value.arguments,
           bindings: value.bindings } })} />}

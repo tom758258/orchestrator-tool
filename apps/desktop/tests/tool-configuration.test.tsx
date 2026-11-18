@@ -445,11 +445,15 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   await screen.findByRole('button', { name: 'Expand serial details' })
   tab('Workflow')
   click('Step 1: Serial Query, query-1')
+  expect(screen.getByText('Max RX Bytes is a limit, not a required length. Query reads until the configured RX delimiter.')).toBeTruthy()
+  expect(screen.queryByText(/Receive reads once and does not wait to fill the limit/)).toBeNull()
   const queryFlag = screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement
   expect(queryFlag.checked).toBe(false)
   fireEvent.click(queryFlag)
   expect(queryFlag.checked).toBe(true)
   click('Step 2: Serial Receive, receive-1')
+  expect(screen.getByText('Max RX Bytes is a limit, not a required length. Receive reads once and does not wait to fill the limit.')).toBeTruthy()
+  expect(screen.queryByText(/Query reads until the configured RX delimiter/)).toBeNull()
   expect((screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement).checked).toBe(false)
 
   click('Step 3: Assert, assert-1')

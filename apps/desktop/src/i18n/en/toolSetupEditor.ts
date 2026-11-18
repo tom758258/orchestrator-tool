@@ -129,6 +129,7 @@ export default {
   "toolSetupEditor.toolInstanceSummary": "Tool Instance Summary",
   "toolSetupEditor.addToolInstance": "Add Tool Instance",
   "toolSetupEditor.toolType": "Tool type",
+  "toolSetupEditor.selectToolType": "Tool type (select from list)",
   "toolSetupEditor.noConfiguredTools": "No configured tools",
   "toolSetupEditor.configureAnExternalToolInToolsBeforeAddingA": "Configure an external tool in Tools before adding a Tool Instance.",
   "toolSetupEditor.instanceID": "Instance ID: ",

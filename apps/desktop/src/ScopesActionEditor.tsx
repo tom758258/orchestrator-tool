@@ -7,11 +7,11 @@ import type { ExecutionMode } from './executionMode'
 import type { ScopesCapabilities } from './scopesSetup'
 import type { InputValueWire } from './inputValue'
 import type { ToolInstance } from './ToolSetupEditor'
-import type { ToolActionStep, WorkflowStep } from './workflow'
+import type { BackgroundConfig, ToolActionStep, WorkflowStep } from './workflow'
 
-export default function ScopesActionEditor({ step, instances, earlierSteps, earlierVariables, disabled, onChange, stepLabel,
+export default function ScopesActionEditor({ step, instances, backgrounds, earlierSteps, earlierVariables, disabled, onChange, stepLabel,
   executionMode, modelId, scopesExecutableKey }: {
-  step: ToolActionStep; instances: ToolInstance[]; earlierSteps: WorkflowStep[]; earlierVariables: string[]
+  step: ToolActionStep; instances: ToolInstance[]; backgrounds?: readonly BackgroundConfig[]; earlierSteps: WorkflowStep[]; earlierVariables: string[]
   disabled: boolean; onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
   executionMode: ExecutionMode; modelId: string | null | undefined; scopesExecutableKey: string
 }) {
@@ -105,7 +105,7 @@ export default function ScopesActionEditor({ step, instances, earlierSteps, earl
     value={step.bindings?.[key] ?? { source: 'literal', value: step.arguments[key] as number ?? fallback }}
     numericSetpoint
     sourceLabel={t("inputValueEditor.namedSource", { label })} literalLabel={label} literalDefault={fallback}
-    earlierSteps={earlierSteps} earlierVariables={earlierVariables} instances={instances} stepLabel={stepLabel} disabled={disabled}
+    earlierSteps={earlierSteps} earlierVariables={earlierVariables} instances={instances} backgrounds={backgrounds} stepLabel={stepLabel} disabled={disabled}
     onChange={(value: InputValueWire) => {
       const bindings = { ...step.bindings }
       const arguments_ = { ...step.arguments }

@@ -21,11 +21,13 @@ import {
 } from './inputValue'
 import type { CuratedResultField, ExpressionOperandWire, InputValueWire } from './inputValue'
 import type { WorkflowStep } from './App'
+import type { BackgroundConfig } from './workflow'
 import type { ToolInstance } from './ToolSetupEditor'
 
 type ReferenceOptions = {
   earlierSteps: readonly WorkflowStep[]
   instances: readonly ToolInstance[]
+  backgrounds?: readonly BackgroundConfig[]
   stepLabel: (step: WorkflowStep) => string
   earlierVariables: readonly string[]
   disabled: boolean
@@ -82,7 +84,7 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   )
 }
 
-function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds = [], stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
   const { t } = useI18n()
   switch (value.source) {
     case 'literal':
@@ -147,7 +149,7 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
     case 'step-output': {
       const candidates = stepOutputCandidates(earlierSteps)
       const previousStep = earlierSteps.find((step) => step.id === value.step_id)
-      const fields = curatedResultFields(previousStep, instances, t)
+      const fields = curatedResultFields(previousStep, instances, t, backgrounds, earlierSteps)
       return (
         <>
           <label className="step-property-field">
@@ -156,7 +158,7 @@ function OperandEditor({ value, onChange, earlierSteps, instances, stepLabel, ea
               disabled={disabled || candidates.length === 0}
               onChange={(event) => {
                 const step = candidates.find(candidate => candidate.id === event.target.value)
-                if (step) onChange(stepOutputReference(step, instances))
+                if (step) onChange(stepOutputReference(step, instances, backgrounds, earlierSteps))
               }}>
               <option value="" disabled>{t("inputValueEditor.selectAnEarlierStep")}</option>
               {candidates.map((step) => <option key={step.id} value={step.id}>{stepLabel(step)} ({step.id})</option>)}
@@ -188,7 +190,7 @@ function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false
 function defaultOperand(source: string, references: ReferenceOptions, literal: number | string = 0): ExpressionOperandWire {
   switch (source) {
     case 'variable': return { source, variable: references.earlierVariables[0] }
-    case 'step-output': return stepOutputReference(stepOutputCandidates(references.earlierSteps)[0], references.instances)
+    case 'step-output': return stepOutputReference(stepOutputCandidates(references.earlierSteps)[0], references.instances, references.backgrounds, references.earlierSteps)
     default: return { source: 'literal', value: literal }
   }
 }

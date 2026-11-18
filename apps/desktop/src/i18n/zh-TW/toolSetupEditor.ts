@@ -129,6 +129,7 @@ export default {
   "toolSetupEditor.toolInstanceSummary": "工具實例摘要",
   "toolSetupEditor.addToolInstance": "新增工具實例",
   "toolSetupEditor.toolType": "工具類型",
+  "toolSetupEditor.selectToolType": "工具類型（可下拉選擇）",
   "toolSetupEditor.noConfiguredTools": "尚未設定工具",
   "toolSetupEditor.configureAnExternalToolInToolsBeforeAddingA": "新增工具實例前，請先在工具頁設定外部工具。",
   "toolSetupEditor.instanceID": "實例 ID： ",

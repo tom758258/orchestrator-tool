@@ -72,8 +72,8 @@ Executable paths belong to a Tool Type. They are shared by all Tool Instances
 of that type; an individual Tool Instance does not store its own executable
 path.
 
-In **Tools**, select an unconfigured Tool Type under **Tool to add**, choose
-**Add...**, and select the actual executable supplied by the external tool
+In **Tools**, select an unconfigured Tool Type under **Select tool to add**, choose
+**Add Tool**, and select the actual executable supplied by the external tool
 distribution. Desktop validates the executable's manifest
 and Worker compatibility for the expected Tool Type before saving the path. A
 path with the wrong Tool ID or incompatible Worker is rejected, and an
@@ -124,7 +124,7 @@ collapsing an outer instance. Successful **New Template** or **Open Template**
 restores the default states, including External Tools cards. These UI states
 are not saved in the Template or local settings.
 
-**Add Tool Instance** offers only Tool Types configured in Tools, including
+**Add Tool Instance** has a **Tool type (select from list)** dropdown that offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
 is not locally configured, with a warning that disappears after configuration.
@@ -887,7 +887,7 @@ automatically. Capture may remain OFF.
 
 Get Steps expose the complete native event as Step Output, for example Meters
 `/value` in an existing Binding or Output: choose **Previous step result**, select
-the Get Step, then enter its **JSON Pointer**. BG Command itself supplies no data
+the Get Step, then choose a common field under **Result**, or use **Custom pointer...** to enter a **JSON Pointer**. BG Command itself supplies no data
 output; Get Command Result resolves its invocation internally by source Step.
 Latest/Next also support existing
 Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
@@ -1610,7 +1610,7 @@ contract.
 
 ### Tool shows Not configured
 
-In **Tools**, select the Tool Type under **Tool to add** and use **Add...** to
+In **Tools**, select the Tool Type under **Select tool to add** and use **Add Tool** to
 configure the correct external executable.
 
 ### Selected executable is rejected
