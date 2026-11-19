@@ -36,6 +36,7 @@ test('Chart Settings treats uncommitted Elapsed X bounds as raw seconds', () => 
       { type: 'output', id: 'elapsed', name: 'Elapsed', page: 'A',
         value: { source: 'elapsed-time' }, time_format: { kind: 'elapsed-time', format: 'days-decimal' } },
     ]} running={false} hasRows onApply={onApply} onClose={vi.fn()} />)
+  fireEvent.click(screen.getByRole('tab', { name: 'Series' }))
   fireEvent.change(screen.getByRole('combobox', { name: 'X source' }), { target: { value: 'Elapsed' } })
   fireEvent.click(screen.getByRole('tab', { name: 'Axes' }))
   expect(screen.getByText(/X-axis Minimum, Maximum, and Major unit use raw seconds/)).toBeTruthy()
