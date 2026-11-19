@@ -454,10 +454,7 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap();
             assert!(matches!(cli.command, CliCommand::UserGuide(_)));
         }
-        assert!(
-            Cli::try_parse_from(["orchestrator-tool", "user-guide", "--lang", "fr"])
-                .is_err()
-        );
+        assert!(Cli::try_parse_from(["orchestrator-tool", "user-guide", "--lang", "fr"]).is_err());
     }
 
     #[test]

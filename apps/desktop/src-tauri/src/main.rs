@@ -2228,17 +2228,25 @@ mod regression_tests {
         let main = tauri::Url::parse("http://tauri.localhost/index.html").unwrap();
         let chapter = tauri::Url::parse(
             "http://tauri.localhost/help/steps-powers.html?theme=dark#power-measure",
-        ).unwrap();
-        assert!(help_navigation_target(&main, &chapter, &help_url("en", "dark").unwrap())
-            .unwrap().is_none());
+        )
+        .unwrap();
+        assert!(
+            help_navigation_target(&main, &chapter, &help_url("en", "dark").unwrap())
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(
             help_navigation_target(&main, &chapter, &help_url("zh-TW", "dark").unwrap())
-                .unwrap().unwrap().as_str(),
+                .unwrap()
+                .unwrap()
+                .as_str(),
             "http://tauri.localhost/help/steps-powers.zh-TW.html?theme=dark"
         );
         assert_eq!(
             help_navigation_target(&main, &chapter, &help_url("en", "light").unwrap())
-                .unwrap().unwrap().as_str(),
+                .unwrap()
+                .unwrap()
+                .as_str(),
             "http://tauri.localhost/help/steps-powers.html?theme=light"
         );
     }

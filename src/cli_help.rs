@@ -78,7 +78,13 @@ fn cache_base() -> io::Result<PathBuf> {
 fn fingerprint() -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     for (name, bytes) in ASSETS {
-        for byte in name.as_bytes().iter().copied().chain([0]).chain(bytes.iter().copied()) {
+        for byte in name
+            .as_bytes()
+            .iter()
+            .copied()
+            .chain([0])
+            .chain(bytes.iter().copied())
+        {
             hash ^= u64::from(byte);
             hash = hash.wrapping_mul(0x100000001b3);
         }
@@ -189,10 +195,8 @@ mod tests {
 
     #[test]
     fn assets_are_cached_repaired_and_browser_failures_propagate() {
-        let path = env::temp_dir().join(format!(
-            "orchestrator-cli-help-test-{}",
-            std::process::id()
-        ));
+        let path =
+            env::temp_dir().join(format!("orchestrator-cli-help-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         let dir = ensure_bundle(&path).unwrap();
         assert_eq!(fs::read(dir.join("cli.html")).unwrap(), EN_HTML);
