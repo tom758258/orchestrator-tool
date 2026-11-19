@@ -19,6 +19,15 @@ Powers, Scopes, and Wavegen remain separate projects and distributions.
 - Discover configured external tools and run bounded Worker diagnostics from
   the CLI.
 
+Scopes reads back explicitly configured Acquisition Type, Average Count,
+Channel Coupling, Probe Ratio, Bandwidth Limit, Channel Invert, and Channel Units
+in Tool Setup. It also verifies Channel Display, Channel Scale, Channel Offset,
+Horizontal Scale, Horizontal Position, and Edge Trigger in Workflow. Set and
+Query each use the existing timeout. A failed or missing readback or a mismatch
+fails Setup before Workflow starts or fails the affected Step. TDS2024B and
+TBS1052B use an absolute ±0.05 V tolerance for Edge Trigger Level. See the
+[Scopes integration contract](docs/contracts/scopes-integration.md#settings-readback).
+
 The exact Template and execution contract is documented in
 [Template Format](docs/contracts/template-schema.md). Architecture-level
 process, Worker, result, chart, and export data flow is described in

@@ -347,10 +347,7 @@ pub fn validate_session(
     spec: &WorkerLaunchSpec,
     timeout: Duration,
 ) -> Result<(), String> {
-    let status = crate::worker_http::WorkerClient::new(session.ready())
-        .status_with_timeout(timeout)
-        .map_err(|e| e.to_string())?;
-    validate_status(&status, session)?;
+    let status = validated_status(session, timeout)?;
     let argument = |flag: &str| {
         spec.arguments()
             .windows(2)
@@ -384,7 +381,10 @@ pub fn validate_session(
     Ok(())
 }
 
-fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String> {
+fn validated_status(session: &WorkerSession, timeout: Duration) -> Result<Value, String> {
+    let status = crate::worker_http::WorkerClient::new(session.ready())
+        .status_with_timeout(timeout)
+        .map_err(|e| e.to_string())?;
     if status["schema_version"].as_u64() != Some(3)
         || status["service"] != "scopes-tool"
         || status["run_id"] != session.ready().run_id()
@@ -398,7 +398,7 @@ fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String
             status["fatal_error"]
         ));
     }
-    Ok(())
+    Ok(status)
 }
 
 static NEXT_JOB: AtomicU64 = AtomicU64::new(0);
@@ -416,6 +416,111 @@ fn run_command(
     );
     let terminal = session.run_async_job(command, arguments, None, &job_id, timeout)?;
     terminal_result(&terminal, command, arguments)
+}
+
+fn run_with_readback(
+    session: &WorkerSession,
+    command: &str,
+    arguments: &Value,
+    timeout: Duration,
+) -> Result<Value, String> {
+    if arguments["query"] == true {
+        return run_command(session, command, arguments, timeout);
+    }
+    let fields: &[(&str, &str)] = match command {
+        "acquisition" => &[("type", "type"), ("count", "count")],
+        "channel-coupling" => &[("coupling", "coupling")],
+        "channel-probe" => &[("ratio", "probe_ratio")],
+        "channel-bandwidth-limit" => &[("on/off", "bandwidth_limit")],
+        "channel-invert" => &[("on/off", "invert")],
+        "channel-units" => &[("units", "units")],
+        "channel-display" => &[("on/off", "display")],
+        "channel-scale" => &[("volts_per_division", "volts_per_division")],
+        "channel-offset" => &[("volts", "volts")],
+        "timebase-scale" => &[("seconds_per_division", "seconds_per_division")],
+        "timebase-position" => &[("seconds", "position_seconds")],
+        "trigger-edge" => &[
+            ("source_channel", "source_channel"),
+            ("level", "level_volts"),
+            ("slope", "slope"),
+        ],
+        _ => return run_command(session, command, arguments, timeout),
+    };
+    let tektronix_edge = if command == "trigger-edge" {
+        let status = validated_status(session, timeout)
+            .map_err(|error| format!("Scopes {command} readback model check failed: {error}"))?;
+        let model = status["model"]
+            .as_str()
+            .filter(|model| !model.trim().is_empty())
+            .ok_or("Scopes trigger-edge readback model check failed: missing Worker model")?;
+        matches!(model, "tektronix-tds2024b" | "tektronix-tbs1052b")
+    } else {
+        false
+    };
+    let result = run_command(session, command, arguments, timeout)?;
+    let mut query = json!({"query":true});
+    let channel = arguments.get("channel");
+    if let Some(channel) = channel {
+        query["channel"] = channel.clone();
+    }
+    let readback = run_command(session, command, &query, timeout)
+        .map_err(|error| format!("Scopes {command} readback query failed: {error}"))?;
+    let check = |field, expected: &Value| {
+        compare_readback(field, expected, &readback[field], tektronix_edge)
+            .map_err(|error| format!("Scopes {command} readback {error}"))
+    };
+    if let Some(channel) = channel {
+        check("channel", channel)?;
+    }
+    for &(argument, field) in fields {
+        if argument == "on/off" {
+            check(field, &Value::Bool(arguments["on"] == true))?;
+        } else if let Some(expected) = arguments.get(argument) {
+            check(field, expected)?;
+        }
+    }
+    Ok(result)
+}
+
+fn compare_readback(
+    field: &str,
+    expected: &Value,
+    actual: &Value,
+    tektronix_edge: bool,
+) -> Result<(), String> {
+    if actual.is_null() {
+        return Err(format!("is missing {field} (expected {expected})"));
+    }
+    let matches = if matches!(
+        field,
+        "probe_ratio"
+            | "volts_per_division"
+            | "volts"
+            | "seconds_per_division"
+            | "position_seconds"
+            | "level_volts"
+    ) {
+        expected
+            .as_f64()
+            .zip(actual.as_f64())
+            .is_some_and(|(expected, actual)| {
+                let difference = (expected - actual).abs();
+                if field == "level_volts" && tektronix_edge {
+                    // Match the Scopes CLI check at the absolute tolerance boundary.
+                    (difference * 1e12).round_ties_even() / 1e12 <= 0.05
+                } else {
+                    difference <= (expected.abs() * 1e-3).max(1e-12)
+                }
+            })
+    } else {
+        actual == expected
+    };
+    if !matches {
+        return Err(format!(
+            "mismatch for {field}: expected {expected}, got {actual}"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, String> {
@@ -636,7 +741,7 @@ pub fn apply_setup(
     timeout: Duration,
 ) -> Result<(), String> {
     for (command, arguments) in setup_commands(setup) {
-        run_command(session, &command, &arguments, timeout).map_err(|e| {
+        run_with_readback(session, &command, &arguments, timeout).map_err(|e| {
             format!(
                 "{command}, channel {}: {e}",
                 arguments
@@ -741,7 +846,7 @@ pub fn run_action(
         "autoscale" => timeout.max(Duration::from_secs(60)),
         _ => timeout,
     };
-    run_command(session, command, &arguments, timeout)
+    run_with_readback(session, command, &arguments, timeout)
 }
 
 fn prepare_file_arguments(
@@ -923,6 +1028,46 @@ mod tests {
                 ("channel-units".into(), json!({"channel":2,"units":"amp"}))
             ]
         );
+    }
+
+    #[test]
+    fn scopes_readback_compares_numeric_boundaries_and_rejects_malformed_values() {
+        for (field, expected, actual, tektronix, matches) in [
+            ("position_seconds", json!(0), json!(1e-12), false, true),
+            ("position_seconds", json!(0), json!(1.1e-12), false, false),
+            (
+                "seconds_per_division",
+                json!(1e-9),
+                json!(1.0009e-9),
+                false,
+                true,
+            ),
+            (
+                "seconds_per_division",
+                json!(1e-9),
+                json!(1.0011e-9),
+                false,
+                false,
+            ),
+            ("probe_ratio", json!(10), json!(10.009), false, true),
+            ("level_volts", json!(1.0), json!(1.04), false, false),
+            ("level_volts", json!(1.0), json!(1.05), true, true),
+            ("level_volts", json!(1.0), json!(1.06), true, false),
+            ("level_volts", json!(1e-9), json!(0.05), true, true),
+            ("volts", json!(1.0), json!(1.04), true, false),
+            ("volts", json!(1), json!("1"), false, false),
+            ("volts", json!(1), Value::Null, false, false),
+            ("count", json!(16), json!(17), false, false),
+            ("invert", json!(false), json!(0), false, false),
+            ("source_channel", json!(1), json!(2), true, false),
+            ("slope", json!("positive"), json!("negative"), true, false),
+        ] {
+            assert_eq!(
+                compare_readback(field, &expected, &actual, tektronix).is_ok(),
+                matches,
+                "{field}: expected {expected}, got {actual}"
+            );
+        }
     }
     #[test]
     fn scopes_capabilities_preserves_unknown_information_and_checks_model() {

@@ -302,14 +302,15 @@ Scopes Setup 為選用設定。新的 instance 所有欄位都是 **Unchanged**�
 **擷取類型（Acquisition Type）** 可選 **一般（Normal）**、**平均（Average）**、
 **高解析度（High Resolution）** 或 **峰值偵測（Peak）**；只有選擇 **平均（Average）**
 時才能編輯 Average Count。各通道列提供 Input Coupling、Probe Ratio、Bandwidth
-Limit、Waveform Invert 與 Channel Units。只保存及套用明確指定的值；留白或選擇
-Unchanged 不會送出設定命令。
+Limit、Waveform Invert 與 Channel Units。只保存、套用及回讀明確指定的值；留白或選擇
+Unchanged 不會送出命令。
 
 控制項使用 Scopes 提供的離線 capabilities。Simulation 使用 Scopes 預設的
 Keysight DSOX4024A profile；Live 使用所選 Resource 一起保存的 canonical model ID。
 資訊未知或不可取得時，會停用新的設定並顯示原因。不支援的欄位仍顯示但反灰；
-切換型號會保留既有值。實際型號支援與儀器限制仍由 Scopes 在 Workflow 前套用
-Setup 時驗證。Setup 失敗會停止 Workflow，並指出 instance／channel。
+切換型號會保留既有值。實際型號支援與儀器限制由 Scopes 在套用 Setup 時驗證。
+回讀失敗、缺少資料或與要求的值不符時，執行結果會顯示 Setup FAIL。錯誤會指出 instance，
+若為通道設定也會指出 channel。Setup 成功後才會開始執行 Workflow Step。
 
 ## 6. Workflow Editor
 
@@ -657,6 +658,15 @@ Calculation 的運算元只允許固定數值或變數，運算子只允許 Add�
 或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
 仍保有原有來源能力。Measure 的 Value、Unit、Channel 與 Item 可供 Output 或 Assert 使用。
 這五個 Scopes 設定值皆為必填，須提供固定數值或 binding。
+
+Channel Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position
+與 Edge Trigger 會在套用設定後回讀。回讀失敗、缺少資料或超出容差時，Step 會回報 FAIL。
+若值不符，錯誤會顯示要求值與回讀值。驗證成功時，Result 取自原始 Set 命令。
+Set 與 Query 各自使用既有 Timeout。
+
+TDS2024B 與 TBS1052B 的 Edge Trigger Level 採用 ±0.05 V 絕對容差，設定值接近零時也適用。
+Source Channel 與 Slope 仍須完全一致。此容差用於判定驗證是否成功，這項檢查無法證實
+整段設定範圍的儀器精度。
 
 Foreground Measure 另提供 Valid（`/valid`）供 IF／ELSE 判斷。取得有效數值時為
 `true`；僅在確認是無效量測 sentinel、且儀器狀態正常時，Step 仍會成功完成並回傳

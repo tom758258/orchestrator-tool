@@ -502,12 +502,15 @@ fn main() {
         scopes_single_wait_timeout_branches_and_instrument_error_fails();
         scopes_measure_invalid_branches_only_when_confirmed();
         scopes_setup_failure_stops_workflow();
+        scopes_workflow_setting_readback_controls_step_outcome();
         powers_and_meters_workflow_executes_end_to_end();
         powers_protection_setup_lifecycle();
         partial_startup_failure_shuts_down_started_worker();
         invalid_ready_protocol_is_rejected();
         non_2xx_http_response_is_rejected();
-        println!("Scopes protocol/setup and directly affected regression checks passed (9 groups)");
+        println!(
+            "Scopes protocol/setup and directly affected regression checks passed (10 groups)"
+        );
         return;
     }
 
@@ -570,6 +573,7 @@ fn main() {
     scopes_single_wait_timeout_branches_and_instrument_error_fails();
     scopes_measure_invalid_branches_only_when_confirmed();
     scopes_setup_failure_stops_workflow();
+    scopes_workflow_setting_readback_controls_step_outcome();
     powers_and_meters_workflow_executes_end_to_end();
     simulated_measurement_dataflow_exports_csv();
     three_meter_measurements_shutdown_normally();
@@ -3831,6 +3835,15 @@ fn run_scopes_fixture(scenario: &str) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let run_id = "scopes-fixture";
+    let edge_readback = scenario.starts_with("scopes-readback-");
+    let setup_mismatch = scenario == "scopes-setup-readback-mismatch";
+    let mut jobs = 0;
+    let model = match scenario {
+        "scopes-wrong-model" => "unknown",
+        "scopes-readback-tds2024b" => "tektronix-tds2024b",
+        "scopes-readback-tbs1052b" => "tektronix-tbs1052b",
+        _ => "keysight-dsox4024a",
+    };
     print_json_line(
         &json!({"schema_version":3,"event":"ready","run_id":run_id,
         "status_url":format!("{base}/status"),"command_url":format!("{base}/command"),
@@ -3843,19 +3856,35 @@ fn run_scopes_fixture(scenario: &str) {
             "/status" => write_response(request.stream, 200, &json!({"schema_version":3,
                 "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
                 "mode":if scenario == "scopes-dynamic-failed" {"live"} else {"simulate"},
-                "model":if scenario == "scopes-wrong-model" {"unknown"} else {"keysight-dsox4024a"},
+                "model":model,
                 "resource":if scenario == "scopes-dynamic-failed" {json!("USB::SCOPE")} else {json!(null)}}).to_string()),
             "/command" => {
+                jobs += 1;
+                let worker_job_id = format!("job-{jobs}");
                 let command: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                let query = command["arguments"]["query"] == true;
                 assert_eq!(command["schema_version"], 3);
                 assert!(command.get("context").is_none());
                 if scenario == "scopes-dynamic-failed" {
                     assert_eq!(command["command"], "measure");
                     assert_eq!(command["arguments"]["channel"], 99);
                 }
-                if scenario == "scopes-setup-failed" {
+                if scenario == "scopes-setup-failed" || setup_mismatch {
                     assert_eq!(command["command"], "channel-invert");
-                    assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
+                    if setup_mismatch && jobs == 2 {
+                        assert_eq!(command["arguments"], json!({"channel":2,"query":true}));
+                    } else {
+                        assert_eq!(jobs, 1);
+                        assert_eq!(command["arguments"], json!({"channel":2,"on":true}));
+                    }
+                }
+                if edge_readback {
+                    assert_eq!(command["command"], "trigger-edge");
+                    match jobs {
+                        1 => assert_eq!(command["arguments"], json!({"source_channel":1,"level":1.0,"slope":"positive"})),
+                        2 => assert_eq!(command["arguments"], json!({"query":true})),
+                        _ => panic!("unexpected Scopes setting job"),
+                    }
                 }
                 if scenario.starts_with("scopes-measure-") {
                     assert_eq!(command["command"], "measure");
@@ -3874,8 +3903,8 @@ fn run_scopes_fixture(scenario: &str) {
                     continue;
                 }
                 write_response(request.stream, 202, &json!({"schema_version":3,"status":"accepted",
-                    "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":"job-1"}).to_string());
-                if scenario == "scopes-timeout" { continue; }
+                    "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":worker_job_id}).to_string());
+                if scenario == "scopes-timeout" || (query && scenario == "scopes-readback-timeout") { continue; }
                 thread::sleep(Duration::from_millis(50));
                 let single_wait = scenario.starts_with("scopes-single-wait-");
                 let measure = scenario.starts_with("scopes-measure-");
@@ -3883,6 +3912,7 @@ fn run_scopes_fixture(scenario: &str) {
                 let instrument_error = scenario.ends_with("-instrument-error");
                 let failed = single_wait
                     || measure_invalid
+                    || (query && scenario == "scopes-readback-query-failed")
                     || matches!(
                         scenario,
                         "scopes-failed" | "scopes-setup-failed" | "scopes-dynamic-failed"
@@ -3908,6 +3938,16 @@ fn run_scopes_fixture(scenario: &str) {
                         "system_error":{"code":if instrument_error {-222} else {0},
                                         "is_error":instrument_error}
                     })
+                } else if edge_readback {
+                    if query && scenario == "scopes-readback-missing" {
+                        json!({"operation":"query","source_channel":1,"slope":"positive"})
+                    } else if query {
+                        json!({"operation":"query","source_channel":1,"level_volts":1.04,"slope":"positive"})
+                    } else {
+                        json!({"operation":"set","source_channel":1,"level_volts":1.0,"slope":"positive","commands":["set trigger"]})
+                    }
+                } else if setup_mismatch {
+                    json!({"operation":if query {"query"} else {"set"}, "channel":2,"invert":!query})
                 } else {
                     json!({"value":3.3,"unit":"V"})
                 };
@@ -3921,7 +3961,7 @@ fn run_scopes_fixture(scenario: &str) {
                 };
                 print_json_line(&json!({"schema_version":3,"event":"job_finished","run_id":if scenario == "scopes-event-mismatch" {"other-run"} else {run_id},
                     "command":command["command"],"job_id":command["job_id"],
-                    "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {"job-1"},
+                    "worker_job_id":if scenario == "scopes-mismatch" {"wrong-job"} else {&worker_job_id},
                     "state":if cancelled {"cancelled"} else if failed {"failed"} else {"succeeded"},
                     "ok":!failed && !cancelled,
                     "exit_code":if single_wait || measure_invalid {1} else if failed || cancelled {3} else {0},
@@ -4258,20 +4298,97 @@ fn scopes_setup_failure_stops_workflow() {
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
         "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
             "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
-    let error = run_simulated_workflow(
-        &template,
-        &HashMap::from([(
-            ToolInstanceId::new("scope").unwrap(),
-            fixture_spec("scopes-setup-failed"),
-        )]),
-        Duration::from_secs(5),
-        Duration::from_secs(2),
-        Duration::from_secs(2),
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(error.contains("scope Scopes Setup failed"), "{error}");
-    assert!(error.contains("channel 2"), "{error}");
+    for (scenario, detail) in [
+        ("scopes-setup-failed", "fixture failure"),
+        (
+            "scopes-setup-readback-mismatch",
+            "readback mismatch for invert",
+        ),
+    ] {
+        let error = run_simulated_workflow(
+            &template,
+            &HashMap::from([(
+                ToolInstanceId::new("scope").unwrap(),
+                fixture_spec(scenario),
+            )]),
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("scope Scopes Setup failed"), "{error}");
+        assert!(
+            error.contains("channel 2") && error.contains(detail),
+            "{error}"
+        );
+    }
+}
+
+fn scopes_workflow_setting_readback_controls_step_outcome() {
+    let template = Template::from_json_str(&json!({"name":"Edge Trigger readback",
+        "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+            {"type":"set-variable","id":"level-value","variable":"level","value":{"source":"literal","value":1.0}},
+            {"type":"tool-action","id":"trigger","target":"scope","action":"trigger-edge",
+                "arguments":{"source_channel":1,"slope":"positive"},
+                "bindings":{"level":{"source":"variable","variable":"level"}}},
+            {"type":"wait","id":"after-trigger","duration_ms":0}
+        ]}}).to_string()).unwrap();
+    for (scenario, model, failure) in [
+        ("scopes-readback-tds2024b", "tektronix-tds2024b", None),
+        ("scopes-readback-tbs1052b", "tektronix-tbs1052b", None),
+        (
+            "scopes-readback-mismatch",
+            "keysight-dsox4024a",
+            Some("readback mismatch for level_volts"),
+        ),
+        (
+            "scopes-readback-missing",
+            "keysight-dsox4024a",
+            Some("readback is missing level_volts"),
+        ),
+        (
+            "scopes-readback-query-failed",
+            "keysight-dsox4024a",
+            Some("fixture failure"),
+        ),
+        (
+            "scopes-readback-timeout",
+            "keysight-dsox4024a",
+            Some("no terminal"),
+        ),
+    ] {
+        let spec = WorkerLaunchSpec::new(
+            env::current_exe().unwrap(),
+            [FIXTURE_ARGUMENT, scenario, "--model", model],
+        )
+        .with_manifest(fixture_manifest(scenario));
+        let run = run_simulated_workflow(
+            &template,
+            &HashMap::from([(ToolInstanceId::new("scope").unwrap(), spec)]),
+            Duration::from_secs(5),
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let steps = run.step_executions();
+        assert_eq!(steps[1].step_id().as_str(), "trigger");
+        if let Some(detail) = failure {
+            assert!(
+                matches!(steps[1].outcome(), StepOutcome::Failed { message } if message.contains("readback") && message.contains(detail)),
+                "{scenario}: {:?}",
+                steps[1].outcome()
+            );
+            assert_eq!(steps.len(), 2);
+        } else {
+            assert!(
+                matches!(steps[1].outcome(), StepOutcome::Succeeded { output }
+                if output == &json!({"operation":"set","source_channel":1,"level_volts":1.0,"slope":"positive","commands":["set trigger"]}))
+            );
+            assert_eq!(steps[2].step_id().as_str(), "after-trigger");
+        }
+    }
 }
 
 fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {

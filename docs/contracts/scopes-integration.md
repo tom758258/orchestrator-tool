@@ -2,7 +2,7 @@
 
 Scopes remains an external executable. Core uses its published Common Worker
 v3 and Scopes contracts; Desktop edits Template definitions and local
-run options. No VISA/SCPI or physical model rules live in Orchestrator.
+run options. Scopes owns VISA/SCPI, instrument limits, and model support.
 
 ## Template Setup
 
@@ -25,10 +25,12 @@ be positive and unique; probe ratios must be finite and positive. Empty
 acquisition/channel records, unknown fields, and invalid enum types fail at
 Template validation. Physical limits and model support remain Scopes' concern.
 
-After Ready and startup identity validation, Core applies acquisition and
-explicit channel fields before Workflow execution. Failure stops Workflow,
-reports the instance/channel, and shuts down started Workers. Scopes has no
-Orchestrator reset, restore, or Powers safety-cleanup behavior.
+After Ready and startup identity validation, Core applies and verifies
+acquisition and explicit channel fields before Workflow execution. Failure
+stops Workflow, reports the instance/channel, and shuts down started Workers.
+For a deferred Background Worker, Setup failure prevents Measure Streaming
+from starting. Scopes has no Orchestrator reset, restore, or Powers
+safety-cleanup behavior.
 
 Desktop queries `capabilities --json` offline. Simulation leaves model selection
 to Scopes' default profile. Live adds the canonical model ID from saved local
@@ -39,8 +41,8 @@ duplicate, or unknown selections fail without a fallback.
 
 The selected channel controls are common analog-channel operations in Scopes'
 published supported-model tables. Their channel availability uses
-`analog_channels`; physical probe limits and other instrument constraints remain
-external. Orchestrator contains no vendor or model lookup table.
+`analog_channels`; Scopes enforces physical probe limits and other instrument
+constraints.
 
 ## Selected Workflow actions
 
@@ -139,7 +141,52 @@ setup-before-source workflow, and AutoScale is not dispatched to its active
 Worker.
 
 Capture/Screenshot have a 30-second minimum action timeout because screenshot
-transport alone can take ten seconds. Other actions retain the caller timeout.
+transport alone can take ten seconds.
+
+## Settings readback
+
+For the settings below, a successful Set is followed by a separate Query of
+the same command and a comparison with the requested value. Each job has the
+existing timeout in full. Channel queries send `query: true` and the original
+`channel`, which must also agree with the returned channel. Acquisition,
+timebase, and Edge Trigger queries send only `query: true`. Fields left
+Unchanged are excluded from comparison and cause no extra Query. A single
+`acquisition` Query covers both `type` and `count` when both are configured.
+
+| Scope | Setting | Worker command | Set argument → Query result field |
+| --- | --- | --- | --- |
+| Setup | Acquisition Type | `acquisition` | `type` → `type` |
+| Setup | Average Count | `acquisition` | `count` → `count` |
+| Setup | Channel Coupling | `channel-coupling` | `coupling` → `coupling` |
+| Setup | Probe Ratio | `channel-probe` | `ratio` → `probe_ratio` |
+| Setup | Bandwidth Limit | `channel-bandwidth-limit` | `on` / `off` → `bandwidth_limit` |
+| Setup | Channel Invert | `channel-invert` | `on` / `off` → `invert` |
+| Setup | Channel Units | `channel-units` | `units` → `units` |
+| Workflow | Channel Display | `channel-display` | `on` / `off` → `display` |
+| Workflow | Channel Scale | `channel-scale` | `volts_per_division` → `volts_per_division` |
+| Workflow | Channel Offset | `channel-offset` | `volts` → `volts` |
+| Workflow | Horizontal Scale | `timebase-scale` | `seconds_per_division` → `seconds_per_division` |
+| Workflow | Horizontal Position | `timebase-position` | `seconds` → `position_seconds` |
+| Workflow | Edge Trigger | `trigger-edge` | `source_channel` → `source_channel`, `level` → `level_volts`, `slope` → `slope` |
+
+Booleans, canonical strings, channel numbers, and Average Count must match
+exactly. Continuous numeric fields pass when
+`abs(actual - expected) <= max(1e-12, abs(expected) * 1e-3)`, following the
+[Scopes CLI live check](https://github.com/tom758258/scopes-tool/blob/b437f65a396a469685f52b8678e814015a0a890c/scripts/live-cli-check.ps1#L1186-L1207).
+
+Before each Edge Trigger Set, Core obtains the canonical model ID from the
+same Worker's validated `/status`. For `tektronix-tds2024b` and `tektronix-tbs1052b`,
+`level_volts` passes when `abs(actual - expected)` rounded to 12 decimal places
+is at most 0.05 V. Source Channel and Slope still require exact agreement.
+A 1.00 V request accepts 1.04 V and 1.05 V, and rejects 1.06 V. The 0.05 V
+limit is absolute and also applies near zero. It defines software acceptance
+and provides no claim of instrument accuracy across the setting range. See
+the [Tektronix CLI readback check](https://github.com/tom758258/scopes-tool/blob/b437f65a396a469685f52b8678e814015a0a890c/scripts/_live_tektronix_helpers.ps1#L289-L329).
+
+Query rejection, failure, timeout, missing or invalid fields, and mismatches
+fail the Setup or Workflow Step. Setup failure prevents Workflow execution.
+For a successful Workflow Step, its Result is the original Set result.
+Readback does not retry or restore instrument settings.
 
 ## Runtime file output
 

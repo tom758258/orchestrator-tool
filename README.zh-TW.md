@@ -20,6 +20,14 @@ Wavegen 等 external tools 仍是獨立專案與獨立 distribution。
 - 透過 CLI 進行 external tool discovery、設定檢查與 bounded Worker
   diagnostics。
 
+Scopes 會回讀 Tool Setup 中明確指定的 Acquisition Type、Average Count、Channel Coupling、
+Probe Ratio、Bandwidth Limit、Channel Invert 與 Channel Units。Workflow 會驗證 Channel
+Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position 與 Edge Trigger。
+Set 與 Query 各自使用既有 Timeout。回讀失敗、缺少資料或不符合設定時，Setup 會在 Workflow
+啟動前失敗，或由受影響的設定 Step 回報失敗。TDS2024B 與 TBS1052B 的 Edge Trigger Level
+採用 ±0.05 V 絕對容差。詳細規則請見
+[Scopes 整合契約](docs/contracts/scopes-integration.md#settings-readback)。
+
 完整的 Template 與 execution contract 請見
 [Template Format](docs/contracts/template-schema.md)。Process、Worker、
 result、chart 與 export data flow 的 architecture-level 說明請見
