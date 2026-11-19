@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>圖表</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html" aria-current="page">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>圖表</h1>
+<h3 id="104-charts">10.4 Charts</h3>
+<p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
+可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
+最多 8 張額度。Foreground／Background Charts 依顯示的 Chart 編號排列，不會因來源不同而分組。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。</p>
+<p>Charts 預設只屬於目前 session。Charts 標題列新增 <strong>將圖表儲存於範本（Save charts with template）</strong>，
+預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
+開啟含有 saved Foreground 或 Background Chart 設定的 Template 時，checkbox
+會自動勾選並還原設定，包含只有 Background 的 Template。沒有 saved Chart
+設定的 Template 從零張圖開始。選擇來源並按 <strong>+ Add Chart</strong> 才建立圖表。
+刪除所有圖表後，執行、Validate、切換 Page、儲存與載入都不會自動補回。
+已保存的有效圖表設定照常載入；Live Monitor 獨立運作，不占用圖表額度。
+取消勾選不會刪除目前畫面上的 Charts，只代表下一次 Save Template 不再保存它們。
+勾選狀態下執行 <strong>清除上次執行（Clear Last Run）</strong> 會保留 Chart 設定；一般未勾選的 session Charts
+則維持原本清除行為。</p>
+<p>此選項只保存 Chart definitions 與設定，不會保存 run data、Run ID、目前互動操作產生的
+zoom／pan 位置、loading/error UI state、dialog state 或 export destination/path。
+下方 Workflow 的 <strong>Chart Options</strong> 即使勾選本選項，仍然只屬於
+session，不會寫入 Template。</p>
+<p>Chart Options 位於 Workflow 左側窄欄的 <strong>CSV Export</strong> 正下方。最外層
+<strong>Chart Options</strong>、其中的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 都能彼此獨立展開或收合。
+程式啟動時，<strong>Chart Options</strong> 預設收合，內部的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 各自
+預設展開。收合只會隱藏控制項，不會改變其設定值。</p>
+<p><strong>Sampling</strong> 區塊可用於 Simulation 與 Live Line Chart。
+<strong>Preserve Significant Changes</strong> 預設關閉，Change Threshold (%) 預設為 <strong>5%</strong>，
+啟用時必須是有限且大於 0 的百分比。不論是否啟用，原本每個 pixel bucket 的
+Min/Max 都會保留。啟用後會額外檢查可見範圍的 Raw Data，每個 bucket 最多再補
+兩個符合門檻的局部變化代表點（上升 Max、下降 Min），並按真正 Iteration 排序，
+不會刪除原本 Min/Max。正常值比較基準不會在安靜區段任意重設；單筆或雙筆異常
+恢復後，也不會永久將異常值當成後續基準。即使長時間量測，繪圖點數仍約束在
+每 bucket 最多四點，另保留整體首尾點。</p>
+<p>Threshold 下方另有 <strong>Show Significant Change Markers</strong>，預設關閉；
+Preserve Significant Changes 關閉時無法操作。啟用後僅標示符合門檻的上升／
+下降異常代表點，每 bucket 最多兩個，不會把異常恢復正常的數值直接當成異常點，
+也不會對 Line 的全部繪圖點加上 Marker。Marker 開關不會改變折線的選點結果。
+普通 Line 即可在 <strong>Chart Settings → Series → Marker appearance</strong> 設定每個
+Output 的既有 Marker 尺寸、形狀、填色與邊框，不必先選 Line + markers。
+原本的 Line + markers 仍是獨立功能，會為全部繪圖點顯示符號；Marker 樣式也
+沿用目前各 Output 的設定及 PNG 匯出方式。</p>
+<p>門檻為空白、0、負數或非有限數字時，若 Preserve Significant Changes 已啟用，
+Simulation 與 Live 都會停用 Run。0 變成非 0 視為 100%，0 變成 0 視為 0%。</p>
+<p><strong>Y-axis</strong> 區塊提供 <strong>Fit Data</strong>，預設關閉，並可用於 Simulation 與 Live Line
+Chart。Fit Data 關閉時，Auto Y-axis 維持目前行為，範圍可能包含 0；開啟後，
+Auto Y-axis 會依繪圖資料範圍縮放，不再強制把 0 納入顯示，因此較容易觀察帶有
+offset 的小幅變化。Chart Settings 中手動指定的 Y-axis <strong>Minimum</strong>／<strong>Maximum</strong>
+仍照常套用。Fit Data 不改變非 Line chart type。</p>
+<p>Sampling 控制項與 Fit Data 都會在 RUN 開始時建立快照，Last Run 沿用該次設定。
+它們都是 Desktop session 選項，不寫入 Template。RUN 後修改這些控制項不會立即
+改變目前的 Last Run 圖形；需重新執行才會套用新的設定。</p>
+<p>Line Chart 可在 <strong>Chart Settings → General → Show All Raw Data</strong>（預設關閉）
+繞過繪圖降採樣，顯示 X 軸可見範圍內所有已載入 Raw Data（如有資料，另含兩端
+各一筆裁切銜接點）；每張 Chart 獨立設定，立即生效，不需要重新 RUN。
+若該 RUN 啟用專用 Marker，仍可顯示異常標示。顯示全部資料可能降低 Desktop
+繪圖效能，尤其 LIVE 執行中可能導致畫面卡頓或暫時無回應。
+上述顯示選項不修改原始結果、CSV/XLSX 匯出，也不影響非 Line Chart。</p>
+<p>Execution 執行中只有 <strong>Line</strong> 支援即時更新。Execution 停止後，只要有 committed
+numeric rows，即使 run 失敗，也可在 <strong>Settings → General → Chart type</strong> 選擇
+<strong>Line</strong>、<strong>XY Scatter</strong>、<strong>Column</strong>、<strong>Area</strong>、<strong>Bar</strong>、<strong>Combo</strong>、<strong>Histogram</strong>
+或 <strong>Box &amp; Whisker</strong>。Line 顯示 Iteration 趨勢；Area 在折線下填色；Column
+使用垂直分組長條；Bar 使用水平分組長條；XY Scatter 用來比較數值 X 與 Y
+的關係。</p>
+<p>Chart Settings 有五個 tabs：<strong>一般（General）</strong>、<strong>資料系列（Series）</strong>、<strong>座標軸（Axes）</strong>、<strong>分析（Analysis）</strong>
+與 <strong>Export</strong>。Series 包含各 Output 的 <strong>Auto</strong>／<strong>Custom color</strong>、Line 樣式、
+Scatter 設定，以及 Combo 的 Type／Axis。每個 Line Output 可選 <strong>Line</strong> 或
+<strong>Line + markers</strong>；Combo Output 可選 <strong>Column</strong>、<strong>Line</strong> 或
+<strong>Line + markers</strong>。啟用 marker 的 Line 與 Combo Output 可分別設定 marker
+size、shape（Circle、Square、Diamond、Triangle）、fill 與 border。Scatter
+維持整張圖共用的 marker size 與 line width，但 marker shape、fill、border
+可依 Output 設定。Marker fill 與 border 使用 <strong>Auto</strong> 時會跟隨該 Output 的
+series color，也可改為獨立的 custom color。Legend 會反映實際的 line／marker
+樣式；Area 仍不顯示 markers。Box &amp; Whisker 維持自動配色。</p>
+<p><strong>General → Chart type</strong> 也會在選擇 Combo 或 Histogram 時顯示 Output 數量提示。
+若原本選取多個 Outputs 後切換成 Histogram，<strong>Apply</strong> 會保留第一個已選取的 Output。</p>
+<p>在 chart panel 勾選多個 <strong>Outputs</strong>，即可比較多個 numeric series。Scatter 的
+<strong>X source</strong> 可選 Iteration、任一 numeric Output 或 Timestamp Output；只作為 Scatter X 的 Output
+不必同時勾選為 Y series。<strong>Display</strong> 可選 Markers、Lines 或 Lines + markers；
+Scatter 的 <strong>Marker size</strong> 與 <strong>Line width</strong> 接受有限且大於 0 的數值，並用於
+顯示對應元素的模式。Scatter 保留原始 X/Y pairs 與 row order，包括非單調的 X；
+Lines 依該順序連線。Timestamp X 使用完整日期時間轉成的絕對毫秒座標，跨午夜時
+持續增加；X 標籤與 hover 依該 Output 的 Include Date／Include UTC Offset 選項
+顯示固定 UTC+08:00 時間，不受電腦時區影響。Timestamp 不提供作為 Y series、
+Summary、Histogram 或其他量測統計。Elapsed X 一律使用原始秒數，X 軸標籤與
+Tooltip 的 X 值則依該 Output 的 Time Format 顯示。Chart Settings 的 X-axis
+<strong>Minimum</strong>、<strong>Maximum</strong> 與 <strong>Major unit</strong> 一律輸入原始秒數，即使標籤顯示
+分鐘、小時或十進位天數也相同。
+Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
+但只會回報實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個
+Outputs；每個 Output 可選 Column、Line 或 Line + markers，並指定 Left Y 或
+Right Y。左右 Y 軸可分別設定，Combo 支援 Iteration X 軸縮放。</p>
+<p>Histogram 一次只使用一個 numeric Output。<strong>Bins</strong> 可選 Auto、Count（1–200）
+或 Width（正數）；Auto 使用 Sturges rule。Width 若會產生超過 200 個 bins，
+會顯示錯誤。Box &amp; Whisker 會對每個選取的 Output 顯示一個 box，並可顯示或隱藏 outlier points。這兩種
+統計圖會從 committed StoredRun rows 計算，不會把完整 raw samples 載入前端
+chart cache。<strong>Analysis → Show normal curve</strong> 可在 Histogram 上疊加折線。
+<strong>Mean</strong> 與 <strong>Std Dev</strong> 留白時使用與 Summary 相同的平均值及樣本標準差；
+自訂 Mean 必須為有限數值，自訂 Std Dev 必須為有限且大於 0 的數值。
+每個 bin 中心的 normal PDF 會乘上 sample count 與該 bin 的實際 width，
+以對齊 Count 軸。使用自動 Std Dev 時，少於兩筆 samples 或零變異資料
+會省略曲線，Histogram 仍可使用。</p>
+<p>大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
+decimation，Combo 的兩種 Line 樣式也使用相同的 viewport decimation。Column 與
+Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
+raw pairs。Scatter 不對 raw pairs 做 sampling 或 decimation。Scatter Markers
+在 marker size 大於或等於 4 時使用 ECharts large rendering；較小的 marker
+改用一般 scatter rendering，以保留要求的 shape。Scatter Lines 與
+Lines + markers 使用 line rendering。這些顯示最佳化不會刪除 committed
+ResultRows。Line、Area、Column 與 Combo
+的 hover 會解析 exact raw iteration 與 value；Scatter hover 回報最近的實際 raw
+XY row。Bar、Histogram 與 Box &amp; Whisker 不提供 hover inspection。Iteration 是
+Page 的 row sequence；Chart 與 CSV 按 chronological 順序，<strong>Output Data</strong> 則以 latest
+first 顯示。</p>
+<p><strong>設定（Settings）</strong> 可設定圖表標題、<strong>Show legend</strong>、<strong>Legend position</strong>（Top、Bottom、
+Left、Right），以及 X/Y axis 的標題、最小值、最大值、
+主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
+若同時指定最小值與最大值，最小值必須較小；主要刻度間距必須大於 0。Combo
+另有可獨立設定的 Right Y Axis。可辨識的自動 axis title 會隨所選 chart type 與
+Scatter X source 更新，自訂 title 則會保留。因目前 chart type 未使用而隱藏的
+numeric 設定不會阻擋 Apply；合法的 inactive 值會保留，非法值會回到 Auto 或
+該控制項的預設值。</p>
+<p><strong>Apply</strong> 會套用有效設定並關閉視窗；<strong>Cancel</strong> 會捨棄草稿並關閉視窗。點擊
+背景或按 Esc 不會關閉 Settings，因此草稿會保留。<strong>Show legend</strong> 開啟時即使只有
+一個 series 也會顯示 legend；關閉後無論位置為何都不顯示。</p>
+<p>Line、Area、Column 與 Combo 可在 <strong>Settings → Axes → Zoom → Enable zoom</strong> 開啟縮放。
+使用滑鼠滾輪可縮放 X 軸，並可在圖內拖曳平移。<strong>Show zoom slider</strong> 可控制底部
+縮放列是否顯示；隱藏後不會清除目前範圍，滾輪與拖曳仍可使用。按
+<strong>Reset Zoom</strong> 可回到完整 X 範圍。執行中的 Line chart 在尚未手動縮放或平移
+時會跟進新資料；手動操作後，新資料不會移動目前 viewport，直到按 Reset Zoom。
+修改 X Axis 的 Minimum 或 Maximum 並套用、關閉 zoom，或切換到不支援 zoom
+的圖型時，都會重設 manual viewport。Scatter、Bar、Histogram 與
+Box &amp; Whisker 不提供 Zoom 控制。</p>
+<p>每個 chart 都有個別的 <strong>Export PNG</strong> 操作。低調的圖表邊界標示匯出的 chart
+surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不包含 Output
+選取控制項、chart action buttons、zoom slider 與 Reset Zoom。
+<strong>Settings → Export → Background</strong> 可選 Light 或 Dark，並與 Application theme
+分開設定。兩種背景都會保留自訂 series 顏色與 Normal curve。</p>
+<p>Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
+並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
+顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection 與 Export PNG
+仍停用，Settings 與 Remove 可操作，每張圖都可移除，包含最後一張 Foreground 或 Background Chart。
+執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
+第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。
+Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels
+不會載入即時 chart data，execution 停止後
+自動使用新 run 的 committed rows 更新，不需手動 refresh。Run 開始時 panels
+就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
+新 run 的資料尚未可用時，Line 顯示 <strong>Waiting for run data</strong>，不顯示上一 run
+的 plot，也不載入 chart data；資料可用後才開始即時更新。
+<strong>+ Add Chart</strong> 仍建立 Line chart。<strong>開啟範本（Open Template）</strong> 會以該 Template 的 saved
+Charts 取代目前的 Chart configuration；若沒有 saved Charts，則不會還原 persisted
+Chart configuration，且 <strong>將圖表儲存於範本（Save charts with template）</strong> 為未勾選。開啟含 saved Charts
+的 Template 後，可直接 Run Simulation，以還原的 definitions 與設定顯示新結果，
+不需重新設定 Chart。建立新的 blank Template 會清除 Chart configuration。
+<strong>清除上次執行（Clear Last Run）</strong> 會清除 Last Run data；<strong>將圖表儲存於範本（Save charts with template）</strong> 未勾選時，
+也會清除 session Charts，勾選時則保留 Chart configuration。只有啟用
+<strong>將圖表儲存於範本（Save charts with template）</strong> 時，Chart settings 才會成為 Template data。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

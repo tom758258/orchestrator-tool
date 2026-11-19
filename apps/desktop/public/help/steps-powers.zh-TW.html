@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Powers 步驟</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html" aria-current="page">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Powers 步驟</h1>
+<h4 id="power-set-output">Power Set Output</h4>
+<p><strong>Power Set Output</strong>、<strong>Power Output ON</strong>、
+<strong>Power Output OFF</strong>、<strong>Power Measure</strong>，以及 <strong>Power Protection Status</strong> 的 <strong>Specific channel</strong>
+共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
+通道，顯示為 <strong>CH1</strong>、<strong>CH2</strong> 等。Simulation 使用模擬器通道；Live 使用 Setup
+中已儲存 Resource 所辨識的型號。切換目標 instance、Execution Mode 或 Powers
+執行檔時，可選通道也會更新。</p>
+<p>載入中、缺少 Live 型號、capabilities 查詢失敗或通道清單為空時，會顯示提示並
+停用固定通道選擇。已儲存但不在支援清單內的通道仍會顯示，標示為不支援或
+無法確認，儲存及重新載入時也會保留。既有 Channel binding 顯示為
+<strong>Bound channel (preserved)</strong>。只有明確選擇支援的固定通道，才會取代原通道值
+或其 binding；capabilities 不會自動改寫它。</p>
+<p>加入 <strong>Power Set Output</strong> 可設定通道的 Voltage、Current Limit，或同時設定兩者。
+Channel 為必填；兩個設定值至少須選取一項。使用 <strong>Set Voltage</strong> 與
+<strong>Set Current Limit</strong> 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
+輸入欄位顯示 <strong>Voltage (V)</strong> 與 <strong>Current Limit (A)</strong>。
+Power Set Output 的設定值只允許數值 <strong>Fixed value</strong>、
+<strong>Variable</strong> 或 <strong>Calculation</strong>。Calculation 的運算元只允許固定數值或變數，
+運算子只允許 Add、Subtract、Multiply 或 Divide。設定值不能使用 Previous step result、
+Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
+變數解析後仍必須是數值，否則 Powers action validation 會失敗。
+<strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
+電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 <strong>Power Output ON</strong>。</p>
+<h4 id="power-measure">Power Measure</h4>
+<p>加入 <strong>Power Measure</strong> 可對指定通道量測一次實際 Voltage（V）與 Current（A）。
+此唯讀步驟使用固定 Channel 下拉選單，不會啟用輸出或修改 setpoints。
+後續 Output、Assert、Calculation 可透過 Step Output 選取 <strong>Voltage</strong> 或
+<strong>Current</strong>；數值 JSON Pointer 分別為 <code>/data/measurements/voltage</code> 與
+<code>/data/measurements/current</code>。此功能僅供 Foreground Workflow 使用，不啟動
+Background Streaming。若沒有新增 Output step，量測結果不會自動成為 Result column。</p>
+<h4 id="power-protection-status">Power Protection Status</h4>
+<p>加入 <strong>Power Protection Status</strong> 可讀取 protection trip 狀態，不會改變儀器設定。
+Channel 可選 <strong>All</strong>，或選擇 <strong>Specific channel</strong> 後從 Channel 下拉選單指定通道。
+主動從 All 切換至 Specific 時，會選取第一個支援的通道。capabilities 不可用或
+未提供通道時，Specific 無法選取，並保留 All；既有 Specific 值仍會保留。
+結果提供 <strong>Protection Tripped</strong>、
+<strong>Over Voltage Tripped</strong> 與 <strong>Over Current Tripped</strong>。只要過電壓或過電流
+protection 任一觸發，Protection Tripped 即為 true。實際型號支援由 Powers Tool
+驗證。</p>
+<p>若 trip 時需要讓 Workflow 失敗，請在 Power Protection Status 後加入 <strong>Assert</strong>：
+左側選 <strong>Previous step result → Protection Tripped</strong>，運算子選 <code>==</code>，右側選
+<strong>Boolean → False</strong>。Status 本身不會停止 Workflow、清除 protection 或修改電源
+供應器。</p>
+<p>在 IF／ELSE 中，三個 Protection Status 結果都是 Boolean：true 代表對應保護已觸發，false 代表未觸發。比較的另一側請選 Boolean；選取 Result 欄位不會自動修改比較值。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

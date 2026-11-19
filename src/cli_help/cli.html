@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrator Tool CLI User Guide</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1 id="orchestrator-tool-cli-user-guide">Orchestrator Tool CLI User Guide</h1>
+<p>Use the CLI to diagnose the Orchestrator environment and configured external tool executables. Workflow editing and Simulation/Live workflow runs belong to the Desktop, not the CLI.</p>
+<h2 id="choose-your-interface">Choose Your Interface</h2>
+<p>The Windows release contains two EXEs:</p>
+<table>
+<thead>
+<tr><th>Program</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>orchestrator-tool.exe</code></td><td>CLI: external-tool configuration, manifest and Worker diagnostics.</td></tr>
+<tr><td><code>Orchestrator Tool.exe</code></td><td>Desktop: Workflow authoring, Simulation/Live runs and result export.</td></tr>
+</tbody>
+</table>
+<p>This guide covers the CLI; use <strong>Help</strong> in the upper-right corner of <code>Orchestrator Tool.exe</code> for Desktop operation.</p>
+<h2 id="open-the-offline-user-guide">Open the Offline User Guide</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe user-guide
+.\orchestrator-tool.exe user-guide --lang en
+.\orchestrator-tool.exe user-guide --lang zh-TW
+</code></pre>
+<p>The default language is English. The guide opens offline in your system browser; Desktop and instruments are not required.</p>
+<h2 id="1-open-the-cli">1. Open the CLI</h2>
+<p>For a Windows release, open PowerShell in the folder containing <code>orchestrator-tool.exe</code>:</p>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --help
+.\orchestrator-tool.exe --version
+.\orchestrator-tool.exe doctor
+.\orchestrator-tool.exe tools list
+</code></pre>
+<p>If the executable is on <code>PATH</code>, use <code>orchestrator-tool</code> without <code>.\</code>. In a development checkout, the equivalent entry point is <code>cargo run --locked -- &lt;arguments&gt;</code> from the repository root.</p>
+<p><code>doctor</code> summarizes external executable availability; <code>tools list</code> shows each registered tool's resolved status and path. Neither starts a workflow or verifies physical instrument communication.</p>
+<h2 id="2-point-the-cli-to-tool-executables">2. Point the CLI to tool executables</h2>
+<p>Without a <code>--config</code> option, the CLI uses an empty configuration. Create a TOML file if you want to check installed tools, for example <code>orchestrator.toml</code>:</p>
+<pre><code class="language-toml">[tools]
+meters = &quot;C:/Example/Meters/meters-tool.exe&quot;
+powers = &quot;C:/Example/Powers/powers-tool.exe&quot;
+</code></pre>
+<p>Replace the example paths with actual installed EXEs. Run:</p>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml doctor
+.\orchestrator-tool.exe --config .\orchestrator.toml tools list
+</code></pre>
+<p>The CLI does not automatically inherit the Desktop's saved EXE paths. A missing or unconfigured EXE is reported as a status; <code>doctor</code> and <code>tools list</code> can still complete successfully.</p>
+<h2 id="3-inspect-a-tool">3. Inspect a tool</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml tools inspect meters
+</code></pre>
+<p>If the configured EXE exists, inspection runs a manifest probe and reports its Worker compatibility information. If not, the manifest is <code>not-probed</code>. Inspecting an EXE is not a hardware Live test.</p>
+<h2 id="4-check-a-supported-worker">4. Check a supported Worker</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml tools worker-check meters
+.\orchestrator-tool.exe --config .\orchestrator.toml tools worker-check powers
+</code></pre>
+<p>These checks launch the configured external executable in a bounded Worker simulation diagnostic. They require that the relevant tool is installed and configured. <code>worker-check</code> currently does <strong>not</strong> support Scopes, Serial or Wavegen. Do not interpret a passed Worker simulation as physical device verification.</p>
+<h2 id="5-common-problems-and-limits">5. Common problems and limits</h2>
+<table>
+<thead>
+<tr><th>Symptom</th><th>What to check</th></tr>
+</thead>
+<tbody>
+<tr><td><code>not-configured</code></td><td>Supply <code>--config</code> with a TOML <code>[tools]</code> entry; the CLI does not load Desktop settings automatically</td></tr>
+<tr><td><code>missing</code> or <code>not-file</code></td><td>Correct the configured EXE path or point it to a regular file</td></tr>
+<tr><td>Manifest <code>not-probed</code></td><td>The EXE was not available; fix its status before inspecting the manifest</td></tr>
+<tr><td>Manifest probe or Worker check fails</td><td>Confirm the external tool is executable and that its manifest/Worker behavior matches the supported contract</td></tr>
+<tr><td><code>worker check is not supported</code></td><td>Only <code>meters</code> and <code>powers</code> are accepted</td></tr>
+<tr><td>Invalid configuration or Tool ID</td><td>Check TOML syntax, registered IDs and the command spelling</td></tr>
+</tbody>
+</table>
+<p>The CLI has no <code>run</code>, workflow editor, <code>--json</code>. For complete command syntax and exit behavior, use the CLI README and built-in <code>--help</code>.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

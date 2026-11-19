@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run Simulation and Live</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html" aria-current="page">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Run Simulation and Live</h1>
+<h2 id="7-run-simulation">7. Run Simulation</h2>
+<p>Before Simulation, configure every referenced external executable and ensure
+its manifest and Worker compatibility checks can succeed. You can use
+Validate first for an explicit Template check; the run also validates the
+Template when it starts.</p>
+<p>Select <strong>Simulation</strong> in Execution Mode and use the single <strong>Run Simulation</strong>
+button. Simulation does not require Live Resources. It uses the external
+Workers' simulate contracts and is not intended to operate physical hardware.
+For Powers, Protection Setup and final Safe-Off are still sent to powers-tool
+for simulation or planning; this is orchestration validation, not Live hardware
+validation. Indeterminate Simple Software sources show the run-only sample
+warning described above. Custom modes are available only in Background.</p>
+<h2 id="8-run-live">8. Run Live</h2>
+<p>Select <strong>Live</strong> in Execution Mode; the same Run control becomes <strong>Run Live</strong>.
+Desktop automatically checks fixed Powers and Scopes Workflow parameters and
+Setup against each referenced instance's saved model capabilities. <strong>Live
+Preflight: Checking</strong> blocks Run while checking; <strong>Passed</strong> allows the existing
+Live confirmation flow. <strong>Failed</strong> shows the known incompatibilities in red and
+blocks Run until corrected and checked successfully. Required capabilities or
+model IDs that cannot be obtained also block Live. Unused instances and unused
+optional capability fields do not block it.</p>
+<p>Changing the Template, Workflow parameters, Setup, saved Resource/model, or
+Powers/Scopes executable invalidates the previous result and triggers another
+check. Save any Resource or identity draft changes first. Fixed values inside
+For/While/If are checked without running their bodies; values overridden by bindings
+remain subject to Worker runtime validation. Preflight never changes your
+Template or substitutes a supported channel. This automatic check does not validate
+Workflow references or scopes; use Validate or Run for full Template validation.
+Simulation is unaffected.</p>
+<p>The backend checks the current saved settings again before starting Workers,
+creating Powers write authorization, or replacing Last Run. A rejected
+Preflight leaves the previous Last Run, results, and Output intact and is shown
+as a Preflight failure, rather than a completed Workflow failure.</p>
+<p>Before starting Live, Desktop:</p>
+<ul>
+<li>checks the referenced Tool Instances;</li>
+<li>loads their persisted Live Resources and backends;</li>
+<li>rejects unsaved Live Resource, backend or identity draft changes;</li>
+<li>shows a Live confirmation listing each referenced instance, Tool Type, backend, resource and available identity;</li>
+<li>warns that Live mode can change Powers outputs; and</li>
+<li>adds the 10 A terminal warning for the applicable Meters setup.</li>
+</ul>
+<p>Confirm only after checking the displayed resources and the connected
+hardware. The run validates that both backends and resources still exactly match
+what was confirmed. A changed backend or resource, or duplicate resource, causes Live execution to
+be rejected and require a new confirmation.</p>
+<p>The currently supported Live external tools are Powers, Meters, and Scopes.
+Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
+unknown identities fail without a fallback. Wavegen runtime execution remains
+unsupported. Scopes Shutdown does not reset or restore instrument settings.</p>
+<h3 id="81-powers-actions-and-cleanup">8.1 Powers actions and cleanup</h3>
+<p>Powers Live actions include setting values and the <code>output-on</code> and
+<code>output-off</code> actions. Live Powers write authorization exists only for the
+runtime of the Live run.</p>
+<p>At run completion, and also on workflow failure or later Worker startup
+failure paths, the orchestrator requests Powers <code>safe-off</code> for every started
+Powers instance before Worker shutdown. A cleanup failure makes the run fail,
+while preserving the original workflow failure when one already exists. The
+temporary runtime authorization file is used only for the run and removed on
+a best-effort basis.</p>
+<p>An explicit Powers <code>output-off</code> Tool Action does not replace the run-level
+cleanup. Simulation follows the same cleanup position by sending simulated
+Safe-Off through powers-tool; it does not claim that real outputs were changed.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

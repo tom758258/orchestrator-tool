@@ -1,3 +1,5 @@
+mod cli_help;
+
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
@@ -31,6 +33,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum CliCommand {
+    /// Open the bundled offline CLI user guide.
+    UserGuide(cli_help::UserGuideArgs),
     /// Checks the orchestrator environment.
     Doctor,
     /// Manages external tools.
@@ -60,6 +64,7 @@ fn dispatch(cli: Cli) -> ExitCode {
     let Cli { config, command } = cli;
 
     match command {
+        CliCommand::UserGuide(args) => args.run(),
         CliCommand::Doctor => doctor(config.as_deref()),
         CliCommand::Tools {
             command: ToolsCommand::List,
@@ -438,6 +443,19 @@ mod tests {
     use clap::Parser;
 
     use super::{Cli, CliCommand, ToolsCommand};
+
+    #[test]
+    fn user_guide_language_parses() {
+        for args in [
+            vec!["orchestrator-tool", "user-guide"],
+            vec!["orchestrator-tool", "user-guide", "--lang", "en"],
+            vec!["orchestrator-tool", "user-guide", "--lang", "zh-TW"],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert!(matches!(cli.command, CliCommand::UserGuide(_)));
+        }
+        assert!(Cli::try_parse_from(["orchestrator-tool", "user-guide", "--lang", "fr"]).is_err());
+    }
 
     #[test]
     fn doctor_command_parses() {

@@ -1,55 +1,16 @@
-# Desktop offline Help
+# Desktop and CLI offline Help
 
-The only canonical content is `docs/desktop/USER_GUIDE.md` and
-`docs/desktop/USER_GUIDE.zh-TW.md`. `template.html` and `help.css` in this
-directory are presentation sources for the page layout and styling.
-Help includes neither engineering documentation nor Search.
+Desktop operator content is maintained in the two `docs/desktop/USER_GUIDE*.md` entry pages plus the bilingual `docs/desktop/guide/` and `docs/desktop/steps/` chapters. CLI content is maintained in `docs/cli/USER_GUIDE*.md`. These sources are operator-facing, distinct from the engineering READMEs.
 
-`scripts/generate_help.py` renders those sources into
-`apps/desktop/public/help/desktop.html`, `desktop.zh-TW.html`, and `help.css`.
-These generated runtime files are tracked in Git. Do not edit them directly.
-Regenerate after changing either guide, the template, or the stylesheet.
-Run the following commands from the repository root.
+`scripts/generate_help.py` produces the tracked Desktop landing pages `desktop.html` and `desktop.zh-TW.html` and one local HTML page for each translated guide chapter under `apps/desktop/public/help/`. It also produces `src/cli_help/cli.html`, `cli.zh-TW.html`, and `help.css` for embedding in the CLI EXE. Do not manually edit generated files. The existing `docs/help/template.html` and `help.css` are shared presentation sources. Neither Help requires an online service or a documentation server.
 
-On Windows PowerShell, a virtual environment is recommended but optional.
-Create it and install the pinned Help dependency once:
+Use the existing pinned Python Help requirements, then from the repository root:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r scripts/requirements-help.txt
-```
-
-Use its Python executable directly to generate and validate Help; activating
-the virtual environment in PowerShell is not required:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/generate_help.py
-.\.venv\Scripts\python.exe -B scripts/test_generate_help.py
-.\.venv\Scripts\python.exe scripts/generate_help.py --check
-```
-
-Developers with a suitable existing Python environment can use the original
-commands:
-
-```sh
 python -m pip install -r scripts/requirements-help.txt
 python scripts/generate_help.py
 python -B scripts/test_generate_help.py
 python scripts/generate_help.py --check
 ```
 
-The sync check generates into a temporary directory and compares all three
-outputs with the tracked bundle. It also validates source locales, chapter navigation, local links, template
-expansion, and the absence of repository-local Markdown links. Local Markdown
-links are rejected, not rewritten; public URLs are retained.
-
-Python and Markdown are used only for Help development and CI validation.
-Normal Desktop builds and the released EXE do not require Python. Vite and Tauri
-builds consume the tracked bundle without running the generator. Vite copies
-it to `dist/help/`; Tauri serves it as application assets in an on-demand
-internal Help window.
-
-Desktop selects the bundled page from its locale and passes its theme preference
-in the Help URL. Help has no separate language selector or persistent theme setting.
-Selecting Help again updates the existing window when the Desktop language or
-theme has changed; otherwise it focuses that window and preserves its chapter.
+The generator verifies locale, local navigation and chapter links, and exact output synchronization. The Desktop's Help window derives its locale and theme from the application; each page carries its theme to other local pages, and a second Help click keeps the current chapter when its locale and appearance have not changed. The CLI command `orchestrator-tool user-guide [--lang en|zh-TW]` opens the embedded guide in the default browser using a content-identified user cache. The CLI guide uses the system/browser theme, not the Desktop preference. Normal builds do not require Python; they consume the tracked generated HTML and CSS.

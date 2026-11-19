@@ -1439,11 +1439,67 @@ fn help_navigation_target(
     let target = main_url
         .join(&format!("/{}", path.to_string_lossy()))
         .map_err(|error| error.to_string())?;
-    // Keep the current chapter/scroll position when language and theme match.
-    Ok((current_url.origin() != target.origin()
-        || current_url.path() != target.path()
-        || current_url.query() != target.query())
-    .then_some(target))
+    // A second Help click should not reset a chapter when locale and theme match.
+    // Preserve the selected chapter when the Desktop preference changes.
+    let current_page = current_url.path().rsplit('/').next().unwrap_or("");
+    let (stem, current_locale) = if let Some(base) = current_page.strip_suffix(".zh-TW.html") {
+        (base, "zh-TW")
+    } else if let Some(base) = current_page.strip_suffix(".html") {
+        (base, "en")
+    } else {
+        ("desktop", "")
+    };
+    let valid_stem = matches!(
+        stem,
+        "desktop"
+            | "guide-getting-started"
+            | "guide-external-tools"
+            | "guide-tool-setup"
+            | "guide-workflow-editor"
+            | "steps-input-values"
+            | "steps-powers"
+            | "steps-workflow"
+            | "steps-scopes"
+            | "steps-background"
+            | "guide-execution"
+            | "guide-background-streaming"
+            | "guide-results"
+            | "guide-charts"
+            | "guide-results-and-export"
+            | "guide-templates-and-settings"
+            | "guide-troubleshooting"
+            | "steps-serial"
+    );
+    let desired_locale = if target.path().ends_with(".zh-TW.html") {
+        "zh-TW"
+    } else {
+        "en"
+    };
+    let desired_theme = target.query().unwrap_or("theme=system");
+    if current_url.origin() == target.origin()
+        && current_url.path().starts_with("/help/")
+        && valid_stem
+        && current_locale == desired_locale
+        && current_url.query() == Some(desired_theme)
+    {
+        return Ok(None);
+    }
+    if current_url.origin() != target.origin()
+        || !valid_stem
+        || !current_url.path().starts_with("/help/")
+    {
+        return Ok(Some(target));
+    }
+    let locale_suffix = if desired_locale == "zh-TW" {
+        ".zh-TW"
+    } else {
+        ""
+    };
+    Ok(Some(
+        main_url
+            .join(&format!("/help/{stem}{locale_suffix}.html?{desired_theme}"))
+            .map_err(|error| error.to_string())?,
+    ))
 }
 
 #[tauri::command]
@@ -2164,6 +2220,34 @@ mod regression_tests {
                 .unwrap()
                 .origin(),
             main.origin()
+        );
+    }
+
+    #[test]
+    fn help_navigation_preserves_chapter_and_preferences() {
+        let main = tauri::Url::parse("http://tauri.localhost/index.html").unwrap();
+        let chapter = tauri::Url::parse(
+            "http://tauri.localhost/help/steps-powers.html?theme=dark#power-measure",
+        )
+        .unwrap();
+        assert!(
+            help_navigation_target(&main, &chapter, &help_url("en", "dark").unwrap())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            help_navigation_target(&main, &chapter, &help_url("zh-TW", "dark").unwrap())
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            "http://tauri.localhost/help/steps-powers.zh-TW.html?theme=dark"
+        );
+        assert_eq!(
+            help_navigation_target(&main, &chapter, &help_url("en", "light").unwrap())
+                .unwrap()
+                .unwrap()
+                .as_str(),
+            "http://tauri.localhost/help/steps-powers.html?theme=light"
         );
     }
 

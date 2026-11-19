@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scopes Actions</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html" aria-current="page">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Scopes Actions</h1>
+<h3 id="67-scopes-actions-and-file-output">6.7 Scopes actions and File Output</h3>
+<p>The Scopes group offers Channel Display, Channel Scale, Channel Offset,
+Horizontal Scale, Horizontal Position, Edge Trigger, Measure, Capture, Screenshot, and
+AutoScale. Channel Scale, Channel Offset, Horizontal Scale, Horizontal Position,
+and Edge Trigger Level allow only numeric <strong>Fixed value</strong>, <strong>Variable</strong>, or
+<strong>Calculation</strong> setpoints. Calculation operands are fixed numbers or variables,
+with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
+general Output, Set Variable, Assert, and While sources remain available.
+Each of these five Scopes setpoints is required, supplied by a fixed value or binding.
+Measure exposes Value, Unit, Channel, and Item for Output or Assert.</p>
+<p>Channel Display, Channel Scale, Channel Offset, Horizontal Scale, Horizontal
+Position, and Edge Trigger read back the setting after applying it. If the
+readback fails, is missing, or differs beyond the allowed tolerance, the Step
+reports FAIL. For a mismatch, the error shows the requested and returned values
+and any numeric tolerance that applies.
+When verification succeeds, Result comes from the Set command. Set and Query
+each use the existing timeout.</p>
+<p>TDS2024B and TBS1052B accept an absolute difference up to ±0.05 V for Edge
+Trigger Level, including settings close to zero. For example, a 1.00 V setting
+passes with a 1.04 V readback and fails with a 1.06 V readback. Source Channel
+and Slope must still match exactly.</p>
+<p>Foreground Measure also offers Valid (<code>/valid</code>) for IF/ELSE. A measurement
+with a usable value returns <code>true</code>. A confirmed invalid measurement sentinel
+with clean instrument status completes as a successful Step with <code>/valid</code> =
+<code>false</code> and <code>/value</code> = <code>null</code>. In IF/ELSE choose Previous step result → Valid
+and compare it with Boolean false. All other invalid responses, instrument or
+Worker errors, and cancellation still fail the Step. Invalid data does not
+prove that no waveform exists; Orchestrator does not retry automatically.</p>
+<p><strong>Measurement Item</strong>, trigger <strong>Slope</strong>, and Capture <strong>Points</strong> are fixed dropdowns
+from the current Scopes capabilities. Measurement items and slopes save canonical
+strings; Measurement Item capitalizes the first English letter for display,
+with <code>vpp</code> shown as <strong>Vp-p</strong> while still saving <code>vpp</code>. Points saves a number and
+cannot use a binding. Simulation uses the
+default model; Live uses the target's canonical model ID. Changing mode, model,
+target instance, or executable reloads the options. Loading, unavailable
+capabilities, or empty lists disable selection. An invalid or unconfirmed value
+requires explicit reselection; options never change saved values automatically.
+Scopes validates final model support.
+A queued job counts as complete only after Scopes reports its terminal result.</p>
+<p><strong>Scope Single Wait</strong> starts a single acquisition and waits finitely for its trigger.
+<strong>Trigger Timeout (ms)</strong> defaults to <strong>5000</strong> and <strong>Poll Interval (ms)</strong> to
+<strong>100</strong>; both are fixed positive integers, and Poll Interval cannot exceed
+Trigger Timeout. There is no Force Trigger option. A confirmed trigger timeout
+is a successful Step with <code>/outcome</code> = <code>timeout</code> and <code>/timed_out</code> = <code>true</code>;
+use those fields in the existing IF/ELSE. Instrument, Worker, and cancellation
+errors still fail the Step. A timed-out trigger does not mean capture succeeded,
+and Orchestrator does not automatically force, stop, or reset the instrument.</p>
+<p>The Single Wait Result selector shows comparison types and values: Outcome is String (natural means trigger completed; timeout means trigger wait expired); Timed Out and Capture Allowed are Boolean (true or false). Choose the matching type on the other side of IF/ELSE; selecting a result does not change the other operand.</p>
+<p>Channel Display, Channel Scale, Channel Offset, and Measure use a fixed
+<strong>Channel</strong> dropdown; Edge Trigger uses <strong>Source Channel</strong>. Options are <strong>CH1</strong>,
+<strong>CH2</strong>, etc., from offline Scopes capabilities. Simulation uses simulator
+channels; Live uses the target instance's identified model. Changing mode,
+target instance, Live model, or Scopes executable refreshes the options.
+Loading, missing Live model, query failure, or no supported channels prevents
+new fixed selections and shows a hint. Saved unsupported values stay visible
+and are preserved when saving and reloading. Existing Channel bindings are
+preserved with a hint; only explicitly choosing a supported fixed channel
+replaces the value and removes its binding. Other bindings remain unchanged.</p>
+<p>Capture <strong>Channels</strong> uses capability-based <strong>CH1</strong>, <strong>CH2</strong>, etc., checkboxes.
+Choose one or more channels; the last selected channel cannot be unchecked.
+Saved unsupported channels or invalid values are preserved with a hint and
+shown with no boxes checked. Checking a supported channel replaces them with
+a valid selection. Existing Channel bindings are likewise preserved until
+fixed channels are explicitly selected. Loading capabilities or changing models
+never rewrites saved channels automatically.</p>
+<p><strong>Scope AutoScale</strong> is a Keysight-only Foreground Step (DSOX2004A, DSOX3024A, DSOX4024A, DSOX4034A).
+Source Channels, Acquire Mode (Normal/Current), and Channels Mode (All/Displayed) are optional;
+omitted choices are not sent to Scopes Tool. Unchecking every Source Channel omits that option.
+AutoScale may change channel display/scale, horizontal scale, trigger, and other instrument state;
+Orchestrator does not restore those settings automatically. For Background Measure Streaming,
+finish the required Scopes Setup before Worker ON; AutoScale cannot run on an active streaming Worker.
+A Step succeeds only when its Async Job completes, and Scopes Tool may report a fallback to bare
+AutoScale if a selected-source command is rejected. Simulation does not verify physical waveform scaling.</p>
+<p>Screenshot <strong>Image Format</strong> uses offline Scopes capabilities: Simulation uses
+the default model, and Live uses the saved device model. Unsupported formats
+remain visible but disabled. A saved unsupported format is preserved with a
+warning when the model changes. If capabilities are unavailable, the editor
+shows the reason and disables new format selections.</p>
+<p><strong>Scopes File Output</strong> in the left Workflow panel requires at least one Scopes
+Tool Instance in the current Template. Without one, its header is greyed out,
+shows a lock and <strong>No Scopes Tool Instance. Add one in Setup.</strong>, and cannot be
+expanded; its settings are hidden. Adding the first Scopes instance unlocks it;
+removing the last locks it again. Loading a Template updates this lock from its
+instances. Simulation and Live use the same rule, without requiring a saved Live
+Resource. Locking or unlocking preserves the chosen folder and expand/collapse
+state, independently of the Scopes step category.</p>
+<p>When unlocked, expand <strong>Scopes File Output</strong>. <strong>Select Folder</strong>
+chooses a folder shared by Capture and Screenshot; <strong>Use Default</strong> restores
+<strong>Orchestrator application folder / data</strong>. The choice is local runtime state
+and is never saved in a Template. Capture produces CSV and metadata JSON;
+Screenshot produces an image in the selected format. Every execution, including
+loop iterations and later runs, receives new absolute file paths. Existing
+files are not overwritten. Job failure or missing required files fails the step.
+This panel is separate from CSV Export of Workflow Output rows.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

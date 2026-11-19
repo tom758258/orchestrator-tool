@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Background 互動步驟</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html" aria-current="page">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Background 互動步驟</h1>
+<h3 id="fgbg-interaction">FG/BG Interaction</h3>
+<p>Workflow 左側最下方、<strong>Chart Options</strong> 下方的 <strong>FG/BG Interaction</strong>
+設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
+在 Setup 啟用 Background Streaming 後，才能展開並勾選
+<strong>啟用前景／背景互動（Enable FG/BG Interaction）</strong> 以解鎖互動 Steps。移除最後一個未被
+Step 引用的 Background Binding 時會關閉 Interaction，但保留容量數值。
+<strong>Max Active Command Status</strong> 預設 <strong>4096</strong>，範圍 <strong>1–65536</strong>，限制同一
+Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。兩項設定都會隨
+Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。</p>
+<p>先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
+<strong>Worker ON</strong>。啟用 Interaction 不會自動啟動 Worker；Capture 可以保持 OFF。</p>
+<ul>
+<li><strong>BG Command</strong>：支援 Meters <strong>Software (Simple)</strong> 與 Serial <strong>Send／Send File</strong>。Meters 在 Background Setup
+  勾選 <strong>Trigger with BG Command</strong>，以明確命令取代自動計時觸發。Worker 確認接受
+  觸發後 Step 即成功；勾選 <strong>Wait for Completion</strong> 可在同一 Step 等待量測完成。
+  Serial 可選 Send 或 Send File，沿用前景 TX 輸入方式，不需額外開關；
+  Wait for Completion 等待該 TX Job 完成。</li>
+<li><strong>Get Latest</strong>：取得最新一筆完整原生 Background 事件。最新資料不存在或無效時
+  Step 失敗，不會改用較舊的有效值。</li>
+<li><strong>Wait Next</strong>：等待 Step 開始後到達的第一筆事件；首筆無效即失敗。可等待尚在
+  啟動的 Source，但 Source 已結束時立即失敗。</li>
+<li><strong>Get Command Result</strong>：選擇先前的 <strong>Source BG Command Step</strong>，等待該命令
+  完成且結果就緒，再取得原生事件。在 Loop 中，來源必須已於適用的迭代執行；
+  IF 分支跳過來源時 Get 會失敗，不會拿其他命令的結果替代。</li>
+</ul>
+<p>Get Steps 會將完整原生事件作為 Step Output，例如可在既有 Binding 或 Output
+使用 Meters 的 <code>/value</code>：選擇 <strong>Previous step result</strong>、指定 Get Step，再從 <strong>結果</strong> 選擇常用欄位；其他欄位可透過 <strong>自訂指標…</strong> 輸入
+<strong>JSON Pointer</strong>。BG Command 本身不提供資料輸出；Get Command Result 依來源
+Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
+事件。Custom 批次與 Scopes 不提供 Command／Result；Serial Command／Result
+僅支援 TX，Latest／Next 仍取得 RX。Powers 與 Wavegen 不支援 Background。</p>
+<p><strong>Step timeout (ms)</strong> 可留白以使用 action timeout；整個 Step 共用一個期限。
+每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
+命令。Busy 或容量不足會直接失敗，不會排入佇列。已接受的命令稍後失敗時，Run
+仍會失敗並開始清理，先前成功的派送 Step 不會改寫。無法確認派送結果時不會重送。
+若 IF 跳過 Get Command Result，結果仍保留至所在 Loop 當次迭代結束；Loop 外的
+命令則保留至 Run 結束。在同一範圍派送另一筆需要結果的命令前，請先取用該結果。</p>
+<p>正常 Run 結束時，以一個 action timeout 等待尚未完成的命令；Worker OFF 在
+自己的期限內等待必要命令與關閉。未讀結果不增加等待，既有有限筆數與擷取品質
+規則仍適用。Stop Workflow 採合作式清理，不額外等待普通命令。Worker OFF 後
+重新 ON 會使舊資料與結果引用失效。若無法確認關閉，同一資源即使改用計時觸發
+或 Foreground 仍會被阻擋。重新啟動應用程式前，請先確認外部工具已停止；
+重新啟動本身不代表已驗證關閉。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

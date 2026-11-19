@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>常見問題與安全</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html" aria-current="page">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>常見問題與安全</h1>
+<h2 id="14-common-problems">14. Common problems</h2>
+<h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
+<p>在 <strong>工具（Tools）</strong> 的 <strong>選擇要加入的工具（Select tool to add）</strong> 選擇 Tool Type，再使用 <strong>加入工具（Add Tool）</strong> 配置正確的
+external executable。</p>
+<h3 id="selected-executable-is-rejected">Selected executable is rejected</h3>
+<p>Executable 可能有錯誤的 manifest Tool ID，或 Worker 不相容。請選擇符合預期
+Tool Type 的 executable。</p>
+<h3 id="executable-shows-missing-or-not-a-file">Executable shows Missing or Not a file</h3>
+<p>已保存的 path 不存在，或不是一個 file。請使用 <strong>變更路徑…（Change Path...）</strong> 選擇目前的
+executable；Desktop 不會靜默搜尋替代檔案。</p>
+<h3 id="live-resource-is-missing">Live Resource is missing</h3>
+<p>在 <strong>設定（Setup）</strong> 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
+保存。</p>
+<h3 id="live-resource-changes-are-unsaved">Live Resource changes are unsaved</h3>
+<p>使用 <strong>儲存資源（Save Resource）</strong>，再重新開始 Live，讓 confirmation 使用已保存的 backend、
+resource 與 identity。切換 backend 會清空草稿，請重新列出或輸入 resource 再保存。</p>
+<h3 id="duplicate-live-resource">Duplicate Live Resource</h3>
+<p>同一次 Live run 中，不同 referenced Tool Instances 不可指向相同 resource。請
+指定不同 resources。</p>
+<h3 id="simulation-asks-for-meters-sample-counts">Simulation asks for Meters sample counts</h3>
+<p>填寫每個 Instance 的 SIM Max Samples，或按 Cancel；這不會改變 Unlimited
+While。Custom 模式僅供 Background 使用。</p>
+<h3 id="manual-export-is-unavailable">Manual export is unavailable</h3>
+<p>Manual export 需要 run 已經結束，且目前 export scope 存在 committed rows。Run
+仍 active 時 export 會維持 disabled。Failed 或 incomplete run 可以把已 committed
+rows 作為 partial results 匯出；若選取範圍為 zero-row，仍不提供 export。</p>
+<h3 id="streaming-csv-failed">Streaming CSV failed</h3>
+<p>CSV 建立、寫入或最後 flush 失敗會使 Run Failed 並執行安全 Cleanup。
+Committed rows、已收到的 Background Samples 與部分 CSV 仍可查看及手動匯出。</p>
+<h3 id="webview2-is-missing">WebView2 is missing</h3>
+<p>使用 native warning 的 Yes 開啟 Microsoft 官方 WebView2 下載頁，安裝或修復系統
+Runtime 後重新啟動 application。若 availability check 通過後仍出現 Startup failed
+對話框，請保留 Details 內容供診斷，並確認 Windows 受支援且 WebView2 已安裝並更新。</p>
+<h2 id="15-safety-notes">15. Safety notes</h2>
+<ul>
+<li>Live mode 可能影響連接中的 hardware。</li>
+<li>在 confirmation 前確認每個 Live Resource。</li>
+<li>Powers output writes 需要 Live confirmation 與 runtime authorization。</li>
+<li>Run-level Powers <code>safe-off</code> 是 cleanup behavior，不取代 external tool 或 instrument
+  的 safety requirements。</li>
+<li>Meters DC Current 使用 10 A terminal 時，確認 physical lead connection 後再
+  確認 Live。</li>
+<li>External tools 仍負責 instrument-specific limits 與 safety behavior。</li>
+</ul>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

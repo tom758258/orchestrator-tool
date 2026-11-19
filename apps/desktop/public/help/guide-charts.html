@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charts</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html" aria-current="page">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Charts</h1>
+<h3 id="104-charts">10.4 Charts</h3>
+<p>Charts use Apache ECharts with a Canvas renderer. A Foreground chart belongs to one
+Output Page and can plot numeric Outputs from that Page. Session-only and saved Foreground and
+Background Charts share a maximum of eight. Live Monitor and Background bindings
+without a Chart configuration do not count toward this limit.</p>
+<p>Charts are session-only by default. The Charts heading includes <strong>Save charts
+with template</strong>, which is off by default. Enable it when the current chart
+panels and their Chart Settings should be restored with the Template. Opening a
+Template that contains saved Foreground or Background Chart settings turns the
+checkbox on, including a Background-only Template, and restores those settings.
+Templates without saved Chart settings start with zero Charts. Choose a source
+and <strong>+ Add Chart</strong> to create one. Deleting all Charts keeps the count at zero
+through Run, Validate, Page changes and Save/Load. Saved valid settings still
+load normally. Live Monitor works independently and uses no Chart slot.
+Turning it off does not remove the Charts from the current session; the
+next Save Template simply omits them. <strong>Clear Last Run</strong> keeps the chart
+configuration while this option is enabled; ordinary session-only Charts keep
+the previous clear behavior.</p>
+<p>This opt-in saves the chart definitions and settings only. It never saves run
+data, Run IDs, the current interactive zoom/pan position, loading/error UI
+state, dialog state, or export destinations/paths. The Workflow <strong>Chart
+Options</strong> described below remain session options even when Charts are saved
+with the Template.</p>
+<p>Chart Options sits in the narrow Workflow sidebar immediately below
+<strong>CSV Export</strong>. The outer <strong>Chart Options</strong> panel, its <strong>Sampling</strong> section, and
+its <strong>Y-axis</strong> section can each be expanded or collapsed independently.
+<strong>Chart Options</strong> starts collapsed when the application opens; <strong>Sampling</strong> and
+<strong>Y-axis</strong> each start expanded inside it. Collapsing a section only hides its
+controls and does not change their values.</p>
+<p>The <strong>Sampling</strong> section applies to both Simulation and Live Line Charts.
+<strong>Preserve Significant Changes</strong> is <strong>off</strong> by default, and the positive finite
+percentage threshold defaults to <strong>5%</strong>. The original pixel-bucket Min/Max
+remains intact whether or not sampling is enabled. When enabled, a scan of the
+visible Raw Data can preserve up to two <em>additional</em> locally significant turns
+(upward Max and downward Min) per bucket, in original Iteration order, without
+deleting the original Min/Max extrema. Its normal comparison reference survives
+quiet buckets; one- or two-sample spikes do not become the permanent baseline
+when measurements recover. The entire plotted output remains bounded by
+approximately four points per bucket plus the global endpoints, even for large
+runs.</p>
+<p>The optional <strong>Show Significant Change Markers</strong> checkbox sits directly below
+the threshold, defaults to <strong>off</strong>, and is disabled while Preserve Significant
+Changes is off. When enabled, it labels only the qualifying upward/downward
+excursions, up to two markers per bucket; normal recoveries are not marked simply
+because they reverse a preceding spike. It does not enable symbols on every Line
+vertex or alter which points the Line plots. A plain Line may customize the
+per-Output marker size, shape, fill and border at
+<strong>Chart Settings → Series → Marker appearance</strong> without choosing Line + markers.
+The existing Line + markers option remains an independent setting that shows
+symbols for every plotted vertex. Marker shape/color also follows the existing
+per-Output styling and Export PNG.</p>
+<p>A blank, zero, negative or non-finite percentage blocks Run when Preserve
+Significant Changes is enabled; Simulation and Live use the same parser. Zero to
+nonzero counts as 100%, and zero to zero counts as 0%.</p>
+<p>The <strong>Y-axis</strong> section contains <strong>Fit Data</strong>, which is <strong>off</strong> by default and
+applies to Simulation and Live Line Charts. With Fit Data off, the automatic
+Y-axis keeps the existing behavior and may include zero. With Fit Data on, the
+automatic Y-axis follows the plotted data range without forcing zero into view,
+making small changes in an offset signal easier to see. Manual Y-axis
+<strong>Minimum</strong> and <strong>Maximum</strong> values in Chart Settings still apply. Fit Data does
+not change non-Line chart types.</p>
+<p>Sampling controls and Fit Data are snapshotted at RUN start and retained by
+Last Run. They are Desktop session options, not Template data. Changing these
+controls after RUN does not change the current Last Run chart; start a new run
+to use the new settings.</p>
+<p>For a Line Chart, <strong>Chart Settings → General → Show All Raw Data</strong> (off by
+default) bypasses plotted-point downsampling and draws every loaded raw sample
+in the visible X range, including the two neighboring clipping samples when
+available. It takes effect immediately, even during a run, independently for
+each Chart; you do not need to RUN again. Optional significant-change markers
+may remain visible if enabled for that run. Displaying all raw data can slow the
+Desktop interface or make it temporarily unresponsive, especially during Live.
+None of these display options modify committed Raw Data, CSV/XLSX exports or
+non-Line charts.</p>
+<p>Only <strong>Line</strong> supports live updates while execution is running. After execution stops, any run
+with committed numeric rows, including a failed run, can select <strong>Line</strong>,
+<strong>XY Scatter</strong>, <strong>Column</strong>, <strong>Area</strong>, <strong>Bar</strong>, <strong>Combo</strong>, <strong>Histogram</strong>, or
+<strong>Box &amp; Whisker</strong> from <strong>Settings → General → Chart type</strong>. Line shows the
+Iteration trend; Area fills below the line; Column uses vertical grouped bars;
+Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
+values.</p>
+<p>Chart Settings has five tabs: <strong>General</strong>, <strong>Series</strong>, <strong>Axes</strong>, <strong>Analysis</strong>,
+and <strong>Export</strong>. Series contains per-Output <strong>Auto</strong> or <strong>Custom color</strong>, Line
+styles, Scatter settings, and Combo Type/Axis settings. Each Line Output can
+use <strong>Line</strong> or <strong>Line + markers</strong>. Combo Outputs can use <strong>Column</strong>, <strong>Line</strong>,
+or <strong>Line + markers</strong>. Marker-enabled Line and Combo Outputs can set marker
+size, shape (Circle, Square, Diamond, or Triangle), fill, and border. Scatter
+keeps its chart-wide marker size and line width while marker shape, fill, and
+border are per Output. Marker fill and border use the Output series color in
+<strong>Auto</strong> mode or an independent custom color. Legends mirror the rendered
+line/marker style; Area remains marker-free. Box &amp; Whisker retains its
+automatic colors.</p>
+<p><strong>General → Chart type</strong> also shows the Output-count helper for Combo and
+Histogram. When switching to Histogram with multiple Outputs selected,
+<strong>Apply</strong> keeps the first selected Output.</p>
+<p>A chart panel can select multiple <strong>Outputs</strong> to compare numeric series.
+Scatter <strong>X source</strong> can be Iteration, any numeric Output, or a Timestamp Output, and an Output used
+only as Scatter X does not need to be selected as a Y series. <strong>Display</strong> can
+show Markers, Lines, or Lines + markers. Scatter <strong>Marker size</strong> and <strong>Line
+width</strong> accept positive finite numbers and apply to the modes that show them.
+Scatter keeps raw X/Y pairs in original row order, including nonmonotonic X
+values; Lines connect those pairs in that order. Timestamp X uses the full date/time
+as an absolute millisecond coordinate, so it remains continuous across midnight.
+X labels and hover use that Output's Include Date / Include UTC Offset options in
+fixed UTC+08:00, independent of the computer timezone. Timestamp is excluded from
+Y series, Summary, Histogram, and other measurement statistics. Elapsed X retains
+raw seconds regardless of its display format. Elapsed X-axis labels and Tooltip X
+values follow the Output's Time Format. In Chart Settings, X-axis <strong>Minimum</strong>,
+<strong>Maximum</strong>, and <strong>Major unit</strong> always use raw seconds, including when labels show
+minutes, hours, or decimal days. Scatter hover uses screen-space
+proximity; line displays may be selected through a visible segment but always
+report an actual raw row rather than an interpolated measurement. Combo
+requires at least two selected Outputs; each Output can use Column, Line, or
+Line + markers rendering and the Left Y or Right Y axis. The two Y axes are
+configured independently, and Combo supports Iteration X-axis zoom.</p>
+<p>Histogram uses exactly one numeric Output. <strong>Bins</strong> can use Auto, Count from
+1 to 200, or a positive Width. Auto uses the Sturges rule; a Width that would
+create more than 200 bins reports an error. Box &amp; Whisker draws one box for each selected Output and can
+show or hide outlier points. These statistical charts are computed from
+committed StoredRun rows and do not load their full raw samples into the
+frontend chart cache. <strong>Analysis → Show normal curve</strong> overlays a line on
+Histogram. Blank <strong>Mean</strong> and <strong>Std Dev</strong> use the same mean and sample standard
+deviation as Summary; custom Mean must be finite and custom Std Dev must be
+finite and greater than zero. Each bin-center normal PDF is scaled by sample
+count and that bin's actual width to match the Count axis. With automatic Std
+Dev, fewer than two samples or zero variance omits the curve while keeping the
+Histogram usable.</p>
+<p>For large datasets, Line and Area decimate only the visible Iteration range,
+and Combo applies the same viewport decimation to both Line styles. Column and
+Combo Column series keep every raw row in the visible range; Scatter and Bar
+preserve raw pairs. Scatter does not sample or decimate its raw pairs. Scatter
+Markers use ECharts large rendering for marker sizes of 4 or greater; smaller
+markers use normal scatter rendering so the requested shape is preserved.
+Scatter Lines and Lines + markers use line rendering. These display
+optimizations do not remove committed ResultRows.
+Line, Area, Column, and Combo hover inspection resolves exact raw iteration and
+values; Scatter hover reports the nearest actual raw XY row. Bar, Histogram,
+and Box &amp; Whisker do not provide hover inspection. Iteration is the Page row
+sequence; Charts and CSV are
+chronological, while <strong>Output Data</strong> is displayed latest first.</p>
+<p><strong>Settings</strong> can configure the chart title, <strong>Show legend</strong>, <strong>Legend position</strong>
+(Top, Bottom, Left, or Right), X/Y axis titles, minimum,
+maximum, major interval, labels, tick marks, and major gridlines. Blank numeric
+fields mean Auto; when both minimum and maximum are set, minimum must be less
+than maximum; a major interval must be greater than zero. Combo also has an
+independent Right Y Axis. Recognized automatic axis titles follow the selected
+chart type and Scatter X source, while custom titles are retained. Numeric
+settings hidden because they are inactive for the selected chart type do not
+block Apply: valid inactive values are retained, while invalid values return to
+Auto or the control's default.</p>
+<p><strong>Apply</strong> applies valid settings and closes the dialog. <strong>Cancel</strong> discards the
+draft and closes it. Clicking the backdrop or pressing Esc does not close
+Settings, so the draft remains available. <strong>Show legend</strong> displays a legend even
+for a single series; turning it off hides the legend at every position.</p>
+<p>Line, Area, Column, and Combo can enable <strong>Settings → Axes → Zoom → Enable zoom</strong>.
+Use the mouse wheel to zoom the X axis and drag inside the chart to pan.
+<strong>Show zoom slider</strong> controls the bottom slider without clearing the current
+range; wheel zoom and drag pan remain available when the slider is hidden.
+<strong>Reset Zoom</strong> returns to the full X range. An active Line chart follows new
+rows until the user manually zooms or pans; after that, new rows do not move
+the current viewport until Reset Zoom. Applying a changed X Axis Minimum or
+Maximum, disabling zoom, or switching to a chart type without zoom resets the
+manual viewport. Scatter, Bar, Histogram, and Box &amp; Whisker do not expose
+Zoom controls.</p>
+<p>Each chart has an individual <strong>Export PNG</strong> action. The subtle chart boundary
+marks the exported chart surface: title, legend, axes, plot, and current zoom
+range are included; Output selection controls, chart action buttons, zoom slider,
+and Reset Zoom are excluded. <strong>Settings → Export → Background</strong> can use Light
+or Dark independently of the Application theme. Custom series colors and the
+Normal curve are included in either background.</p>
+<p>Chart configuration survives Page/tab changes and subsequent Simulation or
+Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
+original Page and order while running, display <strong>Waiting for run to finish</strong>,
+and hide the plot. Their Output selection and Export PNG remain disabled;
+Settings and Remove remain available. Every Chart can be removed, including
+the final Foreground or Background Chart.
+During execution, Chart type allows keeping the current type or switching a
+non-Line chart to Line, even before the first row arrives. Line cannot switch
+to a non-Line type until execution stops. After Apply, Line uses the current
+run's data and updates live. Panels that remain non-Line do not load live chart
+data and automatically update from the new run's committed rows when execution
+stops; no refresh is needed.
+Panels stay visible and non-Line panels enter Waiting as soon as the run starts,
+even before its first progress update. Until the new run's data is available,
+Line displays <strong>Waiting for run data</strong> without showing the previous run's plot
+or loading chart data. It then updates live, and <strong>+ Add Chart</strong> still creates a Line chart.
+<strong>Open Template</strong> replaces the current Chart configuration with the Template's
+saved Charts. If it has no saved Charts, no persisted Chart configuration is
+restored and <strong>Save charts with template</strong> is off. After opening a Template
+with saved Charts, run Simulation directly to display the new results using
+those definitions and settings; no Chart setup is needed. A new blank Template
+clears the Chart configuration. <strong>Clear Last Run</strong> removes Last Run data and
+clears session Charts when <strong>Save charts with template</strong> is off; when it is on,
+the Chart configuration is retained. Chart settings become Template data only
+when <strong>Save charts with template</strong> is enabled.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

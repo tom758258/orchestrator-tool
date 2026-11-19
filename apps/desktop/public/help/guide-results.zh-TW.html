@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>執行結果</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html" aria-current="page">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>執行結果</h1>
+<h2 id="10-run-results">10. Run Results</h2>
+<p>Run 後，Output 區域目前可顯示以下 visible sections：</p>
+<ul>
+<li><strong>Last Run Execution Results</strong> — execution statuses 與 progress results；大量
+  execution results 以 latest first 顯示並可分頁瀏覽。</li>
+<li><strong>Messages</strong> — Show Message step 在執行時寫入的文字。</li>
+<li><strong>Last Run</strong> — 目前 run 的 Output Pages 與 result workspace。</li>
+<li><strong>圖表（Charts）</strong> — 集中顯示所有 Foreground／Background 圖表。</li>
+<li><strong>即時監視器（Live Monitors）</strong> — 獨立顯示已啟用的監看卡片，位於 Charts 下方。</li>
+<li><strong>Summary</strong> — 適用時顯示 numeric Count、Min、Max 與 Avg。</li>
+<li><strong>Output Data</strong> — 所選 Page 的 committed rows，以 latest first 顯示。</li>
+</ul>
+<h3 id="101-last-run">10.1 Last Run</h3>
+<p>Desktop 只在 memory 中保留一個 <strong>Last Run</strong>，沒有 Run History、database 或 SQL
+storage。</p>
+<p>Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
+不會重新解讀 Last Run。Open Template 會清除 Last Run；<strong>清除上次執行（Clear Last Run）</strong>
+會移除目前 memory 中的 result 與 snapshot。</p>
+<p>Last Run 也會保存該次 run 開始時的 Execution Mode。之後切換目前 selector，
+Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated success 不會
+被呈現為 real-hardware success。</p>
+<p>若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
+停止後可以 manual export。</p>
+<h3 id="102-收合結果面板">10.2 收合結果面板</h3>
+<p>Foreground Output 的 Source 卡片提供 Output Page 下拉選單、目前頁數與操作說明；切換後會更新 Summary、Output Data 及所選 Page 的匯出範圍。Background Output 的 Source 卡片提供 Background、Capture Dataset 選擇及 Worker 狀態。兩區的匯出選項都集中在 Output Data 下方的 Export settings。</p>
+<p>Background 數值 Summary 與 Output Data 使用和 Foreground 相同的表格樣式，並共用 Auto、Fixed、Raw 的 Number display 設定；這些設定不改變儲存資料或匯出精度。Background Summary 只顯示 Dataset 已有的統計，Scopes 保留 Valid／Invalid，Serial RX 則顯示事件與 Bytes 數量。Background 仍使用每頁 100 筆資料，不與 Foreground Output Page 混用。</p>
+<p>Background Source 的 Background 與 Capture Dataset 下拉選單在寬視窗並排，窄視窗則自動換行。Dataset 超過 100 筆才顯示分頁按鈕，並沿用專案標準按鈕樣式。Foreground Export settings 會依目前選項說明將選擇檔案或資料夾；Background Export settings 固定選擇目的資料夾，匯出完整的所選或全部 Datasets，不只目前顯示的資料列。Background 匯出按鈕依所選格式顯示名稱。</p>
+<p>Charts、Live Monitors（有啟用才顯示）、Foreground Output、Background Output、每張圖表與 Live Monitor，以及兩個 Output
+區塊中的 Summary／Output Data 都有獨立 <code>− / +</code> 控制，預設全部展開。收合只隱藏內容，
+不清除設定、不移除圖表、不停止 Capture 或 Monitor 接收；收合狀態不保存到 Template。</p>
+<p>Charts、Live Monitors、Foreground Output 與 Background Output 使用相同圓角外框，
+標題與收合按鈕嵌入框線，彼此獨立收合，且收合後仍保留外框與標題。
+Charts 收合時仍顯示 <strong>將圖表儲存於範本（Save charts with template）</strong> 與圖表數量。</p>
+<p><strong>Last Run Execution Results</strong> 與 <strong>Messages</strong> 的標題右側各有 <code>+ / −</code> 控制。兩者
+預設皆為展開，且可各自獨立收合，互不影響。收合只改變顯示內容：不會移除 execution
+資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。</p>
+<p><strong>Last Run Execution Results</strong> 收合後仍保留標題、Execution Mode badge 與 execution
+數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。</p>
+<p>Failed run 與 failed execution record 會先顯示簡短、較容易理解的錯誤說明。原始錯誤仍保留在
+<strong>Technical details</strong> 下方供除錯使用。這層說明只在 failure 出現；successful 與 cancelled
+execution record 維持既有 compact display。Instrument-specific 的 SCPI/VISA 細節會原樣
+保留，不由 Desktop 猜測或重新解讀。</p>
+<h3 id="103-messages">10.3 Messages</h3>
+<p><strong>Messages</strong> 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：<strong>Message
+1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 依 workflow
+產生的順序顯示訊息，<strong>舊訊息在上、最新訊息在下</strong>，因此 loop 的輸出可以由上往下閱讀。
+這與 <strong>Last Run Execution Results</strong> 及 <strong>Output Data</strong> 的 latest first 排列相反。
+訊息內的換行也會保留；切換 tab 或收合面板都不會遺失訊息。</p>
+<p>由於 loop 可能執行大量次數，每個 tab 僅保留最近 1,000 筆訊息。摘要列仍會顯示該次 run
+產生的訊息總數，因此可以知道是否還有更早的訊息。<strong>Messages</strong> 收合時不會重新載入
+訊息清單，但 run 仍會持續接收訊息並更新總數；重新展開後即可看到最新的訊息。</p>
+<p>單則訊息最多 4,096 個字元，避免過長的 Output 值填滿面板。超過時會縮短並標示
+<code>…[truncated]</code>，且結尾仍保有自己的換行。</p>
+<p>訊息屬於產生它的那一次 run。run 正常結束、失敗或 graceful stop 都會保留當輪已產生的
+訊息。開始新一輪 run 會清空上一輪的訊息。<strong>清除上次執行（Clear Last Run）</strong>、New Template 與 Open
+Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

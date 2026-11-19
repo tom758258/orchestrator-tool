@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Powers Steps</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html" aria-current="page">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Powers Steps</h1>
+<h4 id="power-set-output">Power Set Output</h4>
+<p>The Channel dropdown is shared by <strong>Power Set Output</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, <strong>Power Measure</strong>, and the <strong>Specific channel</strong>
+selection in <strong>Power Protection Status</strong>. It lists only channels confirmed by
+the target instance's capabilities as <strong>CH1</strong>, <strong>CH2</strong>, etc. Simulation uses the
+simulator channels; Live uses the model identified for the saved Resource in
+Setup. Changing the target instance, Execution Mode, or Powers executable
+updates the available channels.</p>
+<p>Loading, a missing Live model, a failed capability query, or an empty channel
+list displays a hint and disables fixed channel selection. Saved channels
+outside the supported list remain visible as unsupported or unconfirmed and
+are preserved when saving and reloading. Existing Channel bindings are shown
+as <strong>Bound channel (preserved)</strong>. Selecting a supported fixed channel explicitly
+replaces the saved channel or its binding; capabilities never change it automatically.</p>
+<p>Add <strong>Power Set Output</strong> to set a channel's Voltage, Current Limit, or both.
+Channel is required; at least one of the two setpoints must be selected. Use
+<strong>Set Voltage</strong> and <strong>Set Current Limit</strong> to include or remove each setpoint;
+unchecking leaves that instrument setting unchanged. The fields show <strong>Voltage
+(V)</strong> and <strong>Current Limit (A)</strong>. Power Set Output allows
+only numeric <strong>Fixed value</strong>, <strong>Variable</strong>, or <strong>Calculation</strong> setpoints.
+Calculation operands allow only fixed numbers or variables, with Add, Subtract,
+Multiply, or Divide. Previous step result, Elapsed time, Timestamp, and comparison
+calculations are unavailable for setpoints. Templates enforce these restrictions.
+Resolved variables must still be numeric or Powers action validation fails. <strong>Current Limit</strong> is the power supply output
+current-limit setpoint, expressed in A, not a forced output current. This step
+only configures the setpoints. Use <strong>Power Output ON</strong> separately to enable the output.</p>
+<h4 id="power-measure">Power Measure</h4>
+<p>Add <strong>Power Measure</strong> to read the selected channel's actual Voltage (V) and
+Current (A) once. It uses the fixed Channel dropdown without enabling the
+output or changing setpoints. After it completes, later Output, Assert, and
+Calculation steps can select <strong>Voltage</strong> or <strong>Current</strong> from its Step Output.
+The numeric pointers are <code>/data/measurements/voltage</code> and
+<code>/data/measurements/current</code>. It is foreground-only; readings do not create
+a Result column unless you add an Output step.</p>
+<h4 id="power-protection-status">Power Protection Status</h4>
+<p>Add <strong>Power Protection Status</strong> to read protection trip state without changing
+instrument settings. Select <strong>All</strong> channels or <strong>Specific channel</strong> and choose
+from the Channel dropdown. Switching from All to Specific selects the first
+supported channel. If capabilities are unavailable or contain no channels,
+Specific is unavailable and All is preserved; existing Specific values remain
+preserved. The result offers <strong>Protection Tripped</strong>, <strong>Over Voltage Tripped</strong>, and
+<strong>Over Current Tripped</strong>. Protection Tripped is true when either voltage or
+current protection has tripped. Powers Tool validates actual model support.</p>
+<p>To fail the Workflow after a trip, add an <strong>Assert</strong> after Power Protection
+Status. Select <strong>Previous step result → Protection Tripped</strong> on the left,
+<code>==</code> as the operator, and <strong>Boolean → False</strong> on the right. Status alone does
+not stop the Workflow, clear protection, or modify the power supply.</p>
+<p>For IF/ELSE, the three Protection Status result fields are Boolean: true means the corresponding protection has tripped, and false means it has not. Choose Boolean on the other side of the comparison; selecting a result does not change the other operand.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

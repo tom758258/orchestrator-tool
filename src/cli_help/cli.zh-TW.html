@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrator Tool CLI 使用者指南</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1 id="orchestrator-tool-cli-使用者指南">Orchestrator Tool CLI 使用者指南</h1>
+<p>CLI 用於診斷 Orchestrator 環境及已設定的外部工具 EXE。Workflow 編輯與 Simulation／Live Workflow 執行由 Desktop 負責，不是 CLI 功能。</p>
+<h2 id="選擇操作介面">選擇操作介面</h2>
+<p>Windows 發行版包含兩個 EXE：</p>
+<table>
+<thead>
+<tr><th>程式</th><th>用途</th></tr>
+</thead>
+<tbody>
+<tr><td><code>orchestrator-tool.exe</code></td><td>CLI：外部工具設定、Manifest、Worker 診斷。</td></tr>
+<tr><td><code>Orchestrator Tool.exe</code></td><td>Desktop：Workflow 編輯、Simulation／Live 執行及結果匯出。</td></tr>
+</tbody>
+</table>
+<p>本指南介紹 CLI；Desktop 的操作說明由 <code>Orchestrator Tool.exe</code> 右上角 <strong>Help</strong> 開啟。</p>
+<h2 id="開啟離線使用指南">開啟離線使用指南</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe user-guide
+.\orchestrator-tool.exe user-guide --lang en
+.\orchestrator-tool.exe user-guide --lang zh-TW
+</code></pre>
+<p>預設英文；指南隨 EXE 提供、由系統預設瀏覽器離線開啟，不需 Desktop 或儀器。</p>
+<h2 id="1-開啟-cli">1. 開啟 CLI</h2>
+<p>在 Windows Release 的 <code>orchestrator-tool.exe</code> 所在資料夾開啟 PowerShell：</p>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --help
+.\orchestrator-tool.exe --version
+.\orchestrator-tool.exe doctor
+.\orchestrator-tool.exe tools list
+</code></pre>
+<p>如果 EXE 已加入 <code>PATH</code>，可省略 <code>.\</code>，直接使用 <code>orchestrator-tool</code>。在開發專案根目錄也可使用 <code>cargo run --locked -- &lt;arguments&gt;</code>。</p>
+<p><code>doctor</code> 彙整外部 EXE 的可用性；<code>tools list</code> 顯示各註冊工具的狀態與路徑。這兩個指令都不會啟動 Workflow，也不代表已驗證實體儀器通訊。</p>
+<h2 id="2-指定工具-exe">2. 指定工具 EXE</h2>
+<p>沒有 <code>--config</code> 時，CLI 使用空設定。若要檢查已安裝工具，可以建立 <code>orchestrator.toml</code>，例如：</p>
+<pre><code class="language-toml">[tools]
+meters = &quot;C:/Example/Meters/meters-tool.exe&quot;
+powers = &quot;C:/Example/Powers/powers-tool.exe&quot;
+</code></pre>
+<p>請將路徑改為實際安裝位置，再執行：</p>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml doctor
+.\orchestrator-tool.exe --config .\orchestrator.toml tools list
+</code></pre>
+<p>CLI 不會自動繼承 Desktop 已保存的 EXE 路徑。缺少或尚未設定 EXE 時會回報其狀態，但 <code>doctor</code> 和 <code>tools list</code> 仍可能成功結束。</p>
+<h2 id="3-檢查單一工具">3. 檢查單一工具</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml tools inspect meters
+</code></pre>
+<p>如果 EXE 可用，指令會執行 Manifest 探測並顯示 Worker 相容性資訊；不可用時則顯示 <code>not-probed</code>。Inspect EXE 不等於實體硬體 Live 測試。</p>
+<h2 id="4-檢查支援的-worker">4. 檢查支援的 Worker</h2>
+<pre><code class="language-powershell">.\orchestrator-tool.exe --config .\orchestrator.toml tools worker-check meters
+.\orchestrator-tool.exe --config .\orchestrator.toml tools worker-check powers
+</code></pre>
+<p>上述指令會啟動所設定的外部工具 EXE，執行有時間界線的 Worker Simulation 診斷，因此必須先安裝並設定對應工具。目前 <code>worker-check</code> <strong>不支援</strong> Scopes、Serial 或 Wavegen。Simulation 通過不可視為已完成實體設備驗證。</p>
+<h2 id="5-常見問題與限制">5. 常見問題與限制</h2>
+<table>
+<thead>
+<tr><th>現象</th><th>檢查方式</th></tr>
+</thead>
+<tbody>
+<tr><td><code>not-configured</code></td><td>用 <code>--config</code> 指定含 <code>[tools]</code> 的 TOML；CLI 不會自動讀取 Desktop 設定</td></tr>
+<tr><td><code>missing</code> 或 <code>not-file</code></td><td>修正 EXE 路徑，確認指向一般檔案</td></tr>
+<tr><td>Manifest <code>not-probed</code></td><td>EXE 不可用，先處理其狀態再檢查 Manifest</td></tr>
+<tr><td>Manifest 或 Worker 檢查失敗</td><td>確認外部工具可執行，且 Manifest／Worker 行為符合支援的 Contract</td></tr>
+<tr><td><code>worker check is not supported</code></td><td>僅接受 <code>meters</code> 與 <code>powers</code></td></tr>
+<tr><td>設定或 Tool ID 錯誤</td><td>檢查 TOML 語法、已註冊 ID 與指令拼字</td></tr>
+</tbody>
+</table>
+<p>CLI 沒有 <code>run</code>、Workflow Editor、<code>--json</code>。完整語法與結束狀態請參閱 CLI README 及 <code>--help</code>。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Output Data and Export</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html" aria-current="page">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Output Data and Export</h1>
+<h3 id="105-data-and-summary">10.5 Data and Summary</h3>
+<p><strong>Output Data</strong> is built from committed ResultRows. Large tables use
+virtualization for display, but the rows remain available for charts and
+export.</p>
+<p><strong>Number display</strong> shares one setting between Summary and Output Data. <strong>Auto</strong>
+(default) shows up to 15 significant digits and simplifies floating-point tails;
+<strong>Fixed</strong> shows 0–12 decimal places; <strong>Raw</strong> shows the original JavaScript Number
+string. Changes apply immediately and carry across Run Pages for the current
+Desktop session. Count stays an integer, and Elapsed Time/Timestamp formats take
+priority. These settings do not change stored values, statistics, Charts, exports,
+or templates.</p>
+<p><strong>Summary</strong> shows Count, Min, Max, and Avg by default. <strong>Columns ▾</strong> independently
+controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std Dev
+is the sample standard deviation, calculated as <code>sqrt(M2 / (n - 1))</code>; 2σ and 3σ
+are its multiples. One sample displays <code>—</code> for all three σ columns, while Range
+remains available; constant data with at least two samples has Std Dev = 0.
+For Elapsed time Outputs, Min, Max, Avg, Range, Std Dev, 2σ, and 3σ follow the
+Output's Time Format from that run, matching Output Data and Scatter X display.
+Count remains an integer, and missing statistics remain <code>—</code>. Formatting affects
+display only; the underlying statistics retain their original precision in seconds.
+Column choices are temporary presentation settings. If a Page has no numeric
+Outputs, there is no numeric summary to show.</p>
+<h2 id="11-manual-export">11. Manual export</h2>
+<p>Manual export is available from the Output area after the run is no longer
+active and the selected export scope contains committed Output rows. Failed or
+incomplete runs keep their failure/incomplete status and export those committed
+rows as partial results.</p>
+<p>Manual export defaults to <strong>XLSX</strong> each time the application starts. You can
+switch between <strong>CSV</strong> and <strong>XLSX</strong> during the current session; this choice is not
+saved. Streaming CSV behavior is unchanged.</p>
+<p>Choose <strong>Run Page</strong> or <strong>All Run Pages</strong>, then choose <strong>CSV</strong> or <strong>XLSX</strong>:</p>
+<ul>
+<li><strong>Run Page / CSV</strong> — exports the selected Page as one CSV file.</li>
+<li><strong>Run Page / XLSX</strong> — exports the selected Page as one worksheet.</li>
+<li><strong>All Run Pages / CSV</strong> — creates one CSV file per Page in the selected
+  destination folder.</li>
+<li><strong>All Run Pages / XLSX</strong> — creates one workbook with one worksheet per Page.</li>
+</ul>
+<p>All XLSX time formats use numeric cells suitable for calculations and plotting.
+Elapsed <strong>Seconds</strong> stores seconds; the other three formats store seconds / 86400
+(Excel days). Timestamp stores the complete date/time serial even when Date is
+hidden; <code>T</code> and <code>+08:00</code> are fixed display text. To convert a difference in Excel
+days to seconds, multiply by 86400. CSV and streaming always retain raw Elapsed
+seconds and the full ISO Timestamp, regardless of display settings.</p>
+<p>Exports use committed ResultRows. XLSX writes finite floating-point values within
+Excel's supported numeric range as Number cells without rounding stored values,
+so you can calculate and plot them directly at Excel's native precision (about 15
+significant digits). JSON integers retain the existing precision protection;
+unsafe integers and numbers outside Excel's range remain Text using their stored
+JSON representation. Numeric-looking strings remain Text; booleans become
+Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
+Export preserves stored results; it cannot recover precision already lost when
+JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
+unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.</p>
+<p>Loop Stop is not itself a failure. Stop Workflow produces a stopped run when
+cleanup succeeds. After execution stops, rows already committed before a
+failure or incomplete termination remain
+eligible for manual export. Rows still staged by a failed or stopped owning
+scope are not exported.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>
