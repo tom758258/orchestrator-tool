@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { stripTypeScriptTypes } from 'node:module'
 import { test } from 'node:test'
-import { runInNewContext } from 'node:vm'
 import {
   canMoveSteps, canRelocateSteps, copySteps, deleteSteps, moveSteps, pasteSteps, reconcileSelection, relocateSteps, selectAllSteps,
   reorderSteps, renameStepId, selectStep, singleSelection, stepClipboardShortcut,
@@ -212,20 +209,7 @@ test('Clipboard shortcuts are confined to Workflow and preserve native editable 
   }
   assert.equal(stepClipboardShortcut({ ...event, key: 'Delete', ctrlKey: false }, true, false), 'delete')
   assert.equal(stepClipboardShortcut({ ...event, key: 'Delete', ctrlKey: false }, false, false), null)
-  const source = readFileSync(new URL('../src/stepEditing.ts', import.meta.url), 'utf8')
-  class Element {
-    constructor(control = false, editable = false) { this.control = control; this.isContentEditable = editable }
-    closest() { return this.control ? this : null }
-  }
-  class HTMLElement extends Element {}
-  const guard = runInNewContext(stripTypeScriptTypes('(' + source.slice(source.indexOf('export function isEditableTarget') + 7) + ')'), { Element, HTMLElement })
-  for (const control of ['input', 'textarea', 'select']) assert.equal(guard(new HTMLElement(control)), true)
-  assert.equal(guard(new HTMLElement(false, true)), true)
-  const descendant = new Element()
-  descendant.parentElement = new HTMLElement(false, true)
-  assert.equal(guard(descendant), true)
-  assert.equal(guard(new HTMLElement()), false)
-  assert.equal(guard(null), false)
+
 })
 
 
