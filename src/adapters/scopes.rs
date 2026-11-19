@@ -39,11 +39,15 @@ pub struct ScopesCapabilities {
 
 pub(crate) const DEFAULT_SIMULATED_MODEL_ID: &str = "keysight-dsox4024a";
 
-pub(crate) fn autoscale_supported_model(model_id: &str) -> bool {
+fn is_keysight_model(model_id: &str) -> bool {
     matches!(
         model_id,
         "keysight-dsox2004a" | "keysight-dsox3024a" | "keysight-dsox4024a" | "keysight-dsox4034a"
     )
+}
+
+pub(crate) fn autoscale_supported_model(model_id: &str) -> bool {
+    is_keysight_model(model_id)
 }
 
 pub(crate) const DEFAULT_SCREENSHOT_FORMAT: &str = "png";
@@ -347,10 +351,7 @@ pub fn validate_session(
     spec: &WorkerLaunchSpec,
     timeout: Duration,
 ) -> Result<(), String> {
-    let status = crate::worker_http::WorkerClient::new(session.ready())
-        .status_with_timeout(timeout)
-        .map_err(|e| e.to_string())?;
-    validate_status(&status, session)?;
+    let status = validated_status(session, timeout)?;
     let argument = |flag: &str| {
         spec.arguments()
             .windows(2)
@@ -381,10 +382,25 @@ pub fn validate_session(
                 .into(),
         );
     }
+    let identity = status_identity(&status);
+    if session.startup_identity.get_or_init(|| identity.clone()) != &identity {
+        return Err("Scopes Worker identity changed after startup".into());
+    }
     Ok(())
 }
 
-fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String> {
+fn status_identity(status: &Value) -> Value {
+    json!({
+        "mode": status["mode"],
+        "model": status["model"],
+        "resource": status["resource"],
+    })
+}
+
+fn validated_status(session: &WorkerSession, timeout: Duration) -> Result<Value, String> {
+    let status = crate::worker_http::WorkerClient::new(session.ready())
+        .status_with_timeout(timeout)
+        .map_err(|e| e.to_string())?;
     if status["schema_version"].as_u64() != Some(3)
         || status["service"] != "scopes-tool"
         || status["run_id"] != session.ready().run_id()
@@ -398,7 +414,7 @@ fn validate_status(status: &Value, session: &WorkerSession) -> Result<(), String
             status["fatal_error"]
         ));
     }
-    Ok(())
+    Ok(status)
 }
 
 static NEXT_JOB: AtomicU64 = AtomicU64::new(0);
@@ -416,6 +432,159 @@ fn run_command(
     );
     let terminal = session.run_async_job(command, arguments, None, &job_id, timeout)?;
     terminal_result(&terminal, command, arguments)
+}
+
+fn run_with_readback(
+    session: &WorkerSession,
+    command: &str,
+    arguments: &Value,
+    timeout: Duration,
+) -> Result<Value, String> {
+    if arguments["query"] == true {
+        return run_command(session, command, arguments, timeout);
+    }
+    let fields: &[(&str, &str)] = match command {
+        "acquisition" => &[("type", "type"), ("count", "count")],
+        "channel-coupling" => &[("coupling", "coupling")],
+        "channel-probe" => &[("ratio", "probe_ratio")],
+        "channel-bandwidth-limit" => &[("on/off", "bandwidth_limit")],
+        "channel-invert" => &[("on/off", "invert")],
+        "channel-units" => &[("units", "units")],
+        "channel-display" => &[("on/off", "display")],
+        "channel-scale" => &[("volts_per_division", "volts_per_division")],
+        "channel-offset" => &[("volts", "volts")],
+        "timebase-scale" => &[("seconds_per_division", "seconds_per_division")],
+        "timebase-position" => &[("seconds", "position_seconds")],
+        "trigger-edge" => &[
+            ("source_channel", "source_channel"),
+            ("level", "level_volts"),
+            ("slope", "slope"),
+        ],
+        _ => return run_command(session, command, arguments, timeout),
+    };
+    let channel = arguments.get("channel");
+    let target = match channel {
+        Some(channel) => format!("Scopes {command}, channel {channel}"),
+        None => format!("Scopes {command}"),
+    };
+    let numeric_policy = fields
+        .iter()
+        .any(|(argument, field)| is_numeric_readback(field) && arguments.get(argument).is_some())
+        .then(|| readback_model_policy(session, timeout))
+        .transpose()
+        .map_err(|error| format!("{target} readback model check failed: {error}"))?;
+    let result = run_command(session, command, arguments, timeout)
+        .map_err(|error| format!("{target} Set failed: {error}"))?;
+    let mut query = json!({"query":true});
+    if let Some(channel) = channel {
+        query["channel"] = channel.clone();
+    }
+    let readback = run_command(session, command, &query, timeout)
+        .map_err(|error| format!("{target} readback query failed: {error}"))?;
+    if readback["operation"] != "query" {
+        return Err(format!(
+            "{target} readback expected operation \"query\", got {}",
+            readback["operation"]
+        ));
+    }
+    let check = |field, expected: &Value| {
+        let policy = numeric_policy.filter(|_| is_numeric_readback(field));
+        compare_readback(field, expected, &readback[field], policy)
+            .map_err(|error| format!("{target} readback {error}"))
+    };
+    if let Some(channel) = channel {
+        check("channel", channel)?;
+    }
+    for &(argument, field) in fields {
+        if argument == "on/off" {
+            check(field, &Value::Bool(arguments["on"] == true))?;
+        } else if let Some(expected) = arguments.get(argument) {
+            check(field, expected)?;
+        }
+    }
+    Ok(result)
+}
+
+#[derive(Clone, Copy)]
+enum ReadbackPolicy {
+    Keysight,
+    Tektronix,
+    TektronixAbsoluteEdgeLevel,
+}
+
+fn readback_model_policy(
+    session: &WorkerSession,
+    timeout: Duration,
+) -> Result<ReadbackPolicy, String> {
+    let startup_identity = session
+        .startup_identity
+        .get()
+        .ok_or("Scopes Worker startup identity has not been verified")?;
+    let status = validated_status(session, timeout)?;
+    if &status_identity(&status) != startup_identity {
+        return Err("Scopes Worker identity changed after startup".into());
+    }
+    match status["model"].as_str() {
+        Some("tektronix-tbs2074") => Ok(ReadbackPolicy::Tektronix),
+        Some("tektronix-tds2024b" | "tektronix-tbs1052b") => {
+            Ok(ReadbackPolicy::TektronixAbsoluteEdgeLevel)
+        }
+        Some(model) if is_keysight_model(model) => Ok(ReadbackPolicy::Keysight),
+        model => Err(format!(
+            "unsupported Scopes Worker model for numeric readback: {model:?}"
+        )),
+    }
+}
+
+fn is_numeric_readback(field: &str) -> bool {
+    matches!(
+        field,
+        "probe_ratio"
+            | "volts_per_division"
+            | "volts"
+            | "seconds_per_division"
+            | "position_seconds"
+            | "level_volts"
+    )
+}
+
+fn compare_readback(
+    field: &str,
+    expected: &Value,
+    actual: &Value,
+    policy: Option<ReadbackPolicy>,
+) -> Result<(), String> {
+    if actual.is_null() {
+        return Err(format!("is missing {field} (expected {expected})"));
+    }
+    if let Some(policy) = policy {
+        let (expected_number, actual_number) = expected
+            .as_f64()
+            .zip(actual.as_f64())
+            .filter(|(expected, actual)| expected.is_finite() && actual.is_finite())
+            .ok_or_else(|| format!("invalid numeric {field}: expected {expected}, got {actual}"))?;
+        let mut difference = (expected_number - actual_number).abs();
+        let magnitude = expected_number.abs();
+        let tolerance = match (policy, field) {
+            (ReadbackPolicy::TektronixAbsoluteEdgeLevel, "level_volts") => {
+                // Match the Scopes CLI check at the absolute tolerance boundary.
+                difference = (difference * 1e12).round_ties_even() / 1e12;
+                0.05
+            }
+            (ReadbackPolicy::Keysight, _) | (_, "level_volts") => (magnitude * 1e-3).max(1e-12),
+            _ => 1e-6 * magnitude.max(1e-12),
+        };
+        if difference > tolerance {
+            return Err(format!(
+                "mismatch for {field}: expected {expected}, got {actual} (tolerance {tolerance:e})"
+            ));
+        }
+    } else if actual != expected {
+        return Err(format!(
+            "mismatch for {field}: expected {expected}, got {actual}"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_single_wait_arguments(arguments: &Value) -> Result<u64, String> {
@@ -636,15 +805,7 @@ pub fn apply_setup(
     timeout: Duration,
 ) -> Result<(), String> {
     for (command, arguments) in setup_commands(setup) {
-        run_command(session, &command, &arguments, timeout).map_err(|e| {
-            format!(
-                "{command}, channel {}: {e}",
-                arguments
-                    .get("channel")
-                    .map(Value::to_string)
-                    .unwrap_or_else(|| "acquisition".into())
-            )
-        })?;
+        run_with_readback(session, &command, &arguments, timeout)?;
     }
     Ok(())
 }
@@ -741,7 +902,7 @@ pub fn run_action(
         "autoscale" => timeout.max(Duration::from_secs(60)),
         _ => timeout,
     };
-    run_command(session, command, &arguments, timeout)
+    run_with_readback(session, command, &arguments, timeout)
 }
 
 fn prepare_file_arguments(
@@ -923,6 +1084,57 @@ mod tests {
                 ("channel-units".into(), json!({"channel":2,"units":"amp"}))
             ]
         );
+    }
+
+    #[test]
+    fn scopes_readback_compares_numeric_boundaries_and_rejects_malformed_values() {
+        let keysight = Some(ReadbackPolicy::Keysight);
+        let tektronix = Some(ReadbackPolicy::Tektronix);
+        let absolute_edge = Some(ReadbackPolicy::TektronixAbsoluteEdgeLevel);
+        for (field, expected, actual, policy, matches) in [
+            ("position_seconds", json!(0), json!(1e-12), keysight, true),
+            (
+                "position_seconds",
+                json!(0),
+                json!(1.1e-12),
+                keysight,
+                false,
+            ),
+            (
+                "seconds_per_division",
+                json!(1e-9),
+                json!(1.0005e-9),
+                keysight,
+                true,
+            ),
+            (
+                "seconds_per_division",
+                json!(1e-9),
+                json!(1.0005e-9),
+                tektronix,
+                false,
+            ),
+            ("probe_ratio", json!(10), json!(10.009), keysight, true),
+            ("level_volts", json!(1.0), json!(1.04), keysight, false),
+            ("level_volts", json!(1.0), json!(1.0005), tektronix, true),
+            ("level_volts", json!(1.0), json!(1.0011), tektronix, false),
+            ("level_volts", json!(1.0), json!(1.05), absolute_edge, true),
+            ("level_volts", json!(1.0), json!(1.06), absolute_edge, false),
+            ("level_volts", json!(1e-9), json!(0.05), absolute_edge, true),
+            ("volts", json!(1.0), json!(1.0005), absolute_edge, false),
+            ("volts", json!(1), json!("1"), keysight, false),
+            ("volts", json!(1), Value::Null, keysight, false),
+            ("count", json!(16), json!(17), None, false),
+            ("invert", json!(false), json!(0), None, false),
+            ("source_channel", json!(1), json!(2), None, false),
+            ("slope", json!("positive"), json!("negative"), None, false),
+        ] {
+            assert_eq!(
+                compare_readback(field, &expected, &actual, policy).is_ok(),
+                matches,
+                "{field}: expected {expected}, got {actual}"
+            );
+        }
     }
     #[test]
     fn scopes_capabilities_preserves_unknown_information_and_checks_model() {

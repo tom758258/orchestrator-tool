@@ -1128,6 +1128,12 @@ impl BackgroundManager {
                 })
                 .map_err(|e| e.to_string())?;
             self.runtimes.insert(id.into(), Runtime { sender, thread });
+            if scopes {
+                // Scopes preparation already bounds startup, status, each
+                // Setup job, and stream start. Wait for its result so the
+                // dispatcher cannot start the stream after an outer timeout.
+                return ready_rx.recv().map_err(|e| e.to_string())?;
+            }
             return ready_rx
                 .recv_timeout(self.startup + self.shutdown + Duration::from_secs(1))
                 .map_err(|e| e.to_string())?;

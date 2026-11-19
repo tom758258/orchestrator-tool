@@ -363,15 +363,20 @@ Resource remains outside both groups.
 Choose Acquisition Type (Normal, Average, High Resolution, or Peak); Average
 Count is editable only with Average. Channel rows provide Input Coupling,
 Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit
-settings are saved and applied. Blank values and Unchanged send no commands.
+settings are saved, applied, and read back. Blank values and Unchanged send no
+commands.
 
 The controls use offline Scopes capabilities. Simulation uses Scopes' default
 Keysight DSOX4024A profile. Live uses the canonical model ID saved with the
 selected Resource. Unknown or unavailable capability information disables new
 settings with an explanation. Unsupported fields remain visible and disabled;
 changing models preserves existing settings. Scopes validates actual model
-support and instrument limits when applying Setup, before any Workflow step.
-A Setup failure stops the Workflow and identifies the instance/channel.
+support and instrument limits when applying Setup. The run reports Setup FAIL
+if a readback fails, is missing, or differs from the requested value. The error
+identifies the instance and, for channel settings, the channel. Workflow steps
+start only after Setup succeeds. For example, if you set Channel 2 Waveform
+Invert to On and leave the other settings Unchanged, Setup verifies Channel 2
+inversion before the Workflow starts.
 
 ## 6. Workflow Editor
 
@@ -768,6 +773,19 @@ with Add, Subtract, Multiply, or Divide. Templates enforce these restrictions;
 general Output, Set Variable, Assert, and While sources remain available.
 Each of these five Scopes setpoints is required, supplied by a fixed value or binding.
 Measure exposes Value, Unit, Channel, and Item for Output or Assert.
+
+Channel Display, Channel Scale, Channel Offset, Horizontal Scale, Horizontal
+Position, and Edge Trigger read back the setting after applying it. If the
+readback fails, is missing, or differs beyond the allowed tolerance, the Step
+reports FAIL. For a mismatch, the error shows the requested and returned values
+and any numeric tolerance that applies.
+When verification succeeds, Result comes from the Set command. Set and Query
+each use the existing timeout.
+
+TDS2024B and TBS1052B accept an absolute difference up to ±0.05 V for Edge
+Trigger Level, including settings close to zero. For example, a 1.00 V setting
+passes with a 1.04 V readback and fails with a 1.06 V readback. Source Channel
+and Slope must still match exactly.
 
 Foreground Measure also offers Valid (`/valid`) for IF/ELSE. A measurement
 with a usable value returns `true`. A confirmed invalid measurement sentinel
