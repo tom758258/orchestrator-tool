@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process::{ChildStderr, ChildStdout, ExitStatus},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
     },
@@ -163,6 +163,8 @@ pub struct WorkerSession {
     event_receiver: Option<Receiver<StdoutMessage>>,
     pending_events: Mutex<VecDeque<Value>>,
     manifest: Option<ToolManifest>,
+    // Tool-specific identity verified by the adapter at startup.
+    pub(crate) startup_identity: OnceLock<Value>,
     jobs: Arc<Mutex<JobTracker>>,
     evidence: Mutex<RunEvidence>,
     // JSONL transitions only; HTTP Status can be a stale snapshot.
@@ -1417,6 +1419,7 @@ pub fn start_worker(
                 JobTracker::new(ready.run_id()).map_err(WorkerStartError::InvalidContract)?;
             Ok(WorkerSession {
                 manifest: spec.manifest().cloned(),
+                startup_identity: OnceLock::new(),
                 jobs: Arc::new(Mutex::new(tracker)),
                 evidence: Mutex::new(RunEvidence::default()),
                 stream_state: Mutex::new(None),

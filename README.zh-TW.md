@@ -25,7 +25,7 @@ Probe Ratio、Bandwidth Limit、Channel Invert 與 Channel Units。Workflow 會�
 Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position 與 Edge Trigger。
 Set 與 Query 各自使用既有 Timeout。回讀失敗、缺少資料或不符合設定時，Setup 會在 Workflow
 啟動前失敗，或由受影響的設定 Step 回報失敗。TDS2024B 與 TBS1052B 的 Edge Trigger Level
-採用 ±0.05 V 絕對容差。詳細規則請見
+採用 ±0.05 V 絕對容差，設定值接近零時可能容許較大的相對差距。詳細規則請見
 [Scopes 整合契約](docs/contracts/scopes-integration.md#settings-readback)。
 
 完整的 Template 與 execution contract 請見

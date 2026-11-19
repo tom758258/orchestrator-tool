@@ -3838,6 +3838,7 @@ fn run_scopes_fixture(scenario: &str) {
     let edge_readback = scenario.starts_with("scopes-readback-");
     let setup_mismatch = scenario == "scopes-setup-readback-mismatch";
     let mut jobs = 0;
+    let mut status_reads = 0;
     let model = match scenario {
         "scopes-wrong-model" => "unknown",
         "scopes-readback-tds2024b" => "tektronix-tds2024b",
@@ -3853,12 +3854,25 @@ fn run_scopes_fixture(scenario: &str) {
     loop {
         let request = accept_request(&listener);
         match request.path.as_str() {
-            "/status" => write_response(request.stream, 200, &json!({"schema_version":3,
-                "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
-                "mode":if scenario == "scopes-dynamic-failed" {"live"} else {"simulate"},
-                "model":model,
-                "resource":if scenario == "scopes-dynamic-failed" {json!("USB::SCOPE")} else {json!(null)}}).to_string()),
+            "/status" => {
+                status_reads += 1;
+                let reported_model =
+                    if scenario == "scopes-readback-changed-model" && status_reads > 1 {
+                        "tektronix-tds2024b"
+                    } else {
+                        model
+                    };
+                write_response(request.stream, 200, &json!({"schema_version":3,
+                    "service":"scopes-tool","run_id":run_id,"status":"ready","fatal_error":null,
+                    "mode":if scenario == "scopes-dynamic-failed" {"live"} else {"simulate"},
+                    "model":reported_model,
+                    "resource":if scenario == "scopes-dynamic-failed" {json!("USB::SCOPE")} else {json!(null)}}).to_string());
+            }
             "/command" => {
+                assert_ne!(
+                    scenario, "scopes-readback-changed-model",
+                    "Set must not run with an unverified identity"
+                );
                 jobs += 1;
                 let worker_job_id = format!("job-{jobs}");
                 let command: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
@@ -3881,7 +3895,10 @@ fn run_scopes_fixture(scenario: &str) {
                 if edge_readback {
                     assert_eq!(command["command"], "trigger-edge");
                     match jobs {
-                        1 => assert_eq!(command["arguments"], json!({"source_channel":1,"level":1.0,"slope":"positive"})),
+                        1 => assert_eq!(
+                            command["arguments"],
+                            json!({"source_channel":1,"level":1.0,"slope":"positive"})
+                        ),
                         2 => assert_eq!(command["arguments"], json!({"query":true})),
                         _ => panic!("unexpected Scopes setting job"),
                     }
@@ -3904,7 +3921,10 @@ fn run_scopes_fixture(scenario: &str) {
                 }
                 write_response(request.stream, 202, &json!({"schema_version":3,"status":"accepted",
                     "command":command["command"],"job_id":if scenario == "scopes-admission-mismatch" {json!("other-job")} else {command["job_id"].clone()},"worker_job_id":worker_job_id}).to_string());
-                if scenario == "scopes-timeout" || (query && scenario == "scopes-readback-timeout") { continue; }
+                if scenario == "scopes-timeout" || (query && scenario == "scopes-readback-timeout")
+                {
+                    continue;
+                }
                 thread::sleep(Duration::from_millis(50));
                 let single_wait = scenario.starts_with("scopes-single-wait-");
                 let measure = scenario.starts_with("scopes-measure-");
@@ -3941,7 +3961,7 @@ fn run_scopes_fixture(scenario: &str) {
                 } else if edge_readback {
                     if query && scenario == "scopes-readback-missing" {
                         json!({"operation":"query","source_channel":1,"slope":"positive"})
-                    } else if query {
+                    } else if query && scenario != "scopes-readback-wrong-operation" {
                         json!({"operation":"query","source_channel":1,"level_volts":1.04,"slope":"positive"})
                     } else {
                         json!({"operation":"set","source_channel":1,"level_volts":1.0,"slope":"positive","commands":["set trigger"]})
@@ -3967,7 +3987,10 @@ fn run_scopes_fixture(scenario: &str) {
                     "exit_code":if single_wait || measure_invalid {1} else if failed || cancelled {3} else {0},
                     "error":error, "result":result,"files":[]}).to_string());
             }
-            "/stop" => { write_response(request.stream, 200, r#"{"ok":true}"#); return; }
+            "/stop" => {
+                write_response(request.stream, 200, r#"{"ok":true}"#);
+                return;
+            }
             other => panic!("unexpected Scopes request {other}"),
         }
     }
@@ -4341,7 +4364,17 @@ fn scopes_workflow_setting_readback_controls_step_outcome() {
         (
             "scopes-readback-mismatch",
             "keysight-dsox4024a",
-            Some("readback mismatch for level_volts"),
+            Some("mismatch for level_volts: expected 1.0, got 1.04 (tolerance 1e-3)"),
+        ),
+        (
+            "scopes-readback-changed-model",
+            "keysight-dsox4024a",
+            Some("Worker identity changed after startup"),
+        ),
+        (
+            "scopes-readback-wrong-operation",
+            "keysight-dsox4024a",
+            Some("readback expected operation \"query\", got \"set\""),
         ),
         (
             "scopes-readback-missing",

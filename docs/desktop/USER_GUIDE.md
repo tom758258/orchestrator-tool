@@ -374,7 +374,9 @@ changing models preserves existing settings. Scopes validates actual model
 support and instrument limits when applying Setup. The run reports Setup FAIL
 if a readback fails, is missing, or differs from the requested value. The error
 identifies the instance and, for channel settings, the channel. Workflow steps
-start only after Setup succeeds.
+start only after Setup succeeds. For example, if you set Channel 2 Waveform
+Invert to On and leave the other settings Unchanged, Setup verifies Channel 2
+inversion before the Workflow starts.
 
 ## 6. Workflow Editor
 
@@ -775,14 +777,15 @@ Measure exposes Value, Unit, Channel, and Item for Output or Assert.
 Channel Display, Channel Scale, Channel Offset, Horizontal Scale, Horizontal
 Position, and Edge Trigger read back the setting after applying it. If the
 readback fails, is missing, or differs beyond the allowed tolerance, the Step
-reports FAIL. For a mismatch, the error shows the requested and returned values.
+reports FAIL. For a mismatch, the error shows the requested and returned values
+and any numeric tolerance that applies.
 When verification succeeds, Result comes from the Set command. Set and Query
 each use the existing timeout.
 
 TDS2024B and TBS1052B accept an absolute difference up to ±0.05 V for Edge
-Trigger Level, including settings close to zero. Source Channel and Slope must
-still match exactly. This is the verification tolerance for the run. Instrument
-accuracy across the setting range has not been established by this check.
+Trigger Level, including settings close to zero. For example, a 1.00 V setting
+passes with a 1.04 V readback and fails with a 1.06 V readback. Source Channel
+and Slope must still match exactly.
 
 Foreground Measure also offers Valid (`/valid`) for IF/ELSE. A measurement
 with a usable value returns `true`. A confirmed invalid measurement sentinel

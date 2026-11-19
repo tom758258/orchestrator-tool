@@ -311,6 +311,8 @@ Keysight DSOX4024A profile；Live 使用所選 Resource 一起保存的 canonica
 切換型號會保留既有值。實際型號支援與儀器限制由 Scopes 在套用 Setup 時驗證。
 回讀失敗、缺少資料或與要求的值不符時，執行結果會顯示 Setup FAIL。錯誤會指出 instance，
 若為通道設定也會指出 channel。Setup 成功後才會開始執行 Workflow Step。
+例如將通道 2 的 Waveform Invert 設為 On，其餘維持 Unchanged，Setup 會先回讀確認通道 2
+已反相，再開始 Workflow。
 
 ## 6. Workflow Editor
 
@@ -661,12 +663,12 @@ Calculation 的運算元只允許固定數值或變數，運算子只允許 Add�
 
 Channel Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position
 與 Edge Trigger 會在套用設定後回讀。回讀失敗、缺少資料或超出容差時，Step 會回報 FAIL。
-若值不符，錯誤會顯示要求值與回讀值。驗證成功時，Result 取自原始 Set 命令。
+若值不符，錯誤會顯示要求值、回讀值及適用的數值容差。驗證成功時，Result 取自原始 Set 命令。
 Set 與 Query 各自使用既有 Timeout。
 
 TDS2024B 與 TBS1052B 的 Edge Trigger Level 採用 ±0.05 V 絕對容差，設定值接近零時也適用。
-Source Channel 與 Slope 仍須完全一致。此容差用於判定驗證是否成功，這項檢查無法證實
-整段設定範圍的儀器精度。
+例如設定 1.00 V 時，回讀 1.04 V 會通過，回讀 1.06 V 會失敗。Source Channel 與 Slope
+仍須完全一致。
 
 Foreground Measure 另提供 Valid（`/valid`）供 IF／ELSE 判斷。取得有效數值時為
 `true`；僅在確認是無效量測 sentinel、且儀器狀態正常時，Step 仍會成功完成並回傳
