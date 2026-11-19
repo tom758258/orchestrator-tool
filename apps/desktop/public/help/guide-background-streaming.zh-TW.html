@@ -192,7 +192,7 @@ manual export 不同。此區塊在程式啟動時預設收合，點擊標題可
       }
       const theme = new URLSearchParams(location.search).get('theme');
       if (['system', 'light', 'dark'].includes(theme)) {
-        document.querySelectorAll('a.help-page').forEach(link => {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
           const url = new URL(link.getAttribute('href'), location.href);
           url.searchParams.set('theme', theme);
           link.href = url.href;

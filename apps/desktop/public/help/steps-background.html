@@ -111,7 +111,7 @@ restarting the application; restarting alone does not verify shutdown.</p>
       }
       const theme = new URLSearchParams(location.search).get('theme');
       if (['system', 'light', 'dark'].includes(theme)) {
-        document.querySelectorAll('a.help-page').forEach(link => {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
           const url = new URL(link.getAttribute('href'), location.href);
           url.searchParams.set('theme', theme);
           link.href = url.href;

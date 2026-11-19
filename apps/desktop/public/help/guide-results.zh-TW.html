@@ -111,7 +111,7 @@ Template 都會一併清除訊息。訊息不會存檔，也無法 export。</p>
       }
       const theme = new URLSearchParams(location.search).get('theme');
       if (['system', 'light', 'dark'].includes(theme)) {
-        document.querySelectorAll('a.help-page').forEach(link => {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
           const url = new URL(link.getAttribute('href'), location.href);
           url.searchParams.set('theme', theme);
           link.href = url.href;

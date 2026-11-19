@@ -209,7 +209,7 @@ Chart configuration，且 <strong>將圖表儲存於範本（Save charts with te
       }
       const theme = new URLSearchParams(location.search).get('theme');
       if (['system', 'light', 'dark'].includes(theme)) {
-        document.querySelectorAll('a.help-page').forEach(link => {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
           const url = new URL(link.getAttribute('href'), location.href);
           url.searchParams.set('theme', theme);
           link.href = url.href;
