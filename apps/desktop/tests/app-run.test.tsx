@@ -1678,6 +1678,7 @@ test('Foreground Output Page picker identifies the selected page and keeps expor
 
 test('Clear Workflow cancel preserves steps; confirmation removes steps without replacing the Template', async () => {
   await mount()
+  const original = await savedDraft()
   const clear = () => screen.getByRole('button', { name: 'Clear Workflow' }) as HTMLButtonElement
   expect(clear().disabled).toBe(false)
 
@@ -1688,6 +1689,7 @@ test('Clear Workflow cancel preserves steps; confirmation removes steps without 
     expect.objectContaining({ kind: 'warning', okLabel: 'Clear' }),
   ))
   expect(clear().disabled).toBe(false)
+  expect(await savedDraft()).toEqual(original)
 
   vi.mocked(confirm).mockResolvedValueOnce(true)
   fireEvent.click(clear())

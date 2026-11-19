@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import ScopesActionEditor from '../src/ScopesActionEditor'
-import { ExpressionOperandEditor } from '../src/InputValueEditor'
+import InputValueEditor, { ExpressionOperandEditor } from '../src/InputValueEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
 import type { ExpressionOperandWire } from '../src/inputValue'
@@ -1227,4 +1227,26 @@ test('Background Step Palette shows complete tooltips with compact visible names
   expect(workerOff.getAttribute('title')).toContain('Stop the selected background Worker.')
   fireEvent.click(workerOff)
   expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('numeric setpoint UI restricts sources and forwards a selected variable', () => {
+  const onChange = vi.fn()
+  render(<InputValueEditor value={{ source: 'literal', value: 2 }} onChange={onChange}
+    numericSetpoint earlierSteps={[]} earlierVariables={['threshold']}
+    instances={original.tool_instances} disabled={false} stepLabel={step => step.id} />)
+  const source = screen.getByRole('combobox', { name: 'Value Source' })
+  const values = Array.from(source.querySelectorAll('option')).map(option => option.value)
+  expect(values).not.toContain('elapsed-time')
+  expect(values).not.toContain('timestamp')
+  fireEvent.change(source, { target: { value: 'variable' } })
+  expect(onChange).toHaveBeenCalledWith({ source: 'variable', variable: 'threshold' })
+})
+
+test('operand UI accepts String literals only when explicitly allowed', () => {
+  const onChange = vi.fn()
+  render(<ExpressionOperandEditor side="Left" value={{ source: 'literal', value: 0 }}
+    allowStringLiteral onChange={onChange} earlierSteps={[]} earlierVariables={[]}
+    instances={original.tool_instances} disabled={false} stepLabel={step => step.id} />)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'string' } })
+  expect(onChange).toHaveBeenCalledWith({ source: 'literal', value: '' })
 })

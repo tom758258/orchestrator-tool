@@ -56,6 +56,19 @@ test('Live remains blocked until a fresh preflight passes, and Simulation stays 
   expect(invoke).toHaveBeenCalledTimes(2)
   expect(h.result.current.blocked).toBe(false)
 
+  // Saving or updating executable configuration invalidates the previous Live pass.
+  h.args[8] = true
+  h.rerender()
+  expect(h.result.current.blocked).toBe(true)
+  await settlePreflight()
+  expect(invoke).toHaveBeenCalledTimes(2)
+  h.args[8] = false
+  h.rerender()
+  expect(h.result.current.blocked).toBe(true)
+  await settlePreflight()
+  expect(invoke).toHaveBeenCalledTimes(3)
+  expect(h.result.current.status).toBe('passed')
+
   h.args[0] = 'simulate'
   h.rerender()
   expect(h.result.current.blocked).toBe(false)
