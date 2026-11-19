@@ -4,8 +4,6 @@ import { chartLoadGroups, chartNeedsLoad, createPageChartData } from '../src/cha
 import { addChartPanel, chartRawOutputs } from '../src/chartPanels.ts'
 import { statisticalRequestKey } from '../src/chartStatistics.ts'
 
-const source = readFileSync(new URL('../src/ResultChart.tsx', import.meta.url), 'utf8')
-
 test('heterogeneous series are planned from their own local lengths with a 25k bound', () => {
   const data = createPageChartData()
   data.append('V', 0, Array.from({ length: 50_000 }, () => 1))
