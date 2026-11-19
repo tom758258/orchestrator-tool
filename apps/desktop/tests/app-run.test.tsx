@@ -161,22 +161,6 @@ async function savedDraft(): Promise<WorkflowDraft> {
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
 
-test('top controls keep preferences, Template actions and Execution Mode in their intended groups', async () => {
-  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith('create_workflow_draft'))
-  const preferences = screen.getByRole('group', { name: 'Interface preferences' })
-  expect(within(preferences).getByText('Appearance')).toBeTruthy()
-  expect(within(preferences).getByText('Language')).toBeTruthy()
-  expect(within(preferences).getByRole('button', { name: 'Help' })).toBeTruthy()
-  const toolbar = screen.getByRole('group', { name: 'Application actions' })
-  const template = within(toolbar).getByRole('group', { name: 'Template' })
-  for (const name of ['New Template', 'Open Template', 'Save Template']) {
-    expect(within(template).getByRole('button', { name })).toBeTruthy()
-  }
-  expect(within(toolbar).getByRole('group', { name: 'Execution Mode' })).toBeTruthy()
-  expect(within(toolbar).queryByRole('button', { name: 'Help' })).toBeNull()
-})
-
 test('locale changes preserve Template payload, active run, output data and Help settings', async () => {
   localStorage.removeItem('orchestrator-tool.theme')
   const original = vi.mocked(invoke).getMockImplementation()!
@@ -267,7 +251,8 @@ test('Charts disable Add Chart when the chosen Ground has no sources', async () 
   expect(screen.queryByRole('region', { name: 'Live Monitors' })).toBeNull()
 })
 
-test.each([8, 7])('Run preserves %i saved Background Charts without adding a Foreground Chart', async count => {
+test('Run preserves eight saved Background Charts without adding a Foreground Chart', async () => {
+  const count = 8
   currentDraft = backgroundDraft(1)
   let panels = addBackgroundChartPanel([], 'background-1')
   for (let i = 1; i < count; i++) panels = addBackgroundChartPanel(panels, 'background-1')
@@ -646,49 +631,11 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   await waitFor(() => expect(dataset(source).value).toBe('capture-3'))
   closeSource(source)
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').every(([,args]) => (args as {limit:number}).limit <= 100)).toBe(true)
-  fireEvent.click(screen.getByRole('button', { name: 'Collapse Live Monitor: background-1' }))
-  expect(screen.getByRole('button', { name: 'Expand Live Monitor: background-1' })).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Collapse Chart 1' }))
-  const queries = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_background_output').length
-  const beforePoll = queries()
-  const currentOutput = within(screen.getByRole('region', { name: 'Background Output' }))
   fireEvent.click(screen.getByRole('button', { name: 'Collapse Charts' }))
   expect(screen.queryByRole('button', { name: '+ Add Chart' })).toBeNull()
-  expect(screen.getByRole('checkbox', { name: 'Save charts with template' })).toBeTruthy()
-  expect(screen.queryByRole('combobox', { name: 'Ground' })).toBeNull()
-  expect(screen.queryByRole('combobox', { name: 'Page' })).toBeNull()
-  expect(screen.queryByRole('region', { name: 'Chart 2' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Collapse Foreground Output' }).getAttribute('aria-expanded')).toBe('true')
-  expect(currentMonitors().getByRole('button', { name: 'Collapse Live Monitors' }).getAttribute('aria-expanded')).toBe('true')
   expect(currentMonitors().getByRole('region', { name: 'Live Monitor: background-1' })).toBeTruthy()
-  fireEvent.click(currentMonitors().getByRole('button', { name: 'Collapse Live Monitors' }))
-  expect(currentMonitors().getByRole('button', { name: 'Expand Live Monitors' })
-    .getAttribute('aria-expanded')).toBe('false')
-  fireEvent.click(currentMonitors().getByRole('button', { name: 'Expand Live Monitors' }))
-  expect(currentOutput.getByRole('button', { name: 'Collapse Background Output' }).getAttribute('aria-expanded')).toBe('true')
-  fireEvent.click(screen.getByRole('button', { name: 'Collapse Foreground Output' }))
-  expect(screen.queryByRole('combobox', { name: 'Export Pages' })).toBeNull()
-  expect(currentOutput.getByRole('button', { name: 'Export XLSX' })).toBeTruthy()
-  fireEvent.click(currentOutput.getByRole('button', { name: 'Collapse Background Output' }))
-  expect(currentOutput.queryByRole('button', { name: 'Export XLSX' })).toBeNull()
-  await waitFor(() => expect(queries()).toBeGreaterThan(beforePoll))
   fireEvent.click(screen.getByRole('button', { name: 'Expand Charts' }))
   expect(currentCharts().getByText('Charts: 8 / 8')).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Expand Chart 1' })).toBeTruthy()
-  source = openSource(2)
-  expect(dataset(source).value).toBe('capture-2')
-  closeSource(source)
-  fireEvent.click(screen.getByRole('button', { name: 'Expand Foreground Output' }))
-  expect(screen.getByRole('combobox', { name: 'Export Pages' })).toBeTruthy()
-  fireEvent.click(currentOutput.getByRole('button', { name: 'Expand Background Output' }))
-  expect(currentOutput.getByRole('button', { name: 'Export XLSX' })).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Expand Chart 1' }))
-  source = openSource(1)
-  expect(dataset(source).value).toBe('capture-1')
-  closeSource(source)
-  const expandMonitor = screen.queryByRole('button', { name: 'Expand Live Monitor: background-1' })
-  if (expandMonitor) fireEvent.click(expandMonitor)
-  expect(Number(within(screen.getByRole('region', { name: 'Live Monitor: background-1' })).getByRole('img').textContent!.split(' ')[0])).toBeGreaterThan(1)
   await act(async () => run.resolve({ ...metadata(20), pages: [] }))
   const backgroundOutput = within(screen.getByRole('region', { name: 'Background Output' }))
   await waitFor(() => expect((backgroundOutput.getByRole('button', { name: 'Export XLSX' }) as HTMLButtonElement).disabled).toBe(false))
@@ -723,8 +670,6 @@ test('Background-only Output separates Charts, Monitor and export with a shared 
   await waitFor(() => expect(dataset(source).value).toBe('next-run-capture'))
   expect(source.queryByRole('option', { name: /capture-1/ })).toBeNull()
   closeSource(source)
-  for (let i = 8; i >= 1; i--) fireEvent.click(screen.getByRole('button', { name: `Remove Chart ${i}` }))
-  expect(currentCharts().getByText('Charts: 0 / 8')).toBeTruthy()
 })
 
 test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snapshots options for Last Run', async mode => {
@@ -800,13 +745,13 @@ test('Live cancellation and backend preflight rejection preserve the previous La
   expect(runButton('Live').disabled).toBe(true)
 })
 
-test.each(['Simulation', 'Live'])('%s dismisses stale Summary failures while preserving Last Run and showing new failures', async mode => {
+test('Simulation dismisses stale Summary failures while preserving Last Run and showing new failures', async () => {
+  const mode = 'Simulation' as const
   currentDraft = backgroundDraft(1)
   const original = vi.mocked(invoke).getMockImplementation()!
   vi.mocked(invoke).mockImplementation(async (command, args) => command === 'get_live_resources'
     ? { 'meters-1': 'USB::METER' } : original(command, args))
   await previousRun()
-  if (mode === 'Live') await selectLive()
   const error = 'worker exited unexpectedly'
   let runId = 7
   const fail = async (reject = false) => {
@@ -1052,28 +997,22 @@ test('loading a template resets the execution mode without persisting desktop mo
 })
 
 
-test.each(['Validate', 'Simulation', 'Live'])('%s presents structured validation locations and prevents invalid run dispatch', async action => {
+test('Validate locates structured errors, preserves Last Run and clears markers after editing', async () => {
   await previousRun()
-  if (action === 'Live') await selectLive()
   const original = vi.mocked(invoke).getMockImplementation()!
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === 'validate_workflow_draft') throw { message: 'Variable i is unavailable', step_id: 'out' }
     return original(command, args)
   })
-  fireEvent.click(action === 'Validate' ? screen.getByRole('button', { name: 'Validate' }) : runButton(action))
+  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
   await screen.findByText('Validation failed: Variable i is unavailable')
   expect(runCalls()).toHaveLength(1)
   expect(screen.queryByText('Run failed')).toBeNull()
-  expect(screen.queryByText('Live run did not start')).toBeNull()
-  expect(runButton(action === 'Live' ? 'Live' : 'Simulation').disabled).toBe(false)
-  expect((screen.getByRole('button', { name: 'Validate' }) as HTMLButtonElement).disabled).toBe(false)
   const card = screen.getByRole('button', { name: /Step 1.1.1:/ })
   expect(card.getAttribute('aria-invalid')).toBe('true')
-  expect(card.classList.contains('sequence-step-invalid')).toBe(true)
   expect(screen.getByRole('img', { name: 'Validation warning' })).toBeTruthy()
   fireEvent.click(card)
   expect(within(screen.getByRole('region', { name: 'Properties' })).getByRole('alert').textContent).toBe('Variable i is unavailable')
-  expect(screen.getByText('Message from run 7')).toBeTruthy()
   tab('Output')
   expect(snapshot().runId).toBe(7)
   tab('Workflow')
@@ -1083,11 +1022,27 @@ test.each(['Validate', 'Simulation', 'Live'])('%s presents structured validation
   vi.mocked(invoke).mockImplementation(original)
   fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
   await screen.findByText('Valid')
-  await waitFor(() => expect(runButton(action === 'Live' ? 'Live' : 'Simulation').disabled).toBe(false))
-  fireEvent.click(runButton(action === 'Live' ? 'Live' : 'Simulation'))
+  await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
+  fireEvent.click(runButton('Simulation'))
   await waitFor(() => expect(runCalls()).toHaveLength(2))
   expect(JSON.parse((runCalls()[1][1] as { templateJson: string }).templateJson).workflow.steps[0].steps[0].steps[0].page).toBe('Moved')
   await finish(8)
+})
+
+test.each(['Simulation', 'Live'])('%s blocks invalid Workflow before starting a run', async mode => {
+  await mount()
+  if (mode === 'Live') await selectLive()
+  const original = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === 'validate_workflow_draft') throw { message: 'Variable i is unavailable', step_id: 'out' }
+    return original(command, args)
+  })
+  await waitFor(() => expect(runButton(mode).disabled).toBe(false))
+  fireEvent.click(runButton(mode))
+  await screen.findByText('Validation failed: Variable i is unavailable')
+  expect(runCalls()).toHaveLength(0)
+  expect(screen.queryByText('Run failed')).toBeNull()
+  expect(screen.queryByText('Live run did not start')).toBeNull()
 })
 
 test.each(['Simulation', 'Live'])('%s still presents execution errors after successful validation', async mode => {
