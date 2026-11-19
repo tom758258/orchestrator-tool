@@ -1250,3 +1250,114 @@ test('operand UI accepts String literals only when explicitly allowed', () => {
   fireEvent.change(screen.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'string' } })
   expect(onChange).toHaveBeenCalledWith({ source: 'literal', value: '' })
 })
+
+
+test('Scopes Screenshot preserves unsupported saved formats until explicit replacement', async () => {
+  const step: ToolActionStep = { type: 'tool-action', id: 'image', target: 'scopes-1',
+    action: 'screenshot', arguments: { format: 'legacy-format', extra: 'preserved' } }
+  const onChange = vi.fn()
+  vi.mocked(invoke).mockResolvedValue({ analog_channels: 2, screenshot_formats: ['bmp'] })
+  render(<ScopesActionEditor step={step} instances={original.tool_instances} earlierSteps={[]}
+    earlierVariables={[]} disabled={false} onChange={onChange} stepLabel={item => item.id}
+    executionMode="live" modelId="saved-scope" scopesExecutableKey="scopes.exe" />)
+  const format = screen.getByRole('combobox', { name: 'Image Format' }) as HTMLSelectElement
+  await waitFor(() => expect(format.disabled).toBe(false))
+  expect(format.value).toBe('legacy-format')
+  expect((format.querySelector('option[value="legacy-format"]') as HTMLOptionElement).disabled).toBe(true)
+  expect((format.querySelector('option[value="png"]') as HTMLOptionElement).disabled).toBe(true)
+  expect(onChange).not.toHaveBeenCalled()
+  fireEvent.change(format, { target: { value: 'bmp' } })
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+    arguments: { format: 'bmp', extra: 'preserved' },
+  }))
+  expect(step.arguments).toEqual({ format: 'legacy-format', extra: 'preserved' })
+})
+
+test('Scopes capabilities discard late replies when the selected Live model changes', async () => {
+  let completeOld!: (value: unknown) => void
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    expect(command).toBe('get_scopes_capabilities')
+    const modelId = (args as { modelId: string }).modelId
+    if (modelId === 'old-model') return new Promise(resolve => { completeOld = resolve })
+    return Promise.resolve({ analog_channels: 2, screenshot_formats: ['bmp'] })
+  })
+  const step: ToolActionStep = { type: 'tool-action', id: 'image', target: 'scopes-1',
+    action: 'screenshot', arguments: { format: 'bmp' } }
+  const onChange = vi.fn()
+  const view = (modelId: string) => <ScopesActionEditor step={step}
+    instances={original.tool_instances} earlierSteps={[]} earlierVariables={[]} disabled={false}
+    onChange={onChange} stepLabel={item => item.id} executionMode="live"
+    modelId={modelId} scopesExecutableKey="scopes.exe" />
+  const { rerender } = render(view('old-model'))
+  await waitFor(() => expect(completeOld).toBeTypeOf('function'))
+  rerender(view('new-model'))
+  const format = screen.getByRole('combobox', { name: 'Image Format' }) as HTMLSelectElement
+  await waitFor(() => expect(format.disabled).toBe(false))
+  expect((format.querySelector('option[value="png"]') as HTMLOptionElement).disabled).toBe(true)
+  await act(async () => completeOld({ analog_channels: 2, screenshot_formats: ['png'] }))
+  expect((format.querySelector('option[value="png"]') as HTMLOptionElement).disabled).toBe(true)
+  expect(onChange).not.toHaveBeenCalled()
+})
+
+test('Scopes Capture maintains nonempty supported channel arrays and unrelated settings', async () => {
+  vi.mocked(invoke).mockResolvedValue({ analog_channels: 2, capture_point_options: [1000] })
+  let step: ToolActionStep = { type: 'tool-action', id: 'capture', target: 'scopes-1',
+    action: 'capture', arguments: { channel: [1], points: 1000, extra: 'keep' } }
+  const onChange = vi.fn((next: ToolActionStep) => { step = next })
+  const view = () => <ScopesActionEditor step={step} instances={original.tool_instances}
+    earlierSteps={[]} earlierVariables={[]} disabled={false} onChange={onChange}
+    stepLabel={item => item.id} executionMode="simulate" modelId={undefined}
+    scopesExecutableKey="scopes.exe" />
+  const { rerender } = render(view())
+  const channel2 = await screen.findByRole('checkbox', { name: 'Capture CH2' })
+  await waitFor(() => expect(channel2.hasAttribute('disabled')).toBe(false))
+  expect((screen.getByRole('checkbox', { name: 'Capture CH1' }) as HTMLInputElement).disabled).toBe(true)
+  expect(onChange).not.toHaveBeenCalled()
+  fireEvent.click(channel2)
+  rerender(view())
+  expect(step.arguments).toEqual({ channel: [1, 2], points: 1000, extra: 'keep' })
+  expect((screen.getByRole('checkbox', { name: 'Capture CH1' }) as HTMLInputElement).disabled).toBe(false)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Capture CH1' }))
+  expect(step.arguments.channel).toEqual([2])
+})
+
+test('Scopes Channel rejects unconfirmed saved choices without overwriting numeric bindings', async () => {
+  vi.mocked(invoke).mockResolvedValue({ analog_channels: 2 })
+  const step: ToolActionStep = { type: 'tool-action', id: 'scale', target: 'scopes-1',
+    action: 'channel-scale', arguments: { channel: 99, volts_per_division: 2, extra: 'keep' },
+    bindings: { volts_per_division: { source: 'variable', variable: 'level' } } }
+  const onChange = vi.fn()
+  render(<ScopesActionEditor step={step} instances={original.tool_instances}
+    earlierSteps={[]} earlierVariables={[]} disabled={false} onChange={onChange}
+    stepLabel={item => item.id} executionMode="simulate" modelId={undefined}
+    scopesExecutableKey="scopes.exe" />)
+  const channel = screen.getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement
+  await waitFor(() => expect(channel.disabled).toBe(false))
+  expect(channel.value).toBe('99')
+  expect((channel.querySelector('option[value="99"]') as HTMLOptionElement).disabled).toBe(true)
+  expect(onChange).not.toHaveBeenCalled()
+  fireEvent.change(channel, { target: { value: '2' } })
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+    arguments: { channel: 2, volts_per_division: 2, extra: 'keep' },
+    bindings: { volts_per_division: { source: 'variable', variable: 'level' } },
+  }))
+})
+
+test('Powers Step editor selects confirmed channels without rewriting saved bindings', async () => {
+  newDraft.workflow.steps = [{ type: 'tool-action', id: 'set-power', target: 'powers-1',
+    action: 'set-output', arguments: { channel: 99, voltage: 0, current: 0.25 },
+    bindings: { current: { source: 'variable', variable: 'limit' } } }]
+  await mount()
+  tab('Workflow')
+  const workflow = within(screen.getByRole('tabpanel', { name: 'Workflow' }))
+  fireEvent.click(workflow.getByRole('button', { name: /Step 1: Power Set Output, set-power/ }))
+  const channel = workflow.getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement
+  await waitFor(() => expect(channel.disabled).toBe(false))
+  expect(channel.value).toBe('99')
+  expect((channel.querySelector('option[value="99"]') as HTMLOptionElement).disabled).toBe(true)
+  expect((await savedDraft()).workflow.steps).toEqual(newDraft.workflow.steps)
+  fireEvent.change(channel, { target: { value: '1' } })
+  const saved = await savedDraft()
+  expect(saved.workflow.steps[0].arguments).toEqual({ channel: 1, voltage: 0, current: 0.25 })
+  expect(saved.workflow.steps[0].bindings).toEqual({ current: { source: 'variable', variable: 'limit' } })
+})
