@@ -57,6 +57,9 @@ Core. The ownership and lifecycle details are in
     apps/desktop                       Tauri frontend
     apps/desktop/src-tauri              Tauri application crate
     tests                               Integration tests
+    docs/core                           Core engineering docs
+    docs/cli                            CLI reference and user guide
+    docs/desktop                        Desktop engineering docs and user guide
     docs/architecture                   Architecture references
     docs/contracts                      Durable contract references
     Cargo.toml                          Core and CLI package metadata
@@ -135,49 +138,21 @@ for the prerequisite.
 
 ## Desktop
 
-Desktop provides the main workflow experience: Tool Setup, an ordered
-workflow editor, Template load/save, Simulation and Live run actions,
-incremental execution results, Output Pages, charts, graceful Stop, and CSV
-or XLSX export of committed results after a run ends, including partial
-results from failed or incomplete runs. It also owns the local configuration UI
-for external executable paths and Live Resources.
-
-Desktop behavior that is durable architecture or contract knowledge is kept
-in the [architecture](docs/architecture/overview.md) and
-[contract](docs/contracts/template-schema.md) documents rather than
-duplicated here.
+Desktop is the primary interface for authoring Templates, running Workflows and inspecting results. See [Desktop README](docs/desktop/README.md) for development and ownership, and [Desktop User Guide](docs/desktop/USER_GUIDE.md) for operations.
 
 ## CLI
 
-The CLI is intended for engineering setup and diagnostics:
-
-    orchestrator-tool --help
-    orchestrator-tool --version
-    orchestrator-tool doctor
-    orchestrator-tool tools list
-    orchestrator-tool tools inspect <TOOL_ID>
-    orchestrator-tool tools worker-check powers
-    orchestrator-tool tools worker-check meters
-    orchestrator-tool --config <PATH> doctor
-    orchestrator-tool --config <PATH> tools list
-
-It reports configured executable status and performs bounded, simulate-mode
-Worker checks where supported. It does not replace the Desktop workflow
-interface.
+The CLI covers engineering setup and external-tool diagnostics, not Workflow runs. See [CLI README](docs/cli/README.md) for commands and flags, and [CLI User Guide](docs/cli/USER_GUIDE.md) for PowerShell walkthroughs.
 
 ## Documentation
 
-- [Desktop User Guide](docs/desktop/USER_GUIDE.md)
-- [Architecture Overview](docs/architecture/overview.md)
-- [External Tool Boundary](docs/architecture/external-tool-boundary.md)
-- [Template Format](docs/contracts/template-schema.md)
-- [Contributing](docs/CONTRIBUTING.md)
-- [Agent repository rules](AGENTS.md)
-- [Traditional Chinese entry point](README.zh-TW.md)
-
-Focused engineering documents are currently maintained in English as the
-canonical source. The root Traditional Chinese README keeps the same project
-entry-point structure and links to those documents.
+- [Core README](docs/core/README.md) — shared Rust library ownership and modules.
+- [CLI README](docs/cli/README.md) / [CLI User Guide](docs/cli/USER_GUIDE.md) — command reference and operation.
+- [Desktop README](docs/desktop/README.md) / [Desktop User Guide](docs/desktop/USER_GUIDE.md) — implementation and UI operation.
+- [Architecture Overview](docs/architecture/overview.md) / [External Tool Boundary](docs/architecture/external-tool-boundary.md) — system architecture and external-tool boundaries.
+- [Template Format](docs/contracts/template-schema.md) — normative Template and Workflow rules.
+- [Contributing](docs/CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) — contribution and validation rules.
+- [Traditional Chinese entry point](README.zh-TW.md).
 
 ## Contributing
 

@@ -56,6 +56,9 @@ Tauri commands 是 application boundary；orchestration behavior 仍由 Core
     apps/desktop                       Tauri frontend
     apps/desktop/src-tauri              Tauri application crate
     tests                               Integration tests
+    docs/core                           Core 技術文件
+    docs/cli                            CLI 指令參考與使用者指南
+    docs/desktop                        Desktop 技術文件與使用者指南
     docs/architecture                   Architecture references
     docs/contracts                      Durable contract references
     Cargo.toml                          Core 與 CLI package metadata
@@ -132,46 +135,21 @@ Runtime。必要條件請參閱
 
 ## Desktop
 
-Desktop 提供主要的 Workflow experience：Tool Setup、有順序的 workflow
-editor、Template load/save、Simulation 與 Live run、incremental execution
-results、Output Page、chart、graceful Stop，以及成功 run 的 CSV/XLSX
-export。Desktop 也負責 external executable path 與 Live Resource 的 local
-configuration UI。
-
-Durable 的 architecture 或 contract 詳情放在
-[architecture](docs/architecture/overview.md) 與
-[contract](docs/contracts/template-schema.md) 文件，不在此重複完整
-specification。
+Desktop 是建立 Template、執行 Workflow 及檢視結果的主要介面。實作與開發方式見 [Desktop README](docs/desktop/README.zh-TW.md)；實際操作見 [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)。
 
 ## CLI
 
-CLI 用於工程設定與診斷：
-
-    orchestrator-tool --help
-    orchestrator-tool --version
-    orchestrator-tool doctor
-    orchestrator-tool tools list
-    orchestrator-tool tools inspect <TOOL_ID>
-    orchestrator-tool tools worker-check powers
-    orchestrator-tool tools worker-check meters
-    orchestrator-tool --config <PATH> doctor
-    orchestrator-tool --config <PATH> tools list
-
-CLI 回報 configured executable status，並在支援的工具上執行 bounded
-simulate-mode Worker checks。CLI 不取代 Desktop Workflow interface。
+CLI 用於工程設定與外部工具診斷，不提供 Workflow Run。指令與參數請見 [CLI README](docs/cli/README.zh-TW.md)；Windows PowerShell 操作流程請見 [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md)。
 
 ## Documentation
 
-- [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)
-- [Architecture Overview](docs/architecture/overview.md)
-- [External Tool Boundary](docs/architecture/external-tool-boundary.md)
-- [Template Format](docs/contracts/template-schema.md)
-- [Contributing](docs/CONTRIBUTING.md)
-- [Agent repository rules](AGENTS.md)
-- [English entry point](README.md)
-
-Focused engineering documents 目前以英文作為 canonical source。root 繁中
-README 維持相同的 project entry-point 結構，並連結到這些文件。
+- [Core README](docs/core/README.zh-TW.md) — 共用 Rust Library 的職責與模組。
+- [CLI README](docs/cli/README.zh-TW.md) / [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md) — 指令參考與實際操作。
+- [Desktop README](docs/desktop/README.zh-TW.md) / [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md) — 技術架構與畫面操作。
+- [Architecture Overview](docs/architecture/overview.md) / [External Tool Boundary](docs/architecture/external-tool-boundary.md) — 系統架構及外部工具邊界。
+- [Template Format](docs/contracts/template-schema.md) — Template／Workflow 的正式規格。
+- [Contributing](docs/CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) — 開發與驗證原則。
+- [English entry point](README.md)。
 
 ## Contributing
 
