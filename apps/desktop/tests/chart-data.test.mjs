@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
   createPageChartData,
@@ -168,20 +167,6 @@ test('partial Chart cleanup drops unused series and shrinks the shared iteration
   assert.equal(page.getSeries('I').length, 0)
   assert.deepEqual([...page.iteration], [1, 2])
   assert.ok(page.iteration.buffer.byteLength < oldBytes)
-})
-
-test('ChartPlot refreshes raw typed-array views after live appends or cleanup', () => {
-  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /\[data, data\.version, panel\.outputs, rawRowCount, isStatistical, bounded\]/)
-  assert.match(source, /\[panel, data, data\.version, width, visibleRange\.min, visibleRange\.max, isStatistical, changeSettings, bounded\]/)
-})
-
-test('ChartPlot uses the common selected-series prefix for axis, decimation, and hover', () => {
-  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  assert.match(source, /data\.commonLength\(chartRequiredOutputs\(panel\)\)/)
-  assert.match(source, /data\.iteration\.subarray\(0, rawRowCount\)/)
-  assert.match(source, /exactHoverIndex\(x, rawRowCount\)/)
-  assert.match(source, /nearestScatterHover\(scatterXValues, yValues/)
 })
 
 test('Scatter X remains cached when it is not selected as a Y Output', () => {

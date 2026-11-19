@@ -1675,3 +1675,25 @@ test('Foreground Output Page picker identifies the selected page and keeps expor
   fireEvent.change(foreground.getByRole('combobox', { name: 'Export format' }), { target: { value: 'csv' } })
   expect(foreground.getByText('Export all Output Pages as separate CSV files. Choose a destination folder.')).toBeTruthy()
 })
+
+test('Clear Workflow cancel preserves steps; confirmation removes steps without replacing the Template', async () => {
+  await mount()
+  const clear = () => screen.getByRole('button', { name: 'Clear Workflow' }) as HTMLButtonElement
+  expect(clear().disabled).toBe(false)
+
+  vi.mocked(confirm).mockResolvedValueOnce(false)
+  fireEvent.click(clear())
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(
+    'Clear all workflow steps?\n\nThis action cannot be undone.',
+    expect.objectContaining({ kind: 'warning', okLabel: 'Clear' }),
+  ))
+  expect(clear().disabled).toBe(false)
+
+  vi.mocked(confirm).mockResolvedValueOnce(true)
+  fireEvent.click(clear())
+  await waitFor(() => expect(clear().disabled).toBe(true))
+  const cleared = await savedDraft()
+  expect(cleared.workflow.steps).toEqual([])
+  expect(cleared.tool_instances).toEqual(draft.tool_instances)
+  expect(cleared.name).toBe(draft.name)
+})

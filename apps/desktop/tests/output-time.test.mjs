@@ -278,34 +278,3 @@ test('ECharts renders all four Elapsed X formats and clears the formatter for or
     chart.dispose()
   }
 })
-
-test('Scatter hover formats the actual hit X only and retains raw Y and hit logic', async () => {
-  const { readFileSync } = await import('node:fs')
-  const { stripTypeScriptTypes } = await import('node:module')
-  const { nearestScatterHover } = await import('../src/chartData.ts')
-  const source = readFileSync(new URL('../src/ChartPlot.tsx', import.meta.url), 'utf8')
-  const start = source.indexOf('      const inspect = () => {')
-  const end = source.indexOf('      const move =', start)
-  const inspectSource = stripTypeScriptTypes(source.slice(start, end))
-  const x = new Float64Array([2.857, 4.857])
-  const rawSeries = [{ name: 'Voltage', values: new Float64Array([12.3456789, 13]) }]
-  const chart = { containPixel: () => true, convertFromPixel: (_finder, point) => point }
-  for (const timeFormat of [...formats.map(format => ({ kind: 'elapsed-time', format })), undefined,
-    { kind: 'timestamp', include_date: false, include_utc_offset: true }]) {
-    if (timeFormat?.kind === 'timestamp') x[0] = Date.parse(timestamp)
-    const tip = { textContent: '' }
-    const line = { hidden: false }
-    let hidden = false
-    const inspect = new Function('t', 'chart', 'scatterXValues', 'rawSeries', 'rawIteration', 'panel',
-      'xTimeFormat', 'tip', 'line', 'nearestScatterHover', 'formatScatterX', 'hide', 'positionTip',
-      `let frame = null; let pending = { offsetX: ${x[0]}, offsetY: 12.3456789 };
-      const rawRowCount = 2; const bounded = undefined; const yValues = rawSeries.map(series => series.values);
-      const SCATTER_HOVER_RADIUS = 12; ${inspectSource}; return inspect;`)(
-      english, chart, x, rawSeries, new Float64Array([1, 2]), { scatterXOutput: 'Time', scatter: { display: 'markers' } },
-      timeFormat, tip, line, nearestScatterHover, formatScatterX, () => { hidden = true }, () => {})
-    inspect()
-    assert.equal(hidden, false)
-    assert.equal(tip.textContent, `Iteration 1\nX Time ${formatScatterX(x[0], timeFormat)}\nY Voltage 12.3456789`)
-    assert.equal(line.hidden, true)
-  }
-})

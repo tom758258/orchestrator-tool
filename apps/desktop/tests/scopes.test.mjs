@@ -246,9 +246,7 @@ test('Scopes Screenshot reloads canonical Live model, instance and EXE without o
     ...Array.from({ length: 3 }, () => ({ modelId: caps.model_id, executionMode: 'live' })),
   ])
   assert.deepEqual(props.step, original)
-  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const editorProps = app.slice(app.indexOf('<ScopesActionEditor'), app.indexOf('onChange={next => updateStep(selectedToolAction.id'))
-  assert.match(editorProps, /executionMode=\{executionMode\} scopesExecutableKey=\{scopesExecutableKey\}/)
+
 })
 
 test('Scopes Screenshot preserves unsupported saved values on missing models and capability errors', async () => {

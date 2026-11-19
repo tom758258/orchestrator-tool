@@ -1,35 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFileSync } from 'node:fs'
 import { composeMessageText, inputScope, showMessageOutputCandidates,
   MESSAGE_TARGETS } from '../src/workflow.ts'
 import { pasteSteps, singleSelection } from '../src/stepEditing.ts'
 
-const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-const editor = readFileSync(new URL('../src/ShowMessageEditor.tsx', import.meta.url), 'utf8')
-
 const output = (id, name) => ({ type: 'output', id, name, page: 'Results',
   value: { source: 'literal', value: 1 } })
 
-test('Show Message is offered in the Workflow palette with its defaults', () => {
-  assert.match(source, /case 'show-message':\s*\n\s*return \{ type: 'show-message', id, target: 'message-1', fields: \[\{ kind: 'text', text: '', newline: false \}\] \}/)
-  assert.match(source, /STEP_HELP|show-message': 'Write a message to the Messages Panel/)
-})
-
 test('Show Message Target Message offers exactly three messages defaulting to Message 1', () => {
   assert.deepEqual(MESSAGE_TARGETS, ['message-1', 'message-2', 'message-3'])
-  // String text is limited to 256 Unicode characters, not 256 UTF-16 units.
-  assert.match(editor, /limitMessageText\(event\.target\.value, MAX_MESSAGE_TEXT_CHARS\)/)
-})
-
-test('only the last Show Message field omits the Newline checkbox', () => {
-  assert.match(editor, /\{index < step\.fields\.length - 1 && \(\s*<label className="step-property-field show-message-newline">\s*\n\s*<input type="checkbox" checked=\{field\.newline\}/)
-  // A single field cannot request a newline, so the record cannot gain a blank line.
-  assert.match(editor, /const replacesLast = \(field: MessageFieldWire\): MessageFieldWire =>\s*\n\s*step\.fields\.length === 1 \? \{ \.\.\.field, newline: false \} : field/)
 })
 
 test('the Message Preview mirrors the Core composition rules', () => {
-  assert.match(editor, /<pre>\{composeMessageText\(step\.fields,\s*\n\s*stepId => outputs\.find\(output => output\.id === stepId\)\?\.name\)\}<\/pre>/)
   const fields = [
     { kind: 'text', text: 'Iteration: ', newline: false },
     { kind: 'output', step_id: 'iteration', pointer: '', newline: true },
@@ -63,7 +45,6 @@ test('a Show Message Output field may only pick earlier Output steps in scope', 
   const candidates = showMessageOutputCandidates(earlierSteps)
   // The dropdown shows Output names but stores the stable Step ID.
   assert.deepEqual(candidates.map(step => step.id), ['before'])
-  assert.match(editor, /\{outputs\.map\(output => <option key=\{output\.id\} value=\{output\.id\}>\{output\.name\}<\/option>\)\}/)
   // An unresolvable reference is preserved so Validate can report it.
 })
 

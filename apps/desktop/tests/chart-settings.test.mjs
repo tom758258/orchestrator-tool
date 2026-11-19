@@ -528,8 +528,6 @@ test('Show All Raw Data is off by default and round-trips through Chart Settings
 
 
 test('plain Line exposes existing per-Output marker appearance without enabling all point symbols', () => {
-  const source = readFileSync(new URL('../src/ChartSettings.tsx', import.meta.url), 'utf8')
-  assert.match(source, /markerFields\(name, true\)/)
   const unchanged = lineRendererSeries(panel, { name: 'V', data: [[1, 100], [2, 145]] }, 'red')
   assert.equal(unchanged.showSymbol, false)
 })

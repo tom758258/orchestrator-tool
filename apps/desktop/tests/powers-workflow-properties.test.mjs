@@ -204,8 +204,6 @@ test('setpoint labels, help and units accompany horizontal clickable checkbox la
   assert.match(view.text, /Set the maximum allowed output current, not a forced output current\. Uncheck to leave the existing limit unchanged\./)
   assert.deepEqual(view.inputs.map(node => node.props.literalLabel), ['Voltage (V)', 'Current Limit (A)'])
   assert.deepEqual(view.inputs.map(node => node.props.value.value), [0, 0])
-  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
-  assert.match(css, /\.powers-protection-toggle,\s*\.step-property-checkbox\s*\{[^}]*display: flex;[^}]*align-items: center;[^}]*gap: 8px;/)
 })
 
 test('checkbox handlers hide removed fields, keep one setpoint and preserve other bindings and values', () => {

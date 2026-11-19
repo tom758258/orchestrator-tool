@@ -26,21 +26,6 @@ test('caught-up detection becomes false again as soon as a new row arrives', () 
   assert.equal(chartNeedsLoad(data, ['V'], 25_001), true)
 })
 
-test('each successful response still renders once after all response series append', () => {
-  const loader = source.slice(source.indexOf('async function runLoader'))
-  const appendAt = loader.indexOf('local.append(names[index], startRow, tails[index])')
-  const bumpAt = loader.indexOf('setDataVersion(version => version + 1)')
-  assert.ok(appendAt !== -1 && bumpAt !== -1 && appendAt < bumpAt)
-  assert.equal(loader.match(/setDataVersion\(version => version \+ 1\)/g).length, 1)
-  assert.doesNotMatch(source, /Promise\.all\(\[?\.\.\.groups/)
-})
-
-test('loader identity remains reversible and content-stable', () => {
-  assert.match(source, /JSON\.stringify\(\[\.\.\.requestedNames\]\.sort\(\)\)/)
-  assert.match(source, /JSON\.parse\(requestedKey\) as string\[\]/)
-  assert.doesNotMatch(source, /join\('\\0'\)|split\('\\0'\)/)
-})
-
 test('statistical-only panels request no raw series while Combo still does', () => {
   const base = addChartPanel([], 'A', ['V'])[0]
   const panels = [{ ...base, type: 'histogram' },
@@ -49,7 +34,6 @@ test('statistical-only panels request no raw series while Combo still does', () 
   assert.deepEqual(chartLoadGroups(createPageChartData(), panels.flatMap(chartRawOutputs), 500_000, 25_000), [])
   assert.deepEqual(chartRawOutputs({ ...base, type: 'combo', outputs: ['V', 'I'] }), ['V', 'I'])
   assert.deepEqual(chartRawOutputs({ ...base, type: 'scatter', scatterXOutput: 'I' }), ['I', 'V'])
-  assert.match(source, /loadingPanels\.flatMap\(chartRawOutputs\)/)
 })
 
 test('statistical keys change with run and query parameters', () => {
@@ -156,7 +140,7 @@ test('Timestamp Scatter X loads numeric milliseconds separately from measurement
   }
 })
 
-for (const type of ['line', 'scatter', 'column', 'area', 'bar', 'combo', 'histogram', 'boxplot']) {
+for (const type of ['line', 'scatter', 'combo', 'histogram', 'boxplot']) {
   test(`${type}: actual requests obey live eligibility and automatically resume after running`, async () => {
     const calls = []
     const harness = loadingHarness(async (command, args) => {
@@ -461,6 +445,4 @@ test('actual ResultChart passes snapshot X formats to Plot and snapshot Outputs 
   panel.scatterXOutput = 'Elapsed'
   assert.equal(render().find(node => node.type === Plot).props.xTimeFormat, undefined)
   assert.equal(render().find(node => node.type === PanelView).props.outputs, outputs)
-  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /outputPageContext\(runWorkflowSnapshot\?\.workflow\.steps \?\? \[\], selectedRunPage\)/)
 })

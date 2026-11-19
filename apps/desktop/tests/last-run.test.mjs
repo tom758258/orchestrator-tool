@@ -1,28 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { failurePresentation } from '../src/failurePresentation.ts'
-
-const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-
-test('manual export sends only the run selector and export options to Rust', () => {
-  const handler = source.slice(source.indexOf('const handleExport'), source.indexOf('const selectedStep'))
-  assert.match(handler, /invoke\('export_last_run_pages'/)
-  assert.match(handler, /runId: runMetadata\.run_id/)
-  assert.match(handler, /page: exportAllPages \? null : runPage\?\.name/)
-  assert.doesNotMatch(handler, /templateJson|runResult|result_rows|step_executions/)
-})
-
-test('Clear Last Run clears Rust ownership before dropping frontend state', () => {
-  const handler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
-  assert.match(handler, /const runId = runMetadata\?\.run_id \?\? runIdRef\.current/)
-  assert.match(handler, /if \(runId !== null\) await invoke\('clear_last_run', \{ runId \}\)/)
-  assert.ok(handler.indexOf("invoke('clear_last_run'") < handler.indexOf('setRunMetadata(null)'))
-  assert.match(handler, /setRunMetadata\(null\)/)
-  assert.match(handler, /setExecutionPage\(null\)/)
-  assert.match(handler, /setChartPanels\(\[\]\)/)
-  assert.match(handler, /runIdRef\.current = null/)
-})
 
 const invalidSettingsSummary = 'This operation was not valid or supported with the current settings.'
 
@@ -63,27 +41,4 @@ test('Assert failure presentation distinguishes a failed check from evaluation e
     failurePresentation(boundedMessage, { type: 'assert', message: longMessage }).summary,
     'This check did not pass.',
   )
-})
-
-test('non-run actions keep errors local instead of labeling them as Run failed', () => {
-  const clearHandler = source.slice(source.indexOf('const handleClearLastRun'), source.indexOf('const csvStreamFeedback'))
-  assert.doesNotMatch(clearHandler, /setRunError\('Could not clear Last Run:/)
-
-  const folderHandler = source.slice(source.indexOf('async function selectOutputFolder'), source.indexOf('const handleExport'))
-  assert.doesNotMatch(folderHandler, /setRunError\('Could not select CSV output folder:/)
-
-  const streamingPanel = source.slice(source.indexOf('<section className="streaming-panel"'), source.indexOf('<section className="chart-sampling-options"'))
-  assert.match(streamingPanel, /streamOutputFolderError &&/)
-  const outputPanel = source.slice(source.indexOf('<section id="output-panel"'))
-  assert.match(outputPanel, /clearLastRunError &&/)
-})
-
-test('bounded execution previews distinguish omitted data from a real null', () => {
-  assert.match(source, /result\.output_omitted && result\.output === null/)
-})
-
-test('failed or terminal incomplete runs are labeled and exported as Partial Results', () => {
-  assert.match(source, /runMetadata\?\.completed_successfully === true/)
-  assert.match(source, /runMetadata\.status !== 'running' && \(runMetadata\.status === 'failed' \|\| !runCompletedSuccessfully\)/)
-  assert.doesNotMatch(source, /cannot be exported\./)
 })

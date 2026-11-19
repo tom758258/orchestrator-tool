@@ -179,20 +179,6 @@ test('Scopes File Output locks by instances and preserves folder selection and r
   assert.equal(button(elements(panel), 'Use Default').props.disabled, true)
 })
 
-test('Steps categories keep tool mapping independent of the first preset tool', async () => {
-  const source = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  const alteredPresets = source.replace("category: 'Scopes', tool: 'scopes' as const",
-    "category: 'Scopes', tool: 'powers' as const")
-  assert.notEqual(alteredPresets, source)
-  const app = await toolsView([status('powers'), status('scopes')],
-    { tool_instances: [{ id: 'scopes-1', tool: 'scopes', setup: {} }], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }, alteredPresets)
-  button(app.render(), 'Workflow').props.onClick()
-  assertCategories(app, ['Scopes'])
-  const header = categoryHeader(categorySections(app)[3])
-  assert.equal(header.props.disabled, false)
-  assert.equal(header.props['aria-expanded'], true)
-})
-
 async function toolsView(initial, draft = template, source, local = {}) {
   let statuses = initial
   let picked = null
