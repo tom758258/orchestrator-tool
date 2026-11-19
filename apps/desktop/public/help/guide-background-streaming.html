@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Background Streaming and Streaming CSV</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<a class="help-page" href="guide-background-streaming.html" aria-current="page">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Background Streaming and Streaming CSV</h1>
+<h2 id="background-streaming">Background Streaming</h2>
+<p>In <strong>Tool Setup</strong>, select <strong>Enable Background Streaming</strong> for a Meters
+or Scopes Tool Instance. Meters offers six acquisition modes. Scopes Background
+captures read-only numeric Measure cycles, not screenshots or waveforms.
+Powers and Wavegen do not support Background.
+A Background instance cannot also be used by foreground Tool actions. Existing
+steps are retained when switching roles; resolve the displayed conflict before
+running. Turning off Background while another mode is selected requires choosing
+Single before using foreground Measure. Two instances cannot share one Live
+resource in a run.</p>
+<p>Choose <strong>Finite</strong> or <strong>Infinite</strong>. For Scopes, Finite <strong>Cycles</strong> counts
+complete measurement cycles, each containing all selected Channel/Item pairs;
+Infinite continues until Worker OFF or Stop Workflow. Set <strong>Measure interval
+(seconds)</strong> (default 1) as the wait <strong>after</strong> a complete cycle, not a precise
+sample rate. In <strong>Measurements</strong>, add or remove rows and select each <strong>Channel</strong>
+and <strong>Item</strong> from the Scopes capabilities. Each row has an internal stable
+Measurement ID. Individual measurements in a cycle are read sequentially.
+Scopes validates supported items and channel/model parameters when starting.</p>
+<p>For Meters, Finite Simple modes use <strong>Max Samples</strong>; finite
+Custom modes use <strong>Trigger Count</strong>, with <strong>Sample Count</strong> readings per trigger.
+Infinite Custom requires explicit <strong>Allow Buffer Overflow Risk</strong>. Infinite
+Background acquisition has no hidden Simulation sample limit.</p>
+<p><strong>Software</strong> and <strong>Software Custom</strong> use <strong>Timer Interval (ms)</strong> by default, initially
+<strong>1000</strong>. The first trigger is sent when the source is ready. After one reading
+or a complete Custom batch arrives, Orchestrator waits the selected interval
+before the next trigger. This is a delay between completed measurements, not a
+fixed sampling frequency. Capture OFF leaves triggering and optional Live Monitor
+running. Worker OFF, Stop Workflow, source completion or failure stops triggering.
+A rejected trigger or measurement timeout fails the run and preserves available data.
+For Software Simple, <strong>Trigger with BG Command</strong> replaces this timer with
+Workflow commands; enable FG/BG Interaction in Workflow before using it.</p>
+<p><strong>External</strong> and <strong>External Custom</strong> use the connected trigger signal in Live.
+Simulation generates virtual triggers on supported models, including 34461A;
+34460A does not support External. Slope and delay settings are passed to the tool.
+Simulation does not verify physical trigger timing.</p>
+<p><strong>Live Monitor</strong> is optional and starts unchecked. For Scopes, the Monitor has a
+<strong>Measurement</strong> selector and plots one numeric field at a time, independently
+of Capture; an invalid reading is not plotted as zero. The Allow Risk warning in
+<strong>5.1 Meters Setup</strong> applies to Custom Background sources. Lost readings cannot
+be recovered by Stop; check captured counts and data quality after stopping.</p>
+<p>Add these Workflow actions and select the Background in Step Properties:</p>
+<ul>
+<li><strong>Worker ON</strong> starts its source at that Step. For Scopes, it launches the
+  streaming Worker, applies existing Scopes Setup while the stream waits, then
+  starts Measure Streaming after Setup succeeds. Simultaneous Capture ON starts
+  unchecked; check it to retain the first samples from startup.</li>
+<li><strong>Capture ON</strong> starts a new Dataset while the Worker continues independently.</li>
+<li><strong>Capture OFF</strong> finishes that Dataset and its optional streaming CSV without
+  stopping the Worker or automatically exporting another file.</li>
+<li><strong>Worker OFF</strong> releases the source. Simultaneous Capture OFF starts checked.
+  Uncheck it if Capture was already explicitly switched OFF. Stopping a finite
+  source before its configured count is reached fails the run; use <strong>Stop Workflow</strong>
+  to end the run early and retain a partial Dataset.</li>
+</ul>
+<p>Repeated ON/OFF is a Step error. A finite source automatically retains its tail
+and finishes its Dataset. The first subsequent Capture OFF acknowledges that
+automatic finish; the first Worker OFF releases the source. A second explicit
+OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
+Worker ON. Every run also cleans up remaining Workers, including on failure,
+while preserving the existing Powers Safe-Off behavior.</p>
+<p><strong>Output</strong> contains <strong>Charts</strong>, optional <strong>Live Monitors</strong>, <strong>Foreground Output</strong>,
+and <strong>Background Output</strong> as separate expandable sections. Background-only runs can use
+Charts and Background Output. Background Output appears only when the Last Run
+had Background bindings; changing the current Draft does not hide those results.
+Its Background and Capture Dataset selectors control its Summary, Output Data
+and export, independently of each Chart's selection.</p>
+<p>Foreground Output has a Source card with an Output Page selector, the current page number, and short guidance. Changing the Output Page updates its Summary, Output Data, and selected-page export. Background Output has a Source card for its Background and Capture Dataset selectors and Worker status. Both outputs place their export options under Export settings below Output Data.</p>
+<p>Background numeric Summary and Output Data use the same styled tables as Foreground. Background numeric values share the Auto, Fixed, and Raw Number display setting, without changing stored data or export precision. Background Summary shows only statistics already present in the Dataset, including Scopes valid and invalid counts; Serial RX shows event and byte counts instead. Background still reads 100 rows per page, independently of Foreground Output Pages.</p>
+<p>Background Source places Background and Capture Dataset side by side when space permits and wraps them on narrow windows. Pagination controls appear only for Datasets exceeding 100 rows and use the standard action-button style. Foreground Export settings explains whether the selected option opens a file or folder picker; Background Export settings always selects a destination folder and exports the complete selected or all Datasets, not just the visible rows. The Background export button shows the chosen format.</p>
+<p>In <strong>Charts</strong>, use <strong>Chart settings</strong> to choose <strong>Ground</strong> (Foreground or Background),
+then <strong>Page</strong> (a Foreground Output Page or Background source), and select <strong>Add Chart</strong>.
+Each Chart displays a colored Foreground or Background source label and its Page or
+Background ID. The <strong>Save charts with template</strong> option and shared chart count appear
+at the top-right of Charts. All Foreground Pages and Background Charts appear together in Chart number order, regardless of source.
+Each Background Chart offers <strong>Export PNG</strong>, <strong>Settings</strong>, <strong>Source settings</strong>, and <strong>Remove</strong>.
+<strong>Source settings</strong> shows the selected Background as read-only and offers
+<strong>Capture Dataset</strong> and <strong>X-axis data</strong> (Elapsed Time, Timestamp or Sample Index).
+Scopes adds a <strong>Measurement</strong> selector. The Background source is chosen when the
+Chart is created; when unavailable in the current Draft or Last Run, use
+<strong>Reassign source</strong> to select a valid Background present in both. Changes apply
+immediately, and the Chart card retains its source badge and <strong>Data summary</strong>. Each Scopes Chart selects
+one Measurement field; use
+multiple Charts to plot different measurements rather than combining different
+units on one axis.
+Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
+Area or Bar in Settings; only Line updates during a run. Foreground retains all
+its existing chart types. Each Chart initially selects the latest available
+Dataset for its Background and then keeps that selection, even if newer Datasets
+arrive. Each new run chooses afresh. With no Dataset, the Chart waits for captured
+data and never substitutes Monitor samples.</p>
+<p>Background X uses actual Elapsed Time in seconds, Timestamp, or Sample Index.
+Hover identifies an actual displayed sample. Line/Area retain peaks, troughs and
+endpoints when sampled; Scatter/Column/Bar show representative observations.
+<strong>Data summary</strong> shows Total samples, In range and Plotted, with the current sampling status. Line/Area/Column
+Zoom requests detail for the visible range; Scatter/Bar have no Zoom controls.
+Line <strong>Settings → General → Show All Raw Data</strong> displays all visible samples up
+to <strong>25,000</strong>. Above this limit the Chart shows no points and asks you to narrow
+Zoom or turn the option off. Full Dataset storage and CSV/XLSX export are unchanged.</p>
+<p>Last Run Charts remain viewable and editable after removing their binding from
+the current Workflow. Display settings never recreate or modify Draft bindings.
+With <strong>Save charts with template</strong> enabled, a Chart referring to a Background
+missing from the Draft prevents Template Save and identifies the Chart to fix.
+Remove that Chart, select a valid source, or turn off saving Charts.</p>
+<p>When enabled in Setup, <strong>Live Monitors</strong> appears immediately below Charts as a
+separate expandable framed section with matching inner cards. Charts and
+Live Monitors collapse independently; without any enabled Monitor, the section
+is hidden. Each monitor has a compact <strong>Monitor info</strong> section: numeric monitors
+describe the latest-1,000-Worker-sample buffer, while Serial RX monitors describe
+their bounded-byte buffer. Both operate independently of Capture. Numeric
+monitors retain Line appearance, Hover and Zoom, and continue updating while
+Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
+Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
+CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
+count/min/max/average, status and quality for Meters. For Scopes, it shows
+valid/invalid counts and min/max/average <strong>per Measurement field</strong>. The Scopes
+Output Data table displays the selected fields and leaves invalid values blank,
+with the reason available on hover. <strong>Output Data</strong> uses pages of 100 rows.
+<code>no_loss_detected</code> describes the Tool's evidence, not a zero-loss guarantee.</p>
+<p>Capture boundaries follow received event processing, not hardware sample time.
+Full captured samples stay in memory for the current run. A new run or <strong>Clear
+Last Run</strong> releases them; there is no history or recovery store. Background
+samples do not feed Workflow variables, calculations, assertions or ResultRows.</p>
+<p><strong>CSV Export → Stream Background CSV during Capture</strong> is independent of
+foreground CSV. Choose All Backgrounds or one Background and its output folder.
+The default is <code>&lt;application folder&gt;/data</code>. For Scopes, <strong>Scopes CSV columns</strong>
+selects <strong>Values + units</strong> or <strong>Values + units + validity + reason</strong> before
+Run; the latter includes per-Measurement quality fields. Both formats retain
+blank values for invalid measurements rather than writing zero. Meters retains
+its existing five-column CSV. Each Capture creates a new CSV;
+Monitor-only operation creates none. Every enabled CSV destination follows the
+failure policy below and keeps any partial files.</p>
+<p>After the run, <strong>Export Background</strong> saves the selected or all Datasets as CSV
+or XLSX, including partial data from a failed run. When a Scopes Dataset is
+present, <strong>Scopes export columns</strong> lets each manual export choose the same
+two formats independently of the format used during streaming; captured memory
+data always retains <code>value</code>, <code>unit</code>, <code>valid</code> and <code>reason</code>. More than
+300,000 samples shows a warning. XLSX defaults to 300,000 samples per file; edit <strong>Samples per
+XLSX file</strong> from 1 to 1,048,575. Larger Datasets split into new files without
+truncation. Export names avoid overwriting streaming or previous manual files.
+No Capture OFF or run completion automatically performs manual export.</p>
+<h2 id="9-streaming-csv">9. Streaming CSV</h2>
+<p>Streaming CSV is configured in the Workflow area's <strong>CSV Export</strong> panel. It
+is different from exporting a completed run later. The panel starts collapsed
+when the application opens. Click its title to expand or collapse it; collapsing
+only hides the controls and does not change their values.</p>
+<p>Foreground streaming requires at least one Output; Background streaming does
+not. Choose one of these foreground modes:</p>
+<ul>
+<li><strong>Selected Page</strong> — choose one Output Page and optionally choose an output
+  folder. Desktop automatically creates a timestamped CSV filename. The
+  selected Page is fixed once the run starts.</li>
+<li><strong>All Pages</strong> — optionally choose an output folder. Desktop creates a
+  timestamped destination directory and one CSV file for each Page.</li>
+</ul>
+<p>If no folder is selected, Streaming output uses the application's data
+folder:</p>
+<p>Default output folder: <code>&lt;application folder&gt;/data</code></p>
+<p>Streaming behavior:</p>
+<ul>
+<li>Headers are created and flushed before workflow execution.</li>
+<li>Only committed ResultRows are written.</li>
+<li>Each written row is flushed.</li>
+<li>Any enabled CSV creation, write or final-flush failure fails the run, stops
+  further ordinary Steps and performs background and Powers safety cleanup.
+  It is independent of Graceful Loop Stop and preserves committed rows,
+  received Background samples and partial CSV files.</li>
+<li>CSV data already written from committed rows remains after workflow failure
+  or Stop Workflow / loop Stop.</li>
+<li>Streaming does not produce XLSX files.</li>
+<li>Streaming settings are locked while the run is active.</li>
+</ul>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

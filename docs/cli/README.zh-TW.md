@@ -1,7 +1,6 @@
 # Orchestrator Tool CLI
 
-[English](README.md) | [CLI 使用者指南](USER_GUIDE.zh-TW.md) | [Core](../core/README.zh-TW.md) | [專案 README](../../README.zh-TW.md)
-
+[CLI 使用者指南](USER_GUIDE.zh-TW.md) | [Core](../core/README.zh-TW.md) | [專案 README](../../README.zh-TW.md)
 `orchestrator-tool` 執行檔（Windows 為 `orchestrator-tool.exe`）是使用共用 Rust Core 的工程診斷介面，可檢查本機工具設定、EXE 狀態、外部工具 Manifest 與部分 Worker 啟動流程。CLI **不提供** Workflow Template 編輯或執行功能。
 
 ## 指令
@@ -9,6 +8,7 @@
 | 指令 | 功能 |
 | --- | --- |
 | `orchestrator-tool --help`／`--version` | 顯示指令說明或產品版本 |
+| `orchestrator-tool user-guide [--lang en\|zh-TW]` | 以預設瀏覽器開啟內建離線 CLI 使用者指南 |
 | `orchestrator-tool doctor` | 彙整外部工具 EXE 的設定與可用性 |
 | `orchestrator-tool tools list` | 列出註冊的 Tool ID、EXE 路徑、來源與狀態 |
 | `orchestrator-tool tools inspect <TOOL_ID>` | 檢查單一工具；EXE 可用時探測 Manifest |

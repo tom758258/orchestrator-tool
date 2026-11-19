@@ -1,7 +1,6 @@
 # Orchestrator Tool Core
 
-[English](README.md) | [專案 README](../../README.zh-TW.md) | [CLI](../cli/README.zh-TW.md) | [Desktop](../desktop/README.zh-TW.md)
-
+[專案 README](../../README.zh-TW.md) | [CLI](../cli/README.zh-TW.md) | [Desktop](../desktop/README.zh-TW.md)
 Core 是根目錄 `orchestrator-tool` Cargo Package 中，以 `src/lib.rs` 為入口的共用 Rust Library，提供診斷 CLI 與 Tauri Desktop 後端使用的協調執行邏輯。它不是獨立 Crate，也不是儀器驅動程式。
 
 ## 主要職責

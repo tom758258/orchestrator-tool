@@ -22,6 +22,7 @@
 <body>
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav">{{navigation}}</div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
@@ -33,6 +34,14 @@
       if (document.documentElement.lang === 'zh-TW') {
         document.getElementById('toc-title').textContent = '章節導覽';
         document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
       }
       const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
       const toc = document.getElementById('toc');

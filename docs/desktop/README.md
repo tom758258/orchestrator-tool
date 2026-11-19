@@ -1,7 +1,6 @@
 # Orchestrator Tool Desktop
 
-[繁體中文](README.zh-TW.md) | [Desktop User Guide](USER_GUIDE.md) | [Core](../core/README.md) | [Project README](../../README.md)
-
+[Desktop User Guide](USER_GUIDE.md) | [Core](../core/README.md) | [Project README](../../README.md)
 Desktop is the primary interface for creating Tool Instances, editing Templates and Workflows, running supported Simulation/Live workflows, and viewing or exporting committed results. This README covers development and component boundaries. For controls and step-by-step operation use the [Desktop User Guide](USER_GUIDE.md).
 
 ## Implementation and ownership

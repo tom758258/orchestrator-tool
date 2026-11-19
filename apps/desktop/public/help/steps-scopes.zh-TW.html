@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scopes 動作</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html" aria-current="page">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Scopes 動作</h1>
+<h3 id="67-scopes-actions-與-file-output">6.7 Scopes actions 與 File Output</h3>
+<p>Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Horizontal Scale（示波器水平軸刻度）、
+Horizontal Position（示波器水平軸位置）、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。
+Channel Scale、Channel Offset、Horizontal Scale（示波器水平軸刻度）、Horizontal Position（示波器水平軸位置）與 Edge Trigger Level
+只允許數值 <strong>Fixed value</strong>、<strong>Variable</strong> 或 <strong>Calculation</strong> 設定值。
+Calculation 的運算元只允許固定數值或變數，運算子只允許 Add、Subtract、Multiply
+或 Divide。Template 也會驗證這些限制；一般 Output、Set Variable、Assert 與 While
+仍保有原有來源能力。Measure 的 Value、Unit、Channel 與 Item 可供 Output 或 Assert 使用。
+這五個 Scopes 設定值皆為必填，須提供固定數值或 binding。</p>
+<p>Channel Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position
+與 Edge Trigger 會在套用設定後回讀。回讀失敗、缺少資料或超出容差時，Step 會回報 FAIL。
+若值不符，錯誤會顯示要求值、回讀值及適用的數值容差。驗證成功時，Result 取自原始 Set 命令。
+Set 與 Query 各自使用既有 Timeout。</p>
+<p>TDS2024B 與 TBS1052B 的 Edge Trigger Level 採用 ±0.05 V 絕對容差，設定值接近零時也適用。
+例如設定 1.00 V 時，回讀 1.04 V 會通過，回讀 1.06 V 會失敗。Source Channel 與 Slope
+仍須完全一致。</p>
+<p>Foreground Measure 另提供 Valid（<code>/valid</code>）供 IF／ELSE 判斷。取得有效數值時為
+<code>true</code>；僅在確認是無效量測 sentinel、且儀器狀態正常時，Step 仍會成功完成並回傳
+<code>/valid</code> = <code>false</code>、<code>/value</code> = <code>null</code>。在 IF／ELSE 選 Previous step result →
+Valid，與 Boolean false 比較。其他無效回應、儀器或 Worker 錯誤以及取消仍會使
+Step 失敗。無效量測不代表儀器完全沒有波形，Orchestrator 也不會自動重試。</p>
+<p><strong>Measurement Item</strong>、Trigger <strong>Slope</strong> 與 Capture <strong>Points</strong> 都是依目前 Scopes
+Capabilities 提供的固定下拉選單。量測項目與斜率儲存 canonical 字串；Measurement Item
+顯示時將第一個英文字母大寫，<code>vpp</code> 顯示為 <strong>Vp-p</strong>，儲存值仍為 <code>vpp</code>。Points 儲存
+數字，不能使用 binding。Simulation 使用預設型號；Live 使用目標的 canonical model ID。
+切換模式、型號、目標 instance 或執行檔會重新載入選項。載入中、Capabilities 無法取得
+或清單為空時會停用選擇。設定不合法或無法確認時，必須明確重新選擇；選項不會自動改寫
+已儲存值。最終型號支援仍由 Scopes 驗證。
+Job 排入佇列後，要等 Scopes 回報 terminal result 才算完成。</p>
+<p><strong>Scope Single Wait（單次觸發等待）</strong> 啟動單次擷取，並在有限時間內等待觸發完成。
+<strong>Trigger Timeout (ms)</strong> 預設為 <strong>5000</strong>，<strong>Poll Interval (ms)</strong> 預設為 <strong>100</strong>；
+兩者只能是固定正整數，且 Poll Interval 不可大於 Trigger Timeout。
+此 Action 不提供 Force Trigger 選項。已確認的正常觸發逾時會作為成功 Step，
+可利用 <code>/outcome</code> = <code>timeout</code> 或 <code>/timed_out</code> = <code>true</code> 進行既有的 IF／ELSE 判斷。
+儀器、Worker 或取消等真正錯誤仍使 Step 失敗。觸發逾時不代表擷取成功，
+Orchestrator 也不會自動強制觸發、停止擷取或重設儀器。</p>
+<p>選取 Single Wait 的 Result 欄位後，會顯示資料型別與比較值：Outcome 是 String（natural＝正常完成觸發，timeout＝等待逾時）；Timed Out 與 Capture Allowed 是 Boolean（true 或 false）。IF／ELSE 的另一側請選相同型別；選取欄位不會自動修改比較值。</p>
+<p>Channel Display、Channel Scale、Channel Offset 與 Measure 使用固定的 <strong>Channel</strong>
+下拉選單；Edge Trigger 使用 <strong>Source Channel</strong>。選項依 Scopes 離線 Capabilities
+顯示為 <strong>CH1</strong>、<strong>CH2</strong> 等。Simulation 使用模擬器通道；Live 使用目標 instance
+已識別的型號。切換模式、目標 instance、Live 型號或 Scopes 執行檔時，會重新載入選項。
+載入中、缺少 Live 型號、查詢失敗或沒有支援通道時，會停用新的固定選擇並顯示提示。
+已儲存但不支援的值仍會顯示，儲存與重新載入時也會保留。既有 Channel binding
+會保留並顯示提示；只有明確選擇支援的固定通道，才會取代原值並移除該 binding。
+其他 bindings 保持不變。</p>
+<p>Capture 的 <strong>Channels</strong> 使用依 Capabilities 提供的 <strong>CH1</strong>、<strong>CH2</strong> 等核取方塊。
+可選擇一個或多個通道，最後一個已選通道無法取消勾選。已儲存但不支援的通道或
+無效舊值會保留並顯示提示，所有核取方塊顯示為未勾選；勾選支援通道後，才以有效
+選擇取代原資料。既有 Channel binding 同樣保留，直到明確選擇固定通道才會取代。
+載入 Capabilities 或切換型號不會自動改寫已儲存通道。</p>
+<p><strong>Scope AutoScale</strong> 僅支援 Keysight 的 Foreground Step（DSOX2004A、DSOX3024A、DSOX4024A、DSOX4034A）。
+Source Channels、Acquire Mode（Normal／Current）及 Channels Mode（All／Displayed）均為選填；
+未指定的項目不會傳給 Scopes Tool，取消全部 Source Channels 勾選即省略此參數。
+AutoScale 可能改變通道顯示與刻度、Timebase、Trigger 等儀器狀態；Orchestrator 不會自動還原。
+使用 Background Measure Streaming 時，應在 Worker ON 前完成必要的 Scopes Setup；
+Streaming 啟動後不能在同一 Worker 執行 AutoScale。Step 必須等 Async Job 完成才算成功；
+若指定來源命令遭拒，Scopes Tool 可能回報改用不指定來源的 AutoScale Fallback。
+Simulation 僅驗證命令流程，不代表已完成真實波形縮放。</p>
+<p>Screenshot 的 <strong>Image Format</strong> 依 Scopes 離線 Capabilities 控制：Simulation 使用
+預設型號，Live 使用已保存的裝置型號。不支援的格式仍顯示，但無法選取。切換型號時，
+已保存但不支援的格式會保留並顯示警告。若無法取得 Capabilities，編輯器會顯示原因，
+並停用新的格式選擇。</p>
+<p>左側 Workflow 的 <strong>Scopes File Output</strong> 需要目前 Template 中至少有一個 Scopes
+Tool Instance。沒有時，標題會灰化並顯示鎖頭與 <strong>No Scopes Tool Instance. Add one in Setup.</strong>，
+無法展開，內部設定也會隱藏。新增第一個 Scopes instance 後解鎖；移除最後一個後
+再次鎖定。載入 Template 時會依其中的 instances 更新鎖定狀態。Simulation 與 Live
+採用相同條件，不需要已保存的 Live Resource。鎖定或解鎖會保留已選資料夾及
+展開／收合狀態，並與 Scopes step 分類各自獨立。</p>
+<p>解鎖後可展開 <strong>Scopes File Output</strong>。<strong>選取資料夾（Select Folder）</strong> 選擇 Capture 與
+Screenshot 共用的資料夾；<strong>使用預設值（Use Default）</strong> 回到 <strong>Orchestrator application folder / data</strong>。
+此選擇只屬於本機 runtime state，不保存至 Template。Capture 產生 CSV 與 metadata
+JSON；Screenshot 產生所選格式的圖片。每次執行，包括 loop iteration 與後續 run，
+都會取得新的絕對檔案路徑，不覆蓋既有檔案。Job 失敗或缺少必要檔案會使 step 失敗。
+此區塊與匯出 Workflow Output rows 的 CSV Export 分開。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

@@ -1,8 +1,27 @@
 # Orchestrator Tool CLI 使用者指南
 
-[English](USER_GUIDE.md) | [CLI 指令參考](README.zh-TW.md) | [Desktop 使用者指南](../desktop/USER_GUIDE.zh-TW.md)
+CLI 用於診斷 Orchestrator 環境及已設定的外部工具 EXE。Workflow 編輯與 Simulation／Live Workflow 執行由 Desktop 負責，不是 CLI 功能。
 
-CLI 用於診斷 Orchestrator 環境及已設定的外部工具 EXE。Workflow 編輯與 Simulation／Live Workflow 執行由 [Desktop](../desktop/USER_GUIDE.zh-TW.md) 負責，不是 CLI 功能。
+## 選擇操作介面
+
+Windows 發行版包含兩個 EXE：
+
+| 程式 | 用途 |
+| --- | --- |
+| `orchestrator-tool.exe` | CLI：外部工具設定、Manifest、Worker 診斷。 |
+| `Orchestrator Tool.exe` | Desktop：Workflow 編輯、Simulation／Live 執行及結果匯出。 |
+
+本指南介紹 CLI；Desktop 的操作說明由 `Orchestrator Tool.exe` 右上角 **Help** 開啟。
+
+## 開啟離線使用指南
+
+```powershell
+.\orchestrator-tool.exe user-guide
+.\orchestrator-tool.exe user-guide --lang en
+.\orchestrator-tool.exe user-guide --lang zh-TW
+```
+
+預設英文；指南隨 EXE 提供、由系統預設瀏覽器離線開啟，不需 Desktop 或儀器。
 
 ## 1. 開啟 CLI
 
@@ -66,4 +85,4 @@ CLI 不會自動繼承 Desktop 已保存的 EXE 路徑。缺少或尚未設定 E
 | `worker check is not supported` | 僅接受 `meters` 與 `powers` |
 | 設定或 Tool ID 錯誤 | 檢查 TOML 語法、已註冊 ID 與指令拼字 |
 
-CLI 沒有 `run`、Workflow Editor、`--json` 或內建 `user-guide` 指令。完整語法與結束狀態請參閱 [CLI README](README.zh-TW.md) 及 `--help`。
+CLI 沒有 `run`、Workflow Editor、`--json`。完整語法與結束狀態請參閱 CLI README 及 `--help`。

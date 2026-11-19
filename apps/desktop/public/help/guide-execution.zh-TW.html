@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulation 與 Live 執行</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
+<a class="help-page" href="guide-execution.zh-TW.html" aria-current="page">Simulation 與 Live 執行</a>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Simulation 與 Live 執行</h1>
+<h2 id="7-run-simulation">7. Run Simulation</h2>
+<p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
+manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
+使用 Validate；run 啟動時也會驗證 Template。</p>
+<p>在 Execution Mode 選擇 <strong>模擬（Simulation）</strong>，並使用唯一的 <strong>執行模擬（Run Simulation）</strong> button。
+Simulation 不需要 Live Resources，會使用 external Workers 的 simulate contract，
+不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
+powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
+Live hardware validation。無法推導數量的 Simple Software 來源會顯示本次執行的
+Sample 警告；Custom 模式僅供 Background 使用。</p>
+<h2 id="8-run-live">8. Run Live</h2>
+<p>在 Execution Mode 選擇 <strong>真實硬體（Live）</strong> 後，同一個 Run control 會變成 <strong>執行真實硬體（Run Live）</strong>。
+Desktop 會自動依每個 referenced instance 已保存的型號 Capability，檢查 Powers 與
+Scopes 的 Workflow 固定參數及 Setup。<strong>Live Preflight: Checking</strong> 表示檢查中，
+此時不能 Run；<strong>Passed</strong> 才能進入既有的 Live confirmation 流程。<strong>Failed</strong> 會以
+紅色顯示已發現的不相容設定，修正並重新檢查成功前不能 Run。無法取得必要 Capability
+或 Model ID 也會阻擋 Live；未使用的 instance 與未使用的選用 Capability 欄位不會阻擋。</p>
+<p>更換 Template、修改 Workflow 參數或 Setup、保存 Resource／型號，或更換 Powers／Scopes
+executable，都會使舊結果失效並重新檢查。Resource 或 identity draft 變更必須先保存。
+For／While 內的固定值也會檢查，但不執行迴圈；被 binding 覆蓋的值仍由 Worker 在執行時
+驗證。Preflight 不會修改 Template 或自動替換成支援的通道。自動檢查不驗證
+Workflow 引用或作用域；完整 Template 驗證只在 Validate 或 Run 執行。Simulation 不受影響。</p>
+<p>後端在啟動 Worker、建立 Powers write authorization 或替換 Last Run 前，會再次檢查
+當次已保存的設定。Preflight 拒絕執行時會保留原 Last Run、結果與 Output，並顯示為
+Preflight failure，不會呈現成已執行 Workflow 的 failure。</p>
+<p>開始 Live 前，Desktop 會：</p>
+<ul>
+<li>確認 referenced Tool Instances；</li>
+<li>取得已保存的 Live Resources 與 backends；</li>
+<li>拒絕尚未保存的 Live Resource、backend 或 identity draft changes；</li>
+<li>顯示列出每個 referenced instance、Tool Type、backend、resource 與可用 identity 的 Live confirmation；</li>
+<li>提醒 Live mode 可能改變 Powers outputs；以及</li>
+<li>對適用的 Meters setup 額外顯示 10 A terminal warning。</li>
+</ul>
+<p>請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 backend
+與 resource 仍與確認時完全相同。Backend 或 resource 改變，或 resource 重複使用，
+都會使 Live execution 被拒絕，並要求
+重新確認。</p>
+<p>目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Powers 與 Scopes 的
+Preflight 使用已保存的 canonical model ID。Scopes 使用原樣保存的 Resource；
+未知 identity 不會被替換成其他型號。
+Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。</p>
+<h3 id="81-powers-actions-與-cleanup">8.1 Powers actions 與 cleanup</h3>
+<p>Powers Live actions 包括設定值，以及 <code>output-on</code> 與 <code>output-off</code> actions。Live
+Powers write authorization 只存在於該次 Live run 的 runtime。</p>
+<p>Run 結束時，以及 Workflow failure 或後續 Worker startup failure path，orchestrator
+會在 Worker shutdown 前對每個已啟動的 Powers instance 要求 <code>safe-off</code>。Cleanup
+failure 會使 run failure；若原本已有 Workflow failure，仍保留原始 failure。Temporary
+runtime authorization file 只用於該次 run，並會 best-effort remove。</p>
+<p>明確的 Powers <code>output-off</code> Tool Action 不會取代 run-level cleanup。Simulation
+會在相同 cleanup 位置透過 powers-tool 送出 simulated Safe-Off，但不宣稱真實
+outputs 已被改變。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

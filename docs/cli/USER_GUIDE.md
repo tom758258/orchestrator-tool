@@ -1,8 +1,27 @@
 # Orchestrator Tool CLI User Guide
 
-[繁體中文](USER_GUIDE.zh-TW.md) | [CLI command reference](README.md) | [Desktop User Guide](../desktop/USER_GUIDE.md)
+Use the CLI to diagnose the Orchestrator environment and configured external tool executables. Workflow editing and Simulation/Live workflow runs belong to the Desktop, not the CLI.
 
-Use the CLI to diagnose the Orchestrator environment and configured external tool executables. Workflow editing and Simulation/Live workflow runs belong to the [Desktop application](../desktop/USER_GUIDE.md), not the CLI.
+## Choose Your Interface
+
+The Windows release contains two EXEs:
+
+| Program | Purpose |
+| --- | --- |
+| `orchestrator-tool.exe` | CLI: external-tool configuration, manifest and Worker diagnostics. |
+| `Orchestrator Tool.exe` | Desktop: Workflow authoring, Simulation/Live runs and result export. |
+
+This guide covers the CLI; use **Help** in the upper-right corner of `Orchestrator Tool.exe` for Desktop operation.
+
+## Open the Offline User Guide
+
+```powershell
+.\orchestrator-tool.exe user-guide
+.\orchestrator-tool.exe user-guide --lang en
+.\orchestrator-tool.exe user-guide --lang zh-TW
+```
+
+The default language is English. The guide opens offline in your system browser; Desktop and instruments are not required.
 
 ## 1. Open the CLI
 
@@ -66,4 +85,4 @@ These checks launch the configured external executable in a bounded Worker simul
 | `worker check is not supported` | Only `meters` and `powers` are accepted |
 | Invalid configuration or Tool ID | Check TOML syntax, registered IDs and the command spelling |
 
-The CLI has no `run`, workflow editor, `--json` or bundled `user-guide` command. For complete command syntax and exit behavior, use the [CLI README](README.md) and built-in `--help`.
+The CLI has no `run`, workflow editor, `--json`. For complete command syntax and exit behavior, use the CLI README and built-in `--help`.

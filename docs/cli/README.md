@@ -1,7 +1,6 @@
 # Orchestrator Tool CLI
 
-[繁體中文](README.zh-TW.md) | [CLI User Guide](USER_GUIDE.md) | [Core](../core/README.md) | [Project README](../../README.md)
-
+[CLI User Guide](USER_GUIDE.md) | [Core](../core/README.md) | [Project README](../../README.md)
 The `orchestrator-tool` binary (`orchestrator-tool.exe` on Windows) is an engineering and diagnostic interface over the shared Rust Core. It checks local tool configuration, executable status, external-tool manifests and selected Worker startup paths. The CLI does **not** edit or execute workflow Templates.
 
 ## Commands
@@ -9,6 +8,7 @@ The `orchestrator-tool` binary (`orchestrator-tool.exe` on Windows) is an engine
 | Command | Behavior |
 | --- | --- |
 | `orchestrator-tool --help` / `--version` | Show command help or product version |
+| `orchestrator-tool user-guide [--lang en\|zh-TW]` | Open the bundled offline CLI user guide in the default browser |
 | `orchestrator-tool doctor` | Summarize configured external-tool executable availability |
 | `orchestrator-tool tools list` | List registered tool IDs and executable path, source and status |
 | `orchestrator-tool tools inspect <TOOL_ID>` | Inspect one tool; probe its manifest if the executable is available |

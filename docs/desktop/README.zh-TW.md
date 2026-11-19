@@ -1,7 +1,6 @@
 # Orchestrator Tool Desktop
 
-[English](README.md) | [Desktop 使用者指南](USER_GUIDE.zh-TW.md) | [Core](../core/README.zh-TW.md) | [專案 README](../../README.zh-TW.md)
-
+[Desktop 使用者指南](USER_GUIDE.zh-TW.md) | [Core](../core/README.zh-TW.md) | [專案 README](../../README.zh-TW.md)
 Desktop 是建立 Tool Instance、編輯 Template 與 Workflow、執行支援的 Simulation／Live Workflow，以及檢視或匯出已提交結果的主要介面。本 README 說明開發與元件邊界；畫面操作與步驟請參閱 [Desktop 使用者指南](USER_GUIDE.zh-TW.md)。
 
 ## 實作與職責

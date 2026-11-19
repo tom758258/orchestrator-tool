@@ -1,7 +1,6 @@
 # Orchestrator Tool Core
 
-[繁體中文](README.zh-TW.md) | [Project README](../../README.md) | [CLI](../cli/README.md) | [Desktop](../desktop/README.md)
-
+[Project README](../../README.md) | [CLI](../cli/README.md) | [Desktop](../desktop/README.md)
 Core is the shared Rust library in `src/lib.rs` of the root `orchestrator-tool` Cargo package. It supplies orchestration behavior to the diagnostic CLI and the Tauri Desktop backend. It is not a separate crate or an instrument driver.
 
 ## Responsibilities
