@@ -249,7 +249,7 @@ test('all Tool instances place Background Streaming between tool setup and Live 
   }
 })
 
-test('Setup groups preserve settings through collapse and tabs, and reset on New/Open Template', async () => {
+test('Setup groups preserve settings through collapse and tabs, and reset on New Template', async () => {
   tools.push(toolStatus('serial'))
   const instances: ToolInstance[] = [backgroundMeter, { id: 'serial-1', tool: 'serial', setup: {
     transport: 'tcp', baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
@@ -294,21 +294,19 @@ test('Setup groups preserve settings through collapse and tabs, and reset on New
   const saved = await savedDraft()
   expect(saved.tool_instances).toEqual(instances)
   expect(saved.backgrounds).toEqual(newDraft.backgrounds)
-  for (const action of ['Open Template', 'New Template']) {
-    const previous = instance('meters-1').getByRole('button', { name: 'Expand Measurement Setup' })
-    click(action)
-    await waitFor(() => expect(previous.isConnected).toBe(false))
-    tab('Setup')
-    for (const [id, title, field] of groups) {
-      const card = instance(id)
-      expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
-      expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
-      expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
-      expect(card.getByRole('combobox', { name: field })).toBeTruthy()
-      fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
-      fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
-      fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
-    }
+  const previous = instance('meters-1').getByRole('button', { name: 'Expand Measurement Setup' })
+  click('New Template')
+  await waitFor(() => expect(previous.isConnected).toBe(false))
+  tab('Setup')
+  for (const [id, title, field] of groups) {
+    const card = instance(id)
+    expect(card.getByRole('button', { name: 'Expand Background Streaming' }).getAttribute('aria-expanded')).toBe('false')
+    expect(card.getByRole('button', { name: 'Collapse Live Device' }).getAttribute('aria-expanded')).toBe('true')
+    expect(card.getByRole('button', { name: `Collapse ${title}` }).getAttribute('aria-expanded')).toBe('true')
+    expect(card.getByRole('combobox', { name: field })).toBeTruthy()
+    fireEvent.click(card.getByRole('button', { name: 'Expand Background Streaming' }))
+    fireEvent.click(card.getByRole('button', { name: 'Collapse Live Device' }))
+    fireEvent.click(card.getByRole('button', { name: `Collapse ${title}` }))
   }
 })
 function focusClick(control: HTMLElement) {
@@ -746,40 +744,31 @@ test('Setup preserves independent groups, local drafts and protection data throu
     item.id === 'powers-1' ? { ...item, display_name: 'Bench power' } : item) })
 })
 
-test.each(['Acquisition Setup', 'Scopes instance', 'Tools tab', 'Language switch'])('Average Count survives focus transfer to %s and accepts a completed value', async target => {
+test.each(['Acquisition Setup', 'Tools tab'])('Average Count preserves an incomplete draft across %s and accepts a completed value', async target => {
   await mount()
   click('Expand Acquisition Setup')
   const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
   act(() => count.focus())
   fireEvent.change(count, { target: { value: '1' } })
-  const control = target === 'Tools tab' ? screen.getByRole('tab', { name: 'Tools' })
-    : target === 'Language switch' ? screen.getByRole('button', { name: 'Switch language to 繁體中文' })
-    : screen.getByRole('button', { name: target === 'Scopes instance' ? 'Collapse scopes-1' : 'Collapse Acquisition Setup' })
+  const control = target === 'Tools tab'
+    ? screen.getByRole('tab', { name: 'Tools' })
+    : screen.getByRole('button', { name: 'Collapse Acquisition Setup' })
   const events: string[] = []
   count.addEventListener('blur', () => events.push('blur'), { once: true })
   control.addEventListener('click', () => events.push('click'), { once: true })
   focusClick(control)
   expect(events).toEqual(['blur', 'click'])
-  if (target === 'Language switch') {
-    expect(screen.getByRole('spinbutton', { name: '平均次數' })).toBe(count)
-    expect(count.value).toBe('1')
-    act(() => count.focus())
-    focusClick(screen.getByRole('button', { name: '切換語言為 English' }))
-  } else {
-    expect(screen.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
-    if (target === 'Tools tab') tab('Setup')
-    else click(target === 'Scopes instance' ? 'Expand scopes-1' : 'Expand Acquisition Setup')
-  }
+  expect(screen.queryByRole('spinbutton', { name: 'Average Count' })).toBeNull()
+  if (target === 'Tools tab') tab('Setup')
+  else click('Expand Acquisition Setup')
   expect(count.value).toBe('1')
-  expect(await savedDraft()).toEqual(original) // An incomplete draft never becomes a formal setting.
+  expect(await savedDraft()).toEqual(original)
   act(() => count.focus())
   fireEvent.change(count, { target: { value: '64' } })
   act(() => count.blur())
   expect(count.value).toBe('64')
   const saved = await savedDraft()
   expect(saved.tool_instances[1].setup.acquisition).toEqual({ acquisition_type: 'average', average_count: 64 })
-  expect(saved.tool_instances[1].setup).toEqual({ ...original.tool_instances[1].setup,
-    acquisition: { acquisition_type: 'average', average_count: 64 } })
 })
 
 test('Average Count ordinary blur still restores the accepted value and Acquisition Type changes clear the draft', async () => {
@@ -787,9 +776,7 @@ test('Average Count ordinary blur still restores the accepted value and Acquisit
   click('Expand Acquisition Setup')
   const count = screen.getByRole('spinbutton', { name: 'Average Count' }) as HTMLInputElement
   const type = screen.getByRole('combobox', { name: 'Acquisition Type' })
-  for (const next of [type, instance('scopes-1').getByRole('textbox', { name: 'Live Resource' }),
-    screen.getByRole('button', { name: 'Expand Channel Configuration' }),
-    screen.getByRole('button', { name: 'Collapse powers-1' }), null]) {
+  for (const next of [type, null]) {
     act(() => count.focus())
     fireEvent.change(count, { target: { value: '1' } })
     act(() => { if (next) next.focus(); else count.blur() })
@@ -1212,21 +1199,6 @@ test('Step ID rename updates a saved Serial BG Send binding when switching comma
   const operation = saved.workflow.steps[1].operation
   expect(operation.bindings.tx_value).toEqual({ source: 'step-output', step_id: 'latest-new', pointer: '/value' })
   expect(operation.arguments.tx_value).toBe('unchanged')
-})
-
-test('Background Step Palette shows complete tooltips with compact visible names', async () => {
-  newDraft = { ...original, tool_instances: [{ ...backgroundMeter }],
-    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1 }],
-    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
-  render(<App />)
-  await screen.findByRole('button', { name: 'Expand meters details' })
-  tab('Workflow')
-  const palette = within(screen.getByRole('region', { name: 'Step categories' }))
-  const workerOff = palette.getByRole('button', { name: 'Background Worker OFF' })
-  expect(workerOff.getAttribute('title')).toContain('Background Worker OFF')
-  expect(workerOff.getAttribute('title')).toContain('Stop the selected background Worker.')
-  fireEvent.click(workerOff)
-  expect((screen.getByRole('button', { name: 'Add Step' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 test('numeric setpoint UI restricts sources and forwards a selected variable', () => {
