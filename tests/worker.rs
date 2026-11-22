@@ -2458,7 +2458,10 @@ fn run_manual_powers_fixture(scenario: &str) {
                 "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
             }})
         } else if command == "safe-off" && !simulated {
-            fixture_safe_off_readback(Some(true), json!([]))
+            json!({
+                "execution":{"mode":"live","dry_run":false,"hardware_touched":true},
+                "data":fixture_safe_off_readback(Some(true), json!([]))
+            })
         } else if simulated && command == "clear-protection" {
             json!({
                 "request":{"command":"clear-protection","arguments":{"channel":2}},
@@ -2750,6 +2753,7 @@ fn run_fixture(scenario: &OsStr) {
         | "live-readback-failure"
         | "live-legacy-safe-off"
         | "live-simulated-safe-off"
+        | "live-safe-off-without-execution"
         | "live-both-failed"
         | "live-startup-failure"
         | "live-protection-success"
@@ -3186,11 +3190,16 @@ fn run_powers_workflow_fixture(scenario: &str) {
                         } else {
                             json!([])
                         };
-                        json!({
-                            "execution":{"mode":if simulated {"simulate"} else {"live"},
-                                "dry_run":simulated,"hardware_touched":!simulated},
-                            "data":if cleanup_failed { json!(null) } else { fixture_safe_off_readback(Some(true), errors) }
-                        })
+                        let data = if cleanup_failed { json!(null) } else { fixture_safe_off_readback(Some(true), errors) };
+                        if scenario == "live-safe-off-without-execution" {
+                            json!({"data":data})
+                        } else {
+                            json!({
+                                "execution":{"mode":if simulated {"simulate"} else {"live"},
+                                    "dry_run":simulated,"hardware_touched":!simulated},
+                                "data":data
+                            })
+                        }
                     } else { json!({ "ok": true }) }
                 }
             })
@@ -5757,6 +5766,7 @@ fn live_workflow_cleanup_lifecycle() {
         "live-readback-failure",
         "live-legacy-safe-off",
         "live-simulated-safe-off",
+        "live-safe-off-without-execution",
         "live-both-failed",
         "live-startup-failure",
     ] {
@@ -5931,8 +5941,10 @@ fn live_workflow_cleanup_lifecycle() {
                 }
                 assert!(cleanup_failure.is_some());
             }
-            "live-legacy-safe-off" | "live-simulated-safe-off" => {
-                assert!(off.is_none());
+            "live-legacy-safe-off"
+            | "live-simulated-safe-off"
+            | "live-safe-off-without-execution" => {
+                assert!(off.is_none(), "{scenario}: {off:?}");
                 assert!(cleanup_failure.is_some());
             }
             _ => {}
@@ -6007,10 +6019,11 @@ fn live_workflow_cleanup_lifecycle() {
                 assert!(matches!(error, WorkflowRunError::SafetyCleanup { .. }));
                 let message = error.to_string();
                 let classification = match scenario {
-                    "live-queue-failure" => "Error Queue query did not complete",
+                    "live-queue-failure" => "Error Queue",
                     "live-readback-failure"
                     | "live-legacy-safe-off"
-                    | "live-simulated-safe-off" => "OFF could not be confirmed",
+                    | "live-simulated-safe-off"
+                    | "live-safe-off-without-execution" => "OFF could not be confirmed",
                     _ => "still ON",
                 };
                 assert!(

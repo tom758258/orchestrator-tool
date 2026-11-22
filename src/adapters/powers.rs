@@ -541,11 +541,10 @@ pub fn safe_off_all(
         return job.map(|_| PowersSafeOffResult::Simulated);
     }
 
-    let result = &terminal["result"];
-    let readback = if let Some(execution) = result.get("execution")
-        && (execution["mode"] != "live"
-            || execution["dry_run"] != false
-            || execution["hardware_touched"] != true)
+    let execution = &terminal["result"]["execution"];
+    let readback = if execution["mode"] != "live"
+        || execution["dry_run"] != false
+        || execution["hardware_touched"] != true
     {
         Err("the Worker result does not show live hardware execution".to_owned())
     } else {
@@ -1123,7 +1122,7 @@ impl fmt::Display for PowersActionError {
                     }
                     Some(readback) if readback.output_off_confirmed == Some(true) => {
                         if readback.instrument_errors.is_none() {
-                            "Powers output OFF confirmed, but the instrument Error Queue query did not complete"
+                            "Powers output OFF confirmed, but no instrument Error Queue result was returned"
                         } else {
                             "Powers output OFF confirmed, but the Worker job failed"
                         }
