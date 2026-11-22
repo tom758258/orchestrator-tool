@@ -1181,6 +1181,11 @@ pub enum WorkflowRunEvent {
     StepCompleted(StepExecution),
     ResultRowCommitted(ResultRow),
     MessageEmitted(MessageRecord),
+    PowersCleanup {
+        instance: ToolInstanceId,
+        result: Option<crate::adapters::powers::PowersSafeOffResult>,
+        failure: Option<String>,
+    },
 }
 
 /// One message produced by a completed Show Message step.

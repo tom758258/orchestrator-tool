@@ -15,9 +15,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::powers::{
-        PowersActionError, apply_protection_setup, protection_status_all, safe_off_all,
+        PowersActionError, PowersSafeOffResult, apply_protection_setup, protection_status_all,
+        safe_off_all,
     },
-    executor::{WorkflowExecutionError, execute_workflow_internal},
+    executor::{WorkflowExecutionError, execute_workflow_internal, notify_progress},
     manifest::WorkerCompatibility,
     manifest_probe::probe_manifest,
     template::Template,
@@ -394,8 +395,14 @@ fn run_workflow_internal(
         match launch_result {
             Ok(session) => sessions.push((instance, session)),
             Err(source) => {
-                let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
-                let _ = shutdown_workers(sessions, shutdown_timeout);
+                let (cleanup, _) = cleanup_and_shutdown_workers(
+                    template,
+                    sessions,
+                    execution_mode,
+                    action_timeout,
+                    shutdown_timeout,
+                    &mut on_event,
+                );
                 let startup = WorkflowRunError::WorkerStartup { instance, source };
                 return Err(match cleanup {
                     Some((instance, source)) => WorkflowRunError::SafetyCleanup {
@@ -496,8 +503,14 @@ fn run_workflow_internal(
         })();
     if let Err(error) = setup_result {
         drop(session_refs);
-        let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
-        let _ = shutdown_workers(sessions, shutdown_timeout);
+        let (cleanup, _) = cleanup_and_shutdown_workers(
+            template,
+            sessions,
+            execution_mode,
+            action_timeout,
+            shutdown_timeout,
+            &mut on_event,
+        );
         return Err(match cleanup {
             Some((instance, source)) => WorkflowRunError::SafetyCleanup {
                 instance,
@@ -572,8 +585,14 @@ fn run_workflow_internal(
     let background_cleanup = background.cleanup_after_workflow(
         stopped || execution_failure.is_some() || options.failure.check().is_err(),
     );
-    let cleanup = cleanup_powers(template, &sessions, execution_mode, action_timeout);
-    let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
+    let (cleanup, shutdown_error) = cleanup_and_shutdown_workers(
+        template,
+        sessions,
+        execution_mode,
+        action_timeout,
+        shutdown_timeout,
+        &mut on_event,
+    );
     if let Some((instance, source)) = cleanup {
         let prior_failure = execution_failure
             .clone()
@@ -650,25 +669,54 @@ pub fn run_simulated_workflow(
     )
 }
 
-fn cleanup_powers(
+type PowersCleanupFailure = (ToolInstanceId, PowersActionError);
+
+fn cleanup_and_shutdown_workers(
     template: &Template,
-    sessions: &[(ToolInstanceId, WorkerSession)],
+    sessions: Vec<(ToolInstanceId, WorkerSession)>,
     execution_mode: ExecutionMode,
-    timeout: Duration,
-) -> Option<(ToolInstanceId, PowersActionError)> {
+    action_timeout: Duration,
+    shutdown_timeout: Duration,
+    on_event: &mut impl FnMut(WorkflowRunEvent),
+) -> (Option<PowersCleanupFailure>, Option<WorkflowRunError>) {
     let mut first_error = None;
-    for (id, session) in sessions {
-        if template
+    let mut events = Vec::new();
+    for (id, session) in &sessions {
+        if !template
             .tool_instances()
             .iter()
             .any(|instance| &instance.id == id && instance.tool == ToolId::powers())
-            && let Err(error) = safe_off_all(session, execution_mode, timeout)
-            && first_error.is_none()
         {
-            first_error = Some((id.clone(), error));
+            continue;
         }
+        let (result, failure) = match safe_off_all(session, execution_mode, action_timeout) {
+            Ok(result) => (Some(result), None),
+            Err(error) => {
+                let failure = error.to_string();
+                let result = match &error {
+                    PowersActionError::SafeOffFailed {
+                        readback: Some(readback),
+                        ..
+                    } => Some(PowersSafeOffResult::Live(readback.as_ref().clone())),
+                    _ => None,
+                };
+                if first_error.is_none() {
+                    first_error = Some((id.clone(), error));
+                }
+                (result, Some(failure))
+            }
+        };
+        events.push(WorkflowRunEvent::PowersCleanup {
+            instance: id.clone(),
+            result,
+            failure,
+        });
     }
-    first_error
+    let shutdown_error = shutdown_workers(sessions, shutdown_timeout);
+    for event in events {
+        notify_progress(on_event, event);
+    }
+    (first_error, shutdown_error)
 }
 
 fn shutdown_workers(

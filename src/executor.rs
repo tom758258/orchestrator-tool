@@ -719,7 +719,7 @@ fn command_result_referenced(steps: &[Step], source: &str) -> bool {
     })
 }
 
-fn notify_progress(
+pub(crate) fn notify_progress(
     on_event: &mut (impl FnMut(WorkflowRunEvent) + ?Sized),
     event: WorkflowRunEvent,
 ) {

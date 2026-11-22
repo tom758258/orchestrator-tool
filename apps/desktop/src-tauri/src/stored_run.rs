@@ -412,6 +412,7 @@ impl StoredRun {
             orchestrator_tool::workflow::WorkflowRunEvent::MessageEmitted(record) => {
                 self.messages[record.target().index()].append(record.text().to_owned());
             }
+            orchestrator_tool::workflow::WorkflowRunEvent::PowersCleanup { .. } => {}
         }
     }
 

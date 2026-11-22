@@ -19,9 +19,9 @@ use orchestrator_tool::{
             run_worker_smoke as run_meters_worker_smoke,
         },
         powers::{
-            PowersSmokeError, clear_protection, normalized_protection_status_all,
-            run_action as run_powers_action, run_worker_smoke as run_powers_worker_smoke,
-            safe_off_all,
+            PowersSafeOffResult, PowersSmokeError, clear_protection,
+            normalized_protection_status_all, run_action as run_powers_action,
+            run_worker_smoke as run_powers_worker_smoke, safe_off_all,
         },
     },
     manifest::{ToolManifest, parse_manifest},
@@ -511,6 +511,20 @@ fn main() {
         println!(
             "Scopes protocol/setup and directly affected regression checks passed (10 groups)"
         );
+        return;
+    }
+
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--powers-cleanup-tests")
+    {
+        live_workflow_cleanup_lifecycle();
+        powers_protection_setup_lifecycle();
+        manual_powers_clear_safe_offs_clears_rereads_and_shuts_down();
+        manual_powers_clear_stops_after_safe_off_failure();
+        manual_powers_clear_returns_unresolved_trip_without_retry();
+        simulated_manual_powers_clear_returns_plan_without_reread();
+        println!("Powers cleanup and directly affected checks passed");
         return;
     }
 
@@ -2443,6 +2457,8 @@ fn run_manual_powers_fixture(scenario: &str) {
                 ],
                 "outputs":[{"channel":1,"enabled":false},{"channel":2,"enabled":false}]
             }})
+        } else if command == "safe-off" && !simulated {
+            fixture_safe_off_readback(Some(true), json!([]))
         } else if simulated && command == "clear-protection" {
             json!({
                 "request":{"command":"clear-protection","arguments":{"channel":2}},
@@ -2730,6 +2746,10 @@ fn run_fixture(scenario: &OsStr) {
         | "live-assert-failure"
         | "live-step-failure"
         | "live-cleanup-failure"
+        | "live-queue-failure"
+        | "live-readback-failure"
+        | "live-legacy-safe-off"
+        | "live-simulated-safe-off"
         | "live-both-failed"
         | "live-startup-failure"
         | "live-protection-success"
@@ -2962,6 +2982,17 @@ fn run_powers_runtime_fixture() {
     write_response(request.stream, 200, r#"{"ok":true}"#);
 }
 
+fn fixture_safe_off_readback(
+    confirmed: Option<bool>,
+    errors: serde_json::Value,
+) -> serde_json::Value {
+    json!({
+        "output_off_confirmed": confirmed,
+        "outputs":[{"channel":1,"enabled":confirmed == Some(false)}],
+        "instrument_errors":errors
+    })
+}
+
 fn run_powers_workflow_fixture(scenario: &str) {
     let live = !scenario.starts_with("simulate");
     let protection_scenario = matches!(
@@ -2984,6 +3015,8 @@ fn run_powers_workflow_fixture(scenario: &str) {
     let cleanup_failed = matches!(
         scenario,
         "live-cleanup-failure"
+            | "live-queue-failure"
+            | "live-readback-failure"
             | "live-stop-cleanup-failure"
             | "live-both-failed"
             | "live-multi-cleanup-failure"
@@ -3106,6 +3139,18 @@ fn run_powers_workflow_fixture(scenario: &str) {
             (request.method.as_str(), request.path.as_str()),
             ("GET", "/status")
         );
+        let cleanup_failed = cleanup_failed && worker_job_id == "job-cleanup";
+        let error = if cleanup_failed {
+            let (confirmed, errors) = match scenario {
+                "live-queue-failure" => (Some(true), json!(null)),
+                "live-readback-failure" => (None, json!(null)),
+                _ => (Some(false), json!(["-222,\"Data out of range\""])),
+            };
+            json!({"category":"execution","code":"safe_off_failed","message":"fixture cleanup failure",
+                "details":{"partial_result":fixture_safe_off_readback(confirmed, errors)}})
+        } else {
+            json!({"message":"fixture action failure"})
+        };
         write_response(
             request.stream,
             200,
@@ -3118,10 +3163,10 @@ fn run_powers_workflow_fixture(scenario: &str) {
                 "active_job": null,
                 "last_job": {
                     "worker_job_id": worker_job_id,
-                    "status": if (step_failed && command == "output-on") || (cleanup_failed && worker_job_id == "job-cleanup")
+                    "status": if (step_failed && command == "output-on") || cleanup_failed
                         || (matches!(scenario, "simulate-protection-set-failure" | "live-protection-set-failure" | "live-protection-set-and-cleanup-failure")
                             && command == "protection-set") { "failed" } else { "succeeded" },
-                    "error": { "message": if command == "safe-off" { "fixture cleanup failure" } else { "fixture action failure" } },
+                    "error": error,
                     "result": if command == "measure" {
                         json!({
                             "request": { "command": "measure", "arguments": { "channel": 2 } },
@@ -3133,6 +3178,18 @@ fn run_powers_workflow_fixture(scenario: &str) {
                             "request": { "command": "protection-status" },
                             "data": { "protection": { "over_voltage_tripped": scenario.ends_with("protection-trip"), "over_current_tripped": false } },
                             "metadata": { "source": "fixture" }
+                        })
+                    } else if command == "safe-off" && live && scenario != "live-legacy-safe-off" {
+                        let simulated = scenario == "live-simulated-safe-off";
+                        let errors = if matches!(scenario, "live-success" | "live-step-failure") {
+                            json!(["-222,\"Data out of range\""])
+                        } else {
+                            json!([])
+                        };
+                        json!({
+                            "execution":{"mode":if simulated {"simulate"} else {"live"},
+                                "dry_run":simulated,"hardware_touched":!simulated},
+                            "data":if cleanup_failed { json!(null) } else { fixture_safe_off_readback(Some(true), errors) }
                         })
                     } else { json!({ "ok": true }) }
                 }
@@ -5696,6 +5753,10 @@ fn live_workflow_cleanup_lifecycle() {
         "live-for-failure",
         "live-step-failure",
         "live-cleanup-failure",
+        "live-queue-failure",
+        "live-readback-failure",
+        "live-legacy-safe-off",
+        "live-simulated-safe-off",
         "live-both-failed",
         "live-startup-failure",
     ] {
@@ -5812,7 +5873,8 @@ fn live_workflow_cleanup_lifecycle() {
             );
         }
         let workflow = Workflow::new(steps).unwrap();
-        let result = run_workflow(
+        let mut cleanup = Vec::new();
+        let result = run_workflow_with_events(
             &test_template(&workflow),
             if scenario.starts_with("simulate") {
                 ExecutionMode::Simulate
@@ -5823,7 +5885,58 @@ fn live_workflow_cleanup_lifecycle() {
             Duration::from_secs(5),
             Duration::from_secs(5),
             Duration::from_secs(5),
+            |event| {
+                if let WorkflowRunEvent::PowersCleanup {
+                    instance,
+                    result,
+                    failure,
+                } = event
+                {
+                    assert_eq!(instance.as_str(), "powers-1");
+                    cleanup.push((result, failure));
+                }
+            },
         );
+        let [(off, cleanup_failure)] = cleanup.as_slice() else {
+            panic!("{cleanup:?}");
+        };
+        match scenario {
+            "live-success" | "live-step-failure" => {
+                let Some(PowersSafeOffResult::Live(readback)) = off else {
+                    panic!("{off:?}");
+                };
+                assert_eq!(readback.output_off_confirmed, Some(true));
+                assert_eq!(
+                    readback.instrument_errors,
+                    Some(vec!["-222,\"Data out of range\"".into()])
+                );
+                assert!(cleanup_failure.is_none());
+            }
+            "simulate-step-failure" => assert_eq!(*off, Some(PowersSafeOffResult::Simulated)),
+            "live-cleanup-failure"
+            | "live-both-failed"
+            | "live-readback-failure"
+            | "live-queue-failure" => {
+                let Some(PowersSafeOffResult::Live(readback)) = off else {
+                    panic!("{off:?}");
+                };
+                let confirmed = match scenario {
+                    "live-queue-failure" => Some(true),
+                    "live-readback-failure" => None,
+                    _ => Some(false),
+                };
+                assert_eq!(readback.output_off_confirmed, confirmed);
+                if confirmed != Some(false) {
+                    assert!(readback.instrument_errors.is_none());
+                }
+                assert!(cleanup_failure.is_some());
+            }
+            "live-legacy-safe-off" | "live-simulated-safe-off" => {
+                assert!(off.is_none());
+                assert!(cleanup_failure.is_some());
+            }
+            _ => {}
+        }
         // SAFETY: lifecycle has reaped all child sessions.
         unsafe { env::remove_var(CLEANUP_MARKER_ENV) };
         let events = fs::read_to_string(&marker).unwrap();
@@ -5893,9 +6006,16 @@ fn live_workflow_cleanup_lifecycle() {
                 let error = result.unwrap_err();
                 assert!(matches!(error, WorkflowRunError::SafetyCleanup { .. }));
                 let message = error.to_string();
+                let classification = match scenario {
+                    "live-queue-failure" => "Error Queue query did not complete",
+                    "live-readback-failure"
+                    | "live-legacy-safe-off"
+                    | "live-simulated-safe-off" => "OFF could not be confirmed",
+                    _ => "still ON",
+                };
                 assert!(
                     message.contains("Power safety cleanup failed")
-                        && message.contains("fixture cleanup failure"),
+                        && message.contains(classification),
                     "{message}"
                 );
                 if scenario == "live-both-failed" {
