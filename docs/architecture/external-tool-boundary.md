@@ -138,7 +138,11 @@ behavior; the orchestrator guarantees the run-level cleanup sequence:
    cleanup.
 4. Cleanup is best-effort and its failure makes the run fail while preserving
    the original workflow failure when one exists. Worker shutdown is still
-   attempted.
+   attempted. For Live Powers cleanup, the Worker must confirm OFF with channel
+   readbacks. The Core run event carries the readbacks and any Error Queue
+   diagnostics, including data from a failed job. Error Queue entries alone
+   do not fail cleanup once the outputs are confirmed OFF. A failed Error Queue
+   query still fails cleanup with the OFF confirmation retained.
 5. The temporary authorization support file is removed best-effort after the
    run.
 

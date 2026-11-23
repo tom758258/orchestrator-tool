@@ -129,6 +129,55 @@ fn request_workflow_stop(state: tauri::State<'_, ActiveRun>, loop_step_id: Strin
 }
 
 #[tauri::command]
+async fn read_and_drain_errors(
+    app: AppHandle,
+    state: tauri::State<'_, ActiveRun>,
+    tool_id: String,
+    instance_id: String,
+    execution_mode: ExecutionMode,
+) -> Result<orchestrator_tool::error_queue::ErrorQueueResult, String> {
+    state.register_manual()?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let tool = resolve_built_in_tool_id(&tool_id)?;
+        let instance = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::error_queue::read_and_drain_errors(
+            &application_dir,
+            &config,
+            &tool,
+            &instance,
+            execution_mode,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string());
+    state.clear();
+    result?
+}
+
+#[tauri::command]
+async fn check_meters_error_queue_support(
+    app: AppHandle,
+    instance_id: String,
+    execution_mode: ExecutionMode,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let instance = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::error_queue::check_meters_error_queue_support(
+            &application_dir,
+            &config,
+            &instance,
+            execution_mode,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn list_live_resources(
     app: AppHandle,
     tool_id: String,
@@ -1580,6 +1629,8 @@ fn main() {
             open_help,
             get_tool_status,
             list_live_resources,
+            read_and_drain_errors,
+            check_meters_error_queue_support,
             get_meters_capabilities,
             get_powers_capabilities,
             get_scopes_capabilities,
@@ -2269,6 +2320,7 @@ mod regression_tests {
         assert!(!state.request(a.to_string()));
         assert!(!state.request_global(7));
         let control = state.register().unwrap();
+        assert!(state.register_manual().is_err());
         assert!(!state.request_global(7));
         *control.run_id.lock().unwrap() = Some(7);
         assert!(!state.request_global(8));

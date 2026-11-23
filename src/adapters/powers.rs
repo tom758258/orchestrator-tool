@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     error::Error,
     ffi::OsString,
     fmt,
@@ -29,7 +30,7 @@ use crate::{
 const WORKER_SCHEMA_VERSION: u32 = 3;
 const READ_STATUS_COMMAND: &str = "read-status";
 const SIMULATION_MODEL_ID: &str = "keysight-e36312a";
-const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
+pub(crate) const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PowersProtectionFeatures {
@@ -496,19 +497,107 @@ fn augment_protection_status_result(mut result: Value) -> Result<Value, PowersAc
     Ok(result)
 }
 
-/// Requests bounded safe-off for every Powers channel.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PowersSafeOffResult {
+    Simulated,
+    Live(PowersSafeOffReadback),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct PowersSafeOffReadback {
+    pub output_off_confirmed: Option<bool>,
+    pub outputs: Vec<PowersSafeOffOutput>,
+    pub instrument_errors: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct PowersSafeOffOutput {
+    pub channel: u32,
+    pub enabled: bool,
+}
+
+/// Requests bounded safe-off for every Powers channel and checks the readback in Live.
 pub fn safe_off_all(
     session: &WorkerSession,
     execution_mode: ExecutionMode,
     timeout: Duration,
-) -> Result<Value, PowersActionError> {
-    run_command(
+) -> Result<PowersSafeOffResult, PowersActionError> {
+    let terminal = submit_command(
         session,
         "safe-off",
         json!({ "channel": "all" }),
         execution_mode,
         timeout,
     )
+    .map_err(|error| match execution_mode {
+        ExecutionMode::Simulate => error,
+        ExecutionMode::Live => PowersActionError::SafeOffFailed {
+            readback: None,
+            detail: Some(error.to_string()),
+        },
+    })?;
+    let job = command_result(&terminal);
+    if execution_mode == ExecutionMode::Simulate {
+        return job.map(|_| PowersSafeOffResult::Simulated);
+    }
+
+    let execution = &terminal["result"]["execution"];
+    let readback = if execution["mode"] != "live"
+        || execution["dry_run"] != false
+        || execution["hardware_touched"] != true
+    {
+        Err("the Worker result does not show live hardware execution".to_owned())
+    } else {
+        let data = match &job {
+            Ok(result) => Some(result.get("data").unwrap_or(result)),
+            Err(_) => terminal.pointer("/error/details/partial_result"),
+        };
+        data.ok_or_else(|| "no safe-off readback was returned".to_owned())
+            .and_then(parse_safe_off_readback)
+    };
+
+    match (job, readback) {
+        (Ok(_), Ok(readback))
+            if readback.output_off_confirmed == Some(true)
+                && readback.instrument_errors.is_some() =>
+        {
+            Ok(PowersSafeOffResult::Live(readback))
+        }
+        (job, Ok(readback)) => Err(PowersActionError::SafeOffFailed {
+            readback: Some(Box::new(readback)),
+            detail: job.err().map(|error| error.to_string()),
+        }),
+        (job, Err(detail)) => Err(PowersActionError::SafeOffFailed {
+            readback: None,
+            detail: Some(match job {
+                Ok(_) => detail,
+                Err(error) => format!("{error}. {detail}"),
+            }),
+        }),
+    }
+}
+
+fn parse_safe_off_readback(data: &Value) -> Result<PowersSafeOffReadback, String> {
+    if data.get("output_off_confirmed").is_none() || data.get("instrument_errors").is_none() {
+        return Err("safe-off result is missing confirmation or instrument diagnostics".into());
+    }
+    let readback: PowersSafeOffReadback = serde_json::from_value(data.clone())
+        .map_err(|error| format!("invalid safe-off readback: {error}"))?;
+    let mut channels = BTreeSet::new();
+    if readback
+        .outputs
+        .iter()
+        .any(|output| output.channel == 0 || !channels.insert(output.channel))
+    {
+        return Err("invalid or duplicate safe-off channel".into());
+    }
+    let any_on = readback.outputs.iter().any(|output| output.enabled);
+    if (readback.output_off_confirmed == Some(false)) != any_on
+        || (readback.output_off_confirmed == Some(true) && readback.outputs.is_empty())
+    {
+        return Err("safe-off confirmation conflicts with the channel readbacks".into());
+    }
+    Ok(readback)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -864,6 +953,17 @@ static NEXT_JOB_ID: AtomicU64 = AtomicU64::new(0);
 fn run_command(
     session: &WorkerSession,
     worker_command: &str,
+    arguments: Value,
+    execution_mode: ExecutionMode,
+    timeout: Duration,
+) -> Result<Value, PowersActionError> {
+    let terminal = submit_command(session, worker_command, arguments, execution_mode, timeout)?;
+    command_result(&terminal).cloned()
+}
+
+fn submit_command(
+    session: &WorkerSession,
+    worker_command: &str,
     mut arguments: Value,
     execution_mode: ExecutionMode,
     timeout: Duration,
@@ -884,11 +984,14 @@ fn run_command(
         std::process::id(),
         NEXT_JOB_ID.fetch_add(1, Ordering::Relaxed)
     );
-    let terminal = session
+    session
         .run_async_job(worker_command, &arguments, Some(context), &job_id, timeout)
-        .map_err(PowersActionError::InvalidResponse)?;
+        .map_err(PowersActionError::InvalidResponse)
+}
+
+fn command_result(terminal: &Value) -> Result<&Value, PowersActionError> {
     match terminal["state"].as_str() {
-        Some("succeeded") if terminal["ok"] == true => Ok(terminal["result"].clone()),
+        Some("succeeded") if terminal["ok"] == true => Ok(&terminal["result"]),
         Some("failed" | "cancelled") => Err(PowersActionError::WorkerFailure {
             status: terminal["state"].as_str().unwrap_or("failed").to_owned(),
             detail: terminal["error"]["message"].as_str().map(str::to_owned),
@@ -984,6 +1087,10 @@ pub enum PowersActionError {
         status: String,
         detail: Option<String>,
     },
+    SafeOffFailed {
+        readback: Option<Box<PowersSafeOffReadback>>,
+        detail: Option<String>,
+    },
     WorkerFatal(String),
     Timeout(Duration),
 }
@@ -1003,6 +1110,26 @@ impl fmt::Display for PowersActionError {
             }
             Self::WorkerFailure { status, detail } => {
                 write!(formatter, "Powers job ended with {status}")?;
+                if let Some(detail) = detail {
+                    write!(formatter, ": {detail}")?;
+                }
+                Ok(())
+            }
+            Self::SafeOffFailed { readback, detail } => {
+                let message = match readback.as_deref() {
+                    Some(readback) if readback.output_off_confirmed == Some(false) => {
+                        "Powers output is still ON"
+                    }
+                    Some(readback) if readback.output_off_confirmed == Some(true) => {
+                        if readback.instrument_errors.is_none() {
+                            "Powers output OFF confirmed, but no instrument Error Queue result was returned"
+                        } else {
+                            "Powers output OFF confirmed, but the Worker job failed"
+                        }
+                    }
+                    _ => "Powers output OFF could not be confirmed",
+                };
+                formatter.write_str(message)?;
                 if let Some(detail) = detail {
                     write!(formatter, ": {detail}")?;
                 }

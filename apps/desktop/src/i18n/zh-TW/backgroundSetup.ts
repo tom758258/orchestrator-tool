@@ -4,7 +4,7 @@ export default {
   "backgroundSetup.unsupportedBackgroundStreamingRequiresMetersScopesOrSerial": "不支援。背景串流需要 Meters、Scopes 或 Serial。",
   "backgroundSetup.enableBackgroundStreaming": " 啟用背景串流",
   "backgroundSetup.background": "背景： ",
-  "backgroundSetup.useWorkerAndCaptureActionsToControlThisInstance": "。使用 Worker 與擷取動作控制此實例。",
+  "backgroundSetup.configureContinuousAcquisition": "設定持續背景資料擷取。使用 Worker 與 Capture 動作控制串流及資料記錄。",
   "backgroundSetup.thisInstanceStillHasForegroundActionsRemoveThoseActions": "此實例仍有前景動作。執行前請移除這些動作，或使用其他實例。",
   "backgroundSetup.source": "來源",
   "backgroundSetup.source2": " 來源",

@@ -20,6 +20,7 @@ Both sections have independent **− / +** controls. Background Streaming starts
 collapsed; Live Device starts expanded. Expand Background Streaming and select
 **Enable Background Streaming** to show the supported Background options.
 Unsupported Tool Types keep this checkbox disabled and show an explanation.
+Use Worker and Capture actions to control background streaming and data recording.
 
 Group and card expansion states persist while editing, switching tabs, or
 collapsing an outer instance. Successful **New Template** or **Open Template**
@@ -150,6 +151,32 @@ Resource to enable new protection settings. In Simulation, Desktop queries
 powers-tool for the existing Powers simulator model, so Protection Setup does
 not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.
+
+#### Read & Drain Errors
+
+Open **Live Device** in a Powers, Meters, or Scopes instance and select
+**Read & Drain Errors** in **Error Queue**. Meters requires a CLI with the
+`read-errors` command. Desktop checks the CLI and any known saved Meters model
+without connecting to the instrument. If you replace the Meters executable at
+the same path, select **Refresh** in **Tools** to check support again. In Live,
+save a discovered Scopes resource so Desktop can verify model support.
+
+- **Simulation** uses the Tool's simulator and displays **NO HARDWARE I/O**.
+- **Live** uses the saved Live Resource and VISA Backend, even if the Resource
+  fields show a draft. The confirmation identifies the saved address. Reading
+  removes the returned entries from the instrument's queue without issuing
+  `*CLS` or clearing other instrument status.
+
+All instances' buttons are disabled from Workflow start through stopping and
+cleanup. The diagnostic is manual and its results are shown only in Setup.
+
+The result shows the original error codes and messages in read order. **Queue
+Empty** means the first read confirmed an empty queue. **Drained** means error
+entries were read and the queue was then confirmed empty. **Not Fully Drained**
+means the 20-read limit was reached before confirming an empty queue. **Failed**
+shows the failure and retains entries already returned by the Tool. If the
+connection fails during a read, the instrument may have removed an entry before
+returning its reply.
 
 ### 5.3 Powers Protection Setup
 

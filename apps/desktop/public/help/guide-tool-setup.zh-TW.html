@@ -58,7 +58,8 @@ Add Tool Instance 上方的 <strong>Tool Instance Summary</strong> 依 Tool Type
 Background Streaming 前後各有分隔線。兩區皆可用 <strong>− / +</strong> 獨立收合；Background
 Streaming 預設收合，Live Device 預設展開。展開 Background Streaming 並勾選
 <strong>Enable Background Streaming</strong> 後顯示支援的 Background 選項。不支援的 Tool Type
-維持停用核取方塊並顯示原因。</p>
+維持停用核取方塊並顯示原因。
+使用 Worker 與 Capture 動作控制串流及資料記錄。</p>
 <p>編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
 成功執行 <strong>新增範本（New Template）</strong> 或 <strong>開啟範本（Open Template）</strong> 後恢復預設狀態，包含 External
 Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。</p>
@@ -149,6 +150,24 @@ capability，Live 模式下請選擇並保存受支援的 Live Resource，才能
 Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capability，
 因此不需 discovery 或 saved resource 即可設定 Protection Setup。當目前 model
 不支援時，Template 中既有設定仍會顯示。</p>
+<h4 id="讀取並排空錯誤佇列read-drain-errors">讀取並排空錯誤佇列（Read &amp; Drain Errors）</h4>
+<p>展開 Powers、Meters 或 Scopes 實例的 <strong>即時裝置（Live Device）</strong>，在
+<strong>錯誤佇列</strong> 按下 <strong>讀取並排空錯誤佇列</strong>。Meters 需要支援 <code>read-errors</code> 命令的 CLI。
+Desktop 會離線檢查 CLI 及已知的 Meters 保存型號。若在同一路徑更換 Meters 執行檔，
+請在 <strong>工具（Tools）</strong> 選擇 <strong>重新整理（Refresh）</strong>，重新確認支援。Live 模式下，
+請選取並儲存搜尋到的 Scopes 資源，以便 Desktop 確認型號支援。</p>
+<ul>
+<li><strong>Simulation</strong> 使用對應 Tool 的模擬器，結果顯示 <strong>NO HARDWARE I/O</strong>。</li>
+<li><strong>Live</strong> 使用已儲存的 Live Resource 及 VISA Backend，即使 Resource 欄位目前
+  顯示草稿。確認視窗會顯示已儲存的位址。讀取會從儀器佇列移除已回傳的項目，
+  過程中不會執行 <code>*CLS</code> 或清除其他儀器狀態。</li>
+</ul>
+<p>從 Workflow 啟動到停止與收尾完成，所有實例的按鈕都會停用。此診斷須手動操作，
+結果僅顯示於 Setup。</p>
+<p>結果依讀取順序顯示原始錯誤代碼和訊息。<strong>佇列原已為空</strong> 表示第一次讀取即確認
+佇列為空。<strong>已確認排空</strong> 表示已讀取錯誤項目並確認佇列為空。<strong>尚未確認排空</strong>
+表示已達 20 次讀取上限，仍未確認佇列為空。<strong>失敗</strong> 會顯示失敗原因並保留 Tool
+已回傳的項目。如果讀取途中連線失敗，儀器有可能在回傳項目之前就已移除該項目。</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Protection Setup 為選用設定。在 Powers Tool Instance 內，按 <strong>Protection Setup</strong>
 旁的 <strong>+</strong> 展開預設收合的群組。Protection 欄位與 Device 區域一起展開／收合，

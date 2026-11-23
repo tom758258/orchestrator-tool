@@ -28,6 +28,7 @@ import WorkflowRunSummary from './WorkflowRunSummary'
 import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDrafts } from './InteractionEditor'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
+import ErrorQueueSetup, { type ErrorQueueResult, type ErrorQueueSetupProps, type ErrorQueueTool } from './ErrorQueueSetup'
 import BackgroundOutput from './BackgroundOutput'
 import { useSimulationSamples } from './useSimulationSamples'
 import { toolInstanceLabel } from './toolInstanceLabel'
@@ -378,7 +379,7 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
   return { output_folder: outputFolder, timestamp, page, all_pages: allPages }
 }
 
-function LiveDeviceSetup({ children }: { children: ReactNode }) {
+function LiveDeviceSetup({ children, errorQueue }: { children: ReactNode; errorQueue?: ErrorQueueSetupProps }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   return <div className="live-resource">
@@ -387,7 +388,7 @@ function LiveDeviceSetup({ children }: { children: ReactNode }) {
         aria-label={t("app.liveDevice", { value1: expanded ? t("app.collapse") : t("app.expand") })} onClick={() => setExpanded(!expanded)}>
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
       </button>{t("app.liveDevice2")}</h4>
-    <div hidden={!expanded}>{children}</div>
+    <div hidden={!expanded}>{errorQueue ? <ErrorQueueSetup {...errorQueue}>{children}</ErrorQueueSetup> : children}</div>
   </div>
 }
 
@@ -629,6 +630,7 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const [toolRefreshRevision, setToolRefreshRevision] = useState(0)
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
   const [templateUiGeneration, setTemplateUiGeneration] = useState(0)
   useEffect(() => {
@@ -658,6 +660,8 @@ function App() {
   const discoveryRequests = useRef<Record<string, number>>({})
   const [powersStatuses, setPowersStatuses] = useState<Record<string, PowersStatusState>>({})
   const [powersOperationBusy, setPowersOperationBusy] = useState<string | null>(null)
+  const [errorQueueBusy, setErrorQueueBusy] = useState(false)
+  const errorQueueInFlight = useRef(false)
   const [powersCapabilityChannels, setPowersCapabilityChannels] = useState<{
     key: string; models: Record<string, { status: 'ready'; channels: number[] } | { status: 'error' }>
   } | null>(null)
@@ -1004,6 +1008,7 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
+      setToolRefreshRevision(current => current + 1)
       const [resources, identities, backends] = await Promise.all([
         invoke<Record<string, string>>('get_live_resources'),
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
@@ -1646,6 +1651,25 @@ function App() {
     }
   }, [executionMode, powersOperationBusy, t])
 
+  const handleErrorQueue = useCallback(async (toolId: ErrorQueueTool, instanceId: string, savedResource: string | undefined) => {
+    if (errorQueueInFlight.current || runInFlightRef.current || stepEditingBusyRef.current || toolConfigBusy !== null) return null
+    errorQueueInFlight.current = true
+    setErrorQueueBusy(true)
+    try {
+      if (executionMode === 'live') {
+        if (!savedResource?.trim()) return null
+        const approved = await confirm(t('app.errorQueueLiveConfirm', { instance: instanceId, resource: savedResource }), {
+          title: t('app.readAndDrainErrors'), kind: 'warning', okLabel: t('app.readAndDrainErrors'), cancelLabel: t('app.cancel'),
+        })
+        if (!approved || runInFlightRef.current) return null
+      }
+      return await invoke<ErrorQueueResult>('read_and_drain_errors', { toolId, instanceId, executionMode })
+    } finally {
+      errorQueueInFlight.current = false
+      setErrorQueueBusy(false)
+    }
+  }, [executionMode, toolConfigBusy, t])
+
   const handleListResources = useCallback(async (instance: ToolInstance) => {
     if (toolConfigBusy !== null) return
     const id = instance.id
@@ -1911,7 +1935,7 @@ function App() {
     Number.isNaN(parseChartThresholdPercent(chartSamplingOptions.threshold))
 
   const workflowBusy =
-    simulationSamples.pending || choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || exporting
+    simulationSamples.pending || choosingStreamOutputFolder || chartSaving || liveConfirmationPending || validationStatus === 'validating' || templateIoStatus !== 'idle' || runStatus === 'running' || powersOperationBusy !== null || errorQueueBusy || exporting
   stepEditingBusyRef.current = workflowBusy
 
   const handleClearLastRun = useCallback(async () => {
@@ -2620,10 +2644,26 @@ function App() {
                     {executionMode === 'live' && <p className="tool-setup-hint">{t("app.ifRemoteClearIsUnsupportedForThisModelClear")}</p>}
                   </div>
                 }}
-                renderResource={instance => (
-                  <>
-                    {(instance.tool === 'powers' || instance.tool === 'meters' || instance.tool === 'scopes' || instance.tool === 'serial') && (
-                      <LiveDeviceSetup>
+                renderResource={instance => {
+                  const { id, tool } = instance
+                  if (tool === 'wavegen') return null
+                  const savedResource = savedResources[id]
+                  const identity = resourceIdentities[id]
+                  const savedModelId = tool === 'meters'
+                    ? identity?.model_id?.trim() || identity?.model?.trim() || null
+                    : identity?.model_id ?? null
+                  const externalTool = tools.find(status => status.tool_id === tool)
+                  const executableKey = JSON.stringify([externalTool?.source, externalTool?.path, externalTool?.tool_version])
+                  const errorQueue = tool === 'serial' ? undefined : {
+                    tool, instanceId: id, executionMode, savedResource, savedModelId, executableKey,
+                    toolRefreshRevision,
+                    bindingKey: JSON.stringify([executionMode, executableKey,
+                      ...(executionMode === 'live' ? [savedResource, savedBackends[id], savedModelId] : [])]),
+                    available: externalTool?.executable_status === 'available',
+                    disabled: workflowBusy || loading || toolConfigBusy !== null,
+                    onRead: () => handleErrorQueue(tool, id, savedResource),
+                  }
+                  return <LiveDeviceSetup errorQueue={errorQueue}>
                         <div className="live-device">
                           {deviceName(resourceIdentityDrafts[instance.id]) && <span>{deviceName(resourceIdentityDrafts[instance.id])}</span>}
                           {resourceIdentityDrafts[instance.id]?.serial?.trim() && <span>{t("app.sN")}{resourceIdentityDrafts[instance.id]?.serial?.trim()}</span>}
@@ -2766,10 +2806,8 @@ function App() {
                             </select>
                           </label>
                         )}
-                      </LiveDeviceSetup>
-                    )}
-                  </>
-                )}
+                  </LiveDeviceSetup>
+                }}
                 onChange={updateToolInstances}
                 disabled={workflowBusy}
               />

@@ -11,6 +11,7 @@ pub mod common_v3;
 pub mod config;
 pub mod data_context;
 pub mod discovery;
+pub mod error_queue;
 pub mod executor;
 pub mod inspection;
 pub mod interaction;

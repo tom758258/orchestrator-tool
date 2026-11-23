@@ -22,7 +22,7 @@ This guide covers Desktop. Start `Orchestrator Tool.exe` and select **Help** in 
 
 - [Getting Started](guide/getting-started.md)
 - [Configure External Tools](guide/external-tools.md)
-- [Tool Setup and Instances](guide/tool-setup.md)
+- [Tool Setup and Instances](guide/tool-setup.md), including manual Error Queue diagnostics
 - [Workflow Editor](guide/workflow-editor.md)
 - [Input Values and Data Flow](steps/input-values.md)
 - [Powers Steps](steps/powers.md)
