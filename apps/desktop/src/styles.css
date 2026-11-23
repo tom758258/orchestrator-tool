@@ -1938,13 +1938,32 @@ textarea:disabled {
 
 .live-device-columns {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
 .error-queue-controls {
   border-inline-start: 1px solid var(--line);
   padding-inline-start: 16px;
+}
+
+.error-queue-help {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.error-queue-help h6 {
+  margin: 0 0 2px;
+  font-size: inherit;
+}
+
+.error-queue-help p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.error-queue-help strong {
+  color: var(--ink);
 }
 
 .error-queue-result {
