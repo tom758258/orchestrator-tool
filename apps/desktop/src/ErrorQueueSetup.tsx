@@ -89,17 +89,22 @@ export default function ErrorQueueSetup({ children, tool, instanceId, executionM
       </div>
       <div className="error-queue-controls">
         <h5>{t('app.errorQueue')}</h5>
-        <div className="error-queue-help">
-          <p>{t('app.errorQueuePurpose')}</p>
-          <h6>{t('app.errorQueueBehaviorTitle')}</h6>
-          <p>{t('app.errorQueueBehavior')}</p>
-          <h6>{t('app.errorQueueNotesTitle')}</h6>
-          <p><strong>{t('app.errorQueueDrainWarning')}</strong>{' '}{t('app.errorQueueNotes')}</p>
-        </div>
         <button type="button" className="action-button" disabled={disabled || unavailable !== null} onClick={() => void read()}>
           {t('app.readAndDrainErrors')}
         </button>
         {unavailable !== null && <p className="tool-setup-hint">{unavailable}</p>}
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueuePurposeTitle')}</strong><br />
+          {t('app.errorQueuePurpose')}
+        </p>
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueueBehaviorTitle')}</strong><br />
+          {t('app.errorQueueBehavior')}
+        </p>
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueueNotesTitle')}</strong><br />
+          {t('app.errorQueueNotes')}
+        </p>
       </div>
     </div>
     {result && <div className="error-queue-result">
