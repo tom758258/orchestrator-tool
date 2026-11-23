@@ -130,8 +130,9 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 
 展開 Powers、Meters 或 Scopes 實例的 **即時裝置（Live Device）**，在
 **錯誤佇列** 按下 **讀取並排空錯誤佇列**。Meters 需要支援 `read-errors` 命令的 CLI。
-Desktop 會離線檢查 CLI 及已知的 Meters 保存型號。Live 模式下，請選取並儲存搜尋到的
-Scopes 資源，以便 Desktop 確認型號支援。
+Desktop 會離線檢查 CLI 及已知的 Meters 保存型號。若在同一路徑更換 Meters 執行檔，
+請在 **工具（Tools）** 選擇 **重新整理（Refresh）**，重新確認支援。Live 模式下，
+請選取並儲存搜尋到的 Scopes 資源，以便 Desktop 確認型號支援。
 
 - **Simulation** 使用對應 Tool 的模擬器，結果顯示 **NO HARDWARE I/O**。
 - **Live** 使用已儲存的 Live Resource 及 VISA Backend，即使 Resource 欄位目前

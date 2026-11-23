@@ -157,8 +157,9 @@ visible when the current model does not support them.
 Open **Live Device** in a Powers, Meters, or Scopes instance and select
 **Read & Drain Errors** in **Error Queue**. Meters requires a CLI with the
 `read-errors` command. Desktop checks the CLI and any known saved Meters model
-without connecting to the instrument. In Live, save a discovered Scopes
-resource so Desktop can verify model support.
+without connecting to the instrument. If you replace the Meters executable at
+the same path, select **Refresh** in **Tools** to check support again. In Live,
+save a discovered Scopes resource so Desktop can verify model support.
 
 - **Simulation** uses the Tool's simulator and displays **NO HARDWARE I/O**.
 - **Live** uses the saved Live Resource and VISA Backend, even if the Resource

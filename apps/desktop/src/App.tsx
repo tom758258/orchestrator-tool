@@ -630,6 +630,7 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(DEFAULT_EXECUTION_MODE)
   const [lastRunExecutionMode, setLastRunExecutionMode] = useState<ExecutionMode | null>(null)
   const [tools, setTools] = useState<ToolStatus[]>([])
+  const [toolRefreshRevision, setToolRefreshRevision] = useState(0)
   const [expandedToolIds, setExpandedToolIds] = useState<string[]>([])
   const [templateUiGeneration, setTemplateUiGeneration] = useState(0)
   useEffect(() => {
@@ -1007,6 +1008,7 @@ function App() {
     try {
       const statuses = await invoke<ToolStatus[]>('get_tool_status')
       setTools(statuses)
+      setToolRefreshRevision(current => current + 1)
       const [resources, identities, backends] = await Promise.all([
         invoke<Record<string, string>>('get_live_resources'),
         invoke<Record<string, ResourceIdentity>>('get_live_resource_identities'),
@@ -2654,6 +2656,7 @@ function App() {
                   const executableKey = JSON.stringify([externalTool?.source, externalTool?.path, externalTool?.tool_version])
                   const errorQueue = tool === 'serial' ? undefined : {
                     tool, instanceId: id, executionMode, savedResource, savedModelId, executableKey,
+                    toolRefreshRevision,
                     bindingKey: JSON.stringify([executionMode, executableKey,
                       ...(executionMode === 'live' ? [savedResource, savedBackends[id], savedModelId] : [])]),
                     available: externalTool?.executable_status === 'available',

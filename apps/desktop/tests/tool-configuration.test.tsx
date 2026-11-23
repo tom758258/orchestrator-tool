@@ -330,14 +330,16 @@ test('Error Queue uses the selected mode and saved address, and shows partial er
   resources['meters-1'] = 'USB::METER'
   identities['scopes-1'] = { model_id: 'unsupported-scope', model: null, manufacturer: null, serial: null, identity: null }
   identities['meters-1'] = { model_id: 'unsupported-meter', model: null, manufacturer: null, serial: null, identity: null }
+  let meterCliSupportsErrorQueue = false
   const existing = vi.mocked(invoke).getMockImplementation()!
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === 'get_scopes_capabilities') {
       return { analog_channels: 4, check_error_supported: (args as { modelId?: string }).modelId !== 'unsupported-scope' }
     }
     if (command === 'check_meters_error_queue_support') {
-      throw (args as { executionMode: string }).executionMode === 'simulate'
-        ? 'Use a Meters CLI that supports read-errors' : 'Unsupported instrument model: unsupported-meter'
+      if ((args as { executionMode: string }).executionMode === 'live') throw 'Unsupported instrument model: unsupported-meter'
+      if (!meterCliSupportsErrorQueue) throw 'Use a Meters CLI that supports read-errors'
+      return undefined
     }
     if (command === 'read_and_drain_errors') {
       return (args as { executionMode: string }).executionMode === 'simulate'
@@ -353,6 +355,13 @@ test('Error Queue uses the selected mode and saved address, and shows partial er
   const meterRead = () => instance('meters-1').getByRole<HTMLButtonElement>('button', { name: 'Read & Drain Errors' })
   await instance('meters-1').findByText(/CLI that supports read-errors/)
   expect(meterRead().disabled).toBe(true)
+  meterCliSupportsErrorQueue = true // The executable is replaced without changing its path or version.
+  tab('Tools')
+  await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Refresh' }).disabled).toBe(false))
+  click('Refresh')
+  tab('Setup')
+  await waitFor(() => expect(meterRead().disabled).toBe(false))
+  expect(invoke).not.toHaveBeenCalledWith('read_and_drain_errors', expect.anything())
   fireEvent.click(read())
   await instance('powers-1').findByText(/Queue Empty.*NO HARDWARE I\/O/)
   expect(confirm).not.toHaveBeenCalled()

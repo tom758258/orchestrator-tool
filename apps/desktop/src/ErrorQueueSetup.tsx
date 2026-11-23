@@ -26,6 +26,7 @@ export type ErrorQueueSetupProps = {
   savedResource: string | undefined
   savedModelId: string | null
   executableKey: string
+  toolRefreshRevision: number
   bindingKey: string
   available: boolean
   disabled: boolean
@@ -33,11 +34,11 @@ export type ErrorQueueSetupProps = {
 }
 
 export default function ErrorQueueSetup({ children, tool, instanceId, executionMode, savedResource, savedModelId,
-  executableKey, bindingKey, available, disabled, onRead }: ErrorQueueSetupProps & { children: ReactNode }) {
+  executableKey, toolRefreshRevision, bindingKey, available, disabled, onRead }: ErrorQueueSetupProps & { children: ReactNode }) {
   const { t } = useI18n()
   const live = executionMode === 'live'
   const modelId = live ? savedModelId : null
-  const capabilityKey = JSON.stringify([tool, instanceId, executionMode, modelId, executableKey])
+  const capabilityKey = JSON.stringify([tool, instanceId, executionMode, modelId, executableKey, toolRefreshRevision])
   const [capability, setCapability] = useState<{ key: string; supported: boolean | null; error?: string } | null>(null)
   const [lastRead, setLastRead] = useState<{ key: string; result: ErrorQueueResult } | null>(null)
   const result = lastRead?.key === bindingKey ? lastRead.result : null
