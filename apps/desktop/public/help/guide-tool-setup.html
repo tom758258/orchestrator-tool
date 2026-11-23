@@ -178,9 +178,10 @@ not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.</p>
 <h4 id="read-drain-errors">Read &amp; Drain Errors</h4>
 <p>Open <strong>Live Device</strong> in a Powers, Meters, or Scopes instance and select
-<strong>Read &amp; Drain Errors</strong> in <strong>Error Queue</strong>. Scopes support depends on the model
-and the configured Tool. In Live, save a discovered Scopes resource so Desktop
-can verify model support.</p>
+<strong>Read &amp; Drain Errors</strong> in <strong>Error Queue</strong>. Meters requires a CLI with the
+<code>read-errors</code> command. Desktop checks the CLI and any known saved Meters model
+without connecting to the instrument. In Live, save a discovered Scopes
+resource so Desktop can verify model support.</p>
 <ul>
 <li><strong>Simulation</strong> uses the Tool's simulator and displays <strong>NO HARDWARE I/O</strong>.</li>
 <li><strong>Live</strong> uses the saved Live Resource and VISA Backend, even if the Resource
@@ -194,7 +195,9 @@ cleanup. The diagnostic is manual and its results are shown only in Setup.</p>
 Empty</strong> means the first read confirmed an empty queue. <strong>Drained</strong> means error
 entries were read and the queue was then confirmed empty. <strong>Not Fully Drained</strong>
 means the 20-read limit was reached before confirming an empty queue. <strong>Failed</strong>
-shows the failure and retains any entries retrieved before it.</p>
+shows the failure and retains entries already returned by the Tool. If the
+connection fails during a read, the instrument may have removed an entry before
+returning its reply.</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Protection Setup is optional. Within a Powers Tool Instance, use <strong>+</strong> beside
 <strong>Protection Setup</strong> to expand the group, which starts collapsed. Protection

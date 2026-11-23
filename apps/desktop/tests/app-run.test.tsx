@@ -180,6 +180,7 @@ test.each(['Simulation', 'Live'] as const)('Error Queue stays disabled for every
       case 'get_live_resources': return Object.fromEntries(currentDraft.tool_instances.map(({ id }) => [id, `${id}::SAVED`]))
       case 'get_live_resource_identities': return { 'scopes-1': { model_id: 'keysight-dsox4024a' } }
       case 'get_scopes_capabilities': return { analog_channels: 4, check_error_supported: true }
+      case 'check_meters_error_queue_support': return undefined
       default: return existing(command, args)
     }
   })

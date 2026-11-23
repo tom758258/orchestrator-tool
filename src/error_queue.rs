@@ -1,7 +1,7 @@
 //! Manual instrument diagnostics through the external Tools' existing CLI commands.
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -21,6 +21,7 @@ use crate::{
 
 const MAX_READS: usize = 20;
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
+const METERS_SIMULATION_MODEL: &str = "34461A";
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,7 +87,7 @@ impl Diagnostic {
             args.push("--simulate".into());
             match self {
                 Self::Powers => args.push(format!("--resource={SIMULATION_RESOURCE}")),
-                Self::Meters => args.push("--model=34461A".into()),
+                Self::Meters => args.push(format!("--model={METERS_SIMULATION_MODEL}")),
                 Self::Scopes => {}
             }
         }
@@ -117,6 +118,46 @@ pub fn read_and_drain_errors(
     } else {
         None
     };
+    let executable = diagnostic_executable(application_dir, config, tool)?;
+    match diagnostic {
+        Diagnostic::Scopes => {
+            let model = config
+                .live_resource_identities()
+                .get(instance.as_str())
+                .and_then(|identity| identity.model_id.as_deref());
+            let capability =
+                scopes::get_capabilities_for_mode(application_dir, config, mode, model)?;
+            if !capability.check_error_supported {
+                return Err(format!(
+                    "{} does not support Read & Drain Errors",
+                    capability.model_name
+                ));
+            }
+        }
+        Diagnostic::Meters => {
+            check_meters_support(&executable, meters_model(config, instance, mode))?
+        }
+        Diagnostic::Powers => {}
+    }
+    Ok(read_queue(diagnostic, &executable, live, READ_TIMEOUT))
+}
+
+/// Checks the configured Meters CLI and saved model without opening a VISA session.
+pub fn check_meters_error_queue_support(
+    application_dir: &Path,
+    config: &Config,
+    instance: &ToolInstanceId,
+    mode: ExecutionMode,
+) -> Result<(), String> {
+    let executable = diagnostic_executable(application_dir, config, &ToolId::meters())?;
+    check_meters_support(&executable, meters_model(config, instance, mode))
+}
+
+fn diagnostic_executable(
+    application_dir: &Path,
+    config: &Config,
+    tool: &ToolId,
+) -> Result<PathBuf, String> {
     let definition = built_in_tool_definitions()
         .into_iter()
         .find(|definition| definition.id() == tool)
@@ -126,34 +167,71 @@ pub fn read_and_drain_errors(
     if inspection.status() != ExecutableStatus::Available {
         return Err(format!("{tool} executable is unavailable"));
     }
-    let executable = inspection
+    Ok(inspection
         .resolved()
         .path()
-        .expect("available executable has a path");
-    if diagnostic == Diagnostic::Scopes {
-        let model = config
-            .live_resource_identities()
-            .get(instance.as_str())
-            .and_then(|identity| identity.model_id.as_deref());
-        let capability = scopes::get_capabilities_for_mode(application_dir, config, mode, model)?;
-        if !capability.check_error_supported {
-            return Err(format!(
-                "{} does not support Read & Drain Errors",
-                capability.model_name
-            ));
-        }
-    }
+        .expect("available executable has a path")
+        .to_path_buf())
+}
 
-    // Powers and Scopes only report entries on completion of a CLI read. In
-    // Live, commit each successful read before requesting the next entry.
-    let batch_size = if live.is_some() && diagnostic != Diagnostic::Meters {
-        1
+fn meters_model<'a>(config: &'a Config, instance: &ToolInstanceId, mode: ExecutionMode) -> &'a str {
+    if mode == ExecutionMode::Live
+        && let Some(identity) = config.live_resource_identities().get(instance.as_str())
+        && let Some(model) = [identity.model_id.as_deref(), identity.model.as_deref()]
+            .into_iter()
+            .flatten()
+            .find(|model| !model.trim().is_empty())
+    {
+        return model;
+    }
+    METERS_SIMULATION_MODEL
+}
+
+fn check_meters_support(executable: &Path, model: &str) -> Result<(), String> {
+    let args = [
+        "read-errors",
+        "--dry-run",
+        "--json",
+        &format!("--model={model}"),
+    ];
+    let output =
+        run_output_with_timeout(executable, args, Duration::from_secs(10)).map_err(|error| {
+            match error {
+                CaptureError::Io(error) => format!("Could not start the Meters CLI: {error}"),
+                CaptureError::Timeout => {
+                    "The Meters CLI did not respond to the offline check".into()
+                }
+            }
+        })?;
+    let unavailable = || "Use a Meters CLI that supports read-errors".to_owned();
+    let response: Value = serde_json::from_slice(&output.stdout).map_err(|_| unavailable())?;
+    if response["schema_version"] != 2 || response["command"] != "read-errors" {
+        return Err(unavailable());
+    }
+    if output.status.success() && response["event"] == "dry_run" && response["mode"] == "dry-run" {
+        return Ok(());
+    }
+    Err(response["message"]
+        .as_str()
+        .map_or_else(unavailable, str::to_owned))
+}
+
+fn read_queue(
+    diagnostic: Diagnostic,
+    executable: &Path,
+    live: Option<(&str, VisaBackend)>,
+    timeout: Duration,
+) -> ErrorQueueResult {
+    // These CLIs publish results after the command completes. Save each Live
+    // reply before starting another consumptive read so a timeout retains it.
+    let (mode, batch_size) = if live.is_some() {
+        (ExecutionMode::Live, 1)
     } else {
-        MAX_READS
+        (ExecutionMode::Simulate, MAX_READS)
     };
-    let deadline = Instant::now() + READ_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let args = diagnostic.arguments(live, batch_size);
-    Ok(drain(MAX_READS / batch_size, || {
+    drain(MAX_READS / batch_size, || {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err("Error Queue read timed out".into());
@@ -161,14 +239,17 @@ pub fn read_and_drain_errors(
         let output =
             run_output_with_timeout(executable, &args, remaining).map_err(|error| match error {
                 CaptureError::Io(error) => {
-                    format!("Could not run {tool} Error Queue command: {error}")
+                    format!("Could not run {}: {error}", diagnostic.command())
                 }
                 CaptureError::Timeout => "Error Queue read timed out".to_owned(),
             })?;
         let response = serde_json::from_slice(&output.stdout).map_err(|error| {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.trim().is_empty() {
-                format!("{tool} returned invalid Error Queue JSON: {error}")
+                format!(
+                    "{} returned invalid Error Queue JSON: {error}",
+                    diagnostic.command()
+                )
             } else {
                 stderr.trim().to_owned()
             }
@@ -180,7 +261,7 @@ pub fn read_and_drain_errors(
             mode,
             batch_size,
         )
-    }))
+    })
 }
 
 struct ReadReply {
@@ -408,6 +489,22 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[cfg(unix)]
+    fn fixture_dir() -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let dir = std::env::temp_dir().join(format!(
+            "orchestrator-error-queue-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn scopes_distinguishes_reported_errors_from_failure_and_confirms_empty() {
         let error =
@@ -472,22 +569,46 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn powers_uses_saved_live_binding_and_retains_entries_before_failure() {
-        use std::{
-            fs,
-            os::unix::fs::PermissionsExt,
-            time::{SystemTime, UNIX_EPOCH},
-        };
+    fn meters_retains_completed_reads_when_the_next_cli_times_out() {
+        use std::{fs, os::unix::fs::PermissionsExt};
 
-        let dir = std::env::temp_dir().join(format!(
-            "orchestrator-error-queue-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&dir).unwrap();
+        let dir = fixture_dir();
+        let executable = dir.join("meters-tool");
+        fs::write(&executable, r#"#!/bin/sh
+set -eu
+cd "$(dirname "$0")"
+[ "$*" = 'read-errors --json --max-reads 1 --resource=USB::Saved' ]
+if [ -e first-read ]; then
+    exec sleep 5
+fi
+touch first-read
+echo '{"schema_version":2,"command":"read-errors","event":"read-errors","status":"ok","mode":"real","termination":"max_reads","queue_cleared":false,"errors":[{"code":-101,"message":"Invalid character, 1"}]}'
+"#).unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let result = read_queue(
+            Diagnostic::Meters,
+            &executable,
+            Some(("USB::Saved", VisaBackend::System)),
+            Duration::from_secs(1),
+        );
+        fs::remove_dir_all(dir).unwrap();
+        assert_eq!(result.status, ErrorQueueStatus::Failed);
+        assert_eq!(result.error.as_deref(), Some("Error Queue read timed out"));
+        assert_eq!(
+            result.entries,
+            [ErrorQueueEntry {
+                code: "-101".into(),
+                message: "Invalid character, 1".into(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn powers_uses_saved_live_binding_and_retains_entries_before_failure() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let dir = fixture_dir();
         let tool = ToolId::powers();
         let executable = dir.join("powers-tool");
         let instance = ToolInstanceId::new("powers-1").unwrap();

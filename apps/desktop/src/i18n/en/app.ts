@@ -7,6 +7,8 @@ export default {
   "app.errorQueueHelp": "Read and display instrument errors.",
   "app.errorQueueToolUnavailable": "Configure the Tool executable to read its Error Queue.",
   "app.errorQueueSaveResource": "Save a Live Resource to read its Error Queue.",
+  "app.errorQueueLoadingMetersSupport": "Checking Meters Error Queue support…",
+  "app.errorQueueMetersSupportUnavailable": "Meters Error Queue unavailable. {reason}",
   "app.errorQueueSaveIdentifiedScope": "Select and save a discovered Scopes resource to verify model support.",
   "app.errorQueueLoadingScopeCapability": "Checking Scopes model support…",
   "app.errorQueueScopeCapabilityUnavailable": "Could not verify Error Queue support for this Scopes model.",

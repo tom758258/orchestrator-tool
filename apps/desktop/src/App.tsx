@@ -2646,11 +2646,14 @@ function App() {
                   const { id, tool } = instance
                   if (tool === 'wavegen') return null
                   const savedResource = savedResources[id]
-                  const savedModelId = resourceIdentities[id]?.model_id ?? null
+                  const identity = resourceIdentities[id]
+                  const savedModelId = tool === 'meters'
+                    ? identity?.model_id?.trim() || identity?.model?.trim() || null
+                    : identity?.model_id ?? null
                   const externalTool = tools.find(status => status.tool_id === tool)
-                  const executableKey = JSON.stringify([externalTool?.source, externalTool?.path])
+                  const executableKey = JSON.stringify([externalTool?.source, externalTool?.path, externalTool?.tool_version])
                   const errorQueue = tool === 'serial' ? undefined : {
-                    tool, executionMode, savedResource, savedModelId, executableKey,
+                    tool, instanceId: id, executionMode, savedResource, savedModelId, executableKey,
                     bindingKey: JSON.stringify([executionMode, executableKey,
                       ...(executionMode === 'live' ? [savedResource, savedBackends[id], savedModelId] : [])]),
                     available: externalTool?.executable_status === 'available',

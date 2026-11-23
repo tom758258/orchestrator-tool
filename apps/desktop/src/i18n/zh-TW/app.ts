@@ -7,6 +7,8 @@ export default {
   "app.errorQueueHelp": "讀取並顯示儀器錯誤。",
   "app.errorQueueToolUnavailable": "請先設定 Tool 執行檔，才能讀取錯誤佇列。",
   "app.errorQueueSaveResource": "請先儲存 Live Resource，才能讀取錯誤佇列。",
+  "app.errorQueueLoadingMetersSupport": "正在確認 Meters 是否支援錯誤佇列…",
+  "app.errorQueueMetersSupportUnavailable": "無法使用 Meters 錯誤佇列功能。{reason}",
   "app.errorQueueSaveIdentifiedScope": "請選取並儲存搜尋到的 Scopes 資源，以確認型號支援。",
   "app.errorQueueLoadingScopeCapability": "正在確認 Scopes 型號是否支援…",
   "app.errorQueueScopeCapabilityUnavailable": "無法確認此 Scopes 型號是否支援錯誤佇列。",

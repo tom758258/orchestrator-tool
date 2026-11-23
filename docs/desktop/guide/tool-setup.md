@@ -155,9 +155,10 @@ visible when the current model does not support them.
 #### Read & Drain Errors
 
 Open **Live Device** in a Powers, Meters, or Scopes instance and select
-**Read & Drain Errors** in **Error Queue**. Scopes support depends on the model
-and the configured Tool. In Live, save a discovered Scopes resource so Desktop
-can verify model support.
+**Read & Drain Errors** in **Error Queue**. Meters requires a CLI with the
+`read-errors` command. Desktop checks the CLI and any known saved Meters model
+without connecting to the instrument. In Live, save a discovered Scopes
+resource so Desktop can verify model support.
 
 - **Simulation** uses the Tool's simulator and displays **NO HARDWARE I/O**.
 - **Live** uses the saved Live Resource and VISA Backend, even if the Resource
@@ -172,7 +173,9 @@ The result shows the original error codes and messages in read order. **Queue
 Empty** means the first read confirmed an empty queue. **Drained** means error
 entries were read and the queue was then confirmed empty. **Not Fully Drained**
 means the 20-read limit was reached before confirming an empty queue. **Failed**
-shows the failure and retains any entries retrieved before it.
+shows the failure and retains entries already returned by the Tool. If the
+connection fails during a read, the instrument may have removed an entry before
+returning its reply.
 
 ### 5.3 Powers Protection Setup
 

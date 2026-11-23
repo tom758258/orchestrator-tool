@@ -157,6 +157,27 @@ async fn read_and_drain_errors(
 }
 
 #[tauri::command]
+async fn check_meters_error_queue_support(
+    app: AppHandle,
+    instance_id: String,
+    execution_mode: ExecutionMode,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let instance = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
+        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
+        let config = load_desktop_config(&app)?;
+        orchestrator_tool::error_queue::check_meters_error_queue_support(
+            &application_dir,
+            &config,
+            &instance,
+            execution_mode,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn list_live_resources(
     app: AppHandle,
     tool_id: String,
@@ -1609,6 +1630,7 @@ fn main() {
             get_tool_status,
             list_live_resources,
             read_and_drain_errors,
+            check_meters_error_queue_support,
             get_meters_capabilities,
             get_powers_capabilities,
             get_scopes_capabilities,

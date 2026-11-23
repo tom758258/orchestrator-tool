@@ -21,6 +21,7 @@ const statusLabels = {
 
 export type ErrorQueueSetupProps = {
   tool: ErrorQueueTool
+  instanceId: string
   executionMode: ExecutionMode
   savedResource: string | undefined
   savedModelId: string | null
@@ -31,31 +32,38 @@ export type ErrorQueueSetupProps = {
   onRead: () => Promise<ErrorQueueResult | null>
 }
 
-export default function ErrorQueueSetup({ children, tool, executionMode, savedResource, savedModelId,
+export default function ErrorQueueSetup({ children, tool, instanceId, executionMode, savedResource, savedModelId,
   executableKey, bindingKey, available, disabled, onRead }: ErrorQueueSetupProps & { children: ReactNode }) {
   const { t } = useI18n()
   const live = executionMode === 'live'
   const modelId = live ? savedModelId : null
-  const capabilityKey = JSON.stringify([executionMode, modelId, executableKey])
-  const [capability, setCapability] = useState<{ key: string; supported: boolean | null } | null>(null)
+  const capabilityKey = JSON.stringify([tool, instanceId, executionMode, modelId, executableKey])
+  const [capability, setCapability] = useState<{ key: string; supported: boolean | null; error?: string } | null>(null)
   const [lastRead, setLastRead] = useState<{ key: string; result: ErrorQueueResult } | null>(null)
   const result = lastRead?.key === bindingKey ? lastRead.result : null
   useEffect(() => {
-    if (tool !== 'scopes' || !available || (executionMode === 'live' && !modelId)) return
+    if (tool === 'powers' || !available || (tool === 'scopes' && live && !modelId)) return
     let cancelled = false
-    void invoke<ScopesCapabilities>('get_scopes_capabilities', { modelId, executionMode }).then(
-      caps => {
-        if (!cancelled) setCapability({ key: capabilityKey, supported: caps?.check_error_supported ?? null })
+    const check = tool === 'meters'
+      ? invoke<void>('check_meters_error_queue_support', { instanceId, executionMode }).then(() => true)
+      : invoke<ScopesCapabilities>('get_scopes_capabilities', { modelId, executionMode })
+        .then(caps => caps?.check_error_supported ?? null)
+    void check.then(
+      supported => {
+        if (!cancelled) setCapability({ key: capabilityKey, supported })
       },
-      () => { if (!cancelled) setCapability({ key: capabilityKey, supported: null }) },
+      error => { if (!cancelled) setCapability({ key: capabilityKey, supported: null, error: String(error) }) },
     )
     return () => { cancelled = true }
-  }, [tool, available, executionMode, modelId, capabilityKey])
+  }, [tool, instanceId, available, live, executionMode, modelId, capabilityKey])
 
   let unavailable: string | null = null
   if (!available) unavailable = t('app.errorQueueToolUnavailable')
   else if (live && !savedResource?.trim()) unavailable = t('app.errorQueueSaveResource')
-  else if (tool === 'scopes') {
+  else if (tool === 'meters') {
+    if (capability?.key !== capabilityKey) unavailable = t('app.errorQueueLoadingMetersSupport')
+    else if (!capability.supported) unavailable = t('app.errorQueueMetersSupportUnavailable', { reason: capability.error ?? '' })
+  } else if (tool === 'scopes') {
     if (live && !modelId) unavailable = t('app.errorQueueSaveIdentifiedScope')
     else if (capability?.key !== capabilityKey) unavailable = t('app.errorQueueLoadingScopeCapability')
     else if (capability.supported === null) unavailable = t('app.errorQueueScopeCapabilityUnavailable')

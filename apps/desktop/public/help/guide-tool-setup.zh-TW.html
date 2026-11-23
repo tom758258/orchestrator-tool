@@ -152,8 +152,9 @@ Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capabil
 不支援時，Template 中既有設定仍會顯示。</p>
 <h4 id="讀取並排空錯誤佇列read-drain-errors">讀取並排空錯誤佇列（Read &amp; Drain Errors）</h4>
 <p>展開 Powers、Meters 或 Scopes 實例的 <strong>即時裝置（Live Device）</strong>，在
-<strong>錯誤佇列</strong> 按下 <strong>讀取並排空錯誤佇列</strong>。Scopes 是否支援取決於型號和已設定的
-Tool。Live 模式下，請選取並儲存搜尋到的 Scopes 資源，以便 Desktop 確認型號支援。</p>
+<strong>錯誤佇列</strong> 按下 <strong>讀取並排空錯誤佇列</strong>。Meters 需要支援 <code>read-errors</code> 命令的 CLI。
+Desktop 會離線檢查 CLI 及已知的 Meters 保存型號。Live 模式下，請選取並儲存搜尋到的
+Scopes 資源，以便 Desktop 確認型號支援。</p>
 <ul>
 <li><strong>Simulation</strong> 使用對應 Tool 的模擬器，結果顯示 <strong>NO HARDWARE I/O</strong>。</li>
 <li><strong>Live</strong> 使用已儲存的 Live Resource 及 VISA Backend，即使 Resource 欄位目前
@@ -164,8 +165,8 @@ Tool。Live 模式下，請選取並儲存搜尋到的 Scopes 資源，以便 De
 結果僅顯示於 Setup。</p>
 <p>結果依讀取順序顯示原始錯誤代碼和訊息。<strong>佇列原已為空</strong> 表示第一次讀取即確認
 佇列為空。<strong>已確認排空</strong> 表示已讀取錯誤項目並確認佇列為空。<strong>尚未確認排空</strong>
-表示已達 20 次讀取上限，仍未確認佇列為空。<strong>失敗</strong> 會顯示失敗原因並保留此前
-已取得的項目。</p>
+表示已達 20 次讀取上限，仍未確認佇列為空。<strong>失敗</strong> 會顯示失敗原因並保留 Tool
+已回傳的項目。如果讀取途中連線失敗，儀器有可能在回傳項目之前就已移除該項目。</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Protection Setup 為選用設定。在 Powers Tool Instance 內，按 <strong>Protection Setup</strong>
 旁的 <strong>+</strong> 展開預設收合的群組。Protection 欄位與 Device 區域一起展開／收合，
