@@ -322,6 +322,49 @@ async function mount() {
   await waitFor(() => expect((screen.getByRole('button', { name: 'Add Tool Instance' }) as HTMLButtonElement).disabled).toBe(false))
   await waitFor(() => expect(calls().some(([command]) => command === 'get_scopes_capabilities')).toBe(true))
 }
+
+test('Error Queue uses the selected mode and saved address, and shows partial errors', async () => {
+  resources['powers-1'] = 'USB::SAVED'
+  resources['scopes-1'] = 'USB::SCOPE'
+  identities['scopes-1'] = { model_id: 'unsupported-scope', model: null, manufacturer: null, serial: null, identity: null }
+  const existing = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === 'get_scopes_capabilities') {
+      return { analog_channels: 4, check_error_supported: (args as { modelId?: string }).modelId !== 'unsupported-scope' }
+    }
+    if (command === 'read_and_drain_errors') {
+      return (args as { executionMode: string }).executionMode === 'simulate'
+        ? { status: 'queue_empty', entries: [], error: null }
+        : { status: 'failed', entries: [{ code: '-113', message: 'Undefined header, channel 1' }], error: 'Connection lost' }
+    }
+    return existing(command, args)
+  })
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
+  await screen.findByRole('button', { name: 'Expand powers details' }, { timeout: 5000 })
+  tab('Setup')
+  const read = () => instance('powers-1').getByRole<HTMLButtonElement>('button', { name: 'Read & Drain Errors' })
+  fireEvent.click(read())
+  await instance('powers-1').findByText(/Queue Empty.*NO HARDWARE I\/O/)
+  expect(confirm).not.toHaveBeenCalled()
+  expect(invoke).toHaveBeenCalledWith('read_and_drain_errors', { toolId: 'powers', instanceId: 'powers-1', executionMode: 'simulate' })
+  click('Live')
+  await instance('scopes-1').findByText(/does not support reading the Error Queue/)
+  expect(instance('scopes-1').getByRole<HTMLButtonElement>('button', { name: 'Read & Drain Errors' }).disabled).toBe(true)
+  fireEvent.change(instance('powers-1').getByRole('textbox', { name: 'Live Resource' }), { target: { value: 'USB::DRAFT' } })
+  fireEvent.change(instance('powers-1').getByRole('combobox', { name: 'VISA Backend' }), { target: { value: '@py' } })
+  expect(read().disabled).toBe(false)
+  vi.mocked(confirm).mockResolvedValueOnce(false)
+  fireEvent.click(read())
+  await waitFor(() => expect(read().disabled).toBe(false))
+  expect(vi.mocked(confirm).mock.calls.at(-1)![0]).toMatch(/USB::SAVED.*removes the returned entries/)
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'read_and_drain_errors')).toHaveLength(1)
+  fireEvent.click(read())
+  await instance('powers-1').findByText('Connection lost')
+  expect(invoke).toHaveBeenCalledWith('read_and_drain_errors', { toolId: 'powers', instanceId: 'powers-1', executionMode: 'live' })
+  expect(instance('powers-1').getByRole('cell', { name: '-113' })).toBeTruthy()
+  expect(instance('powers-1').getByRole('cell', { name: 'Undefined header, channel 1' })).toBeTruthy()
+  expect(instance('powers-1').getByRole('status').textContent).toBe('Queue Status Failed')
+}, 15000)
 async function savedDraft() {
   click('Save Template')
   await screen.findByText('Template saved.')

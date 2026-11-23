@@ -21,7 +21,7 @@ Windows 發行包提供兩個使用者操作入口：
 
 - [快速開始](guide/getting-started.zh-TW.md)
 - [設定外部工具](guide/external-tools.zh-TW.md)
-- [Tool Setup 與 Instance](guide/tool-setup.zh-TW.md)
+- [Tool Setup 與 Instance](guide/tool-setup.zh-TW.md)，含手動讀取錯誤佇列
 - [Workflow 編輯器](guide/workflow-editor.zh-TW.md)
 - [輸入值與資料流](steps/input-values.zh-TW.md)
 - [Powers 步驟](steps/powers.zh-TW.md)

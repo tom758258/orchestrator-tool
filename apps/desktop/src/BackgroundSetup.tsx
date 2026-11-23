@@ -57,6 +57,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
         <span aria-hidden="true">{expanded ? '−' : '+'}</span>
       </button>{t("backgroundSetup.backgroundStreaming2")}</h4>
     <div hidden={!expanded}>
+    <p className="tool-setup-hint">{t("backgroundSetup.configureContinuousAcquisition")}</p>
     {!supported && <p>{t("backgroundSetup.unsupportedBackgroundStreamingRequiresMetersScopesOrSerial")}</p>}
     <label><input type="checkbox" checked={Boolean(config)} disabled={(!supported && !config) || Boolean(referenced)} onChange={event => {
       if (!event.target.checked) { onChange(value.filter(item => item !== config)); return }
@@ -69,7 +70,7 @@ export default function BackgroundSetup({ instance, value, steps, onChange, exec
       }])
     }} /> {t("backgroundSetup.enableBackgroundStreaming")}</label>
     {config && <>
-      <p>{t("backgroundSetup.background")}<code>{config.id}</code>{t("backgroundSetup.useWorkerAndCaptureActionsToControlThisInstance")}</p>
+      <p>{t("backgroundSetup.background")}<code>{config.id}</code></p>
       {foregroundReferenced && <p role="alert">{t("backgroundSetup.thisInstanceStillHasForegroundActionsRemoveThoseActions")}</p>}
       {!serial && <label>{t("backgroundSetup.source")}<select aria-label={config.id + t("backgroundSetup.source2")} value={config.limit_count === null ? 'infinite' : 'finite'}
         onChange={event => update({ limit_count: event.target.value === 'infinite' ? null : 1000 })}>

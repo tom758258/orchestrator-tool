@@ -1936,6 +1936,41 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 
+.live-device-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.error-queue-controls {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 16px;
+}
+
+.error-queue-result {
+  overflow-wrap: anywhere;
+}
+
+.error-queue-result table {
+  width: 100%;
+  text-align: start;
+}
+
+.error-queue-result td {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 600px) {
+  .live-device-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .error-queue-controls {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+}
+
 .tool-setup .tool-instance-card {
   margin-top: 16px;
   padding: 12px;

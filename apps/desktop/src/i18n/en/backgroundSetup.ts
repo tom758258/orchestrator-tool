@@ -4,7 +4,7 @@ export default {
   "backgroundSetup.unsupportedBackgroundStreamingRequiresMetersScopesOrSerial": "Unsupported. Background Streaming requires Meters, Scopes or Serial.",
   "backgroundSetup.enableBackgroundStreaming": " Enable Background Streaming",
   "backgroundSetup.background": "Background: ",
-  "backgroundSetup.useWorkerAndCaptureActionsToControlThisInstance": ". Use Worker and Capture actions to control this instance.",
+  "backgroundSetup.configureContinuousAcquisition": "Configure continuous background data acquisition. Use Worker and Capture actions to control streaming and data recording.",
   "backgroundSetup.thisInstanceStillHasForegroundActionsRemoveThoseActions": "This instance still has Foreground actions. Remove those actions or use another instance before running.",
   "backgroundSetup.source": "Source",
   "backgroundSetup.source2": " source",

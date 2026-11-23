@@ -161,6 +161,51 @@ async function savedDraft(): Promise<WorkflowDraft> {
     .at(-1)![1] as { templateJson: string }).templateJson)
 }
 
+test.each(['Simulation', 'Live'] as const)('Error Queue stays disabled for every instance through %s workflow cleanup', async mode => {
+  currentDraft.tool_instances = [
+    { id: 'powers-1', tool: 'powers', setup: {} },
+    { id: 'powers-2', tool: 'powers', setup: {} },
+    { id: 'scopes-1', tool: 'scopes', setup: {} },
+    ...backgroundDraft(1).tool_instances,
+    { id: 'wavegen-1', tool: 'wavegen', setup: {} },
+  ]
+  currentDraft.workflow.steps.unshift({ type: 'tool-action', id: 'status', target: 'powers-1', action: 'protection-status', arguments: {} })
+  const existing = vi.mocked(invoke).getMockImplementation()!
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    switch (command) {
+      case 'get_tool_status': return ['powers', 'meters', 'scopes', 'wavegen'].map(tool_id => ({
+        tool_id, executable_status: 'available', compatibility: 'compatible', path: `${tool_id}.exe`,
+        source: 'configured', tool_version: '1.0', worker_schema_versions: [3], reason: null,
+      }))
+      case 'get_live_resources': return Object.fromEntries(currentDraft.tool_instances.map(({ id }) => [id, `${id}::SAVED`]))
+      case 'get_live_resource_identities': return { 'scopes-1': { model_id: 'keysight-dsox4024a' } }
+      case 'get_scopes_capabilities': return { analog_channels: 4, check_error_supported: true }
+      default: return existing(command, args)
+    }
+  })
+  const buttons = () => screen.getAllByRole<HTMLButtonElement>('button', { name: 'Read & Drain Errors' })
+  await mount()
+  if (mode === 'Live') await selectLive()
+  tab('Setup')
+  await waitFor(() => expect(buttons().map(button => button.disabled)).toEqual([false, false, false, false]))
+  tab('Workflow')
+  fireEvent.click(runButton(mode))
+  await waitFor(() => expect(runCalls()).toHaveLength(1))
+  tab('Setup')
+  expect(buttons().every(button => button.disabled)).toBe(true)
+  await act(async () => progressChannel().onmessage({ type: 'progress-batch', run: metadata(50, 'running'), completed_step_ids: [] }))
+  tab('Workflow')
+  fireEvent.click(screen.getByRole('button', { name: 'Stop Workflow' }))
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('request_global_workflow_stop', { runId: 50 }))
+  tab('Setup')
+  await act(async () => progressChannel().onmessage({ type: 'progress-batch', run: metadata(50, 'stopped'), completed_step_ids: [] }))
+  expect(buttons().every(button => button.disabled)).toBe(true)
+  buttons().forEach(button => fireEvent.click(button))
+  expect(invoke).not.toHaveBeenCalledWith('read_and_drain_errors', expect.anything())
+  await act(async () => run.resolve(metadata(50, 'stopped')))
+  expect(buttons().every(button => !button.disabled)).toBe(true)
+}, 15000)
+
 test('locale changes preserve Template payload, active run, output data and Help settings', async () => {
   localStorage.removeItem('orchestrator-tool.theme')
   const original = vi.mocked(invoke).getMockImplementation()!

@@ -60,7 +60,8 @@ Streaming</strong>, then <strong>Live Device</strong>, with separators around Ba
 Both sections have independent <strong>− / +</strong> controls. Background Streaming starts
 collapsed; Live Device starts expanded. Expand Background Streaming and select
 <strong>Enable Background Streaming</strong> to show the supported Background options.
-Unsupported Tool Types keep this checkbox disabled and show an explanation.</p>
+Unsupported Tool Types keep this checkbox disabled and show an explanation.
+Use Worker and Capture actions to control background streaming and data recording.</p>
 <p>Group and card expansion states persist while editing, switching tabs, or
 collapsing an outer instance. Successful <strong>New Template</strong> or <strong>Open Template</strong>
 restores the default states, including External Tools cards. These UI states
@@ -175,6 +176,25 @@ Resource to enable new protection settings. In Simulation, Desktop queries
 powers-tool for the existing Powers simulator model, so Protection Setup does
 not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.</p>
+<h4 id="read-drain-errors">Read &amp; Drain Errors</h4>
+<p>Open <strong>Live Device</strong> in a Powers, Meters, or Scopes instance and select
+<strong>Read &amp; Drain Errors</strong> in <strong>Error Queue</strong>. Scopes support depends on the model
+and the configured Tool. In Live, save a discovered Scopes resource so Desktop
+can verify model support.</p>
+<ul>
+<li><strong>Simulation</strong> uses the Tool's simulator and displays <strong>NO HARDWARE I/O</strong>.</li>
+<li><strong>Live</strong> uses the saved Live Resource and VISA Backend, even if the Resource
+  fields show a draft. The confirmation identifies the saved address. Reading
+  removes the returned entries from the instrument's queue without issuing
+  <code>*CLS</code> or clearing other instrument status.</li>
+</ul>
+<p>All instances' buttons are disabled from Workflow start through stopping and
+cleanup. The diagnostic is manual and its results are shown only in Setup.</p>
+<p>The result shows the original error codes and messages in read order. <strong>Queue
+Empty</strong> means the first read confirmed an empty queue. <strong>Drained</strong> means error
+entries were read and the queue was then confirmed empty. <strong>Not Fully Drained</strong>
+means the 20-read limit was reached before confirming an empty queue. <strong>Failed</strong>
+shows the failure and retains any entries retrieved before it.</p>
 <h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
 <p>Protection Setup is optional. Within a Powers Tool Instance, use <strong>+</strong> beside
 <strong>Protection Setup</strong> to expand the group, which starts collapsed. Protection

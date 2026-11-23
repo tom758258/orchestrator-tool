@@ -30,7 +30,7 @@ use crate::{
 const WORKER_SCHEMA_VERSION: u32 = 3;
 const READ_STATUS_COMMAND: &str = "read-status";
 const SIMULATION_MODEL_ID: &str = "keysight-e36312a";
-const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
+pub(crate) const SIMULATION_RESOURCE: &str = "USB0::SIM::E36312A::INSTR";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PowersProtectionFeatures {

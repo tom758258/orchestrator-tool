@@ -35,6 +35,8 @@ pub struct ScopesCapabilities {
     pub capture_point_options: Vec<u32>,
     #[serde(default)]
     pub autoscale_supported: bool,
+    #[serde(default)]
+    pub check_error_supported: bool,
 }
 
 pub(crate) const DEFAULT_SIMULATED_MODEL_ID: &str = "keysight-dsox4024a";
@@ -227,6 +229,7 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
         direct_measurement_items: Vec<String>,
         trigger_edge_slopes: Vec<String>,
         capture_point_options: Vec<u32>,
+        supported_operations: Option<Vec<String>>,
     }
     #[derive(Deserialize)]
     struct Response {
@@ -258,6 +261,10 @@ fn parse_capabilities(stdout: &[u8], model_id: Option<&str>) -> Result<ScopesCap
         trigger_edge_slopes: r.capabilities.trigger_edge_slopes,
         capture_point_options: r.capabilities.capture_point_options,
         autoscale_supported,
+        check_error_supported: r
+            .capabilities
+            .supported_operations
+            .is_none_or(|operations| operations.iter().any(|name| name == "check-error")),
     })
 }
 
@@ -1145,6 +1152,20 @@ mod tests {
         assert_eq!(caps.direct_measurement_items, vec!["vpp", "frequency"]);
         assert_eq!(caps.trigger_edge_slopes, vec!["positive", "negative"]);
         assert_eq!(caps.capture_point_options, vec![1000, 5000]);
+        for (operations, supported) in [
+            (Value::Null, true),
+            (json!(["check-error"]), true),
+            (json!(["measure"]), false),
+        ] {
+            let mut capability = value.clone();
+            capability["capabilities"]["supported_operations"] = operations;
+            assert_eq!(
+                parse_capabilities(capability.to_string().as_bytes(), None)
+                    .unwrap()
+                    .check_error_supported,
+                supported
+            );
+        }
         let serialized = serde_json::to_value(&caps).unwrap();
         for field in [
             "direct_measurement_items",
