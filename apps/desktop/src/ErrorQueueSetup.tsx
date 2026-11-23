@@ -92,7 +92,19 @@ export default function ErrorQueueSetup({ children, tool, instanceId, executionM
         <button type="button" className="action-button" disabled={disabled || unavailable !== null} onClick={() => void read()}>
           {t('app.readAndDrainErrors')}
         </button>
-        <p className="tool-setup-hint">{unavailable ?? t('app.errorQueueHelp')}</p>
+        {unavailable !== null && <p className="tool-setup-hint">{unavailable}</p>}
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueuePurposeTitle')}</strong><br />
+          {t('app.errorQueuePurpose')}
+        </p>
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueueBehaviorTitle')}</strong><br />
+          {t('app.errorQueueBehavior')}
+        </p>
+        <p className="tool-setup-hint">
+          <strong>{t('app.errorQueueNotesTitle')}</strong><br />
+          {t('app.errorQueueNotes')}
+        </p>
       </div>
     </div>
     {result && <div className="error-queue-result">
