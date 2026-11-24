@@ -1,4 +1,6 @@
 export default {
+  "inputValueEditor.null": "Null",
+  "inputValueEditor.replaceWithStringFixedValue": "改為字串固定值",
   "inputValueEditor.result": "結果",
   "inputValueEditor.customPointer": "自訂指標…",
   "inputValueEditor.jSONPointer": "JSON Pointer",

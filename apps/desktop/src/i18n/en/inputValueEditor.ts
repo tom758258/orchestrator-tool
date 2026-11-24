@@ -1,4 +1,6 @@
 export default {
+  "inputValueEditor.null": "Null",
+  "inputValueEditor.replaceWithStringFixedValue": "Replace with string fixed value",
   "inputValueEditor.result": "Result",
   "inputValueEditor.customPointer": "Custom pointer...",
   "inputValueEditor.jSONPointer": "JSON Pointer",

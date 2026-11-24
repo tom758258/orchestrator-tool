@@ -9,18 +9,22 @@ The current InputValue choices in the editor are:
 - **Fixed value** — a literal value.
 - **Variable** — the current value of a workflow variable.
 - **Previous step result** — a result from an earlier visible step. The current
-  UI offers results from prior Tool Actions.
+  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result,
+  and String Process / Byte Process steps.
 - **Calculation** — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).
 - **Elapsed time** — a runtime elapsed-time value.
 - **Timestamp** — a runtime timestamp value.
 
-Set Variable steps create or update variables. A Previous step result can
+Set Variable steps create or update variables. Fixed value supports Number,
+String, Boolean, and Null. Boolean uses the True / False selection; Null needs
+no value field. String "true" and "null" are text, not Boolean or Null. A Previous step result can
 refer only to a step that is earlier and visible in the current lexical scope.
 Calculations use arithmetic and comparison operators. Assert, While, and If
-offer `==`, `!=`, `>`, `>=`, `<`, and `<=`. Assert Fixed value operands can
-be Number or Boolean; While and If also allow String. Equality compares JSON
-values without type coercion; arithmetic and ordering comparisons require
-numbers. A Calculation is not an arbitrary nested expression tree.
+offer `==`, `!=`, `>`, `>=`, `<`, and `<=`. Their Fixed value operands support
+Number, String, Boolean, and Null. Equality compares JSON values without type
+coercion, with case-sensitive strings; arithmetic and ordering comparisons require
+numbers. A missing variable or result path is an error, not Null. A Calculation
+is not an arbitrary nested expression tree.
 
 For an Output with **Elapsed time**, **Time Format** offers **Seconds** (default),
 **Minutes:Seconds**, **Hours:Minutes:Seconds**, and **Days (Decimal)**. Minutes

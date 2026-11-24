@@ -19,6 +19,7 @@ import messages from './messages.ts'
 import outputCharts from './outputCharts.ts'
 import pageResultSummary from './pageResultSummary.ts'
 import preferences from './preferences.ts'
+import process from './process.ts'
 import preflight from './preflight.ts'
 import resultChart from './resultChart.ts'
 import resultFields from './resultFields.ts'
@@ -57,6 +58,7 @@ export default {
   ...outputCharts,
   ...pageResultSummary,
   ...preferences,
+  ...process,
   ...preflight,
   ...resultChart,
   ...resultFields,

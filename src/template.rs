@@ -1393,6 +1393,16 @@ enum StepWire {
         variable: String,
         value: InputValueWire,
     },
+    StringProcess {
+        id: String,
+        operation: crate::data_processing::StringOperation,
+        arguments: BTreeMap<String, ExpressionOperandWire>,
+    },
+    ByteProcess {
+        id: String,
+        operation: crate::data_processing::ByteOperation,
+        arguments: BTreeMap<String, ExpressionOperandWire>,
+    },
     Output {
         id: String,
         name: String,
@@ -1540,6 +1550,28 @@ impl StepWire {
                 id: step.id().as_str().to_owned(),
                 variable: variable.as_str().to_owned(),
                 value: InputValueWire::from_input(value),
+            },
+            StepKind::StringProcess {
+                operation,
+                arguments,
+            } => Self::StringProcess {
+                id: step.id().as_str().to_owned(),
+                operation: *operation,
+                arguments: arguments
+                    .iter()
+                    .map(|(key, value)| (key.clone(), ExpressionOperandWire::from_operand(value)))
+                    .collect(),
+            },
+            StepKind::ByteProcess {
+                operation,
+                arguments,
+            } => Self::ByteProcess {
+                id: step.id().as_str().to_owned(),
+                operation: *operation,
+                arguments: arguments
+                    .iter()
+                    .map(|(key, value)| (key.clone(), ExpressionOperandWire::from_operand(value)))
+                    .collect(),
             },
             StepKind::Output { name, value } => Self::Output {
                 name: name.clone(),
@@ -1925,6 +1957,44 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                 StepKind::SetVariable {
                     variable,
                     value: input_from_wire(value)?,
+                },
+            ))
+        }
+        StepWire::StringProcess {
+            id,
+            operation,
+            arguments,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let arguments = arguments
+                .into_iter()
+                .map(|(key, value)| Ok((key, operand_from_wire(value)?)))
+                .collect::<Result<_, TemplateError>>()?;
+            Ok(Step::new(
+                step_id,
+                StepKind::StringProcess {
+                    operation,
+                    arguments,
+                },
+            ))
+        }
+        StepWire::ByteProcess {
+            id,
+            operation,
+            arguments,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let arguments = arguments
+                .into_iter()
+                .map(|(key, value)| Ok((key, operand_from_wire(value)?)))
+                .collect::<Result<_, TemplateError>>()?;
+            Ok(Step::new(
+                step_id,
+                StepKind::ByteProcess {
+                    operation,
+                    arguments,
                 },
             ))
         }

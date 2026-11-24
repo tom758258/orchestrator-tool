@@ -756,6 +756,29 @@ fn clear_branch_step_outputs(steps: &[Step], data_context: &mut DataContext) {
     }
 }
 
+fn execute_process(
+    arguments: &BTreeMap<String, crate::workflow::ExpressionOperand>,
+    data_context: &DataContext,
+    process: impl FnOnce(&BTreeMap<String, Value>) -> Result<Value, String>,
+) -> StepOutcome {
+    let result = arguments
+        .iter()
+        .map(|(key, operand)| {
+            data_context
+                .resolve_expression_operand(operand)
+                .map(|value| (key.clone(), value))
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .and_then(|values| process(&values));
+    match result {
+        Ok(value) => StepOutcome::Succeeded {
+            output: serde_json::json!({ "value": value }),
+        },
+        Err(message) => StepOutcome::Failed { message },
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_non_loop_step(
     step: &Step,
@@ -791,6 +814,14 @@ fn execute_non_loop_step(
                 message: error.to_string(),
             },
         },
+        StepKind::StringProcess {
+            operation,
+            arguments,
+        } => execute_process(arguments, data_context, |values| operation.execute(values)),
+        StepKind::ByteProcess {
+            operation,
+            arguments,
+        } => execute_process(arguments, data_context, |values| operation.execute(values)),
         StepKind::Output { value, .. } => match data_context.resolve(value) {
             Ok(output) => StepOutcome::Succeeded { output },
             Err(error) => StepOutcome::Failed {

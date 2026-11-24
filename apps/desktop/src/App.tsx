@@ -42,6 +42,7 @@ import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, containerPath, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow, StepBranch } from './workflow'
 import ShowMessageEditor from './ShowMessageEditor'
+import ProcessEditor from './ProcessEditor'
 import { hasPowerSetpoint, powerSetpointLiteralDefault, togglePowerSetpoint } from './powerSetpoint'
 import type { PowerSetpoint } from './powerSetpoint'
 import { DEFAULT_EXECUTION_MODE, executionModeLabel, manualOperationRequiresSavedResource, workflowRunCommand } from './executionMode'
@@ -173,6 +174,8 @@ type StepPreset =
   | 'meter-measure'
   | 'power-output-off'
   | 'show-message'
+  | 'string-process'
+  | 'byte-process'
 
 type StepPresetOption = {
   value: StepPreset
@@ -302,6 +305,10 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
         action: 'output-off',
         arguments: { channel: 1 },
       }
+    case 'string-process':
+      return { type: 'string-process', id, operation: 'length', arguments: { input: { source: 'literal', value: '' } } }
+    case 'byte-process':
+      return { type: 'byte-process', id, operation: { kind: 'byte-length' }, arguments: { input: { source: 'literal', value: '' } } }
     case 'show-message':
       return { type: 'show-message', id, target: 'message-1', fields: [{ kind: 'text', text: '', newline: false }] }
     default: throw new Error(`Unsupported preset ${preset}`)
@@ -427,6 +434,8 @@ function App() {
     { value: 'wait', label: t("app.wait"), prefix: 'wait', category: 'Workflow' },
     { value: 'assert', label: t("app.assert"), prefix: 'assert', category: 'Workflow' },
     { value: 'show-message', label: t("app.showMessage"), prefix: 'show-message', category: 'Workflow' },
+    { value: 'string-process', label: t("process.stringProcess"), prefix: 'string-process', category: 'Workflow' },
+    { value: 'byte-process', label: t("process.byteProcess"), prefix: 'byte-process', category: 'Workflow' },
     { value: 'meter-measure', label: t("app.meterMeasure"), prefix: 'meter-read', category: 'Meters', tool: 'meters' },
     { value: 'power-output-off', label: t("app.powerOutputOFF"), prefix: 'power-off', category: 'Powers', tool: 'powers' },
   ]
@@ -456,6 +465,8 @@ function App() {
     for: t("app.repeatTheseBodyStepsOverAnExactDecimalRange"),
     assert: t("app.failTheWorkflowWhenThisComparisonIsFalse"),
     'show-message': t("app.writeAMessageToTheMessagesPanelWhileThe"),
+    'string-process': t("process.stringHelp"),
+    'byte-process': t("process.byteHelp"),
     'set-variable': t("app.saveAValueOrCalculationResultSoLaterSteps"),
     output: t("app.publishAValueAsAFinalWorkflowResultThis"),
     wait: t("app.pauseBeforeRunningTheNextStepUsefulForDUT"),
@@ -502,6 +513,8 @@ function App() {
     if (step.type === 'assert') {
       return t("app.assert")
     }
+    if (step.type === 'string-process') return t("process.stringProcess")
+    if (step.type === 'byte-process') return t("process.byteProcess")
     if (step.type === 'show-message') {
       return t("app.showMessage")
     }
@@ -3227,6 +3240,8 @@ function App() {
                           key={selectedStep.id}
                           value={selectedValue}
                            allowStringLiteral={selectedStep.type === 'set-variable'}
+                          allowBooleanLiteral={selectedStep.type === 'set-variable'}
+                          allowNullLiteral={selectedStep.type === 'set-variable'}
                           timeFormat={selectedStep.type === 'output' ? selectedStep.time_format : undefined}
                           onTimeFormatChange={selectedStep.type === 'output' ? format => updateStep(selectedStep.id, step =>
                             step.type === 'output' ? { ...step, time_format: format } : step) : undefined}
@@ -3246,6 +3261,7 @@ function App() {
                           <ExpressionOperandEditor
                             allowBooleanLiteral
                             allowStringLiteral
+                            allowNullLiteral
                             side="Left" value={selectedStep.left}
                             earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
@@ -3267,6 +3283,7 @@ function App() {
                           <ExpressionOperandEditor
                             allowBooleanLiteral
                             allowStringLiteral
+                            allowNullLiteral
                             side="Right" value={selectedStep.right}
                             earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables}
                             instances={workflowDraft.tool_instances}
@@ -3342,6 +3359,16 @@ function App() {
                             }}
                           />
                         </label>
+                      )}
+
+                      {(selectedStep.type === 'string-process' || selectedStep.type === 'byte-process') && (
+                        <ProcessEditor key={selectedStep.id} step={selectedStep}
+                          earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+                          instances={workflowDraft.tool_instances} backgrounds={workflowDraft.backgrounds ?? []}
+                          stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
+                          disabled={workflowBusy}
+                          onChange={next => updateStep(selectedStep.id, step => step.type === next.type ? next : step)}
+                        />
                       )}
 
                       {selectedStep.type === 'show-message' && (

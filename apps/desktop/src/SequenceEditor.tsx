@@ -93,6 +93,10 @@ function SequenceEditor({
       case 'assert':
       case 'if':
         return expressionSummary(step)
+      case 'string-process':
+        return t(`process.operation.${step.operation}`)
+      case 'byte-process':
+        return t(`process.operation.${step.operation.kind}`)
       case 'set-variable':
         return `${step.variable} = ${valueSummary(step.value)}`
       case 'output':

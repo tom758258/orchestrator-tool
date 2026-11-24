@@ -1700,3 +1700,54 @@ test('Clear Workflow cancel preserves steps; confirmation removes steps without 
   expect(cleared.tool_instances).toEqual(draft.tool_instances)
   expect(cleared.name).toBe(draft.name)
 })
+
+test('Workflow data processing editors save typed literals and dynamic operands', async () => {
+  currentDraft.workflow.steps = [
+    { type: 'set-variable', id: 'set-flag', variable: 'flag', value: { source: 'literal', value: 0 } },
+    { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
+      right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
+  ]
+  await mount()
+  const properties = within(screen.getByRole('region', { name: 'Properties' }))
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  const add = (name: string) => {
+    fireEvent.click(within(screen.getByRole('region', { name: 'Step categories' })).getByRole('button', { name }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+  }
+  fireEvent.click(card('set-flag'))
+  fireEvent.change(properties.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'boolean' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Value' }), { target: { value: 'true' } })
+  fireEvent.click(card('condition'))
+  const left = within(properties.getByRole('group', { name: 'Left operand' }))
+  fireEvent.change(left.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'null' } })
+  expect(left.queryByRole('spinbutton')).toBeNull()
+
+  fireEvent.click(card('set-flag'))
+  add('String Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'length' } })
+  fireEvent.change(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'AA' } })
+  add('Byte Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'hex-to-number' } })
+  fireEvent.change(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '1234' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Byte Count Source' }), { target: { value: 'step-output' } })
+  expect((within(properties.getByRole('group', { name: 'Byte Count' }))
+    .getByRole('combobox', { name: 'Result' }) as HTMLSelectElement).value).toBe('/value')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Byte Order' }), { target: { value: 'lsb-first' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Number Format' }), { target: { value: 'signed' } })
+
+  const saved = await savedDraft()
+  expect(saved.workflow.steps.find(step => step.id === 'set-flag')).toMatchObject({
+    value: { source: 'literal', value: true },
+  })
+  expect(saved.workflow.steps.find(step => step.id === 'condition')).toMatchObject({
+    left: { source: 'literal', value: null },
+  })
+  expect(saved.workflow.steps.find(step => step.type === 'string-process')).toMatchObject({
+    operation: 'length', arguments: { input: { source: 'literal', value: 'AA' } },
+  })
+  expect(saved.workflow.steps.find(step => step.type === 'byte-process')).toMatchObject({
+    operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },
+    arguments: { input: { source: 'literal', value: '1234' },
+      byte_count: { source: 'step-output', step_id: 'string-process-1', pointer: '/value' } },
+  })
+})

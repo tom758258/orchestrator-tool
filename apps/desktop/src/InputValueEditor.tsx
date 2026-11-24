@@ -34,6 +34,7 @@ type ReferenceOptions = {
   numericSetpoint?: boolean
   numericCalculation?: boolean
   allowStringLiteral?: boolean
+  allowNullLiteral?: boolean
 }
 
 
@@ -43,6 +44,7 @@ type OperandEditorProps = ReferenceOptions & {
   onChange: (value: ExpressionOperandWire) => void
   literalLabel?: string
   allowBooleanLiteral?: boolean
+  fixedStringLiteral?: boolean
 }
 
 function ResultPathEditor({ value, onChange, fields, disabled }: {
@@ -84,22 +86,38 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   )
 }
 
-function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds = [], stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false }: OperandEditorProps) {
+function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds = [], stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false, allowNullLiteral = false, fixedStringLiteral = false }: OperandEditorProps) {
   const { t } = useI18n()
   switch (value.source) {
     case 'literal':
-      return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') || (allowStringLiteral && typeof value.value === 'string') ? (
+      if (fixedStringLiteral) {
+        return typeof value.value === 'string' ? (
+          <label className="step-property-field">
+            <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
+            <input type="text" value={value.value} disabled={disabled}
+              onChange={event => onChange({ source: 'literal', value: event.target.value })} />
+          </label>
+        ) : (
+          <>
+            <p className="step-properties-empty">{t("inputValueEditor.valuePreservedFixedValueTypeIsNotEditableHere")}{JSON.stringify(value.value)}</p>
+            <button className="action-button" type="button" disabled={disabled}
+              onClick={() => onChange({ source: 'literal', value: '' })}>{t("inputValueEditor.replaceWithStringFixedValue")}</button>
+          </>
+        )
+      }
+      return typeof value.value === 'number' || (allowBooleanLiteral && typeof value.value === 'boolean') || (allowStringLiteral && typeof value.value === 'string') || (allowNullLiteral && value.value === null) ? (
         <>
-          {(allowBooleanLiteral || allowStringLiteral) && <label className="step-property-field">
+          {(allowBooleanLiteral || allowStringLiteral || allowNullLiteral) && <label className="step-property-field">
             <span className="step-property-label">{t("inputValueEditor.valueType")}</span>
-            <select value={typeof value.value === 'boolean' ? 'boolean' : typeof value.value === 'string' ? 'string' : 'number'} disabled={disabled}
-              onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'boolean' ? false : event.target.value === 'string' ? '' : 0 })}>
+            <select value={value.value === null ? 'null' : typeof value.value === 'boolean' ? 'boolean' : typeof value.value === 'string' ? 'string' : 'number'} disabled={disabled}
+              onChange={(event) => onChange({ source: 'literal', value: event.target.value === 'null' ? null : event.target.value === 'boolean' ? false : event.target.value === 'string' ? '' : 0 })}>
               <option value="number">{t("inputValueEditor.number")}</option>
               {allowBooleanLiteral && <option value="boolean">{t("inputValueEditor.boolean")}</option>}
               {allowStringLiteral && <option value="string">{t("inputValueEditor.string")}</option>}
+              {allowNullLiteral && <option value="null">{t("inputValueEditor.null")}</option>}
             </select>
           </label>}
-          <label className="step-property-field">
+          {value.value !== null && <label className="step-property-field">
             <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
             {typeof value.value === 'boolean' ? (
               <select value={String(value.value)} disabled={disabled}
@@ -117,7 +135,7 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
                   if (Number.isFinite(number)) onChange({ source: 'literal', value: number })
                 }} />
             )}
-          </label>
+          </label>}
         </>
       ) : (
         <>
@@ -212,7 +230,26 @@ export function ExpressionOperandEditor({ value, onChange, side, allowBooleanLit
   )
 }
 
+export function ProcessOperandEditor({ value, onChange, label, literalDefault, ...references }:
+  Omit<OperandEditorProps, 'literalLabel'> & { label: string; literalDefault: number | string }) {
+  const { t } = useI18n()
+  return (
+    <div className="step-properties-fields" role="group" aria-label={label}>
+      <label className="step-property-field">
+        <span className="step-property-label">{t("inputValueEditor.namedSource", { label })}</span>
+        <select value={value.source} disabled={references.disabled}
+          onChange={event => onChange(defaultOperand(event.target.value, references, literalDefault))}>
+          <SourceOptions {...references} />
+        </select>
+      </label>
+      <OperandEditor {...references} value={value} onChange={onChange}
+        fixedStringLiteral={typeof literalDefault === 'string'} literalLabel={label} />
+    </div>
+  )
+}
+
 type InputValueEditorProps = ReferenceOptions & {
+  allowBooleanLiteral?: boolean
   timeFormat?: OutputTimeFormat
   onTimeFormatChange?: (format: OutputTimeFormat) => void
   value: InputValueWire
@@ -223,7 +260,7 @@ type InputValueEditorProps = ReferenceOptions & {
 }
 
 export default function InputValueEditor({ value, onChange, sourceLabel, literalLabel,
-  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, numericCalculation = false, allowStringLiteral = false, ...references }: InputValueEditorProps) {
+  timeFormat, onTimeFormatChange, literalDefault = 0, numericSetpoint = false, numericCalculation = false, allowStringLiteral = false, allowBooleanLiteral = false, allowNullLiteral = false, ...references }: InputValueEditorProps) {
   const { t } = useI18n()
 
 
@@ -301,7 +338,7 @@ export default function InputValueEditor({ value, onChange, sourceLabel, literal
         </div>
       ) : (
         value.source !== 'elapsed-time' && value.source !== 'timestamp' &&
-        <OperandEditor {...references} allowStringLiteral={allowStringLiteral} value={value} literalLabel={literalLabel} onChange={onChange} />
+        <OperandEditor {...references} allowStringLiteral={allowStringLiteral} allowBooleanLiteral={allowBooleanLiteral} allowNullLiteral={allowNullLiteral} value={value} literalLabel={literalLabel} onChange={onChange} />
       )}
     </>
   )
