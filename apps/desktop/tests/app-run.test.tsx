@@ -1707,7 +1707,7 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
       right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
     { type: 'byte-process', id: 'loaded-text', operation: { kind: 'text-to-hex' },
-      arguments: { input: { source: 'literal', value: 'A\r\nB\r\nC\nD\rE' } } },
+      arguments: { input: { source: 'literal', value: 'A\r\nB\r\nC\nD\rE\\r' } } },
   ]
   await mount()
   const properties = within(screen.getByRole('region', { name: 'Properties' }))
@@ -1724,22 +1724,36 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   fireEvent.change(left.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'null' } })
   expect(left.queryByRole('spinbutton')).toBeNull()
 
-  // Editing a loaded mixed-line-ending literal must preserve the original CRs.
+  // A visible CR escape distinguishes raw CRLF, CR, LF and literal backslashes.
   fireEvent.click(card('loaded-text'))
   const loadedText = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
-  fireEvent.input(loadedText, { target: { value: 'A\nB\nC\nD\nE!' } })
+  expect(loadedText.value).toBe('A\\r\nB\\r\nC\nD\\rE\\\\r')
+  fireEvent.input(loadedText, { target: { value: 'A\\r\nB\\r\nC\nD\\rE\\\\r!' } })
   loadedText.setSelectionRange(0, 0)
-  fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
-
-  // Replace the first original CRLF and B, not merely delete B.
-  loadedText.setSelectionRange(3, 5)
-  fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, inputType: 'insertLineBreak' }))
-  fireEvent.input(loadedText, { target: { value: 'X\nA\n\nC\nD\nE!' }, inputType: 'insertLineBreak' })
-  // Replacing CRLF with LF can leave the entire displayed string unchanged.
-  loadedText.setSelectionRange(1, 2)
-  fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, inputType: 'insertLineBreak' }))
-  loadedText.setSelectionRange(2, 2)
-  fireEvent.input(loadedText, { inputType: 'insertLineBreak' })
+  // jsdom has no native edit history. Mock only the browser's insert command;
+  // native Undo/Redo and clipboard behavior are verified in Chromium.
+  const originalCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+  const insertText = vi.fn((command: string, _showUI?: boolean, text?: string) => {
+    if (command !== 'insertText' || text === undefined) return false
+    loadedText.setRangeText(text, loadedText.selectionStart, loadedText.selectionEnd, 'end')
+    fireEvent.input(loadedText)
+    return true
+  })
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: insertText })
+  try {
+    fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
+  } finally {
+    if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+    else Reflect.deleteProperty(document, 'execCommand')
+  }
+  expect(insertText).toHaveBeenCalledWith('insertText', false, 'X\\r\n')
+  // Remove CRLF+B and replace it with LF; then replace X's CRLF with LF.
+  fireEvent.input(loadedText, { target: { value: 'X\\r\nA\n\\r\nC\nD\\rE\\\\r!' } })
+  fireEvent.input(loadedText, { target: { value: 'X\nA\n\\r\nC\nD\\rE\\\\r!' } })
+  loadedText.setSelectionRange(0, loadedText.value.length)
+  const copyData = vi.fn()
+  fireEvent.copy(loadedText, { clipboardData: { setData: copyData } })
+  expect(copyData).toHaveBeenCalledWith('text/plain', 'X\nA\n\r\nC\nD\rE\\r!')
 
   fireEvent.click(card('set-flag'))
   add('String Process')
@@ -1766,7 +1780,7 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   })
   expect(saved.workflow.steps.find(step => step.id === 'loaded-text')).toMatchObject({
     operation: { kind: 'text-to-hex' },
-    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE!' } },
+    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE\\r!' } },
   })
   expect(saved.workflow.steps.find(step => step.type === 'byte-process' && step.id !== 'loaded-text')).toMatchObject({
     operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },

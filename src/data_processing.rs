@@ -117,6 +117,15 @@ impl StringOperation {
                     let value = input
                         .parse::<f64>()
                         .map_err(|_| "input is not a valid number".to_owned())?;
+                    // A nonzero significand that rounds to zero is out of range.
+                    if value == 0.0
+                        && input
+                            .bytes()
+                            .take_while(|byte| !matches!(*byte, b'e' | b'E'))
+                            .any(|byte| matches!(byte, b'1'..=b'9'))
+                    {
+                        return Err("nonzero input underflows the JSON number range".to_owned());
+                    }
                     // Use integer JSON results where conversion is exact and safe.
                     if value.is_finite()
                         && value.fract() == 0.0
@@ -408,6 +417,10 @@ mod tests {
             (ToLowerCase, json!({"input":"ABC"}), json!("abc")),
             (ToNumber, json!({"input":" -1.25e2 "}), json!(-125)),
             (ToNumber, json!({"input":"+3.305"}), json!(3.305)),
+            (ToNumber, json!({"input":"0e-400"}), json!(0)),
+            (ToNumber, json!({"input":"-0.00E-999"}), json!(0)),
+            (ToNumber, json!({"input":"5e-324"}), json!(5e-324)),
+            (ToNumber, json!({"input":"-5e-324"}), json!(-5e-324)),
         ] {
             assert_eq!(operation.execute(&args(input)).unwrap(), expected);
         }
@@ -420,6 +433,11 @@ mod tests {
             (Replace, json!({"input":"A","search":"","replacement":"B"})),
             (ToNumber, json!({"input":"NaN"})),
             (ToNumber, json!({"input":"Infinity"})),
+            (ToNumber, json!({"input":"1e400"})),
+            (ToNumber, json!({"input":"-1e400"})),
+            (ToNumber, json!({"input":"1e-400"})),
+            (ToNumber, json!({"input":"-1e-400"})),
+            (ToNumber, json!({"input":".01E-999"})),
             (ToNumber, json!({"input":"abc"})),
         ] {
             assert!(operation.execute(&args(input)).is_err());

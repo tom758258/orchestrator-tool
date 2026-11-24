@@ -4,6 +4,7 @@ export default {
   "process.stringHelp": "處理文字，不改變原始變數。",
   "process.byteHelp": "處理 Hex String 代表的位元組，不改變原始變數。",
   "process.operation": "操作",
+  "process.fixedStringHelp": "固定字串：Enter 輸入 LF；\\r 表示 CR、\\n 表示 LF、\\\\ 表示原本的反斜線。貼上使用原始文字；複製及剪下會傳出選取的原始文字。這些欄位之間拖曳使用畫面上的表示方式。",
   "process.inputString": "輸入字串",
   "process.inputNumber": "輸入數值",
   "process.inputHex": "輸入 Hex String",

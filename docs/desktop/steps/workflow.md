@@ -156,6 +156,17 @@ inline Calculation, Elapsed time, or Timestamp sources. Their result is availabl
 as Value (JSON Pointer `/value`) to later steps. Neither step changes the source
 variable or creates an Output column.
 
+In Process Fixed value string fields, Enter inserts LF. The visible escape
+`\r` represents CR, `\n` represents LF, and `\\` represents a literal
+backslash. Other backslash sequences remain literal. A loaded CRLF is shown
+as `\r` followed by a line break, so CR and LF are not silently merged or
+lost. Select complete escapes when editing or copying those characters.
+Copy and cut transfer raw selected text; paste and external drops treat
+received text as raw. Dragging within or between Process string fields uses
+the displayed representation, including when dragging out to another app.
+The stored Template and Process values remain ordinary JSON strings; the
+1 MiB limit applies to the decoded UTF-8 string, not its editor representation.
+
 Each input and output string is limited to 1 MiB (1,048,576 UTF-8 bytes).
 Exceeding this limit fails the step; data is not truncated. This limit does not
 change existing Variable, Serial RX, or Capture Dataset limits.
@@ -177,7 +188,7 @@ start at zero, and searches are case-sensitive.
 | To Number | — | Number; accepts integers, decimals, signs, scientific notation and surrounding whitespace |
 
 Empty search strings, out-of-range indexes, wrong types, and invalid or
-non-finite number conversions fail the step. For example, Substring of
+non-finite number conversions and nonzero numbers that underflow to zero fail the step. For example, Substring of
 `STATUS:PASS` at Start Index 7 and Length 4 returns `PASS`.
 
 **Byte Process** operates on raw bytes represented by Hex Strings. Hex input

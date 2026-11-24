@@ -744,7 +744,7 @@ case-sensitive and nonempty. Index-of returns the first matching index or -1;
 contains returns false when not found. Replace changes all non-overlapping
 matches, and an empty append or replacement is valid. To-number trims surrounding
 whitespace and accepts signed integers, decimals and scientific notation;
-invalid and non-finite results fail.
+invalid and non-finite results fail, as do nonzero inputs that underflow to zero.
 
 A Byte Process operation is an object with a `kind` discriminator. The two
 numeric conversion kinds additionally require `byte_order` (msb-first or

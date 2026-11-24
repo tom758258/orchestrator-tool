@@ -136,6 +136,14 @@ Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time �
 結果可由後續 Step 選擇 Value（JSON Pointer `/value`）取得。不修改來源 Variable，
 也不自動建立 Output 欄位。
 
+Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 `\r` 表示 CR、
+`\n` 表示 LF、`\\` 表示原本的反斜線，其他反斜線組合保持文字原樣。
+載入的 CRLF 顯示為 `\r` 加上一個換行，避免 CR 與 LF 被無聲合併或遺失。
+編輯或複製這類字元時，請選取完整的跳脫表示。複製與剪下傳出原始文字，
+貼上與外部拖入按接收到的原始文字處理。Process 字串欄位內或欄位之間拖曳
+使用畫面上的表示方式，拖出至其他程式亦為畫面表示。Template 與 Process
+仍使用原本的 JSON 字串；1 MiB 限制適用於解碼後的 UTF-8 字串，而非編輯器顯示長度。
+
 每個輸入與輸出字串最多為 1 MiB（1,048,576 個 UTF-8 Bytes）。超出限制時 Step
 執行失敗，不會自動截斷資料。此限制不改變既有 Variable、Serial RX 或 Capture Dataset
 的容量限制。
@@ -156,7 +164,7 @@ Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time �
 | To Lower Case | — | String |
 | To Number | — | Number；接受整數、小數、正負號、科學記號及前後空白 |
 
-空 Search String、索引超出範圍、型態錯誤及無效或非有限數值轉換均使 Step 失敗。
+空 Search String、索引超出範圍、型態錯誤、無效或非有限數值轉換，以及非零數值下溢為零，均使 Step 失敗。
 例如 `STATUS:PASS` 使用 Substring，Start Index 7、Length 4，回傳 `PASS`。
 
 **Byte Process** 處理 Hex String 所代表的原始 Bytes。Hex 輸入接受大小寫與完整 Byte

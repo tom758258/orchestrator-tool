@@ -4,6 +4,7 @@ export default {
   "process.stringHelp": "Process text without changing the original variable.",
   "process.byteHelp": "Process bytes represented by a Hex String without changing the original variable.",
   "process.operation": "Operation",
+  "process.fixedStringHelp": "Fixed text: Enter inserts LF. Use \\r for CR, \\n for LF, and \\\\ for a literal backslash. Pasted text is treated as raw text; copy and cut return raw selected text. Dragging between these fields uses the displayed representation.",
   "process.inputString": "Input String",
   "process.inputNumber": "Input Number",
   "process.inputHex": "Input Hex String",
