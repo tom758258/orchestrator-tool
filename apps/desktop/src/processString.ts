@@ -12,14 +12,32 @@ export function replaceProcessStringRange(value: string, start: number, end: num
   return value.slice(0, rawProcessOffset(value, start)) + replacement + value.slice(rawProcessOffset(value, end))
 }
 
-export function editProcessString(value: string, edited: string, caret: number): string {
+export type ProcessEditSelection = { start: number; end: number; inputType: string }
+
+export function editProcessString(value: string, edited: string, caret: number, selection?: ProcessEditSelection): string {
   const displayed = value.replace(/\r\n?/g, '\n')
-  if (displayed === edited) return value
   if (displayed === value) return edited
 
-  // A normal textarea edit replaces one contiguous range. Keep the common
-  // prefix and suffix in their original form; use the caret to disambiguate
-  // insertions/deletions among repeated characters (including line endings).
+  // Prefer the selection captured before the native edit. Equal displayed
+  // values can represent different bytes when a CRLF is replaced by LF.
+  if (selection) {
+    let { start, end } = selection
+    const inserting = selection.inputType.startsWith('insert')
+    const deleting = selection.inputType.startsWith('delete')
+    if (deleting && start === end) {
+      start = caret
+      end = caret + displayed.length - edited.length
+    }
+    const replacementEnd = edited.length - (displayed.length - end)
+    if ((inserting || deleting) && start >= 0 && end >= start && end <= displayed.length &&
+      replacementEnd >= start && edited.startsWith(displayed.slice(0, start)) &&
+      edited.endsWith(displayed.slice(end))) {
+      return replaceProcessStringRange(value, start, end, edited.slice(start, replacementEnd))
+    }
+  }
+
+  if (displayed === edited) return value
+  // Fallback for input events without an available pre-edit range.
   const shorter = Math.min(displayed.length, edited.length)
   let start = 0
   while (start < shorter && displayed[start] === edited[start]) start++

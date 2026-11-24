@@ -1707,7 +1707,7 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
       right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
     { type: 'byte-process', id: 'loaded-text', operation: { kind: 'text-to-hex' },
-      arguments: { input: { source: 'literal', value: 'A\r\nB\nC\rD' } } },
+      arguments: { input: { source: 'literal', value: 'A\r\nB\r\nC\nD\rE' } } },
   ]
   await mount()
   const properties = within(screen.getByRole('region', { name: 'Properties' }))
@@ -1727,17 +1727,27 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   // Editing a loaded mixed-line-ending literal must preserve the original CRs.
   fireEvent.click(card('loaded-text'))
   const loadedText = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
-  fireEvent.change(loadedText, { target: { value: 'A\nB\nC\nD!' } })
+  fireEvent.input(loadedText, { target: { value: 'A\nB\nC\nD\nE!' } })
   loadedText.setSelectionRange(0, 0)
   fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
+
+  // Replace the first original CRLF and B, not merely delete B.
+  loadedText.setSelectionRange(3, 5)
+  fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, inputType: 'insertLineBreak' }))
+  fireEvent.input(loadedText, { target: { value: 'X\nA\n\nC\nD\nE!' }, inputType: 'insertLineBreak' })
+  // Replacing CRLF with LF can leave the entire displayed string unchanged.
+  loadedText.setSelectionRange(1, 2)
+  fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, inputType: 'insertLineBreak' }))
+  loadedText.setSelectionRange(2, 2)
+  fireEvent.input(loadedText, { inputType: 'insertLineBreak' })
 
   fireEvent.click(card('set-flag'))
   add('String Process')
   fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'length' } })
-  fireEvent.change(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'A\nA' } })
+  fireEvent.input(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'A\nA' } })
   add('Byte Process')
   fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'hex-to-number' } })
-  fireEvent.change(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '12\n34\n56' } })
+  fireEvent.input(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '12\n34\n56' } })
   fireEvent.change(properties.getByRole('combobox', { name: 'Byte Count Source' }), { target: { value: 'step-output' } })
   expect((within(properties.getByRole('group', { name: 'Byte Count' }))
     .getByRole('combobox', { name: 'Result' }) as HTMLSelectElement).value).toBe('/value')
@@ -1756,7 +1766,7 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   })
   expect(saved.workflow.steps.find(step => step.id === 'loaded-text')).toMatchObject({
     operation: { kind: 'text-to-hex' },
-    arguments: { input: { source: 'literal', value: 'X\r\nA\r\nB\nC\rD!' } },
+    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE!' } },
   })
   expect(saved.workflow.steps.find(step => step.type === 'byte-process' && step.id !== 'loaded-text')).toMatchObject({
     operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },

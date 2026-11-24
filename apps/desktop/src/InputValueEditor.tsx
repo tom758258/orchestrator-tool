@@ -9,8 +9,8 @@ const sourceHelp = (t: Translate) => ({
 })
 import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
-import { useState } from 'react'
-import { editProcessString, replaceProcessStringRange } from './processString'
+import { useEffect, useRef, useState } from 'react'
+import { editProcessString, replaceProcessStringRange, type ProcessEditSelection } from './processString'
 import {
   CUSTOM_RESULT,
   EXPRESSION_OPERATORS,
@@ -87,6 +87,50 @@ function ResultPathEditor({ value, onChange, fields, disabled }: {
   )
 }
 
+function ProcessStringField({ value, disabled, onChange }: {
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+  const beforeEdit = useRef<(ProcessEditSelection & { displayed: string }) | null>(null)
+  useEffect(() => {
+    const field = fieldRef.current
+    if (!field) return
+    // React's beforeinput abstraction does not expose all native edit types.
+    const capture = (event: InputEvent) => {
+      beforeEdit.current = { start: field.selectionStart, end: field.selectionEnd,
+        inputType: event.inputType, displayed: field.value }
+    }
+    field.addEventListener('beforeinput', capture)
+    return () => field.removeEventListener('beforeinput', capture)
+  }, [])
+
+  const displayed = value.replace(/\r\n?/g, '\n')
+  return <textarea ref={fieldRef} rows={3} value={displayed} disabled={disabled}
+    onBlur={() => { beforeEdit.current = null }}
+    onInput={event => {
+      const field = event.currentTarget
+      const selection = beforeEdit.current
+      beforeEdit.current = null
+      // Input fires even if replacing CRLF with LF leaves the display unchanged.
+      onChange(editProcessString(value, field.value, field.selectionEnd,
+        selection?.displayed === displayed ? selection : undefined))
+    }}
+    onPaste={event => {
+      beforeEdit.current = null
+      const pasted = event.clipboardData.getData('text/plain')
+      if (!pasted || (!pasted.includes('\r') && !value.includes('\r'))) return
+      // The default paste would normalize CR before input can see it.
+      event.preventDefault()
+      const field = event.currentTarget
+      const start = field.selectionStart
+      const end = field.selectionEnd
+      field.setRangeText(pasted.replace(/\r\n?/g, '\n'), start, end, 'end')
+      onChange(replaceProcessStringRange(value, start, end, pasted))
+    }} />
+}
+
 function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds = [], stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false, allowNullLiteral = false, fixedStringLiteral = false }: OperandEditorProps) {
   const { t } = useI18n()
   switch (value.source) {
@@ -96,20 +140,8 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
         return typeof literal === 'string' ? (
           <label className="step-property-field">
             <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
-            <textarea rows={3} value={literal.replace(/\r\n?/g, '\n')} disabled={disabled}
-              onChange={event => onChange({ source: 'literal',
-                value: editProcessString(literal, event.currentTarget.value, event.currentTarget.selectionEnd) })}
-              onPaste={event => {
-                const pasted = event.clipboardData.getData('text/plain')
-                if (!pasted || (!pasted.includes('\r') && !literal.includes('\r'))) return
-                // The default paste would normalize CR before onChange can see it.
-                event.preventDefault()
-                const field = event.currentTarget
-                const start = field.selectionStart
-                const end = field.selectionEnd
-                field.setRangeText(pasted.replace(/\r\n?/g, '\n'), start, end, 'end')
-                onChange({ source: 'literal', value: replaceProcessStringRange(literal, start, end, pasted) })
-              }} />
+            <ProcessStringField value={literal} disabled={disabled}
+              onChange={value => onChange({ source: 'literal', value })} />
           </label>
         ) : (
           <>
