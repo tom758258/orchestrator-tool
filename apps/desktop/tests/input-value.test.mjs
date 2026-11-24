@@ -208,3 +208,15 @@ test('structural steps are excluded from Step Output candidates', () => {
   assert.deepEqual(stepOutputCandidates([...structuralSteps, meterMeasure]), [meterMeasure])
 })
 
+
+test('both Process steps expose their value through the existing result picker', () => {
+  const stringStep = { type: 'string-process', id: 'text', operation: 'length' }
+  const byteStep = { type: 'byte-process', id: 'bytes', operation: { kind: 'get-byte' } }
+  assert.deepEqual(stepOutputCandidates([stringStep, byteStep]), [stringStep, byteStep])
+  for (const step of [stringStep, byteStep]) {
+    assert.deepEqual(curatedResultFields(step, []), [{ label: 'Value', pointer: '/value' }])
+    assert.deepEqual(stepOutputReference(step, []), {
+      source: 'step-output', step_id: step.id, pointer: '/value',
+    })
+  }
+})

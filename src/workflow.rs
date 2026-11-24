@@ -455,6 +455,14 @@ pub enum StepKind {
         variable: VariableId,
         value: InputValue,
     },
+    StringProcess {
+        operation: crate::data_processing::StringOperation,
+        arguments: BTreeMap<String, ExpressionOperand>,
+    },
+    ByteProcess {
+        operation: crate::data_processing::ByteOperation,
+        arguments: BTreeMap<String, ExpressionOperand>,
+    },
     Output {
         name: String,
         value: InputValue,
@@ -700,6 +708,29 @@ impl Workflow {
                         _ => Ok(()),
                     }
                 };
+                let validate_process = |required: &[&str],
+                                        arguments: &BTreeMap<String, ExpressionOperand>|
+                 -> Result<(), WorkflowError> {
+                    crate::data_processing::validate_parameters(required, arguments).map_err(
+                        |message| WorkflowError::InvalidProcessParameters {
+                            step_id: step.id().clone(),
+                            message,
+                        },
+                    )?;
+                    for operand in arguments.values() {
+                        let input = match operand {
+                            ExpressionOperand::Literal(_) => continue,
+                            ExpressionOperand::Variable(variable) => {
+                                InputValue::Variable(variable.clone())
+                            }
+                            ExpressionOperand::StepOutput(reference) => {
+                                InputValue::StepOutput(reference.clone())
+                            }
+                        };
+                        validate_input(&input)?;
+                    }
+                    Ok(())
+                };
                 match step.kind() {
                     StepKind::For { body, .. } | StepKind::While { body, .. } => {
                         if available.depth >= 8 {
@@ -798,6 +829,18 @@ impl Workflow {
                         }
                         validate_input(value)?;
                         prior_variables.insert(variable.clone());
+                    }
+                    StepKind::StringProcess {
+                        operation,
+                        arguments,
+                    } => {
+                        validate_process(operation.parameters(), arguments)?;
+                    }
+                    StepKind::ByteProcess {
+                        operation,
+                        arguments,
+                    } => {
+                        validate_process(operation.parameters(), arguments)?;
                     }
                     StepKind::Output { name, value } => {
                         use crate::output_time::OutputTimeFormat;
@@ -1053,6 +1096,10 @@ pub enum WorkflowError {
     LoopVariableAssignment(StepId),
     InvalidRange(String),
     InvalidMessageFields(StepId),
+    InvalidProcessParameters {
+        step_id: StepId,
+        message: String,
+    },
     MessageTextTooLong {
         step_id: StepId,
         limit: usize,
@@ -1081,6 +1128,7 @@ impl WorkflowError {
             | Self::InvalidStepOutputReference { step_id: id, .. }
             | Self::InvalidVariableReference { step_id: id, .. }
             | Self::MessageTextTooLong { step_id: id, .. }
+            | Self::InvalidProcessParameters { step_id: id, .. }
             | Self::MessageFieldNotOutput { step_id: id, .. } => Some(id),
             Self::DuplicateStepId(_)
             | Self::DuplicateOutputName(_)
@@ -1157,6 +1205,9 @@ impl fmt::Display for WorkflowError {
                 "step {step_id} cannot assign its For loop variable"
             ),
             Self::InvalidRange(message) => write!(formatter, "invalid numeric range: {message}"),
+            Self::InvalidProcessParameters { step_id, message } => {
+                write!(formatter, "Process step {step_id}: {message}")
+            }
             Self::InvalidMessageFields(step_id) => write!(
                 formatter,
                 "show-message step {step_id} requires 1 to {MAX_MESSAGE_FIELDS} fields"

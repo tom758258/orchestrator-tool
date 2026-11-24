@@ -9,16 +9,19 @@ Editor 目前的 InputValue 選項是：
 - **Fixed value** — literal value。
 - **Variable** — Workflow variable 的目前值。
 - **Previous step result** — 較早且可見的 step result。目前 UI 會提供先前
-  Tool Actions 的 results。
+  Tool Actions、BG Get Latest／Wait Next／Get Command Result，以及 String Process／Byte Process 的 results。
 - **Calculation** — 四則運算／比較使用左右兩個 operand；Round、Floor、Ceil、Trunc 僅使用一個 operand（Round 的 0.5 中點遠離零、Trunc 朝零捨去小數）。
 - **Elapsed time** — runtime elapsed-time value。
 - **Timestamp** — runtime timestamp value。
 
-Set Variable 會建立或更新 variables。Previous step result 只能引用目前 lexical
+Set Variable 會建立或更新 variables。Fixed value 支援 Number、String、Boolean、Null。
+Boolean 使用 True／False 選項；Null 不需額外輸入。String 的 "true" 與 "null" 是文字，
+並非 Boolean 或 Null。Previous step result 只能引用目前 lexical
 scope 中較早且可見的 step。Calculation 使用 arithmetic 與 comparison
 operators。Assert、While 與 If 提供 `==`、`!=`、`>`、`>=`、`<`、`<=`。
-Assert 的 Fixed value 可選 Number／Boolean；While 與 If 另可選 String。
-Equality 不進行型別轉換；arithmetic 與大小比較僅接受數值。
+Assert、While 與 If 的 Fixed value 皆可選 Number、String、Boolean、Null。
+Equality 不進行型別轉換，字串區分大小寫；arithmetic 與大小比較僅接受數值。
+缺少的 Variable 或 Result Path 是錯誤，不是 Null。
 Calculation 不是任意 nested expression tree。
 
 Output 的 **Elapsed time** 來源提供 **Time Format**：**Seconds**（預設）、

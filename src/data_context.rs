@@ -155,7 +155,7 @@ impl DataContext {
         }
     }
 
-    fn resolve_expression_operand(
+    pub(crate) fn resolve_expression_operand(
         &self,
         operand: &ExpressionOperand,
     ) -> Result<Value, ResolveError> {

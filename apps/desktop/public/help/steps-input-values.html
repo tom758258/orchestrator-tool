@@ -52,18 +52,22 @@
 <li><strong>Fixed value</strong> — a literal value.</li>
 <li><strong>Variable</strong> — the current value of a workflow variable.</li>
 <li><strong>Previous step result</strong> — a result from an earlier visible step. The current
-  UI offers results from prior Tool Actions.</li>
+  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result,
+  and String Process / Byte Process steps.</li>
 <li><strong>Calculation</strong> — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).</li>
 <li><strong>Elapsed time</strong> — a runtime elapsed-time value.</li>
 <li><strong>Timestamp</strong> — a runtime timestamp value.</li>
 </ul>
-<p>Set Variable steps create or update variables. A Previous step result can
+<p>Set Variable steps create or update variables. Fixed value supports Number,
+String, Boolean, and Null. Boolean uses the True / False selection; Null needs
+no value field. String "true" and "null" are text, not Boolean or Null. A Previous step result can
 refer only to a step that is earlier and visible in the current lexical scope.
 Calculations use arithmetic and comparison operators. Assert, While, and If
-offer <code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, and <code>&lt;=</code>. Assert Fixed value operands can
-be Number or Boolean; While and If also allow String. Equality compares JSON
-values without type coercion; arithmetic and ordering comparisons require
-numbers. A Calculation is not an arbitrary nested expression tree.</p>
+offer <code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, and <code>&lt;=</code>. Their Fixed value operands support
+Number, String, Boolean, and Null. Equality compares JSON values without type
+coercion, with case-sensitive strings; arithmetic and ordering comparisons require
+numbers. A missing variable or result path is an error, not Null. A Calculation
+is not an arbitrary nested expression tree.</p>
 <p>For an Output with <strong>Elapsed time</strong>, <strong>Time Format</strong> offers <strong>Seconds</strong> (default),
 <strong>Minutes:Seconds</strong>, <strong>Hours:Minutes:Seconds</strong>, and <strong>Days (Decimal)</strong>. Minutes
 and hours accumulate beyond 60 minutes and 24 hours. Output Data shows three

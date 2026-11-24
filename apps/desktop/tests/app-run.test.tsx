@@ -1700,3 +1700,203 @@ test('Clear Workflow cancel preserves steps; confirmation removes steps without 
   expect(cleared.tool_instances).toEqual(draft.tool_instances)
   expect(cleared.name).toBe(draft.name)
 })
+
+test('Workflow data processing editors save typed literals and dynamic operands', async () => {
+  currentDraft.workflow.steps = [
+    { type: 'set-variable', id: 'set-suffix', variable: 'suffix', value: { source: 'literal', value: '!' } },
+    { type: 'set-variable', id: 'set-flag', variable: 'flag', value: { source: 'literal', value: 0 } },
+    { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
+      right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
+    { type: 'byte-process', id: 'loaded-text', operation: { kind: 'text-to-hex' },
+      arguments: { input: { source: 'literal', value: 'A\r\nB\r\nC\nD\rE\\r' } } },
+  ]
+  await mount()
+  const properties = within(screen.getByRole('region', { name: 'Properties' }))
+  const card = (id: string) => screen.getByRole('button', { name: new RegExp(`Step .*?, ${id}$`) })
+  const add = (name: string) => {
+    fireEvent.click(within(screen.getByRole('region', { name: 'Step categories' })).getByRole('button', { name }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+  }
+  fireEvent.click(card('set-flag'))
+  fireEvent.change(properties.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'boolean' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Value' }), { target: { value: 'true' } })
+  fireEvent.click(card('condition'))
+  const left = within(properties.getByRole('group', { name: 'Left operand' }))
+  fireEvent.change(left.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'null' } })
+  expect(left.queryByRole('spinbutton')).toBeNull()
+
+  // A visible CR escape distinguishes raw CRLF, CR, LF and literal backslashes.
+  fireEvent.click(card('loaded-text'))
+  const loadedText = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
+  expect(loadedText.value).toBe('A\\r\nB\\r\nC\nD\\rE\\\\r')
+  fireEvent.input(loadedText, { target: { value: 'A\\r\nB\\r\nC\nD\\rE\\\\r!' } })
+  loadedText.setSelectionRange(0, 0)
+  // jsdom has no native edit history. Mock only the browser's insert command;
+  // native Undo/Redo and clipboard behavior are verified in Chromium.
+  const originalCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+  const insertText = vi.fn((command: string, _showUI?: boolean, text?: string) => {
+    if (command !== 'insertText' || text === undefined) return false
+    loadedText.setRangeText(text, loadedText.selectionStart, loadedText.selectionEnd, 'end')
+    fireEvent.input(loadedText)
+    return true
+  })
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: insertText })
+  try {
+    fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
+    expect(insertText).toHaveBeenCalledWith('insertText', false, 'X\\r\n')
+    // Remove CRLF+B and replace it with LF; then replace X's CRLF with LF.
+    fireEvent.input(loadedText, { target: { value: 'X\\r\nA\n\\r\nC\nD\\rE\\\\r!' } })
+    fireEvent.input(loadedText, { target: { value: 'X\nA\n\\r\nC\nD\\rE\\\\r!' } })
+    loadedText.setSelectionRange(0, loadedText.value.length)
+    const copyData = vi.fn()
+    fireEvent.copy(loadedText, { clipboardData: { setData: copyData } })
+    expect(copyData).toHaveBeenCalledWith('text/plain', 'X\nA\n\r\nC\nD\rE\\r!')
+
+    // Unknown typed escapes are literal. A raw transfer must not combine
+    // an untouched backslash with the inserted text or the cut suffix.
+    fireEvent.input(loadedText, { target: { value: loadedText.value + '|P:\\q|D:\\q|R:\\q|C:\\qr' } })
+    const afterSlash = (label: string) => loadedText.value.indexOf('|' + label + ':') + 4
+    const pasteAt = (label: string, text: string) => {
+      const index = afterSlash(label)
+      loadedText.setSelectionRange(index, index)
+      fireEvent.paste(loadedText, { clipboardData: { getData: () => text } })
+    }
+    pasteAt('P', 'n')
+    pasteAt('R', '\r')
+    const dropIndex = afterSlash('D')
+    loadedText.setSelectionRange(dropIndex, dropIndex)
+    fireEvent.drop(loadedText, { dataTransfer: { types: ['text/plain'], getData: () => 'n' } })
+    fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertFromDrop', data: 'n' }))
+    const cutIndex = afterSlash('C')
+    loadedText.setSelectionRange(cutIndex, cutIndex + 1)
+    const cutData = vi.fn()
+    fireEvent.cut(loadedText, { clipboardData: { setData: cutData } })
+    expect(cutData).toHaveBeenCalledWith('text/plain', 'q')
+  } finally {
+    if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+    else Reflect.deleteProperty(document, 'execCommand')
+  }
+
+  fireEvent.click(card('set-flag'))
+  add('String Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'length' } })
+  fireEvent.input(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'A\nA' } })
+  add('Byte Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'hex-to-number' } })
+  fireEvent.input(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '12\n34\n56' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Byte Count Source' }), { target: { value: 'step-output' } })
+  expect((within(properties.getByRole('group', { name: 'Byte Count' }))
+    .getByRole('combobox', { name: 'Result' }) as HTMLSelectElement).value).toBe('/value')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Byte Order' }), { target: { value: 'lsb-first' } })
+  fireEvent.change(properties.getByRole('combobox', { name: 'Number Format' }), { target: { value: 'signed' } })
+
+  const saved = await savedDraft()
+  expect(saved.workflow.steps.find(step => step.id === 'set-flag')).toMatchObject({
+    value: { source: 'literal', value: true },
+  })
+  expect(saved.workflow.steps.find(step => step.id === 'condition')).toMatchObject({
+    left: { source: 'literal', value: null },
+  })
+  expect(saved.workflow.steps.find(step => step.type === 'string-process')).toMatchObject({
+    operation: 'length', arguments: { input: { source: 'literal', value: 'A\nA' } },
+  })
+  expect(saved.workflow.steps.find(step => step.id === 'loaded-text')).toMatchObject({
+    operation: { kind: 'text-to-hex' },
+    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE\\r!|P:\\nq|D:\\nq|R:\\\rq|C:\\r' } },
+  })
+  expect(saved.workflow.steps.find(step => step.type === 'byte-process' && step.id !== 'loaded-text')).toMatchObject({
+    operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },
+    arguments: { input: { source: 'literal', value: '12\n34\n56' },
+      byte_count: { source: 'step-output', step_id: 'string-process-1', pointer: '/value' } },
+  })
+
+
+  // A cross-field move and its history events may update two operands before
+  // React renders. Assert both raw literals at the existing Save Template IPC.
+  add('String Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'concat' } })
+  const source = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
+  const target = properties.getByRole('textbox', { name: 'Append' }) as HTMLTextAreaElement
+  const inputEvent = (field: HTMLTextAreaElement, value: string, inputType = 'insertText') =>
+    fireEvent.input(field, { target: { value }, inputType })
+  const expectConcat = async (input: string, append: string) => {
+    expect((await savedDraft()).workflow.steps.find(step => step.type === 'string-process' && step.operation === 'concat')).toMatchObject({
+      arguments: { input: { source: 'literal', value: input }, append: { source: 'literal', value: append } },
+    })
+  }
+  for (const { before, moved, beforeRaw, movedRaw, repaired } of [
+    { before: ['nB', 'Aq'], moved: ['B', 'Anq'], beforeRaw: ['nB', 'Aq'], movedRaw: ['B', 'Anq'], repaired: 'none' },
+    { before: ['nB', 'A\\q'], moved: ['B', 'A\\\\nq'], beforeRaw: ['nB', 'A\\q'], movedRaw: ['B', 'A\\nq'], repaired: 'target' },
+    { before: ['A\\qr', 'P'], moved: ['A\\\\r', 'Pq'], beforeRaw: ['A\\qr', 'P'], movedRaw: ['A\\r', 'Pq'], repaired: 'source' },
+    { before: ['A\\nqr', 'B\\q'], moved: ['A\\\\r', 'B\\\\nqq'], beforeRaw: ['A\nqr', 'B\\q'], movedRaw: ['A\\r', 'B\\nqq'], repaired: 'both' },
+  ]) {
+    inputEvent(source, before[0])
+    inputEvent(target, before[1])
+    const sourceRepaired = repaired === 'source' || repaired === 'both'
+    const targetRepaired = repaired === 'target' || repaired === 'both'
+    source.setSelectionRange(sourceRepaired ? 2 : 0, repaired === 'both' ? 4 : sourceRepaired ? 3 : 1)
+    // jsdom has no native drag edit. For a repaired source, deliver the
+    // actual beforeinput and let the dragend handler execute its edit.
+    const nativeInsert = vi.fn((command: string, _showUI?: boolean, text?: string) => {
+      if (command !== 'insertText' || text === undefined) return false
+      source.setRangeText(text, source.selectionStart, source.selectionEnd, 'end')
+      fireEvent.input(source, { inputType: 'insertText' })
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: nativeInsert })
+    try {
+      await act(async () => {
+        fireEvent.dragStart(source, { dataTransfer: { setData: vi.fn() } })
+        if (sourceRepaired) {
+          fireEvent(source, new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteByDrag' }))
+        } else {
+          inputEvent(source, moved[0], 'deleteByDrag')
+        }
+        inputEvent(target, moved[1], targetRepaired ? 'insertText' : 'insertFromDrop')
+        fireEvent.dragEnd(source)
+      })
+      await expectConcat(movedRaw[0], movedRaw[1])
+    } finally {
+      if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+      else Reflect.deleteProperty(document, 'execCommand')
+    }
+
+    // jsdom cannot execute native history: simulate Chromium's single native
+    // move or the two native commands required by a repaired boundary.
+    const historyCommand = vi.fn((command: string) => {
+      if (command === 'undo') inputEvent(sourceRepaired ? target : source, before[sourceRepaired ? 1 : 0], 'historyUndo')
+      else if (command === 'redo') inputEvent(sourceRepaired ? source : target, moved[sourceRepaired ? 0 : 1], 'historyRedo')
+      else return false
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: historyCommand })
+    try {
+      await act(async () => {
+        if (repaired === 'none' || sourceRepaired) inputEvent(source, before[0], 'historyUndo')
+        if (!sourceRepaired) inputEvent(target, before[1], 'historyUndo')
+      })
+      await expectConcat(beforeRaw[0], beforeRaw[1])
+      await act(async () => {
+        if (!sourceRepaired) inputEvent(source, moved[0], 'historyRedo')
+        if (repaired === 'none' || sourceRepaired) inputEvent(target, moved[1], 'historyRedo')
+      })
+      await expectConcat(movedRaw[0], movedRaw[1])
+      expect(historyCommand.mock.calls.map(([command]) => command)).toEqual(repaired === 'none' ? [] : ['undo', 'redo'])
+    } finally {
+      if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+      else Reflect.deleteProperty(document, 'execCommand')
+    }
+  }
+
+  // Switching the other operand to a variable must not discard this field's
+  // native edit. Send historyUndo to the original field and verify Save IPC.
+  inputEvent(source, 'abc')
+  inputEvent(source, 'abcX')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Append Source' }), { target: { value: 'variable' } })
+  const appendGroup = within(properties.getByRole('group', { name: 'Append' }))
+  fireEvent.change(appendGroup.getByRole('combobox', { name: 'Referenced Variable' }), { target: { value: 'suffix' } })
+  inputEvent(source, 'abc', 'historyUndo')
+  expect((await savedDraft()).workflow.steps.find(step => step.type === 'string-process' && step.operation === 'concat')).toMatchObject({
+    arguments: { input: { source: 'literal', value: 'abc' }, append: { source: 'variable', variable: 'suffix' } },
+  })
+})

@@ -46,7 +46,7 @@ type StepOutputCandidate = {
   action?: string
   arguments?: Record<string, unknown>
   background_id?: string
-  operation?: { kind: string; command?: string; source_step?: string }
+  operation?: string | { kind: string; command?: string; source_step?: string }
 }
 
 type BackgroundIdentity = {
@@ -117,8 +117,9 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
 }
 
 export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {
-  return steps.filter(step => step.type === 'tool-action' || (
-    step.type === 'bg-interaction' && ['get-latest', 'wait-next', 'get-command-result'].includes(step.operation?.kind ?? '')
+  return steps.filter(step => step.type === 'tool-action' || step.type === 'string-process' || step.type === 'byte-process' || (
+    step.type === 'bg-interaction' && typeof step.operation === 'object' &&
+    ['get-latest', 'wait-next', 'get-command-result'].includes(step.operation.kind)
   ))
 }
 
@@ -135,7 +136,9 @@ export function curatedResultFields(
   earlierSteps: readonly StepOutputCandidate[] = [],
 ): readonly CuratedResultField[] {
   let fields: readonly CuratedResultField[] = []
-  if (step?.type === 'tool-action') {
+  if (step?.type === 'string-process' || step?.type === 'byte-process') {
+    fields = [{ label: "resultFields.value", pointer: '/value' }]
+  } else if (step?.type === 'tool-action') {
     const tool = instances.find(instance => instance.id === step.target)?.tool
     fields = ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []
     if (tool === 'serial' && (step.action === 'receive' || step.action === 'query') &&
@@ -149,7 +152,8 @@ export function curatedResultFields(
   } else if (step?.type === 'bg-interaction') {
     const background = backgrounds.find(item => item.id === step.background_id)
     const tool = instances.find(instance => instance.id === background?.tool_instance_id)?.tool
-    const kind = step.operation?.kind
+    const operation = typeof step.operation === 'object' ? step.operation : undefined
+    const kind = operation?.kind
     if (kind === 'get-latest' || kind === 'wait-next') {
       if (tool === 'meters' || tool === 'serial') {
         fields = BACKGROUND_SAMPLE_FIELDS[tool]
@@ -161,9 +165,9 @@ export function curatedResultFields(
         ])
       }
     } else if (kind === 'get-command-result') {
-      const source = earlierSteps.find(item => item.id === step.operation?.source_step)
+      const source = earlierSteps.find(item => item.id === operation?.source_step)
       if (source?.type === 'bg-interaction' && source.background_id === step.background_id &&
-        source.operation?.kind === 'command') {
+        typeof source.operation === 'object' && source.operation.kind === 'command') {
         if (tool === 'meters' && source.operation.command === 'software-trigger') {
           fields = BACKGROUND_SAMPLE_FIELDS.meters
         } else if (tool === 'serial') {

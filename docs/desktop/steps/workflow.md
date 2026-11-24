@@ -148,3 +148,79 @@ Double: 6000
 Because the fields are resolved when the step runs, a Show Message inside a For
 or While loop always reports the current iteration, never a previous one.
 
+### 6.7 String Process and Byte Process
+
+Both are Workflow steps with no Tool Instance requirement. Each data parameter
+can use Fixed value, Variable, or Previous step result. They do not provide
+inline Calculation, Elapsed time, or Timestamp sources. Their result is available
+as Value (JSON Pointer `/value`) to later steps. Neither step changes the source
+variable or creates an Output column.
+
+In Process Fixed value string fields, Enter inserts LF. The visible escape
+`\r` represents CR, `\n` represents LF, and `\\` represents a literal
+backslash. Other backslash sequences remain literal. A loaded CRLF is shown
+as `\r` followed by a line break, so CR and LF are not silently merged or
+lost. Select complete escapes when editing or copying those characters.
+Copy and cut transfer raw selected text; paste and external drops treat
+received text as raw. Dragging within or between Process string fields uses
+the displayed representation, including when dragging out to another app.
+The stored Template and Process values remain ordinary JSON strings; the
+1 MiB limit applies to the decoded UTF-8 string, not its editor representation.
+
+Each input and output string is limited to 1 MiB (1,048,576 UTF-8 bytes).
+Exceeding this limit fails the step; data is not truncated. This limit does not
+change existing Variable, Serial RX, or Capture Dataset limits.
+
+**String Process** operates on Unicode code points, not UTF-8 bytes. Indexes
+start at zero, and searches are case-sensitive.
+
+| Operation | Parameters after Input String | Result |
+|---|---|---|
+| Length | — | Number of code points |
+| Substring | Start Index, Length | String; zero length returns an empty string |
+| Concat | Append | String; an empty append is allowed |
+| Contains | Search | Boolean |
+| Index Of | Search | First matching index, or -1 |
+| Replace | Search, Replacement | String; replaces all non-overlapping matches |
+| Trim | — | String without leading/trailing whitespace |
+| To Upper Case | — | String |
+| To Lower Case | — | String |
+| To Number | — | Number; accepts integers, decimals, signs, scientific notation and surrounding whitespace |
+
+Empty search strings, out-of-range indexes, wrong types, and invalid or
+non-finite number conversions and nonzero numbers that underflow to zero fail the step. For example, Substring of
+`STATUS:PASS` at Start Index 7 and Length 4 returns `PASS`.
+
+**Byte Process** operates on raw bytes represented by Hex Strings. Hex input
+accepts either letter case and whitespace between complete byte pairs. Hex
+output is uppercase without spaces; an unspaced Hex String represents at most
+524,288 raw bytes within the string limit. Byte indexes start at zero.
+
+| Operation | Data parameters after input | Result |
+|---|---|---|
+| Byte Length | — | Number of bytes |
+| Get Byte | Byte Index | Number, 0–255 |
+| Get Bytes | Start Index, Byte Count | Hex String |
+| Concat | Append | Hex String |
+| Contains | Search | Boolean; matches complete bytes only |
+| Hex to Number | Start Index, Byte Count | Number |
+| Number to Hex | Byte Count (Input is Number) | Hex String |
+| Hex to Text | — | UTF-8 String or Null if bytes are not valid UTF-8 |
+| Text to Hex | — (Input is String) | UTF-8 bytes as Hex String |
+
+Hex to Number and Number to Hex additionally require Byte Order (MSB First
+(Big Endian) or LSB First (Little Endian)) and Number Format (Signed or
+Unsigned). Only these two numeric conversions are limited to 1–4 Bytes;
+Signed uses two's complement. Values must be integers in the selected range.
+Byte Order does not reverse bits within a byte. Invalid Hex, empty searches,
+wrong data types, non-integer indexes, out-of-range slices and numeric overflow
+fail without truncation. Invalid UTF-8 is the exception: Hex to Text succeeds
+with Null for valid Hex containing invalid UTF-8.
+
+For example, the Serial RX Hex String `AA010CE400FF` can be passed to Hex to
+Number at Start Index 2, Byte Count 2, MSB First and Unsigned. Its `/value`
+is 3300; a later Calculation can divide it by 1000 to obtain 3.3.
+For `1234`, MSB First returns 4660 and LSB First returns 13330.
+
+These steps process the data they receive. They do not assemble Serial RX
+events into frames, pair TX with RX, or change Serial Send capabilities.

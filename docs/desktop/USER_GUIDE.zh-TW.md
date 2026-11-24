@@ -25,7 +25,7 @@ Windows 發行包提供兩個使用者操作入口：
 - [Workflow 編輯器](guide/workflow-editor.zh-TW.md)
 - [輸入值與資料流](steps/input-values.zh-TW.md)
 - [Powers 步驟](steps/powers.zh-TW.md)
-- [Workflow 步驟](steps/workflow.zh-TW.md)
+- [Workflow 步驟](steps/workflow.zh-TW.md)，含 String Process 與 Byte Process 固定字串編輯
 - [Scopes 動作](steps/scopes.zh-TW.md)
 - [Background 互動步驟](steps/background.zh-TW.md)
 - [Simulation 與 Live 執行](guide/execution.zh-TW.md)

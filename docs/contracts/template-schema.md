@@ -472,6 +472,8 @@ The Template supports these step kinds:
 
 - Assert: a comparison expression and failure message.
 - Set Variable: assign an InputValue to a variable.
+- String Process: process Unicode text and return a value.
+- Byte Process: process bytes represented by Hex Strings and return a value.
 - Output: publish an InputValue under a unique name on a named Output Page.
 - Wait: wait for a duration in milliseconds.
 - Tool Action: invoke an action on a target Tool Instance with JSON arguments
@@ -698,6 +700,105 @@ comparison operators. A true Assert comparison succeeds with boolean true as
 its step result. A false Assert comparison uses the configured message, or
 Assertion failed. when the message is blank. Invalid references and expression
 resolution errors retain their existing validation/diagnostic behavior.
+
+## String Process and Byte Process
+
+The new Step kinds `string-process` and `byte-process` require no Tool
+Instance. Both have `id`, `operation`, and `arguments`. Each argument is an
+existing ExpressionOperand (literal, variable, or step-output); expressions
+and the two time sources are not supported. Required argument names are
+operation-specific; missing or extra arguments are rejected. Variable and
+Step Output references follow the existing lexical and sequential rules.
+Runtime data types and ranges are checked when executing the step.
+
+A String Process operation is a kebab-case string, for example:
+
+    {
+      "type": "string-process",
+      "id": "extract",
+      "operation": "substring",
+      "arguments": {
+        "input": { "source": "literal", "value": "STATUS:PASS" },
+        "start_index": { "source": "literal", "value": 7 },
+        "length": { "source": "literal", "value": 4 }
+      }
+    }
+
+| Operation | Required arguments | Result value |
+|---|---|---|
+| length | input | number |
+| substring | input, start_index, length | string |
+| concat | input, append | string |
+| contains | input, search | boolean |
+| index-of | input, search | number |
+| replace | input, search, replacement | string |
+| trim | input | string |
+| to-upper-case | input | string |
+| to-lower-case | input | string |
+| to-number | input | number |
+
+String arguments must be JSON strings. Index and length arguments are
+non-negative integral JSON numbers, counted in Unicode code points. Substring
+requires the full range to be in bounds; a zero length is allowed. Search is
+case-sensitive and nonempty. Index-of returns the first matching index or -1;
+contains returns false when not found. Replace changes all non-overlapping
+matches, and an empty append or replacement is valid. To-number trims surrounding
+whitespace and accepts signed integers, decimals and scientific notation;
+invalid and non-finite results fail, as do nonzero inputs that underflow to zero.
+
+A Byte Process operation is an object with a `kind` discriminator. The two
+numeric conversion kinds additionally require `byte_order` (msb-first or
+lsb-first) and `number_format` (signed or unsigned). For example:
+
+    {
+      "type": "byte-process",
+      "id": "decode",
+      "operation": {
+        "kind": "hex-to-number",
+        "byte_order": "msb-first",
+        "number_format": "unsigned"
+      },
+      "arguments": {
+        "input": { "source": "literal", "value": "AA010CE400FF" },
+        "start_index": { "source": "literal", "value": 2 },
+        "byte_count": { "source": "literal", "value": 2 }
+      }
+    }
+
+| Operation kind | Required arguments | Result value |
+|---|---|---|
+| byte-length | input | number |
+| get-byte | input, byte_index | number (0–255) |
+| get-bytes | input, start_index, byte_count | hex string |
+| concat | input, append | hex string |
+| contains | input, search | boolean |
+| hex-to-number | input, start_index, byte_count | number |
+| number-to-hex | input, byte_count | hex string |
+| hex-to-text | input | string or null |
+| text-to-hex | input | hex string |
+
+Except for number-to-hex (numeric input) and text-to-hex (UTF-8 text input),
+Byte Process expects Hex Strings. Hex input accepts either letter case and
+whitespace between complete byte pairs; output is uppercase without whitespace.
+Odd-length or invalid Hex fails. Indexes and counts are non-negative integral
+JSON numbers; ranges must be in bounds. Contains matches whole bytes and rejects
+empty search bytes. The two numeric conversions require byte_count 1–4 and
+support MSB First (Big Endian) or LSB First (Little Endian), without reversing
+bits. Signed conversion uses two's complement; fractional or out-of-range
+numeric input fails without truncation. Hex-to-text decodes strictly as UTF-8:
+valid Hex representing invalid UTF-8 succeeds with null.
+
+Each individual input and output string is limited to 1 MiB (1,048,576 UTF-8
+bytes), inclusive; exceeding it fails the step without truncation. A continuous
+Hex String can represent at most 524,288 raw bytes under this limit. The
+limit applies to these two Step kinds only, not global Variable storage,
+Serial RX, or Capture Datasets.
+
+A successful Process step returns exactly `{"value": ...}` in Step Output,
+including a present null when Hex-to-text cannot decode. A failed step does
+not publish a successful result. Process steps do not modify Variables,
+create ResultRows, invoke external Tools, or implement Serial framing. Existing
+Tool Action binding source restrictions remain unchanged.
 
 ## For ranges and lexical scope
 

@@ -26,7 +26,7 @@ This guide covers Desktop. Start `Orchestrator Tool.exe` and select **Help** in 
 - [Workflow Editor](guide/workflow-editor.md)
 - [Input Values and Data Flow](steps/input-values.md)
 - [Powers Steps](steps/powers.md)
-- [Workflow Steps](steps/workflow.md)
+- [Workflow Steps](steps/workflow.md), including String Process and Byte Process fixed-string editing
 - [Scopes Actions](steps/scopes.md)
 - [Background Interaction Steps](steps/background.md)
 - [Run Simulation and Live](guide/execution.md)

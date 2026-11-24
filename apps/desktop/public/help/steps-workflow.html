@@ -200,6 +200,165 @@ Double: 6000
 </code></pre>
 <p>Because the fields are resolved when the step runs, a Show Message inside a For
 or While loop always reports the current iteration, never a previous one.</p>
+<h3 id="67-string-process-and-byte-process">6.7 String Process and Byte Process</h3>
+<p>Both are Workflow steps with no Tool Instance requirement. Each data parameter
+can use Fixed value, Variable, or Previous step result. They do not provide
+inline Calculation, Elapsed time, or Timestamp sources. Their result is available
+as Value (JSON Pointer <code>/value</code>) to later steps. Neither step changes the source
+variable or creates an Output column.</p>
+<p>In Process Fixed value string fields, Enter inserts LF. The visible escape
+<code>\r</code> represents CR, <code>\n</code> represents LF, and <code>\\</code> represents a literal
+backslash. Other backslash sequences remain literal. A loaded CRLF is shown
+as <code>\r</code> followed by a line break, so CR and LF are not silently merged or
+lost. Select complete escapes when editing or copying those characters.
+Copy and cut transfer raw selected text; paste and external drops treat
+received text as raw. Dragging within or between Process string fields uses
+the displayed representation, including when dragging out to another app.
+The stored Template and Process values remain ordinary JSON strings; the
+1 MiB limit applies to the decoded UTF-8 string, not its editor representation.</p>
+<p>Each input and output string is limited to 1 MiB (1,048,576 UTF-8 bytes).
+Exceeding this limit fails the step; data is not truncated. This limit does not
+change existing Variable, Serial RX, or Capture Dataset limits.</p>
+<p><strong>String Process</strong> operates on Unicode code points, not UTF-8 bytes. Indexes
+start at zero, and searches are case-sensitive.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Parameters after Input String</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Length</td>
+<td>—</td>
+<td>Number of code points</td>
+</tr>
+<tr>
+<td>Substring</td>
+<td>Start Index, Length</td>
+<td>String; zero length returns an empty string</td>
+</tr>
+<tr>
+<td>Concat</td>
+<td>Append</td>
+<td>String; an empty append is allowed</td>
+</tr>
+<tr>
+<td>Contains</td>
+<td>Search</td>
+<td>Boolean</td>
+</tr>
+<tr>
+<td>Index Of</td>
+<td>Search</td>
+<td>First matching index, or -1</td>
+</tr>
+<tr>
+<td>Replace</td>
+<td>Search, Replacement</td>
+<td>String; replaces all non-overlapping matches</td>
+</tr>
+<tr>
+<td>Trim</td>
+<td>—</td>
+<td>String without leading/trailing whitespace</td>
+</tr>
+<tr>
+<td>To Upper Case</td>
+<td>—</td>
+<td>String</td>
+</tr>
+<tr>
+<td>To Lower Case</td>
+<td>—</td>
+<td>String</td>
+</tr>
+<tr>
+<td>To Number</td>
+<td>—</td>
+<td>Number; accepts integers, decimals, signs, scientific notation and surrounding whitespace</td>
+</tr>
+</tbody>
+</table>
+<p>Empty search strings, out-of-range indexes, wrong types, and invalid or
+non-finite number conversions and nonzero numbers that underflow to zero fail the step. For example, Substring of
+<code>STATUS:PASS</code> at Start Index 7 and Length 4 returns <code>PASS</code>.</p>
+<p><strong>Byte Process</strong> operates on raw bytes represented by Hex Strings. Hex input
+accepts either letter case and whitespace between complete byte pairs. Hex
+output is uppercase without spaces; an unspaced Hex String represents at most
+524,288 raw bytes within the string limit. Byte indexes start at zero.</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Data parameters after input</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Byte Length</td>
+<td>—</td>
+<td>Number of bytes</td>
+</tr>
+<tr>
+<td>Get Byte</td>
+<td>Byte Index</td>
+<td>Number, 0–255</td>
+</tr>
+<tr>
+<td>Get Bytes</td>
+<td>Start Index, Byte Count</td>
+<td>Hex String</td>
+</tr>
+<tr>
+<td>Concat</td>
+<td>Append</td>
+<td>Hex String</td>
+</tr>
+<tr>
+<td>Contains</td>
+<td>Search</td>
+<td>Boolean; matches complete bytes only</td>
+</tr>
+<tr>
+<td>Hex to Number</td>
+<td>Start Index, Byte Count</td>
+<td>Number</td>
+</tr>
+<tr>
+<td>Number to Hex</td>
+<td>Byte Count (Input is Number)</td>
+<td>Hex String</td>
+</tr>
+<tr>
+<td>Hex to Text</td>
+<td>—</td>
+<td>UTF-8 String or Null if bytes are not valid UTF-8</td>
+</tr>
+<tr>
+<td>Text to Hex</td>
+<td>— (Input is String)</td>
+<td>UTF-8 bytes as Hex String</td>
+</tr>
+</tbody>
+</table>
+<p>Hex to Number and Number to Hex additionally require Byte Order (MSB First
+(Big Endian) or LSB First (Little Endian)) and Number Format (Signed or
+Unsigned). Only these two numeric conversions are limited to 1–4 Bytes;
+Signed uses two's complement. Values must be integers in the selected range.
+Byte Order does not reverse bits within a byte. Invalid Hex, empty searches,
+wrong data types, non-integer indexes, out-of-range slices and numeric overflow
+fail without truncation. Invalid UTF-8 is the exception: Hex to Text succeeds
+with Null for valid Hex containing invalid UTF-8.</p>
+<p>For example, the Serial RX Hex String <code>AA010CE400FF</code> can be passed to Hex to
+Number at Start Index 2, Byte Count 2, MSB First and Unsigned. Its <code>/value</code>
+is 3300; a later Calculation can divide it by 1000 to obtain 3.3.
+For <code>1234</code>, MSB First returns 4660 and LSB First returns 13330.</p>
+<p>These steps process the data they receive. They do not assemble Serial RX
+events into frames, pair TX with RX, or change Serial Send capabilities.</p>
   </main>
   <script>
     (() => {

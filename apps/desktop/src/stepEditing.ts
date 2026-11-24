@@ -197,6 +197,9 @@ export function renameStepId(steps: WorkflowStep[], oldId: string, newId: string
         }
         return next
       }
+      case 'string-process':
+      case 'byte-process':
+        return { ...next, arguments: Object.fromEntries(Object.entries(next.arguments).map(([key, value]) => [key, operand(value)])) }
       case 'set-variable':
       case 'output':
         return { ...next, value: input(next.value) }
@@ -269,6 +272,9 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
         }
         return next
       }
+      case 'string-process':
+      case 'byte-process':
+        return { ...next, arguments: Object.fromEntries(Object.entries(next.arguments).map(([key, value]) => [key, operand(value)])) }
       case 'set-variable':
       case 'output': return { ...next, value: input(next.value) }
       case 'assert':

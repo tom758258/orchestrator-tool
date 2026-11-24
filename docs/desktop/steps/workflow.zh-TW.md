@@ -129,3 +129,70 @@ Double: 6000
 因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
 目前的 iteration，不會取用上一輪的值。
 
+### 6.7 String Process 與 Byte Process
+
+這兩個 Workflow Step 不需要 Tool Instance。每個資料參數均可使用 Fixed value、
+Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time 或 Timestamp。
+結果可由後續 Step 選擇 Value（JSON Pointer `/value`）取得。不修改來源 Variable，
+也不自動建立 Output 欄位。
+
+Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 `\r` 表示 CR、
+`\n` 表示 LF、`\\` 表示原本的反斜線，其他反斜線組合保持文字原樣。
+載入的 CRLF 顯示為 `\r` 加上一個換行，避免 CR 與 LF 被無聲合併或遺失。
+編輯或複製這類字元時，請選取完整的跳脫表示。複製與剪下傳出原始文字，
+貼上與外部拖入按接收到的原始文字處理。Process 字串欄位內或欄位之間拖曳
+使用畫面上的表示方式，拖出至其他程式亦為畫面表示。Template 與 Process
+仍使用原本的 JSON 字串；1 MiB 限制適用於解碼後的 UTF-8 字串，而非編輯器顯示長度。
+
+每個輸入與輸出字串最多為 1 MiB（1,048,576 個 UTF-8 Bytes）。超出限制時 Step
+執行失敗，不會自動截斷資料。此限制不改變既有 Variable、Serial RX 或 Capture Dataset
+的容量限制。
+
+**String Process** 以 Unicode code point 而非 UTF-8 Bytes 計算文字。索引從 0 開始，
+搜尋區分大小寫。
+
+| Operation | Input String 以外的參數 | 結果 |
+|---|---|---|
+| Length | — | Number，code point 數量 |
+| Substring | Start Index、Length | String；長度 0 回傳空字串 |
+| Concat | Append | String；可附加空字串 |
+| Contains | Search | Boolean |
+| Index Of | Search | 第一個符合的索引，找不到為 -1 |
+| Replace | Search、Replacement | String；取代所有不重疊的符合項目 |
+| Trim | — | String，移除前後空白 |
+| To Upper Case | — | String |
+| To Lower Case | — | String |
+| To Number | — | Number；接受整數、小數、正負號、科學記號及前後空白 |
+
+空 Search String、索引超出範圍、型態錯誤、無效或非有限數值轉換，以及非零數值下溢為零，均使 Step 失敗。
+例如 `STATUS:PASS` 使用 Substring，Start Index 7、Length 4，回傳 `PASS`。
+
+**Byte Process** 處理 Hex String 所代表的原始 Bytes。Hex 輸入接受大小寫與完整 Byte
+之間的空白；Hex 輸出統一大寫且不含空白。無空白的 Hex String 在字串上限內最多
+可表示 524,288 個原始 Bytes。Byte 索引從 0 開始。
+
+| Operation | Input 以外的資料參數 | 結果 |
+|---|---|---|
+| Byte Length | — | Number，Bytes 數量 |
+| Get Byte | Byte Index | Number，0～255 |
+| Get Bytes | Start Index、Byte Count | Hex String |
+| Concat | Append | Hex String |
+| Contains | Search | Boolean，只比對完整 Byte |
+| Hex to Number | Start Index、Byte Count | Number |
+| Number to Hex | Byte Count（Input 為 Number） | Hex String |
+| Hex to Text | — | UTF-8 String；無效 UTF-8 回傳 Null |
+| Text to Hex | —（Input 為 String） | UTF-8 Bytes 的 Hex String |
+
+Hex to Number／Number to Hex 另需設定 Byte Order：MSB First (Big Endian) 或
+LSB First (Little Endian)，及 Number Format：Signed 或 Unsigned。只有這兩項數值
+轉換限制為 1～4 Bytes；Signed 使用二補數。數值必須是選定範圍內的整數。
+Byte Order 不反轉單一 Byte 內的 Bit。無效 Hex、空搜尋、型態錯誤、非整數索引、
+超出範圍與數值溢位均使 Step 失敗，不截斷資料。Hex to Text 遇到合法 Hex
+但無效 UTF-8 時例外地成功回傳 Null。
+
+例如 Serial RX Hex String `AA010CE400FF` 可交給 Hex to Number，Start Index 2、
+Byte Count 2、MSB First、Unsigned；`/value` 為 3300，後續 Calculation 除以
+1000 可得到 3.3。對 `1234`，MSB First 回傳 4660，LSB First 回傳 13330。
+
+這些 Step 只處理已取得的資料，不組裝 Serial RX 封包、不配對 TX／RX，
+也不改變 Serial Send 能力。

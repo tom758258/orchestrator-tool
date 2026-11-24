@@ -743,3 +743,163 @@ fn if_branch_error_fails_without_running_other_branch_or_later_steps() {
         StepOutcome::Failed { .. }
     ));
 }
+
+fn process_template(steps: serde_json::Value) -> Result<Template, TemplateError> {
+    Template::from_json_str(
+        &json!({
+            "name": "Data processing",
+            "tool_instances": [],
+            "workflow": {
+                "interaction": {"enabled": false, "max_active_command_status": 4096},
+                "steps": steps
+            }
+        })
+        .to_string(),
+    )
+}
+
+#[test]
+fn process_results_round_trip_and_feed_later_steps_without_workers() {
+    let template = process_template(json!([
+        {"type":"set-variable","id":"set-text","variable":"text",
+            "value":{"source":"literal","value":"STATUS:PASS"}},
+        {"type":"string-process","id":"extract","operation":"substring","arguments":{
+            "input":{"source":"variable","variable":"text"},
+            "start_index":{"source":"literal","value":7},
+            "length":{"source":"literal","value":4}}},
+        {"type":"string-process","id":"contains","operation":"contains","arguments":{
+            "input":{"source":"step-output","step_id":"extract","pointer":"/value"},
+            "search":{"source":"literal","value":"PASS"}}},
+        {"type":"assert","id":"assert-pass","operator":"equal","message":"expected PASS",
+            "left":{"source":"step-output","step_id":"contains","pointer":"/value"},
+            "right":{"source":"literal","value":true}},
+        {"type":"set-variable","id":"set-hex","variable":"rx",
+            "value":{"source":"literal","value":"AA010CE400FF"}},
+        {"type":"byte-process","id":"decode","operation":{"kind":"hex-to-number",
+            "byte_order":"msb-first","number_format":"unsigned"},"arguments":{
+            "input":{"source":"variable","variable":"rx"},
+            "start_index":{"source":"literal","value":2},
+            "byte_count":{"source":"literal","value":2}}},
+        {"type":"set-variable","id":"set-voltage","variable":"voltage","value":{
+            "source":"expression","operator":"divide",
+            "left":{"source":"step-output","step_id":"decode","pointer":"/value"},
+            "right":{"source":"literal","value":1000}}},
+        {"type":"output","id":"out-voltage","page":"Results","name":"Voltage",
+            "value":{"source":"variable","variable":"voltage"}},
+        {"type":"byte-process","id":"invalid-text","operation":{"kind":"hex-to-text"},"arguments":{
+            "input":{"source":"literal","value":"FF"}}},
+        {"type":"set-variable","id":"set-null","variable":"missing",
+            "value":{"source":"literal","value":null}},
+        {"type":"if","id":"if-null","operator":"equal",
+            "left":{"source":"step-output","step_id":"invalid-text","pointer":"/value"},
+            "right":{"source":"variable","variable":"missing"},
+            "then_steps":[{"type":"assert","id":"null-assert","operator":"not-equal","message":"",
+                "left":{"source":"variable","variable":"missing"},
+                "right":{"source":"literal","value":"null"}}],"else_steps":[]},
+        {"type":"for","id":"loop-bytes","variable":"i","range":{"start":"0","stop":"2","step":"1"},
+            "steps":[
+                {"type":"byte-process","id":"pick","operation":{"kind":"get-byte"},"arguments":{
+                    "input":{"source":"variable","variable":"rx"},
+                    "byte_index":{"source":"variable","variable":"i"}}},
+                {"type":"output","id":"out-byte","page":"Bytes","name":"Byte",
+                    "value":{"source":"step-output","step_id":"pick","pointer":"/value"}}
+            ]}
+    ]))
+    .unwrap();
+    let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
+    assert_eq!(restored, template);
+    let run = orchestrator_tool::executor::execute_workflow(
+        &restored,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }))
+    );
+    for (id, expected) in [
+        ("extract", json!({"value":"PASS"})),
+        ("contains", json!({"value":true})),
+        ("decode", json!({"value":3300})),
+        ("invalid-text", json!({"value":null})),
+        ("out-voltage", json!(3.3)),
+    ] {
+        let result = run
+            .step_executions()
+            .iter()
+            .find(|result| result.step_id().as_str() == id)
+            .unwrap();
+        assert_eq!(
+            result.outcome(),
+            &StepOutcome::Succeeded { output: expected }
+        );
+    }
+    assert!(
+        run.step_executions()
+            .iter()
+            .any(|result| result.step_id().as_str() == "null-assert")
+    );
+    let bytes: Vec<_> = run
+        .step_executions()
+        .iter()
+        .filter(|result| result.step_id().as_str() == "out-byte")
+        .map(|result| result.outcome().clone())
+        .collect();
+    assert_eq!(
+        bytes,
+        [170, 1, 12].map(|byte| StepOutcome::Succeeded {
+            output: json!(byte)
+        })
+    );
+}
+
+#[test]
+fn process_template_rejects_invalid_parameters_and_unavailable_sources() {
+    let step = json!({"type":"byte-process","id":"pick","operation":{"kind":"get-byte"},"arguments":{
+        "input":{"source":"literal","value":"AA"},
+        "byte_index":{"source":"literal","value":0}
+    }});
+    for arguments in [
+        json!({"input":{"source":"literal","value":"AA"}}),
+        json!({"input":{"source":"literal","value":"AA"},
+            "byte_index":{"source":"literal","value":0},"extra":{"source":"literal","value":1}}),
+        json!({"input":{"source":"literal","value":"AA"},"byte_index":{"source":"variable","variable":"missing"}}),
+        json!({"input":{"source":"literal","value":"AA"},
+            "byte_index":{"source":"step-output","step_id":"later","pointer":"/value"}}),
+        json!({"input":{"source":"literal","value":"AA"},"byte_index":{"source":"elapsed-time"}}),
+    ] {
+        let mut invalid = step.clone();
+        invalid["arguments"] = arguments;
+        assert!(process_template(json!([invalid])).is_err());
+    }
+}
+
+#[test]
+fn invalid_process_data_fails_without_publishing_a_successful_result() {
+    let template = process_template(json!([
+        {"type":"byte-process","id":"bad-hex","operation":{"kind":"byte-length"},
+            "arguments":{"input":{"source":"literal","value":"A"}}},
+        {"type":"output","id":"out","page":"Results","name":"Value",
+            "value":{"source":"step-output","step_id":"bad-hex","pointer":"/value"}}
+    ]))
+    .unwrap();
+    let run = orchestrator_tool::executor::execute_workflow(
+        &template,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert!(matches!(
+        run.step_executions()[0].outcome(),
+        StepOutcome::Failed { .. }
+    ));
+    assert!(run.result_rows().is_empty());
+    assert!(!run.step_executions().iter().any(|result| {
+        result.step_id().as_str() == "out"
+            && matches!(result.outcome(), StepOutcome::Succeeded { .. })
+    }));
+}

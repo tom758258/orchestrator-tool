@@ -10,6 +10,7 @@ pub mod common_job;
 pub mod common_v3;
 pub mod config;
 pub mod data_context;
+pub mod data_processing;
 pub mod discovery;
 pub mod error_queue;
 pub mod executor;

@@ -386,3 +386,25 @@ test('Step ID rename updates nested typed references and leaves other IDs and li
   assert.ok(allWorkflowSteps(nested.steps).some(step => step.id === 'nested-new'))
   assert.ok(!allWorkflowSteps(nested.steps).some(step => step.id === 'nested'))
 })
+
+test('Process arguments retain literal data and remap typed references on rename and copy', () => {
+  const steps = [
+    { type: 'string-process', id: 'text', operation: 'length', arguments: {
+      input: { source: 'literal', value: 'text' },
+    } },
+    { type: 'byte-process', id: 'byte', operation: { kind: 'get-byte' }, arguments: {
+      input: { source: 'literal', value: 'AA01' }, byte_index: ref('text'),
+    } },
+    { type: 'string-process', id: 'concat', operation: 'concat', arguments: {
+      input: { source: 'variable', variable: 'text' }, append: ref('byte'),
+    } },
+  ]
+  const renamed = renameStepId(steps, 'text', 'length').steps
+  assert.deepEqual(renamed[1].arguments.byte_index, ref('length'))
+  assert.deepEqual(renamed[0].arguments.input, { source: 'literal', value: 'text' })
+  assert.deepEqual(renamed[2].arguments.input, { source: 'variable', variable: 'text' })
+  const pasted = pasteSteps(renamed, copySteps(renamed, selection('length', 'byte', 'concat')), singleSelection(null)).steps.slice(3)
+  assert.deepEqual(pasted[1].arguments.byte_index, ref(pasted[0].id))
+  assert.deepEqual(pasted[2].arguments.append, ref(pasted[1].id))
+  assert.deepEqual(pasted[0].arguments.input, { source: 'literal', value: 'text' })
+})

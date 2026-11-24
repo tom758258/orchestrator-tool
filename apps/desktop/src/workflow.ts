@@ -87,7 +87,24 @@ export type BackgroundConfig = {
   scopes_measurements?: ScopesMeasurement[]
   scopes_interval_seconds?: number | null
 }
-export type NonLoopWorkflowStep = InteractionStep | BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
+export type StringProcessOperation = 'length' | 'substring' | 'concat' | 'contains' | 'index-of'
+  | 'replace' | 'trim' | 'to-upper-case' | 'to-lower-case' | 'to-number'
+export type ByteOrder = 'msb-first' | 'lsb-first'
+export type NumberFormat = 'signed' | 'unsigned'
+export type ByteProcessOperation =
+  | { kind: 'byte-length' | 'get-byte' | 'get-bytes' | 'concat' | 'contains' | 'hex-to-text' | 'text-to-hex' }
+  | { kind: 'hex-to-number' | 'number-to-hex'; byte_order: ByteOrder; number_format: NumberFormat }
+export type StringProcessStep = {
+  type: 'string-process'; id: string; operation: StringProcessOperation
+  arguments: Record<string, ExpressionOperandWire>
+}
+export type ByteProcessStep = {
+  type: 'byte-process'; id: string; operation: ByteProcessOperation
+  arguments: Record<string, ExpressionOperandWire>
+}
+export type ProcessStep = StringProcessStep | ByteProcessStep
+
+export type NonLoopWorkflowStep = ProcessStep | InteractionStep | BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {
   type: 'for'
   id: string
