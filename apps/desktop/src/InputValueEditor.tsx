@@ -9,8 +9,8 @@ const sourceHelp = (t: Translate) => ({
 })
 import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
-import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
-import { decodeProcessString, encodeProcessString } from './processString'
+import { useEffect, useRef, useState } from 'react'
+import { bindProcessStringTransfers, decodeProcessString, encodeProcessString } from './processString'
 import {
   CUSTOM_RESULT,
   EXPRESSION_OPERATORS,
@@ -98,66 +98,14 @@ function ProcessStringField({ value, disabled, onChange }: {
   const displayed = decodeProcessString(draft) === value ? draft : encodeProcessString(value)
   useEffect(() => {
     const field = fieldRef.current
-    if (!field) return
-    const displayType = 'application/x-orchestrator-process-display'
-    let displayDrop = false
-    let droppedText: string | undefined
-    const markDrag = (event: DragEvent) => {
-      // Process-to-Process drag uses the visible representation. In particular,
-      // a native move within one field stays a single undoable operation.
-      if (field.selectionStart !== field.selectionEnd) event.dataTransfer?.setData(displayType, '1')
-    }
-    const captureDrop = (event: DragEvent) => {
-      displayDrop = event.dataTransfer?.types.includes(displayType) ?? false
-      droppedText = event.dataTransfer?.getData('text/plain')
-    }
-    const insertDrop = (event: InputEvent) => {
-      if (event.inputType !== 'insertFromDrop') return
-      const raw = droppedText ?? event.data ?? ''
-      const isDisplay = displayDrop
-      displayDrop = false
-      droppedText = undefined
-      if (isDisplay) return
-      const encoded = encodeProcessString(raw)
-      if (encoded === raw) return
-      // Chromium sets the actual drop caret before beforeinput. Insert through
-      // its native editing command so this is undoable, unlike setRangeText.
-      event.preventDefault()
-      field.ownerDocument.execCommand('insertText', false, encoded)
-    }
-    field.addEventListener('dragstart', markDrag)
-    field.addEventListener('drop', captureDrop)
-    field.addEventListener('beforeinput', insertDrop)
-    return () => {
-      field.removeEventListener('dragstart', markDrag)
-      field.removeEventListener('drop', captureDrop)
-      field.removeEventListener('beforeinput', insertDrop)
-    }
+    if (field) return bindProcessStringTransfers(field)
   }, [])
-
-  const copySelection = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const field = event.currentTarget
-    const selected = field.value.slice(field.selectionStart, field.selectionEnd)
-    const raw = decodeProcessString(selected)
-    if (raw === selected) return
-    event.clipboardData.setData('text/plain', raw)
-    event.preventDefault()
-    if (event.type === 'cut') field.ownerDocument.execCommand('delete')
-  }
 
   return <textarea ref={fieldRef} rows={3} value={displayed} disabled={disabled}
     onInput={event => {
       const next = event.currentTarget.value
       setDraft(next)
       onChange(decodeProcessString(next))
-    }}
-    onCopy={copySelection} onCut={copySelection}
-    onPaste={event => {
-      const raw = event.clipboardData.getData('text/plain')
-      const encoded = encodeProcessString(raw)
-      if (encoded === raw) return
-      event.preventDefault()
-      event.currentTarget.ownerDocument.execCommand('insertText', false, encoded)
     }} />
 }
 

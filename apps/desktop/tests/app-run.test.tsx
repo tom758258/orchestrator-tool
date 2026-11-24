@@ -1742,18 +1742,39 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   Object.defineProperty(document, 'execCommand', { configurable: true, value: insertText })
   try {
     fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
+    expect(insertText).toHaveBeenCalledWith('insertText', false, 'X\\r\n')
+    // Remove CRLF+B and replace it with LF; then replace X's CRLF with LF.
+    fireEvent.input(loadedText, { target: { value: 'X\\r\nA\n\\r\nC\nD\\rE\\\\r!' } })
+    fireEvent.input(loadedText, { target: { value: 'X\nA\n\\r\nC\nD\\rE\\\\r!' } })
+    loadedText.setSelectionRange(0, loadedText.value.length)
+    const copyData = vi.fn()
+    fireEvent.copy(loadedText, { clipboardData: { setData: copyData } })
+    expect(copyData).toHaveBeenCalledWith('text/plain', 'X\nA\n\r\nC\nD\rE\\r!')
+
+    // Unknown typed escapes are literal. A raw transfer must not combine
+    // an untouched backslash with the inserted text or the cut suffix.
+    fireEvent.input(loadedText, { target: { value: loadedText.value + '|P:\\q|D:\\q|R:\\q|C:\\qr' } })
+    const afterSlash = (label: string) => loadedText.value.indexOf('|' + label + ':') + 4
+    const pasteAt = (label: string, text: string) => {
+      const index = afterSlash(label)
+      loadedText.setSelectionRange(index, index)
+      fireEvent.paste(loadedText, { clipboardData: { getData: () => text } })
+    }
+    pasteAt('P', 'n')
+    pasteAt('R', '\r')
+    const dropIndex = afterSlash('D')
+    loadedText.setSelectionRange(dropIndex, dropIndex)
+    fireEvent.drop(loadedText, { dataTransfer: { types: ['text/plain'], getData: () => 'n' } })
+    fireEvent(loadedText, new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertFromDrop', data: 'n' }))
+    const cutIndex = afterSlash('C')
+    loadedText.setSelectionRange(cutIndex, cutIndex + 1)
+    const cutData = vi.fn()
+    fireEvent.cut(loadedText, { clipboardData: { setData: cutData } })
+    expect(cutData).toHaveBeenCalledWith('text/plain', 'q')
   } finally {
     if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
     else Reflect.deleteProperty(document, 'execCommand')
   }
-  expect(insertText).toHaveBeenCalledWith('insertText', false, 'X\\r\n')
-  // Remove CRLF+B and replace it with LF; then replace X's CRLF with LF.
-  fireEvent.input(loadedText, { target: { value: 'X\\r\nA\n\\r\nC\nD\\rE\\\\r!' } })
-  fireEvent.input(loadedText, { target: { value: 'X\nA\n\\r\nC\nD\\rE\\\\r!' } })
-  loadedText.setSelectionRange(0, loadedText.value.length)
-  const copyData = vi.fn()
-  fireEvent.copy(loadedText, { clipboardData: { setData: copyData } })
-  expect(copyData).toHaveBeenCalledWith('text/plain', 'X\nA\n\r\nC\nD\rE\\r!')
 
   fireEvent.click(card('set-flag'))
   add('String Process')
@@ -1780,7 +1801,7 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   })
   expect(saved.workflow.steps.find(step => step.id === 'loaded-text')).toMatchObject({
     operation: { kind: 'text-to-hex' },
-    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE\\r!' } },
+    arguments: { input: { source: 'literal', value: 'X\nA\n\r\nC\nD\rE\\r!|P:\\nq|D:\\nq|R:\\\rq|C:\\r' } },
   })
   expect(saved.workflow.steps.find(step => step.type === 'byte-process' && step.id !== 'loaded-text')).toMatchObject({
     operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },
