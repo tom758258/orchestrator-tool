@@ -1706,6 +1706,8 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     { type: 'set-variable', id: 'set-flag', variable: 'flag', value: { source: 'literal', value: 0 } },
     { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
       right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
+    { type: 'byte-process', id: 'loaded-text', operation: { kind: 'text-to-hex' },
+      arguments: { input: { source: 'literal', value: 'A\r\nB\nC\rD' } } },
   ]
   await mount()
   const properties = within(screen.getByRole('region', { name: 'Properties' }))
@@ -1721,6 +1723,13 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   const left = within(properties.getByRole('group', { name: 'Left operand' }))
   fireEvent.change(left.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'null' } })
   expect(left.queryByRole('spinbutton')).toBeNull()
+
+  // Editing a loaded mixed-line-ending literal must preserve the original CRs.
+  fireEvent.click(card('loaded-text'))
+  const loadedText = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
+  fireEvent.change(loadedText, { target: { value: 'A\nB\nC\nD!' } })
+  loadedText.setSelectionRange(0, 0)
+  fireEvent.paste(loadedText, { clipboardData: { getData: () => 'X\r\n' } })
 
   fireEvent.click(card('set-flag'))
   add('String Process')
@@ -1745,7 +1754,11 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   expect(saved.workflow.steps.find(step => step.type === 'string-process')).toMatchObject({
     operation: 'length', arguments: { input: { source: 'literal', value: 'A\nA' } },
   })
-  expect(saved.workflow.steps.find(step => step.type === 'byte-process')).toMatchObject({
+  expect(saved.workflow.steps.find(step => step.id === 'loaded-text')).toMatchObject({
+    operation: { kind: 'text-to-hex' },
+    arguments: { input: { source: 'literal', value: 'X\r\nA\r\nB\nC\rD!' } },
+  })
+  expect(saved.workflow.steps.find(step => step.type === 'byte-process' && step.id !== 'loaded-text')).toMatchObject({
     operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },
     arguments: { input: { source: 'literal', value: '12\n34\n56' },
       byte_count: { source: 'step-output', step_id: 'string-process-1', pointer: '/value' } },

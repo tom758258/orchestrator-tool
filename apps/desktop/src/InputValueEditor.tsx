@@ -10,6 +10,7 @@ const sourceHelp = (t: Translate) => ({
 import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
 import { useState } from 'react'
+import { editProcessString, replaceProcessStringRange } from './processString'
 import {
   CUSTOM_RESULT,
   EXPRESSION_OPERATORS,
@@ -91,11 +92,24 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
   switch (value.source) {
     case 'literal':
       if (fixedStringLiteral) {
-        return typeof value.value === 'string' ? (
+        const literal = value.value
+        return typeof literal === 'string' ? (
           <label className="step-property-field">
             <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
-            <textarea rows={3} value={value.value} disabled={disabled}
-              onChange={event => onChange({ source: 'literal', value: event.target.value })} />
+            <textarea rows={3} value={literal.replace(/\r\n?/g, '\n')} disabled={disabled}
+              onChange={event => onChange({ source: 'literal',
+                value: editProcessString(literal, event.currentTarget.value, event.currentTarget.selectionEnd) })}
+              onPaste={event => {
+                const pasted = event.clipboardData.getData('text/plain')
+                if (!pasted || (!pasted.includes('\r') && !literal.includes('\r'))) return
+                // The default paste would normalize CR before onChange can see it.
+                event.preventDefault()
+                const field = event.currentTarget
+                const start = field.selectionStart
+                const end = field.selectionEnd
+                field.setRangeText(pasted.replace(/\r\n?/g, '\n'), start, end, 'end')
+                onChange({ source: 'literal', value: replaceProcessStringRange(literal, start, end, pasted) })
+              }} />
           </label>
         ) : (
           <>
