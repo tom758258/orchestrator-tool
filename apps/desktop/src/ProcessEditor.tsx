@@ -69,13 +69,19 @@ type Props = {
   backgrounds: readonly BackgroundConfig[]
   stepLabel: (step: WorkflowStep) => string
   disabled: boolean
-  onChange: (step: ProcessStep) => void
+  onChange: (update: (step: ProcessStep) => ProcessStep) => void
 }
 
 export default function ProcessEditor({ step, onChange, ...references }: Props) {
   const { t } = useI18n()
   const kind = step.type === 'string-process' ? step.operation : step.operation.kind
   const operations = Object.keys(step.type === 'string-process' ? STRING_PARAMETERS : BYTE_PARAMETERS)
+  // A cross-field native edit cannot survive a change in its participating fields.
+  const textFields = parameters(step).filter(name => {
+    const value = step.arguments[name]
+    return typeof literalDefault(step, name) === 'string' && (!value ||
+      (value.source === 'literal' && typeof value.value === 'string'))
+  }).join(':')
   const label = (name: string) => {
     if (name !== 'input') return t(`process.parameter.${name}`)
     if (step.type === 'string-process' || kind === 'text-to-hex') return t("process.inputString")
@@ -83,19 +89,22 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
     return t("process.inputHex")
   }
   return (
-    <div className="step-properties-fields">
+    <div className="step-properties-fields" data-process-string-editor>
       <label className="step-property-field">
         <span className="step-property-label">{t("process.operation")}</span>
         <select value={kind} disabled={references.disabled}
-          onChange={event => onChange(withOperation(step, event.target.value))}>
+          onChange={event => {
+            const selected = event.target.value
+            onChange(current => withOperation(current, selected))
+          }}>
           {operations.map(operation => <option key={operation} value={operation}>{t(`process.operation.${operation}`)}</option>)}
         </select>
       </label>
       {parameters(step).map(name => (
-        <ProcessOperandEditor key={kind + ':' + name} {...references}
+        <ProcessOperandEditor key={kind + ':' + textFields + ':' + name} {...references}
           label={label(name)} literalDefault={literalDefault(step, name)}
           value={step.arguments[name] ?? { source: 'literal', value: literalDefault(step, name) }}
-          onChange={value => onChange({ ...step, arguments: { ...step.arguments, [name]: value } })} />
+          onChange={value => onChange(current => ({ ...current, arguments: { ...current.arguments, [name]: value } }))} />
       ))}
       {step.type === 'byte-process' && 'byte_order' in step.operation && (() => {
         const operation = step.operation
@@ -103,7 +112,11 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
           <label className="step-property-field">
             <span className="step-property-label">{t("process.byteOrder")}</span>
             <select value={operation.byte_order} disabled={references.disabled}
-              onChange={event => onChange({ ...step, operation: { ...operation, byte_order: event.target.value as typeof operation.byte_order } })}>
+              onChange={event => {
+                const byte_order = event.target.value as typeof operation.byte_order
+                onChange(current => current.type === 'byte-process' && 'byte_order' in current.operation
+                  ? { ...current, operation: { ...current.operation, byte_order } } : current)
+              }}>
               <option value="msb-first">{t("process.msbFirst")}</option>
               <option value="lsb-first">{t("process.lsbFirst")}</option>
             </select>
@@ -111,7 +124,11 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
           <label className="step-property-field">
             <span className="step-property-label">{t("process.numberFormat")}</span>
             <select value={operation.number_format} disabled={references.disabled}
-              onChange={event => onChange({ ...step, operation: { ...operation, number_format: event.target.value as typeof operation.number_format } })}>
+              onChange={event => {
+                const number_format = event.target.value as typeof operation.number_format
+                onChange(current => current.type === 'byte-process' && 'number_format' in current.operation
+                  ? { ...current, operation: { ...current.operation, number_format } } : current)
+              }}>
               <option value="unsigned">{t("process.unsigned")}</option>
               <option value="signed">{t("process.signed")}</option>
             </select>

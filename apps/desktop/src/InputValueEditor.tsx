@@ -9,8 +9,10 @@ const sourceHelp = (t: Translate) => ({
 })
 import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { bindProcessStringTransfers, decodeProcessString, encodeProcessString } from './processString'
+import { bindProcessStringHistory, syncProcessStringHistory } from './processStringHistory'
 import {
   CUSTOM_RESULT,
   EXPRESSION_OPERATORS,
@@ -93,20 +95,38 @@ function ProcessStringField({ value, disabled, onChange }: {
   onChange: (value: string) => void
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null)
-  const [draft, setDraft] = useState(() => encodeProcessString(value))
-  // Do not re-encode an in-progress edit or overwrite native undo history.
-  const displayed = decodeProcessString(draft) === value ? draft : encodeProcessString(value)
+  const [mount, setMount] = useState(() => ({ key: 0, display: encodeProcessString(value) }))
+  const lastPublished = useRef(value)
+  const publish = useRef<(next: string) => void>(() => {})
+  useLayoutEffect(() => {
+    publish.current = next => {
+      const raw = decodeProcessString(next)
+      lastPublished.current = raw
+      onChange(raw)
+    }
+    const field = fieldRef.current
+    // Keep native editing history in the DOM. Only an external value change
+    // may replace the display; React must not rewrite another field mid-Undo.
+    if (field && lastPublished.current !== value) {
+      if (decodeProcessString(field.value) !== value) field.value = encodeProcessString(value)
+      lastPublished.current = value
+      syncProcessStringHistory(field)
+    }
+  })
   useEffect(() => {
     const field = fieldRef.current
-    if (field) return bindProcessStringTransfers(field)
-  }, [])
+    if (!field) return
+    const unbindHistory = bindProcessStringHistory(field, next => publish.current(next),
+      display => setMount(current => ({ key: current.key + 1, display })), flushSync)
+    const unbindTransfers = bindProcessStringTransfers(field)
+    return () => {
+      unbindTransfers()
+      unbindHistory()
+    }
+  }, [mount.key])
 
-  return <textarea ref={fieldRef} rows={3} value={displayed} disabled={disabled}
-    onInput={event => {
-      const next = event.currentTarget.value
-      setDraft(next)
-      onChange(decodeProcessString(next))
-    }} />
+  return <textarea key={mount.key} ref={fieldRef} rows={3} defaultValue={mount.display} disabled={disabled}
+    onInput={event => publish.current(event.currentTarget.value)} />
 }
 
 function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds = [], stepLabel, earlierVariables, disabled, literalLabel, allowBooleanLiteral = false, allowStringLiteral = false, allowNullLiteral = false, fixedStringLiteral = false }: OperandEditorProps) {

@@ -3367,7 +3367,7 @@ function App() {
                           instances={workflowDraft.tool_instances} backgrounds={workflowDraft.backgrounds ?? []}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           disabled={workflowBusy}
-                          onChange={next => updateStep(selectedStep.id, step => step.type === next.type ? next : step)}
+                          onChange={update => updateStep(selectedStep.id, step => step.type === 'string-process' || step.type === 'byte-process' ? update(step) : step)}
                         />
                       )}
 

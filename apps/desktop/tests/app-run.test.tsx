@@ -1808,4 +1808,61 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     arguments: { input: { source: 'literal', value: '12\n34\n56' },
       byte_count: { source: 'step-output', step_id: 'string-process-1', pointer: '/value' } },
   })
+
+
+  // A cross-field move and its history events may update two operands before
+  // React renders. Assert both raw literals at the existing Save Template IPC.
+  add('String Process')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'concat' } })
+  const source = properties.getByRole('textbox', { name: 'Input String' }) as HTMLTextAreaElement
+  const target = properties.getByRole('textbox', { name: 'Append' }) as HTMLTextAreaElement
+  const inputEvent = (field: HTMLTextAreaElement, value: string, inputType = 'insertText') =>
+    fireEvent.input(field, { target: { value }, inputType })
+  const expectConcat = async (input: string, append: string) => {
+    expect((await savedDraft()).workflow.steps.find(step => step.type === 'string-process' && step.operation === 'concat')).toMatchObject({
+      arguments: { input: { source: 'literal', value: input }, append: { source: 'literal', value: append } },
+    })
+  }
+  for (const { before, moved, beforeRaw, movedRaw, repaired } of [
+    { before: ['nB', 'Aq'], moved: ['B', 'Anq'], beforeRaw: ['nB', 'Aq'], movedRaw: ['B', 'Anq'], repaired: 'none' },
+    { before: ['nB', 'A\\q'], moved: ['B', 'A\\\\nq'], beforeRaw: ['nB', 'A\\q'], movedRaw: ['B', 'A\\nq'], repaired: 'target' },
+    { before: ['A\\qr', 'P'], moved: ['A\\\\r', 'Pq'], beforeRaw: ['A\\qr', 'P'], movedRaw: ['A\\r', 'Pq'], repaired: 'source' },
+  ]) {
+    inputEvent(source, before[0])
+    inputEvent(target, before[1])
+    source.setSelectionRange(repaired === 'source' ? 2 : 0, repaired === 'source' ? 3 : 1)
+    await act(async () => {
+      fireEvent.dragStart(source, { dataTransfer: { setData: vi.fn() } })
+      inputEvent(source, moved[0], repaired === 'source' ? 'insertText' : 'deleteByDrag')
+      inputEvent(target, moved[1], repaired === 'target' ? 'insertText' : 'insertFromDrop')
+      fireEvent.dragEnd(source)
+    })
+    await expectConcat(movedRaw[0], movedRaw[1])
+
+    // jsdom cannot execute native history: simulate Chromium's single native
+    // move or the two native commands required by a repaired boundary.
+    const historyCommand = vi.fn((command: string) => {
+      if (command === 'undo') inputEvent(source, before[0], 'historyUndo')
+      else if (command === 'redo') inputEvent(target, moved[1], 'historyRedo')
+      else return false
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: historyCommand })
+    try {
+      await act(async () => {
+        if (repaired === 'none') inputEvent(source, before[0], 'historyUndo')
+        inputEvent(target, before[1], 'historyUndo')
+      })
+      await expectConcat(beforeRaw[0], beforeRaw[1])
+      await act(async () => {
+        inputEvent(source, moved[0], 'historyRedo')
+        if (repaired === 'none') inputEvent(target, moved[1], 'historyRedo')
+      })
+      await expectConcat(movedRaw[0], movedRaw[1])
+      expect(historyCommand.mock.calls.map(([command]) => command)).toEqual(repaired === 'none' ? [] : ['undo', 'redo'])
+    } finally {
+      if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+      else Reflect.deleteProperty(document, 'execCommand')
+    }
+  }
 })
