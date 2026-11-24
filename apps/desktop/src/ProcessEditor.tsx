@@ -76,12 +76,6 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
   const { t } = useI18n()
   const kind = step.type === 'string-process' ? step.operation : step.operation.kind
   const operations = Object.keys(step.type === 'string-process' ? STRING_PARAMETERS : BYTE_PARAMETERS)
-  // A cross-field native edit cannot survive a change in its participating fields.
-  const textFields = parameters(step).filter(name => {
-    const value = step.arguments[name]
-    return typeof literalDefault(step, name) === 'string' && (!value ||
-      (value.source === 'literal' && typeof value.value === 'string'))
-  }).join(':')
   const label = (name: string) => {
     if (name !== 'input') return t(`process.parameter.${name}`)
     if (step.type === 'string-process' || kind === 'text-to-hex') return t("process.inputString")
@@ -101,7 +95,7 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
         </select>
       </label>
       {parameters(step).map(name => (
-        <ProcessOperandEditor key={kind + ':' + textFields + ':' + name} {...references}
+        <ProcessOperandEditor key={kind + ':' + name} {...references}
           label={label(name)} literalDefault={literalDefault(step, name)}
           value={step.arguments[name] ?? { source: 'literal', value: literalDefault(step, name) }}
           onChange={value => onChange(current => ({ ...current, arguments: { ...current.arguments, [name]: value } }))} />

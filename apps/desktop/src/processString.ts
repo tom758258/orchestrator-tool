@@ -41,6 +41,7 @@ export function bindProcessStringTransfers(field: HTMLTextAreaElement): () => vo
   let displayDrop = false
   let sameFieldMove = false
   let droppedText: string | undefined
+  let deferredSource: { start: number; end: number; text: string } | undefined
 
   const replacement = (insertion: string) => processTransferText(field.value, field.selectionStart, field.selectionEnd, insertion)
   const copy = (event: ClipboardEvent) => {
@@ -64,6 +65,7 @@ export function bindProcessStringTransfers(field: HTMLTextAreaElement): () => vo
   const markDrag = (event: DragEvent) => {
     if (field.selectionStart === field.selectionEnd) return
     resetDrag()
+    deferredSource = undefined
     dragSelection = { start: field.selectionStart, end: field.selectionEnd }
     event.dataTransfer?.setData(displayType, '1')
   }
@@ -88,7 +90,10 @@ export function bindProcessStringTransfers(field: HTMLTextAreaElement): () => vo
         const text = replacement('')
         if (text) {
           event.preventDefault()
-          insertText(field, text)
+          // A nested source edit during deleteByDrag may not get its own
+          // native undo entry when insertion also needs a boundary repair.
+          // Finish it after the browser's drop, before history publication.
+          deferredSource = { start: field.selectionStart, end: field.selectionEnd, text }
         }
       }
       return
@@ -129,6 +134,18 @@ export function bindProcessStringTransfers(field: HTMLTextAreaElement): () => vo
     const selectedStart = joinDisplayParts(field.value.slice(0, start), insertion).length - insertion.length
     if (insertText(field, text)) field.setSelectionRange(selectedStart, start + text.length)
   }
+  const finishSource = () => {
+    const repair = deferredSource
+    deferredSource = undefined
+    if (!repair) return
+    const active = field.ownerDocument.activeElement
+    field.focus()
+    field.setSelectionRange(repair.start, repair.end)
+    insertText(field, repair.text)
+    if (active instanceof HTMLElement) active.focus()
+  }
+  // Capture runs before the history coordinator's dragend listener.
+  field.addEventListener('dragend', finishSource, true)
   field.addEventListener('copy', copy)
   field.addEventListener('cut', copy)
   field.addEventListener('paste', paste)
@@ -137,6 +154,7 @@ export function bindProcessStringTransfers(field: HTMLTextAreaElement): () => vo
   field.addEventListener('dragend', resetDrag)
   field.addEventListener('beforeinput', beforeInput)
   return () => {
+    field.removeEventListener('dragend', finishSource, true)
     field.removeEventListener('copy', copy)
     field.removeEventListener('cut', copy)
     field.removeEventListener('paste', paste)

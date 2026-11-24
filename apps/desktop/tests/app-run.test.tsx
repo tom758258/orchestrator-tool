@@ -1703,6 +1703,7 @@ test('Clear Workflow cancel preserves steps; confirmation removes steps without 
 
 test('Workflow data processing editors save typed literals and dynamic operands', async () => {
   currentDraft.workflow.steps = [
+    { type: 'set-variable', id: 'set-suffix', variable: 'suffix', value: { source: 'literal', value: '!' } },
     { type: 'set-variable', id: 'set-flag', variable: 'flag', value: { source: 'literal', value: 0 } },
     { type: 'if', id: 'condition', left: { source: 'literal', value: 0 }, operator: 'equal',
       right: { source: 'literal', value: 0 }, then_steps: [], else_steps: [] },
@@ -1827,36 +1828,57 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     { before: ['nB', 'Aq'], moved: ['B', 'Anq'], beforeRaw: ['nB', 'Aq'], movedRaw: ['B', 'Anq'], repaired: 'none' },
     { before: ['nB', 'A\\q'], moved: ['B', 'A\\\\nq'], beforeRaw: ['nB', 'A\\q'], movedRaw: ['B', 'A\\nq'], repaired: 'target' },
     { before: ['A\\qr', 'P'], moved: ['A\\\\r', 'Pq'], beforeRaw: ['A\\qr', 'P'], movedRaw: ['A\\r', 'Pq'], repaired: 'source' },
+    { before: ['A\\nqr', 'B\\q'], moved: ['A\\\\r', 'B\\\\nqq'], beforeRaw: ['A\nqr', 'B\\q'], movedRaw: ['A\\r', 'B\\nqq'], repaired: 'both' },
   ]) {
     inputEvent(source, before[0])
     inputEvent(target, before[1])
-    source.setSelectionRange(repaired === 'source' ? 2 : 0, repaired === 'source' ? 3 : 1)
-    await act(async () => {
-      fireEvent.dragStart(source, { dataTransfer: { setData: vi.fn() } })
-      inputEvent(source, moved[0], repaired === 'source' ? 'insertText' : 'deleteByDrag')
-      inputEvent(target, moved[1], repaired === 'target' ? 'insertText' : 'insertFromDrop')
-      fireEvent.dragEnd(source)
+    const sourceRepaired = repaired === 'source' || repaired === 'both'
+    const targetRepaired = repaired === 'target' || repaired === 'both'
+    source.setSelectionRange(sourceRepaired ? 2 : 0, repaired === 'both' ? 4 : sourceRepaired ? 3 : 1)
+    // jsdom has no native drag edit. For a repaired source, deliver the
+    // actual beforeinput and let the dragend handler execute its edit.
+    const nativeInsert = vi.fn((command: string, _showUI?: boolean, text?: string) => {
+      if (command !== 'insertText' || text === undefined) return false
+      source.setRangeText(text, source.selectionStart, source.selectionEnd, 'end')
+      fireEvent.input(source, { inputType: 'insertText' })
+      return true
     })
-    await expectConcat(movedRaw[0], movedRaw[1])
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: nativeInsert })
+    try {
+      await act(async () => {
+        fireEvent.dragStart(source, { dataTransfer: { setData: vi.fn() } })
+        if (sourceRepaired) {
+          fireEvent(source, new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'deleteByDrag' }))
+        } else {
+          inputEvent(source, moved[0], 'deleteByDrag')
+        }
+        inputEvent(target, moved[1], targetRepaired ? 'insertText' : 'insertFromDrop')
+        fireEvent.dragEnd(source)
+      })
+      await expectConcat(movedRaw[0], movedRaw[1])
+    } finally {
+      if (originalCommand) Object.defineProperty(document, 'execCommand', originalCommand)
+      else Reflect.deleteProperty(document, 'execCommand')
+    }
 
     // jsdom cannot execute native history: simulate Chromium's single native
     // move or the two native commands required by a repaired boundary.
     const historyCommand = vi.fn((command: string) => {
-      if (command === 'undo') inputEvent(source, before[0], 'historyUndo')
-      else if (command === 'redo') inputEvent(target, moved[1], 'historyRedo')
+      if (command === 'undo') inputEvent(sourceRepaired ? target : source, before[sourceRepaired ? 1 : 0], 'historyUndo')
+      else if (command === 'redo') inputEvent(sourceRepaired ? source : target, moved[sourceRepaired ? 0 : 1], 'historyRedo')
       else return false
       return true
     })
     Object.defineProperty(document, 'execCommand', { configurable: true, value: historyCommand })
     try {
       await act(async () => {
-        if (repaired === 'none') inputEvent(source, before[0], 'historyUndo')
-        inputEvent(target, before[1], 'historyUndo')
+        if (repaired === 'none' || sourceRepaired) inputEvent(source, before[0], 'historyUndo')
+        if (!sourceRepaired) inputEvent(target, before[1], 'historyUndo')
       })
       await expectConcat(beforeRaw[0], beforeRaw[1])
       await act(async () => {
-        inputEvent(source, moved[0], 'historyRedo')
-        if (repaired === 'none') inputEvent(target, moved[1], 'historyRedo')
+        if (!sourceRepaired) inputEvent(source, moved[0], 'historyRedo')
+        if (repaired === 'none' || sourceRepaired) inputEvent(target, moved[1], 'historyRedo')
       })
       await expectConcat(movedRaw[0], movedRaw[1])
       expect(historyCommand.mock.calls.map(([command]) => command)).toEqual(repaired === 'none' ? [] : ['undo', 'redo'])
@@ -1865,4 +1887,16 @@ test('Workflow data processing editors save typed literals and dynamic operands'
       else Reflect.deleteProperty(document, 'execCommand')
     }
   }
+
+  // Switching the other operand to a variable must not discard this field's
+  // native edit. Send historyUndo to the original field and verify Save IPC.
+  inputEvent(source, 'abc')
+  inputEvent(source, 'abcX')
+  fireEvent.change(properties.getByRole('combobox', { name: 'Append Source' }), { target: { value: 'variable' } })
+  const appendGroup = within(properties.getByRole('group', { name: 'Append' }))
+  fireEvent.change(appendGroup.getByRole('combobox', { name: 'Referenced Variable' }), { target: { value: 'suffix' } })
+  inputEvent(source, 'abc', 'historyUndo')
+  expect((await savedDraft()).workflow.steps.find(step => step.type === 'string-process' && step.operation === 'concat')).toMatchObject({
+    arguments: { input: { source: 'literal', value: 'abc' }, append: { source: 'variable', variable: 'suffix' } },
+  })
 })

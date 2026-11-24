@@ -5,7 +5,7 @@
 // second controlled textarea. Native history remains the source of undo/redo.
 type Values = Map<HTMLTextAreaElement, string>
 type Delta = { field: HTMLTextAreaElement; offset: number; removed: string; inserted: string }
-type Edit = { changes: Delta[]; crossFieldMove: boolean; splitMove: boolean }
+type Edit = { changes: Delta[]; crossFieldMove: boolean; splitMove: boolean; detached?: boolean }
 type Publish = (displayed: string) => void
 type Commit = (update: () => void) => void
 type Field = { publish: Publish; remount: Publish }
@@ -55,6 +55,27 @@ function createHistory(commit: Commit) {
     dragBefore = undefined
     dragRepaired = false
     pending = undefined
+  }
+  // Mounting or unmounting one operand must not reset another operand's
+  // native history. Keep surviving deltas, but mark incomplete cross-field
+  // moves so they cannot restore only the remaining half.
+  const updateMembership = () => {
+    if (!fields.size || dragBefore || pending) {
+      reset()
+      return
+    }
+    const retained: Edit[] = []
+    let nextCursor = 0
+    for (const [index, edit] of edits.entries()) {
+      const changes = edit.changes.filter(change => fields.has(change.field))
+      if (!changes.length) continue
+      retained.push({ ...edit, changes, detached: edit.detached ||
+        (edit.crossFieldMove && changes.length !== edit.changes.length) })
+      if (index < cursor) nextCursor++
+    }
+    edits.splice(0, edits.length, ...retained)
+    cursor = nextCursor
+    values = read()
   }
   const sync = () => {
     if (dragBefore || pending) return
@@ -117,6 +138,12 @@ function createHistory(commit: Commit) {
       const edit = edits[reverse ? index - 1 : index]
       if (!applyEdit(expected, edit, reverse)) break
       index += direction
+      if (edit.detached) {
+        // The other operand is no longer a fixed string. Never undo a move
+        // into a removed field or replace its newly selected source.
+        invalidateHistory(before)
+        return
+      }
       if (sameValues(expected, after)) {
         matched = true
         break
@@ -172,7 +199,7 @@ function createHistory(commit: Commit) {
   }
   const register = (field: HTMLTextAreaElement, onEdit: Publish, remount: Publish) => {
     fields.set(field, { publish: onEdit, remount })
-    reset()
+    updateMembership()
     const beforeInput = (event: InputEvent) => {
       if (pending && cancelPending && event.inputType !== 'historyUndo' && event.inputType !== 'historyRedo') finishHistory()
       sync()
@@ -213,7 +240,7 @@ function createHistory(commit: Commit) {
       field.removeEventListener('dragstart', startDrag)
       field.removeEventListener('dragend', finishDrag)
       fields.delete(field)
-      reset()
+      updateMembership()
     }
   }
   return { register, sync }
