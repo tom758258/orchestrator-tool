@@ -815,10 +815,11 @@ fn process_results_round_trip_and_feed_later_steps_without_workers() {
         Duration::from_secs(1),
     )
     .unwrap();
-    assert!(run.step_executions().iter().all(|result| matches!(
-        result.outcome(),
-        StepOutcome::Succeeded { .. }
-    )));
+    assert!(
+        run.step_executions()
+            .iter()
+            .all(|result| matches!(result.outcome(), StepOutcome::Succeeded { .. }))
+    );
     for (id, expected) in [
         ("extract", json!({"value":"PASS"})),
         ("contains", json!({"value":true})),
@@ -849,7 +850,9 @@ fn process_results_round_trip_and_feed_later_steps_without_workers() {
         .collect();
     assert_eq!(
         bytes,
-        [170, 1, 12].map(|byte| StepOutcome::Succeeded { output: json!(byte) })
+        [170, 1, 12].map(|byte| StepOutcome::Succeeded {
+            output: json!(byte)
+        })
     );
 }
 

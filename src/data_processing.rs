@@ -167,7 +167,9 @@ impl ByteOperation {
                     || number.fract() != 0.0
                     || !(min as f64..=max as f64).contains(&number)
                 {
-                    return Err("input must be an integer within the selected byte range".to_owned());
+                    return Err(
+                        "input must be an integer within the selected byte range".to_owned()
+                    );
                 }
                 let raw = (number as i64).to_be_bytes();
                 let mut bytes = raw[raw.len() - count..].to_vec();
@@ -183,9 +185,11 @@ impl ByteOperation {
                     Self::ByteLength => Value::from(bytes.len()),
                     Self::GetByte => {
                         let position = index(args, "byte_index")?;
-                        Value::from(*bytes.get(position).ok_or_else(|| {
-                            "byte_index is out of range".to_owned()
-                        })?)
+                        Value::from(
+                            *bytes
+                                .get(position)
+                                .ok_or_else(|| "byte_index is out of range".to_owned())?,
+                        )
                     }
                     Self::GetBytes => {
                         let start = index(args, "start_index")?;
@@ -205,7 +209,11 @@ impl ByteOperation {
                         if search.is_empty() {
                             return Err("search must not be empty".to_owned());
                         }
-                        Value::Bool(bytes.windows(search.len()).any(|part| part == search.as_slice()))
+                        Value::Bool(
+                            bytes
+                                .windows(search.len())
+                                .any(|part| part == search.as_slice()),
+                        )
                     }
                     Self::HexToNumber {
                         byte_order,
@@ -366,15 +374,35 @@ mod tests {
         use StringOperation::*;
         for (operation, input, expected) in [
             (Length, json!({"input":"A測😀"}), json!(3)),
-            (Substring, json!({"input":"A測😀","start_index":1,"length":2}), json!("測😀")),
-            (Substring, json!({"input":"A","start_index":1,"length":0}), json!("")),
+            (
+                Substring,
+                json!({"input":"A測😀","start_index":1,"length":2}),
+                json!("測😀"),
+            ),
+            (
+                Substring,
+                json!({"input":"A","start_index":1,"length":0}),
+                json!(""),
+            ),
             (Concat, json!({"input":"AB","append":"CD"}), json!("ABCD")),
             (Concat, json!({"input":"AB","append":""}), json!("AB")),
-            (Contains, json!({"input":"PASS","search":"PASS"}), json!(true)),
-            (Contains, json!({"input":"PASS","search":"pass"}), json!(false)),
+            (
+                Contains,
+                json!({"input":"PASS","search":"PASS"}),
+                json!(true),
+            ),
+            (
+                Contains,
+                json!({"input":"PASS","search":"pass"}),
+                json!(false),
+            ),
             (IndexOf, json!({"input":"測😀A😀A","search":"😀"}), json!(1)),
             (IndexOf, json!({"input":"ABC","search":"Z"}), json!(-1)),
-            (Replace, json!({"input":"ABAB","search":"AB","replacement":"CD"}), json!("CDCD")),
+            (
+                Replace,
+                json!({"input":"ABAB","search":"AB","replacement":"CD"}),
+                json!("CDCD"),
+            ),
             (Trim, json!({"input":" \tABC\n "}), json!("ABC")),
             (ToUpperCase, json!({"input":"abc"}), json!("ABC")),
             (ToLowerCase, json!({"input":"ABC"}), json!("abc")),
@@ -403,11 +431,31 @@ mod tests {
         use ByteOperation::*;
         for (operation, input, expected) in [
             (ByteLength, json!({"input":"aa 01\n02 FF"}), json!(4)),
-            (GetByte, json!({"input":"AA0102FF","byte_index":0.0}), json!(170)),
-            (GetBytes, json!({"input":"AA0102FF","start_index":1,"byte_count":2}), json!("0102")),
-            (Concat, json!({"input":"aa 01","append":"02ff"}), json!("AA0102FF")),
-            (Contains, json!({"input":"AA0102FF","search":"0102"}), json!(true)),
-            (Contains, json!({"input":"ABCD","search":"BC"}), json!(false)),
+            (
+                GetByte,
+                json!({"input":"AA0102FF","byte_index":0.0}),
+                json!(170),
+            ),
+            (
+                GetBytes,
+                json!({"input":"AA0102FF","start_index":1,"byte_count":2}),
+                json!("0102"),
+            ),
+            (
+                Concat,
+                json!({"input":"aa 01","append":"02ff"}),
+                json!("AA0102FF"),
+            ),
+            (
+                Contains,
+                json!({"input":"AA0102FF","search":"0102"}),
+                json!(true),
+            ),
+            (
+                Contains,
+                json!({"input":"ABCD","search":"BC"}),
+                json!(false),
+            ),
             (HexToText, json!({"input":"4F4B"}), json!("OK")),
             (HexToText, json!({"input":"FF"}), Value::Null),
             (TextToHex, json!({"input":"OK"}), json!("4F4B")),
@@ -420,7 +468,10 @@ mod tests {
             (ByteLength, json!({"input":"XY"})),
             (GetByte, json!({"input":"AA","byte_index":1})),
             (GetByte, json!({"input":"AA","byte_index":-1})),
-            (GetBytes, json!({"input":"AA","start_index":0,"byte_count":2})),
+            (
+                GetBytes,
+                json!({"input":"AA","start_index":0,"byte_count":2}),
+            ),
             (Contains, json!({"input":"AA","search":" "})),
         ] {
             assert!(operation.execute(&args(input)).is_err());
@@ -446,14 +497,31 @@ mod tests {
                         number_format: format,
                     };
                     for number in [min, max] {
-                        let hex = encode.execute(&args(json!({"input":number,"byte_count":count}))).unwrap();
+                        let hex = encode
+                            .execute(&args(json!({"input":number,"byte_count":count})))
+                            .unwrap();
                         assert_eq!(hex.as_str().unwrap().len(), count * 2);
-                        assert_eq!(decode.execute(&args(json!({"input":hex,"start_index":0,"byte_count":count}))).unwrap(), json!(number));
+                        assert_eq!(
+                            decode
+                                .execute(&args(
+                                    json!({"input":hex,"start_index":0,"byte_count":count})
+                                ))
+                                .unwrap(),
+                            json!(number)
+                        );
                     }
                     for number in [min - 1, max + 1] {
-                        assert!(encode.execute(&args(json!({"input":number,"byte_count":count}))).is_err());
+                        assert!(
+                            encode
+                                .execute(&args(json!({"input":number,"byte_count":count})))
+                                .is_err()
+                        );
                     }
-                    assert!(encode.execute(&args(json!({"input":1.5,"byte_count":count}))).is_err());
+                    assert!(
+                        encode
+                            .execute(&args(json!({"input":1.5,"byte_count":count})))
+                            .is_err()
+                    );
                 }
             }
         }
@@ -462,9 +530,22 @@ mod tests {
                 byte_order: order,
                 number_format: NumberFormat::Unsigned,
             };
-            assert_eq!(operation.execute(&args(json!({"input":"AA1234FF","start_index":1,"byte_count":2}))).unwrap(), json!(expected));
+            assert_eq!(
+                operation
+                    .execute(&args(
+                        json!({"input":"AA1234FF","start_index":1,"byte_count":2})
+                    ))
+                    .unwrap(),
+                json!(expected)
+            );
             for count in [0, 5] {
-                assert!(operation.execute(&args(json!({"input":"001234567890","start_index":0,"byte_count":count}))).is_err());
+                assert!(
+                    operation
+                        .execute(&args(
+                            json!({"input":"001234567890","start_index":0,"byte_count":count})
+                        ))
+                        .is_err()
+                );
             }
         }
     }
@@ -473,13 +554,43 @@ mod tests {
     fn string_limits_apply_to_individual_inputs_and_outputs() {
         let at_limit = "測".repeat(MAX_PROCESS_STRING_BYTES / 3) + "x";
         assert_eq!(at_limit.len(), MAX_PROCESS_STRING_BYTES);
-        assert!(StringOperation::Length.execute(&args(json!({"input":at_limit}))).is_ok());
+        assert!(
+            StringOperation::Length
+                .execute(&args(json!({"input":at_limit})))
+                .is_ok()
+        );
         let over = at_limit.clone() + "x";
-        assert!(StringOperation::Length.execute(&args(json!({"input":over}))).is_err());
-        assert!(StringOperation::Concat.execute(&args(json!({"input":at_limit,"append":"x"}))).is_err());
-        assert!(StringOperation::Replace.execute(&args(json!({"input":"A".repeat(1024),"search":"A","replacement":"B".repeat(1025)}))).is_err());
+        assert!(
+            StringOperation::Length
+                .execute(&args(json!({"input":over})))
+                .is_err()
+        );
+        assert!(
+            StringOperation::Concat
+                .execute(&args(json!({"input":at_limit,"append":"x"})))
+                .is_err()
+        );
+        assert!(
+            StringOperation::Replace
+                .execute(&args(
+                    json!({"input":"A".repeat(1024),"search":"A","replacement":"B".repeat(1025)})
+                ))
+                .is_err()
+        );
         let half = "A".repeat(MAX_PROCESS_STRING_BYTES / 2);
-        assert_eq!(ByteOperation::TextToHex.execute(&args(json!({"input":half}))).unwrap().as_str().unwrap().len(), MAX_PROCESS_STRING_BYTES);
-        assert!(ByteOperation::TextToHex.execute(&args(json!({"input":half + "A"}))).is_err());
+        assert_eq!(
+            ByteOperation::TextToHex
+                .execute(&args(json!({"input":half})))
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .len(),
+            MAX_PROCESS_STRING_BYTES
+        );
+        assert!(
+            ByteOperation::TextToHex
+                .execute(&args(json!({"input":half + "A"})))
+                .is_err()
+        );
     }
 }
