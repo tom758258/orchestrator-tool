@@ -94,7 +94,7 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
         return typeof value.value === 'string' ? (
           <label className="step-property-field">
             <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
-            <input type="text" value={value.value} disabled={disabled}
+            <textarea rows={3} value={value.value} disabled={disabled}
               onChange={event => onChange({ source: 'literal', value: event.target.value })} />
           </label>
         ) : (

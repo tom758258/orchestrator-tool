@@ -1725,10 +1725,10 @@ test('Workflow data processing editors save typed literals and dynamic operands'
   fireEvent.click(card('set-flag'))
   add('String Process')
   fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'length' } })
-  fireEvent.change(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'AA' } })
+  fireEvent.change(properties.getByRole('textbox', { name: 'Input String' }), { target: { value: 'A\nA' } })
   add('Byte Process')
   fireEvent.change(properties.getByRole('combobox', { name: 'Operation' }), { target: { value: 'hex-to-number' } })
-  fireEvent.change(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '1234' } })
+  fireEvent.change(properties.getByRole('textbox', { name: 'Input Hex String' }), { target: { value: '12\n34\n56' } })
   fireEvent.change(properties.getByRole('combobox', { name: 'Byte Count Source' }), { target: { value: 'step-output' } })
   expect((within(properties.getByRole('group', { name: 'Byte Count' }))
     .getByRole('combobox', { name: 'Result' }) as HTMLSelectElement).value).toBe('/value')
@@ -1743,11 +1743,11 @@ test('Workflow data processing editors save typed literals and dynamic operands'
     left: { source: 'literal', value: null },
   })
   expect(saved.workflow.steps.find(step => step.type === 'string-process')).toMatchObject({
-    operation: 'length', arguments: { input: { source: 'literal', value: 'AA' } },
+    operation: 'length', arguments: { input: { source: 'literal', value: 'A\nA' } },
   })
   expect(saved.workflow.steps.find(step => step.type === 'byte-process')).toMatchObject({
     operation: { kind: 'hex-to-number', byte_order: 'lsb-first', number_format: 'signed' },
-    arguments: { input: { source: 'literal', value: '1234' },
+    arguments: { input: { source: 'literal', value: '12\n34\n56' },
       byte_count: { source: 'step-output', step_id: 'string-process-1', pointer: '/value' } },
   })
 })
