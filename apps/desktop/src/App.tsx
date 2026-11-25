@@ -418,8 +418,8 @@ function App() {
     function preventUnsupportedDrop(event: DragEvent) {
       const target = event.target
       const textField = target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLInputElement && ['text', 'number', 'search', 'url', 'tel', 'email', 'password'].includes(target.type))
-      if (textField && !target.disabled && !target.readOnly && !event.dataTransfer?.types.includes('Files')) return
+        (target instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'email', 'password'].includes(target.type))
+      if (textField && !target.matches(':disabled') && !target.readOnly && !event.dataTransfer?.types.includes('Files')) return
       event.preventDefault()
       event.stopPropagation()
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'

@@ -1425,14 +1425,18 @@ test('Workflow shortcuts cut, paste, copy, select siblings and delete while resp
   expect(card('out').getAttribute('aria-pressed')).toBe('true')
   expect(card('outer').getAttribute('aria-pressed')).toBe('false')
   const page = screen.getByLabelText('Page name')
+  const number = screen.getByRole('spinbutton', { name: 'Value' })
   // File/URL drops must not navigate the native WebView away from the draft;
-  // editable text keeps the browser's native drop behavior.
+  // editable text keeps native drop behavior, but numeric fields must not
+  // accept browser-filtered text as a different valid number.
   for (const dispatch of [fireEvent.dragOver, fireEvent.drop]) {
     const files = { types: ['Files'], dropEffect: 'copy' }
     expect(dispatch(page, { dataTransfer: files })).toBe(false)
     expect(dispatch(panel, { dataTransfer: { types: ['Files'] } })).toBe(false)
     expect(dispatch(panel, { dataTransfer: { types: ['text/uri-list'] } })).toBe(false)
     expect(dispatch(page, { dataTransfer: { types: ['text/plain'] } })).toBe(true)
+    expect(dispatch(number, { dataTransfer: { types: ['text/plain'] } })).toBe(false)
+    expect(dispatch(number, { dataTransfer: { types: ['text/uri-list', 'text/plain'] } })).toBe(false)
   }
   for (const shortcut of ['x', 'a', 'Delete', 'c', 'v']) key(shortcut, page)
   expect(card('out').getAttribute('aria-pressed')).toBe('true')
