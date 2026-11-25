@@ -44,6 +44,8 @@ test('Scope Single Wait shows fixed integer inputs without force or capability q
   const poll = screen.getByRole('spinbutton', { name: 'Poll Interval (ms)' }) as HTMLInputElement
   expect(trigger.value).toBe('5000')
   expect(poll.value).toBe('100')
+  expect(screen.getByRole('spinbutton', { name: 'Poll Interval (ms)', description: /no greater than Trigger Timeout/ })).toBe(poll)
+  expect(screen.getByRole('spinbutton', { name: 'Trigger Timeout (ms)', description: /successful Step result.*No force trigger/ })).toBe(trigger)
   expect(screen.queryByRole('checkbox', { name: /Force Trigger/i })).toBeNull()
   expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('get_scopes_capabilities', expect.anything())
   fireEvent.change(trigger, { target: { value: '12000' } })
@@ -1508,6 +1510,12 @@ test('all 42 Workflow presets show their Palette description in Properties', asy
     fireEvent.click(preset)
     click('Add Step')
     expect(properties.getAllByText(description)).toHaveLength(1)
+    if (preset.getAttribute('title')?.split('\n')[0] === 'Scope Single Wait') {
+      expect(description).toMatch(/start a single acquisition.*wait for its trigger/i)
+    }
+    if (preset.getAttribute('title')?.split('\n')[0] === 'Show Message') {
+      expect(description).toMatch(/does not create an Output Page, a Popup, or an Assert/i)
+    }
   }
   fireEvent.click(screen.getByRole('button', { name: /Step .*?, serial-query-1$/ }))
   expect(properties.getByRole('heading', { name: 'Serial Query' })).toBeTruthy()

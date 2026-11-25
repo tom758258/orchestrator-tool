@@ -433,7 +433,7 @@ export default {
   "app.workflowHelp.serialCompletedResults": "Completed read (outcome = completed, timed_out = false)",
   "app.workflowHelp.serialTimeoutResults": "Converted Read Timeout (outcome = timeout, timed_out = true)",
   "app.workflowHelp.serialTimeoutResultHelp": "Only when a confirmed Read Timeout is returned as a successful Step Result. Normal RX fields are absent; partial data may be incomplete.",
-  "app.workflowHelp.scopePoll": "Interval in milliseconds between trigger status checks; positive integer.",
+  "app.workflowHelp.scopePoll": "Interval in milliseconds between trigger status checks; a positive integer no greater than Trigger Timeout.",
   "app.workflowHelp.scopePoints": "Select a supported waveform sample count for the current model.",
   "app.workflowHelp.commonResults": "Common result fields",
   "app.workflowHelp.resultReference": "Use Previous step result to reference these fields or other available result fields.",

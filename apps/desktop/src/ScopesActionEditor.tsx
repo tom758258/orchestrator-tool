@@ -1,7 +1,7 @@
 import { optionLabel } from './i18n/presentation'
 import { useI18n } from './i18n/I18nProvider'
 import InputValueEditor from './InputValueEditor'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { ExecutionMode } from './executionMode'
 import type { ScopesCapabilities } from './scopesSetup'
@@ -16,6 +16,7 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
   executionMode: ExecutionMode; modelId: string | null | undefined; scopesExecutableKey: string
 }) {
   const { t } = useI18n()
+  const singleWaitHelpId = useId()
   const [loaded, setLoaded] = useState<{ key: string; value: ScopesCapabilities | null; error?: string } | null>(null)
   const capabilityModelId = executionMode === 'live' ? modelId : undefined
   const key = JSON.stringify([executionMode, capabilityModelId, scopesExecutableKey, step.target])
@@ -118,7 +119,7 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
     return <label className="step-property-field">
       <span className="step-property-label">{label}</span>
       <input type="number" min={1} step={1} disabled={disabled}
-        aria-label={label}
+        aria-label={label} aria-describedby={`${singleWaitHelpId}-${key}`}
         value={saved === undefined ? fallback : typeof saved === 'number' || typeof saved === 'string' ? saved : ''}
         onChange={event => {
           const value = event.currentTarget.valueAsNumber
@@ -159,9 +160,9 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
     </>}
     {step.action === 'single-wait' && <>
       {singleWaitInteger('trigger_timeout_ms', t("scopesActionEditor.triggerTimeoutMs"), 5000)}
-      <p className="value-source-help">{t("scopesActionEditor.singleWaitTimeoutHint")}</p>
+      <p id={`${singleWaitHelpId}-trigger_timeout_ms`} className="value-source-help">{t("scopesActionEditor.singleWaitTimeoutHint")}</p>
       {singleWaitInteger('trigger_poll_interval_ms', t("scopesActionEditor.pollIntervalMs"), 100)}
-      <p className="value-source-help">{t('app.workflowHelp.scopePoll')}</p>
+      <p id={`${singleWaitHelpId}-trigger_poll_interval_ms`} className="value-source-help">{t('app.workflowHelp.scopePoll')}</p>
     </>}
     {step.action === 'measure' && capabilityChoice('item', t("scopesActionEditor.measurementItem"), caps?.direct_measurement_items ?? [])}
     {step.action === 'autoscale' && <>

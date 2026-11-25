@@ -433,7 +433,7 @@ export default {
   "app.workflowHelp.serialCompletedResults": "正常讀取完成（outcome = completed、timed_out = false）",
   "app.workflowHelp.serialTimeoutResults": "轉換讀取逾時（outcome = timeout、timed_out = true）",
   "app.workflowHelp.serialTimeoutResultHelp": "僅在已確認的 Read Timeout 轉為成功 Step Result 時提供。正常 RX 欄位不存在；部分資料可能不完整。",
-  "app.workflowHelp.scopePoll": "觸發狀態檢查間隔（ms），須為正整數。",
+  "app.workflowHelp.scopePoll": "觸發狀態檢查間隔（ms），須為正整數，且不得大於 Trigger Timeout。",
   "app.workflowHelp.scopePoints": "選擇目前型號支援的波形取樣點數。",
   "app.workflowHelp.commonResults": "常用結果欄位",
   "app.workflowHelp.resultReference": "透過先前步驟結果引用這些欄位或其他可用結果欄位。",
