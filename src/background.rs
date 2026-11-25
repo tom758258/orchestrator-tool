@@ -795,7 +795,12 @@ impl BackgroundManager {
         result
     }
 
-    pub fn get_buffer_data(&self, background: &str, mode: crate::interaction::BufferReadMode, count: Option<usize>) -> Result<Value, String> {
+    pub fn get_buffer_data(
+        &self,
+        background: &str,
+        mode: crate::interaction::BufferReadMode,
+        count: Option<usize>,
+    ) -> Result<Value, String> {
         self.check_interaction()?;
         self.interaction.buffer_data(background, mode, count)
     }
@@ -893,11 +898,17 @@ impl BackgroundManager {
         Self {
             interaction: crate::interaction::InteractionCore::with_buffer(
                 template.workflow().interaction().max_active_command_status,
-                template.workflow().interaction().buffer.enabled.then_some(template.workflow().interaction().buffer.mode),
+                template
+                    .workflow()
+                    .interaction()
+                    .buffer
+                    .enabled
+                    .then_some(template.workflow().interaction().buffer.mode),
             )
             .expect("validated capacity"),
             interaction_enabled: template.workflow().interaction().enabled,
-            buffer_fail_run: template.workflow().interaction().buffer.overflow_policy == crate::interaction::OverflowPolicy::FailRun,
+            buffer_fail_run: template.workflow().interaction().buffer.overflow_policy
+                == crate::interaction::OverflowPolicy::FailRun,
             configs: configs
                 .iter()
                 .map(|config| {
@@ -1019,7 +1030,7 @@ impl BackgroundManager {
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
             let generation = self.interaction.worker_on(id)?;
             let mut dispatcher = Dispatcher {
-            buffer_fail_run: self.buffer_fail_run,
+                buffer_fail_run: self.buffer_fail_run,
                 stopping: false,
                 interaction: self.interaction.clone(),
                 generation,
@@ -1706,9 +1717,14 @@ impl Dispatcher {
                     Ok(native.clone())
                 }
             });
-            let overflow = self.interaction.data(&self.config.id, self.generation, quality);
+            let overflow = self
+                .interaction
+                .data(&self.config.id, self.generation, quality);
             if overflow && self.buffer_fail_run {
-                self.failure.fail(format!("{}: Data Buffer overflow (data lost)", self.config.id));
+                self.failure.fail(format!(
+                    "{}: Data Buffer overflow (data lost)",
+                    self.config.id
+                ));
             }
             if self.config.command_trigger && result.is_ok() {
                 let id = self.pending_command.unwrap(); // Correlation was validated before publication.
@@ -2639,7 +2655,7 @@ mod tests {
                 monitor: VecDeque::new(),
             });
             let mut dispatcher = Dispatcher {
-            buffer_fail_run: false,
+                buffer_fail_run: false,
                 stopping: false,
                 interaction: crate::interaction::InteractionCore::new(4096).unwrap(),
                 generation: 1,
@@ -2705,7 +2721,7 @@ mod tests {
                 1
             );
             let template = Template::from_json_str(&json!({"name":"CSV failure", "tool_instances":[],
-                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
+                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
                     "steps":[{"type":"output","id":"out","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                     {"type":"wait","id":"after-loop","duration_ms":0}]}}).to_string()).unwrap();
             let mut committed = Vec::new();

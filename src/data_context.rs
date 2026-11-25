@@ -155,14 +155,24 @@ impl DataContext {
         }
     }
 
-    pub(crate) fn resolve_operand_ref<'a>(&'a self, operand: &'a ExpressionOperand) -> Result<&'a Value, ResolveError> {
+    pub(crate) fn resolve_operand_ref<'a>(
+        &'a self,
+        operand: &'a ExpressionOperand,
+    ) -> Result<&'a Value, ResolveError> {
         match operand {
             ExpressionOperand::Literal(value) => Ok(value),
-            ExpressionOperand::Variable(id) => self.variable(id).ok_or_else(|| ResolveError::MissingVariable(id.clone())),
+            ExpressionOperand::Variable(id) => self
+                .variable(id)
+                .ok_or_else(|| ResolveError::MissingVariable(id.clone())),
             ExpressionOperand::StepOutput(reference) => {
-                let output = self.step_output(reference.step_id()).ok_or_else(|| ResolveError::MissingStepOutput(reference.step_id().clone()))?;
-                output.pointer(reference.pointer()).ok_or_else(|| ResolveError::MissingStepOutputPath {
-                    step_id: reference.step_id().clone(), pointer: reference.pointer().to_owned(),
+                let output = self
+                    .step_output(reference.step_id())
+                    .ok_or_else(|| ResolveError::MissingStepOutput(reference.step_id().clone()))?;
+                output.pointer(reference.pointer()).ok_or_else(|| {
+                    ResolveError::MissingStepOutputPath {
+                        step_id: reference.step_id().clone(),
+                        pointer: reference.pointer().to_owned(),
+                    }
                 })
             }
         }

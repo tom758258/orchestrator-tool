@@ -105,7 +105,7 @@ pub enum BufferReadMode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BufferSelection {
-    All,
+    All {},
     Count {
         #[serde(with = "crate::template::expression_operand_wire")]
         count: crate::workflow::ExpressionOperand,
@@ -450,7 +450,11 @@ impl InteractionCore {
     pub fn buffer_status(&self, background: &str) -> Result<Value, String> {
         let s = self.0.0.lock().unwrap_or_else(|e| e.into_inner());
         let source = active_source(&s, background)?;
-        Ok(source.buffer.as_ref().ok_or("Data Buffer is disabled")?.status())
+        Ok(source
+            .buffer
+            .as_ref()
+            .ok_or("Data Buffer is disabled")?
+            .status())
     }
 
     pub fn buffer_data(
@@ -846,16 +850,28 @@ pub(crate) fn validate_template(template: &crate::template::Template) -> Result<
                         })?;
                     match operation {
                         InteractionOperation::GetBufferData { selection, .. } => {
-                            if !template.workflow().interaction().buffer.enabled || timeout_ms.is_some() {
-                                return Err("Get Buffer Data requires enabled Buffer and no timeout".into());
+                            if !template.workflow().interaction().buffer.enabled
+                                || timeout_ms.is_some()
+                            {
+                                return Err(
+                                    "Get Buffer Data requires enabled Buffer and no timeout".into(),
+                                );
                             }
-                            if let BufferSelection::Count { count: crate::workflow::ExpressionOperand::Literal(value) } = selection {
+                            if let BufferSelection::Count {
+                                count: crate::workflow::ExpressionOperand::Literal(value),
+                            } = selection
+                            {
                                 buffer_count(value)?;
                             }
                         }
                         InteractionOperation::GetBufferStatus => {
-                            if !template.workflow().interaction().buffer.enabled || timeout_ms.is_some() {
-                                return Err("Get Buffer Status requires enabled Buffer and no timeout".into());
+                            if !template.workflow().interaction().buffer.enabled
+                                || timeout_ms.is_some()
+                            {
+                                return Err(
+                                    "Get Buffer Status requires enabled Buffer and no timeout"
+                                        .into(),
+                                );
                             }
                         }
                         InteractionOperation::Command {

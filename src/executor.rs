@@ -415,14 +415,26 @@ impl Execution<'_> {
                                     )?;
                                     self.command_bindings.insert(step.id().to_string(), id);
                                     Ok(Value::Null)
-                                } else if let InteractionOperation::GetBufferData { read_mode, selection } = operation {
+                                } else if let InteractionOperation::GetBufferData {
+                                    read_mode,
+                                    selection,
+                                } = operation
+                                {
                                     use crate::interaction::BufferSelection;
                                     let count = match selection {
-                                        BufferSelection::All => None,
-                                        BufferSelection::Count { count } => Some(crate::interaction::buffer_count(&self.data.resolve_expression_operand(count).map_err(|e| e.to_string())?)?),
+                                        BufferSelection::All {} => None,
+                                        BufferSelection::Count { count } => {
+                                            Some(crate::interaction::buffer_count(
+                                                &self
+                                                    .data
+                                                    .resolve_expression_operand(count)
+                                                    .map_err(|e| e.to_string())?,
+                                            )?)
+                                        }
                                     };
                                     manager.get_buffer_data(background_id, *read_mode, count)
-                                } else if matches!(operation, InteractionOperation::GetBufferStatus) {
+                                } else if matches!(operation, InteractionOperation::GetBufferStatus)
+                                {
                                     manager.get_buffer_status(background_id)
                                 } else {
                                     let id = match operation {
@@ -831,14 +843,25 @@ fn execute_non_loop_step(
             operation,
             arguments,
         } => execute_process(arguments, data_context, |values| operation.execute(values)),
-        StepKind::ArrayProcess { operation, arguments } => {
+        StepKind::ArrayProcess {
+            operation,
+            arguments,
+        } => {
             let result = (|| {
-                let input = data_context.resolve_operand_ref(&arguments["input"]).map_err(|e| e.to_string())?;
-                let index = arguments.get("index").map(|operand| data_context.resolve_operand_ref(operand)).transpose().map_err(|e| e.to_string())?;
+                let input = data_context
+                    .resolve_operand_ref(&arguments["input"])
+                    .map_err(|e| e.to_string())?;
+                let index = arguments
+                    .get("index")
+                    .map(|operand| data_context.resolve_operand_ref(operand))
+                    .transpose()
+                    .map_err(|e| e.to_string())?;
                 operation.execute(input, index)
             })();
             match result {
-                Ok(value) => StepOutcome::Succeeded { output: serde_json::json!({ "value": value }) },
+                Ok(value) => StepOutcome::Succeeded {
+                    output: serde_json::json!({ "value": value }),
+                },
                 Err(message) => StepOutcome::Failed { message },
             }
         }

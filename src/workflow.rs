@@ -846,12 +846,17 @@ impl Workflow {
                     } => {
                         validate_process(operation.parameters(), arguments)?;
                     }
-                    StepKind::ArrayProcess { operation, arguments } => {
+                    StepKind::ArrayProcess {
+                        operation,
+                        arguments,
+                    } => {
                         validate_process(operation.parameters(), arguments)?;
                         if matches!(arguments.get("input"), Some(ExpressionOperand::Literal(_))) {
                             return Err(WorkflowError::InvalidProcessParameters {
                                 step_id: step.id().clone(),
-                                message: "Array input must reference a Variable or Previous step result".into(),
+                                message:
+                                    "Array input must reference a Variable or Previous step result"
+                                        .into(),
                             });
                         }
                     }
@@ -923,16 +928,21 @@ impl Workflow {
                         }
                     }
                     StepKind::Interaction {
-                        operation: crate::interaction::InteractionOperation::GetBufferData {
-                            selection: crate::interaction::BufferSelection::Count { count }, ..
-                        }, ..
-                    } => {
-                        match count {
-                            ExpressionOperand::Literal(_) => {},
-                            ExpressionOperand::Variable(v) => validate_input(&InputValue::Variable(v.clone()))?,
-                            ExpressionOperand::StepOutput(r) => validate_input(&InputValue::StepOutput(r.clone()))?,
+                        operation:
+                            crate::interaction::InteractionOperation::GetBufferData {
+                                selection: crate::interaction::BufferSelection::Count { count },
+                                ..
+                            },
+                        ..
+                    } => match count {
+                        ExpressionOperand::Literal(_) => {}
+                        ExpressionOperand::Variable(v) => {
+                            validate_input(&InputValue::Variable(v.clone()))?
                         }
-                    }
+                        ExpressionOperand::StepOutput(r) => {
+                            validate_input(&InputValue::StepOutput(r.clone()))?
+                        }
+                    },
                     StepKind::ShowMessage { fields, .. } => {
                         if fields.is_empty() || fields.len() > MAX_MESSAGE_FIELDS {
                             return Err(WorkflowError::InvalidMessageFields(step.id().clone()));

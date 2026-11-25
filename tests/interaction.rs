@@ -225,7 +225,12 @@ fn interaction_template_round_trip_and_rejects_old_or_unsupported_contracts() {
                     .unwrap()
                     .remove("interaction");
             }
-            "old-buffer" => { bad["workflow"]["interaction"].as_object_mut().unwrap().remove("buffer"); }
+            "old-buffer" => {
+                bad["workflow"]["interaction"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("buffer");
+            }
             "disabled" => bad["workflow"]["interaction"]["enabled"] = json!(false),
             "zero" => bad["workflow"]["interaction"]["max_active_command_status"] = json!(0),
             "overflow" => {
@@ -327,13 +332,16 @@ fn serial_commands_reuse_fg_arguments_bindings_and_template_scope() {
 
 #[test]
 fn buffer_count_order_loss_and_lifecycle() {
-    use orchestrator_tool::interaction::{BufferMode, BufferReadMode, BUFFER_CAPACITY};
+    use orchestrator_tool::interaction::{BUFFER_CAPACITY, BufferMode, BufferReadMode};
     for mode in [BufferMode::Fifo, BufferMode::Ring] {
         let core = InteractionCore::with_buffer(2, Some(mode)).unwrap();
         let generation = core.worker_on("a").unwrap();
         let other = core.worker_on("b").unwrap();
         assert!(!core.data("b", other, Ok(json!({"v": "other"}))));
-        assert_eq!(core.buffer_data("a", BufferReadMode::Pop, None).unwrap()["data"], json!([]));
+        assert_eq!(
+            core.buffer_data("a", BufferReadMode::Pop, None).unwrap()["data"],
+            json!([])
+        );
         for i in 0..BUFFER_CAPACITY {
             assert!(!core.data("a", generation, Ok(json!(i))));
         }
@@ -345,7 +353,9 @@ fn buffer_count_order_loss_and_lifecycle() {
         assert_eq!(next.poll().unwrap(), Some(json!(BUFFER_CAPACITY)));
         assert_eq!(core.latest("a").unwrap(), json!(BUFFER_CAPACITY));
         let first = if mode == BufferMode::Ring { 1 } else { 0 };
-        let peek = core.buffer_data("a", BufferReadMode::Peek, Some(2)).unwrap();
+        let peek = core
+            .buffer_data("a", BufferReadMode::Peek, Some(2))
+            .unwrap();
         assert_eq!(peek["data"], json!([first, first + 1]));
         assert_eq!(peek["status"]["count"], BUFFER_CAPACITY);
         let pop = core.buffer_data("a", BufferReadMode::Pop, Some(2)).unwrap();
@@ -360,7 +370,10 @@ fn buffer_count_order_loss_and_lifecycle() {
         assert_eq!(rest["count"], BUFFER_CAPACITY - 2);
         assert_eq!(rest["status"]["buffered_bytes"], 0);
         assert_eq!(rest["status"]["dropped_count"], 1);
-        assert_eq!(core.buffer_data("a", BufferReadMode::Pop, Some(8)).unwrap()["count"], 0);
+        assert_eq!(
+            core.buffer_data("a", BufferReadMode::Pop, Some(8)).unwrap()["count"],
+            0
+        );
         core.worker_off("a", generation, true);
         assert!(core.buffer_status("a").is_err());
         let new_generation = core.worker_on("a").unwrap();
@@ -377,7 +390,7 @@ fn buffer_count_order_loss_and_lifecycle() {
 
 #[test]
 fn buffer_byte_limits_and_invalid_pop_are_atomic() {
-    use orchestrator_tool::interaction::{BufferMode, BufferReadMode, BUFFER_BYTE_CAPACITY};
+    use orchestrator_tool::interaction::{BUFFER_BYTE_CAPACITY, BufferMode, BufferReadMode};
     for mode in [BufferMode::Fifo, BufferMode::Ring] {
         let core = InteractionCore::with_buffer(2, Some(mode)).unwrap();
         let generation = core.worker_on("a").unwrap();
@@ -386,7 +399,11 @@ fn buffer_byte_limits_and_invalid_pop_are_atomic() {
         let status = core.buffer_status("a").unwrap();
         assert_eq!(status["buffered_bytes"], BUFFER_BYTE_CAPACITY);
         assert_eq!(status["full"], true);
-        assert!(core.data("a", generation, Ok(json!("a".repeat(BUFFER_BYTE_CAPACITY - 1)))));
+        assert!(core.data(
+            "a",
+            generation,
+            Ok(json!("a".repeat(BUFFER_BYTE_CAPACITY - 1)))
+        ));
         let status = core.buffer_status("a").unwrap();
         assert_eq!(status["count"], 1);
         assert_eq!(status["buffered_bytes"], BUFFER_BYTE_CAPACITY);
@@ -415,7 +432,10 @@ fn buffer_byte_limits_and_invalid_pop_are_atomic() {
     core.data("a", generation, Ok(valid.clone()));
     core.data("a", generation, Err("bad".into()));
     let before = core.buffer_status("a").unwrap();
-    assert_eq!(before["buffered_bytes"], serde_json::to_vec(&valid).unwrap().len() + serde_json::to_vec("bad").unwrap().len());
+    assert_eq!(
+        before["buffered_bytes"],
+        serde_json::to_vec(&valid).unwrap().len() + serde_json::to_vec("bad").unwrap().len()
+    );
     assert!(core.buffer_data("a", BufferReadMode::Pop, None).is_err());
     assert_eq!(core.buffer_status("a").unwrap(), before);
     let one = core.buffer_data("a", BufferReadMode::Pop, Some(1)).unwrap();
@@ -437,16 +457,35 @@ fn buffer_template_requires_settings_and_legal_count_source() {
             "count":{"source":"step-output","step_id":"status","pointer":"/count"}}}}
     ]);
     let template = Template::from_json_str(&wire.to_string()).unwrap();
-    assert_eq!(template, Template::from_json_str(&template.to_json_string().unwrap()).unwrap());
-    for case in ["disabled", "timeout", "missing", "range", "extra", "literal-type"] {
+    assert_eq!(
+        template,
+        Template::from_json_str(&template.to_json_string().unwrap()).unwrap()
+    );
+    for case in [
+        "disabled",
+        "timeout",
+        "missing",
+        "range",
+        "extra",
+        "literal-type",
+    ] {
         let mut bad = wire.clone();
         match case {
             "disabled" => bad["workflow"]["interaction"]["buffer"]["enabled"] = json!(false),
             "timeout" => bad["workflow"]["steps"][1]["timeout_ms"] = json!(100),
-            "missing" => bad["workflow"]["steps"][1]["operation"]["selection"]["count"]["step_id"] = json!("later"),
-            "range" => bad["workflow"]["steps"][1]["operation"]["selection"]["count"] = json!({"source":"literal","value":1025}),
+            "missing" => {
+                bad["workflow"]["steps"][1]["operation"]["selection"]["count"]["step_id"] =
+                    json!("later")
+            }
+            "range" => {
+                bad["workflow"]["steps"][1]["operation"]["selection"]["count"] =
+                    json!({"source":"literal","value":1025})
+            }
             "extra" => bad["workflow"]["steps"][1]["operation"]["selection"]["kind"] = json!("all"),
-            "literal-type" => bad["workflow"]["steps"][1]["operation"]["selection"]["count"] = json!({"source":"literal","value":"10"}),
+            "literal-type" => {
+                bad["workflow"]["steps"][1]["operation"]["selection"]["count"] =
+                    json!({"source":"literal","value":"10"})
+            }
             _ => unreachable!(),
         }
         assert!(Template::from_json_str(&bad.to_string()).is_err(), "{case}");

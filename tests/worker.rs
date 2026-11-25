@@ -1103,7 +1103,6 @@ fn serial_background_rx_contract() {
     }
 }
 
-
 fn serial_buffer_contract() {
     use orchestrator_tool::{
         background::BackgroundStore,
@@ -1111,11 +1110,17 @@ fn serial_buffer_contract() {
     };
     use std::sync::Arc;
 
-    for scenario in ["serial-buffer", "serial-buffer-overflow-continue", "serial-buffer-overflow-fail"] {
+    for scenario in [
+        "serial-buffer",
+        "serial-buffer-overflow-continue",
+        "serial-buffer-overflow-fail",
+    ] {
         let overflow = scenario.starts_with("serial-buffer-overflow");
         let fail = scenario.ends_with("-fail");
         let capture = overflow && !fail;
-        let mut steps = vec![json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":capture})];
+        let mut steps = vec![
+            json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":capture}),
+        ];
         if overflow {
             if fail {
                 // No Get Step is involved in discovering the asynchronous Run failure.
@@ -1161,15 +1166,26 @@ fn serial_buffer_contract() {
         }).to_string()).unwrap();
         let specs = HashMap::from([(
             ToolInstanceId::new("serial-bg").unwrap(),
-            WorkerLaunchSpec::new(env::current_exe().unwrap(), ["--background-fixture", scenario])
-                .with_manifest(fixture_manifest("serial-smoke")),
+            WorkerLaunchSpec::new(
+                env::current_exe().unwrap(),
+                ["--background-fixture", scenario],
+            )
+            .with_manifest(fixture_manifest("serial-smoke")),
         )]);
         let store = Arc::new(Mutex::new(BackgroundStore::default()));
         let mut outputs = HashMap::new();
         let result = run_workflow_streaming_controlled(
-            &template, ExecutionMode::Simulate, &specs,
-            Duration::from_secs(3), Duration::from_secs(3), Duration::from_secs(3), None,
-            RunOptions { backgrounds: store.clone(), ..Default::default() },
+            &template,
+            ExecutionMode::Simulate,
+            &specs,
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            Duration::from_secs(3),
+            None,
+            RunOptions {
+                backgrounds: store.clone(),
+                ..Default::default()
+            },
             |event| {
                 if let WorkflowRunEvent::StepCompleted(step) = event
                     && let StepOutcome::Succeeded { output } = step.outcome()
@@ -1184,7 +1200,10 @@ fn serial_buffer_contract() {
             assert!(error.contains("Data Buffer overflow"), "{error}");
             assert!(!outputs.contains_key("after-overflow"));
         } else {
-            assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{scenario}: {result:?}");
+            assert!(
+                result.as_ref().is_ok_and(|r| r.succeeded()),
+                "{scenario}: {result:?}"
+            );
             if overflow {
                 let batch = &outputs["batch"];
                 assert_eq!(outputs["length"]["value"], 1024);

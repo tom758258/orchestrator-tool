@@ -920,9 +920,12 @@ fn array_process_preserves_values_and_resolves_dynamic_indices() {
     let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
     assert_eq!(restored, template);
     let run = orchestrator_tool::executor::execute_workflow(
-        &restored, &HashMap::new(), orchestrator_tool::run::ExecutionMode::Simulate,
+        &restored,
+        &HashMap::new(),
+        orchestrator_tool::run::ExecutionMode::Simulate,
         Duration::from_secs(1),
-    ).unwrap();
+    )
+    .unwrap();
     for (id, expected) in [
         ("length", json!({"value":3})),
         ("item", json!({"value":{"rx_hex":"0102"}})),
@@ -932,9 +935,18 @@ fn array_process_preserves_values_and_resolves_dynamic_indices() {
         ("nested-length", json!({"value":2})),
         ("unchanged", json!({"value":3})),
     ] {
-        let step = run.step_executions().iter().find(|result| result.step_id().as_str() == id).unwrap();
+        let step = run
+            .step_executions()
+            .iter()
+            .find(|result| result.step_id().as_str() == id)
+            .unwrap();
         assert_eq!(step.outcome(), &StepOutcome::Succeeded { output: expected });
     }
-    assert!(process_template(json!([{"type":"array-process","id":"bad","operation":"length",
-        "arguments":{"input":{"source":"literal","value":[]}}}])).is_err());
+    assert!(
+        process_template(
+            json!([{"type":"array-process","id":"bad","operation":"length",
+        "arguments":{"input":{"source":"literal","value":[]}}}])
+        )
+        .is_err()
+    );
 }
