@@ -46,7 +46,7 @@ export default {
   "interactionEditor.oversizeHelp": "An event over 16 MiB is rejected in either mode without removing existing entries.",
   "interactionEditor.backgroundHelp": "Select the Background to interact with. Its Worker must be ON; Capture may be OFF.",
   "interactionEditor.waitCompletedHelp": "Wait for command completion before continuing to the next Step.",
-  "interactionEditor.waitAcceptedHelp": "Continue once reliable acceptance is confirmed; do not wait for completion.",
+  "interactionEditor.waitAcceptedHelp": "Continue once reliable acceptance is confirmed; do not wait for completion. A later command failure still fails the Run.",
   "interactionEditor.commandOutputHelp": "This Step has no data output; use Get Command Result for the native result.",
   "interactionEditor.sourceCommandHelp": "Select an earlier command for the same Background in an applicable scope. Wait for completion and result readiness; a successful read consumes the retained result. Take the retained result before dispatching another result-bearing command.",
   "interactionEditor.readHelp.peek": "Read events without removing them.",

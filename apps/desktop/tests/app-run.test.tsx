@@ -735,7 +735,14 @@ test.each(['Simulation', 'Live'])('%s uses one run entry, locks editing and snap
   const threshold = screen.getByLabelText('Change Threshold (%)')
   fireEvent.change(threshold, { target: { value: '0' } })
   expect(runButton(mode).disabled).toBe(true)
+  expect(screen.getByRole('spinbutton', { name: 'Change Threshold (%)',
+    description: /greater than zero.*Change Threshold must be a finite number greater than zero/ })).toBe(threshold)
+  expect(threshold.getAttribute('aria-invalid')).toBe('true')
   fireEvent.change(threshold, { target: { value: '12' } })
+  expect(screen.getByRole('spinbutton', { name: 'Change Threshold (%)',
+    description: /greater than zero/ })).toBe(threshold)
+  expect(threshold.getAttribute('aria-invalid')).toBeNull()
+  expect(screen.queryByText('Change Threshold must be a finite number greater than zero.')).toBeNull()
   fireEvent.click(screen.getByLabelText('Fit Data'))
   fireEvent.click(screen.getByRole('button', { name: 'CSV Export' }))
   fireEvent.click(screen.getByLabelText('Stream CSV during run'))

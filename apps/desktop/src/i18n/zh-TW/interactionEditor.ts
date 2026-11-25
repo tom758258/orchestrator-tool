@@ -46,7 +46,7 @@ export default {
   "interactionEditor.oversizeHelp": "單筆 Event 超過 16 MiB 時，兩種模式均拒絕該筆，不移除既有資料。",
   "interactionEditor.backgroundHelp": "選擇互動的背景。Worker 必須 ON，Capture 可以 OFF。",
   "interactionEditor.waitCompletedHelp": "等待命令完成後才執行下一個步驟。",
-  "interactionEditor.waitAcceptedHelp": "確認命令已可靠接受後繼續，不等待命令完成。",
+  "interactionEditor.waitAcceptedHelp": "確認命令已可靠接受後繼續，不等待命令完成；若命令之後失敗，仍會使本次 Run 失敗。",
   "interactionEditor.commandOutputHelp": "此步驟不提供資料輸出；請以 Get Command Result 取得原生結果。",
   "interactionEditor.sourceCommandHelp": "選擇相同背景、適用範圍內的先前命令。等待命令完成及結果就緒；成功取得後消耗保留結果。派送另一筆需要結果的命令前，請先取得保留的結果。",
   "interactionEditor.readHelp.peek": "讀取 Event，但保留 Buffer 內資料。",

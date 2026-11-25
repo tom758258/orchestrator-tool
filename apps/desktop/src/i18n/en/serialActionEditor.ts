@@ -1,8 +1,4 @@
 export default {
-  "serialActionEditor.stepHelp.send": "Sends data to the Serial device without waiting for an RX response.",
-  "serialActionEditor.stepHelp.send-file": "Sends raw file bytes without waiting for an RX response.",
-  "serialActionEditor.stepHelp.receive": "Receives Serial data without TX, using the selected completion mode.",
-  "serialActionEditor.stepHelp.query": "Sends TX first, then receives using the selected completion mode.",
   "serialActionEditor.receiveMode": "Receive Mode",
   "serialActionEditor.mode.single": "Single Read",
   "serialActionEditor.mode.delimiter": "Until Delimiter",

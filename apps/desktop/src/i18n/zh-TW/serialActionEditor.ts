@@ -1,8 +1,4 @@
 export default {
-  "serialActionEditor.stepHelp.send": "傳送指定資料至 Serial 裝置，不等待 RX 回覆。",
-  "serialActionEditor.stepHelp.send-file": "傳送指定檔案的原始 Bytes，不等待 RX 回覆。",
-  "serialActionEditor.stepHelp.receive": "不發送 TX，依選擇的接收模式讀取 Serial 資料。",
-  "serialActionEditor.stepHelp.query": "先發送 TX，再依選擇的接收模式等待 RX 回覆。",
   "serialActionEditor.receiveMode": "接收模式",
   "serialActionEditor.mode.single": "Single Read（單次讀取）",
   "serialActionEditor.mode.delimiter": "Until Delimiter（結束標記）",

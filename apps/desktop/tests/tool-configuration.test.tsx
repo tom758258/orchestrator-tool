@@ -1403,7 +1403,9 @@ test('Scopes Channel rejects unconfirmed saved choices without overwriting numer
 test('Powers Step editor selects confirmed channels without rewriting saved bindings', async () => {
   newDraft.workflow.steps = [{ type: 'tool-action', id: 'set-power', target: 'powers-1',
     action: 'set-output', arguments: { channel: 99, voltage: 0, current: 0.25 },
-    bindings: { current: { source: 'variable', variable: 'limit' } } }]
+    bindings: { current: { source: 'variable', variable: 'limit' } } },
+    { type: 'tool-action', id: 'bound-only', target: 'powers-1', action: 'set-output',
+      arguments: { channel: 1 }, bindings: { current: { source: 'variable', variable: 'limit' } } }]
   await mount()
   tab('Workflow')
   const workflow = within(screen.getByRole('tabpanel', { name: 'Workflow' }))
@@ -1417,6 +1419,26 @@ test('Powers Step editor selects confirmed channels without rewriting saved bind
   const saved = await savedDraft()
   expect(saved.workflow.steps[0].arguments).toEqual({ channel: 1, voltage: 0, current: 0.25 })
   expect(saved.workflow.steps[0].bindings).toEqual({ current: { source: 'variable', variable: 'limit' } })
+  const properties = within(screen.getByRole('region', { name: 'Properties' }))
+  const voltagePointer = '/request/arguments/voltage'
+  const currentPointer = '/request/arguments/current'
+  expect(properties.getByText('/request/arguments/channel')).toBeTruthy()
+  expect(properties.getByText(voltagePointer)).toBeTruthy()
+  expect(properties.getByText(currentPointer)).toBeTruthy()
+  fireEvent.click(properties.getByRole('checkbox', { name: 'Set Voltage' }))
+  expect(properties.queryByText(voltagePointer)).toBeNull()
+  expect(properties.getByText(currentPointer)).toBeTruthy()
+  fireEvent.click(properties.getByRole('checkbox', { name: 'Set Voltage' }))
+  fireEvent.click(properties.getByRole('checkbox', { name: 'Set Current Limit' }))
+  expect(properties.getByText(voltagePointer)).toBeTruthy()
+  expect(properties.queryByText(currentPointer)).toBeNull()
+  const voltageOnly = (await savedDraft()).workflow.steps[0]
+  expect(voltageOnly.arguments).toEqual({ channel: 1, voltage: 5 })
+  expect(voltageOnly.bindings).toBeUndefined()
+  fireEvent.click(workflow.getByRole('button', { name: /Step 2: Power Set Output, bound-only/ }))
+  expect(properties.queryByText(voltagePointer)).toBeNull()
+  expect(properties.getByText(currentPointer)).toBeTruthy()
+  expect((await savedDraft()).workflow.steps[1]).toEqual(newDraft.workflow.steps[1])
 })
 
 test('Buffer settings and Steps save the current contract with Array input references', async () => {

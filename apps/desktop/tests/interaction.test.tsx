@@ -114,7 +114,7 @@ test('BG Command exposes optional completion wait and locks controls during a Ru
   const onChange = vi.fn()
   const props = { step, steps: [step], backgrounds: [], onChange, savedCommands: {}, onSaveCommand: vi.fn() }
   const view = render(<InteractionEditor {...props} disabled={false} />)
-  expect(screen.getByRole('checkbox', { name: 'Wait for Completion', description: /reliable acceptance/ })).toBeTruthy()
+  expect(screen.getByRole('checkbox', { name: 'Wait for Completion', description: /reliable acceptance.*later command failure still fails the Run/ })).toBeTruthy()
   fireEvent.click(screen.getByLabelText('Wait for Completion'))
   expect(onChange).toHaveBeenCalledWith({ ...step, operation: { ...step.operation, wait_for_completion: true } })
   view.rerender(<InteractionEditor {...props} step={onChange.mock.lastCall![0]} disabled />)
@@ -137,8 +137,10 @@ test('Serial BG Command reuses TX and file controls and retains settings across 
   }
   render(<Editor />)
   expect((screen.getByLabelText('TX Format') as HTMLSelectElement).value).toBe('text')
+  expect(screen.getByText(/without waiting for RX; this does not confirm device receipt/)).toBeTruthy()
   fireEvent.change(screen.getByLabelText('TX Data'), { target: { value: 'STOP' } })
   fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
+  expect(screen.getByText(/raw bytes of a Worker-local file without waiting for RX/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Browse File' }))
   await vi.waitFor(() => expect((screen.getByLabelText('Absolute File Path (Worker-local)') as HTMLInputElement).value).toBe('/tmp/payload.bin'))
   expect(saved.operation).toEqual({ kind: 'command', command: 'serial-send-file', wait_for_completion: true, arguments: { path: '/tmp/payload.bin' } })

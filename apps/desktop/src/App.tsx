@@ -3026,17 +3026,19 @@ function App() {
                             {t("app.preserveSignificantChanges")}</label>
                           <p className="value-source-help">{t('app.workflowHelp.sampling')}</p>
                           <label className="chart-sampling-threshold">{t("app.changeThreshold")}<input aria-label={t("app.changeThreshold")} type="number" min="0" step="any"
+                              aria-describedby={chartThresholdInvalid ? 'chart-threshold-help chart-threshold-error' : 'chart-threshold-help'}
+                              aria-invalid={chartThresholdInvalid || undefined}
                               disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
                               onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
                           </label>
-                          <p className="value-source-help">{t('app.workflowHelp.threshold')}</p>
+                          <p id="chart-threshold-help" className="value-source-help">{t('app.workflowHelp.threshold')}</p>
+                          {chartThresholdInvalid && <p id="chart-threshold-error" className="step-property-error" role="alert">
+                            {t("app.changeThresholdMustBeAFiniteNumberGreaterThan")}</p>}
                           <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
                             disabled={!chartSamplingOptions.enabled}
                             onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
                             {t("app.showSignificantChangeMarkers")}</label>
                           <p className="tool-setup-hint">{t("app.simulationAmpLiveLineChartsMarkersHighlightOnlyQualifying")}</p>
-                          {chartThresholdInvalid && <p className="error" role="alert">
-                            {t("app.changeThresholdMustBeAFiniteNumberGreaterThan")}</p>}
                         </fieldset>}
                       </section>
                       <section className="chart-option-section">
@@ -3511,7 +3513,12 @@ function App() {
                       {(() => {
                         if (selectedStep.type !== 'tool-action' && (selectedStep.type !== 'bg-interaction' ||
                           !['get-latest', 'wait-next', 'get-command-result'].includes(selectedStep.operation.kind))) return null
-                        const fields = curatedResultFields(selectedStep, workflowDraft.tool_instances, t, workflowDraft.backgrounds ?? [], earlierSteps)
+                        const resultFields = curatedResultFields(selectedStep, workflowDraft.tool_instances, t, workflowDraft.backgrounds ?? [], earlierSteps)
+                        const fields = selectedStep.type === 'tool-action' && selectedAction === 'powers/set-output'
+                          ? resultFields.filter(field =>
+                              (field.pointer !== '/request/arguments/voltage' || hasPowerSetpoint(selectedStep, 'voltage')) &&
+                              (field.pointer !== '/request/arguments/current' || hasPowerSetpoint(selectedStep, 'current')))
+                          : resultFields
                         if (!fields.length) return null
                         const serialRead = selectedStep.type === 'tool-action' &&
                           (selectedAction === 'serial/receive' || selectedAction === 'serial/query')

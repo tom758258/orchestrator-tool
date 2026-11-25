@@ -44,7 +44,7 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
   const receiveMode = String(step.arguments.receive_mode ??
     (step.action === 'receive' ? 'single' : 'delimiter'))
   return <div className="step-properties-fields">
-    {showStepHelp && <p className="value-source-help">{t(`serialActionEditor.stepHelp.${step.action}`)}</p>}
+    {showStepHelp && <p className="value-source-help">{t(`steps.hint.serial-${step.action}`)}</p>}
     {hasTx && <>
       <label className="step-property-field">
         <span className="step-property-label">{t("serialActionEditor.tXFormat")}</span>
