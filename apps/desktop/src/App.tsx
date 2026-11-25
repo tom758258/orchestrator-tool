@@ -412,6 +412,25 @@ function readStepDensity(): StepDensity {
 
 function App() {
   const { locale, setLocale, t } = useI18n()
+  useEffect(() => {
+    // With WebView-native drag and drop enabled, reject unsupported drops
+    // instead of letting a file or URL navigate away from the workflow.
+    function preventUnsupportedDrop(event: DragEvent) {
+      const target = event.target
+      const textField = target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement && ['text', 'number', 'search', 'url', 'tel', 'email', 'password'].includes(target.type))
+      if (textField && !target.disabled && !target.readOnly && !event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    }
+    document.addEventListener('dragover', preventUnsupportedDrop, true)
+    document.addEventListener('drop', preventUnsupportedDrop, true)
+    return () => {
+      document.removeEventListener('dragover', preventUnsupportedDrop, true)
+      document.removeEventListener('drop', preventUnsupportedDrop, true)
+    }
+  }, [])
   const STEP_PRESETS: StepPresetOption[] = [
     ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: [t("app.bGCommand"), t("app.getLatest"), t("app.waitNext"), t("app.getCommandResult")][index], prefix: value, category: 'FG/BG Interaction' })),
     ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
