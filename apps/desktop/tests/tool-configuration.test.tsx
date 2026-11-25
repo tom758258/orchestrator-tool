@@ -539,8 +539,20 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   expect(screen.getByText('Reads until the delimiter appears; the returned data includes the delimiter.')).toBeTruthy()
   const queryFlag = screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement
   expect(queryFlag.checked).toBe(false)
+  const properties = within(screen.getByRole('region', { name: 'Properties' }))
+  expect(properties.getByText('/rx_hex')).toBeTruthy()
+  expect(properties.getByText('/rx_bytes')).toBeTruthy()
+  expect(properties.getByText('/timed_out')).toBeTruthy()
+  expect(properties.getByText('/outcome')).toBeTruthy()
+  expect(properties.getByText('/partial_rx_hex')).toBeTruthy()
+  expect(properties.getByText('/partial_rx_bytes')).toBeTruthy()
+  expect(properties.queryByText('/rx_text')).toBeNull()
+  expect(properties.queryByText('/partial_rx_text')).toBeNull()
   fireEvent.click(queryFlag)
   expect(queryFlag.checked).toBe(true)
+  expect(properties.getByText('/rx_hex')).toBeTruthy()
+  expect(properties.queryByText('/partial_rx_hex')).toBeNull()
+  expect(properties.queryByText('/partial_rx_bytes')).toBeNull()
   click('Step 2: Serial Receive, receive-1')
   const receiveMode = screen.getByRole('combobox', { name: 'Receive Mode' }) as HTMLSelectElement
   expect(receiveMode.value).toBe('single')
@@ -550,7 +562,11 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   const expectedBytes = screen.getByRole('spinbutton', { name: 'Expected RX Bytes' }) as HTMLInputElement
   expect(expectedBytes.value).toBe('')
   fireEvent.change(expectedBytes, { target: { value: '8' } })
+  expect(properties.queryByText('/rx_text')).toBeNull()
+  expect(properties.queryByText('/partial_rx_text')).toBeNull()
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enable RX Text (UTF-8)' }))
+  expect(properties.getByText('/rx_text')).toBeTruthy()
+  expect(properties.getByText('/partial_rx_text')).toBeTruthy()
   fireEvent.change(receiveMode, { target: { value: 'idle' } })
   const gap = screen.getByRole('spinbutton', { name: 'Idle Gap (ms)' }) as HTMLInputElement
   expect(gap.value).toBe('')
@@ -589,6 +605,9 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   expect((screen.getByRole('combobox', { name: 'Receive Mode' }) as HTMLSelectElement).value).toBe('fixed')
   expect((screen.getByRole('spinbutton', { name: 'Expected RX Bytes' }) as HTMLInputElement).value).toBe('8')
   expect((screen.getByRole('checkbox', { name: 'Enable RX Text (UTF-8)' }) as HTMLInputElement).checked).toBe(true)
+  const reloadedProperties = within(screen.getByRole('region', { name: 'Properties' }))
+  expect(reloadedProperties.getByText('/rx_text')).toBeTruthy()
+  expect(reloadedProperties.getByText('/partial_rx_text')).toBeTruthy()
   click('Step 3: Assert, assert-1')
   const reloadedLeft = within(screen.getByRole('group', { name: /Left/ }))
   const reloadedRight = within(screen.getByRole('group', { name: /Right/ }))
@@ -1491,6 +1510,15 @@ test('all 21 Process operations show contextual help and a result type', () => {
     return <ProcessEditor step={step} onChange={setStep} earlierSteps={[]} earlierVariables={[]}
       instances={[]} backgrounds={[]} stepLabel={step => step.id} disabled={false} />
   }
+  const resultTypes: Record<ProcessStep['type'], Record<string, string>> = {
+    'string-process': { length: 'Number', substring: 'String', concat: 'String', contains: 'Boolean',
+      'index-of': 'Number', replace: 'String', trim: 'String', 'to-upper-case': 'String',
+      'to-lower-case': 'String', 'to-number': 'Number' },
+    'byte-process': { 'byte-length': 'Number', 'get-byte': 'Number', 'get-bytes': 'Hex String',
+      concat: 'Hex String', contains: 'Boolean', 'hex-to-number': 'Number',
+      'number-to-hex': 'Hex String', 'hex-to-text': 'String / Null', 'text-to-hex': 'Hex String' },
+    'array-process': { length: 'Number', 'get-item': 'JSON' },
+  }
   let count = 0
   for (const initialStep of initial) {
     const view = render(<Editor initialStep={initialStep} />)
@@ -1504,7 +1532,18 @@ test('all 21 Process operations show contextual help and a result type', () => {
       expect(description).toBeTruthy()
       expect(description).not.toMatch(/^process\.help\./)
       descriptions.add(description)
-      expect(screen.getByText(/^\/value · (Number|String|Boolean|Hex String|JSON)/)).toBeTruthy()
+      expect(resultTypes[initialStep.type][value]).toBeTruthy()
+      expect(screen.getByText(`/value · ${resultTypes[initialStep.type][value]}`)).toBeTruthy()
+      if (initialStep.type === 'byte-process' && value === 'hex-to-number') {
+        const order = screen.getByRole('combobox', { name: 'Byte Order' })
+        const format = screen.getByRole('combobox', { name: 'Number Format' })
+        expect(screen.getByRole('combobox', { name: 'Byte Order', description: /Most significant byte first/ })).toBeTruthy()
+        expect(screen.getByRole('combobox', { name: 'Number Format', description: /Unsigned integer/ })).toBeTruthy()
+        fireEvent.change(order, { target: { value: 'lsb-first' } })
+        fireEvent.change(format, { target: { value: 'signed' } })
+        expect(screen.getByRole('combobox', { name: 'Byte Order', description: /Least significant byte first/ })).toBeTruthy()
+        expect(screen.getByRole('combobox', { name: 'Number Format', description: /Signed integer/ })).toBeTruthy()
+      }
       count += 1
     }
     expect(descriptions.size).toBe(values.length)

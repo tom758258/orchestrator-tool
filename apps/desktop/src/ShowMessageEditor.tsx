@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useI18n } from './i18n/I18nProvider'
 import {
   MAX_MESSAGE_FIELDS,
@@ -22,6 +23,7 @@ const outputField = (stepId: string, newline: boolean): MessageFieldWire =>
 
 export default function ShowMessageEditor({ step, outputs, disabled, onChange }: Props) {
   const { t } = useI18n()
+  const newlineHelpId = useId()
   const updateField = (index: number, field: MessageFieldWire) => onChange({
     ...step,
     fields: step.fields.map((current, position) => position === index ? field : current),
@@ -92,14 +94,15 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
                 )}
               </label>}
 
-          {index < step.fields.length - 1 && (
+          {index < step.fields.length - 1 && <>
             <label className="step-property-field show-message-newline">
-              <input type="checkbox" checked={field.newline} disabled={disabled}
+              <input type="checkbox" checked={field.newline} disabled={disabled} aria-describedby={newlineHelpId}
                 onChange={event => updateField(index, { ...field,
                   newline: event.target.checked })} />
               <span className="step-property-label">{t("showMessageEditor.newlineAfterThisField")}</span>
             </label>
-          )}
+            {index === 0 && <p id={newlineHelpId} className="value-source-help">{t('app.workflowHelp.messageNewline')}</p>}
+          </>}
           <button className="action-button" type="button" disabled={disabled || step.fields.length <= 1}
             onClick={() => removeField(index)}>{t("showMessageEditor.deleteField")}</button>
         </fieldset>

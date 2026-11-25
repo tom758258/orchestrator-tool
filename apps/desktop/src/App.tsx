@@ -3512,13 +3512,24 @@ function App() {
                         if (selectedStep.type !== 'tool-action' && (selectedStep.type !== 'bg-interaction' ||
                           !['get-latest', 'wait-next', 'get-command-result'].includes(selectedStep.operation.kind))) return null
                         const fields = curatedResultFields(selectedStep, workflowDraft.tool_instances, t, workflowDraft.backgrounds ?? [], earlierSteps)
-                        const primary = selectedAction === 'serial/receive' || selectedAction === 'serial/query'
-                          ? fields.filter(field => ['/rx_hex', '/rx_bytes', '/rx_text'].includes(field.pointer))
-                          : fields.slice(0, 3)
-                        if (!primary.length) return null
+                        if (!fields.length) return null
+                        const serialRead = selectedStep.type === 'tool-action' &&
+                          (selectedAction === 'serial/receive' || selectedAction === 'serial/query')
+                        const renderFields = (items: typeof fields, showHints = false) => items.map(field =>
+                          <p key={field.pointer} className="value-source-help">{field.label}: <code>{field.pointer}</code>
+                            {showHints && field.hint && <> — {field.hint}</>}</p>)
                         return <div className="workflow-help-group">
                           <span className="step-property-label">{t('app.workflowHelp.commonResults')}</span>
-                          {primary.map(field => <p key={field.pointer} className="value-source-help">{field.label}: <code>{field.pointer}</code></p>)}
+                          {serialRead ? <>
+                            {renderFields(fields.filter(field => ['/outcome', '/timed_out'].includes(field.pointer)), selectedStep.arguments.fail_on_read_timeout !== true)}
+                            <span className="step-property-label">{t('app.workflowHelp.serialCompletedResults')}</span>
+                            {renderFields(fields.filter(field => ['/rx_hex', '/rx_bytes', '/rx_text'].includes(field.pointer)))}
+                            {selectedStep.arguments.fail_on_read_timeout !== true && <>
+                              <span className="step-property-label">{t('app.workflowHelp.serialTimeoutResults')}</span>
+                              <p className="value-source-help">{t('app.workflowHelp.serialTimeoutResultHelp')}</p>
+                              {renderFields(fields.filter(field => ['/partial_rx_hex', '/partial_rx_bytes', '/partial_rx_text'].includes(field.pointer)))}
+                            </>}
+                          </> : renderFields(fields.slice(0, 3), true)}
                           <p className="value-source-help">{t('app.workflowHelp.resultReference')}</p>
                         </div>
                       })()}
