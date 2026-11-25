@@ -433,8 +433,10 @@ impl Execution<'_> {
                                         }
                                     };
                                     manager.get_buffer_data(background_id, *read_mode, count)
-                                } else if matches!(operation, InteractionOperation::GetBufferStatus)
-                                {
+                                } else if matches!(
+                                    operation,
+                                    InteractionOperation::GetBufferStatus {}
+                                ) {
                                     manager.get_buffer_status(background_id)
                                 } else {
                                     let id = match operation {

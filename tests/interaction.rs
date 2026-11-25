@@ -464,15 +464,21 @@ fn buffer_template_requires_settings_and_legal_count_source() {
     for case in [
         "disabled",
         "timeout",
+        "status-timeout",
         "missing",
         "range",
         "extra",
+        "operation-extra",
         "literal-type",
     ] {
         let mut bad = wire.clone();
         match case {
             "disabled" => bad["workflow"]["interaction"]["buffer"]["enabled"] = json!(false),
             "timeout" => bad["workflow"]["steps"][1]["timeout_ms"] = json!(100),
+            "status-timeout" => bad["workflow"]["steps"][0]["timeout_ms"] = json!(100),
+            "operation-extra" => {
+                bad["workflow"]["steps"][1]["operation"]["unexpected"] = json!(null)
+            }
             "missing" => {
                 bad["workflow"]["steps"][1]["operation"]["selection"]["count"]["step_id"] =
                     json!("later")
@@ -489,6 +495,30 @@ fn buffer_template_requires_settings_and_legal_count_source() {
             _ => unreachable!(),
         }
         assert!(Template::from_json_str(&bad.to_string()).is_err(), "{case}");
+    }
+    // All parameterless Interaction operations share the same strict object contract.
+    for kind in ["get-buffer-status", "get-latest", "wait-next"] {
+        let mut candidate = wire.clone();
+        candidate["workflow"]["steps"] = json!([
+            {"type":"bg-interaction","id":"read","background_id":"a","operation":{"kind":kind}}
+        ]);
+        let valid = Template::from_json_str(&candidate.to_string()).unwrap();
+        assert_eq!(
+            valid,
+            Template::from_json_str(&valid.to_json_string().unwrap()).unwrap()
+        );
+        for (field, value) in [
+            ("read_mode", json!("pop")),
+            ("selection", json!({"kind":"all"})),
+            ("unexpected", json!(null)),
+        ] {
+            let mut bad = candidate.clone();
+            bad["workflow"]["steps"][0]["operation"][field] = value;
+            assert!(
+                Template::from_json_str(&bad.to_string()).is_err(),
+                "{kind}: {field}"
+            );
+        }
     }
 }
 

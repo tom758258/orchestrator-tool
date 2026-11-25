@@ -819,10 +819,10 @@ impl BackgroundManager {
     ) -> Result<Value, String> {
         use crate::interaction::InteractionOperation;
         self.check_interaction()?;
-        if matches!(operation, InteractionOperation::GetLatest) {
+        if matches!(operation, InteractionOperation::GetLatest {}) {
             return self.interaction.latest(background);
         }
-        let next = if matches!(operation, InteractionOperation::WaitNext) {
+        let next = if matches!(operation, InteractionOperation::WaitNext {}) {
             Some(self.interaction.next(background)?)
         } else {
             None
@@ -907,8 +907,9 @@ impl BackgroundManager {
             )
             .expect("validated capacity"),
             interaction_enabled: template.workflow().interaction().enabled,
-            buffer_fail_run: template.workflow().interaction().buffer.overflow_policy
-                == crate::interaction::OverflowPolicy::FailRun,
+            buffer_fail_run: template.workflow().interaction().buffer.enabled
+                && template.workflow().interaction().buffer.overflow_policy
+                    == crate::interaction::OverflowPolicy::FailRun,
             configs: configs
                 .iter()
                 .map(|config| {
@@ -1720,7 +1721,9 @@ impl Dispatcher {
             let overflow = self
                 .interaction
                 .data(&self.config.id, self.generation, quality);
-            if overflow && self.buffer_fail_run {
+            // An existing event-processing error must reach the normal failure path
+            // instead of being replaced by the overflow from that same event.
+            if overflow && self.buffer_fail_run && result.is_ok() {
                 self.failure.fail(format!(
                     "{}: Data Buffer overflow (data lost)",
                     self.config.id
@@ -2110,6 +2113,11 @@ impl Dispatcher {
         let result = session
             .shutdown_background_with_events(shutdown, |event| {
                 if let Err(error) = self.event(event) {
+                    // Shutdown still drains tail events. Latch the first error before
+                    // a later valid event can overflow the Buffer and mask it.
+                    if self.buffer_fail_run {
+                        self.failure.fail(format!("{}: {error}", self.config.id));
+                    }
                     event_error.get_or_insert(error);
                 }
             })

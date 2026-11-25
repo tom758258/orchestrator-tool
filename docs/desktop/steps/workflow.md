@@ -239,4 +239,3 @@ To process a batch, set i=0, repeat While i is less than the batch count,
 use Get Item with Index i, process the item, and increment i with Calculation.
 There is no added global Array size limit. Existing String and Byte Process
 string limits still apply when those Steps receive an extracted string.
-

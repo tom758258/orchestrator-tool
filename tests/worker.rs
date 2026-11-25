@@ -925,12 +925,28 @@ fn serial_background_fixture(scenario: &str) {
     let pieces = ["5a4b3d", "3c", "6874"];
     let mut count: usize = 0;
     let burst = scenario.starts_with("serial-buffer-overflow");
+    let tail = scenario.contains("-tail-");
+    let invalid_at = if tail {
+        Some(1023)
+    } else if scenario.contains("-invalid-") {
+        Some(1024)
+    } else {
+        None
+    };
+    let emit_burst = || {
+        for i in 0..1025 {
+            let hex = if invalid_at == Some(i) {
+                "invalid".to_owned()
+            } else {
+                format!("{:04X}", i)
+            };
+            emit(json!({"event":"rx","rx_hex":hex,"rx_bytes":2}));
+        }
+    };
     let ready_at = Instant::now();
     loop {
-        if burst && count == 0 && ready_at.elapsed() >= Duration::from_millis(100) {
-            for i in 0..1025 {
-                emit(json!({"event":"rx","rx_hex":format!("{:04X}", i),"rx_bytes":2}));
-            }
+        if burst && !tail && count == 0 && ready_at.elapsed() >= Duration::from_millis(100) {
+            emit_burst();
             count = 1025;
         } else if !burst && count < 50 {
             let hex = pieces[count % pieces.len()];
@@ -957,6 +973,9 @@ fn serial_background_fixture(scenario: &str) {
                 body.len(), body).unwrap();
             stream.flush().unwrap();
             drop(stream);
+            if tail {
+                emit_burst();
+            }
             break;
         }
         thread::sleep(Duration::from_millis(15));
@@ -1114,18 +1133,27 @@ fn serial_buffer_contract() {
         "serial-buffer",
         "serial-buffer-overflow-continue",
         "serial-buffer-overflow-fail",
+        "serial-buffer-overflow-invalid-fail",
+        "serial-buffer-overflow-invalid-continue",
+        "serial-buffer-overflow-invalid-tail-fail",
     ] {
         let overflow = scenario.starts_with("serial-buffer-overflow");
         let fail = scenario.ends_with("-fail");
-        let capture = overflow && !fail;
+        let invalid = scenario.contains("-invalid-");
+        let tail = scenario.contains("-tail-");
+        let expect_failure = fail || invalid;
+        let capture = overflow && (!fail || invalid);
         let mut steps = vec![
             json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":capture}),
         ];
         if overflow {
-            if fail {
-                // No Get Step is involved in discovering the asynchronous Run failure.
-                steps.push(json!({"type":"wait","id":"foreground","duration_ms":1500}));
-                steps.push(json!({"type":"set-variable","id":"after-overflow","variable":"after","value":{"source":"literal","value":true}}));
+            if expect_failure {
+                // The tail fixture emits only after the Worker OFF request.
+                if !tail {
+                    // No Get Step is involved in discovering the asynchronous Run failure.
+                    steps.push(json!({"type":"wait","id":"foreground","duration_ms":1500}));
+                    steps.push(json!({"type":"set-variable","id":"after-overflow","variable":"after","value":{"source":"literal","value":true}}));
+                }
             } else {
                 // Observe loss without relying on a fixed burst delivery time.
                 steps.extend([
@@ -1156,12 +1184,15 @@ fn serial_buffer_contract() {
             ]);
         }
         steps.push(json!({"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":capture}));
+        if tail {
+            steps.push(json!({"type":"set-variable","id":"after-overflow","variable":"after","value":{"source":"literal","value":true}}));
+        }
         let template = Template::from_json_str(&json!({
             "name":"Serial Buffer",
             "tool_instances":[{"id":"serial-bg","tool":"serial","setup":{"transport":"serial","baud":115200}}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg","live_monitor":false,"limit_count":null}],
             "workflow":{"interaction":{"enabled":true,"max_active_command_status":4096,"buffer":{
-                "enabled":true,"mode":if capture {"ring"} else {"fifo"},"overflow_policy":if fail {"fail-run"} else {"continue"}}},
+                "enabled":true,"mode":if capture && !invalid {"ring"} else {"fifo"},"overflow_policy":if fail {"fail-run"} else {"continue"}}},
                 "steps":steps}
         }).to_string()).unwrap();
         let specs = HashMap::from([(
@@ -1195,9 +1226,35 @@ fn serial_buffer_contract() {
             },
             |_| false,
         );
-        if fail {
-            let error = result.expect_err("overflow must fail the run").to_string();
-            assert!(error.contains("Data Buffer overflow"), "{error}");
+        if expect_failure {
+            let error = result
+                .expect_err("Buffer or event failure must fail the run")
+                .to_string();
+            if invalid {
+                assert!(
+                    error.contains("Invalid Serial RX hex"),
+                    "{scenario}: {error}"
+                );
+                assert!(
+                    !error.contains("Data Buffer overflow"),
+                    "{scenario}: overflow masked or replaced the event failure: {error}"
+                );
+                let data = store.lock().unwrap();
+                let metadata = &data.metadata()[0];
+                assert_eq!(metadata.status, "failed");
+                assert_eq!(metadata.quality, "incomplete");
+                assert!(
+                    metadata
+                        .error
+                        .as_deref()
+                        .is_some_and(|e| e.contains("Invalid Serial RX hex")),
+                    "{scenario}: {:?}",
+                    metadata.error
+                );
+                assert_eq!(metadata.row_count, 1024);
+            } else {
+                assert!(error.contains("Data Buffer overflow"), "{error}");
+            }
             assert!(!outputs.contains_key("after-overflow"));
         } else {
             assert!(

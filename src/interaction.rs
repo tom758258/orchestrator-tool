@@ -60,9 +60,10 @@ pub enum InteractionOperation {
         read_mode: BufferReadMode,
         selection: BufferSelection,
     },
-    GetBufferStatus,
-    GetLatest,
-    WaitNext,
+    // Empty struct variants enforce deny_unknown_fields for tagged operations.
+    GetBufferStatus {},
+    GetLatest {},
+    WaitNext {},
     GetCommandResult {
         source_step: String,
     },
@@ -864,7 +865,7 @@ pub(crate) fn validate_template(template: &crate::template::Template) -> Result<
                                 buffer_count(value)?;
                             }
                         }
-                        InteractionOperation::GetBufferStatus => {
+                        InteractionOperation::GetBufferStatus {} => {
                             if !template.workflow().interaction().buffer.enabled
                                 || timeout_ms.is_some()
                             {

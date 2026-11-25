@@ -396,6 +396,8 @@ No capacity wait or truncation is allowed. Each discarded entry increments
 `dropped_count`. Core records the facts; the dispatcher signals existing
 RunFailure for Fail Run even if FG is not executing an Interaction Step.
 Continue does not suppress other Worker, command or data-quality failures.
+Fail Run must not replace a fatal event-processing error from the same event
+or an earlier failure (including during Worker shutdown).
 Latest, Next, Command Result and Capture are independent of Buffer retention.
 Worker ON starts a new empty Buffer; Source Ended retains it; Worker OFF and
 Run end release it. Already acquired FG results retain their existing scope.

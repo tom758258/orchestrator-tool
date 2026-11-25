@@ -209,4 +209,3 @@ Get Buffer Data 的 `/data`；不提供 Fixed Value Array 編輯器。
 逐筆處理時可設定 i=0，以 While 判斷 i 小於取得筆數，使用 Get Item 的 Index i，
 處理該筆後以 Calculation 將 i 加 1。不新增全域 Array 大小限制；
 取出的字串交給 String／Byte Process 時仍適用原有字串限制。
-

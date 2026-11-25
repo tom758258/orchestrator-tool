@@ -60,6 +60,10 @@ Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker O
 Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會清理尚在
 執行的 Worker，同時保留原有 Powers Safe-Off 行為。
 
+選用的 FG/BG Data Buffer 與 Capture、Live Monitor 獨立。固定容量、
+FIFO／Ring 模式、Overflow 與讀取規則請見
+[Background 互動步驟](../steps/background.zh-TW.md)。
+
 **輸出（Output）** 同頁包含 **圖表（Charts）**、有啟用 Monitor 才顯示的 **即時監視器（Live Monitors）**、**前景輸出（Foreground Output）**、**背景輸出（Background Output）**，各自可收合。
 只有 Background 的 Run 也能使用 Charts 與 Background Output。該次 Last Run 有
 Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏既有結果。
@@ -108,8 +112,8 @@ Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的
 
 Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
 本次 Run 的記憶體；新 Run 或 **清除上次執行（Clear Last Run）** 會釋放，沒有 History 或 Recovery
-Store。Background Samples 不提供給 Workflow Variables、Calculation、Assert
-或 ResultRows。
+Store。Capture Dataset 的 Samples 不會直接提供給 Workflow Variables、Calculation、
+Assert 或 ResultRows；需透過 FG/BG Interaction Steps 取得背景資料。
 
 **CSV Export → Stream Background CSV during Capture** 與前景 CSV 獨立。
 可選 All Backgrounds 或單一 Background，並各自選擇輸出資料夾；預設
@@ -158,5 +162,3 @@ Streaming behavior：
 - Workflow failure、Stop Workflow 或迴圈 Stop 後，已寫入的 committed CSV data 不會被刪除。
 - Streaming 不產生 XLSX。
 - Run 進行中會鎖定 streaming settings。
-
-選用的 FG/BG Data Buffer 與 Capture、Live Monitor 獨立。

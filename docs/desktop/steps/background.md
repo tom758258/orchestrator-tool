@@ -75,8 +75,10 @@ FIFO drops new events when space is insufficient; Ring Buffer removes the
 oldest events until there is space. A single oversized event is rejected
 without clearing existing entries. No truncation or waiting for space occurs.
 Fail Run signals the existing failure cleanup even during other FG Steps;
-Continue preserves loss status for IF/ELSE. Capture, Latest, Next and Command
-Result are separate; Buffer loss is not itself Capture loss.
+Continue preserves loss status for IF/ELSE. Buffer overflow does not replace
+a fatal event-processing error from the same event or an earlier failure.
+Capture, Latest, Next and Command Result are separate; Buffer loss is not
+itself Capture loss.
 
 - **Get Buffer Data**: select a Background, Peek or Pop, Count or ALL. Count
   accepts 1–1024 as Fixed Value, Variable or Previous step result. Returns

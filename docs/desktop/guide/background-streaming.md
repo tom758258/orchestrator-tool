@@ -142,8 +142,9 @@ with the reason available on hover. **Output Data** uses pages of 100 rows.
 
 Capture boundaries follow received event processing, not hardware sample time.
 Full captured samples stay in memory for the current run. A new run or **Clear
-Last Run** releases them; there is no history or recovery store. Background
-samples do not feed Workflow variables, calculations, assertions or ResultRows.
+Last Run** releases them; there is no history or recovery store.
+Capture Dataset samples do not directly feed Workflow variables, calculations,
+assertions or ResultRows; use FG/BG Interaction Steps to obtain Background data.
 
 **CSV Export → Stream Background CSV during Capture** is independent of
 foreground CSV. Choose All Backgrounds or one Background and its output folder.
