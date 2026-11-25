@@ -76,6 +76,7 @@
 </ul>
 <p>這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他
 machine/runtime state 保留在 Desktop local configuration。</p>
+<p>目前 Template 必須明確保存 FG/BG Buffer 設定，即使停用亦同。缺少欄位的舊範本會被拒絕，不提供轉換或自動補值。Buffer 執行期間的資料及狀態不會保存。</p>
 <h2 id="13-語言與外觀">13. 語言與外觀</h2>
 <p>「外觀（Appearance）」旁的地球按鈕顯示 <strong>English</strong> 或 <strong>繁體中文</strong>，按一下
 即可立即切換整個 Desktop 的語言，並保留編輯內容、執行狀態與結果。選擇會記住在

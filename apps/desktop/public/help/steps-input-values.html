@@ -52,8 +52,8 @@
 <li><strong>Fixed value</strong> — a literal value.</li>
 <li><strong>Variable</strong> — the current value of a workflow variable.</li>
 <li><strong>Previous step result</strong> — a result from an earlier visible step. The current
-  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result,
-  and String Process / Byte Process steps.</li>
+  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result / Get Buffer Data / Get Buffer Status,
+  and String Process / Byte Process / Array Process steps.</li>
 <li><strong>Calculation</strong> — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).</li>
 <li><strong>Elapsed time</strong> — a runtime elapsed-time value.</li>
 <li><strong>Timestamp</strong> — a runtime timestamp value.</li>
@@ -81,6 +81,8 @@ Output and survive Template save/load and step copy/paste. Changing Value Source
 clears the old time settings. Set Variable and Tool Action time sources are unchanged.</p>
 <p>An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.</p>
+<p>An Array returned by a Step can be stored as a Variable and used by Array Process;
+no manual fixed Array editor is provided. Use a dynamic Index in Get Item.</p>
   </main>
   <script>
     (() => {

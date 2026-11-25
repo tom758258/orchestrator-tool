@@ -106,6 +106,9 @@ automatic finish; the first Worker OFF releases the source. A second explicit
 OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.</p>
+<p>The optional FG/BG Data Buffer is independent of Capture and Live Monitor. See
+<a href="steps-background.html">Background Interaction Steps</a> for its fixed capacity,
+FIFO/Ring modes, overflow and read rules.</p>
 <p><strong>Output</strong> contains <strong>Charts</strong>, optional <strong>Live Monitors</strong>, <strong>Foreground Output</strong>,
 and <strong>Background Output</strong> as separate expandable sections. Background-only runs can use
 Charts and Background Output. Background Output appears only when the Last Run

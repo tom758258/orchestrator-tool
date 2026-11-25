@@ -23,6 +23,8 @@ class HelpGenerationTests(unittest.TestCase):
                 self.assertEqual(len(chapters), len(TOPICS))
                 self.assertTrue(intro.startswith("# "))
                 self.assertIn("Guide Chapters" if lang == "en" else "使用指南章節", landing)
+                self.assertIn('](steps-background' + (".zh-TW" if lang == "zh-TW" else "") + '.html)',
+                              chapters[TOPICS.index(("steps/serial", "Serial Background RX and Actions", "Serial Background RX 與動作"))])
                 main, fragments = slice_chapters(intro, chapters)
                 self.assertIn("<h1 ", main)
                 self.assertEqual(len(fragments), len(chapters))
