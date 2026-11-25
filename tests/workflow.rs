@@ -19,7 +19,7 @@ fn comparison_expression_flows_through_simulated_workflow() {
         &json!({
             "tool_instances": [],
             "name": "Comparison integration",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 {
                     "type": "set-variable", "id": "set-threshold", "variable": "threshold",
                     "value": { "source": "literal", "value": 3 }
@@ -302,7 +302,7 @@ fn projection_rejects_missing_failed_and_cancelled_outputs() {
 fn while_wire(limit: usize, stop: usize) -> serde_json::Value {
     json!({
         "name": "While counter", "tool_instances": [],
-        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
             { "type": "set-variable", "id": "init", "variable": "x",
               "value": { "source": "literal", "value": 0 } },
             { "type": "while", "id": "repeat", "max_iterations": limit,
@@ -673,7 +673,7 @@ fn while_string_condition_and_if_empty_else_execute_without_workers() {
     let workflow = Template::from_json_str(
         &json!({
             "name":"String and If","tool_instances":[],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
                 {"type":"set-variable","id":"set-status","variable":"status",
                     "value":{"source":"literal","value":"WAITING"}},
                 {"type":"while","id":"wait-ready","max_iterations":2,
@@ -715,7 +715,7 @@ fn while_string_condition_and_if_empty_else_execute_without_workers() {
 fn if_branch_error_fails_without_running_other_branch_or_later_steps() {
     let workflow = Template::from_json_str(&json!({
         "name":"Failed If","tool_instances":[],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
             {"type":"if","id":"decision","left":{"source":"literal","value":true},
                 "operator":"equal","right":{"source":"literal","value":true},
                 "then_steps":[{"type":"assert","id":"fail","left":{"source":"literal","value":1},
@@ -750,7 +750,7 @@ fn process_template(steps: serde_json::Value) -> Result<Template, TemplateError>
             "name": "Data processing",
             "tool_instances": [],
             "workflow": {
-                "interaction": {"enabled": false, "max_active_command_status": 4096},
+                "interaction": {"enabled": false, "max_active_command_status": 4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps": steps
             }
         })
@@ -902,4 +902,39 @@ fn invalid_process_data_fails_without_publishing_a_successful_result() {
         result.step_id().as_str() == "out"
             && matches!(result.outcome(), StepOutcome::Succeeded { .. })
     }));
+}
+
+#[test]
+fn array_process_preserves_values_and_resolves_dynamic_indices() {
+    let template = process_template(json!([
+        {"type":"set-variable","id":"source","variable":"array","value":{"source":"literal","value":[null,{"rx_hex":"0102"},[1,2]]}},
+        {"type":"array-process","id":"length","operation":"length","arguments":{"input":{"source":"variable","variable":"array"}}},
+        {"type":"set-variable","id":"index","variable":"i","value":{"source":"literal","value":1}},
+        {"type":"array-process","id":"item","operation":"get-item","arguments":{"input":{"source":"variable","variable":"array"},"index":{"source":"variable","variable":"i"}}},
+        {"type":"byte-process","id":"byte","operation":{"kind":"get-byte"},"arguments":{"input":{"source":"step-output","step_id":"item","pointer":"/value/rx_hex"},"byte_index":{"source":"literal","value":1}}},
+        {"type":"array-process","id":"null-item","operation":"get-item","arguments":{"input":{"source":"variable","variable":"array"},"index":{"source":"literal","value":0}}},
+        {"type":"array-process","id":"nested","operation":"get-item","arguments":{"input":{"source":"variable","variable":"array"},"index":{"source":"step-output","step_id":"byte","pointer":"/value"}}},
+        {"type":"array-process","id":"nested-length","operation":"length","arguments":{"input":{"source":"step-output","step_id":"nested","pointer":"/value"}}},
+        {"type":"array-process","id":"unchanged","operation":"length","arguments":{"input":{"source":"variable","variable":"array"}}}
+    ])).unwrap();
+    let restored = Template::from_json_str(&template.to_json_string().unwrap()).unwrap();
+    assert_eq!(restored, template);
+    let run = orchestrator_tool::executor::execute_workflow(
+        &restored, &HashMap::new(), orchestrator_tool::run::ExecutionMode::Simulate,
+        Duration::from_secs(1),
+    ).unwrap();
+    for (id, expected) in [
+        ("length", json!({"value":3})),
+        ("item", json!({"value":{"rx_hex":"0102"}})),
+        ("byte", json!({"value":2})),
+        ("null-item", json!({"value":null})),
+        ("nested", json!({"value":[1,2]})),
+        ("nested-length", json!({"value":2})),
+        ("unchanged", json!({"value":3})),
+    ] {
+        let step = run.step_executions().iter().find(|result| result.step_id().as_str() == id).unwrap();
+        assert_eq!(step.outcome(), &StepOutcome::Succeeded { output: expected });
+    }
+    assert!(process_template(json!([{"type":"array-process","id":"bad","operation":"length",
+        "arguments":{"input":{"source":"literal","value":[]}}}])).is_err());
 }

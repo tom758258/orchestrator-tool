@@ -23,5 +23,18 @@ export default {
   "interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe": "One deadline covers this entire Step. Worker must be ON; Capture may be OFF.",
   "interactionEditor.getCommandResultReturnsTheCompleteNativeJobFinished": "Get Command Result returns the complete native job_finished event. TX completion does not confirm a device reply.",
   "interactionEditor.collapse": "Collapse",
-  "interactionEditor.expand": "Expand"
+  "interactionEditor.expand": "Expand",
+  "interactionEditor.enableBuffer": "Enable Buffer",
+  "interactionEditor.enableBufferFirst": "Enable Buffer in FG/BG Interaction settings first.",
+  "interactionEditor.bufferMode": "Buffer Mode",
+  "interactionEditor.overflowPolicy": "Overflow Policy",
+  "interactionEditor.failRun": "Fail Run",
+  "interactionEditor.continue": "Continue",
+  "interactionEditor.bufferLimits": "Each Background has a fixed capacity of 1024 events and 16 MiB of compact JSON UTF-8 data (including serialized error information). A single oversized event is rejected without clearing existing data. This is not a total memory limit.",
+  "interactionEditor.bufferPolicyHelp": "FIFO drops new events; Ring Buffer evicts oldest events when either capacity is insufficient. Fail Run terminates the workflow through existing cleanup; Continue preserves loss status for later checks. Capture and Buffer are independent.",
+  "interactionEditor.readMode": "Read Mode",
+  "interactionEditor.getMode": "Get Mode",
+  "interactionEditor.count": "Count",
+  "interactionEditor.bufferReadHelp": "Oldest first. Peek retains data; Pop removes the selected batch only on success. Count (1–1024) or ALL returns immediately, including an empty array if no data is available. Invalid events fail the whole selection without consuming it. Status describes the buffer after the operation; Peek and later Pop are not a transaction. A Serial RX event is not necessarily a complete packet.",
+  "interactionEditor.bufferStatusHelp": "Read status without consuming data. Full means either capacity is reached; Overflowed means data was lost and Dropped Count counts lost events. Loss status resets only with a new Worker lifecycle."
 }

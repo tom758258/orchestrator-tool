@@ -32,7 +32,7 @@ Receive／Query 使用 Serial Setup 的 UART `timeout_ms` 或 TCP `io_timeout_ms
 
 普通 Worker Receive／Query 遇到 Read Timeout 或 ReadLimitExceeded 時，只消費 Session Buffer 中已回報的 Partial RX，保留未回報的後續 Bytes。不會清空 OS／設備 RX 佇列；前一次延遲到達的資料可能被下一次 Receive／Query 讀到，使用者必須自行確認後續資料有效性。ReadLimitExceeded、斷線、其他 I/O 錯誤、Worker 失敗與 Action Deadline 到期仍會造成 Step Failed。Text TX 需要 String；單一位元組 TX 需要 Number 且只送最低 Byte。RX Hex String 不能直接當作多 Byte 原始 TX。
 
-Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow RX FIFO。
+Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow 原始 Bytes FIFO。
 
 ### Background RX 執行中的 Serial Send／Send File
 
@@ -52,3 +52,5 @@ TX 完成，若缺少原生事件，Get 會在自身期限到達時失敗。完�
 禁止 Foreground 或 Background 重用相同 COM／TCP Endpoint。重啟應用程式前，
 請先確認外部 Tool 已安全停止。純 RX-only 維持原有行為；不提供 Background Query、
 自動 TX／RX 配對或 Recovery 畫面。
+
+啟用 FG/BG Data Buffer 時，可透過 Get Buffer Data 取得完整 RX Event Array；不提供原始 Bytes FIFO、封包組裝或 TX/RX 自動配對。容量與 Overflow 規則請見 [Background 互動步驟](background.zh-TW.md)。

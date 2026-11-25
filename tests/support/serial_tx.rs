@@ -193,7 +193,7 @@ fn get(id: &str, source: &str) -> Value {
 fn wire(steps: Value) -> Value {
     json!({"name":"Serial BG TX","tool_instances":[{"id":"serial","tool":"serial","setup":{"transport":"serial","baud":115200}}],
         "backgrounds":[{"id":"bg","tool_instance_id":"serial","limit_count":null,"live_monitor":true}],
-        "workflow":{"interaction":{"enabled":true,"max_active_command_status":2},"steps":steps}})
+        "workflow":{"interaction":{"enabled":true,"max_active_command_status":2,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":steps}})
 }
 
 fn failure(
@@ -465,7 +465,7 @@ pub fn contract(real: bool) {
             if scenario == "off-unconfirmed" {
                 assert!(failure(retry).unwrap().contains("reuse blocked"));
                 let fg = json!({"name":"FG","tool_instances":[{"id":"serial","tool":"serial","setup":{"transport":"serial","baud":115200}}],
-                    "workflow":{"interaction":{"enabled":false,"max_active_command_status":2},"steps":[{"type":"tool-action","id":"tx","target":"serial","action":"send","arguments":{"tx_format":"text","tx_value":"你好"}}]}});
+                    "workflow":{"interaction":{"enabled":false,"max_active_command_status":2,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"tool-action","id":"tx","target":"serial","action":"send","arguments":{"tx_format":"text","tx_value":"你好"}}]}});
                 let fg = Template::from_json_str(&fg.to_string()).unwrap();
                 assert!(
                     failure(run_workflow(

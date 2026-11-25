@@ -156,7 +156,7 @@ type TemplateIoStatus = 'idle' | 'loading' | 'saving'
 type RunStatus = 'idle' | 'running'
 type WorkflowStopRequest = { generation: number; sent: boolean; error?: string }
 type StepPreset =
-  | 'bg-command' | 'bg-get-latest' | 'bg-wait-next' | 'bg-get-result'
+  | 'bg-command' | 'bg-get-latest' | 'bg-wait-next' | 'bg-get-result' | 'bg-get-buffer-data' | 'bg-get-buffer-status'
   | 'background-worker-on' | 'background-worker-off' | 'background-capture-on' | 'background-capture-off'
   | `scope-${ScopesAction}`
   | 'serial-send' | 'serial-send-file' | 'serial-receive' | 'serial-query'
@@ -176,6 +176,7 @@ type StepPreset =
   | 'show-message'
   | 'string-process'
   | 'byte-process'
+  | 'array-process'
 
 type StepPresetOption = {
   value: StepPreset
@@ -228,6 +229,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
   if (preset.startsWith('bg-')) {
     const operation: import('./workflow').InteractionOperation = preset === 'bg-command'
       ? { kind: 'command', command: 'software-trigger', wait_for_completion: false }
+      : preset === 'bg-get-buffer-data' ? { kind: 'get-buffer-data', read_mode: 'pop', selection: { kind: 'all' } }
+      : preset === 'bg-get-buffer-status' ? { kind: 'get-buffer-status' }
       : preset === 'bg-get-result' ? { kind: 'get-command-result', source_step: '' }
         : { kind: preset === 'bg-get-latest' ? 'get-latest' : 'wait-next' }
     return { type: 'bg-interaction', id, background_id: target, operation, timeout_ms: null }
@@ -307,6 +310,8 @@ function createPresetStep(preset: StepPreset, id: string, target: string): Workf
       }
     case 'string-process':
       return { type: 'string-process', id, operation: 'length', arguments: { input: { source: 'literal', value: '' } } }
+    case 'array-process':
+      return { type: 'array-process', id, operation: 'length', arguments: { input: { source: 'step-output', step_id: '', pointer: '' } } }
     case 'byte-process':
       return { type: 'byte-process', id, operation: { kind: 'byte-length' }, arguments: { input: { source: 'literal', value: '' } } }
     case 'show-message':
@@ -433,6 +438,8 @@ function App() {
   }, [])
   const STEP_PRESETS: StepPresetOption[] = [
     ...(['bg-command', 'bg-get-latest', 'bg-wait-next', 'bg-get-result'] as const).map((value, index) => ({ value, label: [t("app.bGCommand"), t("app.getLatest"), t("app.waitNext"), t("app.getCommandResult")][index], prefix: value, category: 'FG/BG Interaction' })),
+    { value: 'bg-get-buffer-data', label: t('steps.interaction.get-buffer-data'), prefix: 'bg-get-buffer-data', category: 'FG/BG Interaction' },
+    { value: 'bg-get-buffer-status', label: t('steps.interaction.get-buffer-status'), prefix: 'bg-get-buffer-status', category: 'FG/BG Interaction' },
     ...(['worker-on', 'worker-off', 'capture-on', 'capture-off'] as const).map(action => ({ value: `background-${action}` as StepPreset,
       label: t(`steps.palette.background-${action}`), fullLabel: t(`steps.background.${action}`),
       prefix: `background-${action}`, category: 'Background Workflow' })),
@@ -454,6 +461,7 @@ function App() {
     { value: 'assert', label: t("app.assert"), prefix: 'assert', category: 'Workflow' },
     { value: 'show-message', label: t("app.showMessage"), prefix: 'show-message', category: 'Workflow' },
     { value: 'string-process', label: t("process.stringProcess"), prefix: 'string-process', category: 'Workflow' },
+    { value: 'array-process', label: t('process.arrayProcess'), prefix: 'array-process', category: 'Workflow' },
     { value: 'byte-process', label: t("process.byteProcess"), prefix: 'byte-process', category: 'Workflow' },
     { value: 'meter-measure', label: t("app.meterMeasure"), prefix: 'meter-read', category: 'Meters', tool: 'meters' },
     { value: 'power-output-off', label: t("app.powerOutputOFF"), prefix: 'power-off', category: 'Powers', tool: 'powers' },
@@ -486,6 +494,7 @@ function App() {
     'show-message': t("app.writeAMessageToTheMessagesPanelWhileThe"),
     'string-process': t("process.stringHelp"),
     'byte-process': t("process.byteHelp"),
+    'array-process': t('process.arrayHelp'),
     'set-variable': t("app.saveAValueOrCalculationResultSoLaterSteps"),
     output: t("app.publishAValueAsAFinalWorkflowResultThis"),
     wait: t("app.pauseBeforeRunningTheNextStepUsefulForDUT"),
@@ -533,6 +542,7 @@ function App() {
       return t("app.assert")
     }
     if (step.type === 'string-process') return t("process.stringProcess")
+    if (step.type === 'array-process') return t('process.arrayProcess')
     if (step.type === 'byte-process') return t("process.byteProcess")
     if (step.type === 'show-message') {
       return t("app.showMessage")
@@ -1185,6 +1195,9 @@ function App() {
     if (isControl && parentId && containerPath(steps, parentId).length + 1 >= 8) return
     if (preset.value.startsWith('bg-') && !workflowDraft.workflow.interaction.enabled) {
       setValidationError(uiMessage("app.enableFGBGInteractionInWorkflowSettingsBeforeAdding")); return
+    }
+    if (preset.value.startsWith('bg-get-buffer-') && !workflowDraft.workflow.interaction.buffer.enabled) {
+      setValidationError(uiMessage('interactionEditor.enableBufferFirst')); return
     }
     const target = (preset.value.startsWith('background-') || preset.value.startsWith('bg-')) ? workflowDraft.backgrounds?.[0]?.id
       : workflowDraft.tool_instances.find(instance => instance.tool === preset.tool &&
@@ -2105,7 +2118,8 @@ function App() {
   const selectedPaletteLocked = selectedPalettePreset?.category === 'Background Workflow'
     ? !workflowDraft?.backgrounds?.length
     : selectedPalettePreset?.category === 'FG/BG Interaction'
-      ? !workflowDraft?.backgrounds?.length || !workflowDraft?.workflow.interaction.enabled
+      ? !workflowDraft?.backgrounds?.length || !workflowDraft?.workflow.interaction.enabled ||
+        (selectedPalettePreset.value.startsWith('bg-get-buffer-') && !workflowDraft?.workflow.interaction.buffer.enabled)
       : selectedPalettePreset?.tool
       ? !workflowDraft?.tool_instances.some(instance => instance.tool === selectedPalettePreset.tool)
       : false
@@ -2200,7 +2214,7 @@ function App() {
                   }
                   suppressPaletteClickRef.current = null
                 }}
-                disabled={workflowBusy}
+                disabled={workflowBusy || (preset.value.startsWith('bg-get-buffer-') && !workflowDraft?.workflow.interaction.buffer.enabled)}
               >
                 {preset.label}
               </button>
@@ -2567,7 +2581,7 @@ function App() {
                     ...current,
                     backgrounds,
                     workflow: current.backgrounds?.length && !backgrounds.length
-                      ? { ...current.workflow, interaction: { ...current.workflow.interaction, enabled: false } }
+                      ? { ...current.workflow, interaction: { ...current.workflow.interaction, enabled: false, buffer: { ...current.workflow.interaction.buffer, enabled: false } } }
                       : current.workflow,
                   } : current)
                   setWorkflowChangedSinceRun(true)
@@ -3380,13 +3394,13 @@ function App() {
                         </label>
                       )}
 
-                      {(selectedStep.type === 'string-process' || selectedStep.type === 'byte-process') && (
+                      {(selectedStep.type === 'string-process' || selectedStep.type === 'byte-process' || selectedStep.type === 'array-process') && (
                         <ProcessEditor key={selectedStep.id} step={selectedStep}
                           earlierSteps={earlierSteps} earlierVariables={earlierVariables}
                           instances={workflowDraft.tool_instances} backgrounds={workflowDraft.backgrounds ?? []}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           disabled={workflowBusy}
-                          onChange={update => updateStep(selectedStep.id, step => step.type === 'string-process' || step.type === 'byte-process' ? update(step) : step)}
+                          onChange={update => updateStep(selectedStep.id, step => step.type === 'string-process' || step.type === 'byte-process' || step.type === 'array-process' ? update(step) : step)}
                         />
                       )}
 

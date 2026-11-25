@@ -1,6 +1,7 @@
 import { useI18n } from './i18n/I18nProvider'
 import { useState } from 'react'
 import { allWorkflowSteps, inputScope, loopPath, type BackgroundConfig, type InteractionOperation, type InteractionSettings, type InteractionStep, type WorkflowStep } from './workflow'
+import { ProcessOperandEditor } from './InputValueEditor'
 import SerialActionEditor from './SerialActionEditor'
 import type { ToolInstance } from './ToolSetupEditor'
 
@@ -23,12 +24,26 @@ export function InteractionSettingsEditor({ value, disabled, hasBackground, onCh
       {t("interactionEditor.noBackgroundBindingEnableBackgroundStreamingInSetup")}</p>}
     {open && <div className="interaction-settings-fields">
       <label className="streaming-toggle"><input type="checkbox" checked={value.enabled} disabled={disabled}
-        onChange={event => onChange({ ...value, enabled: event.target.checked })} /> {t("interactionEditor.enableFGBGInteraction")}</label>
+        onChange={event => onChange({ ...value, enabled: event.target.checked, buffer: { ...value.buffer, enabled: event.target.checked && value.buffer.enabled } })} /> {t("interactionEditor.enableFGBGInteraction")}</label>
       <label className="step-property-field">{t("interactionEditor.maxActiveCommandStatus")}<input type="number" min={1} max={65536} step={1} required
           value={value.max_active_command_status} disabled={disabled || !value.enabled}
           onChange={event => onChange({ ...value, max_active_command_status: Number(event.target.value) })} />
       </label>
       <p className="tool-setup-hint">{t("interactionEditor.sharedByAllBackgroundsInThisRunCompletedSettled")}</p>
+      <label className="streaming-toggle"><input type="checkbox" checked={value.buffer.enabled}
+        disabled={disabled || !value.enabled} onChange={event => onChange({ ...value, buffer: { ...value.buffer, enabled: event.target.checked } })} /> {t('interactionEditor.enableBuffer')}</label>
+      {value.buffer.enabled && <>
+        <label className="step-property-field">{t('interactionEditor.bufferMode')}<select disabled={disabled || !value.enabled} value={value.buffer.mode}
+          onChange={event => onChange({ ...value, buffer: { ...value.buffer, mode: event.target.value as 'fifo' | 'ring' } })}>
+          <option value="fifo">FIFO</option><option value="ring">Ring Buffer</option>
+        </select></label>
+        <label className="step-property-field">{t('interactionEditor.overflowPolicy')}<select disabled={disabled || !value.enabled} value={value.buffer.overflow_policy}
+          onChange={event => onChange({ ...value, buffer: { ...value.buffer, overflow_policy: event.target.value as 'fail-run' | 'continue' } })}>
+          <option value="fail-run">{t('interactionEditor.failRun')}</option><option value="continue">{t('interactionEditor.continue')}</option>
+        </select></label>
+        <p className="tool-setup-hint">{t('interactionEditor.bufferLimits')}</p>
+        <p className="tool-setup-hint">{t('interactionEditor.bufferPolicyHelp')}</p>
+      </>}
     </div>}
   </section>
 }
@@ -95,9 +110,26 @@ export function InteractionEditor({ step, steps, backgrounds, instances = [], di
       <option value="">{t("interactionEditor.selectABGCommandStep")}</option>
       {sources.map(source => <option key={source.id} value={source.id}>{source.id}</option>)}
     </select></label>}
+    {operation.kind === 'get-buffer-data' && <>
+      <label className="step-property-field">{t('interactionEditor.readMode')}<select value={operation.read_mode}
+        onChange={event => onChange({ ...step, operation: { ...operation, read_mode: event.target.value as 'peek' | 'pop' } })}>
+        <option value="peek">Peek</option><option value="pop">Pop</option>
+      </select></label>
+      <label className="step-property-field">{t('interactionEditor.getMode')}<select value={operation.selection.kind}
+        onChange={event => onChange({ ...step, operation: { ...operation, selection: event.target.value === 'all' ? { kind: 'all' } : { kind: 'count', count: { source: 'literal', value: 1 } } } })}>
+        <option value="all">ALL</option><option value="count">{t('interactionEditor.count')}</option>
+      </select></label>
+      {operation.selection.kind === 'count' && <ProcessOperandEditor label={t('interactionEditor.count')} literalDefault={1}
+        value={operation.selection.count} earlierSteps={earlierSteps} earlierVariables={earlierVariables}
+        instances={instances} backgrounds={backgrounds} stepLabel={item => item.id} disabled={disabled}
+        onChange={count => onChange({ ...step, operation: { ...operation, selection: { kind: 'count', count } } })} />}
+      <p className="value-source-help">{t('interactionEditor.bufferReadHelp')}</p>
+    </>}
+    {operation.kind === 'get-buffer-status' && <p className="value-source-help">{t('interactionEditor.bufferStatusHelp')}</p>}
+    {operation.kind !== 'get-buffer-data' && operation.kind !== 'get-buffer-status' && <>
     <label className="step-property-field"><span className="step-property-label">{t("interactionEditor.stepTimeoutMs")}</span><input type="number" min={1} step={1} placeholder={t("interactionEditor.useActionTimeout")}
       value={step.timeout_ms ?? ''} onChange={event => onChange({ ...step, timeout_ms: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-    <p className="value-source-help">{t("interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe")}</p>
+    <p className="value-source-help">{t("interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe")}</p></>}
     {tool === 'serial' && operation.kind === 'get-command-result' && <p className="value-source-help">{t("interactionEditor.getCommandResultReturnsTheCompleteNativeJobFinished")}</p>}
     </div>
   </fieldset>

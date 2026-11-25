@@ -32,7 +32,7 @@ Receive/Query use the UART `timeout_ms` or TCP `io_timeout_ms` configured in Ser
 
 For ordinary Worker Receive/Query, Read Timeout and ReadLimitExceeded consume only the already reported partial RX from the Session buffer, retaining any unreported trailing bytes. No OS/device RX queue is flushed; late data from a previous operation may be read by a later Receive/Query. The user must verify subsequent RX validity. ReadLimitExceeded, disconnection, other I/O errors, Worker failure, and action deadline expiry still fail the Step. Text TX requires a String; Single Byte TX requires a Number and sends only the low byte. RX Hex Strings cannot be sent as raw multi-byte TX.
 
-Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow RX FIFO are not available as Orchestrator actions.
+Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow raw-byte FIFO are not available as Orchestrator actions.
 
 ### Serial Send / Send File while Background RX is running
 
@@ -55,3 +55,5 @@ confirmed OFF, the application blocks reuse of the same COM/TCP endpoint by
 Foreground or Background. Verify the external Tool has safely stopped before
 restarting the application. Pure RX-only operation keeps its existing behavior.
 There is no Background Query, automatic TX/RX pairing or recovery screen.
+
+With FG/BG Data Buffer enabled, Get Buffer Data returns an Array of complete RX events, not a raw-byte FIFO or packet reassembly. See [Background Interaction Steps](background.md) for capacity and overflow rules.

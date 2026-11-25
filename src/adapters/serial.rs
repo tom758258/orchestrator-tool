@@ -895,7 +895,7 @@ mod tests {
                     "setup": {"transport": "serial", "baud": 115200}
                 }],
                 "workflow": {
-                    "interaction": {"enabled": false, "max_active_command_status": 4096},
+                    "interaction": {"enabled": false, "max_active_command_status": 4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                     "steps": [{
                         "type": "tool-action",
                         "id": "serial-read",
@@ -993,7 +993,7 @@ mod tests {
             "name": "Serial File",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
                 "setup": {"transport":"serial","baud": 115200} }],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [
                 {"type": "for", "id": "loop", "variable": "n",
                  "range": {"start": "1", "stop": "1", "step": "1"},
                  "steps": [{"type": "tool-action", "id": "send-file",

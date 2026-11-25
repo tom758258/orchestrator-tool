@@ -463,6 +463,10 @@ pub enum StepKind {
         operation: crate::data_processing::ByteOperation,
         arguments: BTreeMap<String, ExpressionOperand>,
     },
+    ArrayProcess {
+        operation: crate::data_processing::ArrayOperation,
+        arguments: BTreeMap<String, ExpressionOperand>,
+    },
     Output {
         name: String,
         value: InputValue,
@@ -842,6 +846,15 @@ impl Workflow {
                     } => {
                         validate_process(operation.parameters(), arguments)?;
                     }
+                    StepKind::ArrayProcess { operation, arguments } => {
+                        validate_process(operation.parameters(), arguments)?;
+                        if matches!(arguments.get("input"), Some(ExpressionOperand::Literal(_))) {
+                            return Err(WorkflowError::InvalidProcessParameters {
+                                step_id: step.id().clone(),
+                                message: "Array input must reference a Variable or Previous step result".into(),
+                            });
+                        }
+                    }
                     StepKind::Output { name, value } => {
                         use crate::output_time::OutputTimeFormat;
                         let valid_format = match (value, step.output_time_format()) {
@@ -907,6 +920,17 @@ impl Workflow {
                     } => {
                         for value in bindings.values() {
                             validate_input(value)?;
+                        }
+                    }
+                    StepKind::Interaction {
+                        operation: crate::interaction::InteractionOperation::GetBufferData {
+                            selection: crate::interaction::BufferSelection::Count { count }, ..
+                        }, ..
+                    } => {
+                        match count {
+                            ExpressionOperand::Literal(_) => {},
+                            ExpressionOperand::Variable(v) => validate_input(&InputValue::Variable(v.clone()))?,
+                            ExpressionOperand::StepOutput(r) => validate_input(&InputValue::StepOutput(r.clone()))?,
                         }
                     }
                     StepKind::ShowMessage { fields, .. } => {

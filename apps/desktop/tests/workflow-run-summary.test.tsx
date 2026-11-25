@@ -4,7 +4,7 @@ import type { ComponentProps } from 'react'
 import WorkflowRunSummary from '../src/WorkflowRunSummary'
 
 const defaults: ComponentProps<typeof WorkflowRunSummary> = {
-  workflowDraft: { name: 'Example', tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } },
+  workflowDraft: { name: 'Example', tool_instances: [], workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } },
   workflowBusy: false, toolConfigBusy: null, loading: false, chartThresholdInvalid: false,
   executionMode: 'simulate', validationStatus: 'idle', validationError: null,
   runStatus: 'idle', runningText: 'Running…', runError: null, displayedRun: null, showLastRunError: true,

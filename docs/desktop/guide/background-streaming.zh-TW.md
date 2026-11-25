@@ -159,3 +159,4 @@ Streaming behavior：
 - Streaming 不產生 XLSX。
 - Run 進行中會鎖定 streaming settings。
 
+選用的 FG/BG Data Buffer 與 Capture、Live Monitor 獨立。

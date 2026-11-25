@@ -409,6 +409,7 @@ fn main() {
     {
         interaction_tests::contract(false);
         serial_background_rx_contract();
+        serial_buffer_contract();
         return;
     }
     if arguments
@@ -544,6 +545,7 @@ fn main() {
     valid_ready_starts_worker_session();
     interaction_tests::contract(false);
     serial_background_rx_contract();
+    serial_buffer_contract();
     serial_tx_tests::contract(false);
     software_background_timer_contract();
     background_capture_and_termination_contract();
@@ -922,8 +924,15 @@ fn serial_background_fixture(scenario: &str) {
     );
     let pieces = ["5a4b3d", "3c", "6874"];
     let mut count: usize = 0;
+    let burst = scenario.starts_with("serial-buffer-overflow");
+    let ready_at = Instant::now();
     loop {
-        if count < 50 {
+        if burst && count == 0 && ready_at.elapsed() >= Duration::from_millis(100) {
+            for i in 0..1025 {
+                emit(json!({"event":"rx","rx_hex":format!("{:04X}", i),"rx_bytes":2}));
+            }
+            count = 1025;
+        } else if !burst && count < 50 {
             let hex = pieces[count % pieces.len()];
             emit(json!({
                 "event":"rx",
@@ -978,7 +987,7 @@ fn serial_background_rx_contract() {
                 "setup":{"transport":"serial","baud":115200}}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg",
                 "live_monitor":true,"limit_count":null}],
-            "workflow":{"interaction":{"enabled":!capture,"max_active_command_status":4096},"steps":[
+            "workflow":{"interaction":{"enabled":!capture,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
                 {"type":"background","id":"on","background_id":"background-1",
                     "action":"worker-on","capture":capture},
                 {"type":"wait","id":"collect","duration_ms":240},
@@ -1090,6 +1099,108 @@ fn serial_background_rx_contract() {
                     .all(|pair| pair[1] == (pair[0] + 1) % pieces.len()),
                 "captured RX events must preserve fixture order"
             );
+        }
+    }
+}
+
+
+fn serial_buffer_contract() {
+    use orchestrator_tool::{
+        background::BackgroundStore,
+        run::{RunOptions, run_workflow_streaming_controlled},
+    };
+    use std::sync::Arc;
+
+    for scenario in ["serial-buffer", "serial-buffer-overflow-continue", "serial-buffer-overflow-fail"] {
+        let overflow = scenario.starts_with("serial-buffer-overflow");
+        let fail = scenario.ends_with("-fail");
+        let capture = overflow && !fail;
+        let mut steps = vec![json!({"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":capture})];
+        if overflow {
+            if fail {
+                // No Get Step is involved in discovering the asynchronous Run failure.
+                steps.push(json!({"type":"wait","id":"foreground","duration_ms":1500}));
+                steps.push(json!({"type":"set-variable","id":"after-overflow","variable":"after","value":{"source":"literal","value":true}}));
+            } else {
+                // Observe loss without relying on a fixed burst delivery time.
+                steps.extend([
+                    json!({"type":"set-variable","id":"init-loss","variable":"lost","value":{"source":"literal","value":false}}),
+                    json!({"type":"while","id":"poll","left":{"source":"variable","variable":"lost"},"operator":"equal","right":{"source":"literal","value":false},"max_iterations":400,"steps":[
+                        {"type":"wait","id":"pause","duration_ms":10},
+                        {"type":"bg-interaction","id":"status","background_id":"background-1","operation":{"kind":"get-buffer-status"}},
+                        {"type":"set-variable","id":"update-loss","variable":"lost","value":{"source":"step-output","step_id":"status","pointer":"/overflowed"}}
+                    ]}),
+                    json!({"type":"assert","id":"assert-loss","left":{"source":"variable","variable":"lost"},"operator":"equal","right":{"source":"literal","value":true},"message":"Expected overflow"}),
+                    json!({"type":"bg-interaction","id":"batch","background_id":"background-1","operation":{"kind":"get-buffer-data","read_mode":"pop","selection":{"kind":"all"}}}),
+                    json!({"type":"array-process","id":"length","operation":"length","arguments":{"input":{"source":"step-output","step_id":"batch","pointer":"/data"}}}),
+                ]);
+            }
+        } else {
+            steps.extend([
+                json!({"type":"bg-interaction","id":"next","background_id":"background-1","operation":{"kind":"wait-next"}}),
+                json!({"type":"set-variable","id":"read-count","variable":"read-count","value":{"source":"literal","value":1}}),
+                json!({"type":"bg-interaction","id":"peek","background_id":"background-1","operation":{"kind":"get-buffer-data","read_mode":"peek","selection":{"kind":"count","count":{"source":"variable","variable":"read-count"}}}}),
+                json!({"type":"array-process","id":"length","operation":"length","arguments":{"input":{"source":"step-output","step_id":"peek","pointer":"/data"}}}),
+                json!({"type":"bg-interaction","id":"batch","background_id":"background-1","operation":{"kind":"get-buffer-data","read_mode":"pop","selection":{"kind":"count","count":{"source":"step-output","step_id":"length","pointer":"/value"}}}}),
+                json!({"type":"set-variable","id":"index","variable":"i","value":{"source":"literal","value":0}}),
+                json!({"type":"array-process","id":"item","operation":"get-item","arguments":{"input":{"source":"step-output","step_id":"batch","pointer":"/data"},"index":{"source":"variable","variable":"i"}}}),
+                json!({"type":"byte-process","id":"bytes","operation":{"kind":"byte-length"},"arguments":{"input":{"source":"step-output","step_id":"item","pointer":"/value/rx_hex"}}}),
+                json!({"type":"assert","id":"assert-bytes","left":{"source":"step-output","step_id":"bytes","pointer":"/value"},"operator":"equal","right":{"source":"step-output","step_id":"item","pointer":"/value/rx_bytes"},"message":"Native event bytes"}),
+                json!({"type":"output","id":"out","name":"Bytes","page":"Results","value":{"source":"step-output","step_id":"bytes","pointer":"/value"}}),
+                json!({"type":"bg-interaction","id":"latest","background_id":"background-1","operation":{"kind":"get-latest"}}),
+            ]);
+        }
+        steps.push(json!({"type":"background","id":"off","background_id":"background-1","action":"worker-off","capture":capture}));
+        let template = Template::from_json_str(&json!({
+            "name":"Serial Buffer",
+            "tool_instances":[{"id":"serial-bg","tool":"serial","setup":{"transport":"serial","baud":115200}}],
+            "backgrounds":[{"id":"background-1","tool_instance_id":"serial-bg","live_monitor":false,"limit_count":null}],
+            "workflow":{"interaction":{"enabled":true,"max_active_command_status":4096,"buffer":{
+                "enabled":true,"mode":if capture {"ring"} else {"fifo"},"overflow_policy":if fail {"fail-run"} else {"continue"}}},
+                "steps":steps}
+        }).to_string()).unwrap();
+        let specs = HashMap::from([(
+            ToolInstanceId::new("serial-bg").unwrap(),
+            WorkerLaunchSpec::new(env::current_exe().unwrap(), ["--background-fixture", scenario])
+                .with_manifest(fixture_manifest("serial-smoke")),
+        )]);
+        let store = Arc::new(Mutex::new(BackgroundStore::default()));
+        let mut outputs = HashMap::new();
+        let result = run_workflow_streaming_controlled(
+            &template, ExecutionMode::Simulate, &specs,
+            Duration::from_secs(3), Duration::from_secs(3), Duration::from_secs(3), None,
+            RunOptions { backgrounds: store.clone(), ..Default::default() },
+            |event| {
+                if let WorkflowRunEvent::StepCompleted(step) = event
+                    && let StepOutcome::Succeeded { output } = step.outcome()
+                {
+                    outputs.insert(step.step_id().to_string(), output.clone());
+                }
+            },
+            |_| false,
+        );
+        if fail {
+            let error = result.expect_err("overflow must fail the run").to_string();
+            assert!(error.contains("Data Buffer overflow"), "{error}");
+            assert!(!outputs.contains_key("after-overflow"));
+        } else {
+            assert!(result.as_ref().is_ok_and(|r| r.succeeded()), "{scenario}: {result:?}");
+            if overflow {
+                let batch = &outputs["batch"];
+                assert_eq!(outputs["length"]["value"], 1024);
+                assert_eq!(batch["status"]["dropped_count"], 1);
+                assert_eq!(batch["status"]["overflowed"], true);
+                assert_eq!(batch["status"]["count"], 0);
+                assert_eq!(batch["data"][0]["rx_hex"], "0001");
+                assert_eq!(batch["data"][1023]["rx_hex"], "0400");
+                assert_eq!(store.lock().unwrap().metadata()[0].row_count, 1025);
+            } else {
+                assert_eq!(outputs["length"]["value"], 1);
+                assert_eq!(outputs["batch"]["data"], outputs["peek"]["data"]);
+                assert_eq!(outputs["item"]["value"]["event"], "rx");
+                assert_eq!(outputs["latest"]["event"], "rx");
+                assert!(store.lock().unwrap().metadata().is_empty());
+            }
         }
     }
 }
@@ -1216,7 +1327,7 @@ fn background_template(steps: serde_json::Value) -> Template {
     };
     Template::from_json_str(&json!({"name":"Background contract", "tool_instances":[
         {"id":"meters-bg","tool":"meters","setup":setup}],"backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","live_monitor":true,"limit_count":6}],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}}).to_string()).unwrap()
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":steps}}).to_string()).unwrap()
 }
 
 fn background_workflow_stop_contract() {
@@ -2123,7 +2234,7 @@ fn real_meters_background_and_unlimited_simulation() {
     // A source bound is a launch parameter: it never turns the While into a finite loop.
     let setup = MetersSetup::default();
     let template=Template::from_json_str(&json!({"name":"Unlimited SIM", "tool_instances":[{"id":"meters-1","tool":"meters","setup":setup}],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"while","id":"loop","left":{"source":"literal","value":true},"operator":"equal","right":{"source":"literal","value":true},"max_iterations":null,
             "steps":[{"type":"tool-action","id":"measure","target":"meters-1","action":"measure","arguments":{}}]}]}}).to_string()).unwrap();
     let specs = prepare_worker_launch_specs_with_simulation(
         &template,
@@ -4067,7 +4178,7 @@ fn serial_dynamic_integer_workflow_reaches_worker_without_invalid_tx() {
         &json!({
             "name":"Serial dynamic integer",
             "tool_instances":[{"id":"serial-1","tool":"serial","setup":{"transport":"serial","baud":115200}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
                 {"type":"set-variable","id":"source","variable":"b",
                     "value":{"source":"literal","value":3.75}},
                 {"type":"tool-action","id":"send-b","target":"serial-1","action":"send",
@@ -4238,7 +4349,7 @@ fn scopes_single_wait_timeout_branches_and_instrument_error_fails() {
         &json!({
             "name":"Scope timeout branch",
             "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps":[
                     {"type":"tool-action","id":"trigger","target":"scope",
                      "action":"single-wait","arguments":{
@@ -4315,7 +4426,7 @@ fn scopes_measure_invalid_branches_only_when_confirmed() {
         &json!({
             "name":"Scope Measure validity branch",
             "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps":[
                     {"type":"tool-action","id":"reading","target":"scope",
                      "action":"measure","arguments":{"channel":1,"item":"vpp"}},
@@ -4385,7 +4496,7 @@ fn scopes_measure_invalid_branches_only_when_confirmed() {
 fn scopes_setup_failure_stops_workflow() {
     let template = Template::from_json_str(&json!({"name":"Setup failure",
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{"channels":[{"channel":2,"invert":true}]}}],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"tool-action","id":"read","target":"scope","action":"measure",
             "arguments":{"channel":2,"item":"vpp"}}]}}).to_string()).unwrap();
     for (scenario, detail) in [
         ("scopes-setup-failed", "fixture failure"),
@@ -4417,7 +4528,7 @@ fn scopes_setup_failure_stops_workflow() {
 fn scopes_workflow_setting_readback_controls_step_outcome() {
     let template = Template::from_json_str(&json!({"name":"Edge Trigger readback",
         "tool_instances":[{"id":"scope","tool":"scopes","setup":{}}],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
             {"type":"set-variable","id":"level-value","variable":"level","value":{"source":"literal","value":1.0}},
             {"type":"tool-action","id":"trigger","target":"scope","action":"trigger-edge",
                 "arguments":{"source_channel":1,"slope":"positive"},
@@ -4493,7 +4604,7 @@ fn scopes_workflow_setting_readback_controls_step_outcome() {
 fn live_preflight_dynamic_worker_failure_retains_powers_cleanup() {
     let template = Template::from_json_str(&json!({"name":"Dynamic Worker failure",
         "tool_instances":[{"id":"power","tool":"powers","setup":{}},{"id":"scope","tool":"scopes","setup":{}}],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
             {"type":"set-variable","id":"channel","variable":"channel","value":{"source":"literal","value":99}},
             {"type":"tool-action","id":"set","target":"power","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
             {"type":"tool-action","id":"on","target":"power","action":"output-on","arguments":{"channel":1}},
@@ -4892,7 +5003,7 @@ fn powers_measure_voltage_and_current_reach_result_row() {
         &json!({
             "name": "Power Measure",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "tool-action", "id": "measure-1", "target": "powers-1",
                   "action": "measure", "arguments": { "channel": 2 } },
                 { "type": "output", "id": "voltage-out", "name": "Voltage", "page": "Results",
@@ -4947,7 +5058,7 @@ fn powers_set_output_binding_reaches_worker() {
         &json!({
             "name": "Power set output",
             "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "set-variable", "id": "set-limit", "variable": "limit",
                   "value": { "source": "literal", "value": 0.2 } },
                 { "type": "tool-action", "id": "power-set", "target": "powers-1",
@@ -5065,7 +5176,7 @@ fn powers_protection_status_asserts_untripped_result() {
     let template = Template::from_json_str(&json!({
         "name": "Power Protection Status",
         "tool_instances": [{ "id": "powers-1", "tool": "powers", "setup": {} }],
-        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+        "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
             { "type": "tool-action", "id": "protection-1", "target": "powers-1",
               "action": "protection-status", "arguments": { "channel": "all" } },
             { "type": "assert", "id": "assert-1",
@@ -5199,7 +5310,7 @@ fn single_meter_template(steps: serde_json::Value) -> Template {
     Template::from_json_str(
         &json!({"name": "Single meter", "tool_instances": [{
         "id": "meters-1", "tool": "meters", "setup": MetersSetup::default()
-    }], "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": steps }})
+    }], "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": steps }})
         .to_string(),
     )
     .unwrap()
@@ -5296,7 +5407,7 @@ fn meters_single_outputs_preserve_staging() {
                     "buffer_drain_size": null, "allow_buffer_overflow_risk": false
                 }
             }],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "tool-action", "id": "measure-a", "target": "meters-1", "action": "measure", "arguments": {} },
                 { "type": "output", "id": "out-a", "name": "a", "page": "Batch",
                   "value": { "source": "step-output", "step_id": "measure-a", "pointer": "/value" } },
@@ -5320,7 +5431,7 @@ fn meters_single_outputs_preserve_staging() {
                     "trigger_mode": "software-custom", "sample_count": 3
                 }
             }],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "tool-action", "id": "measure", "target": "meters-1", "action": "measure", "arguments": {} },
                 { "type": "assert", "id": "assert-batch",
                   "left": { "source": "step-output", "step_id": "measure", "pointer": "/value" },
@@ -5440,7 +5551,7 @@ fn simulated_measurement_dataflow_exports_csv() {
                 "current_terminal": null
             }}, {"id": "powers-1", "tool": "powers", "setup": {}}],
             "name": "Measurement CSV",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 {
                     "type": "set-variable", "id": "set-threshold", "variable": "threshold",
                     "value": { "source": "literal", "value": 3 }
@@ -5655,7 +5766,7 @@ fn powers_protection_setup_lifecycle() {
             "name": "Protection setup fixture",
             "tool_instances": [{"id":"powers-1","tool":"powers","setup":{"protection":{"channels":[
                 {"channel":1,"ovp_voltage":5.5,"ocp":"on"}]}}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
                 {"type":"tool-action","id":"set-1","target":"powers-1","action":"set-output",
                     "arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on-1","target":"powers-1","action":"output-on",
@@ -6056,7 +6167,7 @@ fn live_workflow_cleanup_lifecycle() {
             env::set_var(CLEANUP_MARKER_ENV, &marker);
         }
         let template = Template::from_json_str(&json!({"name":"Stop cleanup",
-            "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[
+            "tool_instances":[{"id":"powers-1","tool":"powers","setup":{}}], "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[
                 {"type":"tool-action","id":"set","target":"powers-1","action":"set-output","arguments":{"channel":1,"voltage":5.0}},
                 {"type":"tool-action","id":"on","target":"powers-1","action":"output-on","arguments":{"channel":1}},
                 {"type":"wait","id":"after","duration_ms":0}

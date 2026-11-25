@@ -289,7 +289,7 @@ pub fn contract(real: bool) {
         };
         let mut wire = json!({"name":"Interaction contract","tool_instances":[{"id":"meters-bg","tool":"meters","setup":setup}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"meters-bg","limit_count":if matches!(scenario,"loop"|"skip-result") {3} else if scenario == "slot-busy" {2} else {1},"command_trigger":true}],
-            "workflow":{"interaction":{"enabled":true,"max_active_command_status":2},"steps":steps}});
+            "workflow":{"interaction":{"enabled":true,"max_active_command_status":2,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":steps}});
         if scenario == "quarantined-timer" {
             wire["backgrounds"][0]["command_trigger"] = json!(false);
             wire["backgrounds"][0]["timer_interval_ms"] = json!(1000);

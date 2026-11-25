@@ -9,10 +9,10 @@ sidebar, below **Chart Options**, and starts collapsed. Without a Background
 binding it is locked and its controls are hidden. After enabling Background
 Streaming in Setup, expand the panel and select **Enable FG/BG Interaction**
 to unlock interaction Steps. Removing the last unreferenced Background binding
-disables Interaction but retains the capacity value. **Max Active Command Status**
+disables Interaction and Buffer but retains the command capacity value. **Max Active Command Status**
 defaults to **4096** and accepts **1–65536**. It is shared across Backgrounds
-for commands still being tracked, not cumulative commands in a Run. Both
-settings are saved with the Template. Version 0.3.0 requires the current
+for commands still being tracked, not cumulative commands in a Run. All
+settings, including the required Buffer settings, are saved with the Template. Version 0.3.0 requires the current
 Template format; older Templates without these settings cannot be loaded.
 
 First enable Background Streaming for the Tool Instance in Setup, then add
@@ -62,4 +62,53 @@ new Worker ON invalidate old data/result references. If shutdown cannot be
 confirmed, the same resource remains blocked even if you switch to timer
 triggering or Foreground use. Verify the external tool is stopped before
 restarting the application; restarting alone does not verify shutdown.
+
+### Data Buffer (optional)
+
+In the same FG/BG Interaction panel, enable **Enable Buffer** after enabling
+FG/BG Interaction. It defaults to OFF. Select FIFO or Ring Buffer and Overflow
+Policy (Fail Run by default, or Continue). All Backgrounds share these settings,
+but each Worker has its own fixed limit of **1024 events and 16 MiB**
+(16,777,216 bytes). Size counts the complete compact JSON event in UTF-8
+(or serialized error information), not raw Serial bytes or total process RAM.
+FIFO drops new events when space is insufficient; Ring Buffer removes the
+oldest events until there is space. A single oversized event is rejected
+without clearing existing entries. No truncation or waiting for space occurs.
+Fail Run signals the existing failure cleanup even during other FG Steps;
+Continue preserves loss status for IF/ELSE. Capture, Latest, Next and Command
+Result are separate; Buffer loss is not itself Capture loss.
+
+- **Get Buffer Data**: select a Background, Peek or Pop, Count or ALL. Count
+  accepts 1–1024 as Fixed Value, Variable or Previous step result. Returns
+  immediately, oldest first, up to Count (or all present); if empty, count is
+  0 and data is an empty Array. Peek retains data, Pop removes the whole
+  successful batch. An invalid selected event fails without consuming any of
+  the selection. Peek and a later Pop do not guarantee identical data.
+- **Get Buffer Status**: select a Background. Reads status without reading or
+  removing events. Neither Buffer Step waits for data or has a Step timeout.
+
+Get Buffer Data returns `/count` (actual read count), `/data` (complete native
+events as Array) and `/status/...` (snapshot after reading). Get Buffer Status
+returns the same status fields at the root. Select these results in IF/ELSE,
+Assert, Output or other Steps.
+
+| Status | Meaning |
+| --- | --- |
+| capacity | 1024 events |
+| count | Events currently buffered |
+| byte_capacity | 16,777,216 bytes |
+| buffered_bytes | Current compact JSON UTF-8 bytes |
+| full | Either capacity has been reached |
+| overflowed | Data has been lost during this Worker lifecycle |
+| dropped_count | Total number of dropped or evicted events |
+
+Full can be false when a new event is too large to fit. Overflowed and
+Dropped Count are not cleared by Peek, Pop, Pop ALL or Capture changes.
+Worker ON initializes them; Source Ended preserves the remaining data until
+Worker OFF, which releases it. A new Worker or Run starts empty. A successful
+FG Array remains subject to its normal Step Output or Variable scope.
+
+Use Array Process Length or Get Item with `/data` to process the batch.
+Serial RX events are not necessarily complete packets; no packet reassembly
+or automatic TX/RX matching is provided.
 

@@ -44,5 +44,14 @@ export default {
   "resultFields.captureAllowedHint": "Boolean：true＝允許擷取；false＝不允許擷取。不代表波形已儲存。",
   "resultFields.protectionTrippedHint": "Boolean：true＝過電壓或過電流保護已觸發；false＝未回報觸發。",
   "resultFields.overVoltageTrippedHint": "Boolean：true＝過電壓保護已觸發；false＝未觸發。",
-  "resultFields.overCurrentTrippedHint": "Boolean：true＝過電流保護已觸發；false＝未觸發。"
+  "resultFields.overCurrentTrippedHint": "Boolean：true＝過電流保護已觸發；false＝未觸發。",
+  "resultFields.buffer.capacity": "Event 容量",
+  "resultFields.buffer.count": "Buffer 組數",
+  "resultFields.buffer.byte_capacity": "Bytes 容量",
+  "resultFields.buffer.buffered_bytes": "Buffer Bytes",
+  "resultFields.buffer.full": "Full（已滿）",
+  "resultFields.buffer.overflowed": "Overflowed（曾遺失）",
+  "resultFields.buffer.dropped_count": "Dropped Count（遺失組數）",
+  "resultFields.buffer.data": "Data（Array）",
+  "resultFields.buffer.readCount": "本次取得組數"
 }

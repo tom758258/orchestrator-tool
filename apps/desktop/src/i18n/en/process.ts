@@ -41,5 +41,10 @@ export default {
   "process.operation.hex-to-number": "Hex to Number",
   "process.operation.number-to-hex": "Number to Hex",
   "process.operation.hex-to-text": "Hex to Text",
-  "process.operation.text-to-hex": "Text to Hex"
+  "process.operation.text-to-hex": "Text to Hex",
+  "process.arrayProcess": "Array Process",
+  "process.arrayHelp": "Read an Array from a Variable or Previous step result without modifying it. Length returns its size; Get Item uses a zero-based integer index and preserves the original JSON type, including Null. Invalid input or index fails the Step. No additional global Array size limit.",
+  "process.inputArray": "Input Array",
+  "process.parameter.index": "Index",
+  "process.operation.get-item": "Get Item"
 }
