@@ -3006,3 +3006,32 @@ textarea:disabled {
 
 .locale-button { display: inline-flex; align-items: center; gap: .45rem; white-space: nowrap; }
 :lang(zh-TW) .action-button { word-break: keep-all; }
+
+/* Keep Workflow help grouped with its controls; do not change Setup styles. */
+.workflow-sidebar .value-source-help,
+.step-properties .value-source-help,
+.step-properties .tool-setup-hint,
+.workflow-sidebar .tool-setup-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.step-properties .workflow-help-group,
+.workflow-sidebar .workflow-help-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.step-properties .step-context-help,
+.step-properties .step-properties-step-title { overflow-wrap: anywhere; }
+
+.step-properties-fields > label + .value-source-help,
+.step-properties-fields > label + .tool-setup-hint,
+.interaction-settings-fields > label + .value-source-help,
+.chart-sampling-fields > label + .value-source-help {
+  margin-top: -6px;
+}
+.workflow-sidebar .streaming-panel > .value-source-help { margin: 4px 0 10px; }
+.workflow-help-group > .value-source-help { margin: 0; }
