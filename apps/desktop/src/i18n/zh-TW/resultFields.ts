@@ -53,5 +53,6 @@ export default {
   "resultFields.buffer.overflowed": "Overflowed（曾遺失）",
   "resultFields.buffer.dropped_count": "Dropped Count（遺失組數）",
   "resultFields.buffer.data": "Data（Array）",
-  "resultFields.buffer.readCount": "本次取得組數"
+  "resultFields.buffer.readCount": "本次取得組數",
+  "resultFields.processValue": "處理結果"
 }

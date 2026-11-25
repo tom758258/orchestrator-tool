@@ -51,6 +51,7 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
         </select>
       </label>
 
+      <p className="value-source-help">{t('app.workflowHelp.messageTarget')}</p>
       {step.fields.map((field, index) => (
         <fieldset className="show-message-field" key={index}>
           <legend>{t("showMessageEditor.field")}{index + 1}</legend>
@@ -66,6 +67,7 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
             </select>
           </label>
 
+          <p className="value-source-help">{t(field.kind === 'text' ? 'app.workflowHelp.messageText' : 'app.workflowHelp.messageOutput')}</p>
           {field.kind === 'text'
             ? <label className="step-property-field">
                 <span className="step-property-label">{t("showMessageEditor.text")}</span>
@@ -109,6 +111,7 @@ export default function ShowMessageEditor({ step, outputs, disabled, onChange }:
         <p className="step-properties-empty">{t("showMessageEditor.aShowMessageStepSupportsUpTo")}{MAX_MESSAGE_FIELDS} {t("showMessageEditor.fields")}</p>
       )}
 
+      <p className="value-source-help">{t('app.workflowHelp.messageFields')}</p>
       <div className="show-message-preview">
         <span className="step-property-label">{t("showMessageEditor.messagePreview")}</span>
         <pre>{composeMessageText(step.fields,

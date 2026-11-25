@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { ProcessOperandEditor } from './InputValueEditor'
 import { useI18n } from './i18n/I18nProvider'
 import type { ExpressionOperandWire } from './inputValue'
@@ -83,6 +84,7 @@ type Props = {
 
 export default function ProcessEditor({ step, onChange, ...references }: Props) {
   const { t } = useI18n()
+  const helpId = useId()
   const kind = step.type === 'byte-process' ? step.operation.kind : step.operation
   const operations = Object.keys(step.type === 'array-process' ? ARRAY_PARAMETERS : step.type === 'string-process' ? STRING_PARAMETERS : BYTE_PARAMETERS)
   const label = (name: string) => {
@@ -92,11 +94,22 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
     if (kind === 'number-to-hex') return t("process.inputNumber")
     return t("process.inputHex")
   }
+  const family = step.type === 'string-process' ? 'string' : step.type === 'byte-process' ? 'byte' : 'array'
+  const parameterHelp = (name: string) => {
+    if (name === 'input') return family === 'array' ? 'arrayInput' : kind === 'number-to-hex' ? 'numberInput'
+      : family === 'byte' && kind !== 'text-to-hex' ? 'hexInput' : 'textInput'
+    if (name === 'start_index' || name === 'byte_index' || name === 'index') return family === 'string' ? 'characterIndex' : family === 'array' ? 'arrayIndex' : 'byteIndex'
+    if (name === 'byte_count') return kind === 'hex-to-number' || kind === 'number-to-hex' ? 'numericByteCount' : 'byteCount'
+    if (name === 'search') return family === 'byte' ? 'byteSearch' : 'stringSearch'
+    if (name === 'append' && family === 'byte') return 'hexAppend'
+    return name
+  }
+  const example = ['substring', 'index-of', 'hex-to-number', 'number-to-hex', 'hex-to-text', 'get-item'].includes(kind)
   return (
     <div className="step-properties-fields" data-process-string-editor>
       <label className="step-property-field">
         <span className="step-property-label">{t("process.operation")}</span>
-        <select value={kind} disabled={references.disabled}
+        <select aria-describedby={helpId} value={kind} disabled={references.disabled}
           onChange={event => {
             const selected = event.target.value
             onChange(current => withOperation(current, selected))
@@ -104,9 +117,10 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
           {operations.map(operation => <option key={operation} value={operation}>{t(`process.operation.${operation}`)}</option>)}
         </select>
       </label>
+      <p id={helpId} className="value-source-help">{t(`process.help.${family}.${kind}`)}</p>
       {parameters(step).map(name => (
         <ProcessOperandEditor key={kind + ':' + name} {...references}
-          label={label(name)} literalDefault={literalDefault(step, name)} noLiteral={step.type === 'array-process' && name === 'input'}
+          label={label(name)} help={t(`process.parameterHelp.${parameterHelp(name)}`)} literalDefault={literalDefault(step, name)} noLiteral={step.type === 'array-process' && name === 'input'}
           value={step.arguments[name] ?? (step.type === 'array-process' && name === 'input' ? { source: 'step-output', step_id: '', pointer: '' } : { source: 'literal', value: literalDefault(step, name) })}
           onChange={value => onChange(current => ({ ...current, arguments: { ...current.arguments, [name]: value } }))} />
       ))}
@@ -115,7 +129,7 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
         return <>
           <label className="step-property-field">
             <span className="step-property-label">{t("process.byteOrder")}</span>
-            <select value={operation.byte_order} disabled={references.disabled}
+            <select aria-describedby={helpId + '-order'} value={operation.byte_order} disabled={references.disabled}
               onChange={event => {
                 const byte_order = event.target.value as typeof operation.byte_order
                 onChange(current => current.type === 'byte-process' && 'byte_order' in current.operation
@@ -125,9 +139,10 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
               <option value="lsb-first">{t("process.lsbFirst")}</option>
             </select>
           </label>
+          <p id={helpId + '-order'} className="value-source-help">{t(`process.orderHelp.${operation.byte_order}`)}</p>
           <label className="step-property-field">
             <span className="step-property-label">{t("process.numberFormat")}</span>
-            <select value={operation.number_format} disabled={references.disabled}
+            <select aria-describedby={helpId + '-format'} value={operation.number_format} disabled={references.disabled}
               onChange={event => {
                 const number_format = event.target.value as typeof operation.number_format
                 onChange(current => current.type === 'byte-process' && 'number_format' in current.operation
@@ -137,12 +152,17 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
               <option value="signed">{t("process.signed")}</option>
             </select>
           </label>
-          <p className="value-source-help">{t("process.numericByteCountHelp")}</p>
+          <p id={helpId + '-format'} className="value-source-help">{t(`process.formatHelp.${operation.number_format}`)}</p>
         </>
       })()}
-      <p className="value-source-help">{t(step.type === 'array-process' ? 'process.arrayHelp' : 'process.limitHelp')}</p>
-      {step.type === 'byte-process' && <p className="value-source-help">{t("process.hexHelp")}</p>}
-      <p className="value-source-help">{t("process.resultHelp")}</p>
+      <div className="workflow-help-group">
+        <span className="step-property-label">{t('process.resultTitle')}</span>
+        <p className="value-source-help">{t(`process.result.${family}.${kind}`)}</p>
+        <p className="value-source-help">{t('process.resultHelp')}</p>
+        {example && <p className="value-source-help">{t(`process.example.${kind}`)}</p>}
+        {family === 'byte' && !['byte-length', 'get-byte', 'contains', 'hex-to-number', 'hex-to-text'].includes(kind) && <p className="value-source-help">{t('process.hexHelp')}</p>}
+      </div>
+      <p className="value-source-help">{t(family === 'array' ? 'process.arrayLimitHelp' : 'process.limitHelp')}</p>
     </div>
   )
 }

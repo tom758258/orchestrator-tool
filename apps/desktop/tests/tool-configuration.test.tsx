@@ -5,13 +5,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import ScopesActionEditor from '../src/ScopesActionEditor'
+import ProcessEditor from '../src/ProcessEditor'
+import { useState } from 'react'
 import InputValueEditor, { ExpressionOperandEditor } from '../src/InputValueEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
 import type { WorkflowDraft } from '../src/templateDraft'
 import type { ExpressionOperandWire } from '../src/inputValue'
 import ToolSetupEditor, { type ToolInstance } from '../src/ToolSetupEditor'
 import BackgroundSetup from '../src/BackgroundSetup'
-import type { BackgroundConfig, ToolActionStep, WorkflowStep } from '../src/workflow'
+import type { BackgroundConfig, ProcessStep, ToolActionStep, WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
@@ -1434,3 +1436,79 @@ test('Buffer settings and Steps save the current contract with Array input refer
     arguments: { input: { source: 'step-output', step_id: batch.id, pointer: '/data' },
       index: { source: 'literal', value: 0 } } })
 }, 15000)
+
+// This is an operator-facing requirement: every available Step must explain
+// its purpose in Properties, using the same description as the Palette.
+test('all 42 Workflow presets show their Palette description in Properties', async () => {
+  tools = [...tools, toolStatus('serial')]
+  newDraft = {
+    ...original,
+    tool_instances: [...original.tool_instances,
+      { ...backgroundMeter, id: 'meters-bg', setup: { ...backgroundMeter.setup, trigger_mode: 'software' } },
+      { ...backgroundMeter, id: 'meters-fg', setup: { ...backgroundMeter.setup, trigger_mode: 'single' } },
+      { id: 'serial-1', tool: 'serial', setup: {} }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-bg', live_monitor: false, limit_count: 1 }],
+    workflow: { interaction: { enabled: true, max_active_command_status: 4096,
+      buffer: { enabled: true, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] },
+  }
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  const categories = within(screen.getByRole('region', { name: 'Step categories' }))
+  const presets = categories.getAllByRole('button').filter(button => button.hasAttribute('aria-pressed'))
+  expect(presets).toHaveLength(42)
+  const properties = within(screen.getByRole('region', { name: 'Properties' }))
+  for (const preset of presets) {
+    const description = preset.getAttribute('title')?.split('\n')[1] ?? ''
+    expect(description).toBeTruthy()
+    expect(description).not.toMatch(/^steps\.hint\./)
+    const root = screen.queryByRole('button', { name: 'Set Target to Root' })
+    if (root) fireEvent.click(root)
+    fireEvent.click(preset)
+    click('Add Step')
+    expect(properties.getAllByText(description)).toHaveLength(1)
+  }
+  fireEvent.click(screen.getByRole('button', { name: /Step .*?, serial-query-1$/ }))
+  expect(properties.getByRole('heading', { name: 'Serial Query' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
+  const localized = within(screen.getByRole('region', { name: '屬性' }))
+  const description = screen.getByRole('button', { name: 'Serial 查詢' }).getAttribute('title')?.split('\n')[1] ?? ''
+  expect(localized.getByRole('heading', { name: 'Serial 查詢 (Serial Query)' })).toBeTruthy()
+  expect(localized.getAllByText(description)).toHaveLength(1)
+  localStorage.removeItem('orchestrator-tool.locale')
+}, 30000)
+
+test('all 21 Process operations show contextual help and a result type', () => {
+  const literal = { source: 'literal' as const, value: '' }
+  const initial: ProcessStep[] = [
+    { type: 'string-process', id: 'string', operation: 'length', arguments: { input: literal } },
+    { type: 'byte-process', id: 'byte', operation: { kind: 'byte-length' }, arguments: { input: literal } },
+    { type: 'array-process', id: 'array', operation: 'length', arguments: {
+      input: { source: 'step-output', step_id: '', pointer: '' } } },
+  ]
+  function Editor({ initialStep }: { initialStep: ProcessStep }) {
+    const [step, setStep] = useState(initialStep)
+    return <ProcessEditor step={step} onChange={setStep} earlierSteps={[]} earlierVariables={[]}
+      instances={[]} backgrounds={[]} stepLabel={step => step.id} disabled={false} />
+  }
+  let count = 0
+  for (const initialStep of initial) {
+    const view = render(<Editor initialStep={initialStep} />)
+    const operation = screen.getByRole('combobox', { name: 'Operation' }) as HTMLSelectElement
+    const values = Array.from(operation.options, option => option.value)
+    const descriptions = new Set<string>()
+    for (const value of values) {
+      fireEvent.change(operation, { target: { value } })
+      const id = operation.getAttribute('aria-describedby')!
+      const description = document.getElementById(id)?.textContent ?? ''
+      expect(description).toBeTruthy()
+      expect(description).not.toMatch(/^process\.help\./)
+      descriptions.add(description)
+      expect(screen.getByText(/^\/value · (Number|String|Boolean|Hex String|JSON)/)).toBeTruthy()
+      count += 1
+    }
+    expect(descriptions.size).toBe(values.length)
+    view.unmount()
+  }
+  expect(count).toBe(21)
+})

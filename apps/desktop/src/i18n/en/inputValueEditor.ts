@@ -46,5 +46,9 @@ export default {
   "inputValueEditor.right": "Right",
   "inputValueEditor.namedSource": "{label} Source",
   "inputValueEditor.valueSource": "Value Source",
-  "inputValueEditor.value": "Value"
+  "inputValueEditor.value": "Value",
+  "inputValueEditor.typeHelp.number": "A numeric value, not text.",
+  "inputValueEditor.typeHelp.string": "Text, including an empty string; numeric-looking text is still a String.",
+  "inputValueEditor.typeHelp.boolean": "True or False as a Boolean, not a String.",
+  "inputValueEditor.typeHelp.null": "Explicit JSON Null, not an empty String or a missing reference."
 }

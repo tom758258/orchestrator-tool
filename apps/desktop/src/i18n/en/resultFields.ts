@@ -53,5 +53,6 @@ export default {
   "resultFields.buffer.overflowed": "Overflowed",
   "resultFields.buffer.dropped_count": "Dropped Count",
   "resultFields.buffer.data": "Data (Array)",
-  "resultFields.buffer.readCount": "Read Count"
+  "resultFields.buffer.readCount": "Read Count",
+  "resultFields.processValue": "Value"
 }

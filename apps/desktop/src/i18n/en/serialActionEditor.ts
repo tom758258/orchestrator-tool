@@ -34,12 +34,14 @@ export default {
   "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "The RX delimiter tells Receive/Query when to stop reading. Text supports \\r, \\n and escaped backslashes; Hex Byte String accepts pairs of hex digits such as 0D 0A (spaces allowed). This is independent of TX Format.",
   "serialActionEditor.maxBytes11048576": "Max RX Bytes (1–1048576)",
   "serialActionEditor.failOnReadTimeout": "Fail on Read Timeout",
-  "serialActionEditor.failOnReadTimeoutHelp": "Off (default): confirmed Read Timeout returns a Step Result for Assert/IF/ELSE; it does not mean the full response arrived. On: Read Timeout fails the Step. Reported Session partial RX is not repeated, but OS/device RX is not cleared. Later Receive/Query steps may see delayed data from an earlier operation. Other errors still fail.",
+  "serialActionEditor.failOnReadTimeoutHelp": "Reported Session partial RX is not repeated, but OS/device RX is not cleared. Later Receive/Query Steps may read delayed data. Other errors still fail.",
   "serialActionEditor.receiveReadHelp": "Max RX Bytes is a limit, not a required length. Receive reads once and does not wait to fill the limit.",
   "serialActionEditor.queryReadHelp": "Max RX Bytes is a limit, not a required length. Query reads until the configured RX delimiter.",
   "serialActionEditor.textSourceTypes": "TX Data accepts a String or Number according to TX Format. Text transmission requires a String; Timestamp is an ISO-8601 String, while Elapsed Time is a Number and cannot be sent directly as text.",
   "serialActionEditor.hexSourceTypes": "Single Byte transmission requires a Number and sends only its lowest byte. Elapsed Time is seconds (Number); Timestamp and RX Data (Hex String) are Strings and cannot be sent as one byte.",
   "serialActionEditor.tXSource": "TX Data Source",
   "serialActionEditor.tXValue": "TX Data",
-  "serialActionEditor.selectSerialFileToSend": "Select Serial file to send"
+  "serialActionEditor.selectSerialFileToSend": "Select Serial file to send",
+  "serialActionEditor.timeoutHelp.checked": "Confirmed Read Timeout fails the Step.",
+  "serialActionEditor.timeoutHelp.unchecked": "Confirmed Read Timeout returns a Step Result for Assert/IF/ELSE; this does not mean the full response arrived (default)."
 }

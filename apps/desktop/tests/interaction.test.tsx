@@ -28,8 +28,12 @@ test('Interaction settings lock without Background and retain capacity through c
   fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
   fireEvent.change(capacity, { target: { value: '65536' } })
   fireEvent.click(screen.getByLabelText('Enable Buffer'))
+  expect(screen.getByRole('combobox', { name: 'Buffer Mode', description: /drop the incoming event/ })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'Overflow Policy', description: /fails the Workflow/ })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Buffer Mode'), { target: { value: 'ring' } })
   fireEvent.change(screen.getByLabelText('Overflow Policy'), { target: { value: 'continue' } })
+  expect(screen.getByRole('combobox', { name: 'Buffer Mode', description: /remove the oldest events/ })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'Overflow Policy', description: /Continue after Buffer loss/ })).toBeTruthy()
   fireEvent.click(toggle())
   expect(screen.queryByLabelText('Max Active Command Status')).toBeNull()
   fireEvent.click(toggle())
@@ -110,9 +114,11 @@ test('BG Command exposes optional completion wait and locks controls during a Ru
   const onChange = vi.fn()
   const props = { step, steps: [step], backgrounds: [], onChange, savedCommands: {}, onSaveCommand: vi.fn() }
   const view = render(<InteractionEditor {...props} disabled={false} />)
+  expect(screen.getByRole('checkbox', { name: 'Wait for Completion', description: /reliable acceptance/ })).toBeTruthy()
   fireEvent.click(screen.getByLabelText('Wait for Completion'))
   expect(onChange).toHaveBeenCalledWith({ ...step, operation: { ...step.operation, wait_for_completion: true } })
-  view.rerender(<InteractionEditor {...props} disabled />)
+  view.rerender(<InteractionEditor {...props} step={onChange.mock.lastCall![0]} disabled />)
+  expect(screen.getByRole('checkbox', { name: 'Wait for Completion', description: /Wait for command completion/ })).toBeTruthy()
   expect(screen.getByRole('group').hasAttribute('disabled')).toBe(true)
 })
 
@@ -200,8 +206,12 @@ test('Buffer data editor selects Count source without a timeout and ALL removes 
   }
   render(<Editor />)
   expect(screen.queryByLabelText('Step timeout (ms)')).toBeNull()
+  expect(screen.getByRole('combobox', { name: 'Read Mode', description: /entire batch succeeds/ })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'Get Mode', description: /all currently available events/ })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Read Mode'), { target: { value: 'peek' } })
   fireEvent.change(screen.getByLabelText('Get Mode'), { target: { value: 'count' } })
+  expect(screen.getByRole('combobox', { name: 'Read Mode', description: /without removing/ })).toBeTruthy()
+  expect(screen.getByRole('combobox', { name: 'Get Mode', description: /up to the requested count/ })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Count Source'), { target: { value: 'step-output' } })
   fireEvent.change(screen.getByLabelText('Result'), { target: { value: '/count' } })
   expect(changed.mock.lastCall?.[0].operation).toEqual({

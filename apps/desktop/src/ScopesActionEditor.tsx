@@ -159,8 +159,9 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
     </>}
     {step.action === 'single-wait' && <>
       {singleWaitInteger('trigger_timeout_ms', t("scopesActionEditor.triggerTimeoutMs"), 5000)}
+      <p className="value-source-help">{t("scopesActionEditor.singleWaitTimeoutHint")}</p>
       {singleWaitInteger('trigger_poll_interval_ms', t("scopesActionEditor.pollIntervalMs"), 100)}
-      <p className="tool-setup-hint">{t("scopesActionEditor.singleWaitTimeoutHint")}</p>
+      <p className="value-source-help">{t('app.workflowHelp.scopePoll')}</p>
     </>}
     {step.action === 'measure' && capabilityChoice('item', t("scopesActionEditor.measurementItem"), caps?.direct_measurement_items ?? [])}
     {step.action === 'autoscale' && <>
@@ -222,6 +223,7 @@ export default function ScopesActionEditor({ step, instances, backgrounds, earli
             ? t("scopesActionEditor.invalidOrNotSupportedByTheCurrentModelSelect") : t("scopesActionEditor.supportCannotBeConfirmed")}
         </p>}
       {capabilityChoice('points', t("scopesActionEditor.points"), caps?.capture_point_options ?? [])}
+      <p className="value-source-help">{t('app.workflowHelp.scopePoints')}</p>
       <p className="tool-setup-hint">{t("scopesActionEditor.cSVAndMetadataAreSavedInScopesFileOutput")}</p>
     </>}
     {step.action === 'screenshot' && <>

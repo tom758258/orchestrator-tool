@@ -137,7 +137,7 @@ export function curatedResultFields(
 ): readonly CuratedResultField[] {
   let fields: readonly CuratedResultField[] = []
   if (step?.type === 'string-process' || step?.type === 'byte-process' || step?.type === 'array-process') {
-    fields = [{ label: "resultFields.value", pointer: '/value' }]
+    fields = [{ label: "resultFields.processValue", pointer: '/value' }]
   } else if (step?.type === 'tool-action') {
     const tool = instances.find(instance => instance.id === step.target)?.tool
     fields = ACTION_RESULT_FIELDS[`${tool}/${step.action}`] ?? []

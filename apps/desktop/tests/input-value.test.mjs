@@ -1,4 +1,5 @@
 import { english } from './presentation-fixture.mjs'
+import { translate } from '../src/i18n/index.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
@@ -232,4 +233,14 @@ test('Buffer and Array results expose the exact current contract pointers', () =
   assert.deepEqual(curatedResultFields(status, []).map(field => field.pointer), fields.map(name => '/' + name))
   assert.equal(stepOutputReference(batch, []).pointer, '/data')
   assert.equal(stepOutputReference(item, []).pointer, '/value')
+})
+
+test('Process result labels describe general values without changing the pointer', () => {
+  const zh = (key, params) => translate('zh-TW', key, params)
+  for (const type of ['string-process', 'byte-process', 'array-process']) {
+    const step = { type, id: 'process' }
+    assert.deepEqual(curatedResultFields(step, instances, zh), [{ label: '處理結果', pointer: '/value' }])
+    assert.equal(stepOutputReference(step, instances).pointer, '/value')
+  }
+  assert.equal(curatedResultFields(meterMeasure, instances, zh)[0].label, '數值')
 })

@@ -9,7 +9,7 @@ const sourceHelp = (t: Translate) => ({
 })
 import { useI18n } from './i18n/I18nProvider'
 import { ELAPSED_TIME_FORMATS, type ElapsedTimeFormat, type OutputTimeFormat } from './outputTime'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { bindProcessStringTransfers, decodeProcessString, encodeProcessString } from './processString'
 import { bindProcessStringHistory, syncProcessStringHistory } from './processStringHistory'
@@ -165,6 +165,10 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
               {allowNullLiteral && <option value="null">{t("inputValueEditor.null")}</option>}
             </select>
           </label>}
+          {(allowBooleanLiteral || allowStringLiteral || allowNullLiteral) &&
+            <p className="value-source-help">{t(value.value === null ? 'inputValueEditor.typeHelp.null'
+              : typeof value.value === 'boolean' ? 'inputValueEditor.typeHelp.boolean'
+              : typeof value.value === 'string' ? 'inputValueEditor.typeHelp.string' : 'inputValueEditor.typeHelp.number')}</p>}
           {value.value !== null && <label className="step-property-field">
             <span className="step-property-label">{literalLabel ?? t("inputValueEditor.value")}</span>
             {typeof value.value === 'boolean' ? (
@@ -278,11 +282,12 @@ export function ExpressionOperandEditor({ value, onChange, side, allowBooleanLit
   )
 }
 
-export function ProcessOperandEditor({ value, onChange, label, literalDefault, ...references }:
-  Omit<OperandEditorProps, 'literalLabel'> & { label: string; literalDefault: number | string }) {
+export function ProcessOperandEditor({ value, onChange, label, literalDefault, help, ...references }:
+  Omit<OperandEditorProps, 'literalLabel'> & { label: string; literalDefault: number | string; help?: string }) {
   const { t } = useI18n()
+  const helpId = useId()
   return (
-    <div className="step-properties-fields" role="group" aria-label={label}>
+    <div className="step-properties-fields" role="group" aria-label={label} aria-describedby={help ? helpId : undefined}>
       <label className="step-property-field">
         <span className="step-property-label">{t("inputValueEditor.namedSource", { label })}</span>
         <select value={value.source} disabled={references.disabled}
@@ -290,8 +295,10 @@ export function ProcessOperandEditor({ value, onChange, label, literalDefault, .
           <SourceOptions {...references} />
         </select>
       </label>
+      <p className="value-source-help">{sourceHelp(t)[value.source]}</p>
       <OperandEditor {...references} value={value} onChange={onChange}
         fixedStringLiteral={typeof literalDefault === 'string'} literalLabel={label} />
+      {help && <p id={helpId} className="value-source-help">{help}</p>}
     </div>
   )
 }

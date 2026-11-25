@@ -46,5 +46,9 @@ export default {
   "inputValueEditor.right": "右側",
   "inputValueEditor.namedSource": "{label}來源",
   "inputValueEditor.valueSource": "資料來源",
-  "inputValueEditor.value": "值"
+  "inputValueEditor.value": "值",
+  "inputValueEditor.typeHelp.number": "數值，不是文字。",
+  "inputValueEditor.typeHelp.string": "文字（包含空字串）；看似數字的文字仍為 String。",
+  "inputValueEditor.typeHelp.boolean": "True 或 False 的布林值，不是字串。",
+  "inputValueEditor.typeHelp.null": "明確的 JSON Null，不是空字串或不存在的引用。"
 }

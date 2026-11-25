@@ -7,10 +7,11 @@ import type { BackgroundConfig, ToolActionStep, WorkflowStep } from './workflow'
 
 /** Editor only: Serial encoding and job validation are owned by Core. */
 export default function SerialActionEditor({ step, instances, backgrounds, earlierSteps, earlierVariables,
-  disabled, onChange, stepLabel }: {
+  disabled, onChange, stepLabel, showStepHelp = true }: {
   step: ToolActionStep; instances: ToolInstance[]; backgrounds?: readonly BackgroundConfig[]; earlierSteps: WorkflowStep[]
   earlierVariables: string[]; disabled: boolean
   onChange: (step: ToolActionStep) => void; stepLabel: (step: WorkflowStep) => string
+  showStepHelp?: boolean
 }) {
   const { t } = useI18n()
   const change = (key: string, value: unknown) =>
@@ -43,7 +44,7 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
   const receiveMode = String(step.arguments.receive_mode ??
     (step.action === 'receive' ? 'single' : 'delimiter'))
   return <div className="step-properties-fields">
-    <p className="value-source-help">{t(`serialActionEditor.stepHelp.${step.action}`)}</p>
+    {showStepHelp && <p className="value-source-help">{t(`serialActionEditor.stepHelp.${step.action}`)}</p>}
     {hasTx && <>
       <label className="step-property-field">
         <span className="step-property-label">{t("serialActionEditor.tXFormat")}</span>
@@ -53,12 +54,12 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
           <option value="hex-byte">{t("serialActionEditor.hexByteOneByte")}</option>
         </select>
       </label>
-      <p className="value-source-help">{t(txFormat === 'text'
-        ? "serialActionEditor.textSourceTypes"
-        : "serialActionEditor.hexSourceTypes")}</p>
       <p className="value-source-help">{txFormat === 'text'
         ? t("serialActionEditor.textSendsUTF8BytesOfAStringOnly")
         : t("serialActionEditor.hexByteInteger0FixedValuesMustBeIntegers")}</p>
+      <p className="value-source-help">{t(txFormat === 'text'
+        ? "serialActionEditor.textSourceTypes"
+        : "serialActionEditor.hexSourceTypes")}</p>
       <InputValueEditor key={`${step.id}-tx`}
         value={txValue} literalDefault={txFormat === 'text' ? '' : 0}
         allowStringLiteral={txFormat === 'text'}
@@ -160,6 +161,8 @@ export default function SerialActionEditor({ step, instances, backgrounds, earli
           onChange={event => change('fail_on_read_timeout', event.target.checked)} />
         <span className="step-property-label">{t("serialActionEditor.failOnReadTimeout")}</span>
       </label>
+      <p className="value-source-help">{t(step.arguments.fail_on_read_timeout === true
+        ? 'serialActionEditor.timeoutHelp.checked' : 'serialActionEditor.timeoutHelp.unchecked')}</p>
       <p className="value-source-help">{t("serialActionEditor.failOnReadTimeoutHelp")}</p>
     </>}
   </div>

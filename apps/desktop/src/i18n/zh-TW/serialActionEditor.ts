@@ -34,12 +34,14 @@ export default {
   "serialActionEditor.delimiterMayContainMultipleBytesTextSupportsRN": "接收結束標記供 Receive／Query 判斷何時停止接收。文字支援 \\r、\\n 與跳脫反斜線；Hex 位元組字串接受成對十六進位字元（例如 0D 0A，可含空白）。此設定與傳送格式無關。",
   "serialActionEditor.maxBytes11048576": "最大接收位元組數（1–1048576）",
   "serialActionEditor.failOnReadTimeout": "讀取逾時時使步驟失敗",
-  "serialActionEditor.failOnReadTimeoutHelp": "預設不勾選：Read Timeout 回傳供 Assert／IF／ELSE 判斷的 Step Result，不代表已完整接收；勾選則使步驟失敗。已回報的 Session Partial RX 不會重複讀取，但不會清空 OS／設備端 RX；後續 Receive／Query 可能讀到前一次延遲到達的資料，請自行確認資料有效性。其他錯誤仍會失敗。",
+  "serialActionEditor.failOnReadTimeoutHelp": "已回報的 Session Partial RX 不會重複讀取，但不清除 OS／設備 RX。後續 Receive／Query 可能讀到延遲資料。其他錯誤仍會失敗。",
   "serialActionEditor.receiveReadHelp": "最大接收位元組數是讀取上限，不保證讀滿。Receive 只讀取一次。",
   "serialActionEditor.queryReadHelp": "最大接收位元組數是讀取上限，不保證讀滿。Query 讀取至指定的接收結束標記。",
   "serialActionEditor.textSourceTypes": "傳送內容依傳送格式選擇 String 或 Number。文字傳送需要 String；Timestamp 是 ISO-8601 字串，Elapsed Time 是秒數（Number），不能直接當文字傳送。",
   "serialActionEditor.hexSourceTypes": "單一位元組傳送需要 Number，只送最低 1 Byte。Elapsed Time 是秒數（Number）；Timestamp 和 RX 資料（Hex 字串）是 String，不能直接作為單一位元組傳送。",
   "serialActionEditor.tXSource": "傳送資料來源",
   "serialActionEditor.tXValue": "傳送內容",
-  "serialActionEditor.selectSerialFileToSend": "選取要傳送的 Serial 檔案"
+  "serialActionEditor.selectSerialFileToSend": "選取要傳送的 Serial 檔案",
+  "serialActionEditor.timeoutHelp.checked": "確認為 Read Timeout 時，步驟失敗。",
+  "serialActionEditor.timeoutHelp.unchecked": "確認為 Read Timeout 時回傳供 Assert／IF／ELSE 判斷的 Step Result，不代表已完整接收（預設）。"
 }

@@ -37,7 +37,7 @@ import { protectionChannelNumbers } from './powersProtectionSetup'
 import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT } from './outputTime'
 import type { NumericDisplayFormat } from './outputTime'
 import InputValueEditor, { ExpressionOperandEditor } from './InputValueEditor'
-import { COMPARISON_OPERATORS } from './inputValue'
+import { COMPARISON_OPERATORS, curatedResultFields } from './inputValue'
 import type { ComparisonOperator, InputValueWire } from './inputValue'
 import { allWorkflowSteps, containerPath, mapWorkflowSteps, loopPath, outputPages, outputPageContext, enclosingLoop, enclosingForVariables, inputScope, outputDefinitions, occurrenceKey, compatibleOutputPages, showMessageOutputCandidates, visibleMessageWindow, MESSAGE_TARGETS } from './workflow'
 import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDto, RunMetadataDto, MessageTargetWire, MessageWindow, StepBranch } from './workflow'
@@ -467,43 +467,18 @@ function App() {
     { value: 'power-output-off', label: t("app.powerOutputOFF"), prefix: 'power-off', category: 'Powers', tool: 'powers' },
   ]
 
-  const TOOL_ACTION_LABELS: Record<string, string> = {
-    'serial/send': t("app.serialSend"),
-    'serial/send-file': t("app.serialSendFile"),
-    'serial/receive': t("app.serialReceive"),
-    'serial/query': t("app.serialQuery"),
-    ...Object.fromEntries(SCOPES_ACTIONS.map(([action]) => [`scopes/${action}`, t(`steps.scope.${action}`)])),
-    'powers/set-output': t("app.powerSetOutput"),
-    'powers/protection-status': t("app.powerProtectionStatus"),
-    'powers/measure': t("app.powerMeasure"),
-    'powers/output-on': t("app.powerOutputON"),
-    'meters/measure': t("app.meterMeasure"),
-    'powers/output-off': t("app.powerOutputOFF"),
-  }
-
-  const STEP_HELP: Record<string, string> = {
-    'scopes/autoscale': t("app.keysightOnlyAutoScaleMayChangeChannelTimebaseAndTrigger"),
-    'serial/send': t("app.sendUTF8TextOrOneHexByteTo"),
-    'serial/send-file': t("app.sendAWorkerLocalFileRunIsBlockedIf"),
-    'serial/receive': t("app.receiveUpToMaxBytesOnceResultContainsRx"),
-    'serial/query': t("app.sendAByteOrUTF8StringAndRead"),
-    while: t("app.repeatWhileAComparisonIsTrueMaxIterationsIs"),
-    if: t("app.evaluateAComparisonOnceAndExecuteEitherTHENOr"),
-    for: t("app.repeatTheseBodyStepsOverAnExactDecimalRange"),
-    assert: t("app.failTheWorkflowWhenThisComparisonIsFalse"),
-    'show-message': t("app.writeAMessageToTheMessagesPanelWhileThe"),
-    'string-process': t("process.stringHelp"),
-    'byte-process': t("process.byteHelp"),
-    'array-process': t('process.arrayHelp'),
-    'set-variable': t("app.saveAValueOrCalculationResultSoLaterSteps"),
-    output: t("app.publishAValueAsAFinalWorkflowResultThis"),
-    wait: t("app.pauseBeforeRunningTheNextStepUsefulForDUT"),
-    'powers/set-output': t("app.thisStepOnlyConfiguresTheSetpointsUsePowerOutput"),
-    'powers/protection-status': t("app.powerProtectionStatusReadsTheSelectedPowerChannelProtection"),
-    'powers/measure': t("app.readTheSelectedChannelSActualVoltageVAnd"),
-    'powers/output-on': t("app.enableTheSelectedPowerChannel"),
-    'powers/output-off': t("app.disableTheSelectedPowerChannel"),
-    'meters/measure': t("app.acquireTheNextMeterReadingOrCustomBatchUsing"),
+  const TOOL_ACTION_LABEL_KEYS: Record<string, string> = {
+    'serial/send': "app.serialSend",
+    'serial/send-file': "app.serialSendFile",
+    'serial/receive': "app.serialReceive",
+    'serial/query': "app.serialQuery",
+    ...Object.fromEntries(SCOPES_ACTIONS.map(([action]) => [`scopes/${action}`, `steps.scope.${action}`])),
+    'powers/set-output': "app.powerSetOutput",
+    'powers/protection-status': "app.powerProtectionStatus",
+    'powers/measure': "app.powerMeasure",
+    'powers/output-on': "app.powerOutputON",
+    'meters/measure': "app.meterMeasure",
+    'powers/output-off': "app.powerOutputOFF",
   }
 
   const EXECUTABLE_LABELS: Record<string, string> = {
@@ -526,33 +501,54 @@ function App() {
     'not-configured': t("app.notConfigured"),
   }
 
-  function stepLabel(step: WorkflowStep, instances: ToolInstance[]): string {
-    if (step.type === 'bg-interaction') return t(`steps.interaction.${step.operation.kind}`)
-    if (step.type === 'background') return t(`steps.background.${step.action}`)
-    if (step.type === 'while') return t("app.while")
-    if (step.type === 'if') return t("app.ifElse")
-    if (step.type === 'for') return t("app.forRange", { value1: step.variable, value2: step.range.start, value3: step.range.stop })
+  function stepHelpKey(step: WorkflowStep, instances: ToolInstance[]): StepPreset | undefined {
+    if (step.type === 'bg-interaction') return ({
+      command: 'bg-command', 'get-latest': 'bg-get-latest', 'wait-next': 'bg-wait-next',
+      'get-command-result': 'bg-get-result', 'get-buffer-data': 'bg-get-buffer-data', 'get-buffer-status': 'bg-get-buffer-status',
+    } as const)[step.operation.kind]
+    if (step.type === 'background') return `background-${step.action}`
+    if (step.type !== 'tool-action') return step.type
+    const tool = instances.find(instance => instance.id === step.target)?.tool
+    const prefix = tool === 'scopes' ? 'scope' : tool === 'powers' ? 'power' : tool === 'meters' ? 'meter' : tool
+    return STEP_PRESETS.find(preset => preset.value === `${prefix}-${step.action}`)?.value
+  }
+
+  function propertiesTitle(step: WorkflowStep, instances: ToolInstance[]): string {
+    if (step.type === 'for' || step.type === 'while') return t(`steps.properties.${step.type}`)
+    const label = stepLabel(step, instances).trim()
+    if (locale !== 'zh-TW' || !stepHelpKey(step, instances)) return label
+    const name = stepLabel(step, instances, english).trim()
+    return label.toLowerCase().includes(name.toLowerCase()) ? label : `${label} (${name})`
+  }
+
+  function stepLabel(step: WorkflowStep, instances: ToolInstance[], translate: Translate = t): string {
+    if (step.type === 'bg-interaction') return translate(`steps.interaction.${step.operation.kind}`)
+    if (step.type === 'background') return translate(`steps.background.${step.action}`)
+    if (step.type === 'while') return translate("app.while")
+    if (step.type === 'if') return translate("app.ifElse")
+    if (step.type === 'for') return translate("app.forRange", { value1: step.variable, value2: step.range.start, value3: step.range.stop })
     if (step.type === 'set-variable') {
-      return t("app.setVariable")
+      return translate("app.setVariable")
     }
     if (step.type === 'output') {
-      return t("app.output")
+      return translate("app.output")
     }
     if (step.type === 'assert') {
-      return t("app.assert")
+      return translate("app.assert")
     }
-    if (step.type === 'string-process') return t("process.stringProcess")
-    if (step.type === 'array-process') return t('process.arrayProcess')
-    if (step.type === 'byte-process') return t("process.byteProcess")
+    if (step.type === 'string-process') return translate("process.stringProcess")
+    if (step.type === 'array-process') return translate('process.arrayProcess')
+    if (step.type === 'byte-process') return translate("process.byteProcess")
     if (step.type === 'show-message') {
-      return t("app.showMessage")
+      return translate("app.showMessage")
     }
     if (step.type === 'wait') {
-      return t("app.wait")
+      return translate("app.wait")
     }
 
     const tool = instances.find(instance => instance.id === step.target)?.tool
-    return TOOL_ACTION_LABELS[`${tool}/${step.action}`] ?? `${step.target} / ${step.action}`
+    const key = TOOL_ACTION_LABEL_KEYS[`${tool}/${step.action}`]
+    return key ? translate(key) : `${step.target} / ${step.action}`
   }
 
   const simulationSamples = useSimulationSamples()
@@ -2952,20 +2948,24 @@ function App() {
                     {streamingExpanded && <>
                     <label><input type="checkbox" checked={backgroundCsvEnabled} disabled={workflowBusy || !workflowDraft.backgrounds?.length}
                       onChange={event => setBackgroundCsvEnabled(event.target.checked)} /> {t("app.streamBackgroundCSVDuringCapture")}</label>
+                    <p className="value-source-help">{t('app.workflowHelp.backgroundCsv')}</p>
                     {backgroundCsvEnabled && <>
                       <select aria-label={t("app.backgroundCSVSelection")} value={backgroundCsvTarget} disabled={workflowBusy} onChange={event => setBackgroundCsvTarget(event.target.value)}>
                         <option value="all">{t("app.allBackgrounds")}</option>{workflowDraft.backgrounds?.map(background => <option key={background.id} value={background.id}>{background.id}</option>)}
                       </select>
+                      <p className="value-source-help">{t(backgroundCsvTarget === 'all' ? 'app.workflowHelp.backgroundCsvAll' : 'app.workflowHelp.backgroundCsvOne')}</p>
                       <label>{t("app.scopesCSVColumns")}<select aria-label={t("app.scopesStreamingCSVColumns")} value={backgroundCsvMode}
                         disabled={workflowBusy} onChange={event => setBackgroundCsvMode(event.target.value as 'values-only' | 'values-quality')}>
                         <option value="values-only">{t("app.valuesUnits")}</option>
                         <option value="values-quality">{t("app.valuesUnitsValidityReason")}</option>
                       </select></label>
+                      <p className="value-source-help">{t(`app.workflowHelp.scopeCsv.${backgroundCsvMode}`)}</p>
                         <label>{t("app.serialStreamingCSVData")}<select aria-label={t("app.serialStreamingCSVData")}
                           value={serialCsvMode} disabled={workflowBusy}
                           onChange={event => setSerialCsvMode(event.target.value as 'hex' | 'text')}>
                           <option value="hex">{t("app.hex")}</option><option value="text">{t("app.textUTF8")}</option>
                         </select></label>
+                      <p className="value-source-help">{t(`app.workflowHelp.serialCsv.${serialCsvMode}`)}</p>
                       <p>{backgroundCsvFolder ?? t("app.defaultApplicationFolderData")}</p>
                       <button type="button" className="action-button" disabled={workflowBusy} onClick={() => void (async () => {
                         setChoosingStreamOutputFolder(true)
@@ -2981,6 +2981,7 @@ function App() {
                         disabled={workflowBusy || !hasWorkflowOutputs}
                         onChange={event => setStreamCsv(event.target.checked)} />
                       {t("app.streamCSVDuringRun")}</label>
+                    <p className="value-source-help">{t('app.workflowHelp.foregroundCsv')}</p>
                     {!hasWorkflowOutputs && <p>{t("app.streamingCSVRequiresAtLeastOneOutput")}</p>}
                     {streamCsv && hasWorkflowOutputs && <div className="streaming-fields">
                       <select aria-label={t("app.cSVStreamingMode")} disabled={workflowBusy} value={streamAllPages ? 'all' : 'selected'}
@@ -3023,10 +3024,12 @@ function App() {
                           <label><input type="checkbox" checked={chartSamplingOptions.enabled}
                             onChange={event => setChartSamplingOptions(current => ({ ...current, enabled: event.target.checked }))} />
                             {t("app.preserveSignificantChanges")}</label>
+                          <p className="value-source-help">{t('app.workflowHelp.sampling')}</p>
                           <label className="chart-sampling-threshold">{t("app.changeThreshold")}<input aria-label={t("app.changeThreshold")} type="number" min="0" step="any"
                               disabled={!chartSamplingOptions.enabled} value={chartSamplingOptions.threshold}
                               onChange={event => setChartSamplingOptions(current => ({ ...current, threshold: event.target.value }))} />
                           </label>
+                          <p className="value-source-help">{t('app.workflowHelp.threshold')}</p>
                           <label><input type="checkbox" checked={chartSamplingOptions.showMarkers}
                             disabled={!chartSamplingOptions.enabled}
                             onChange={event => setChartSamplingOptions(current => ({ ...current, showMarkers: event.target.checked }))} />
@@ -3103,9 +3106,9 @@ function App() {
                   {selectedStepIds.length === 1 && selectedStep && (
                     <div className="step-properties-fields">
                       <div>
-                        <h4 className="step-properties-step-title">{stepLabel(selectedStep, workflowDraft.tool_instances)}</h4>
-                        {STEP_HELP[selectedAction ?? selectedStep.type] && (
-                          <p className="step-context-help">{STEP_HELP[selectedAction ?? selectedStep.type]}</p>
+                        <h4 className="step-properties-step-title">{propertiesTitle(selectedStep, workflowDraft.tool_instances)}</h4>
+                        {stepHelpKey(selectedStep, workflowDraft.tool_instances) && (
+                          <p className="step-context-help">{t(`steps.hint.${stepHelpKey(selectedStep, workflowDraft.tool_instances)}`)}</p>
                         )}
                       </div>
                       <div className="step-property-readonly">
@@ -3175,6 +3178,7 @@ function App() {
                         {(selectedStep.action === 'worker-on' || selectedStep.action === 'worker-off') && <label className="step-property-field step-property-checkbox"><input type="checkbox" checked={selectedStep.capture} disabled={workflowBusy}
                           onChange={event => updateStep(selectedStep.id, step => step.type === 'background' ? { ...step, capture: event.target.checked } : step)} />
                           <span className="step-property-label">{t("app.simultaneousCapture")}{selectedStep.action === 'worker-on' ? t("app.oN") : t("app.oFF")}</span></label>}
+                        {selectedStep.action === 'worker-on' && <p className="value-source-help">{t('app.workflowHelp.captureOn')}</p>}
                         {selectedStep.action === 'worker-off' && <p className="value-source-help">{t("app.ifCaptureWasAlreadyExplicitlySwitchedOFFUncheckSimultaneous")}</p>}
                       </>}
                       {selectedStep.type === 'for' && <>
@@ -3187,7 +3191,8 @@ function App() {
                               updateStep(selectedStep.id, step => step.type === 'for' ? { ...step, variable } : step)
                             }} />
                         </label>
-                        {(['start', 'stop', 'step'] as const).map(field => <label key={field} className="step-property-field">
+                        <p className="value-source-help">{t('app.workflowHelp.loopVariable')}</p>
+                        {(['start', 'stop', 'step'] as const).map(field => <div key={field} className="workflow-help-group"><label className="step-property-field">
                           <span className="step-property-label">{field === 'start' ? t("app.start") : field === 'stop' ? t("app.stop") : t("app.step")}</span>
                           <input type="text" required value={selectedStep.range[field]} disabled={workflowBusy}
                             onChange={event => {
@@ -3195,7 +3200,7 @@ function App() {
                               updateStep(selectedStep.id, step => step.type === 'for'
                                 ? { ...step, range: { ...step.range, [field]: value } } : step)
                             }} />
-                        </label>)}
+                        </label><p className="value-source-help">{t(`app.workflowHelp.for.${field}`)}</p></div>)}
                         {(!selectedStep.variable.trim() || Object.values(selectedStep.range).some(value => !value.trim())) &&
                           <p className="error">{t("app.loopVariableAndRangeFieldsMustNotBeBlank")}</p>}
                       </>}
@@ -3238,6 +3243,8 @@ function App() {
                               )}
                             />
                           </label>
+                          <p id="output-name-help" className="value-source-help">{t("app.editableColumnNameUsedInOutputDataCSVXLSX")}</p>
+                          {outputNameError && <p id="output-name-error" className="step-property-error">{outputNameError}</p>}
                           <label className="step-property-field">
                             <span className="step-property-label">{t("app.existingCompatiblePage")}</span>
                             <select value={selectedCompatiblePages.includes(selectedStep.page) ? selectedStep.page : ''}
@@ -3259,12 +3266,6 @@ function App() {
                             {t("app.aPageIsAnIndependentTabularDatasetOnlyPages")}</p>
                           {pages.some(page => page.name === selectedStep.page && JSON.stringify(page.scope) !== JSON.stringify(loopPath(workflowDraft.workflow.steps, selectedStep.id).map(loop => loop.id))) &&
                             <p className="error">{t("app.thisPageBelongsToADifferentLoopPathChoose")}</p>}
-                          <p id="output-name-help" className="value-source-help">
-                            {t("app.editableColumnNameUsedInOutputDataCSVXLSX")}</p>
-                          {outputNameError && (
-                            <p id="output-name-error" className="step-property-error">{outputNameError}</p>
-                          )}
-                          <p className="step-context-help">{t("app.chooseTheValueThisOutputPublishes")}</p>
                         </>
                       )}
 
@@ -3332,6 +3333,7 @@ function App() {
                               onChange={event => updateStep(selectedStep.id, step =>
                                 step.type === 'assert' ? { ...step, message: event.target.value } : step)} />
                           </label>}
+                          {selectedStep.type === 'assert' && <p className="value-source-help">{t('app.workflowHelp.assertMessage')}</p>}
                           {selectedStep.type === 'while' && <div className="step-property-field">
                             <span className="step-property-label">{t("app.iterationLimit")}</span>
                             <select aria-label={t("app.iterationLimit")} value={selectedStep.max_iterations === null ? 'unlimited' : 'limited'} disabled={workflowBusy}
@@ -3340,8 +3342,9 @@ function App() {
                               <option value="limited">{t("app.maxIterations")}</option>
                               <option value="unlimited" disabled={Boolean(selectedParent)}>{t("app.unlimited")}</option>
                             </select>
+                            <p className="value-source-help">{t('app.workflowHelp.iterationLimit')}</p>
                             {selectedStep.max_iterations === null ? (
-                              <span>{t("app.runsUntilTheConditionBecomesFalseOrTheLoop")}</span>
+                              <p className="value-source-help">{t("app.runsUntilTheConditionBecomesFalseOrTheLoop")} {t('app.workflowHelp.unlimitedScope')}</p>
                             ) : <>
                               <input type="number" min="1" max={Number.MAX_SAFE_INTEGER} step="1"
                                 aria-label={t("app.maxIterations")} value={selectedStep.max_iterations} disabled={workflowBusy}
@@ -3354,6 +3357,7 @@ function App() {
                               {(!Number.isSafeInteger(selectedStep.max_iterations) || selectedStep.max_iterations <= 0) &&
                                 <span className="error">{t("app.maxIterationsMustBeAPositiveSafeInteger")}</span>}
                             </>}
+                            {selectedParent && <p className="value-source-help">{t('app.workflowHelp.unlimitedNested')}</p>}
                           </div>}
                         </div>
                       )}
@@ -3369,6 +3373,7 @@ function App() {
                           <option value="else">{t("app.eLSE")}</option>
                         </select>
                       </label>}
+                      {selectedStep.type === 'if' && <p className="value-source-help">{t('app.workflowHelp.ifBranch')}</p>}
                       {selectedStep.type === 'wait' && (
                         <label className="step-property-field">
                           <span className="step-property-label">{t("app.durationMs")}</span>
@@ -3394,6 +3399,7 @@ function App() {
                         </label>
                       )}
 
+                      {selectedStep.type === 'wait' && <p className="value-source-help">{t('app.workflowHelp.wait')}</p>}
                       {(selectedStep.type === 'string-process' || selectedStep.type === 'byte-process' || selectedStep.type === 'array-process') && (
                         <ProcessEditor key={selectedStep.id} step={selectedStep}
                           earlierSteps={earlierSteps} earlierVariables={earlierVariables}
@@ -3416,7 +3422,7 @@ function App() {
                       )}
 
                       {selectedToolAction && selectedAction?.startsWith('serial/') && (
-                        <SerialActionEditor step={selectedToolAction} instances={workflowDraft.tool_instances}
+                        <SerialActionEditor showStepHelp={false} step={selectedToolAction} instances={workflowDraft.tool_instances}
                           earlierSteps={earlierSteps} backgrounds={workflowDraft.backgrounds ?? []} earlierVariables={earlierVariables} disabled={workflowBusy}
                           stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                           onChange={serialStep => updateStep(selectedToolAction.id, () => serialStep)} />
@@ -3499,6 +3505,23 @@ function App() {
                       {selectedAction === 'meters/measure' && (
                         <p className="step-properties-empty">{t("app.noEditableParameters")}</p>
                       )}
+                      {selectedAction === 'meters/measure' && (
+                        <p className="value-source-help">{t('app.workflowHelp.meterResult')}</p>
+                      )}
+                      {(() => {
+                        if (selectedStep.type !== 'tool-action' && (selectedStep.type !== 'bg-interaction' ||
+                          !['get-latest', 'wait-next', 'get-command-result'].includes(selectedStep.operation.kind))) return null
+                        const fields = curatedResultFields(selectedStep, workflowDraft.tool_instances, t, workflowDraft.backgrounds ?? [], earlierSteps)
+                        const primary = selectedAction === 'serial/receive' || selectedAction === 'serial/query'
+                          ? fields.filter(field => ['/rx_hex', '/rx_bytes', '/rx_text'].includes(field.pointer))
+                          : fields.slice(0, 3)
+                        if (!primary.length) return null
+                        return <div className="workflow-help-group">
+                          <span className="step-property-label">{t('app.workflowHelp.commonResults')}</span>
+                          {primary.map(field => <p key={field.pointer} className="value-source-help">{field.label}: <code>{field.pointer}</code></p>)}
+                          <p className="value-source-help">{t('app.workflowHelp.resultReference')}</p>
+                        </div>
+                      })()}
 
                       {selectedToolAction &&
                         !selectedPowersAction &&
