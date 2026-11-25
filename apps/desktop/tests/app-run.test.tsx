@@ -218,7 +218,7 @@ test('locale changes preserve Template payload, active run, output data and Help
   await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
   const expectProcessHints = (names: string[]) => {
     for (const name of names) {
-      const description = screen.getByRole('button', { name, exact: true }).getAttribute('title')?.split('\n')[1]
+      const description = screen.getByRole('button', { name }).getAttribute('title')?.split('\n')[1]
       expect(description).toBeTruthy()
       expect(description).not.toMatch(/^steps\.hint\./)
     }
