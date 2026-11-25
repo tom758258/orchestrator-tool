@@ -216,10 +216,19 @@ test('locale changes preserve Template payload, active run, output data and Help
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('create_workflow_draft'))
   tab('Workflow')
   await waitFor(() => expect(runButton('Simulation').disabled).toBe(false))
+  const expectProcessHints = (names: string[]) => {
+    for (const name of names) {
+      const description = screen.getByRole('button', { name }).getAttribute('title')?.split('\n')[1]
+      expect(description).toBeTruthy()
+      expect(description).not.toMatch(/^steps\.hint\./)
+    }
+  }
+  expectProcessHints(['String Process', 'Byte Process'])
   const before = await savedDraft()
   fireEvent.click(screen.getByRole('button', { name: 'Switch theme to Light' }))
   fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
   expect(screen.getByText('已儲存範本。')).toBeTruthy()
+  expectProcessHints(['字串處理 (String Process)', '位元組處理 (Byte Process)'])
   fireEvent.click(screen.getByRole('button', { name: '儲存範本' }))
   await waitFor(() => expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template')).toHaveLength(2))
   const latest = vi.mocked(invoke).mock.calls.filter(([command]) => command === 'save_workflow_template').at(-1)!
@@ -1416,6 +1425,19 @@ test('Workflow shortcuts cut, paste, copy, select siblings and delete while resp
   expect(card('out').getAttribute('aria-pressed')).toBe('true')
   expect(card('outer').getAttribute('aria-pressed')).toBe('false')
   const page = screen.getByLabelText('Page name')
+  const number = screen.getByRole('spinbutton', { name: 'Value' })
+  // File/URL drops must not navigate the native WebView away from the draft;
+  // editable text keeps native drop behavior, but numeric fields must not
+  // accept browser-filtered text as a different valid number.
+  for (const dispatch of [fireEvent.dragOver, fireEvent.drop]) {
+    const files = { types: ['Files'], dropEffect: 'copy' }
+    expect(dispatch(page, { dataTransfer: files })).toBe(false)
+    expect(dispatch(panel, { dataTransfer: { types: ['Files'] } })).toBe(false)
+    expect(dispatch(panel, { dataTransfer: { types: ['text/uri-list'] } })).toBe(false)
+    expect(dispatch(page, { dataTransfer: { types: ['text/plain'] } })).toBe(true)
+    expect(dispatch(number, { dataTransfer: { types: ['text/plain'] } })).toBe(false)
+    expect(dispatch(number, { dataTransfer: { types: ['text/uri-list', 'text/plain'] } })).toBe(false)
+  }
   for (const shortcut of ['x', 'a', 'Delete', 'c', 'v']) key(shortcut, page)
   expect(card('out').getAttribute('aria-pressed')).toBe('true')
   fireEvent.click(runButton('Simulation'))

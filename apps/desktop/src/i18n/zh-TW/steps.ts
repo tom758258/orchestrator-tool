@@ -60,6 +60,8 @@ export default {
   "steps.hint.while": "條件成立時重複執行內部步驟，並受迭代次數上限限制。",
   "steps.hint.if": "判斷條件一次，再執行 THEN 或 ELSE 分支。",
   "steps.hint.for": "依設定的十進位數值範圍重複執行內部步驟。",
+  "steps.hint.string-process": "處理字串，例如取得長度、擷取、搜尋、取代及數值轉換。",
+  "steps.hint.byte-process": "處理以 Hex 字串表示的位元組資料，支援擷取、搜尋及格式轉換。",
   "steps.hint.set-variable": "儲存數值或計算結果，供後續步驟使用。",
   "steps.hint.output": "將指定數值輸出為工作流程結果。",
   "steps.hint.power-set-output": "設定電壓或電流目標值，不會自動開啟輸出。",

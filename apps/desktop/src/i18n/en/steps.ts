@@ -60,6 +60,8 @@ export default {
   "steps.hint.while": "Repeat its body while a condition is true, subject to an iteration limit.",
   "steps.hint.if": "Evaluate a condition once, then run the THEN or ELSE branch.",
   "steps.hint.for": "Repeat its body over the configured decimal range.",
+  "steps.hint.string-process": "Process text, including length, extraction, search, replacement, and numeric conversion.",
+  "steps.hint.byte-process": "Process bytes represented by Hex Strings, including extraction, search, and format conversion.",
   "steps.hint.set-variable": "Store a value or calculated result for later Steps to use.",
   "steps.hint.output": "Publish a value as a workflow output result.",
   "steps.hint.power-set-output": "Set voltage or current setpoints without automatically turning output on.",
