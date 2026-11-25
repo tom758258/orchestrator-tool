@@ -11,7 +11,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/tmp/payl
 
 test('Interaction settings lock without Background and retain capacity through collapse', () => {
   function Settings({ hasBackground, disabled = false }: { hasBackground: boolean; disabled?: boolean }) {
-    const [value, setValue] = useState({ enabled: false, max_active_command_status: 4096 })
+    const [value, setValue] = useState<import('../src/workflow').InteractionSettings>({ enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } })
     return <InteractionSettingsEditor value={value} hasBackground={hasBackground} disabled={disabled} onChange={setValue} />
   }
   const view = render(<Settings hasBackground={false} />)
@@ -27,10 +27,15 @@ test('Interaction settings lock without Background and retain capacity through c
   expect(capacity.value).toBe('4096')
   fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
   fireEvent.change(capacity, { target: { value: '65536' } })
+  fireEvent.click(screen.getByLabelText('Enable Buffer'))
+  fireEvent.change(screen.getByLabelText('Buffer Mode'), { target: { value: 'ring' } })
+  fireEvent.change(screen.getByLabelText('Overflow Policy'), { target: { value: 'continue' } })
   fireEvent.click(toggle())
   expect(screen.queryByLabelText('Max Active Command Status')).toBeNull()
   fireEvent.click(toggle())
   expect((screen.getByLabelText('Max Active Command Status') as HTMLInputElement).value).toBe('65536')
+  expect((screen.getByLabelText('Buffer Mode') as HTMLSelectElement).value).toBe('ring')
+  expect((screen.getByLabelText('Overflow Policy') as HTMLSelectElement).value).toBe('continue')
   view.rerender(<Settings hasBackground disabled />)
   expect((screen.getByLabelText('Enable FG/BG Interaction') as HTMLInputElement).disabled).toBe(true)
   expect((screen.getByLabelText('Max Active Command Status') as HTMLInputElement).disabled).toBe(true)
@@ -179,4 +184,30 @@ test('Serial Get Command Result explanation only appears for that operation', ()
   expect(screen.queryByText(hint)).toBeNull()
   view.rerender(<InteractionEditor {...props} step={{ ...original, operation: { kind: 'get-command-result', source_step: 'send' } }} />)
   expect(screen.getByText(hint)).toBeTruthy()
+})
+
+test('Buffer data editor selects Count source without a timeout and ALL removes Count', () => {
+  const data: InteractionStep = { type: 'bg-interaction', id: 'batch', background_id: 'bg', timeout_ms: null,
+    operation: { kind: 'get-buffer-data', read_mode: 'pop', selection: { kind: 'all' } } }
+  const status: InteractionStep = { ...data, id: 'status', operation: { kind: 'get-buffer-status' } }
+  const changed = vi.fn()
+  function Editor() {
+    const [step, setStep] = useState(data)
+    return <InteractionEditor step={step} steps={[status, step]}
+      backgrounds={[{ id: 'bg', tool_instance_id: 'serial', live_monitor: false, limit_count: null }]}
+      disabled={false} savedCommands={{}} onSaveCommand={() => {}}
+      onChange={next => { changed(next); setStep(next) }} />
+  }
+  render(<Editor />)
+  expect(screen.queryByLabelText('Step timeout (ms)')).toBeNull()
+  fireEvent.change(screen.getByLabelText('Read Mode'), { target: { value: 'peek' } })
+  fireEvent.change(screen.getByLabelText('Get Mode'), { target: { value: 'count' } })
+  fireEvent.change(screen.getByLabelText('Count Source'), { target: { value: 'step-output' } })
+  fireEvent.change(screen.getByLabelText('Result'), { target: { value: '/count' } })
+  expect(changed.mock.lastCall?.[0].operation).toEqual({
+    kind: 'get-buffer-data', read_mode: 'peek', selection: { kind: 'count', count: { source: 'step-output', step_id: 'status', pointer: '/count' } },
+  })
+  fireEvent.change(screen.getByLabelText('Get Mode'), { target: { value: 'all' } })
+  expect(changed.mock.lastCall?.[0].operation.selection).toEqual({ kind: 'all' })
+  expect(screen.queryByLabelText('Count Source')).toBeNull()
 })

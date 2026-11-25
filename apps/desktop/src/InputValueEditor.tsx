@@ -38,6 +38,7 @@ type ReferenceOptions = {
   numericCalculation?: boolean
   allowStringLiteral?: boolean
   allowNullLiteral?: boolean
+  noLiteral?: boolean
 }
 
 
@@ -240,12 +241,12 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
   }
 }
 
-function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false }: ReferenceOptions) {
+function SourceOptions({ earlierSteps, earlierVariables, numericSetpoint = false, noLiteral = false }: ReferenceOptions) {
   const { t } = useI18n()
   const hasStepOutput = stepOutputCandidates(earlierSteps).length > 0
   return (
     <>
-      <option value="literal">{t("inputValueEditor.fixedValue")}</option>
+      {!noLiteral && <option value="literal">{t("inputValueEditor.fixedValue")}</option>}
       <option value="variable" disabled={earlierVariables.length === 0}>{t("inputValueEditor.variable")}</option>
       {!numericSetpoint && <option value="step-output" disabled={!hasStepOutput}>{t("inputValueEditor.previousStepResult")}</option>}
     </>

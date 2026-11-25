@@ -20,7 +20,7 @@
       }
     }
   ],
-  "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
+  "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
     "steps": [
       {
         "type": "tool-action",

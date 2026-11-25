@@ -41,5 +41,10 @@ export default {
   "process.operation.hex-to-number": "Hex 轉數值",
   "process.operation.number-to-hex": "數值轉 Hex",
   "process.operation.hex-to-text": "Hex 轉文字",
-  "process.operation.text-to-hex": "文字轉 Hex"
+  "process.operation.text-to-hex": "文字轉 Hex",
+  "process.arrayProcess": "陣列處理 (Array Process)",
+  "process.arrayHelp": "從 Variable 或 Previous step result 讀取 Array，不修改來源。Length 回傳組數；Get Item 使用從 0 開始的整數 Index，保留原始 JSON 型態（含 Null）。無效輸入或 Index 使 Step 失敗。不新增全域 Array 大小限制。",
+  "process.inputArray": "輸入 Array",
+  "process.parameter.index": "Index",
+  "process.operation.get-item": "取得元素 (Get Item)"
 }

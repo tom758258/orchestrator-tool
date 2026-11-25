@@ -408,3 +408,16 @@ test('Process arguments retain literal data and remap typed references on rename
   assert.deepEqual(pasted[2].arguments.append, ref(pasted[1].id))
   assert.deepEqual(pasted[0].arguments.input, { source: 'literal', value: 'text' })
 })
+
+test('Buffer Count and Array references are remapped with copied and renamed Steps', () => {
+  const steps = [
+    { type: 'bg-interaction', id: 'status', background_id: 'bg', timeout_ms: null, operation: { kind: 'get-buffer-status' } },
+    { type: 'bg-interaction', id: 'batch', background_id: 'bg', timeout_ms: null, operation: { kind: 'get-buffer-data', read_mode: 'pop', selection: { kind: 'count', count: { source: 'step-output', step_id: 'status', pointer: '/count' } } } },
+    { type: 'array-process', id: 'item', operation: 'get-item', arguments: { input: { source: 'step-output', step_id: 'batch', pointer: '/data' }, index: literal } },
+  ]
+  const renamed = renameStepId(steps, 'status', 'buffer-status').steps
+  assert.equal(renamed[1].operation.selection.count.step_id, 'buffer-status')
+  const pasted = pasteSteps(renamed, copySteps(renamed, selection('buffer-status', 'batch', 'item')), singleSelection(null)).steps.slice(3)
+  assert.equal(pasted[1].operation.selection.count.step_id, pasted[0].id)
+  assert.equal(pasted[2].arguments.input.step_id, pasted[1].id)
+})

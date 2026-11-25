@@ -661,6 +661,7 @@ enum BackgroundSetup {
 pub struct BackgroundManager {
     pub interaction: crate::interaction::InteractionCore,
     interaction_enabled: bool,
+    buffer_fail_run: bool,
     configs: Vec<(BackgroundConfig, BackgroundSetup)>,
     specs: HashMap<ToolInstanceId, WorkerLaunchSpec>,
     runtimes: HashMap<String, Runtime>,
@@ -794,6 +795,21 @@ impl BackgroundManager {
         result
     }
 
+    pub fn get_buffer_data(
+        &self,
+        background: &str,
+        mode: crate::interaction::BufferReadMode,
+        count: Option<usize>,
+    ) -> Result<Value, String> {
+        self.check_interaction()?;
+        self.interaction.buffer_data(background, mode, count)
+    }
+
+    pub fn get_buffer_status(&self, background: &str) -> Result<Value, String> {
+        self.check_interaction()?;
+        self.interaction.buffer_status(background)
+    }
+
     pub fn get_data(
         &self,
         background: &str,
@@ -803,10 +819,10 @@ impl BackgroundManager {
     ) -> Result<Value, String> {
         use crate::interaction::InteractionOperation;
         self.check_interaction()?;
-        if matches!(operation, InteractionOperation::GetLatest) {
+        if matches!(operation, InteractionOperation::GetLatest {}) {
             return self.interaction.latest(background);
         }
-        let next = if matches!(operation, InteractionOperation::WaitNext) {
+        let next = if matches!(operation, InteractionOperation::WaitNext {}) {
             Some(self.interaction.next(background)?)
         } else {
             None
@@ -880,11 +896,20 @@ impl BackgroundManager {
                 .collect();
         }
         Self {
-            interaction: crate::interaction::InteractionCore::new(
+            interaction: crate::interaction::InteractionCore::with_buffer(
                 template.workflow().interaction().max_active_command_status,
+                template
+                    .workflow()
+                    .interaction()
+                    .buffer
+                    .enabled
+                    .then_some(template.workflow().interaction().buffer.mode),
             )
             .expect("validated capacity"),
             interaction_enabled: template.workflow().interaction().enabled,
+            buffer_fail_run: template.workflow().interaction().buffer.enabled
+                && template.workflow().interaction().buffer.overflow_policy
+                    == crate::interaction::OverflowPolicy::FailRun,
             configs: configs
                 .iter()
                 .map(|config| {
@@ -1006,6 +1031,7 @@ impl BackgroundManager {
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
             let generation = self.interaction.worker_on(id)?;
             let mut dispatcher = Dispatcher {
+                buffer_fail_run: self.buffer_fail_run,
                 stopping: false,
                 interaction: self.interaction.clone(),
                 generation,
@@ -1274,6 +1300,7 @@ struct Dispatcher {
     interaction: crate::interaction::InteractionCore,
     generation: u64,
     pending_command: Option<u64>,
+    buffer_fail_run: bool,
     command_source_active: bool,
     safety_key: Option<String>,
     runtime_key: String,
@@ -1691,8 +1718,17 @@ impl Dispatcher {
                     Ok(native.clone())
                 }
             });
-            self.interaction
+            let overflow = self
+                .interaction
                 .data(&self.config.id, self.generation, quality);
+            // An existing event-processing error must reach the normal failure path
+            // instead of being replaced by the overflow from that same event.
+            if overflow && self.buffer_fail_run && result.is_ok() {
+                self.failure.fail(format!(
+                    "{}: Data Buffer overflow (data lost)",
+                    self.config.id
+                ));
+            }
             if self.config.command_trigger && result.is_ok() {
                 let id = self.pending_command.unwrap(); // Correlation was validated before publication.
                 self.interaction.result(id, self.generation, Ok(native));
@@ -2077,6 +2113,11 @@ impl Dispatcher {
         let result = session
             .shutdown_background_with_events(shutdown, |event| {
                 if let Err(error) = self.event(event) {
+                    // Shutdown still drains tail events. Latch the first error before
+                    // a later valid event can overflow the Buffer and mask it.
+                    if self.buffer_fail_run {
+                        self.failure.fail(format!("{}: {error}", self.config.id));
+                    }
                     event_error.get_or_insert(error);
                 }
             })
@@ -2622,6 +2663,7 @@ mod tests {
                 monitor: VecDeque::new(),
             });
             let mut dispatcher = Dispatcher {
+                buffer_fail_run: false,
                 stopping: false,
                 interaction: crate::interaction::InteractionCore::new(4096).unwrap(),
                 generation: 1,
@@ -2687,7 +2729,7 @@ mod tests {
                 1
             );
             let template = Template::from_json_str(&json!({"name":"CSV failure", "tool_instances":[],
-                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
+                "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"for","id":"loop","variable":"i","range":{"start":"0","stop":"2","step":"1"},
                     "steps":[{"type":"output","id":"out","name":"value","page":"Results","value":{"source":"literal","value":1}}]},
                     {"type":"wait","id":"after-loop","duration_ms":0}]}}).to_string()).unwrap();
             let mut committed = Vec::new();

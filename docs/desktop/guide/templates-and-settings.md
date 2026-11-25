@@ -35,6 +35,10 @@ A Template does not contain:
 This separation keeps Templates portable while keeping executable paths,
 resources, and other machine/runtime state local to the Desktop installation.
 
+The current Template requires explicit FG/BG Buffer settings, even when disabled.
+Older Templates missing them are rejected; no migration or automatic defaults
+are provided. Buffer runtime contents and status are not saved.
+
 ## 13. Language and appearance
 
 The globe button near **Appearance** shows **English** or **繁體中文**. Click it

@@ -9,6 +9,41 @@ pub const MAX_PROCESS_STRING_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum ArrayOperation {
+    Length,
+    GetItem,
+}
+
+impl ArrayOperation {
+    pub fn parameters(self) -> &'static [&'static str] {
+        match self {
+            Self::Length => &["input"],
+            Self::GetItem => &["input", "index"],
+        }
+    }
+
+    pub fn execute(self, input: &Value, index: Option<&Value>) -> Result<Value, String> {
+        let array = input.as_array().ok_or("input must be an Array")?;
+        match self {
+            Self::Length => Ok(Value::from(array.len())),
+            Self::GetItem => {
+                let n = index
+                    .and_then(Value::as_f64)
+                    .ok_or("index must be a non-negative integer")?;
+                if n.fract() != 0.0 || n < 0.0 || n >= array.len() as f64 {
+                    return Err("Array index is out of range or not an integer".into());
+                }
+                array
+                    .get(n as usize)
+                    .cloned()
+                    .ok_or_else(|| "Array index is out of range".into())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum StringOperation {
     Length,
     Substring,
@@ -611,4 +646,38 @@ mod tests {
                 .is_err()
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn array_operations_handle_empty_and_invalid_input() {
+    use serde_json::json;
+    let input = json!([null, {"value":2}, [3]]);
+    assert_eq!(
+        ArrayOperation::Length.execute(&json!([]), None).unwrap(),
+        json!(0)
+    );
+    assert_eq!(
+        ArrayOperation::Length.execute(&input, None).unwrap(),
+        json!(3)
+    );
+    assert_eq!(
+        ArrayOperation::GetItem
+            .execute(&input, Some(&json!(0)))
+            .unwrap(),
+        Value::Null
+    );
+    for index in [json!(-1), json!(1.5), json!(3), json!("0")] {
+        assert!(
+            ArrayOperation::GetItem
+                .execute(&input, Some(&index))
+                .is_err()
+        );
+    }
+    assert!(ArrayOperation::Length.execute(&json!({}), None).is_err());
+    assert!(
+        ArrayOperation::GetItem
+            .execute(&json!([]), Some(&json!(0)))
+            .is_err()
+    );
 }

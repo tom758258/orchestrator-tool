@@ -61,7 +61,7 @@
 <p>正常接收保留 <code>/rx_hex</code>（Hex String）、<code>/rx_bytes</code>（Number）、<code>/outcome = completed</code>、<code>/timed_out = false</code>。勾選 <strong>Enable RX Text (UTF-8)</strong> 後額外提供 <code>/rx_text</code>（String 或 null），結果包含 Delimiter。無效 UTF-8 回傳 null，不影響接收成功，也不移除原始 Hex／Bytes。IF／ELSE、Assert、Set Variable 可使用上述欄位；Workflow 不會自動解析個別 Binary Bytes。</p>
 <p>Receive／Query 使用 Serial Setup 的 UART <code>timeout_ms</code> 或 TCP <code>io_timeout_ms</code>。Idle Gap 在首個 Byte 前使用 Read Timeout，收到資料後則依最後一次接收時間獨立計算靜默間隔。Delimiter／Fixed Length 在條件滿足或底層 Read Timeout 前持續接收，不另設整筆 RX Timeout。未勾選 <strong>Fail on Read Timeout</strong> 時，已確認的 Read Timeout 回傳 <code>/outcome = timeout</code>、<code>/timed_out = true</code>、<code>/partial_rx_hex</code> 和 <code>/partial_rx_bytes</code>；啟用 UTF-8 時額外提供 <code>/partial_rx_text</code>（String 或 null）。勾選 Fail on Read Timeout 則讓 Step Failed。Timeout Result 不代表回覆完整或 MCU 測試通過。</p>
 <p>普通 Worker Receive／Query 遇到 Read Timeout 或 ReadLimitExceeded 時，只消費 Session Buffer 中已回報的 Partial RX，保留未回報的後續 Bytes。不會清空 OS／設備 RX 佇列；前一次延遲到達的資料可能被下一次 Receive／Query 讀到，使用者必須自行確認後續資料有效性。ReadLimitExceeded、斷線、其他 I/O 錯誤、Worker 失敗與 Action Deadline 到期仍會造成 Step Failed。Text TX 需要 String；單一位元組 TX 需要 Number 且只送最低 Byte。RX Hex String 不能直接當作多 Byte 原始 TX。</p>
-<p>Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow RX FIFO。</p>
+<p>Serial Send File 將 Worker 本機絕對路徑儲存於 Template。Template 載入時缺檔會提示但不阻止載入；Run 前有缺失或無效路徑時阻止啟動任何 Worker。執行中檔案消失仍由 Worker 回報 Step Failed。不提供 Serial run-sequence Workflow Action、Background Query 或 Workflow 原始 Bytes FIFO。</p>
 <h3 id="background-rx-執行中的-serial-sendsend-file">Background RX 執行中的 Serial Send／Send File</h3>
 <p>啟用 <strong>FG/BG Interaction</strong>，加入 <strong>Worker ON</strong>，再新增指向 Serial Background
 的 <strong>BG Command</strong>。Command 可選 <strong>Send</strong> 或 <strong>Send File</strong>；Text、單一位元組、
@@ -77,6 +77,7 @@ TX 完成，若缺少原生事件，Get 會在自身期限到達時失敗。完�
 禁止 Foreground 或 Background 重用相同 COM／TCP Endpoint。重啟應用程式前，
 請先確認外部 Tool 已安全停止。純 RX-only 維持原有行為；不提供 Background Query、
 自動 TX／RX 配對或 Recovery 畫面。</p>
+<p>啟用 FG/BG Data Buffer 時，可透過 Get Buffer Data 取得完整 RX Event Array；不提供原始 Bytes FIFO、封包組裝或 TX/RX 自動配對。容量與 Overflow 規則請見 <a href="steps-background.zh-TW.html">Background 互動步驟</a>。</p>
   </main>
   <script>
     (() => {

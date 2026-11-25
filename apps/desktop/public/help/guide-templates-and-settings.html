@@ -77,6 +77,9 @@ separate <code>New</code> button in the current UI.</p>
 </ul>
 <p>This separation keeps Templates portable while keeping executable paths,
 resources, and other machine/runtime state local to the Desktop installation.</p>
+<p>The current Template requires explicit FG/BG Buffer settings, even when disabled.
+Older Templates missing them are rejected; no migration or automatic defaults
+are provided. Buffer runtime contents and status are not saved.</p>
 <h2 id="13-language-and-appearance">13. Language and appearance</h2>
 <p>The globe button near <strong>Appearance</strong> shows <strong>English</strong> or <strong>繁體中文</strong>. Click it
 once to switch the entire Desktop immediately without losing your edits, run, or

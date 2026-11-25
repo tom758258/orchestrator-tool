@@ -23,5 +23,18 @@ export default {
   "interactionEditor.oneDeadlineCoversThisEntireStepWorkerMustBe": "整個步驟共用一個期限。Worker 必須開啟；擷取可以關閉。",
   "interactionEditor.getCommandResultReturnsTheCompleteNativeJobFinished": "取得命令結果會回傳完整的原生 job_finished 事件。TX 完成不代表已確認裝置回覆。",
   "interactionEditor.collapse": "收合",
-  "interactionEditor.expand": "展開"
+  "interactionEditor.expand": "展開",
+  "interactionEditor.enableBuffer": "啟用 Buffer",
+  "interactionEditor.enableBufferFirst": "請先在 FG/BG Interaction 設定啟用 Buffer。",
+  "interactionEditor.bufferMode": "Buffer 模式",
+  "interactionEditor.overflowPolicy": "Overflow 政策",
+  "interactionEditor.failRun": "Fail Run",
+  "interactionEditor.continue": "Continue",
+  "interactionEditor.bufferLimits": "每個 Background 固定最多 1024 組 Event 與 16 MiB 緊湊 JSON UTF-8 資料（包含序列化的錯誤資訊）。單筆超限時拒絕該筆，不清除原資料。此限制不是全域記憶體上限。",
+  "interactionEditor.bufferPolicyHelp": "FIFO 丟棄新 Event；Ring Buffer 在任一容量不足時移除最舊 Event。Fail Run 使用既有收尾機制終止 Workflow；Continue 保留遺失狀態供後續判斷。Capture 與 Buffer 獨立。",
+  "interactionEditor.readMode": "讀取模式",
+  "interactionEditor.getMode": "取得模式",
+  "interactionEditor.count": "Count（組數）",
+  "interactionEditor.bufferReadHelp": "由最舊開始。Peek 保留資料，Pop 僅在整批成功時移除。Count（1～1024）或 ALL 立即回傳，無資料時回傳空 Array。包含無效 Event 時整批失敗且不消耗。Status 為操作後快照；Peek 與後續 Pop 不具交易保證。Serial RX Event 不保證為完整封包。",
+  "interactionEditor.bufferStatusHelp": "只查詢狀態，不消耗資料。Full 表示任一容量已達上限；Overflowed 表示曾發生資料遺失，Dropped Count 為遺失組數。遺失狀態僅在新 Worker 生命週期重置。"
 }

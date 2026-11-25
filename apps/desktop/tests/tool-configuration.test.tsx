@@ -24,7 +24,7 @@ const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
   { id: 'scopes-1', tool: 'scopes', setup: { acquisition: { acquisition_type: 'average', average_count: 16 },
     channels: [{ channel: 4, invert: true }] } },
   { id: 'wavegen-1', tool: 'wavegen', setup: {} },
-], workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+], workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
 const empty: WorkflowDraft = { ...original, tool_instances: [] }
 const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
   measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
@@ -395,7 +395,7 @@ async function savedDraft() {
 
 test('Interaction panel and Step category follow Background binding and opt-in', async () => {
   newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }], backgrounds: [],
-    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
   tab('Workflow')
@@ -438,13 +438,13 @@ test('Interaction panel and Step category follow Background binding and opt-in',
   expect(interactionCategory().disabled).toBe(true)
   expect((screen.getByRole('button', { name: 'Expand FG/BG Interaction' }) as HTMLButtonElement).disabled).toBe(true)
   const saved = await savedDraft()
-  expect(saved.workflow.interaction).toEqual({ enabled: false, max_active_command_status: 12 })
+  expect(saved.workflow.interaction).toEqual({ enabled: false, max_active_command_status: 12, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } })
 })
 
 test('Workflow saves interaction settings and command/result references through the editor', async () => {
   newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
-    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [] } }
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
   tab('Workflow')
@@ -460,7 +460,7 @@ test('Workflow saves interaction settings and command/result references through 
   expect(source.options.length).toBe(2)
   fireEvent.change(source, { target: { value: source.options[1].value } })
   const saved = await savedDraft()
-  expect(saved.workflow.interaction).toEqual({ enabled: true, max_active_command_status: 12 })
+  expect(saved.workflow.interaction).toEqual({ enabled: true, max_active_command_status: 12, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } })
   const [command, get] = saved.workflow.steps
   expect(command.operation).toEqual({ kind: 'command', command: 'software-trigger', wait_for_completion: true })
   expect(get.operation).toEqual({ kind: 'get-command-result', source_step: command.id })
@@ -470,7 +470,7 @@ const serialBackgroundDraft: WorkflowDraft = { name: 'Serial interaction', tool_
   { id: 'serial-1', tool: 'serial', setup: { transport: 'serial', baud: 115200,
     data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000 } },
 ], backgrounds: [{ id: 'serial-bg', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
-workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [
+workflow: { interaction: { enabled: true, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [
   { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null,
     operation: { kind: 'command', command: 'serial-send', wait_for_completion: true,
       arguments: { tx_format: 'text', tx_value: 'START' } } },
@@ -519,7 +519,7 @@ test('Serial timeout controls and Assert String literals persist through Workflo
     flow_control: 'none', timeout_ms: 1000,
   } }
   newDraft = { name: 'Serial timeout editor', tool_instances: [serial],
-    workflow: { interaction: { enabled: false, max_active_command_status: 4096 }, steps: [
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [
       { type: 'tool-action', id: 'query-1', target: 'serial-1', action: 'query',
         arguments: { tx_format: 'text', tx_value: 'REA', delimiter_format: 'hex',
           delimiter_value: '0D0A', max_bytes: 32 } },
@@ -1208,7 +1208,7 @@ test('Step ID editor rejects invalid names, supports cancel, and updates BG Comm
     operation: { kind: 'get-command-result', source_step: 'send' } }
   newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
-    workflow: { interaction: { enabled: true, max_active_command_status: 4096 }, steps: [command, result] } }
+    workflow: { interaction: { enabled: true, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [command, result] } }
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
   tab('Workflow')
@@ -1397,3 +1397,40 @@ test('Powers Step editor selects confirmed channels without rewriting saved bind
   expect(saved.workflow.steps[0].arguments).toEqual({ channel: 1, voltage: 0, current: 0.25 })
   expect(saved.workflow.steps[0].bindings).toEqual({ current: { source: 'variable', variable: 'limit' } })
 })
+
+test('Buffer settings and Steps save the current contract with Array input references', async () => {
+  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
+    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1 }],
+    workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
+  render(<App />)
+  await screen.findByRole('button', { name: 'Expand meters details' })
+  tab('Workflow')
+  click('Expand FG/BG Interaction')
+  fireEvent.click(screen.getByLabelText('Enable FG/BG Interaction'))
+  expect((screen.getByRole('button', { name: 'Get Buffer Data' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByLabelText('Enable Buffer'))
+  fireEvent.change(screen.getByLabelText('Buffer Mode'), { target: { value: 'ring' } })
+  fireEvent.change(screen.getByLabelText('Overflow Policy'), { target: { value: 'continue' } })
+  click('Get Buffer Status')
+  click('Add Step')
+  click('Get Buffer Data')
+  click('Add Step')
+  fireEvent.change(screen.getByLabelText('Get Mode'), { target: { value: 'count' } })
+  fireEvent.change(screen.getByLabelText('Count Source'), { target: { value: 'step-output' } })
+  fireEvent.change(screen.getByLabelText('Result'), { target: { value: '/count' } })
+  click('Array Process')
+  click('Add Step')
+  expect(screen.queryByRole('option', { name: 'Fixed value' })).toBeNull()
+  const inputStep = screen.getByLabelText('Step') as HTMLSelectElement
+  fireEvent.change(inputStep, { target: { value: inputStep.options[inputStep.options.length - 1].value } })
+  fireEvent.change(screen.getByLabelText('Operation'), { target: { value: 'get-item' } })
+  const saved = await savedDraft()
+  expect(saved.workflow.interaction.buffer).toEqual({ enabled: true, mode: 'ring', overflow_policy: 'continue' })
+  const [status, batch, item] = saved.workflow.steps
+  expect(status.operation).toEqual({ kind: 'get-buffer-status' })
+  expect(batch.operation).toEqual({ kind: 'get-buffer-data', read_mode: 'pop', selection: { kind: 'count',
+    count: { source: 'step-output', step_id: status.id, pointer: '/count' } } })
+  expect(item).toMatchObject({ type: 'array-process', operation: 'get-item',
+    arguments: { input: { source: 'step-output', step_id: batch.id, pointer: '/data' },
+      index: { source: 'literal', value: 0 } } })
+}, 15000)

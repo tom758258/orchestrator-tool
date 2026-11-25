@@ -9,8 +9,8 @@ The current InputValue choices in the editor are:
 - **Fixed value** — a literal value.
 - **Variable** — the current value of a workflow variable.
 - **Previous step result** — a result from an earlier visible step. The current
-  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result,
-  and String Process / Byte Process steps.
+  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result / Get Buffer Data / Get Buffer Status,
+  and String Process / Byte Process / Array Process steps.
 - **Calculation** — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).
 - **Elapsed time** — a runtime elapsed-time value.
 - **Timestamp** — a runtime timestamp value.
@@ -42,3 +42,5 @@ clears the old time settings. Set Variable and Tool Action time sources are unch
 An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.
 
+An Array returned by a Step can be stored as a Variable and used by Array Process;
+no manual fixed Array editor is provided. Use a dynamic Index in Get Item.

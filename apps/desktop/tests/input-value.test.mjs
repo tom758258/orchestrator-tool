@@ -220,3 +220,16 @@ test('both Process steps expose their value through the existing result picker',
     })
   }
 })
+
+test('Buffer and Array results expose the exact current contract pointers', () => {
+  const batch = { type: 'bg-interaction', id: 'batch', operation: { kind: 'get-buffer-data' } }
+  const status = { type: 'bg-interaction', id: 'status', operation: { kind: 'get-buffer-status' } }
+  const item = { type: 'array-process', id: 'item', operation: 'get-item' }
+  const fields = ['capacity', 'count', 'byte_capacity', 'buffered_bytes', 'full', 'overflowed', 'dropped_count']
+  assert.deepEqual(stepOutputCandidates([batch, status, item]), [batch, status, item])
+  assert.deepEqual(curatedResultFields(batch, []).map(field => field.pointer),
+    ['/data', '/count', ...fields.map(name => '/status/' + name)])
+  assert.deepEqual(curatedResultFields(status, []).map(field => field.pointer), fields.map(name => '/' + name))
+  assert.equal(stepOutputReference(batch, []).pointer, '/data')
+  assert.equal(stepOutputReference(item, []).pointer, '/value')
+})

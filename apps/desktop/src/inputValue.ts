@@ -117,9 +117,9 @@ const ACTION_RESULT_FIELDS: Readonly<Record<string, readonly CuratedResultField[
 }
 
 export function stepOutputCandidates<T extends StepOutputCandidate>(steps: readonly T[]): T[] {
-  return steps.filter(step => step.type === 'tool-action' || step.type === 'string-process' || step.type === 'byte-process' || (
+  return steps.filter(step => step.type === 'tool-action' || step.type === 'string-process' || step.type === 'byte-process' || step.type === 'array-process' || (
     step.type === 'bg-interaction' && typeof step.operation === 'object' &&
-    ['get-latest', 'wait-next', 'get-command-result'].includes(step.operation.kind)
+    ['get-latest', 'wait-next', 'get-command-result', 'get-buffer-data', 'get-buffer-status'].includes(step.operation.kind)
   ))
 }
 
@@ -136,7 +136,7 @@ export function curatedResultFields(
   earlierSteps: readonly StepOutputCandidate[] = [],
 ): readonly CuratedResultField[] {
   let fields: readonly CuratedResultField[] = []
-  if (step?.type === 'string-process' || step?.type === 'byte-process') {
+  if (step?.type === 'string-process' || step?.type === 'byte-process' || step?.type === 'array-process') {
     fields = [{ label: "resultFields.value", pointer: '/value' }]
   } else if (step?.type === 'tool-action') {
     const tool = instances.find(instance => instance.id === step.target)?.tool
@@ -154,7 +154,14 @@ export function curatedResultFields(
     const tool = instances.find(instance => instance.id === background?.tool_instance_id)?.tool
     const operation = typeof step.operation === 'object' ? step.operation : undefined
     const kind = operation?.kind
-    if (kind === 'get-latest' || kind === 'wait-next') {
+    if (kind === 'get-buffer-data' || kind === 'get-buffer-status') {
+      const status = ['capacity', 'count', 'byte_capacity', 'buffered_bytes', 'full', 'overflowed', 'dropped_count'].map(key => ({
+        label: 'resultFields.buffer.' + key, pointer: (kind === 'get-buffer-data' ? '/status/' : '/') + key,
+      }))
+      fields = kind === 'get-buffer-data'
+        ? [{ label: 'resultFields.buffer.data', pointer: '/data' }, { label: 'resultFields.buffer.readCount', pointer: '/count' }, ...status]
+        : status
+    } else if (kind === 'get-latest' || kind === 'wait-next') {
       if (tool === 'meters' || tool === 'serial') {
         fields = BACKGROUND_SAMPLE_FIELDS[tool]
       } else if (tool === 'scopes') {

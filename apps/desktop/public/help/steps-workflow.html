@@ -359,6 +359,19 @@ is 3300; a later Calculation can divide it by 1000 to obtain 3.3.
 For <code>1234</code>, MSB First returns 4660 and LSB First returns 13330.</p>
 <p>These steps process the data they receive. They do not assemble Serial RX
 events into frames, pair TX with RX, or change Serial Send capabilities.</p>
+<h3 id="68-array-process">6.8 Array Process</h3>
+<p>Array Process is a Workflow Step independent of FG/BG Interaction. Select an
+existing Array from <strong>Variable</strong> or <strong>Previous step result</strong>, for example
+Get Buffer Data <code>/data</code>. Fixed Value Array editing is not supported.
+<strong>Length</strong> returns the number of elements (0 for an empty Array). <strong>Get Item</strong>
+takes a zero-based integer Index, supplied as Fixed Value, Variable or Previous
+step result, and returns the original JSON value (including Null, Object or
+nested Array). Invalid input or index fails; the source is never modified.
+Use <code>/value</code> for the result or a nested pointer such as <code>/value/rx_hex</code>.
+To process a batch, set i=0, repeat While i is less than the batch count,
+use Get Item with Index i, process the item, and increment i with Calculation.
+There is no added global Array size limit. Existing String and Byte Process
+string limits still apply when those Steps receive an extracted string.</p>
   </main>
   <script>
     (() => {

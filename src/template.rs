@@ -1403,6 +1403,11 @@ enum StepWire {
         operation: crate::data_processing::ByteOperation,
         arguments: BTreeMap<String, ExpressionOperandWire>,
     },
+    ArrayProcess {
+        id: String,
+        operation: crate::data_processing::ArrayOperation,
+        arguments: BTreeMap<String, ExpressionOperandWire>,
+    },
     Output {
         id: String,
         name: String,
@@ -1573,6 +1578,17 @@ impl StepWire {
                     .map(|(key, value)| (key.clone(), ExpressionOperandWire::from_operand(value)))
                     .collect(),
             },
+            StepKind::ArrayProcess {
+                operation,
+                arguments,
+            } => Self::ArrayProcess {
+                id: step.id().as_str().to_owned(),
+                operation: *operation,
+                arguments: arguments
+                    .iter()
+                    .map(|(key, value)| (key.clone(), ExpressionOperandWire::from_operand(value)))
+                    .collect(),
+            },
             StepKind::Output { name, value } => Self::Output {
                 name: name.clone(),
                 page: step.output_page().to_owned(),
@@ -1680,6 +1696,24 @@ pub(crate) mod optional_bindings_wire {
             })
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map(Some)
+    }
+}
+
+pub(crate) mod expression_operand_wire {
+    use super::*;
+
+    pub fn serialize<S: serde::Serializer>(
+        value: &ExpressionOperand,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        ExpressionOperandWire::from_operand(value).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<ExpressionOperand, D::Error> {
+        operand_from_wire(ExpressionOperandWire::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -1998,6 +2032,25 @@ fn step_from_wire(wire: StepWire) -> Result<Step, TemplateError> {
                 },
             ))
         }
+        StepWire::ArrayProcess {
+            id,
+            operation,
+            arguments,
+        } => {
+            let step_id = StepId::new(&id)
+                .map_err(|source| TemplateError::InvalidStepId { value: id, source })?;
+            let arguments = arguments
+                .into_iter()
+                .map(|(key, value)| Ok((key, operand_from_wire(value)?)))
+                .collect::<Result<_, TemplateError>>()?;
+            Ok(Step::new(
+                step_id,
+                StepKind::ArrayProcess {
+                    operation,
+                    arguments,
+                },
+            ))
+        }
         StepWire::Output {
             id,
             name,
@@ -2160,7 +2213,7 @@ mod tests {
         };
         let wire = json!({"name":"Background", "tool_instances":[{"id":"meter","tool":"meters","setup":setup}],
             "backgrounds":[{"id":"background-1","tool_instance_id":"meter","live_monitor":false,"limit_count":null}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"background","id":"on","background_id":"background-1","action":"worker-on","capture":true}]}});
         let template = Template::from_json_str(&wire.to_string()).unwrap();
         assert_eq!(
             Template::from_json_str(&template.to_json_string().unwrap()).unwrap(),
@@ -2470,7 +2523,7 @@ mod tests {
         json!({
             "name": "Chart Template",
             "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [
                 {
                     "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
                     "value": {"source": "literal", "value": 3.3}
@@ -2785,7 +2838,7 @@ mod tests {
             let wire = json!({
                 "name": "Missing setup",
                 "tool_instances": [{"id": "meters-1", "tool": "meters", "setup": {}}],
-                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [{
                     "type": "tool-action", "id": "read-1", "target": "meters-1",
                     "action": action, "arguments": {}
                 }]}
@@ -2885,7 +2938,7 @@ mod tests {
         );
         json!({"name":"Parameter validation",
             "tool_instances":[{"id":"device","tool":tool,"setup":{}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}})
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":steps}})
     }
 
     fn check_action_parameters(wire: &Value, expected_reason: Option<(&str, &str)>) {
@@ -3341,7 +3394,7 @@ mod tests {
         let mut wire = serde_json::json!({
             "name": "Unary Calculation",
             "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "set-variable", "id": "set-value", "variable": "result",
                   "value": { "source": "expression",
                              "left": { "source": "literal", "value": -2.5 },
@@ -3459,7 +3512,7 @@ mod tests {
         let wire = json!({
             "name": "Current format",
             "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": []}
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": []}
         });
         assert!(Template::from_json_str(&wire.to_string()).is_ok());
         for version in [1, 2, 99] {
@@ -3474,7 +3527,7 @@ mod tests {
         let old_action = json!({
             "name": "Obsolete Power action",
             "tool_instances": [{"id": "power", "tool": "powers", "setup": {}}],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [{
                 "type": "tool-action", "id": "set", "target": "power",
                 "action": "set-voltage", "arguments": {"channel": 1, "voltage": 5.0}
             }]}
@@ -3487,7 +3540,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Dup",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps": [
                     { "id": "wait-1", "type": "wait", "duration_ms": 100 },
                     { "id": "wait-1", "type": "wait", "duration_ms": 200 }
@@ -3508,7 +3561,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Bad tool",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps": [
                     {
                         "id": "power-set-1",
@@ -3551,7 +3604,7 @@ mod tests {
         ] {
             let mut wire = json!({
                  "name": "Time inputs", "tool_instances": [],
-                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                     { "type": "set-variable", "id": "set-time", "variable": "time", "value": { "source": source } },
                     { "type": "output", "id": "out", "name": "time", "page": "Results", "value": { "source": source } }
                 ] }
@@ -3580,7 +3633,7 @@ mod tests {
     fn show_message_round_trips_without_storing_records() {
         let wire = json!({
              "name": "Messages", "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "output", "id": "iteration", "name": "Iteration", "page": "Results",
                   "value": { "source": "literal", "value": 3000 } },
                 { "type": "show-message", "id": "show-message-1", "target": "message-2",
@@ -3613,7 +3666,7 @@ mod tests {
         // A reference to a later step is rejected by the shared validation.
         let invalid = json!({
              "name": "Messages", "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
                 { "type": "show-message", "id": "show-message-1", "target": "message-1",
                   "fields": [ { "kind": "output", "step_id": "later", "pointer": "", "newline": false } ] },
                 { "type": "output", "id": "later", "name": "Later", "page": "Results",
@@ -3637,7 +3690,7 @@ mod tests {
         let template_wire = |output: Value| {
             json!({
                  "name": "Required Output fields", "tool_instances": [],
-                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [output] }
+                "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [output] }
             })
         };
 
@@ -3702,7 +3755,7 @@ mod tests {
         let json = json!({
             "tool_instances": [],
             "name": "Invalid variable",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [{
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [{
                 "type": "set-variable", "id": "set-x", "variable": "Bad_Name",
                 "value": { "source": "literal", "value": 5.0 }
             }] }
@@ -4017,7 +4070,7 @@ mod tests {
         let mut wire = json!({
             "name": "Scope Single Wait",
             "tool_instances": [{"id":"scope","tool":"scopes","setup":{}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},
                 "steps":[{"type":"tool-action","id":"wait-trigger","target":"scope",
                           "action":"single-wait","arguments":{}}]}
         });
@@ -4065,7 +4118,7 @@ mod tests {
         let mut wire = json!({
             "name": "Scope AutoScale",
             "tool_instances": [{"id": "scope-1", "tool": "scopes", "setup": {}}],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{"type": "tool-action", "id": "autoscale-1",
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [{"type": "tool-action", "id": "autoscale-1",
                 "target": "scope-1", "action": "autoscale", "arguments": {}}]}
         });
         for args in [
@@ -4111,7 +4164,7 @@ mod tests {
              "name": "Serial",
             "tool_instances": [{ "id": "serial-1", "tool": "serial",
                 "setup": {"transport":"serial", "baud": 115200}}],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096},"steps": [{ "type": "tool-action", "id": "send",
+            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps": [{ "type": "tool-action", "id": "send",
                 "target": "serial-1", "action": "send",
                 "arguments": {"tx_format": "hex-byte", "tx_value": 4660}}]}
         });

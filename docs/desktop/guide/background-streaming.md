@@ -70,6 +70,10 @@ OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.
 
+The optional FG/BG Data Buffer is independent of Capture and Live Monitor. See
+[Background Interaction Steps](../steps/background.md) for its fixed capacity,
+FIFO/Ring modes, overflow and read rules.
+
 **Output** contains **Charts**, optional **Live Monitors**, **Foreground Output**,
 and **Background Output** as separate expandable sections. Background-only runs can use
 Charts and Background Output. Background Output appears only when the Last Run
@@ -138,8 +142,9 @@ with the reason available on hover. **Output Data** uses pages of 100 rows.
 
 Capture boundaries follow received event processing, not hardware sample time.
 Full captured samples stay in memory for the current run. A new run or **Clear
-Last Run** releases them; there is no history or recovery store. Background
-samples do not feed Workflow variables, calculations, assertions or ResultRows.
+Last Run** releases them; there is no history or recovery store.
+Capture Dataset samples do not directly feed Workflow variables, calculations,
+assertions or ResultRows; use FG/BG Interaction Steps to obtain Background data.
 
 **CSV Export → Stream Background CSV during Capture** is independent of
 foreground CSV. Choose All Backgrounds or one Background and its output folder.

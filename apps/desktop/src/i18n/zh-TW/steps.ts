@@ -72,5 +72,10 @@ export default {
   "steps.hint.assert": "指定條件不成立時，讓工作流程判定失敗。",
   "steps.hint.show-message": "在工作流程的訊息面板顯示文字。",
   "steps.hint.meter-measure": "取得 Meter 量測值或設定的批次量測結果。",
-  "steps.hint.power-output-off": "關閉指定電源通道的輸出。"
+  "steps.hint.power-output-off": "關閉指定電源通道的輸出。",
+  "steps.interaction.get-buffer-data": "取得 Buffer 資料 (Get Buffer Data)",
+  "steps.interaction.get-buffer-status": "取得 Buffer 狀態 (Get Buffer Status)",
+  "steps.hint.bg-get-buffer-data": "使用 Peek 或 Pop 立即取得最舊的可用 Event，同時回傳資料與狀態快照。",
+  "steps.hint.bg-get-buffer-status": "查詢容量、使用量及遺失狀態，不消耗資料。",
+  "steps.hint.array-process": "取得既有 Array 的長度或單一元素，不修改來源。"
 }

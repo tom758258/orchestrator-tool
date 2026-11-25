@@ -34,6 +34,8 @@ Template 不會保存：
 這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他
 machine/runtime state 保留在 Desktop local configuration。
 
+目前 Template 必須明確保存 FG/BG Buffer 設定，即使停用亦同。缺少欄位的舊範本會被拒絕，不提供轉換或自動補值。Buffer 執行期間的資料及狀態不會保存。
+
 ## 13. 語言與外觀
 
 「外觀（Appearance）」旁的地球按鈕顯示 **English** 或 **繁體中文**，按一下

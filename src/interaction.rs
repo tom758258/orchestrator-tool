@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Condvar, Mutex},
     time::{Duration, Instant},
 };
@@ -12,6 +12,7 @@ use std::{
 pub struct InteractionSettings {
     pub enabled: bool,
     pub max_active_command_status: usize,
+    pub buffer: BufferSettings,
 }
 
 impl Default for InteractionSettings {
@@ -19,6 +20,7 @@ impl Default for InteractionSettings {
         Self {
             enabled: false,
             max_active_command_status: 4096,
+            buffer: BufferSettings::default(),
         }
     }
 }
@@ -27,6 +29,9 @@ impl InteractionSettings {
     pub fn validate(&self) -> Result<(), String> {
         if !(1..=65_536).contains(&self.max_active_command_status) {
             return Err("Max Active Command Status must be an integer from 1 to 65,536".into());
+        }
+        if self.buffer.enabled && !self.enabled {
+            return Err("Enable FG/BG Interaction before enabling Buffer".into());
         }
         Ok(())
     }
@@ -51,11 +56,154 @@ pub enum InteractionOperation {
         )]
         bindings: Option<std::collections::BTreeMap<String, crate::workflow::InputValue>>,
     },
-    GetLatest,
-    WaitNext,
+    GetBufferData {
+        read_mode: BufferReadMode,
+        selection: BufferSelection,
+    },
+    // Empty struct variants enforce deny_unknown_fields for tagged operations.
+    GetBufferStatus {},
+    GetLatest {},
+    WaitNext {},
     GetCommandResult {
         source_step: String,
     },
+}
+
+pub const BUFFER_CAPACITY: usize = 1024;
+pub const BUFFER_BYTE_CAPACITY: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BufferMode {
+    #[default]
+    Fifo,
+    Ring,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverflowPolicy {
+    #[default]
+    FailRun,
+    Continue,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BufferSettings {
+    pub enabled: bool,
+    pub mode: BufferMode,
+    pub overflow_policy: OverflowPolicy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BufferReadMode {
+    Peek,
+    Pop,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum BufferSelection {
+    All {},
+    Count {
+        #[serde(with = "crate::template::expression_operand_wire")]
+        count: crate::workflow::ExpressionOperand,
+    },
+}
+
+pub(crate) fn buffer_count(value: &Value) -> Result<usize, String> {
+    match value.as_f64() {
+        Some(n) if n.fract() == 0.0 && (1.0..=BUFFER_CAPACITY as f64).contains(&n) => {
+            Ok(n as usize)
+        }
+        _ => Err("Buffer Count must be an integer from 1 to 1024".into()),
+    }
+}
+
+#[derive(Default)]
+struct DataBuffer {
+    entries: VecDeque<(Result<Value, String>, usize)>,
+    bytes: usize,
+    dropped: u64,
+}
+
+impl DataBuffer {
+    fn push(&mut self, mode: BufferMode, event: Result<Value, String>) -> bool {
+        let size = match &event {
+            Ok(value) => serde_json::to_vec(value).map(|v| v.len()),
+            Err(error) => serde_json::to_vec(error).map(|v| v.len()),
+        };
+        // JSON Values and strings are serializable; reject rather than admit
+        // an unaccounted entry if serialization ever fails.
+        let Ok(size) = size else {
+            self.dropped = self.dropped.saturating_add(1);
+            return true;
+        };
+        let lacks_space = |buffer: &Self| {
+            buffer.entries.len() >= BUFFER_CAPACITY
+                || buffer.bytes > BUFFER_BYTE_CAPACITY.saturating_sub(size)
+        };
+        if size > BUFFER_BYTE_CAPACITY || (mode == BufferMode::Fifo && lacks_space(self)) {
+            self.dropped = self.dropped.saturating_add(1);
+            return true;
+        }
+        let mut overflow = false;
+        while lacks_space(self) {
+            let (_, removed) = self.entries.pop_front().expect("bounded entry");
+            self.bytes -= removed;
+            self.dropped = self.dropped.saturating_add(1);
+            overflow = true;
+        }
+        self.bytes += size;
+        self.entries.push_back((event, size));
+        overflow
+    }
+
+    fn status(&self) -> Value {
+        serde_json::json!({
+            "capacity": BUFFER_CAPACITY,
+            "count": self.entries.len(),
+            "byte_capacity": BUFFER_BYTE_CAPACITY,
+            "buffered_bytes": self.bytes,
+            "full": self.entries.len() == BUFFER_CAPACITY || self.bytes == BUFFER_BYTE_CAPACITY,
+            "overflowed": self.dropped != 0,
+            "dropped_count": self.dropped,
+        })
+    }
+
+    fn read(&mut self, mode: BufferReadMode, count: Option<usize>) -> Result<Value, String> {
+        if count.is_some_and(|n| !(1..=BUFFER_CAPACITY).contains(&n)) {
+            return Err("Buffer Count must be an integer from 1 to 1024".into());
+        }
+        let n = count.unwrap_or(self.entries.len()).min(self.entries.len());
+        // Validate the complete selection before consuming any entry.
+        for (entry, _) in self.entries.iter().take(n) {
+            if let Err(error) = entry {
+                return Err(error.clone());
+            }
+        }
+        let data: Vec<Value> = if mode == BufferReadMode::Pop {
+            let mut data = Vec::with_capacity(n);
+            for (entry, size) in self.entries.drain(..n) {
+                self.bytes -= size;
+                data.push(entry.expect("validated entry"));
+            }
+            data
+        } else {
+            self.entries
+                .iter()
+                .take(n)
+                .map(|(entry, _)| entry.as_ref().expect("validated entry").clone())
+                .collect()
+        };
+        Ok(serde_json::json!({
+            "count": n,
+            "data": data,
+            "status": self.status(),
+        }))
+    }
 }
 
 fn present_arguments<'de, D: serde::Deserializer<'de>>(
@@ -132,12 +280,14 @@ struct Source {
     active: bool,
     ended: bool,
     quarantined: bool,
+    buffer: Option<DataBuffer>,
     latest: Option<Result<Value, String>>,
     next: HashMap<u64, Option<Result<Value, String>>>,
 }
 
 struct State {
     capacity: usize,
+    buffer_mode: Option<BufferMode>,
     next_id: u64,
     revision: u64,
     sources: HashMap<String, Source>,
@@ -150,14 +300,20 @@ pub struct InteractionCore(Arc<(Mutex<State>, Condvar)>);
 
 impl InteractionCore {
     pub fn new(capacity: usize) -> Result<Self, String> {
+        Self::with_buffer(capacity, None)
+    }
+
+    pub fn with_buffer(capacity: usize, buffer_mode: Option<BufferMode>) -> Result<Self, String> {
         InteractionSettings {
             enabled: true,
             max_active_command_status: capacity,
+            buffer: BufferSettings::default(),
         }
         .validate()?;
         Ok(Self(Arc::new((
             Mutex::new(State {
                 capacity,
+                buffer_mode,
                 next_id: 0,
                 revision: 0,
                 sources: HashMap::new(),
@@ -191,6 +347,7 @@ impl InteractionCore {
             *source = Source {
                 generation,
                 on: true,
+                buffer: s.buffer_mode.map(|_| DataBuffer::default()),
                 ..Source::default()
             };
             Ok(generation)
@@ -207,6 +364,7 @@ impl InteractionCore {
                 source.on = false;
                 source.quarantined = !confirmed;
                 source.latest = None;
+                source.buffer = None;
                 for waiter in source.next.values_mut() {
                     if waiter.is_none() {
                         *waiter = Some(Err("Worker is OFF".into()));
@@ -268,7 +426,8 @@ impl InteractionCore {
     }
 
     /// The sole dispatcher publishes the complete native event, including invalid first events.
-    pub fn data(&self, background: &str, generation: u64, event: Result<Value, String>) {
+    /// Returns true when the optional buffer dropped an event.
+    pub fn data(&self, background: &str, generation: u64, event: Result<Value, String>) -> bool {
         self.update(|s| {
             if let Some(source) = s
                 .sources
@@ -281,8 +440,42 @@ impl InteractionCore {
                         *waiter = Some(event.clone());
                     }
                 }
+                if let (Some(buffer), Some(mode)) = (&mut source.buffer, s.buffer_mode) {
+                    return buffer.push(mode, event);
+                }
             }
-        });
+            false
+        })
+    }
+
+    pub fn buffer_status(&self, background: &str) -> Result<Value, String> {
+        let s = self.0.0.lock().unwrap_or_else(|e| e.into_inner());
+        let source = active_source(&s, background)?;
+        Ok(source
+            .buffer
+            .as_ref()
+            .ok_or("Data Buffer is disabled")?
+            .status())
+    }
+
+    pub fn buffer_data(
+        &self,
+        background: &str,
+        mode: BufferReadMode,
+        count: Option<usize>,
+    ) -> Result<Value, String> {
+        self.update(|s| {
+            let source = s
+                .sources
+                .get_mut(background)
+                .filter(|source| source.on)
+                .ok_or_else(|| format!("{background}: Worker is OFF"))?;
+            source
+                .buffer
+                .as_mut()
+                .ok_or("Data Buffer is disabled")?
+                .read(mode, count)
+        })
     }
 
     pub fn latest(&self, background: &str) -> Result<Value, String> {
@@ -657,6 +850,31 @@ pub(crate) fn validate_template(template: &crate::template::Template) -> Result<
                             format!("{}: Unknown Background {background_id}", step.id())
                         })?;
                     match operation {
+                        InteractionOperation::GetBufferData { selection, .. } => {
+                            if !template.workflow().interaction().buffer.enabled
+                                || timeout_ms.is_some()
+                            {
+                                return Err(
+                                    "Get Buffer Data requires enabled Buffer and no timeout".into(),
+                                );
+                            }
+                            if let BufferSelection::Count {
+                                count: crate::workflow::ExpressionOperand::Literal(value),
+                            } = selection
+                            {
+                                buffer_count(value)?;
+                            }
+                        }
+                        InteractionOperation::GetBufferStatus {} => {
+                            if !template.workflow().interaction().buffer.enabled
+                                || timeout_ms.is_some()
+                            {
+                                return Err(
+                                    "Get Buffer Status requires enabled Buffer and no timeout"
+                                        .into(),
+                                );
+                            }
+                        }
                         InteractionOperation::Command {
                             command,
                             arguments,

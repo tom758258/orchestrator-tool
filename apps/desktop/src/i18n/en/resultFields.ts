@@ -44,5 +44,14 @@ export default {
   "resultFields.captureAllowedHint": "Boolean — true: capture permitted; false: capture not permitted. This does not mean a waveform was saved.",
   "resultFields.protectionTrippedHint": "Boolean — true: over-voltage or over-current protection tripped; false: no trip reported.",
   "resultFields.overVoltageTrippedHint": "Boolean — true: over-voltage protection tripped; false: not tripped.",
-  "resultFields.overCurrentTrippedHint": "Boolean — true: over-current protection tripped; false: not tripped."
+  "resultFields.overCurrentTrippedHint": "Boolean — true: over-current protection tripped; false: not tripped.",
+  "resultFields.buffer.capacity": "Event Capacity",
+  "resultFields.buffer.count": "Buffered Count",
+  "resultFields.buffer.byte_capacity": "Byte Capacity",
+  "resultFields.buffer.buffered_bytes": "Buffered Bytes",
+  "resultFields.buffer.full": "Full",
+  "resultFields.buffer.overflowed": "Overflowed",
+  "resultFields.buffer.dropped_count": "Dropped Count",
+  "resultFields.buffer.data": "Data (Array)",
+  "resultFields.buffer.readCount": "Read Count"
 }

@@ -63,16 +63,20 @@ export type ToolActionStep = {
   bindings?: Record<string, InputValueWire>
 }
 
-export type InteractionSettings = { enabled: boolean; max_active_command_status: number }
+export type BufferSettings = { enabled: boolean; mode: 'fifo' | 'ring'; overflow_policy: 'fail-run' | 'continue' }
+export type InteractionSettings = { enabled: boolean; max_active_command_status: number; buffer: BufferSettings }
+export type BufferSelection = { kind: 'all' } | { kind: 'count'; count: ExpressionOperandWire }
 export type InteractionOperation =
   | { kind: 'command'; command: 'software-trigger'; wait_for_completion: boolean }
   | { kind: 'command'; command: 'serial-send' | 'serial-send-file'; wait_for_completion: boolean;
       arguments: Record<string, unknown>; bindings?: Record<string, InputValueWire> }
+  | { kind: 'get-buffer-data'; read_mode: 'peek' | 'pop'; selection: BufferSelection }
+  | { kind: 'get-buffer-status' }
   | { kind: 'get-latest' }
   | { kind: 'wait-next' }
   | { kind: 'get-command-result'; source_step: string }
 export type InteractionStep = { type: 'bg-interaction'; id: string; background_id: string; operation: InteractionOperation; timeout_ms: number | null }
-export const INTERACTION_LABELS = { command: 'BG Command', 'get-latest': 'Get Latest', 'wait-next': 'Wait Next', 'get-command-result': 'Get Command Result' }
+export const INTERACTION_LABELS = { command: 'BG Command', 'get-latest': 'Get Latest', 'wait-next': 'Wait Next', 'get-command-result': 'Get Command Result', 'get-buffer-data': 'Get Buffer Data', 'get-buffer-status': 'Get Buffer Status' }
 
 export type BackgroundAction = 'worker-on' | 'worker-off' | 'capture-on' | 'capture-off'
 export type BackgroundStep = { type: 'background'; id: string; background_id: string; action: BackgroundAction; capture: boolean }
@@ -102,7 +106,11 @@ export type ByteProcessStep = {
   type: 'byte-process'; id: string; operation: ByteProcessOperation
   arguments: Record<string, ExpressionOperandWire>
 }
-export type ProcessStep = StringProcessStep | ByteProcessStep
+export type ArrayProcessStep = {
+  type: 'array-process'; id: string; operation: 'length' | 'get-item'
+  arguments: Record<string, ExpressionOperandWire>
+}
+export type ProcessStep = StringProcessStep | ByteProcessStep | ArrayProcessStep
 
 export type NonLoopWorkflowStep = ProcessStep | InteractionStep | BackgroundStep | WaitStep | ToolActionStep | SetVariableStep | OutputStep | AssertStep | ShowMessageStep
 export type ForStep = {

@@ -9,7 +9,7 @@ Editor 目前的 InputValue 選項是：
 - **Fixed value** — literal value。
 - **Variable** — Workflow variable 的目前值。
 - **Previous step result** — 較早且可見的 step result。目前 UI 會提供先前
-  Tool Actions、BG Get Latest／Wait Next／Get Command Result，以及 String Process／Byte Process 的 results。
+  Tool Actions、BG Get Latest／Wait Next／Get Command Result／Get Buffer Data／Get Buffer Status，以及 String Process／Byte Process／Array Process 的 results。
 - **Calculation** — 四則運算／比較使用左右兩個 operand；Round、Floor、Ceil、Trunc 僅使用一個 operand（Round 的 0.5 中點遠離零、Trunc 朝零捨去小數）。
 - **Elapsed time** — runtime elapsed-time value。
 - **Timestamp** — runtime timestamp value。
@@ -38,3 +38,5 @@ Set Variable 與 Tool Action 的時間來源維持原有行為。
 只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。
 
+Get Buffer Data、Get Buffer Status 與 Array Process 的結果也可選為 Previous step result。
+Step 回傳的 Array 可存為 Variable，再由 Array Process 動態 Index 取得元素；不提供手動 Fixed Value Array 編輯器。

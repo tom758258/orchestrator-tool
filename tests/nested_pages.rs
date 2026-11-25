@@ -23,7 +23,7 @@ fn for_loop(id: &str, variable: &str, stop: &str, steps: Vec<Value>) -> Value {
 fn template(steps: Vec<Value>) -> Result<Template, TemplateError> {
     Template::from_json_str(
         &json!({"name":"Nested", "tool_instances":[],
-        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":steps}})
+        "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":steps}})
         .to_string(),
     )
 }

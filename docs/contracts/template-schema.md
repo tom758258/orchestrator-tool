@@ -15,7 +15,7 @@ definitions with the Template:
     {
       "name": "Example",
       "tool_instances": [],
-      "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096}, "steps": [] }
+      "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [] }
     }
 
 The Template is split into:
@@ -303,7 +303,7 @@ spooling for export, without creating an internal file-backed Dataset store.
 ## FG/BG Interaction (internal version 0.3.0)
 
 Every Workflow requires `interaction: {"enabled": false,
-"max_active_command_status": 4096}` (or explicit enabled settings). Missing
+"max_active_command_status": 4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}` (or explicit enabled settings). Missing
 settings are rejected; there is no old-format fallback or migration. Capacity is
 an integer from 1 to 65,536, shared across the Run, counting retained statuses
 including admission reservations, rather than cumulative commands.
@@ -314,7 +314,7 @@ including admission reservations, rather than cumulative commands.
  "timeout_ms":2000}
 ```
 
-Other `operation` objects are `{"kind":"get-latest"}`, `{"kind":"wait-next"}`
+The existing data and command-result `operation` objects are `{"kind":"get-latest"}`, `{"kind":"wait-next"}`
 and `{"kind":"get-command-result","source_step":"trigger"}`. The latter
 references an earlier BG Command Step for the same Background, in the same or an
 ancestor Loop scope. IF paths are checked at execution: an unexecuted source
@@ -324,7 +324,7 @@ an IF skips its Get. Finishing an IF does not prove that a later legal reader
 cannot execute; consume the retained result before another result-bearing
 command in that scope. Copy/paste remaps internal source references.
 
-Each interaction Step has one deadline, using `action_timeout` unless a positive
+Except for the two immediate Buffer Steps below, each interaction Step has one deadline, using `action_timeout` unless a positive
 `timeout_ms` is supplied. Worker must be ON; Capture may be OFF. Get Latest
 returns the newest complete native event or fails if it is absent/invalid; it
 never falls back. Wait Next atomically subscribes for the first subsequent event,
@@ -376,6 +376,70 @@ never completion. This control path does not create another async Job Tracker;
 existing WorkerSession v3 validation and the sole Background dispatcher retain
 ownership. No inferred batch completion, Serial TX, waveform streaming or new
 external protocol is introduced.
+
+### Optional FG/BG Data Buffer
+
+`workflow.interaction.buffer` is required in the current Template, with explicit
+`enabled` (Boolean), `mode` (`fifo` or `ring`) and `overflow_policy`
+(`fail-run` or `continue`). New drafts use disabled, FIFO and Fail Run.
+Buffer cannot be enabled unless FG/BG Interaction is enabled. No migration or
+missing-field fallback is provided. Settings apply to all Backgrounds; each
+Worker lifecycle has its own Buffer. Capacity is not configurable: at most
+1024 complete native events and 16,777,216 bytes (16 MiB) per Background.
+
+Account each entry by its compact JSON serialized UTF-8 length; invalid entries
+store and account for the serialized error string. Count and byte limits both
+apply. FIFO drops an incoming event when insufficient space remains. Ring
+removes oldest entries until the incoming event fits. A single event larger
+than 16 MiB is rejected in either mode without removing existing entries.
+No capacity wait or truncation is allowed. Each discarded entry increments
+`dropped_count`. Core records the facts; the dispatcher signals existing
+RunFailure for Fail Run even if FG is not executing an Interaction Step.
+Continue does not suppress other Worker, command or data-quality failures.
+Fail Run must not replace a fatal event-processing error from the same event
+or an earlier failure (including during Worker shutdown).
+Latest, Next, Command Result and Capture are independent of Buffer retention.
+Worker ON starts a new empty Buffer; Source Ended retains it; Worker OFF and
+Run end release it. Already acquired FG results retain their existing scope.
+No status reset or clear Step is provided. Settings and not runtime data are
+serialized to Template.
+
+```json
+{"type":"bg-interaction","id":"batch","background_id":"background-1",
+ "operation":{"kind":"get-buffer-data","read_mode":"pop",
+              "selection":{"kind":"count","count":{"source":"literal","value":10}}},
+ "timeout_ms":null}
+```
+
+`read_mode` is `peek` or `pop`; `selection` is either
+`{"kind":"all"}` or `{"kind":"count","count":<ExpressionOperand>}`.
+Count must be an integer from 1 to 1024; literal, variable and earlier Step
+Output operands are supported, not calculations or time sources. ALL forbids
+count. Both modes return immediately, oldest first, up to the requested count
+or all available entries. An empty Buffer returns count 0 and data []. Peek
+retains entries; Pop removes the entire successfully selected batch. If any
+selected entry is invalid, the Step fails without consuming any entries or
+publishing a success output. Peek and a later Pop are separate snapshots, not
+a transaction. Worker must be ON (an ended Source may be read), Buffer enabled,
+and timeout absent or null.
+
+```json
+{"type":"bg-interaction","id":"buffer-status","background_id":"background-1",
+ "operation":{"kind":"get-buffer-status"},"timeout_ms":null}
+```
+
+Get Buffer Status reads only status. Both Buffer Steps use the same seven
+status fields: `capacity`, `count`, `byte_capacity`, `buffered_bytes`,
+`full`, `overflowed`, `dropped_count`. The first four and dropped_count
+are numbers; full and overflowed are Booleans. Full means either limit has
+been reached; a larger incoming event can overflow even if full is false.
+Overflowed and dropped_count are sticky for the Worker lifecycle and do not
+reset on read or Capture ON/OFF. Get Buffer Data returns
+`{"count":n,"data":[...],"status":{...}}`; the outer count is the actual read
+count, and status is the post-operation snapshot from the same atomic
+operation. Get Buffer Status returns the status object directly.
+Neither capacity is a process RAM limit; FG Arrays and other runtime data
+are managed separately.
 
 ## Tool Instances and setup
 
@@ -474,6 +538,7 @@ The Template supports these step kinds:
 - Set Variable: assign an InputValue to a variable.
 - String Process: process Unicode text and return a value.
 - Byte Process: process bytes represented by Hex Strings and return a value.
+- Array Process: return the length or one item of an existing JSON Array.
 - Output: publish an InputValue under a unique name on a named Output Page.
 - Wait: wait for a duration in milliseconds.
 - Tool Action: invoke an action on a target Tool Instance with JSON arguments
@@ -800,6 +865,29 @@ not publish a successful result. Process steps do not modify Variables,
 create ResultRows, invoke external Tools, or implement Serial framing. Existing
 Tool Action binding source restrictions remain unchanged.
 
+## Array Process
+
+`array-process` is a Tool-independent Workflow Step. Its operation is
+`length` or `get-item`; the former requires only `input`, the latter also
+requires `index`. Input is an earlier visible Variable or Step Output
+ExpressionOperand (not a literal). Index is a literal, Variable or Step Output
+non-negative integer, zero-based. A non-Array input, non-integer, negative or
+out-of-bounds index fails. Length of an empty Array is 0. Get Item preserves
+the original JSON value, including Null, Object or nested Array.
+
+```json
+{"type":"array-process","id":"item","operation":"get-item","arguments":{
+ "input":{"source":"step-output","step_id":"batch","pointer":"/data"},
+ "index":{"source":"variable","variable":"i"}}}
+```
+
+Successful output is `{"value":...}`, referenced with `/value` or a nested
+JSON Pointer such as `/value/rx_hex`. The source is not modified. No additional
+global Array limit or manual fixed Array editor is introduced. Existing
+String/Byte Process string-size restrictions still apply to their own inputs
+and outputs. Array Process uses read-only source access without cloning the
+entire Array for each item.
+
 ## For ranges and lexical scope
 
 A For range stores start, stop, and step as exact decimal strings:
@@ -1063,7 +1151,7 @@ is preserved after workflow failure or graceful Stop.
 
 ## Serial Background RX and TX (Template)
 
-A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or a FIFO.
+A Serial Tool Instance uses `tool: "serial"` and a Setup object with `baud` (a positive integer); optional fields `data_bits`, `parity`, `stop_bits`, `flow_control` and `timeout_ms` follow the Serial Worker CLI. Serial Background requires `limit_count: null` and forbids `timer_interval_ms`, Scopes measurements and Scopes intervals. Existing Worker ON/OFF and Capture ON/OFF actions control the run-bound RX stream and recorded Datasets; the Template does not store the COM Port, runtime RX bytes or Buffer data/status.
 
 Background Simulation starts Serial Tool's `periodic-rx-v1` profile with `--streaming` to produce RX without TX; Foreground Simulation retains `loopback-v1` without streaming. Live requires a separately saved and confirmed COM Port or TCP endpoint. Each Serial `rx` event contains `rx_hex`, `rx_bytes` and `timestamp_utc`; one RX Event becomes one Output Data row, not one row per Byte or protocol packet. Hex and UTF-8 Text are views over unchanged raw Bytes. Manual Serial CSV/XLSX use the selected display, while BIN contains only concatenated raw Bytes. Serial is not a numeric Chart source. Foreground Serial actions are separately supported by ordinary non-streaming Workers.
 
@@ -1108,7 +1196,7 @@ arguments. Confirmed OFF releases isolation. Pure RX-only lifecycles do not arm
 this TX guard. There is no recovery UI or persistent isolation across restarts;
 operators must verify the external tool has safely stopped before restarting.
 TX completion does not establish DUT RX response or command execution. No Query,
-automatic TX/RX pairing, RX FIFO, command queue or Advanced Mode is introduced.
+automatic TX/RX pairing, packet reassembly, command queue or Advanced Mode is introduced. The optional FG/BG Data Buffer stores complete RX events, not a raw-byte FIFO.
 
 ## Serial Foreground Tool Actions (Template)
 
@@ -1169,7 +1257,7 @@ read cap), transport failures, unconfirmed Job terminals, cancellation, and
 generic action deadline expiry still fail; there is no automatic retry or
 TX/RX matching.
 
-Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background Query/Receive, Workflow RX buffers/FIFO, and multi-byte raw Hex TX in a single Send/Query action are excluded.
+Fixed values, Variables and Step Output bindings use the existing DataContext resolution and validation scope. Binding is supported only for the TX value, using key `tx_value`. The Orchestrator does not expose Serial Tool's native `run-sequence` as a Workflow Action. Background Query/Receive, raw-byte FIFO or packet reassembly, and multi-byte raw Hex TX in a single Send/Query action are excluded.
 
 
 ## Serial UART / TCP Client Transport (Template)

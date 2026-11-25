@@ -196,3 +196,16 @@ Byte Count 2、MSB First、Unsigned；`/value` 為 3300，後續 Calculation 除
 
 這些 Step 只處理已取得的資料，不組裝 Serial RX 封包、不配對 TX／RX，
 也不改變 Serial Send 能力。
+
+### 6.8 Array Process
+
+Array Process 是獨立於 FG/BG Interaction 的 Workflow Step。從
+**Variable** 或 **Previous step result** 選取既有 Array，例如
+Get Buffer Data 的 `/data`；不提供 Fixed Value Array 編輯器。
+**Length** 回傳組數（空 Array 回傳 0）；**Get Item** 使用從 0 開始的整數 Index，
+來源可選 Fixed Value、Variable、Previous step result，保留元素原有 JSON 型態
+（包含 Null、Object、巢狀 Array）。無效輸入或 Index 使 Step 失敗，不修改來源。
+結果可用 `/value` 或 `/value/rx_hex` 等巢狀指標引用。
+逐筆處理時可設定 i=0，以 While 判斷 i 小於取得筆數，使用 Get Item 的 Index i，
+處理該筆後以 Calculation 將 i 加 1。不新增全域 Array 大小限制；
+取出的字串交給 String／Byte Process 時仍適用原有字串限制。

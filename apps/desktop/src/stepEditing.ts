@@ -187,6 +187,9 @@ export function renameStepId(steps: WorkflowStep[], oldId: string, newId: string
     switch (next.type) {
       case 'bg-interaction': {
         const operation = next.operation
+        if (operation.kind === 'get-buffer-data' && operation.selection.kind === 'count') {
+          return { ...next, operation: { ...operation, selection: { kind: 'count', count: operand(operation.selection.count) } } }
+        }
         if (operation.kind === 'get-command-result' && operation.source_step === oldId) {
           return { ...next, operation: { ...operation, source_step: newId } }
         }
@@ -199,6 +202,7 @@ export function renameStepId(steps: WorkflowStep[], oldId: string, newId: string
       }
       case 'string-process':
       case 'byte-process':
+      case 'array-process':
         return { ...next, arguments: Object.fromEntries(Object.entries(next.arguments).map(([key, value]) => [key, operand(value)])) }
       case 'set-variable':
       case 'output':
@@ -266,6 +270,9 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
     switch (next.type) {
       case 'bg-interaction': {
         const operation = next.operation
+        if (operation.kind === 'get-buffer-data' && operation.selection.kind === 'count') {
+          return { ...next, operation: { ...operation, selection: { kind: 'count', count: operand(operation.selection.count) } } }
+        }
         if (operation.kind === 'get-command-result') return { ...next, operation: { ...operation, source_step: idMap.get(operation.source_step) ?? operation.source_step } }
         if (operation.kind === 'command' && operation.command !== 'software-trigger' && operation.bindings) {
           return { ...next, operation: { ...operation, bindings: Object.fromEntries(Object.entries(operation.bindings).map(([key, value]) => [key, input(value)])) } }
@@ -274,6 +281,7 @@ export function pasteSteps(steps: WorkflowStep[], clipboard: readonly WorkflowSt
       }
       case 'string-process':
       case 'byte-process':
+      case 'array-process':
         return { ...next, arguments: Object.fromEntries(Object.entries(next.arguments).map(([key, value]) => [key, operand(value)])) }
       case 'set-variable':
       case 'output': return { ...next, value: input(next.value) }

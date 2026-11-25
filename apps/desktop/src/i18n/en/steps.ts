@@ -72,5 +72,10 @@ export default {
   "steps.hint.assert": "Fail the workflow when the specified condition is false.",
   "steps.hint.show-message": "Write a message to the workflow Messages panel.",
   "steps.hint.meter-measure": "Acquire a Meter reading or a configured measurement batch.",
-  "steps.hint.power-output-off": "Disable output on the selected power channel."
+  "steps.hint.power-output-off": "Disable output on the selected power channel.",
+  "steps.interaction.get-buffer-data": "Get Buffer Data",
+  "steps.interaction.get-buffer-status": "Get Buffer Status",
+  "steps.hint.bg-get-buffer-data": "Read the oldest available events immediately with Peek or Pop; return data and a status snapshot.",
+  "steps.hint.bg-get-buffer-status": "Query capacity, occupancy and data loss without consuming events.",
+  "steps.hint.array-process": "Read the length or one element of an existing Array without modifying it."
 }

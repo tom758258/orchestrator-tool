@@ -29,11 +29,14 @@ const BYTE_PARAMETERS: Record<ByteProcessOperation['kind'], readonly string[]> =
   'text-to-hex': ['input'],
 }
 
+const ARRAY_PARAMETERS = { length: ['input'], 'get-item': ['input', 'index'] } as const
+
 function parameters(step: ProcessStep): readonly string[] {
-  return step.type === 'string-process' ? STRING_PARAMETERS[step.operation] : BYTE_PARAMETERS[step.operation.kind]
+  return step.type === 'array-process' ? ARRAY_PARAMETERS[step.operation] : step.type === 'string-process' ? STRING_PARAMETERS[step.operation] : BYTE_PARAMETERS[step.operation.kind]
 }
 
 function literalDefault(step: ProcessStep, name: string): string | number {
+  if (name === 'index') return 0
   if (name === 'byte_count') return 1
   if (name === 'length' || name === 'byte_index' || name === 'start_index') return 0
   if (name === 'input' && step.type === 'byte-process' && step.operation.kind === 'number-to-hex') return 0
@@ -42,7 +45,9 @@ function literalDefault(step: ProcessStep, name: string): string | number {
 
 function withOperation(step: ProcessStep, kind: string): ProcessStep {
   let next: ProcessStep
-  if (step.type === 'string-process') {
+  if (step.type === 'array-process') {
+    next = { ...step, operation: kind as 'length' | 'get-item' }
+  } else if (step.type === 'string-process') {
     next = { ...step, operation: kind as StringProcessOperation }
   } else {
     const selected = kind as ByteProcessOperation['kind']
@@ -55,6 +60,10 @@ function withOperation(step: ProcessStep, kind: string): ProcessStep {
   return { ...next, arguments: Object.fromEntries(parameters(next).map(name => {
     const value = step.arguments[name]
     const fallback = literalDefault(next, name)
+    if (next.type === 'array-process' && name === 'input') {
+      const operand: ExpressionOperandWire = value && value.source !== 'literal' ? value : { source: 'step-output', step_id: '', pointer: '' }
+      return [name, operand]
+    }
     const operand: ExpressionOperandWire = value && (value.source !== 'literal' || typeof value.value === typeof fallback)
       ? value : { source: 'literal', value: fallback }
     return [name, operand]
@@ -74,10 +83,11 @@ type Props = {
 
 export default function ProcessEditor({ step, onChange, ...references }: Props) {
   const { t } = useI18n()
-  const kind = step.type === 'string-process' ? step.operation : step.operation.kind
-  const operations = Object.keys(step.type === 'string-process' ? STRING_PARAMETERS : BYTE_PARAMETERS)
+  const kind = step.type === 'byte-process' ? step.operation.kind : step.operation
+  const operations = Object.keys(step.type === 'array-process' ? ARRAY_PARAMETERS : step.type === 'string-process' ? STRING_PARAMETERS : BYTE_PARAMETERS)
   const label = (name: string) => {
     if (name !== 'input') return t(`process.parameter.${name}`)
+    if (step.type === 'array-process') return t('process.inputArray')
     if (step.type === 'string-process' || kind === 'text-to-hex') return t("process.inputString")
     if (kind === 'number-to-hex') return t("process.inputNumber")
     return t("process.inputHex")
@@ -96,8 +106,8 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
       </label>
       {parameters(step).map(name => (
         <ProcessOperandEditor key={kind + ':' + name} {...references}
-          label={label(name)} literalDefault={literalDefault(step, name)}
-          value={step.arguments[name] ?? { source: 'literal', value: literalDefault(step, name) }}
+          label={label(name)} literalDefault={literalDefault(step, name)} noLiteral={step.type === 'array-process' && name === 'input'}
+          value={step.arguments[name] ?? (step.type === 'array-process' && name === 'input' ? { source: 'step-output', step_id: '', pointer: '' } : { source: 'literal', value: literalDefault(step, name) })}
           onChange={value => onChange(current => ({ ...current, arguments: { ...current.arguments, [name]: value } }))} />
       ))}
       {step.type === 'byte-process' && 'byte_order' in step.operation && (() => {
@@ -130,7 +140,7 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
           <p className="value-source-help">{t("process.numericByteCountHelp")}</p>
         </>
       })()}
-      <p className="value-source-help">{t("process.limitHelp")}</p>
+      <p className="value-source-help">{t(step.type === 'array-process' ? 'process.arrayHelp' : 'process.limitHelp')}</p>
       {step.type === 'byte-process' && <p className="value-source-help">{t("process.hexHelp")}</p>}
       <p className="value-source-help">{t("process.resultHelp")}</p>
     </div>

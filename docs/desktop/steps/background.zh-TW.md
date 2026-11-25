@@ -8,9 +8,9 @@ Workflow 左側最下方、**Chart Options** 下方的 **FG/BG Interaction**
 設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
 在 Setup 啟用 Background Streaming 後，才能展開並勾選
 **啟用前景／背景互動（Enable FG/BG Interaction）** 以解鎖互動 Steps。移除最後一個未被
-Step 引用的 Background Binding 時會關閉 Interaction，但保留容量數值。
+Step 引用的 Background Binding 時會關閉 Interaction 與 Buffer，但保留命令容量數值。
 **Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
-Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。兩項設定都會隨
+Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。這些設定（含必填 Buffer 設定）都會隨
 Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。
 
 先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
@@ -49,4 +49,49 @@ Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值�
 重新 ON 會使舊資料與結果引用失效。若無法確認關閉，同一資源即使改用計時觸發
 或 Foreground 仍會被阻擋。重新啟動應用程式前，請先確認外部工具已停止；
 重新啟動本身不代表已驗證關閉。
+
+### Data Buffer（選用）
+
+在同一個 FG/BG Interaction 面板啟用 **Enable Buffer（啟用 Buffer）**，
+預設 OFF，必須先啟用 FG/BG Interaction。選擇 FIFO／Ring Buffer 及
+Overflow Policy（預設 Fail Run，或 Continue）。所有 Background 共用設定，
+每個 Worker 各自保存固定最多 **1024 組 Event 與 16 MiB**
+（16,777,216 Bytes）。容量以完整緊湊 JSON 的 UTF-8 Bytes（或序列化錯誤資訊）
+計算，不是原始 Serial Bytes，也不是全域 RAM 上限。FIFO 空間不足時丟棄新資料；
+Ring Buffer 依序移除最舊資料直到空間足夠。單筆超限時拒絕該筆，不清除既有資料。
+不截斷、不等待空間。Fail Run 即使 FG 正執行其他 Step 也通知既有失敗收尾；
+Continue 保留遺失狀態供 IF／ELSE 判斷。Buffer Overflow 不會取代同一筆
+Event 的致命處理錯誤或先前的失敗原因。Capture、Latest、Next 與 Command
+Result 獨立；Buffer 遺失不等於 Capture 遺失。
+
+- **Get Buffer Data**：選擇 Background、Peek／Pop、Count／ALL。Count
+  支援 Fixed Value、Variable、Previous step result，範圍 1～1024 整數。
+  由最舊開始立即回傳，資料不足回傳現有數量，空 Buffer 回傳 count 0 與空 Array。
+  Peek 保留資料，Pop 僅在整批成功時移除。選取範圍含無效 Event 時 Step
+  失敗，整批不消耗。Peek 與後續 Pop 不保證取得相同資料。
+- **Get Buffer Status**：只選擇 Background，查詢狀態、不讀取或移除 Event。
+  兩個 Buffer Step 均不等待資料累積，沒有 Step timeout。
+
+Get Buffer Data 回傳 `/count`（實際取得數量）、`/data`（完整原生 Event
+Array）與 `/status/...`（操作後快照）。Get Buffer Status 在根層級回傳同一組
+狀態欄位。可於 IF／ELSE、Assert、Output 或其他 Step 引用。
+
+| Status | 意義 |
+| --- | --- |
+| capacity | 固定 1024 組 |
+| count | 目前 Buffer 組數 |
+| byte_capacity | 16,777,216 Bytes |
+| buffered_bytes | 目前緊湊 JSON UTF-8 Bytes |
+| full | 任一容量已達上限 |
+| overflowed | 本次 Worker 生命週期曾遺失資料 |
+| dropped_count | 累計丟棄或覆蓋的 Event 組數 |
+
+即使 Full 為 false，下一筆過大的 Event 仍可能造成 Overflow。
+Peek、Pop、Pop ALL、Capture ON／OFF 不重置遺失狀態。
+Worker ON 初始化空 Buffer；Source Ended 保留資料直到 Worker OFF 才釋放。
+新 Worker 或 Run 從空 Buffer 開始；已取回 FG 的 Array 遵循原有 Step Output
+或 Variable 作用範圍。
+
+使用 Array Process Length 或 Get Item 操作 `/data`。Serial RX Event
+不保證為完整封包；不提供封包組裝或 TX/RX 自動配對。
 

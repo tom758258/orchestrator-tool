@@ -934,7 +934,7 @@ mod tests {
         let mut value = serde_json::json!({
             "name":"Scope AutoScale policy",
             "tool_instances":[{"id":"scopes-1","tool":"scopes","setup":{}}],
-            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096},"steps":[{"type":"tool-action","id":"autoscale",
+            "workflow":{"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}},"steps":[{"type":"tool-action","id":"autoscale",
                 "target":"scopes-1","action":"autoscale","arguments":{}}]}
         });
         let autoscale = value["workflow"]["steps"][0].clone();

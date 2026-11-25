@@ -106,6 +106,9 @@ automatic finish; the first Worker OFF releases the source. A second explicit
 OFF fails. An ended source cannot Capture ON again until Worker OFF and a new
 Worker ON. Every run also cleans up remaining Workers, including on failure,
 while preserving the existing Powers Safe-Off behavior.</p>
+<p>The optional FG/BG Data Buffer is independent of Capture and Live Monitor. See
+<a href="steps-background.html">Background Interaction Steps</a> for its fixed capacity,
+FIFO/Ring modes, overflow and read rules.</p>
 <p><strong>Output</strong> contains <strong>Charts</strong>, optional <strong>Live Monitors</strong>, <strong>Foreground Output</strong>,
 and <strong>Background Output</strong> as separate expandable sections. Background-only runs can use
 Charts and Background Output. Background Output appears only when the Last Run
@@ -166,8 +169,9 @@ with the reason available on hover. <strong>Output Data</strong> uses pages of 1
 <code>no_loss_detected</code> describes the Tool's evidence, not a zero-loss guarantee.</p>
 <p>Capture boundaries follow received event processing, not hardware sample time.
 Full captured samples stay in memory for the current run. A new run or <strong>Clear
-Last Run</strong> releases them; there is no history or recovery store. Background
-samples do not feed Workflow variables, calculations, assertions or ResultRows.</p>
+Last Run</strong> releases them; there is no history or recovery store.
+Capture Dataset samples do not directly feed Workflow variables, calculations,
+assertions or ResultRows; use FG/BG Interaction Steps to obtain Background data.</p>
 <p><strong>CSV Export → Stream Background CSV during Capture</strong> is independent of
 foreground CSV. Choose All Backgrounds or one Background and its output folder.
 The default is <code>&lt;application folder&gt;/data</code>. For Scopes, <strong>Scopes CSV columns</strong>

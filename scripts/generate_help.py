@@ -2,6 +2,7 @@
 
 import argparse
 import html
+import posixpath
 import re
 from html.parser import HTMLParser
 from pathlib import Path
@@ -60,8 +61,24 @@ def source_parts(lang):
         source = (ROOT / "docs/desktop" / (stem + suffix(lang))).read_text(encoding="utf-8")
         if source.count(CHAPTER_MARK) != 1 or not source.startswith("# "):
             raise ValueError("Invalid chapter source: " + stem)
-        chapters.append(source.split(CHAPTER_MARK)[1])
+        chapters.append(rewrite_chapter_links(source.split(CHAPTER_MARK)[1], stem, lang))
     return intro, guide, chapters
+
+
+def rewrite_chapter_links(source, stem, lang):
+    """Map relative Markdown links between Desktop chapters to local Help pages."""
+    def link(match):
+        label, target = match.groups()
+        if target.startswith(("http:", "https:", "#")) or not target.endswith(".md"):
+            return match.group(0)
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(stem), target))
+        if target.endswith(".zh-TW.md"):
+            target = target[:-9]
+        else:
+            target = target[:-3]
+        return "[" + label + "](" + filename(target, lang) + ")"
+
+    return re.sub(r'\[([^\]]+)\]\(([^)]+)\)', link, source)
 
 
 def markdown_html(source):
