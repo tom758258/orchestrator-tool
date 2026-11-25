@@ -98,7 +98,8 @@ Overflow Policy（預設 Fail Run，或 Continue）。所有 Background 共用�
 計算，不是原始 Serial Bytes，也不是全域 RAM 上限。FIFO 空間不足時丟棄新資料；
 Ring Buffer 依序移除最舊資料直到空間足夠。單筆超限時拒絕該筆，不清除既有資料。
 不截斷、不等待空間。Fail Run 即使 FG 正執行其他 Step 也通知既有失敗收尾；
-Continue 保留遺失狀態供 IF／ELSE 判斷。Capture、Latest、Next 與 Command
+Continue 保留遺失狀態供 IF／ELSE 判斷。Buffer Overflow 不會取代同一筆
+Event 的致命處理錯誤或先前的失敗原因。Capture、Latest、Next 與 Command
 Result 獨立；Buffer 遺失不等於 Capture 遺失。</p>
 <ul>
 <li><strong>Get Buffer Data</strong>：選擇 Background、Peek／Pop、Count／ALL。Count
