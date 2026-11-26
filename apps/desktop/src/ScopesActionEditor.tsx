@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type { ExecutionMode } from './executionMode'
 import type { ScopesCapabilities } from './scopesSetup'
 import type { InputValueWire } from './inputValue'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 import type { BackgroundConfig, ToolActionStep, WorkflowStep } from './workflow'
 
 export default function ScopesActionEditor({ step, instances, backgrounds, earlierSteps, earlierVariables, disabled, onChange, stepLabel,
