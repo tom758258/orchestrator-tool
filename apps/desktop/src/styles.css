@@ -3035,3 +3035,14 @@ textarea:disabled {
 }
 .workflow-sidebar .streaming-panel > .value-source-help { margin: 4px 0 10px; }
 .workflow-help-group > .value-source-help { margin: 0; }
+
+/* Result names are distinct from their explanatory text, without exposing wire paths. */
+.step-properties .workflow-result-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

@@ -65,7 +65,7 @@ export default {
   "steps.hint.set-variable": "Store a value or calculation result for later Steps, without publishing an Output column.",
   "steps.hint.output": "Publish a value as a column in a workflow output dataset; this does not control Power output.",
   "steps.hint.power-set-output": "Set the voltage setpoint and/or current limit without automatically turning output on.",
-  "steps.hint.power-protection-status": "Read protection status without clearing a trip or changing output. Use Assert with /protection_tripped and Boolean false to fail the Workflow on a trip.",
+  "steps.hint.power-protection-status": "Read protection status without clearing a trip or changing output. Use Assert to compare Protection Tripped with Boolean false to fail the Workflow on a trip.",
   "steps.hint.power-measure": "Read actual voltage and current on the selected power channel.",
   "steps.hint.power-output-on": "Enable output on the selected power channel.",
   "steps.hint.wait": "Pause the workflow before running the next Step.",

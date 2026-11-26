@@ -35,7 +35,7 @@ export default {
   "interactionEditor.getMode": "Get Mode",
   "interactionEditor.count": "Count",
   "interactionEditor.bufferReadHelp": "An empty Buffer returns an empty Array. Any invalid selected event fails the whole batch without consuming it. Peek and later Pop are separate snapshots.",
-  "interactionEditor.bufferStatusHelp": "Read status without consuming data. Full means either limit is reached; a new event may overflow even if Full is false. Overflowed indicates past loss; Dropped Count counts lost events. Loss status resets only with a new Worker lifecycle. Result fields are at the root, e.g. /count and /overflowed.",
+  "interactionEditor.bufferStatusHelp": "Read status without consuming data. Full means either limit is reached; a new event may overflow even if Full is false. Overflowed indicates past loss; Dropped Count counts lost events. Loss status resets only with a new Worker lifecycle. Select Buffered Count and other status fields through Previous step result.",
   "interactionEditor.enableHelp": "Allow foreground Steps to interact with Background Workers. This does not start a Worker.",
   "interactionEditor.bufferEnableHelp": "Retain Background events for foreground reading. Buffer and Capture are independent.",
   "interactionEditor.capacityLabel": "Fixed Buffer capacity per Background",
@@ -55,5 +55,5 @@ export default {
   "interactionEditor.selectionHelp.count": "Return up to the requested count immediately, oldest first; do not wait for more.",
   "interactionEditor.countHelp": "Integer from 1 to 1024, including values resolved at runtime.",
   "interactionEditor.serialEventHelp": "Serial RX events are not guaranteed to be complete packets.",
-  "interactionEditor.bufferDataResult": "Result: /count is the actual number read; /data is the Event Array; /status contains the post-read snapshot. Use Array Process on /data."
+  "interactionEditor.bufferDataResult": "Results: Read Count (Number) is the actual number read; Data (Array) contains the events; Buffer status fields describe the post-read snapshot. Select Data (Array) as the input to Array Process."
 }
