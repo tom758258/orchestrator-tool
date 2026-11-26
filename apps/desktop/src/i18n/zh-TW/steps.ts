@@ -65,7 +65,7 @@ export default {
   "steps.hint.set-variable": "儲存資料或計算結果供後續步驟使用，不會建立 Output 欄位。",
   "steps.hint.output": "將指定值輸出為工作流程資料集的欄位；不控制電源輸出。",
   "steps.hint.power-set-output": "設定電壓設定值及／或電流上限，不會自動開啟輸出。",
-  "steps.hint.power-protection-status": "讀取電源保護狀態，不會清除保護或改變輸出。可使用 Assert 比較 /protection_tripped 與 Boolean false，讓保護觸發時 Workflow 失敗。",
+  "steps.hint.power-protection-status": "讀取電源保護狀態，不會清除保護或改變輸出。可使用 Assert 比較「保護已觸發」與 Boolean false，讓保護觸發時 Workflow 失敗。",
   "steps.hint.power-measure": "讀取指定電源通道的實際電壓與電流。",
   "steps.hint.power-output-on": "開啟指定電源通道的輸出。",
   "steps.hint.wait": "暫停工作流程一段時間，再執行下一個步驟。",

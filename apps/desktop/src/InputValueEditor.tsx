@@ -234,11 +234,21 @@ function OperandEditor({ value, onChange, earlierSteps, instances, backgrounds =
               {candidates.map((step) => <option key={step.id} value={step.id}>{stepLabel(step)} ({step.id})</option>)}
             </select>
           </label>
-          {!candidates.some((step) => step.id === value.step_id) && (
-            <p className="step-properties-empty">{t("inputValueEditor.referencePreserved")}{value.step_id} {t("inputValueEditor.isNotAnEligibleEarlierResultProducingStepValidate")}</p>
-          )}
-          <ResultPathEditor key={value.step_id} value={value} onChange={onChange}
-            fields={fields} disabled={disabled} />
+          {value.step_id ? <>
+            {!candidates.some((step) => step.id === value.step_id) && (
+              <p className="step-properties-empty">{t("inputValueEditor.referencePreserved")}{value.step_id} {t("inputValueEditor.isNotAnEligibleEarlierResultProducingStepValidate")}</p>
+            )}
+            <ResultPathEditor key={value.step_id} value={value} onChange={onChange}
+              fields={fields} disabled={disabled} />
+          </> : <>
+            <label className="step-property-field">
+              <span className="step-property-label">{t("inputValueEditor.result")}</span>
+              <select value="" disabled>
+                <option value="">{t("inputValueEditor.selectStepFirst")}</option>
+              </select>
+            </label>
+            {candidates.length === 0 && <p className="value-source-help">{t("inputValueEditor.noEarlierResults")}</p>}
+          </>}
         </>
       )
     }

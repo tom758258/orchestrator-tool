@@ -14,7 +14,7 @@ export default {
   "serialActionEditor.idleGapHelp": "Required positive integer in milliseconds. Resets after each data arrival; OS scheduling may affect timing precision.",
   "serialActionEditor.maxRXBytesHelp": "An RX limit, not a required length. Hitting it before a Delimiter or Idle Gap completes fails the Step.",
   "serialActionEditor.enableRXText": "Enable RX Text (UTF-8)",
-  "serialActionEditor.enableRXTextHelp": "Also exposes rx_text / partial_rx_text; raw Hex and Bytes stay available. Invalid UTF-8 yields null without failing the Step.",
+  "serialActionEditor.enableRXTextHelp": "Adds RX Text (UTF-8) for completed reads or Partial RX Text (UTF-8) for converted Read Timeout. Raw Hex and Bytes stay available. Invalid UTF-8 yields null without failing the Step.",
   "serialActionEditor.tXFormat": "TX Format",
   "serialActionEditor.textUTF8String": "Text (UTF-8 string)",
   "serialActionEditor.hexByteOneByte": "Single Byte (Integer Input)",

@@ -542,19 +542,21 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   const queryFlag = screen.getByRole('checkbox', { name: 'Fail on Read Timeout' }) as HTMLInputElement
   expect(queryFlag.checked).toBe(false)
   const properties = within(screen.getByRole('region', { name: 'Properties' }))
-  expect(properties.getByText('/rx_hex')).toBeTruthy()
-  expect(properties.getByText('/rx_bytes')).toBeTruthy()
-  expect(properties.getByText('/timed_out')).toBeTruthy()
-  expect(properties.getByText('/outcome')).toBeTruthy()
-  expect(properties.getByText('/partial_rx_hex')).toBeTruthy()
-  expect(properties.getByText('/partial_rx_bytes')).toBeTruthy()
-  expect(properties.queryByText('/rx_text')).toBeNull()
-  expect(properties.queryByText('/partial_rx_text')).toBeNull()
+  const results = () => within(properties.getByRole('group', { name: 'Common result fields' }))
+  expect(results().queryByText('/rx_hex')).toBeNull()
+  expect(results().getByText('RX Data (Hex String)')).toBeTruthy()
+  expect(results().getByText('RX Length (Bytes)')).toBeTruthy()
+  expect(results().getByText('RX Read Timed Out')).toBeTruthy()
+  expect(results().getByText('Serial Read Status')).toBeTruthy()
+  expect(results().getByText('Partial RX Hex')).toBeTruthy()
+  expect(results().getByText('Partial RX Bytes')).toBeTruthy()
+  expect(results().queryByText('RX Text (UTF-8)')).toBeNull()
+  expect(results().queryByText('Partial RX Text (UTF-8)')).toBeNull()
   fireEvent.click(queryFlag)
   expect(queryFlag.checked).toBe(true)
-  expect(properties.getByText('/rx_hex')).toBeTruthy()
-  expect(properties.queryByText('/partial_rx_hex')).toBeNull()
-  expect(properties.queryByText('/partial_rx_bytes')).toBeNull()
+  expect(results().getByText('RX Data (Hex String)')).toBeTruthy()
+  expect(results().queryByText('Partial RX Hex')).toBeNull()
+  expect(results().queryByText('Partial RX Bytes')).toBeNull()
   click('Step 2: Serial Receive, receive-1')
   const receiveMode = screen.getByRole('combobox', { name: 'Receive Mode' }) as HTMLSelectElement
   expect(receiveMode.value).toBe('single')
@@ -564,11 +566,11 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   const expectedBytes = screen.getByRole('spinbutton', { name: 'Expected RX Bytes' }) as HTMLInputElement
   expect(expectedBytes.value).toBe('')
   fireEvent.change(expectedBytes, { target: { value: '8' } })
-  expect(properties.queryByText('/rx_text')).toBeNull()
-  expect(properties.queryByText('/partial_rx_text')).toBeNull()
+  expect(results().queryByText('RX Text (UTF-8)')).toBeNull()
+  expect(results().queryByText('Partial RX Text (UTF-8)')).toBeNull()
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enable RX Text (UTF-8)' }))
-  expect(properties.getByText('/rx_text')).toBeTruthy()
-  expect(properties.getByText('/partial_rx_text')).toBeTruthy()
+  expect(results().getByText('RX Text (UTF-8)')).toBeTruthy()
+  expect(results().getByText('Partial RX Text (UTF-8)')).toBeTruthy()
   fireEvent.change(receiveMode, { target: { value: 'idle' } })
   const gap = screen.getByRole('spinbutton', { name: 'Idle Gap (ms)' }) as HTMLInputElement
   expect(gap.value).toBe('')
@@ -608,8 +610,8 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   expect((screen.getByRole('spinbutton', { name: 'Expected RX Bytes' }) as HTMLInputElement).value).toBe('8')
   expect((screen.getByRole('checkbox', { name: 'Enable RX Text (UTF-8)' }) as HTMLInputElement).checked).toBe(true)
   const reloadedProperties = within(screen.getByRole('region', { name: 'Properties' }))
-  expect(reloadedProperties.getByText('/rx_text')).toBeTruthy()
-  expect(reloadedProperties.getByText('/partial_rx_text')).toBeTruthy()
+  expect(within(reloadedProperties.getByRole('group', { name: 'Common result fields' })).getByText('RX Text (UTF-8)')).toBeTruthy()
+  expect(within(reloadedProperties.getByRole('group', { name: 'Common result fields' })).getByText('Partial RX Text (UTF-8)')).toBeTruthy()
   click('Step 3: Assert, assert-1')
   const reloadedLeft = within(screen.getByRole('group', { name: /Left/ }))
   const reloadedRight = within(screen.getByRole('group', { name: /Right/ }))
@@ -1422,24 +1424,24 @@ test('Powers Step editor selects confirmed channels without rewriting saved bind
   expect(saved.workflow.steps[0].arguments).toEqual({ channel: 1, voltage: 0, current: 0.25 })
   expect(saved.workflow.steps[0].bindings).toEqual({ current: { source: 'variable', variable: 'limit' } })
   const properties = within(screen.getByRole('region', { name: 'Properties' }))
-  const voltagePointer = '/request/arguments/voltage'
-  const currentPointer = '/request/arguments/current'
-  expect(properties.getByText('/request/arguments/channel')).toBeTruthy()
-  expect(properties.getByText(voltagePointer)).toBeTruthy()
-  expect(properties.getByText(currentPointer)).toBeTruthy()
+  const results = () => within(properties.getByRole('group', { name: 'Common result fields' }))
+  expect(results().queryByText('/request/arguments/voltage')).toBeNull()
+  expect(results().getByText('Channel')).toBeTruthy()
+  expect(results().getByText('Voltage')).toBeTruthy()
+  expect(results().getByText('Current Limit')).toBeTruthy()
   fireEvent.click(properties.getByRole('checkbox', { name: 'Set Voltage' }))
-  expect(properties.queryByText(voltagePointer)).toBeNull()
-  expect(properties.getByText(currentPointer)).toBeTruthy()
+  expect(results().queryByText('Voltage')).toBeNull()
+  expect(results().getByText('Current Limit')).toBeTruthy()
   fireEvent.click(properties.getByRole('checkbox', { name: 'Set Voltage' }))
   fireEvent.click(properties.getByRole('checkbox', { name: 'Set Current Limit' }))
-  expect(properties.getByText(voltagePointer)).toBeTruthy()
-  expect(properties.queryByText(currentPointer)).toBeNull()
+  expect(results().getByText('Voltage')).toBeTruthy()
+  expect(results().queryByText('Current Limit')).toBeNull()
   const voltageOnly = (await savedDraft()).workflow.steps[0]
   expect(voltageOnly.arguments).toEqual({ channel: 1, voltage: 5 })
   expect(voltageOnly.bindings).toBeUndefined()
   fireEvent.click(workflow.getByRole('button', { name: /Step 2: Power Set Output, bound-only/ }))
-  expect(properties.queryByText(voltagePointer)).toBeNull()
-  expect(properties.getByText(currentPointer)).toBeTruthy()
+  expect(results().queryByText('Voltage')).toBeNull()
+  expect(results().getByText('Current Limit')).toBeTruthy()
   expect((await savedDraft()).workflow.steps[1]).toEqual(newDraft.workflow.steps[1])
 })
 
@@ -1466,8 +1468,18 @@ test('Buffer settings and Steps save the current contract with Array input refer
   click('Array Process')
   click('Add Step')
   expect(screen.queryByRole('option', { name: 'Fixed value' })).toBeNull()
+  const pendingResult = screen.getByLabelText('Result') as HTMLSelectElement
+  expect(pendingResult.disabled).toBe(true)
+  expect(pendingResult.selectedOptions[0].textContent).toBe('Select a step first')
+  expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
+  expect(screen.queryByText(/Reference preserved:/)).toBeNull()
   const inputStep = screen.getByLabelText('Step') as HTMLSelectElement
   fireEvent.change(inputStep, { target: { value: inputStep.options[inputStep.options.length - 1].value } })
+  const result = screen.getByLabelText('Result') as HTMLSelectElement
+  expect(result.disabled).toBe(false)
+  expect(result.value).toBe('/data')
+  expect(result.selectedOptions[0].textContent).toBe('Data (Array)')
+  expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
   fireEvent.change(screen.getByLabelText('Operation'), { target: { value: 'get-item' } })
   const saved = await savedDraft()
   expect(saved.workflow.interaction.buffer).toEqual({ enabled: true, mode: 'ring', overflow_policy: 'continue' })
@@ -1516,6 +1528,12 @@ test('all 42 Workflow presets show their Palette description in Properties', asy
     if (preset.getAttribute('title')?.split('\n')[0] === 'Show Message') {
       expect(description).toMatch(/does not create an Output Page, a Popup, or an Assert/i)
     }
+    if (preset.getAttribute('title')?.split('\n')[0] === 'Power Protection Status') {
+      const results = within(properties.getByRole('group', { name: 'Common result fields' }))
+      expect(results.getByText('Protection Tripped')).toBeTruthy()
+      expect(results.queryByText('/protection_tripped')).toBeNull()
+      expect(results.getByText(/Boolean.*true.*false.*no trip reported/)).toBeTruthy()
+    }
   }
   fireEvent.click(screen.getByRole('button', { name: /Step .*?, serial-query-1$/ }))
   expect(properties.getByRole('heading', { name: 'Serial Query' })).toBeTruthy()
@@ -1553,6 +1571,12 @@ test('all 21 Process operations show contextual help and a result type', () => {
   for (const initialStep of initial) {
     const view = render(<Editor initialStep={initialStep} />)
     const operation = screen.getByRole('combobox', { name: 'Operation' }) as HTMLSelectElement
+    if (initialStep.type === 'array-process') {
+      expect((screen.getByLabelText('Result') as HTMLSelectElement).disabled).toBe(true)
+      expect(screen.getByText('No earlier result-producing steps are available.')).toBeTruthy()
+      expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
+      expect(screen.queryByText(/Reference preserved:/)).toBeNull()
+    }
     const values = Array.from(operation.options, option => option.value)
     const descriptions = new Set<string>()
     for (const value of values) {
@@ -1563,7 +1587,7 @@ test('all 21 Process operations show contextual help and a result type', () => {
       expect(description).not.toMatch(/^process\.help\./)
       descriptions.add(description)
       expect(resultTypes[initialStep.type][value]).toBeTruthy()
-      expect(screen.getByText(`/value · ${resultTypes[initialStep.type][value]}`)).toBeTruthy()
+      expect(screen.getByText(`Value · ${resultTypes[initialStep.type][value]}`)).toBeTruthy()
       if (initialStep.type === 'byte-process' && value === 'hex-to-number') {
         const order = screen.getByRole('combobox', { name: 'Byte Order' })
         const format = screen.getByRole('combobox', { name: 'Number Format' })

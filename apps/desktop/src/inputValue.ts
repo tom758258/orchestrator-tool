@@ -207,12 +207,13 @@ export function stepOutputReference(
   }
 }
 
-export function expressionSummary(value: Omit<Extract<InputValueWire, { source: 'expression' }>, 'source'>): string {
+export function expressionSummary(value: Omit<Extract<InputValueWire, { source: 'expression' }>, 'source'>,
+  referenceSummary: (reference: Extract<ExpressionOperandWire, { source: 'step-output' }>) => string): string {
   const operandSummary = (operand: ExpressionOperandWire): string => {
     switch (operand.source) {
       case 'literal': return JSON.stringify(operand.value) ?? 'No value'
       case 'variable': return operand.variable
-      case 'step-output': return `${operand.step_id} → ${operand.pointer || '(root)'}`
+      case 'step-output': return referenceSummary(operand)
     }
   }
   if (Object.hasOwn(UNARY_OPERATORS, value.operator)) {

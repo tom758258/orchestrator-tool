@@ -157,7 +157,7 @@ export default function ProcessEditor({ step, onChange, ...references }: Props) 
       })()}
       <div className="workflow-help-group">
         <span className="step-property-label">{t('process.resultTitle')}</span>
-        <p className="value-source-help">{t(`process.result.${family}.${kind}`)}</p>
+        <span className="step-property-label">{t('resultFields.processValue')} · {t(`process.result.${family}.${kind}`)}</span>
         <p className="value-source-help">{t('process.resultHelp')}</p>
         {example && <p className="value-source-help">{t(`process.example.${kind}`)}</p>}
         {family === 'byte' && !['byte-length', 'get-byte', 'contains', 'hex-to-number', 'hex-to-text'].includes(kind) && <p className="value-source-help">{t('process.hexHelp')}</p>}

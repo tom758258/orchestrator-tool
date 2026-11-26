@@ -2,6 +2,8 @@ export default {
   "inputValueEditor.null": "Null",
   "inputValueEditor.replaceWithStringFixedValue": "Replace with string fixed value",
   "inputValueEditor.result": "Result",
+  "inputValueEditor.selectStepFirst": "Select a step first",
+  "inputValueEditor.noEarlierResults": "No earlier result-producing steps are available.",
   "inputValueEditor.customPointer": "Custom pointer...",
   "inputValueEditor.jSONPointer": "JSON Pointer",
   "inputValueEditor.useAJSONPointerSuchAsValueLeaveEmpty": "Use a JSON Pointer such as /value. Leave empty for the complete result.",

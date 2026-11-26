@@ -14,7 +14,7 @@ export default {
   "serialActionEditor.idleGapHelp": "必填正整數毫秒值；接收後以最後一次收到資料的時間重新計算，底層讀取時間可能受作業系統排程影響。",
   "serialActionEditor.maxRXBytesHelp": "接收數量上限，並非必須收到的長度。Delimiter 或 Idle Gap 尚未完成就達上限會使步驟失敗。",
   "serialActionEditor.enableRXText": "啟用 RX Text（UTF-8）",
-  "serialActionEditor.enableRXTextHelp": "額外產生 rx_text／partial_rx_text；原始 Hex 和 Bytes 照常保留。UTF-8 無效時文字為 null，不會因此失敗。",
+  "serialActionEditor.enableRXTextHelp": "正常完成時提供「RX 文字（UTF-8）」，轉換讀取逾時時提供「部分 RX 文字（UTF-8）」。原始 Hex 和 Bytes 照常保留。UTF-8 無效時文字為 null，不會因此失敗。",
   "serialActionEditor.tXFormat": "傳送格式",
   "serialActionEditor.textUTF8String": "文字（UTF-8 字串）",
   "serialActionEditor.hexByteOneByte": "單一位元組（整數輸入）",

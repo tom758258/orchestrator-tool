@@ -3076,6 +3076,7 @@ function App() {
                   validationIssue={validationIssue}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
+                  backgrounds={workflowDraft.backgrounds ?? []}
                   runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_summaries ?? null : null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
@@ -3522,21 +3523,33 @@ function App() {
                         if (!fields.length) return null
                         const serialRead = selectedStep.type === 'tool-action' &&
                           (selectedAction === 'serial/receive' || selectedAction === 'serial/query')
-                        const renderFields = (items: typeof fields, showHints = false) => items.map(field =>
-                          <p key={field.pointer} className="value-source-help">{field.label}: <code>{field.pointer}</code>
-                            {showHints && field.hint && <> — {field.hint}</>}</p>)
-                        return <div className="workflow-help-group">
+                        // Keep the wire pointers for selection; display the same names as the Result dropdown.
+                        const serialTypes: Record<string, string> = {
+                          '/outcome': 'String', '/timed_out': 'Boolean',
+                          '/rx_hex': 'String', '/rx_bytes': 'Number', '/rx_text': 'String / Null',
+                          '/partial_rx_hex': 'String', '/partial_rx_bytes': 'Number', '/partial_rx_text': 'String / Null',
+                        }
+                        const serialType = (field: (typeof fields)[number]) => serialTypes[field.pointer]
+                        const renderFields = (items: typeof fields,
+                          describe: (field: (typeof fields)[number]) => string | undefined = field => field.hint) => items.map(field => {
+                          const detail = describe(field)
+                          return <div key={field.pointer} className="workflow-result-field">
+                            <strong>{field.label}</strong>
+                            {detail && <p className="value-source-help">{detail}</p>}
+                          </div>
+                        })
+                        return <div className="workflow-help-group" role="group" aria-label={t('app.workflowHelp.commonResults')}>
                           <span className="step-property-label">{t('app.workflowHelp.commonResults')}</span>
                           {serialRead ? <>
-                            {renderFields(fields.filter(field => ['/outcome', '/timed_out'].includes(field.pointer)), selectedStep.arguments.fail_on_read_timeout !== true)}
+                            {renderFields(fields.filter(field => ['/outcome', '/timed_out'].includes(field.pointer)), selectedStep.arguments.fail_on_read_timeout === true ? serialType : undefined)}
                             <span className="step-property-label">{t('app.workflowHelp.serialCompletedResults')}</span>
-                            {renderFields(fields.filter(field => ['/rx_hex', '/rx_bytes', '/rx_text'].includes(field.pointer)))}
+                            {renderFields(fields.filter(field => ['/rx_hex', '/rx_bytes', '/rx_text'].includes(field.pointer)), serialType)}
                             {selectedStep.arguments.fail_on_read_timeout !== true && <>
                               <span className="step-property-label">{t('app.workflowHelp.serialTimeoutResults')}</span>
                               <p className="value-source-help">{t('app.workflowHelp.serialTimeoutResultHelp')}</p>
-                              {renderFields(fields.filter(field => ['/partial_rx_hex', '/partial_rx_bytes', '/partial_rx_text'].includes(field.pointer)))}
+                              {renderFields(fields.filter(field => ['/partial_rx_hex', '/partial_rx_bytes', '/partial_rx_text'].includes(field.pointer)), serialType)}
                             </>}
-                          </> : renderFields(fields.slice(0, 3), true)}
+                          </> : renderFields(fields.slice(0, 3))}
                           <p className="value-source-help">{t('app.workflowHelp.resultReference')}</p>
                         </div>
                       })()}

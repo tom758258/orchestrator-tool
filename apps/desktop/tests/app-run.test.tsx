@@ -1605,6 +1605,63 @@ test('Sequence IF supports independent THEN/ELSE collapse and Add Step reveals i
   expect((await savedDraft()).workflow.steps[0].type).toBe('if')
 })
 
+test('Sequence result summaries and tooltips use the same localized labels as result selection without changing references', async () => {
+  currentDraft = backgroundDraft(1)
+  currentDraft.tool_instances.push({ id: 'powers-1', tool: 'powers', setup: {} })
+  currentDraft.workflow.steps = [
+    { type: 'tool-action', id: 'protect', target: 'powers-1', action: 'protection-status', arguments: { channel: 1 } },
+    { type: 'bg-interaction', id: 'batch', background_id: 'background-1', timeout_ms: null,
+      operation: { kind: 'get-buffer-data', read_mode: 'peek', selection: { kind: 'all' } } },
+    { type: 'array-process', id: 'batch-length', operation: 'length',
+      arguments: { input: { source: 'step-output', step_id: 'batch', pointer: '/data' } } },
+    { type: 'for', id: 'loop', variable: 'i', range: { start: '0', stop: '2', step: '1' }, steps: [
+      { type: 'output', id: 'out', name: 'Length', page: 'Results',
+        value: { source: 'step-output', step_id: 'batch-length', pointer: '/value' } },
+      { type: 'assert', id: 'check', operator: 'equal', message: '',
+        left: { source: 'step-output', step_id: 'protect', pointer: '/protection_tripped' },
+        right: { source: 'literal', value: false } },
+      { type: 'string-process', id: 'inside', operation: 'length',
+        arguments: { input: { source: 'literal', value: 'x' } } },
+    ] },
+    { type: 'set-variable', id: 'events', variable: 'events', value: { source: 'step-output', step_id: 'batch', pointer: '/data' } },
+    { type: 'set-variable', id: 'raw', variable: 'raw', value: { source: 'step-output', step_id: 'batch', pointer: '/data/0' } },
+    { type: 'set-variable', id: 'whole', variable: 'whole', value: { source: 'step-output', step_id: 'batch', pointer: '' } },
+    { type: 'set-variable', id: 'missing-ref', variable: 'missing', value: { source: 'step-output', step_id: 'missing', pointer: '/value' } },
+    { type: 'set-variable', id: 'out-of-scope', variable: 'outside', value: { source: 'step-output', step_id: 'inside', pointer: '/value' } },
+    { type: 'set-variable', id: 'calc', variable: 'calc', value: { source: 'expression', operator: 'add',
+      left: { source: 'step-output', step_id: 'batch-length', pointer: '/value' }, right: { source: 'literal', value: 1 } } },
+  ]
+  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith('create_workflow_draft'))
+  tab('Workflow')
+  await screen.findByTitle('Length = batch-length → Value')
+  const expectSummary = (summary: string) => {
+    expect(screen.getByTitle(summary).textContent).toBe(summary)
+  }
+  expectSummary('Length = batch-length → Value')
+  expectSummary('protect → Protection Tripped == false')
+  expectSummary('events = batch → Data (Array)')
+  expectSummary('raw = batch → /data/0')
+  expectSummary('whole = batch → Complete result')
+  expectSummary('missing = missing → /value')
+  expectSummary('outside = inside → /value')
+  expectSummary('calc = batch-length → Value + 1')
+
+  fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
+  expectSummary('Length = batch-length → 處理結果')
+  expectSummary('protect → 保護已觸發 == false')
+  expectSummary('events = batch → Data（Array）')
+  expectSummary('whole = batch → 完整結果')
+  expectSummary('raw = batch → /data/0')
+  expectSummary('missing = missing → /value')
+  expectSummary('outside = inside → /value')
+  expectSummary('calc = batch-length → 處理結果 + 1')
+  fireEvent.click(screen.getByRole('button', { name: '切換語言為 English' }))
+  expectSummary('Length = batch-length → Value')
+  expect((await savedDraft()).workflow.steps).toEqual(currentDraft.workflow.steps)
+  localStorage.removeItem('orchestrator-tool.locale')
+})
+
 test('Sequence locates nested validation errors even when their ancestors were collapsed', async () => {
   await mount()
   const sequence = screen.getByRole('region', { name: 'Sequence' })

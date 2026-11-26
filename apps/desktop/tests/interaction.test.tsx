@@ -75,21 +75,38 @@ test('Binding and Output value editor can select native Get results and their JS
 
 test('Background Meters Get result uses the existing Value and Unit dropdown', () => {
   const latest: InteractionStep = { ...command('latest'), operation: { kind: 'get-latest' } }
-  function Editor() {
+  const changed = vi.fn()
+  function Editor({ steps = [latest], disabled = false }: { steps?: WorkflowStep[]; disabled?: boolean }) {
     const [value, setValue] = useState<InputValueWire>({
       source: 'step-output', step_id: 'latest', pointer: '/value',
     })
-    return <InputValueEditor value={value} onChange={setValue} earlierSteps={[latest]}
+    return <InputValueEditor value={value} onChange={next => { setValue(next); changed(next) }} earlierSteps={steps}
       instances={[{ id: 'meter-1', tool: 'meters', setup: {} } as ToolInstance]}
       backgrounds={[{ id: 'bg', tool_instance_id: 'meter-1', live_monitor: false, limit_count: 3 }]}
-      earlierVariables={[]} stepLabel={step => step.id} disabled={false} />
+      earlierVariables={[]} stepLabel={step => step.id} disabled={disabled} />
   }
-  render(<Editor />)
+  const { rerender } = render(<Editor />)
   const result = screen.getByLabelText('Result') as HTMLSelectElement
   expect(Array.from(result.options).map(option => option.textContent)).toEqual(['Value', 'Unit', 'Custom pointer...'])
   expect(result.value).toBe('/value')
   fireEvent.change(result, { target: { value: '/unit' } })
   expect(result.value).toBe('/unit')
+  expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
+  fireEvent.change(result, { target: { value: 'custom' } })
+  const pointer = screen.getByLabelText('JSON Pointer') as HTMLInputElement
+  expect(pointer.value).toBe('/unit')
+  fireEvent.change(pointer, { target: { value: '/custom/value' } })
+  expect(changed).toHaveBeenLastCalledWith({ source: 'step-output', step_id: 'latest', pointer: '/custom/value' })
+  const calls = changed.mock.calls.length
+  rerender(<Editor steps={[]} disabled />)
+  expect(screen.getByText(/Reference preserved: latest/)).toBeTruthy()
+  expect((screen.getByLabelText('JSON Pointer') as HTMLInputElement).value).toBe('/custom/value')
+  expect((screen.getByLabelText('JSON Pointer') as HTMLInputElement).disabled).toBe(true)
+  expect(changed).toHaveBeenCalledTimes(calls)
+  rerender(<Editor />)
+  expect(screen.queryByText(/Reference preserved:/)).toBeNull()
+  fireEvent.change(screen.getByLabelText('Result'), { target: { value: '/value' } })
+  expect(changed).toHaveBeenLastCalledWith({ source: 'step-output', step_id: 'latest', pointer: '/value' })
   expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
 })
 

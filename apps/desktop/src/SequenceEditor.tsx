@@ -4,9 +4,9 @@ import { toolInstanceLabel } from './toolInstanceLabel'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { canMoveSteps, canRelocateSteps, stepContainer } from './stepEditing'
 import type { ToolInstance } from './ToolSetupEditor'
-import type { StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
-import { allWorkflowSteps, containerPath } from './workflow'
-import { expressionSummary } from './inputValue'
+import type { BackgroundConfig, StepSummaryDto, WorkflowStep, WorkflowContainerStep, StepBranch } from './workflow'
+import { allWorkflowSteps, containerPath, inputScope } from './workflow'
+import { curatedResultFields, expressionSummary, stepOutputCandidates, type ExpressionOperandWire } from './inputValue'
 
 export type SequenceDropTarget = { parentId: string | null; branch: StepBranch | null; index: number }
 export type StepDensity = 'compact' | 'standard' | 'comfortable'
@@ -20,6 +20,7 @@ export type SequenceEditorHandle = {
 type SequenceEditorProps = {
   paletteDropRef?: RefObject<SequenceEditorHandle | null>
   instances: ToolInstance[]
+  backgrounds: readonly BackgroundConfig[]
   steps: readonly WorkflowStep[]
   runResults: readonly StepSummaryDto[] | null
   formatMeasurement: (output: unknown) => string | null
@@ -44,6 +45,7 @@ type SequenceEditorProps = {
 function SequenceEditor({
   steps,
   instances,
+  backgrounds,
   runResults,
   formatMeasurement,
   selectedStepIds,
@@ -64,24 +66,38 @@ function SequenceEditor({
   onSetAllExpanded,
   paletteDropRef,
 }: SequenceEditorProps) {
-  function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value']): string {
+  type Reference = Extract<ExpressionOperandWire, { source: 'step-output' }>
+
+  function valueSummary(value: Extract<WorkflowStep, { type: 'output' }>['value'], referenceSummary: (reference: Reference) => string): string {
     switch (value.source) {
       case 'elapsed-time':
         return t("sequenceEditor.elapsedTime")
       case 'timestamp':
         return t("sequenceEditor.timestamp")
       case 'expression':
-        return expressionSummary(value)
+        return expressionSummary(value, referenceSummary)
       case 'literal':
         return JSON.stringify(value.value) ?? t("sequenceEditor.noValue")
       case 'variable':
         return t("sequenceEditor.variableReference", { value1: value.variable })
       case 'step-output':
-        return `${value.step_id} → ${value.pointer || '(root)'}`
+        return referenceSummary(value)
     }
   }
 
   function stepSummary(step: WorkflowStep, instances: ToolInstance[]): string {
+    // Resolve only visible earlier results, just as the Properties editor does.
+    // Keep custom and invalid references identifiable without rewriting the wire value.
+    let earlierSteps: WorkflowStep[] | undefined
+    const referenceSummary = (reference: Reference): string => {
+      if (!reference.step_id) return t('inputValueEditor.selectStepFirst')
+      earlierSteps ??= inputScope(steps, step.id).earlierSteps
+      const source = stepOutputCandidates(earlierSteps).find(candidate => candidate.id === reference.step_id)
+      const field = curatedResultFields(source, instances, t, backgrounds, earlierSteps)
+        .find(candidate => candidate.pointer === reference.pointer)
+      const name = field?.label ?? (reference.pointer || t('sequenceEditor.completeResult'))
+      return `${reference.step_id} → ${name}`
+    }
     switch (step.type) {
       case 'bg-interaction':
         return `${step.background_id}${step.operation.kind === 'get-command-result' ? ' · ' + step.operation.source_step : ''}`
@@ -92,16 +108,16 @@ function SequenceEditor({
       case 'while':
       case 'assert':
       case 'if':
-        return expressionSummary(step)
+        return expressionSummary(step, referenceSummary)
       case 'array-process':
       case 'string-process':
         return t(`process.operation.${step.operation}`)
       case 'byte-process':
         return t(`process.operation.${step.operation.kind}`)
       case 'set-variable':
-        return `${step.variable} = ${valueSummary(step.value)}`
+        return `${step.variable} = ${valueSummary(step.value, referenceSummary)}`
       case 'output':
-        return `${step.name} = ${valueSummary(step.value)}`
+        return `${step.name} = ${valueSummary(step.value, referenceSummary)}`
       case 'show-message':
         return t("sequenceEditor.messageFields", { target: t(`messages.${step.target}`), count: step.fields.length })
       case 'wait':
@@ -121,10 +137,10 @@ function SequenceEditor({
               const label = name === 'voltage' ? '' : t("sequenceEditor.currentLimit")
               const boundLabel = name === 'voltage' ? t("sequenceEditor.voltage") : t("sequenceEditor.currentLimit2")
               if (!binding) return [`${label}${step.arguments[name]} ${name === 'voltage' ? 'V' : 'A'}`]
-              if (binding.source === 'literal') return [`${label}${valueSummary(binding)} ${name === 'voltage' ? 'V' : 'A'}`]
+              if (binding.source === 'literal') return [`${label}${valueSummary(binding, referenceSummary)} ${name === 'voltage' ? 'V' : 'A'}`]
               if (binding.source === 'variable') return [`${boundLabel} = ${binding.variable}`]
-              if (binding.source === 'expression') return [`${boundLabel} = ${expressionSummary(binding)}`]
-              return [`${boundLabel} = ${valueSummary(binding)}`]
+              if (binding.source === 'expression') return [`${boundLabel} = ${expressionSummary(binding, referenceSummary)}`]
+              return [`${boundLabel} = ${valueSummary(binding, referenceSummary)}`]
             })
             return [channel, ...setpoints].join(' · ')
           }
@@ -312,6 +328,7 @@ function SequenceEditor({
         {siblings.length === 0 && parent && <li className="sequence-body-empty">{t("sequenceEditor.noStepsDropStepsHereOrSelectThisContainer")}</li>}
         {siblings.map((step, index) => {
           const result = runResults?.find(result => result.step_id === step.id)
+          const summary = stepSummary(step, instances)
           const order = parentOrder ? `${parentOrder}.${index + 1}` : `${index + 1}`
           const children = step.type === 'if'
             ? [...allWorkflowSteps(step.then_steps), ...allWorkflowSteps(step.else_steps)]
@@ -403,8 +420,8 @@ function SequenceEditor({
                       {validationIssue?.step_id === step.id && <span className="sequence-validation-warning" role="img" aria-label={t("sequenceEditor.validationWarning")} title={validationIssue.message}> ⚠</span>}
                     </span>
                     {countLabel && collapsed && <span className="sequence-container-count">{countLabel}</span>}
-                    <span className="sequence-step-summary" title={stepSummary(step, instances)}>
-                      {stepSummary(step, instances)}
+                    <span className="sequence-step-summary" title={summary}>
+                      {summary}
                     </span>
                     <code>{step.id}</code>
                     {result && (

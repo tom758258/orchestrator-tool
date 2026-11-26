@@ -35,7 +35,7 @@ export default {
   "interactionEditor.getMode": "取得模式",
   "interactionEditor.count": "Count（組數）",
   "interactionEditor.bufferReadHelp": "無資料時回傳空 Array。選取範圍含無效 Event 時整批失敗且不消耗資料。Peek 與後續 Pop 不具交易保證。",
-  "interactionEditor.bufferStatusHelp": "查詢狀態，不消耗資料。Full 表示任一容量已滿；即使 Full 為 false，新 Event 仍可能超限。Overflowed 表示曾遺失；Dropped Count 為遺失組數。遺失狀態僅於新 Worker 生命週期重置。結果位於根層級，例如 /count、/overflowed。",
+  "interactionEditor.bufferStatusHelp": "查詢狀態，不消耗資料。Full（已滿）表示任一容量已滿；即使 Full 為 false，新 Event 仍可能超限。Overflowed（曾遺失）表示曾遺失；Dropped Count（遺失組數）為遺失組數。遺失狀態僅於新 Worker 生命週期重置。可透過先前步驟結果選取 Buffer 組數等狀態欄位。",
   "interactionEditor.enableHelp": "允許前景步驟與背景 Worker 互動，不會自動啟動 Worker。",
   "interactionEditor.bufferEnableHelp": "暫存背景 Event 供前景讀取，Buffer 與 Capture 獨立。",
   "interactionEditor.capacityLabel": "每個 Background 的固定容量",
@@ -55,5 +55,5 @@ export default {
   "interactionEditor.selectionHelp.count": "由最舊開始，立即取得最多指定組數，不等待補足。",
   "interactionEditor.countHelp": "須為 1～1024 整數，包含執行時解析的值。",
   "interactionEditor.serialEventHelp": "Serial RX Event 不保證為完整封包。",
-  "interactionEditor.bufferDataResult": "結果：/count 為實際取得組數，/data 為 Event Array，/status 為操作後狀態快照。可用 Array Process 處理 /data。"
+  "interactionEditor.bufferDataResult": "結果：本次取得組數（Number）為實際取得組數；Data（Array）為取得的 Event Array；Buffer 狀態欄位為操作後快照。可在 Array Process 中選取 Data（Array）作為輸入。"
 }
