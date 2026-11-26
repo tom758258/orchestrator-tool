@@ -2,7 +2,7 @@ import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { WorkflowStep } from './workflow'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 
 type PreflightState = { key: string, status: 'checking' | 'passed' | 'failed', errors: string[]; unsaved?: { tool: string; id: string }[] }
 

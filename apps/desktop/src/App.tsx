@@ -32,7 +32,7 @@ import ErrorQueueSetup, { type ErrorQueueResult, type ErrorQueueSetupProps, type
 import BackgroundOutput from './BackgroundOutput'
 import { useSimulationSamples } from './useSimulationSamples'
 import { toolInstanceLabel } from './toolInstanceLabel'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 import { protectionChannelNumbers } from './powersProtectionSetup'
 import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT } from './outputTime'
 import type { NumericDisplayFormat } from './outputTime'

@@ -1,4 +1,4 @@
-import type { PowersProtectionChannel, PowersSetup } from './ToolSetupEditor'
+import type { PowersProtectionChannel, PowersSetup } from './toolSetup/types'
 
 export function protectionChannelNumbers(
   capabilityChannels: readonly number[],

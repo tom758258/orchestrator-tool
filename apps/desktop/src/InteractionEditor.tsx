@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 import { allWorkflowSteps, inputScope, loopPath, type BackgroundConfig, type InteractionOperation, type InteractionSettings, type InteractionStep, type WorkflowStep } from './workflow'
 import { ProcessOperandEditor } from './InputValueEditor'
 import SerialActionEditor from './SerialActionEditor'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 
 export function InteractionSettingsEditor({ value, disabled, hasBackground, onChange }: {
   value: InteractionSettings; disabled: boolean; hasBackground: boolean

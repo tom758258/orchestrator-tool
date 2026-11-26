@@ -2,7 +2,7 @@ import { useI18n } from './i18n/I18nProvider'
 import { open } from '@tauri-apps/plugin-dialog'
 import InputValueEditor from './InputValueEditor'
 import type { InputValueWire } from './inputValue'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 import type { BackgroundConfig, ToolActionStep, WorkflowStep } from './workflow'
 
 /** Editor only: Serial encoding and job validation are owned by Core. */

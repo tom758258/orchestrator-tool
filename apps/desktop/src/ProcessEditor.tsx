@@ -3,7 +3,7 @@ import { ProcessOperandEditor } from './InputValueEditor'
 import { useI18n } from './i18n/I18nProvider'
 import type { ExpressionOperandWire } from './inputValue'
 import type { BackgroundConfig, ByteProcessOperation, ProcessStep, StringProcessOperation, WorkflowStep } from './workflow'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 
 const STRING_PARAMETERS: Record<StringProcessOperation, readonly string[]> = {
   length: ['input'],

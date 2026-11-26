@@ -3,7 +3,7 @@ import { useI18n } from './i18n/I18nProvider'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { allWorkflowSteps, type BackgroundConfig, type ScopesMeasurement, type WorkflowStep } from './workflow'
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 import type { ExecutionMode } from './executionMode'
 import type { ScopesCapabilities } from './scopesSetup'
 

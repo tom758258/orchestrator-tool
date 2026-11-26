@@ -1,4 +1,4 @@
-import type { ToolInstance } from './ToolSetupEditor'
+import type { ToolInstance } from './toolSetup/types'
 import type { BackgroundConfig, WorkflowStep } from './workflow'
 import { chartPanelToSavedChart, type ChartPanel, type SavedOutputViews } from './chartPanels.ts'
 

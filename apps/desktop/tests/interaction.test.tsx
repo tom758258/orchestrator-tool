@@ -5,7 +5,7 @@ import { InteractionEditor, InteractionSettingsEditor, type InteractionCommandDr
 import InputValueEditor from '../src/InputValueEditor'
 import type { InputValueWire } from '../src/inputValue'
 import type { InteractionStep, WorkflowStep } from '../src/workflow'
-import type { ToolInstance } from '../src/ToolSetupEditor'
+import type { ToolInstance } from '../src/toolSetup/types'
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(async () => '/tmp/payload.bin') }))
 
