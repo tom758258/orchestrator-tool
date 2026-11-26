@@ -59,6 +59,7 @@ export default {
   "sequenceEditor.elapsedTime": "Elapsed time",
   "sequenceEditor.timestamp": "Timestamp",
   "sequenceEditor.noValue": "No value",
+  "sequenceEditor.completeResult": "Complete result",
   "sequenceEditor.simultaneousCapture": " · simultaneous Capture",
   "sequenceEditor.allChannels": "All channels",
   "sequenceEditor.boundChannel": "Bound channel",

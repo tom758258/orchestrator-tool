@@ -59,6 +59,7 @@ export default {
   "sequenceEditor.elapsedTime": "經過時間",
   "sequenceEditor.timestamp": "時間戳記",
   "sequenceEditor.noValue": "無數值",
+  "sequenceEditor.completeResult": "完整結果",
   "sequenceEditor.simultaneousCapture": "· 同步擷取",
   "sequenceEditor.allChannels": "所有通道",
   "sequenceEditor.boundChannel": "綁定的通道",

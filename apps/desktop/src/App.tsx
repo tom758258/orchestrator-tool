@@ -3076,6 +3076,7 @@ function App() {
                   validationIssue={validationIssue}
                   stepLabel={step => stepLabel(step, workflowDraft.tool_instances)}
                   instances={workflowDraft.tool_instances}
+                  backgrounds={workflowDraft.backgrounds ?? []}
                   runResults={runWorkflowSnapshot && !workflowChangedSinceRun ? displayedRun?.step_summaries ?? null : null}
                   formatMeasurement={formatMeasurement}
                   workflowBusy={workflowBusy}
