@@ -1,6 +1,6 @@
 import type { ScopesSetup } from '../scopesSetup'
 
-type MetersSetup = {
+export type MetersSetup = {
   measurement: 'voltage-dc' | 'current-dc'
   range_mode: 'auto' | 'manual'
   manual_range: number | null
