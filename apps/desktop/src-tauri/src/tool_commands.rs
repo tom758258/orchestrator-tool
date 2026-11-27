@@ -241,4 +241,3 @@ pub(super) async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>
     .await
     .map_err(|error| error.to_string())?
 }
-

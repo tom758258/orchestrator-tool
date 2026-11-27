@@ -225,5 +225,4 @@ mod tests {
         assert_eq!(live["mode"], "live");
         assert_eq!(live["outcome"], "completed");
     }
-
 }

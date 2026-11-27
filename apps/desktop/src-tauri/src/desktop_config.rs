@@ -176,15 +176,13 @@ pub(super) fn remove_live_resource(app: AppHandle, instance_id: String) -> Resul
 #[cfg(test)]
 mod tests {
     use super::{
-        load_desktop_config_from_path, reset_desktop_tool_executable,
-        resolve_built_in_tool_id, set_desktop_tool_executable,
+        load_desktop_config_from_path, reset_desktop_tool_executable, resolve_built_in_tool_id,
+        set_desktop_tool_executable,
     };
     use crate::unique_test_dir;
-    use orchestrator_tool::{
-        config::VisaBackend,
-        tool::ToolId,
-        tool_instance::ToolInstanceId,
-    };
+    use orchestrator_tool::config::VisaBackend;
+    use orchestrator_tool::tool::ToolId;
+    use orchestrator_tool::tool_instance::ToolInstanceId;
 
     #[test]
     fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {

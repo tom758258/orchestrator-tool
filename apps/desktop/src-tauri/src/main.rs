@@ -1,16 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod stored_run;
-mod stream_csv;
-#[cfg(windows)]
-mod webview2;
 mod desktop_config;
 mod powers_commands;
+mod stored_run;
+mod stream_csv;
 mod template_commands;
 mod tool_commands;
+#[cfg(windows)]
+mod webview2;
 
 use desktop_config::load_desktop_config;
-
 use stored_run::{
     BoxPlotDto, ChartSeriesDto, ExecutionRowsDto, HistogramDto, MessageRowsDto, PageRowsDto,
     RunMetadataDto, StoredRun, StoredRuns,
@@ -62,9 +61,10 @@ pub(crate) fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
     dir
 }
 
-const RUN_STARTUP_TIMEOUT = Duration::from_secs(10);
+const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Default)]
 struct WorkflowControl {
     loop_stop: Mutex<Option<String>>,
@@ -1112,9 +1112,7 @@ mod tests {
 
     #[test]
     fn live_preflight_backend_rechecks_saved_models_before_replacing_last_run() {
-        use super::{
-            Config, ToolId, ToolInstanceId, VisaBackend, begin_live_run,
-        };
+        use super::{Config, ToolId, ToolInstanceId, VisaBackend, begin_live_run};
         use orchestrator_tool::config::ResourceIdentity;
         let dir = unique_test_dir("live-preflight");
         let marker = dir.join("invocations.txt");
@@ -1942,5 +1940,4 @@ mod regression_tests {
             vec!["meters-1", "scopes-1"]
         );
     }
-
 }

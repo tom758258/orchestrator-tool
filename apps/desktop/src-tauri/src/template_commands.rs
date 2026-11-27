@@ -1,7 +1,5 @@
-use orchestrator_tool::{
-    template::{Template, TemplateError},
-    workflow::Workflow,
-};
+use orchestrator_tool::template::{Template, TemplateError};
+use orchestrator_tool::workflow::Workflow;
 use serde::Serialize;
 
 #[tauri::command]
@@ -173,5 +171,4 @@ mod tests {
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
-
 }
