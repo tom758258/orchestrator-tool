@@ -175,8 +175,10 @@ test('Message editor translates choices while preserving text, targets and Outpu
   render(<I18nProvider initialLanguage="en"><LanguageButton /><Editor /></I18nProvider>)
   const target = screen.getByLabelText('Target Message') as HTMLSelectElement
   expect([...target.options].map(option => option.value)).toEqual(['message-1', 'message-2', 'message-3'])
+  expect([...target.options].map(option => option.textContent)).toEqual(['Message 1', 'Message 2', 'Message 3'])
   fireEvent.click(screen.getByRole('button', { name: 'language' }))
   expect((screen.getByLabelText('目標訊息') as HTMLSelectElement).value).toBe('message-2')
+  expect([...(screen.getByLabelText('目標訊息') as HTMLSelectElement).options].map(option => option.textContent)).toEqual(['訊息 1', '訊息 2', '訊息 3'])
   expect((screen.getByLabelText(/^文字/) as HTMLInputElement).value).toBe('User text 使用者內容')
   fireEvent.change(screen.getByLabelText('類型'), { target: { value: 'output' } })
   expect((screen.getByLabelText('輸出') as HTMLSelectElement).value).toBe('result')

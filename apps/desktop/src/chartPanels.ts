@@ -342,10 +342,6 @@ export function reconcileRunChartPanels(
   return reconciled
 }
 
-export function canRemoveChartPanel(panels: readonly ChartPanel[]): boolean {
-  return panels.length > 0
-}
-
 export function addBackgroundChartPanel(panels: ChartPanel[], backgroundId: string, field = 'value'): ChartPanel[] {
   if (panels.length >= MAX_CHARTS) return panels
   const added = addChartPanel(panels, '', ['value'])

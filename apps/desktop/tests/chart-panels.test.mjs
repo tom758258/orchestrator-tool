@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { savedChartCount, templateDraftJson, workflowOnlyDraft } from '../src/templateDraft.ts'
-import { nextChartPanelId, reconcileChartPanels, addChartPanel, addBackgroundChartPanel, canRemoveChartPanel, reconcileRunChartPanels,
+import { nextChartPanelId, reconcileChartPanels, addChartPanel, addBackgroundChartPanel, reconcileRunChartPanels,
   chartPanelToSavedChart, savedChartsToPanels, chartRequiredOutputs, chartRawOutputs, chartSupportsZoom,
   chartSupportsLive, comboSeriesSettings, lineSeriesSettings, markerStyleSettings } from '../src/chartPanels.ts'
 
@@ -223,13 +223,6 @@ test('new Last Run reconciles every owned Page and preserves unaffected panel id
   assert.equal(reconcileRunChartPanels(result, pages, changed), result)
   const stale = [panels[2]]
   assert.deepEqual(reconcileRunChartPanels(stale, pages, metadata), [])
-})
-
-test('any Chart panel can be removed, including the final one', () => {
-  const one = addChartPanel([], 'A', ['V'])
-  assert.equal(canRemoveChartPanel([]), false)
-  assert.equal(canRemoveChartPanel(one), true)
-  assert.equal(canRemoveChartPanel([...one, { ...one[0], id: 1, page: 'B' }]), true)
 })
 
 test('Line is the only chart type eligible for live updates', () => {

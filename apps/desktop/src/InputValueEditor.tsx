@@ -23,8 +23,7 @@ import {
   stepOutputReference,
 } from './inputValue'
 import type { CuratedResultField, ExpressionOperandWire, InputValueWire } from './inputValue'
-import type { WorkflowStep } from './App'
-import type { BackgroundConfig } from './workflow'
+import type { BackgroundConfig, WorkflowStep } from './workflow'
 import type { ToolInstance } from './toolSetup/types'
 
 type ReferenceOptions = {
