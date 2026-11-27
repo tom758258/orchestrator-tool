@@ -4,8 +4,8 @@ import type { Translate } from './i18n/index.ts'
 import StepPropertiesEditor from './StepPropertiesEditor'
 import { STEP_CATEGORIES, STEP_CATEGORY_KEYS, getStepPresets, createPresetStep, nextStepId, stepLabel as getStepLabel, type StepPreset, type StepPresetOption } from './stepPresets'
 import { useLivePreflight } from './useLivePreflight'
-import { deviceName, formatResourceCandidate, tcpEndpointParts, formatTcpEndpoint, formatLiveResourceConfirmation, type ResourceIdentity, type LiveResourceCandidate, type VisaBackend } from './resourceFormatting'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { tcpEndpointParts, formatTcpEndpoint, formatLiveResourceConfirmation, type ResourceIdentity, type LiveResourceCandidate, type VisaBackend } from './resourceFormatting'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -28,7 +28,9 @@ import WorkflowRunSummary from './WorkflowRunSummary'
 import { InteractionSettingsEditor, type InteractionCommandDrafts } from './InteractionEditor'
 import { templateDraftJson, workflowOnlyDraft, type WorkflowDraft } from './templateDraft'
 import ToolSetupEditor from './ToolSetupEditor'
-import ErrorQueueSetup, { type ErrorQueueResult, type ErrorQueueSetupProps, type ErrorQueueTool } from './ErrorQueueSetup'
+import { type ErrorQueueResult, type ErrorQueueTool } from './ErrorQueueSetup'
+import LiveDeviceSetup from './LiveDeviceSetup'
+import PowersDeviceStatus, { type PowersClearResult, type PowersProtectionStatus, type PowersStatusState } from './PowersDeviceStatus'
 import BackgroundOutput from './BackgroundOutput'
 import { useSimulationSamples } from './useSimulationSamples'
 import type { ToolInstance } from './toolSetup/types'
@@ -53,30 +55,6 @@ type ToolStatus = {
   worker_schema_versions: number[]
   reason: string | null
 }
-
-type PowersProtectionStatus = {
-  protection_tripped: boolean
-  over_voltage_tripped: boolean
-  over_current_tripped: boolean
-  channels: {
-    channel: number
-    output_enabled: boolean
-    over_voltage_tripped: boolean
-    over_current_tripped: boolean
-  }[]
-}
-
-type PowersStatusState = {
-  status: PowersProtectionStatus | null
-  error: string | null
-  operation: 'refresh' | 'clear' | null
-  clearPlan: { channel: number } | null
-  clearCompleted: boolean
-}
-
-type PowersClearResult =
-  | { mode: 'simulate'; outcome: 'planned'; plan: unknown }
-  | { mode: 'live'; outcome: 'completed'; status: PowersProtectionStatus }
 
 type ActiveTab = 'tools' | 'setup' | 'workflow' | 'output'
 type ValidationStatus = 'idle' | 'validating' | 'valid'
@@ -147,19 +125,6 @@ function streamingOptions(enabled: boolean, outputFolder: string | null, page: s
   const timestamp = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
     .slice(0, 19).replace(/[T:]/g, '-')
   return { output_folder: outputFolder, timestamp, page, all_pages: allPages }
-}
-
-function LiveDeviceSetup({ children, errorQueue }: { children: ReactNode; errorQueue?: ErrorQueueSetupProps }) {
-  const { t } = useI18n()
-  const [expanded, setExpanded] = useState(true)
-  return <div className="live-resource">
-    <h4>
-      <button type="button" className="action-button tool-setup-toggle" aria-expanded={expanded}
-        aria-label={t("app.liveDevice", { value1: expanded ? t("app.collapse") : t("app.expand") })} onClick={() => setExpanded(!expanded)}>
-        <span aria-hidden="true">{expanded ? '−' : '+'}</span>
-      </button>{t("app.liveDevice2")}</h4>
-    <div hidden={!expanded}>{errorQueue ? <ErrorQueueSetup {...errorQueue}>{children}</ErrorQueueSetup> : children}</div>
-  </div>
 }
 
 const STEP_DENSITY_STORAGE_KEY = 'orchestrator-tool.step-density'
@@ -1297,6 +1262,60 @@ function App() {
       setToolConfigBusy(null)
     }
   }, [resourceDrafts, resourceIdentityDrafts, backendDrafts, toolConfigBusy])
+  const handleBackendChange = useCallback((instanceId: string, backend: VisaBackend) => {
+    if (backend === (backendDrafts[instanceId] ?? 'system')) return
+    discoveryRequests.current[instanceId] = (discoveryRequests.current[instanceId] ?? 0) + 1
+    setBackendDrafts(current => ({ ...current, [instanceId]: backend }))
+    setResourceDrafts(current => ({ ...current, [instanceId]: '' }))
+    setResourceIdentityDrafts(current => ({ ...current, [instanceId]: null }))
+    setDiscoveredResources(current => ({ ...current, [instanceId]: undefined }))
+    setDiscoveryErrors(current => ({ ...current, [instanceId]: null }))
+    setPowersStatuses(current => {
+      const next = { ...current }; delete next[instanceId]; return next
+    })
+  }, [backendDrafts])
+
+  const handleResourceDraftChange = useCallback((instanceId: string, resource: string) => {
+    setResourceDrafts(current => ({ ...current, [instanceId]: resource }))
+    setPowersStatuses(current => {
+      const next = { ...current }
+      delete next[instanceId]
+      return next
+    })
+    setResourceIdentityDrafts(current => ({ ...current, [instanceId]: null }))
+  }, [])
+
+  const handleTcpHostChange = useCallback((instanceId: string, host: string) => {
+    setResourceDrafts(current => ({
+      ...current, [instanceId]: formatTcpEndpoint(
+        host, tcpEndpointParts(current[instanceId] ?? '').port),
+    }))
+    setResourceIdentityDrafts(current => ({ ...current, [instanceId]: null }))
+  }, [])
+
+  const handleTcpPortChange = useCallback((instanceId: string, port: string) => {
+    setResourceDrafts(current => ({
+      ...current, [instanceId]: formatTcpEndpoint(
+        tcpEndpointParts(current[instanceId] ?? '').host, port),
+    }))
+    setResourceIdentityDrafts(current => ({ ...current, [instanceId]: null }))
+  }, [])
+
+  const handleResourceCandidateSelect = useCallback((instanceId: string, resource: string) => {
+    if (!resource) return
+    const candidate = discoveredResources[instanceId]?.find(item => item.resource === resource)
+    setResourceDrafts(current => ({ ...current, [instanceId]: resource }))
+    setPowersStatuses(current => {
+      const next = { ...current }
+      delete next[instanceId]
+      return next
+    })
+    setResourceIdentityDrafts(current => ({ ...current, [instanceId]: candidate ? {
+      manufacturer: candidate.manufacturer, model: candidate.model,
+      model_id: candidate.model_id,
+      serial: candidate.serial, identity: candidate.identity,
+    } : null }))
+  }, [discoveredResources])
 
   const refreshPowersStatus = useCallback(async (instanceId: string) => {
     if (powersOperationBusy !== null) return
@@ -2194,16 +2213,12 @@ function App() {
                 steps={allWorkflowSteps(workflowDraft.workflow.steps).filter(step => (step.type !== 'for' && step.type !== 'while' && step.type !== 'if'))}
                 renderPowersDeviceStatus={instance => {
                   const deviceStatus = powersStatuses[instance.id]
-                  const clearPlan = deviceStatus?.clearPlan ?? null
                   const savedResource = savedResources[instance.id]
                   const draftResource = resourceDrafts[instance.id]
                   const resourceReady = !manualOperationRequiresSavedResource(executionMode) ||
                     (Boolean(savedResource?.trim()) && draftResource === savedResource &&
                       (backendDrafts[instance.id] ?? 'system') === (savedBackends[instance.id] ?? 'system'))
                   const operationBusy = powersOperationBusy !== null
-                  const unresolved = deviceStatus?.status?.channels.some(channel =>
-                    (channel.over_voltage_tripped || channel.over_current_tripped))
-                  const outputOn = deviceStatus?.status?.channels.some(channel => channel.output_enabled)
                   const capabilityModel = executionMode === 'simulate' ? 'simulator' : resourceIdentityDrafts[instance.id]?.model_id
                   const capabilityResult = powersCapabilityChannels?.key === powersCapabilityKey && capabilityModel
                     ? powersCapabilityChannels.models[capabilityModel] : undefined
@@ -2211,85 +2226,23 @@ function App() {
                   const statusChannels = protectionChannelNumbers(
                     capabilityChannels, instance.setup.protection?.channels ?? [], deviceStatus?.status?.channels ?? [],
                   )
-                  return <div className="live-resource powers-device-status">
-                    <h5>{t("app.deviceStatus")}</h5>
-                    <p className="tool-setup-hint">{t("app.notSavedInTemplateStatusIsReadOnlyWhen")}</p>
-                    {executionMode === 'simulate'
-                      ? <p className="tool-setup-hint">{t("app.usesTheSimulatorModelNoSavedLiveResourceIs")}</p>
-                      : !resourceReady && <p className="tool-setup-hint">{t("app.saveTheLiveResourceBelowBeforeUsingDeviceStatus")}</p>}
-                    <button className="action-button" type="button"
-                      disabled={!resourceReady || workflowBusy || operationBusy}
-                      onClick={() => void refreshPowersStatus(instance.id)}>
-                      {deviceStatus?.operation === 'refresh' ? t("app.refreshing") : t("app.refreshStatus")}
-                    </button>
-                    {deviceStatus?.operation === 'clear' && <p role="status">{executionMode === 'simulate' ? t("app.generatingClearPlan") : t("app.clearingProtection")}</p>}
-                    {deviceStatus?.error && <p className="error" role="alert">{deviceStatus.error}</p>}
-                    {clearPlan !== null && <div className="simulation-plan-result" role="status">
-                      <strong>{t("app.pLANGENERATEDSIMULATION")}</strong>
-                      <p>{t("app.nOHARDWAREIO")}</p>
-                      <p>{t("app.noRealProtectionLatchWasChanged")}</p>
-                      <details><summary>{t("app.showPlan")}</summary>
-                        <strong>{t("app.cLEARPROTECTIONPLANSIMULATION")}</strong>
-                        <dl className="tool-details">
-                          <div className="detail-row"><dt className="detail-label">{t("app.target")}</dt><dd className="detail-value">{instance.id} {t("app.channel2")}{clearPlan.channel}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">{t("app.safety")}</dt><dd className="detail-value">{t("app.allPowerOutputsWillBeTurnedOFFFirst")}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">{t("app.action")}</dt><dd className="detail-value">{t("app.clearChannel")}{clearPlan.channel} {t("app.protection")}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">{t("app.finalOutput")}</dt><dd className="detail-value">{t("app.remainsOFF")}</dd></div>
-                          <div className="detail-row"><dt className="detail-label">{t("app.hardwareIO")}</dt><dd className="detail-value">{t("app.none")}</dd></div>
-                        </dl>
-                      </details>
-                    </div>}
-                    {deviceStatus?.clearCompleted && <p className="validation-success" role="status">{t("app.protectionClearCompletedInLIVEModeRealHardwareWas")}</p>}
-                    <section className="powers-protection-summary" aria-label={t("app.protectionSummary")}>
-                      <h6>{t("app.protectionSummary")}</h6>
-                      <dl>
-                        {([
-                          [t("app.protection2"), deviceStatus?.status?.protection_tripped, t("app.cLEAR")],
-                          ['OVP', deviceStatus?.status?.over_voltage_tripped, t("app.oK")],
-                          ['OCP', deviceStatus?.status?.over_current_tripped, t("app.oK")],
-                        ] as const).map(([label, tripped, clearLabel]) => <div key={label}>
-                          <dt>{label}</dt>
-                          <dd className={tripped === undefined ? 'powers-status-unknown'
-                            : tripped ? 'powers-status-tripped' : 'powers-status-clear'}>
-                            {tripped === undefined ? '—' : tripped ? t("app.tripped") : clearLabel}
-                          </dd>
-                        </div>)}
-                      </dl>
-                    </section>
-                    <div className="powers-table-scroll">
-                      <table className="powers-status-table">
-                        <thead><tr><th scope="col">{t("app.channel")}</th><th scope="col">{t("app.output")}</th><th scope="col">{t("app.oVP")}</th><th scope="col">{t("app.oCP")}</th><th scope="col">{t("app.action")}</th></tr></thead>
-                        <tbody>{statusChannels.map(channel => {
-                          const status = deviceStatus?.status?.channels.find(record => record.channel === channel)
-                          const canClear = executionMode === 'simulate'
-                            ? capabilityChannels.includes(channel)
-                            : Boolean(status && (status.over_voltage_tripped || status.over_current_tripped))
-                          return <tr key={channel}>
-                            <th scope="row">{channel}</th>
-                            <td>{status ? status.output_enabled ? t("app.oN") : t("app.oFF") : '—'}</td>
-                            <td>{status ? status.over_voltage_tripped ? t("app.tripped") : t("app.oK") : '—'}</td>
-                            <td>{status ? status.over_current_tripped ? t("app.tripped") : t("app.oK") : '—'}</td>
-                            <td><button className={`action-button ${executionMode === 'live' ? 'action-button-danger' : ''}`} type="button"
-                              disabled={!resourceReady || workflowBusy || operationBusy || toolConfigBusy !== null || !canClear}
-                              onClick={() => void clearPowersProtection(instance.id, status ?? {
-                                channel, output_enabled: false, over_voltage_tripped: false, over_current_tripped: false,
-                              })}>
-                              {executionMode === 'simulate' ? t("app.generateClearPlan") : t("app.clearProtection")}
-                            </button></td>
-                          </tr>
-                        })}</tbody>
-                      </table>
-                    </div>
-                    {deviceStatus?.status && <>
-                      {unresolved && <p className="error" role="alert">{t("app.protectionRemainsTripped")}</p>}
-                      {outputOn && <p className="error" role="alert">{t("app.warningPostOperationStatusReportsAnOutputIsStill")}</p>}
-                    </>}
-                    {executionMode === 'live' && <p className="tool-setup-hint">{t("app.ifRemoteClearIsUnsupportedForThisModelClear")}</p>}
-                  </div>
+                  return <PowersDeviceStatus
+                    instance={instance}
+                    deviceStatus={deviceStatus}
+                    executionMode={executionMode}
+                    resourceReady={resourceReady}
+                    workflowBusy={workflowBusy}
+                    operationBusy={operationBusy}
+                    toolConfigBusy={toolConfigBusy}
+                    capabilityChannels={capabilityChannels}
+                    statusChannels={statusChannels}
+                    onRefresh={refreshPowersStatus}
+                    onClear={clearPowersProtection}
+                  />
                 }}
                 renderResource={instance => {
+                  if (instance.tool === 'wavegen') return null
                   const { id, tool } = instance
-                  if (tool === 'wavegen') return null
                   const savedResource = savedResources[id]
                   const identity = resourceIdentities[id]
                   const savedModelId = tool === 'meters'
@@ -2306,150 +2259,27 @@ function App() {
                     disabled: workflowBusy || loading || toolConfigBusy !== null,
                     onRead: () => handleErrorQueue(tool, id, savedResource),
                   }
-                  return <LiveDeviceSetup errorQueue={errorQueue}>
-                        <div className="live-device">
-                          {deviceName(resourceIdentityDrafts[instance.id]) && <span>{deviceName(resourceIdentityDrafts[instance.id])}</span>}
-                          {resourceIdentityDrafts[instance.id]?.serial?.trim() && <span>{t("app.sN")}{resourceIdentityDrafts[instance.id]?.serial?.trim()}</span>}
-                          <code>{resourceDrafts[instance.id] || t("app.noResourceConfigured")}</code>
-                          <span className="tool-setup-hint">{t("app.lastKnownIdentityNotAConnectionCheck")}</span>
-                        </div>
-                        <p className="tool-setup-hint">{t("app.storedLocallyNotIncludedInTemplateSaveResourceTo")}</p>
-                        {executionMode === 'simulate' && <p className="tool-setup-hint">{t("app.storedForLiveModeCurrentExecutionModeIsSimulation")}</p>}
-                        {instance.tool !== 'serial' && <label className="step-property-field">
-                          <span className="step-property-label">{t("app.vISABackend")}</span>
-                          <select value={backendDrafts[instance.id] ?? 'system'}
-                            disabled={toolConfigBusy !== null || workflowBusy || loading || powersOperationBusy !== null}
-                            onChange={event => {
-                              const backend = event.target.value as VisaBackend
-                              if (backend === (backendDrafts[instance.id] ?? 'system')) return
-                              discoveryRequests.current[instance.id] = (discoveryRequests.current[instance.id] ?? 0) + 1
-                              setBackendDrafts(current => ({ ...current, [instance.id]: backend }))
-                              setResourceDrafts(current => ({ ...current, [instance.id]: '' }))
-                              setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
-                              setDiscoveredResources(current => ({ ...current, [instance.id]: undefined }))
-                              setDiscoveryErrors(current => ({ ...current, [instance.id]: null }))
-                              setPowersStatuses(current => {
-                                const next = { ...current }; delete next[instance.id]; return next
-                              })
-                            }}>
-                            <option value="system">{t("app.systemVISA")}</option>
-                            <option value="@py">{t("app.pyVISAPyPy")}</option>
-                          </select>
-                        </label>}
-                        {instance.tool === 'serial' && instance.setup.transport === 'tcp' ? <>
-                          <label className="step-property-field">
-                            <span className="step-property-label">{t("app.tCPHost")}</span>
-                            <input type="text" value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').host}
-                              disabled={toolConfigBusy !== null || workflowBusy || loading}
-                              onChange={event => {
-                                setResourceDrafts(current => ({
-                                  ...current, [instance.id]: formatTcpEndpoint(
-                                    event.target.value, tcpEndpointParts(current[instance.id] ?? '').port),
-                                }))
-                                setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
-                              }} />
-                          </label>
-                          <label className="step-property-field">
-                            <span className="step-property-label">{t("app.tCPPort")}</span>
-                            <input type="number" min={1} max={65535} step={1}
-                              value={tcpEndpointParts(resourceDrafts[instance.id] ?? '').port}
-                              disabled={toolConfigBusy !== null || workflowBusy || loading}
-                              onChange={event => {
-                                setResourceDrafts(current => ({
-                                  ...current, [instance.id]: formatTcpEndpoint(
-                                    tcpEndpointParts(current[instance.id] ?? '').host, event.target.value),
-                                }))
-                                setResourceIdentityDrafts(current => ({ ...current, [instance.id]: null }))
-                              }} />
-                          </label>
-                          <p className="tool-setup-hint">{t("app.enterTCPHostAndTCPPortAndSaveResource")}</p>
-                        </> : <label className="step-property-field">
-                          <span className="step-property-label">{instance.tool === 'serial' ? t("app.cOMPort") : t("app.liveResource")}</span>
-                          <input
-                            type="text"
-                            value={resourceDrafts[instance.id] ?? ''}
-                            disabled={toolConfigBusy !== null || workflowBusy || loading}
-                            onChange={(event) => {
-                              setResourceDrafts((current) => ({ ...current, [instance.id]: event.target.value }))
-                              setPowersStatuses(current => {
-                                const next = { ...current }
-                                delete next[instance.id]
-                                return next
-                              })
-                              setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: null }))
-                            }}
-                          />
-                        </label>}
-                        <div className="tool-actions">
-                          {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && <button
-                            className="action-button"
-                            type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy || loading}
-                            onClick={() => void handleListResources(instance)}
-                          >
-                            {instance.tool === 'serial' ? t("app.listPorts") : t("app.listResources")}
-                          </button>}
-                          <button
-                            className="action-button"
-                            type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy || loading ||
-                              (instance.tool === 'serial' && instance.setup.transport === 'tcp' && (
-                                !tcpEndpointParts(resourceDrafts[instance.id] ?? '').host.trim()
-                                || !Number.isInteger(Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port))
-                                || Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port) < 1
-                                || Number(tcpEndpointParts(resourceDrafts[instance.id] ?? '').port) > 65535
-                              ))}
-                            onClick={() => void handleResource(instance.id, false)}
-                          >
-                            {t("app.saveResource")}</button>
-                          <button
-                            className="action-button"
-                            type="button"
-                            disabled={toolConfigBusy !== null || workflowBusy || loading}
-                            onClick={() => void handleResource(instance.id, true)}
-                          >
-                            {t("app.clearResource")}</button>
-                        </div>
-                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveryErrors[instance.id] && (
-                          <p className="error" role="alert">
-                            {discoveryErrors[instance.id]}
-                          </p>
-                        )}
-                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && discoveredResources[instance.id]?.length === 0 && (
-                          <p role="status">{t("app.noLiveResourcesFound")}</p>
-                        )}
-                        {(instance.tool !== 'serial' || instance.setup.transport !== 'tcp') && (discoveredResources[instance.id]?.length ?? 0) > 0 && (
-                          <label className="step-property-field discovered-resources">
-                            <span className="step-property-label">{t("app.discoveredResources")}</span>
-                            <select
-                              value=""
-                              disabled={toolConfigBusy !== null || workflowBusy || loading}
-                              onChange={(event) => {
-                                const resource = event.target.value
-                                if (resource) {
-                                  const candidate = discoveredResources[instance.id]?.find(item => item.resource === resource)
-                                  setResourceDrafts((current) => ({ ...current, [instance.id]: resource }))
-                                  setPowersStatuses(current => {
-                                    const next = { ...current }
-                                    delete next[instance.id]
-                                    return next
-                                  })
-                                  setResourceIdentityDrafts((current) => ({ ...current, [instance.id]: candidate ? {
-                                    manufacturer: candidate.manufacturer, model: candidate.model,
-                                    model_id: candidate.model_id,
-                                    serial: candidate.serial, identity: candidate.identity,
-                                  } : null }))
-                                }
-                              }}
-                            >
-                              <option value="">{t("app.selectDiscoveredResource")}</option>
-                              {discoveredResources[instance.id]?.map((candidate, index) => (
-                                <option key={index} value={candidate.resource}>{formatResourceCandidate(candidate)}</option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-                  </LiveDeviceSetup>
+                  return <LiveDeviceSetup
+                    instance={instance}
+                    executionMode={executionMode}
+                    resourceIdentity={resourceIdentityDrafts[id]}
+                    resourceDraft={resourceDrafts[id]}
+                    backendDraft={backendDrafts[id]}
+                    discoveredResources={discoveredResources[id]}
+                    discoveryError={discoveryErrors[id]}
+                    loading={loading}
+                    workflowBusy={workflowBusy}
+                    toolConfigBusy={toolConfigBusy}
+                    powersOperationBusy={powersOperationBusy}
+                    errorQueue={errorQueue}
+                    onBackendChange={handleBackendChange}
+                    onTcpHostChange={handleTcpHostChange}
+                    onTcpPortChange={handleTcpPortChange}
+                    onResourceDraftChange={handleResourceDraftChange}
+                    onListResources={handleListResources}
+                    onSaveResource={handleResource}
+                    onResourceCandidateSelect={handleResourceCandidateSelect}
+                  />
                 }}
                 onChange={updateToolInstances}
                 disabled={workflowBusy}
