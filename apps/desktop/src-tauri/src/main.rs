@@ -4,6 +4,12 @@ mod stored_run;
 mod stream_csv;
 #[cfg(windows)]
 mod webview2;
+mod desktop_config;
+mod powers_commands;
+mod template_commands;
+mod tool_commands;
+
+use desktop_config::load_desktop_config;
 
 use stored_run::{
     BoxPlotDto, ChartSeriesDto, ExecutionRowsDto, HistogramDto, MessageRowsDto, PageRowsDto,
@@ -20,33 +26,45 @@ use std::{
 };
 
 use orchestrator_tool::{
-    config::{Config, ConfigError, ResourceIdentity, VisaBackend},
-    discovery::{
-        ExecutablePathSource, ExecutableStatus, built_in_tool_definitions, current_application_dir,
-    },
+    config::{Config, VisaBackend},
+    discovery::current_application_dir,
     live_preflight::{validate_live_preflight, validate_live_preflight_draft},
-    live_resources::LiveResourceCandidate,
     run::{ExecutionMode, RunOptions, WorkflowStop, run_workflow_streaming_controlled},
     run_preparation::{
         prepare_worker_launch_specs, prepare_worker_launch_specs_with_simulation,
         simulation_sample_requirements, validate_confirmed_live_resources,
     },
-    status::{ManifestStatus, inspect_built_in_tool_statuses},
-    template::{Template, TemplateError},
+    template::Template,
     tool::ToolId,
     tool_instance::ToolInstanceId,
     worker::WorkerLaunchSpec,
-    workflow::{StepId, Workflow, WorkflowRunEvent},
+    workflow::{StepId, WorkflowRunEvent},
 };
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, ipc::Channel};
 
-const RUN_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+pub(crate) fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+    use std::{
+        process,
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+const RUN_STARTUP_TIMEOUT = Duration::from_secs(10);
 const RUN_ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const RUN_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
-const DESKTOP_CONFIG_FILENAME: &str = "orchestrator.toml";
-
 #[derive(Default)]
 struct WorkflowControl {
     loop_stop: Mutex<Option<String>>,
@@ -129,322 +147,6 @@ fn request_workflow_stop(state: tauri::State<'_, ActiveRun>, loop_step_id: Strin
 }
 
 #[tauri::command]
-async fn read_and_drain_errors(
-    app: AppHandle,
-    state: tauri::State<'_, ActiveRun>,
-    tool_id: String,
-    instance_id: String,
-    execution_mode: ExecutionMode,
-) -> Result<orchestrator_tool::error_queue::ErrorQueueResult, String> {
-    state.register_manual()?;
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let tool = resolve_built_in_tool_id(&tool_id)?;
-        let instance = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::error_queue::read_and_drain_errors(
-            &application_dir,
-            &config,
-            &tool,
-            &instance,
-            execution_mode,
-        )
-    })
-    .await
-    .map_err(|error| error.to_string());
-    state.clear();
-    result?
-}
-
-#[tauri::command]
-async fn check_meters_error_queue_support(
-    app: AppHandle,
-    instance_id: String,
-    execution_mode: ExecutionMode,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let instance = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::error_queue::check_meters_error_queue_support(
-            &application_dir,
-            &config,
-            &instance,
-            execution_mode,
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
-async fn list_live_resources(
-    app: AppHandle,
-    tool_id: String,
-    backend: VisaBackend,
-) -> Result<Vec<LiveResourceCandidate>, String> {
-    let tool = resolve_built_in_tool_id(&tool_id)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::live_resources::list_live_resources(
-            &application_dir,
-            &config,
-            &tool,
-            backend,
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-fn powers_worker_spec(
-    app: &AppHandle,
-    instance_id: &str,
-    execution_mode: ExecutionMode,
-) -> Result<(WorkerLaunchSpec, VisaBackend), String> {
-    let instance_id = ToolInstanceId::new(instance_id).map_err(|error| error.to_string())?;
-    let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-    let config = load_desktop_config(app)?;
-    let definition = built_in_tool_definitions()
-        .into_iter()
-        .find(|definition| definition.id() == &ToolId::powers())
-        .expect("powers is built in");
-    let inspection =
-        orchestrator_tool::inspection::inspect_tool(&application_dir, &config, &definition)
-            .map_err(|error| format!("powers executable inspection failed: {error}"))?;
-    if inspection.status() != ExecutableStatus::Available {
-        return Err("powers executable is unavailable".to_owned());
-    }
-    let executable = inspection
-        .resolved()
-        .path()
-        .expect("available executable has a path");
-    let spec = match execution_mode {
-        ExecutionMode::Simulate => {
-            orchestrator_tool::adapters::powers::simulate_worker_launch_spec(executable)
-        }
-        ExecutionMode::Live => {
-            let resource = config
-                .live_resources()
-                .get(instance_id.as_str())
-                .filter(|resource| !resource.trim().is_empty())
-                .ok_or_else(|| format!("{instance_id} saved Live Resource is not configured"))?;
-            orchestrator_tool::adapters::powers::live_worker_launch_spec(executable, resource)
-        }
-    };
-    let manifest = orchestrator_tool::adapters::probe_existing_worker_integration(
-        spec.executable(),
-        &ToolId::powers(),
-    )?;
-    Ok((
-        spec.with_manifest(manifest),
-        if execution_mode == ExecutionMode::Live {
-            config.live_backend(&instance_id)
-        } else {
-            VisaBackend::System
-        },
-    ))
-}
-
-fn finish_manual_powers_operation<T>(
-    operation: Result<T, String>,
-    shutdown: Result<std::process::ExitStatus, orchestrator_tool::worker::WorkerShutdownError>,
-) -> Result<T, String> {
-    match (operation, shutdown) {
-        (Ok(value), Ok(status)) if status.success() => Ok(value),
-        (Ok(_), Ok(status)) => Err(format!("Powers Worker exited with {status}")),
-        (Ok(_), Err(error)) => Err(format!("Powers Worker shutdown failed: {error}")),
-        (Err(error), Ok(_)) => Err(error),
-        (Err(error), Err(shutdown)) => Err(format!(
-            "{error}; Powers Worker shutdown also failed: {shutdown}"
-        )),
-    }
-}
-
-#[tauri::command]
-async fn refresh_powers_status(
-    app: AppHandle,
-    state: tauri::State<'_, ActiveRun>,
-    instance_id: String,
-    execution_mode: ExecutionMode,
-) -> Result<orchestrator_tool::adapters::powers::PowersProtectionStatus, String> {
-    state.register_manual()?;
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let (mut spec, backend) = powers_worker_spec(&app, &instance_id, execution_mode)?;
-        let _worker_config = if execution_mode == ExecutionMode::Live && backend == VisaBackend::Py
-        {
-            let dir = app
-                .path()
-                .app_cache_dir()
-                .map_err(|error| error.to_string())?;
-            Some(PowersWorkerConfig::prepare(
-                &dir, &mut spec, backend, false,
-            )?)
-        } else {
-            None
-        };
-        let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
-            .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
-        let operation = orchestrator_tool::adapters::powers::normalized_protection_status_all(
-            &session,
-            execution_mode,
-            RUN_ACTION_TIMEOUT,
-        )
-        .map_err(|error| error.to_string());
-        let shutdown = session.shutdown(RUN_SHUTDOWN_TIMEOUT);
-        finish_manual_powers_operation(operation, shutdown)
-    })
-    .await
-    .map_err(|error| error.to_string());
-    state.clear();
-    result?
-}
-
-#[derive(Serialize)]
-#[serde(tag = "mode", rename_all = "lowercase")]
-enum PowersClearResult {
-    Simulate {
-        outcome: &'static str,
-        plan: serde_json::Value,
-    },
-    Live {
-        outcome: &'static str,
-        status: orchestrator_tool::adapters::powers::PowersProtectionStatus,
-    },
-}
-
-#[tauri::command]
-async fn clear_powers_protection(
-    app: AppHandle,
-    state: tauri::State<'_, ActiveRun>,
-    instance_id: String,
-    channel: u32,
-    execution_mode: ExecutionMode,
-) -> Result<PowersClearResult, String> {
-    if channel == 0 {
-        return Err("Clear Protection channel must be a positive integer".to_owned());
-    }
-    state.register_manual()?;
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let (mut spec, backend) = powers_worker_spec(&app, &instance_id, execution_mode)?;
-        let _authorization = if execution_mode == ExecutionMode::Live {
-            let dir = app
-                .path()
-                .app_cache_dir()
-                .map_err(|error| error.to_string())?;
-            Some(PowersWorkerConfig::prepare(&dir, &mut spec, backend, true)?)
-        } else {
-            None
-        };
-        let session = orchestrator_tool::worker::start_worker(&spec, RUN_STARTUP_TIMEOUT)
-            .map_err(|error| format!("Powers Worker startup failed: {error}"))?;
-        let operation = (|| {
-            orchestrator_tool::adapters::powers::safe_off_all(
-                &session,
-                execution_mode,
-                RUN_ACTION_TIMEOUT,
-            )
-            .map_err(|error| format!("Safe-Off All failed: {error}"))?;
-            let clear_result = orchestrator_tool::adapters::powers::clear_protection(
-                &session,
-                channel,
-                execution_mode,
-                RUN_ACTION_TIMEOUT,
-            )
-            .map_err(|error| error.to_string())?;
-            match execution_mode {
-                ExecutionMode::Simulate => Ok(PowersClearResult::Simulate {
-                    outcome: "planned",
-                    plan: clear_result,
-                }),
-                ExecutionMode::Live => {
-                    orchestrator_tool::adapters::powers::normalized_protection_status_all(
-                        &session,
-                        execution_mode,
-                        RUN_ACTION_TIMEOUT,
-                    )
-                    .map(|status| PowersClearResult::Live {
-                        outcome: "completed",
-                        status,
-                    })
-                    .map_err(|error| error.to_string())
-                }
-            }
-        })();
-        let shutdown = session.shutdown(RUN_SHUTDOWN_TIMEOUT);
-        finish_manual_powers_operation(operation, shutdown)
-    })
-    .await
-    .map_err(|error| error.to_string());
-    state.clear();
-    result?
-}
-
-#[tauri::command]
-async fn get_meters_capabilities(
-    app: AppHandle,
-    model: Option<String>,
-    execution_mode: ExecutionMode,
-) -> Result<orchestrator_tool::adapters::meters::MetersCapabilities, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::adapters::meters::get_capabilities(
-            &application_dir,
-            &config,
-            if execution_mode == ExecutionMode::Live {
-                model.as_deref()
-            } else {
-                None
-            },
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
-async fn get_powers_capabilities(
-    app: AppHandle,
-    model_id: Option<String>,
-    execution_mode: ExecutionMode,
-) -> Result<orchestrator_tool::adapters::powers::PowersCapabilities, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::adapters::powers::get_capabilities_for_mode(
-            &application_dir,
-            &config,
-            execution_mode,
-            model_id.as_deref(),
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
-async fn get_scopes_capabilities(
-    app: AppHandle,
-    model_id: Option<String>,
-    execution_mode: ExecutionMode,
-) -> Result<orchestrator_tool::adapters::scopes::ScopesCapabilities, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        orchestrator_tool::adapters::scopes::get_capabilities_for_mode(
-            &application_dir,
-            &config,
-            execution_mode,
-            model_id.as_deref(),
-        )
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
 async fn check_live_preflight(
     app: AppHandle,
     template_json: String,
@@ -461,18 +163,6 @@ async fn check_live_preflight(
     .map_err(|error| error.to_string())?
 }
 
-#[derive(Serialize)]
-struct ToolStatusDto {
-    tool_id: String,
-    path: Option<String>,
-    source: Option<String>,
-    executable_status: String,
-    compatibility: String,
-    tool_version: Option<String>,
-    worker_schema_versions: Vec<u32>,
-    reason: Option<String>,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum WorkflowRunEventDto {
@@ -483,91 +173,6 @@ enum WorkflowRunEventDto {
     CsvStream {
         status: StreamCsvStatus,
     },
-}
-
-#[tauri::command]
-async fn get_tool_status(app: AppHandle) -> Result<Vec<ToolStatusDto>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let application_dir = current_application_dir().map_err(|error| error.to_string())?;
-        let config = load_desktop_config(&app)?;
-        let statuses = inspect_built_in_tool_statuses(application_dir, &config);
-
-        let dtos = statuses
-            .iter()
-            .map(|status| {
-                let (path, source, executable_status, reason) = match status.executable() {
-                    Ok(inspection) => (
-                        inspection
-                            .resolved()
-                            .path()
-                            .map(|path| path.display().to_string()),
-                        Some(match inspection.resolved().source() {
-                            ExecutablePathSource::Configured => "configured".to_owned(),
-                            ExecutablePathSource::NotConfigured => "not-configured".to_owned(),
-                        }),
-                        match inspection.status() {
-                            ExecutableStatus::NotConfigured => "not-configured".to_owned(),
-                            ExecutableStatus::Available => "available".to_owned(),
-                            ExecutableStatus::Missing => "missing".to_owned(),
-                            ExecutableStatus::NotFile => "not-file".to_owned(),
-                        },
-                        None,
-                    ),
-                    Err(error) => (None, None, "error".to_owned(), Some(error.to_string())),
-                };
-
-                let (compatibility, tool_version, worker_schema_versions, manifest_reason) =
-                    match status.manifest() {
-                        ManifestStatus::NotProbed => {
-                            ("not-probed".to_owned(), None, Vec::new(), None)
-                        }
-                        ManifestStatus::Probed(probe) => {
-                            let compat = match probe.manifest().worker_compatibility() {
-                                orchestrator_tool::manifest::WorkerCompatibility::Compatible => {
-                                    "compatible".to_owned()
-                                }
-                                orchestrator_tool::manifest::WorkerCompatibility::Incompatible => {
-                                    "incompatible".to_owned()
-                                }
-                            };
-                            (
-                                compat,
-                                Some(probe.manifest().tool_version().to_owned()),
-                                probe
-                                    .manifest()
-                                    .worker_protocol()
-                                    .schema_versions()
-                                    .to_vec(),
-                                None,
-                            )
-                        }
-                        ManifestStatus::Error(error) => (
-                            "error".to_owned(),
-                            None,
-                            Vec::new(),
-                            Some(error.to_string()),
-                        ),
-                    };
-
-                let final_reason = reason.or(manifest_reason);
-
-                ToolStatusDto {
-                    tool_id: status.tool_id().as_str().to_owned(),
-                    path,
-                    source,
-                    executable_status,
-                    compatibility,
-                    tool_version,
-                    worker_schema_versions,
-                    reason: final_reason,
-                }
-            })
-            .collect();
-
-        Ok::<Vec<ToolStatusDto>, String>(dtos)
-    })
-    .await
-    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -871,165 +476,6 @@ impl Drop for PowersWorkerConfig {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
-}
-
-/// Returns the persisted Desktop configuration file path.
-fn desktop_config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("could not determine application config directory: {error}"))?;
-
-    Ok(dir.join(DESKTOP_CONFIG_FILENAME))
-}
-
-/// Loads the persisted Desktop configuration.
-///
-/// A missing file leaves tools unconfigured; any other load failure is
-/// reported instead of being silently ignored.
-fn load_desktop_config(app: &AppHandle) -> Result<Config, String> {
-    let path = desktop_config_path(app)?;
-
-    load_desktop_config_from_path(&path)
-}
-
-fn load_desktop_config_from_path(path: &Path) -> Result<Config, String> {
-    match Config::load(path) {
-        Ok(config) => Ok(config),
-        Err(ConfigError::Read { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
-            Ok(Config::default())
-        }
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-/// Validates a caller-supplied tool ID against the built-in registry.
-fn resolve_built_in_tool_id(raw_tool_id: &str) -> Result<ToolId, String> {
-    let tool_id = ToolId::new(raw_tool_id)
-        .map_err(|error| format!("invalid tool ID {raw_tool_id:?}: {error}"))?;
-
-    if built_in_tool_definitions()
-        .iter()
-        .any(|definition| definition.id() == &tool_id)
-    {
-        Ok(tool_id)
-    } else {
-        Err(format!("unknown tool ID {raw_tool_id:?}"))
-    }
-}
-
-fn set_desktop_tool_executable(
-    config_path: &Path,
-    tool_id: &ToolId,
-    executable_path: &Path,
-) -> Result<(), String> {
-    let executable_path =
-        std::path::absolute(executable_path).map_err(|error| error.to_string())?;
-    let probe = orchestrator_tool::manifest_probe::probe_manifest(&executable_path, tool_id)
-        .map_err(|error| error.to_string())?;
-    if probe.manifest().worker_compatibility()
-        != orchestrator_tool::manifest::WorkerCompatibility::Compatible
-    {
-        return Err(format!("{tool_id} Worker protocol is incompatible"));
-    }
-    let mut config = load_desktop_config_from_path(config_path)?;
-    config.set_executable_path(tool_id, executable_path);
-    config.save(config_path).map_err(|error| error.to_string())
-}
-
-fn reset_desktop_tool_executable(config_path: &Path, tool_id: &ToolId) -> Result<(), String> {
-    let mut config = load_desktop_config_from_path(config_path)?;
-    config.remove_executable_path(tool_id);
-    config.save(config_path).map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-async fn set_tool_executable(app: AppHandle, tool_id: String, path: String) -> Result<(), String> {
-    let tool_id = resolve_built_in_tool_id(&tool_id)?;
-    let config_path = desktop_config_path(&app)?;
-
-    tauri::async_runtime::spawn_blocking(move || {
-        set_desktop_tool_executable(&config_path, &tool_id, Path::new(&path))
-    })
-    .await
-    .map_err(|error| error.to_string())?
-}
-
-#[tauri::command]
-fn reset_tool_executable(app: AppHandle, tool_id: String) -> Result<(), String> {
-    let tool_id = resolve_built_in_tool_id(&tool_id)?;
-    let config_path = desktop_config_path(&app)?;
-
-    reset_desktop_tool_executable(&config_path, &tool_id)
-}
-
-fn edit_desktop_live_resource(
-    config_path: &Path,
-    raw_instance_id: &str,
-    resource: Option<&str>,
-    identity: Option<ResourceIdentity>,
-    backend: Option<VisaBackend>,
-) -> Result<(), String> {
-    let instance_id = ToolInstanceId::new(raw_instance_id).map_err(|error| error.to_string())?;
-    if resource.is_some_and(|value| value.trim().is_empty()) {
-        return Err(format!("{instance_id} live resource must not be blank"));
-    }
-    let mut config = load_desktop_config_from_path(config_path)?;
-    if let Some(backend) = backend {
-        config.set_live_backend(&instance_id, backend);
-    }
-    match resource {
-        Some(value) => config.set_live_resource_with_identity(&instance_id, value, identity),
-        None => {
-            config.remove_live_resource(&instance_id);
-        }
-    }
-    config.save(config_path).map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn get_live_resources(
-    app: AppHandle,
-) -> Result<std::collections::BTreeMap<String, String>, String> {
-    Ok(load_desktop_config(&app)?.live_resources().clone())
-}
-
-#[tauri::command]
-fn get_live_backends(
-    app: AppHandle,
-) -> Result<std::collections::BTreeMap<String, VisaBackend>, String> {
-    Ok(load_desktop_config(&app)?.live_backends().clone())
-}
-
-#[tauri::command]
-fn get_live_resource_identities(
-    app: AppHandle,
-) -> Result<std::collections::BTreeMap<String, ResourceIdentity>, String> {
-    Ok(load_desktop_config(&app)?
-        .live_resource_identities()
-        .clone())
-}
-
-#[tauri::command]
-fn set_live_resource(
-    app: AppHandle,
-    instance_id: String,
-    resource: String,
-    identity: Option<ResourceIdentity>,
-    backend: VisaBackend,
-) -> Result<(), String> {
-    edit_desktop_live_resource(
-        &desktop_config_path(&app)?,
-        &instance_id,
-        Some(&resource),
-        identity,
-        Some(backend),
-    )
-}
-
-#[tauri::command]
-fn remove_live_resource(app: AppHandle, instance_id: String) -> Result<(), String> {
-    edit_desktop_live_resource(&desktop_config_path(&app)?, &instance_id, None, None, None)
 }
 
 const PROGRESS_BATCH_INTERVAL: Duration = Duration::from_millis(100);
@@ -1406,63 +852,6 @@ fn export_stored_run_pages(
     }
 }
 
-#[tauri::command]
-fn create_workflow_draft() -> Result<String, String> {
-    let workflow = Workflow::new(Vec::new()).map_err(|error| error.to_string())?;
-    Template::new("Untitled".to_owned(), Default::default(), workflow)
-        .and_then(|template| template.to_json_string())
-        .map_err(|error| error.to_string())
-}
-
-#[derive(Debug, Serialize)]
-struct DraftValidationError {
-    message: String,
-    step_id: Option<String>,
-}
-
-impl From<TemplateError> for DraftValidationError {
-    fn from(error: TemplateError) -> Self {
-        let step_id = match &error {
-            TemplateError::Workflow(error) => error.step_id().map(ToString::to_string),
-            _ => None,
-        };
-        Self {
-            message: error.to_string(),
-            step_id,
-        }
-    }
-}
-
-#[tauri::command]
-fn validate_workflow_draft(template_json: String) -> Result<String, DraftValidationError> {
-    Template::from_json_str(&template_json)
-        .and_then(|template| template.to_json_string())
-        .map_err(DraftValidationError::from)
-}
-
-#[tauri::command]
-fn save_workflow_template(path: String, template_json: String) -> Result<String, String> {
-    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-    template
-        .save_to_file(&path)
-        .map_err(|error| error.to_string())?;
-    template.to_json_string().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn check_serial_send_files(template_json: String) -> Result<Vec<String>, String> {
-    let template = Template::from_json_str(&template_json).map_err(|error| error.to_string())?;
-    Ok(orchestrator_tool::adapters::serial::send_file_path_errors(
-        &template,
-    ))
-}
-
-#[tauri::command]
-fn load_workflow_template(path: String) -> Result<String, String> {
-    let template = Template::load_from_file(&path).map_err(|error| error.to_string())?;
-    template.to_json_string().map_err(|error| error.to_string())
-}
-
 fn help_url(locale: &str, theme: &str) -> Result<tauri::WebviewUrl, String> {
     let page = match locale {
         "en" => "desktop.html",
@@ -1627,16 +1016,16 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             open_help,
-            get_tool_status,
-            list_live_resources,
-            read_and_drain_errors,
-            check_meters_error_queue_support,
-            get_meters_capabilities,
-            get_powers_capabilities,
-            get_scopes_capabilities,
+            tool_commands::get_tool_status,
+            tool_commands::list_live_resources,
+            tool_commands::read_and_drain_errors,
+            tool_commands::check_meters_error_queue_support,
+            tool_commands::get_meters_capabilities,
+            tool_commands::get_powers_capabilities,
+            tool_commands::get_scopes_capabilities,
             check_live_preflight,
-            refresh_powers_status,
-            clear_powers_protection,
+            powers_commands::refresh_powers_status,
+            powers_commands::clear_powers_protection,
             run_workflow_simulation,
             get_simulation_sample_requirements,
             get_background_output,
@@ -1645,18 +1034,18 @@ fn main() {
             run_workflow_live,
             request_workflow_stop,
             request_global_workflow_stop,
-            get_live_resources,
-            get_live_backends,
-            get_live_resource_identities,
-            set_live_resource,
-            remove_live_resource,
-            set_tool_executable,
-            reset_tool_executable,
-            create_workflow_draft,
-            validate_workflow_draft,
-            save_workflow_template,
-            load_workflow_template,
-            check_serial_send_files,
+            desktop_config::get_live_resources,
+            desktop_config::get_live_backends,
+            desktop_config::get_live_resource_identities,
+            desktop_config::set_live_resource,
+            desktop_config::remove_live_resource,
+            desktop_config::set_tool_executable,
+            desktop_config::reset_tool_executable,
+            template_commands::create_workflow_draft,
+            template_commands::validate_workflow_draft,
+            template_commands::save_workflow_template,
+            template_commands::load_workflow_template,
+            template_commands::check_serial_send_files,
             get_last_run_page_rows,
             get_last_run_executions,
             get_last_run_messages,
@@ -1724,8 +1113,9 @@ mod tests {
     #[test]
     fn live_preflight_backend_rechecks_saved_models_before_replacing_last_run() {
         use super::{
-            Config, ResourceIdentity, ToolId, ToolInstanceId, VisaBackend, begin_live_run,
+            Config, ToolId, ToolInstanceId, VisaBackend, begin_live_run,
         };
+        use orchestrator_tool::config::ResourceIdentity;
         let dir = unique_test_dir("live-preflight");
         let marker = dir.join("invocations.txt");
         let capabilities = |model: &str, channels| {
@@ -2168,40 +1558,17 @@ mod tests {
 #[cfg(test)]
 mod regression_tests {
     use super::stored_run::StoredRuns;
-    use super::{
-        create_workflow_draft, help_navigation_target, help_url, load_desktop_config_from_path,
-        load_workflow_template, reset_desktop_tool_executable, resolve_built_in_tool_id,
-        save_chart_png, save_workflow_template, set_desktop_tool_executable,
-        validate_workflow_draft,
-    };
+    use super::{help_navigation_target, help_url, save_chart_png};
+    use crate::unique_test_dir;
     use orchestrator_tool::config::VisaBackend;
     use orchestrator_tool::{
         template::Template,
-        tool::ToolId,
-        tool_instance::ToolInstanceId,
         workflow::{
             MessageRecord, MessageTarget, ResultRow, StepExecution, StepId, StepOutcome,
             StepResult, WorkflowOutput, WorkflowRunEvent,
         },
     };
     use serde_json::json;
-
-    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
-        use std::{
-            process,
-            sync::atomic::{AtomicU64, Ordering},
-            time::{SystemTime, UNIX_EPOCH},
-        };
-        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}-{id}", process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn progress_template() -> Template {
         Template::from_json_str(
@@ -2345,31 +1712,6 @@ mod regression_tests {
         *next.run_id.lock().unwrap() = Some(8);
         assert!(!state.request_global(7));
         assert!(!next.workflow_stop.is_requested());
-    }
-
-    #[test]
-    fn powers_clear_result_distinguishes_planned_simulation_from_completed_live() {
-        let simulated = serde_json::to_value(super::PowersClearResult::Simulate {
-            outcome: "planned",
-            plan: json!({"execution":{"hardware_touched":false},"data":{"plan":[]}}),
-        })
-        .unwrap();
-        assert_eq!(simulated["mode"], "simulate");
-        assert_eq!(simulated["outcome"], "planned");
-        assert_eq!(simulated["plan"]["execution"]["hardware_touched"], false);
-
-        let live = serde_json::to_value(super::PowersClearResult::Live {
-            outcome: "completed",
-            status: orchestrator_tool::adapters::powers::PowersProtectionStatus {
-                protection_tripped: false,
-                over_voltage_tripped: false,
-                over_current_tripped: false,
-                channels: Vec::new(),
-            },
-        })
-        .unwrap();
-        assert_eq!(live["mode"], "live");
-        assert_eq!(live["outcome"], "completed");
     }
 
     #[test]
@@ -2519,64 +1861,6 @@ mod regression_tests {
     }
 
     #[test]
-    fn desktop_live_resources_preserve_exact_values_and_reject_blank_edits() {
-        let dir = unique_test_dir("orchestrator-live-resource-test");
-        let path = dir.join("orchestrator.toml");
-        let powers = " USB0::Power Serial::INSTR ";
-        let meters = " TCPIP0::MeterHost::inst0::INSTR ";
-        super::edit_desktop_live_resource(
-            &path,
-            "powers-1",
-            Some(powers),
-            None,
-            Some(VisaBackend::Py),
-        )
-        .unwrap();
-        super::edit_desktop_live_resource(
-            &path,
-            "meters-1",
-            Some(meters),
-            None,
-            Some(VisaBackend::System),
-        )
-        .unwrap();
-        let loaded = load_desktop_config_from_path(&path).unwrap();
-        assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("powers-1").unwrap()),
-            Some(powers)
-        );
-        assert_eq!(
-            loaded.live_resource(&ToolInstanceId::new("meters-1").unwrap()),
-            Some(meters)
-        );
-        for resource in ["", " ", "\t\r\n"] {
-            assert!(
-                super::edit_desktop_live_resource(
-                    &path,
-                    "powers-1",
-                    Some(resource),
-                    None,
-                    Some(VisaBackend::System)
-                )
-                .is_err()
-            );
-        }
-        assert_eq!(load_desktop_config_from_path(&path).unwrap(), loaded);
-        assert_eq!(
-            loaded.live_backend(&ToolInstanceId::new("powers-1").unwrap()),
-            VisaBackend::Py
-        );
-        super::edit_desktop_live_resource(&path, "powers-1", None, None, None).unwrap();
-        assert_eq!(
-            load_desktop_config_from_path(&path)
-                .unwrap()
-                .live_resource(&ToolInstanceId::new("powers-1").unwrap()),
-            None
-        );
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn powers_live_launch_authorization_is_scoped_to_run() {
         use std::ffi::OsString;
         let dir = unique_test_dir("orchestrator-powers-authorization-test");
@@ -2628,104 +1912,6 @@ mod regression_tests {
     }
 
     #[test]
-    fn create_and_validate_workflow_drafts_use_current_schema() {
-        let json = create_workflow_draft().unwrap();
-        let template = Template::from_json_str(&json).unwrap();
-        assert_eq!(template.name(), "Untitled");
-        assert!(template.workflow().steps().is_empty());
-        let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            wire["workflow"]["interaction"],
-            json!({"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}})
-        );
-        let invalid = r#"{
-            "tool_instances": [],
-            "name": "Invalid",
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
-                { "type": "wait", "id": "Wait-1", "duration_ms": 1 }
-            ] }
-        }"#;
-        let error = validate_workflow_draft(invalid.to_owned()).unwrap_err();
-        assert!(error.message.contains("invalid step ID"));
-        assert!(error.step_id.is_none());
-        let invalid_reference = r#"{
-            "name": "Invalid reference", "tool_instances": [],
-            "workflow": {"interaction":{"enabled":false,"max_active_command_status":4096,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
-                { "type": "output", "id": "out", "name": "Value", "page": "Results",
-                  "value": { "source": "variable", "variable": "missing" } }
-            ] }
-        }"#;
-        let error = validate_workflow_draft(invalid_reference.to_owned()).unwrap_err();
-        assert_eq!(error.step_id.as_deref(), Some("out"));
-        let wire = serde_json::to_value(error).unwrap();
-        assert_eq!(wire["step_id"], "out");
-        assert!(wire["message"].as_str().unwrap().contains("missing"));
-    }
-
-    #[test]
-    fn save_and_load_workflow_template_round_trip() {
-        let dir = unique_test_dir("orchestrator-template-round-trip");
-        let path = dir.join("template.json");
-        let template_json = r#"{
-            "tool_instances": [],
-            "name": "Round Trip",
-            "workflow": {"interaction":{"enabled":true,"max_active_command_status":12,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}}, "steps": [
-                {
-                    "type": "output", "id": "voltage", "name": "Voltage", "page": "Results",
-                    "value": { "source": "literal", "value": 3.3 }
-                }
-            ] },
-            "output_views": { "charts": [{
-                "page": "Results",
-                "title": "Voltage",
-                "outputs": ["Voltage"],
-                "type": "line",
-                "scatter_x_output": null,
-                "scatter": { "display": "markers", "marker_size": 4.0, "line_width": 2.0 },
-                "line": { "series": {} },
-                "marker_styles": {},
-                "series_colors": {},
-                "show_legend": true,
-                "legend_position": "top",
-                "image_background": "light",
-                "show_all_raw_data": false,
-                "zoom": { "enabled": false, "show_slider": true },
-                "x_axis": {
-                    "title": "Iteration", "min": null, "max": null, "interval": null,
-                    "show_labels": true, "show_ticks": true, "show_major_grid": false
-                },
-                "y_axis": {
-                    "title": "Voltage", "min": null, "max": null, "interval": null,
-                    "show_labels": true, "show_ticks": true, "show_major_grid": true
-                },
-                "combo": {
-                    "series": {},
-                    "right_axis": {
-                        "title": "", "min": null, "max": null, "interval": null,
-                        "show_labels": true, "show_ticks": true, "show_major_grid": false
-                    }
-                },
-                "histogram": {
-                    "mode": "auto", "value": null, "show_normal_curve": false,
-                    "mean": null, "std_dev": null
-                },
-                "box_plot": { "show_outliers": true }
-            }] }
-        }"#;
-        let saved =
-            save_workflow_template(path.display().to_string(), template_json.to_owned()).unwrap();
-        let loaded = load_workflow_template(path.display().to_string()).unwrap();
-        assert!(saved.contains("\"output_views\""));
-        assert_eq!(saved, loaded);
-        let wire: serde_json::Value = serde_json::from_str(&loaded).unwrap();
-        assert_eq!(
-            wire["workflow"]["interaction"],
-            json!({"enabled":true,"max_active_command_status":12,"buffer":{"enabled":false,"mode":"fifo","overflow_policy":"fail-run"}})
-        );
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn referenced_tool_instances_only_selects_used_instances() {
         let template = Template::from_json_str(
             r#"{
@@ -2757,87 +1943,4 @@ mod regression_tests {
         );
     }
 
-    fn manifest_fixture(
-        dir: &std::path::Path,
-        tool: &str,
-        worker_version: u32,
-    ) -> std::path::PathBuf {
-        let is_meters = tool == "meters";
-        let manifest = serde_json::json!({
-            "event": "tool_manifest", "schema_version": 2, "tool_id": tool,
-            "tool_version": "1.0.0", "worker_protocol": {
-                "schema_versions": [worker_version], "compatibility_policy": "v3-only"
-            },
-            "execution":{"model": if is_meters {"run_bound"} else {"multi_job"},
-                "context_binding": if is_meters {"startup"} else {"per_command"}},
-            "features": if is_meters {
-                serde_json::json!({})
-            } else {
-                serde_json::json!({"common.async_jobs":{"contract_version":1}})
-            }
-        });
-        #[cfg(windows)]
-        {
-            let path = dir.join(format!("{tool}-{worker_version}.cmd"));
-            std::fs::write(&path, format!("@echo off\r\necho {manifest}\r\n")).unwrap();
-            path
-        }
-        #[cfg(not(windows))]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let path = dir.join(format!("{tool}-{worker_version}"));
-            std::fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' '{manifest}'\n")).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            path
-        }
-    }
-
-    #[test]
-    fn desktop_tool_config_set_load_reset_round_trip() {
-        let dir = unique_test_dir("orchestrator-tool-desktop-config-test");
-        let config_path = dir.join("orchestrator.toml");
-        let meters_exe = manifest_fixture(&dir, "meters", 3);
-        let powers_exe = manifest_fixture(&dir, "powers", 3);
-        assert_eq!(
-            load_desktop_config_from_path(&config_path)
-                .unwrap()
-                .executable_path(&ToolId::meters()),
-            None
-        );
-        set_desktop_tool_executable(&config_path, &ToolId::meters(), &meters_exe).unwrap();
-        set_desktop_tool_executable(&config_path, &ToolId::powers(), &powers_exe).unwrap();
-        let config = load_desktop_config_from_path(&config_path).unwrap();
-        assert_eq!(
-            config.executable_path(&ToolId::meters()),
-            Some(meters_exe.as_path())
-        );
-        assert_eq!(
-            config.executable_path(&ToolId::powers()),
-            Some(powers_exe.as_path())
-        );
-        let saved = std::fs::read(&config_path).unwrap();
-        for rejected in [
-            dir.join("missing.exe"),
-            powers_exe.clone(),
-            manifest_fixture(&dir, "meters", 99),
-        ] {
-            assert!(
-                set_desktop_tool_executable(&config_path, &ToolId::meters(), &rejected).is_err()
-            );
-            assert_eq!(std::fs::read(&config_path).unwrap(), saved);
-        }
-        reset_desktop_tool_executable(&config_path, &ToolId::meters()).unwrap();
-        let config = load_desktop_config_from_path(&config_path).unwrap();
-        assert_eq!(config.executable_path(&ToolId::meters()), None);
-        assert_eq!(
-            config.executable_path(&ToolId::powers()),
-            Some(powers_exe.as_path())
-        );
-        assert_eq!(
-            resolve_built_in_tool_id("meters").unwrap(),
-            ToolId::meters()
-        );
-        assert!(resolve_built_in_tool_id("foobar").is_err());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
 }
