@@ -1,4 +1,4 @@
-//! Pure Workflow string and byte operations. No transport or variable mutation.
+//! Pure Workflow array, string, and byte operations. No transport or variable mutation.
 
 use std::collections::BTreeMap;
 

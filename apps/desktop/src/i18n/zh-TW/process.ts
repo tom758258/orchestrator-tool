@@ -45,7 +45,7 @@ export default {
   "process.operation.get-item": "取得元素 (Get Item)",
   "process.help.string.length": "計算 Unicode code point 數量，不是 UTF-8 Bytes。",
   "process.result.string.length": "Number",
-  "process.help.string.substring": "從指定的 0-based 字元索引截取文字。",
+  "process.help.string.substring": "從指定的 0-based 字元索引截取指定長度的文字。",
   "process.result.string.substring": "String",
   "process.help.string.concat": "將文字附加至輸入；允許空字串。",
   "process.result.string.concat": "String",

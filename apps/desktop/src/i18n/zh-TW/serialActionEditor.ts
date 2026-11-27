@@ -31,8 +31,6 @@ export default {
   "serialActionEditor.maxBytes11048576": "最大接收位元組數（1–1048576）",
   "serialActionEditor.failOnReadTimeout": "讀取逾時時使步驟失敗",
   "serialActionEditor.failOnReadTimeoutHelp": "已回報的 Session Partial RX 不會重複讀取，但不清除 OS／設備 RX。後續 Receive／Query 可能讀到延遲資料。其他錯誤仍會失敗。",
-  "serialActionEditor.receiveReadHelp": "最大接收位元組數是讀取上限，不保證讀滿。Receive 只讀取一次。",
-  "serialActionEditor.queryReadHelp": "最大接收位元組數是讀取上限，不保證讀滿。Query 讀取至指定的接收結束標記。",
   "serialActionEditor.textSourceTypes": "傳送內容依傳送格式選擇 String 或 Number。文字傳送需要 String；Timestamp 是 ISO-8601 字串，Elapsed Time 是秒數（Number），不能直接當文字傳送。",
   "serialActionEditor.hexSourceTypes": "單一位元組傳送需要 Number，只送最低 1 Byte。Elapsed Time 是秒數（Number）；Timestamp 和 RX 資料（Hex 字串）是 String，不能直接作為單一位元組傳送。",
   "serialActionEditor.tXSource": "傳送資料來源",

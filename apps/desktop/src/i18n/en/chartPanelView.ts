@@ -11,6 +11,5 @@ export default {
   "chartPanelView.source": "Source: {value1}",
   "chartPanelView.page": "Page: {value1}",
   "chartPanelView.chartImageSavedSuccessfully": "Chart image saved successfully.",
-  "chartPanelView.couldNotSaveChartImage": "Could not save chart image: ",
   "chartPanelView.couldNotSaveChartImageDiagnostic": "Could not save chart image: {error}"
 }

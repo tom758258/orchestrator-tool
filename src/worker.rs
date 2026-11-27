@@ -238,7 +238,7 @@ impl WorkerSession {
             .mark_unconfirmed(job_id, reason)
     }
 
-    /// One shared async path for Powers, Scopes, and future conforming v3 Tools.
+    /// Shared async job path for Tools supporting `common.async_jobs`.
     /// Domain commands and their results stay with their thin adapter.
     pub fn run_async_job(
         &self,

@@ -11,6 +11,5 @@ export default {
   "chartPanelView.source": "來源：{value1}",
   "chartPanelView.page": "頁面：{value1}",
   "chartPanelView.chartImageSavedSuccessfully": "圖表影像已成功儲存。",
-  "chartPanelView.couldNotSaveChartImage": "無法儲存圖表影像：",
   "chartPanelView.couldNotSaveChartImageDiagnostic": "無法儲存圖表影像：{error}"
 }

@@ -9,7 +9,6 @@ export default {
   "scopesActionEditor.notSupportedByTheCurrentModel": "目前型號不支援。",
   "scopesActionEditor.supportCannotBeConfirmed": "無法確認是否支援。",
   "scopesActionEditor.select": "選取 ",
-  "scopesActionEditor.vpP": "Vp-p",
   "scopesActionEditor.optionsAreUnavailable": " 選項無法取得。",
   "scopesActionEditor.isInvalidOrUnconfirmedSelectASupportedFixedValue": " 無效或尚未確認。請選取支援的固定值。",
   "scopesActionEditor.noSupportedChannelsWereReturnedForTheCurrentModel": "目前型號未回傳任何支援的通道。",
