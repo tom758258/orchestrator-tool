@@ -24,7 +24,7 @@ orchestrator-tool.
   Tauri/WebView window still cannot initialize, Desktop shows a native startup
   error with the underlying Tauri detail and exits. The application does not
   download or install WebView2 automatically.
-- Meters, Powers, Scopes, and Wavegen are independent external tool
+- Meters, Powers, Scopes, Serial, and Wavegen are independent external tool
   distributions. Install and maintain those tools separately, then configure
   their actual executable paths in Desktop.
 
@@ -59,7 +59,7 @@ badge on every Tool Instance show the current target. The selector is locked
 while a Workflow or manual external operation is active. Execution Mode is
 session state; it is not saved in a Template or local configuration.
 
-Meters, Powers, Scopes, and Wavegen instances all show this badge. The badge
+All Tool Instances show this badge. The badge
 does not add runtime support for Wavegen. Scopes supports the selected
 Workflow actions described below.
 

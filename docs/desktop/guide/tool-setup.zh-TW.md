@@ -28,7 +28,7 @@ Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
 狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
 對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。
 
-展開任一 Powers、Meters、Scopes 或 Wavegen instance，即可編輯 **Display Name
+展開任一 Tool Instance，即可編輯 **Display Name
 (optional)**。留空會使用預設 instance ID。名稱可包含中文、英文、數字與空格，
 不同 instances 也可使用相同名稱。Setup 標題與 Workflow Target 選項會立即更新；
 原始 **Instance ID** 仍會顯示，收合時也能辨識。Target 選項會保留可用的型號與

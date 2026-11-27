@@ -48,7 +48,7 @@ Preflight failure，不會呈現成已執行 Workflow 的 failure。
 都會使 Live execution 被拒絕，並要求
 重新確認。
 
-目前支援 Live 的 external tools 是 Powers、Meters 與 Scopes。Powers 與 Scopes 的
+目前支援 Live 的 external tools 是 Powers、Meters、Scopes 與 Serial。Powers 與 Scopes 的
 Preflight 使用已保存的 canonical model ID。Scopes 使用原樣保存的 Resource；
 未知 identity 不會被替換成其他型號。
 Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。

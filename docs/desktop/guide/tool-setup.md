@@ -32,7 +32,7 @@ those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
 is not locally configured, with a warning that disappears after configuration.
 
-Expand any Powers, Meters, Scopes, or Wavegen instance to edit **Display Name
+Expand any Tool Instance to edit **Display Name
 (optional)**. Leave it blank to use the default instance ID. Names may include
 Chinese, English, numbers, and spaces, and different instances may share a name.
 The Setup title and Workflow Target options update immediately; the original
