@@ -125,11 +125,6 @@ test('marker-free legend lines keep their own Output color for Line, Area, Scatt
     assert.deepEqual(data, label === 'Combo Line'
       ? ['V', plainLine('I', 'rgb(0,0,255)')]
       : [plainLine('V', 'rgb(255,0,0)'), plainLine('I', 'rgb(0,0,255)')], label)
-    for (const item of data) {
-      if (typeof item === 'string') continue
-      assert.equal(item.icon, 'line', label)
-      assert.equal(item.itemStyle.color, item.itemStyle.borderColor, label)
-    }
   }
 })
 

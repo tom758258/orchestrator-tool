@@ -62,7 +62,7 @@ distribution，不包含在 orchestrator-tool 內。</p>
   已通過但 main Tauri/WebView window 仍無法初始化，Desktop 會顯示包含實際 Tauri
   error detail 的 native startup error 並結束。Application 不會自動下載或安裝
   WebView2。</li>
-<li>Meters、Powers、Scopes 與 Wavegen 是獨立的 external tool distributions。
+<li>Meters、Powers、Scopes、Serial 與 Wavegen 是獨立的 external tool distributions。
   請分別安裝與維護，再於 Desktop 設定實際 executable path。</li>
 </ul>
 <p>本指南不假設目前存在 external tool 的 installer 或 package deployment 流程。</p>
@@ -88,7 +88,7 @@ distribution，不包含在 orchestrator-tool 內。</p>
 <strong>真實硬體 · 實際硬體操作（LIVE · REAL HARDWARE）</strong> 標示，以及每個 Tool Instance 上相同的 badge，會顯示
 目前 target。Workflow 或 manual external operation 執行期間 selector 會鎖定。
 Execution Mode 只屬於 session state，不會保存到 Template 或 local configuration。</p>
-<p>Meters、Powers、Scopes 與 Wavegen instances 都會顯示此 badge。Badge 不代表新增
+<p>所有 Tool Instances 都會顯示此 badge。Badge 不代表新增
 Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。</p>
   </main>
   <script>

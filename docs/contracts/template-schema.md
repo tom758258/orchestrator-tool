@@ -450,8 +450,7 @@ Each Tool Instance has:
 - tool: the external Tool Type ID; and
 - setup: tool-specific setup data.
 
-All Tool Types, including Powers, Meters, Scopes, and Wavegen, use the same
-optional `display_name` field. Names may contain ordinary Unicode text and may
+All Tool Types use the same optional `display_name` field. Names may contain ordinary Unicode text and may
 be duplicated. Leading and trailing whitespace is trimmed when constructing or
 loading a Template; empty or whitespace-only names are treated as unset and
 serialized without the field, never as `"display_name": null`.

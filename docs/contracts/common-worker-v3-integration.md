@@ -16,9 +16,9 @@ This file does not change or replace those contracts.
 - Runtime `ready.features`, not the Manifest alone, determines features adopted
   by this Worker session. Status snapshots must agree with the validated
   `run_id`, endpoint origin, and Runtime feature adoption.
-- Current Workflow-domain adapters are Meters, Powers and Scopes. Common v3
-  protocol parsing is deliberately independent of tool IDs; Serial and Wavegen
-  need no new domain Workflow actions as part of this migration.
+- Current Workflow-domain adapters are Meters, Powers, Scopes and Serial.
+  Common v3 protocol parsing is deliberately independent of tool IDs.
+  Wavegen runtime Workflow actions are not yet supported.
 
 ## Responsibility split
 

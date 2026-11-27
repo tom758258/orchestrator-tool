@@ -56,7 +56,7 @@ hardware. The run validates that both backends and resources still exactly match
 what was confirmed. A changed backend or resource, or duplicate resource, causes Live execution to
 be rejected and require a new confirmation.
 
-The currently supported Live external tools are Powers, Meters, and Scopes.
+The currently supported Live external tools are Powers, Meters, Scopes, and Serial.
 Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
 unknown identities fail without a fallback. Wavegen runtime execution remains
 unsupported. Scopes Shutdown does not reset or restore instrument settings.
