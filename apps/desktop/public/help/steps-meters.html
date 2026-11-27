@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meters Steps</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
+<a class="help-page" href="guide-getting-started.html">Getting Started</a>
+<a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
+<a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
+<a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
+<a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html" aria-current="page">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
+<a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
+<a class="help-page" href="guide-results.html">Run Results</a>
+<a class="help-page" href="guide-charts.html">Charts</a>
+<a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
+<a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Meters Steps</h1>
+<h2 id="meter-measure-one-reading">Meter Measure: one reading</h2>
+<p>Meter Measure triggers a single measurement for the selected Meters Tool Instance and obtains one reading. Configure the measurement type and range in Setup rather than repeating them in each step.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prerequisite</td>
+<td>Compatible meters-tool.exe configured in Tools and a Meters instance in Setup</td>
+</tr>
+<tr>
+<td>Target</td>
+<td>Select the instance to use</td>
+</tr>
+<tr>
+<td>Settings</td>
+<td>DC Voltage or DC Current and other settings from that instance</td>
+</tr>
+<tr>
+<td>Mode</td>
+<td>Foreground Single; use Background Streaming for background operation</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>One measurement; choose common result fields in Previous step result</td>
+</tr>
+</tbody>
+</table>
+<h2 id="save-the-reading-as-a-data-column">Save the reading as a data column</h2>
+<ol>
+<li>Add a Meters instance in Setup with Background Streaming off.</li>
+<li>Add the Meter Measure step in Workflow and select the instance.</li>
+<li>Add Output and choose Previous step result as the Value Source.</li>
+<li>Choose the Meter Measure step and its Value result, then run Simulation.</li>
+<li>Inspect the column in Output.</li>
+</ol>
+<p>Meter Measure alone does not create an Output column. If a step fails, inspect the error. For continuous acquisition or Immediate/External triggering, see <a href="guide-background-streaming.html">Background Streaming</a>. An instance cannot be both foreground and background in one workflow.</p>
+<p>For instrument settings and data-loss risks, see <a href="guide-tool-setup.html">Tool Setup</a>.</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

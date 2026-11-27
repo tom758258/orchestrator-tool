@@ -24,45 +24,155 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html" aria-current="page">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html" aria-current="page">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Serial Background RX and Actions</h1>
-<h2 id="16-serial-background-rx">16. Serial Background RX</h2>
+<h2 id="serial-communication-basics">Serial communication basics</h2>
+<p>TX means transmit, RX means receive. ### UART and TCP</p>
+<table>
+<thead>
+<tr>
+<th>Transport</th>
+<th>Live connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UART</td>
+<td>COM Port and serial settings</td>
+</tr>
+<tr>
+<td>TCP Client</td>
+<td>Host, Port and TCP timeout; no TCP discovery</td>
+</tr>
+</tbody>
+</table>
+<p>Use Save Resource for the local connection address.</p>
+<p>Serial supports UART (COM Port) and raw TCP Client. It does not decode device protocols or assemble RX events into complete packets.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Foreground</td>
+<td>Run Send, Send File, Receive or Query in sequence</td>
+</tr>
+<tr>
+<td>Background</td>
+<td>Continuous RX, with Capture, Monitor or interaction steps</td>
+</tr>
+</tbody>
+</table>
+<h2 id="background-rx-and-communication-setup">Background RX and communication setup</h2>
 <p>Register <code>serial-tool.exe</code> in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Enable Background Streaming. Background Simulation uses Serial Tool's <code>periodic-rx-v1</code> to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use <code>loopback-v1</code>. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.</p>
 <p>Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in <strong>Communication Setup</strong>, which starts expanded. Use <strong>− / +</strong> to hide or show Transport and its UART or TCP settings; Background Streaming and Live Device stay visible. UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.</p>
+<h3 id="start-receiving-capture-and-inspect">Start receiving, capture and inspect</h3>
 <p>Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.</p>
 <p>Serial RX Live Monitor keeps the Hex/Text received-data pane at a fixed height with its own scrollbar. Incoming data follows the bottom until you scroll up to inspect buffered bytes; scrolling back to the bottom resumes automatic following. Switching Hex/Text returns to the latest data. This is a bounded Monitor view, not a substitute for Capture.</p>
 <p>Choose Hex Bytes or Text (UTF-8) for display without modifying recorded raw bytes. Serial Background manual export supports CSV, XLSX and BIN. BIN writes only raw received bytes, in order, with no headers, delimiters or timestamps; it cannot export numeric Meters or Scopes Datasets. Streaming Background CSV remains optional and accepts a Serial display format.</p>
 <p>Serial does not offer numeric Charts. Worker shutdown validates stream termination, summary, EOF and exit status. Serial data quality remains unknown without stronger loss evidence; actual Worker and CSV errors still fail the run.</p>
 <p>The Steps palette groups Background Worker ON/OFF and Background Capture ON/OFF in Background Workflow. The category is locked until the Template has at least one Background binding; unlocked categories initially expand and can be collapsed without deleting existing steps.</p>
+<h2 id="foreground-communication-steps">Foreground communication steps</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Send</td>
+<td>Send UTF-8 text or a single byte</td>
+</tr>
+<tr>
+<td>Send File</td>
+<td>Send unchanged file contents</td>
+</tr>
+<tr>
+<td>Receive</td>
+<td>Receive without sending</td>
+</tr>
+<tr>
+<td>Query</td>
+<td>Send, then receive</td>
+</tr>
+</tbody>
+</table>
+<p>Example: use UART Simulation with loopback-v1, Query TX Text OK, and RX Fixed Length of 2 bytes. Expect the same text if RX Text is enabled. This is simulated data, not a real MCU reply.</p>
 <p>Serial Foreground has four actions: Serial Send, Serial Send File, Serial Receive and Serial Query. These use an ordinary non-streaming Serial Worker. A Serial Tool Instance cannot be used for both Foreground and Background. The original Serial Background RX-only capture and monitoring are unchanged.</p>
+<h3 id="tx-format">TX format</h3>
 <p>Send and Query TX support Text (UTF-8 string) and Single Byte (Integer Input). In Single Byte mode, a non-negative integer sends only its lowest eight bits. For example 4660 sends the single byte 34 in Single Byte mode. Fixed fractional Single Byte values fail validation. Dynamic numeric Single Byte values are truncated toward zero before TX; negative results, invalid types and out-of-range values fail the consuming Step without sending. Fixed values, Variables and earlier Step Outputs can be selected. To build a string Variable, use Set Variable with the String fixed-value type. Text does not interpret a hexadecimal sequence as binary bytes.</p>
+<h3 id="rx-completion-modes">RX completion modes</h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Completion condition</th>
+<th>Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single Read</td>
+<td>One underlying read</td>
+<td>Receive</td>
+</tr>
+<tr>
+<td>Until Delimiter</td>
+<td>Delimiter received</td>
+<td>Receive / Query</td>
+</tr>
+<tr>
+<td>Fixed Length</td>
+<td>Expected byte count reached</td>
+<td>Receive / Query</td>
+</tr>
+<tr>
+<td>Idle Gap</td>
+<td>Silence after receiving data</td>
+<td>Receive / Query</td>
+</tr>
+</tbody>
+</table>
 <p>RX Delimiter is independent of TX Format and supports multi-byte Text or Hex in Until Delimiter mode. Text recognizes backslash-r, backslash-n and escaped backslash. Receive sends no TX; Query sends TX before RX. Existing Receive Templates default to Single Read, and existing Query Templates default to Until Delimiter.</p>
 <p>Receive supports Single Read (one underlying read), Until Delimiter (including the delimiter), Fixed Length (accumulate exactly Expected RX Bytes), and Idle Gap (complete after an RX silence interval). Query offers Delimiter, Fixed Length and Idle Gap, not Single Read. Expected RX Bytes and Idle Gap (ms) are required positive integers and initially blank when selecting those modes. Fixed Length uses Expected RX Bytes as both target and bound. Other modes use Max RX Bytes (1 through 1048576, default 1024), which is a limit, not a required count. Exceeding this limit before Delimiter or Idle Gap completes fails the Step.</p>
+<h3 id="received-result">Received result</h3>
 <p>A completed read retains raw <code>/rx_hex</code> (Hex String), <code>/rx_bytes</code> (Number), <code>/outcome = completed</code> and <code>/timed_out = false</code>. When <strong>Enable RX Text (UTF-8)</strong> is checked, the Step also returns <code>/rx_text</code> (String or null), with the delimiter included. Invalid UTF-8 produces null without changing RX success; <code>/rx_hex</code> and <code>/rx_bytes</code> stay available. IF/ELSE, Assert and Set Variable can use the result pointers. Workflow does not automatically parse individual binary bytes.</p>
+<h3 id="timeout-partial-data-and-errors">Timeout, partial data and errors</h3>
 <p>Receive/Query use the UART <code>timeout_ms</code> or TCP <code>io_timeout_ms</code> configured in Serial Setup. Idle Gap uses Read Timeout to await the first byte, then independently waits the configured idle interval after the latest RX. Delimiter and Fixed Length continue until their conditions are satisfied or a read timeout occurs; there is no separate overall RX timeout. A confirmed Read Timeout produces <code>/outcome = timeout</code>, <code>/timed_out = true</code>, <code>/partial_rx_hex</code> and <code>/partial_rx_bytes</code> when <strong>Fail on Read Timeout</strong> is unchecked. When UTF-8 output is enabled, it additionally returns <code>/partial_rx_text</code> (String or null). Checking Fail on Read Timeout fails the Workflow Step instead. A timeout result does not establish a complete reply or a passed MCU test.</p>
 <p>For ordinary Worker Receive/Query, Read Timeout and ReadLimitExceeded consume only the already reported partial RX from the Session buffer, retaining any unreported trailing bytes. No OS/device RX queue is flushed; late data from a previous operation may be read by a later Receive/Query. The user must verify subsequent RX validity. ReadLimitExceeded, disconnection, other I/O errors, Worker failure, and action deadline expiry still fail the Step. Text TX requires a String; Single Byte TX requires a Number and sends only the low byte. RX Hex Strings cannot be sent as raw multi-byte TX.</p>
+<h3 id="send-file-paths-and-limits">Send File paths and limits</h3>
 <p>Serial Send File stores an absolute worker-local file path in the Template. Missing files generate a nonblocking warning on Template load; invalid or missing files block Run before any Worker starts. A file can still disappear during execution; runtime errors then fail the Step. The Serial Worker command run-sequence, Background Query and Workflow raw-byte FIFO are not available as Orchestrator actions.</p>
-<h3 id="serial-send-send-file-while-background-rx-is-running">Serial Send / Send File while Background RX is running</h3>
+<h2 id="send-send-file-while-background-rx-runs">Send / Send File while background RX runs</h2>
 <p>Enable <strong>FG/BG Interaction</strong>, add <strong>Worker ON</strong>, then add a <strong>BG Command</strong> for
 the Serial Background. Select <strong>Send</strong> or <strong>Send File</strong>. Text, Single Byte, TX Data Source,
 Calculation and file selection use the same rules as Serial Foreground. Send File

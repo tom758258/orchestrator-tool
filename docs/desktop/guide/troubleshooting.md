@@ -2,7 +2,19 @@
 
 <!-- help-source -->
 
-## 14. Common problems
+## Common problems at a glance
+
+| Symptom | First check |
+| --- | --- |
+| Tool not configured or EXE rejected | Correct CLI/Worker EXE, version and compatibility |
+| Missing / Not a file | Whether the executable moved |
+| Live Resource missing/unsaved/duplicate | Setup address and Save Resource |
+| Simulation asks for sample count | Meters SIM Max Samples |
+| Export unavailable | Run ended and exportable data exists |
+| Streaming CSV failed | Error details and destination folder |
+| Application cannot start | WebView2 Runtime and startup details |
+
+### Detailed troubleshooting
 
 ### Tool shows Not configured
 
@@ -62,7 +74,7 @@ application. If a Startup failed dialog appears after the availability check,
 keep its Details text for diagnosis and make sure Windows is supported and
 WebView2 is installed and up to date.
 
-## 15. Safety notes
+## Safety notes
 
 - Live mode can affect connected hardware.
 - Verify every Live Resource before confirmation.
@@ -73,4 +85,3 @@ WebView2 is installed and up to date.
   connection before confirming Live.
 - External tools remain responsible for instrument-specific limits and safety
   behavior.
-

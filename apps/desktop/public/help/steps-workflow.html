@@ -24,29 +24,70 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html" aria-current="page">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html" aria-current="page">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Workflow Steps</h1>
-<h3 id="62-for">6.2 For</h3>
+<h2 id="basic-workflow-steps">Basic workflow steps</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Settings and purpose</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wait</td>
+<td>Wait a specified duration in milliseconds</td>
+<td>500 ms waits half a second</td>
+</tr>
+<tr>
+<td>Set Variable</td>
+<td>Name and value source; create or update a variable</td>
+<td>x = 5</td>
+</tr>
+<tr>
+<td>Assert</td>
+<td>Compare two values; fail the workflow if false</td>
+<td>Check whether a reading is greater than 0</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>Name, Page and value source; add a result column</td>
+<td>Voltage = Measure reading</td>
+</tr>
+</tbody>
+</table>
+<p>These steps do not require a Tool Instance; using an instrument result requires the corresponding earlier measurement. Assert can provide a failure message. See <a href="steps-input-values.html">Input Values</a> for sources and comparison rules.</p>
+<h2 id="for-repeat-over-a-range">For: repeat over a range</h2>
+<pre><code class="language-text">Example: Start = 1, Stop = 3, Step = 1
+i = 1 -&gt; Body -&gt; i = 2 -&gt; Body -&gt; i = 3 -&gt; Body -&gt; Done
+</code></pre>
 <p>Configure a For step with <strong>Start</strong>, <strong>Stop</strong>, <strong>Step</strong>, a loop variable, and a
 body.</p>
 <ul>
@@ -59,7 +100,15 @@ body.</p>
 <p>For ranges use exact decimal range semantics rather than floating-point
 tolerance. The range is evaluated according to the configured step, so a Stop
 value that is not reachable is not rounded into an extra iteration.</p>
-<h3 id="63-while">6.3 While</h3>
+<h2 id="while-repeat-while-a-condition-is-true">While: repeat while a condition is true</h2>
+<pre><code class="language-text">Check condition -- false --&gt; Done
+    |
+    true
+    v
+  Run Body
+    |
+    +----&gt; Check again (respect iteration limit)
+</code></pre>
 <p>A While condition is evaluated before each iteration. Its iteration limit can
 be:</p>
 <ul>
@@ -70,6 +119,7 @@ be:</p>
 Unlimited While is allowed at root or inside If branches without For or
 While ancestors. Its body must be non-empty and may contain finite nested
 loops. It may not contain another Unlimited While.</p>
+<h3 id="simulation-sample-limit">Simulation sample limit</h3>
 <p>If Software Meters <strong>Measure</strong> is inside an Unlimited While and Simulation
 cannot determine the source size, <strong>Run Simulation</strong> shows a sample warning.
 Each affected instance starts at <strong>1,000 SIM Max Samples</strong>; enter a whole number
@@ -80,6 +130,14 @@ while another Measure is requested, that Measure fails and cleanup runs; the
 Worker is not restarted. A Live Software Measure does not receive this SIM bound.</p>
 <p>Foreground Meters uses Single in both Simulation and Live. To collect batches
 or use Immediate or External triggering, enable Background for that instance.</p>
+<h2 id="if-else-select-a-branch">If / Else: select a branch</h2>
+<pre><code class="language-text">           Condition
+          /         \
+        true       false
+        THEN        ELSE
+          \         /
+             Next
+</code></pre>
 <p>An If step evaluates its condition once and executes only its THEN or ELSE
 body. Select an If step and choose which branch receives new palette steps;
 drag and paste steps into either branch independently. Branch-local Variables
@@ -87,7 +145,26 @@ and Step Outputs do not escape; changes to previously defined Variables
 remain available later. Outputs in either branch use the enclosing Page row
 scope, with unexecuted branch columns left empty. If does not create an
 additional row.</p>
-<h3 id="64-stop-workflow-and-loop-stop">6.4 Stop Workflow and loop Stop</h3>
+<h2 id="stop-a-workflow-or-a-loop">Stop a workflow or a loop</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stop Workflow</td>
+<td>Stop the entire run and wait for required safe cleanup</td>
+</tr>
+<tr>
+<td>Stop / Stop Loop ID</td>
+<td>Exit the selected loop after its current iteration commits; the outer workflow may continue</td>
+</tr>
+</tbody>
+</table>
+<h3 id="stop-the-entire-workflow">Stop the entire workflow</h3>
 <p><strong>Stop Workflow</strong> is available whenever Simulation or Live shows Running,
 including startup and workflows without loops. It stops the entire workflow:</p>
 <ol>
@@ -112,6 +189,7 @@ partial CSV files remain available. Quality follows the Worker evidence, and
 previously completed Captures are not made incomplete by a later intentional
 shortfall. Stopping a Worker without an active Capture creates no Dataset.
 Missing termination evidence, sample gaps, overflow, and CSV errors remain failures.</p>
+<h3 id="stop-only-the-selected-loop">Stop only the selected loop</h3>
 <p>The separate <strong>Stop</strong> / <strong>Stop <Loop ID></strong> controls keep their graceful loop behavior:</p>
 <ol>
 <li>The active innermost iteration continues until its successful commit point.</li>
@@ -120,7 +198,7 @@ Missing termination evidence, sample gaps, overflow, and CSV errors remain failu
 </ol>
 <p>An iteration failure takes precedence over loop Stop. Loop Stop alone does not
 mark the whole run Stopped; its final status follows normal workflow success rules.</p>
-<h3 id="65-output-pages">6.5 Output Pages</h3>
+<h2 id="output-pages">Output Pages</h2>
 <p>An Output step has a name and a Page. Outputs on the same Page form columns in
 one dataset. Different Pages are independent datasets, and a nested loop can
 own its own Page.</p>
@@ -132,7 +210,7 @@ restrictions apply to both export formats.</p>
 variables and assertions may use that sample normally. Output rows are committed
 only when their owning scope or iteration succeeds; a later failure discards
 uncommitted rows. Background samples are recorded separately in Capture Datasets.</p>
-<h3 id="66-show-message">6.6 Show Message</h3>
+<h2 id="show-message">Show Message</h2>
 <p>A <strong>Show Message</strong> step writes text to the Messages Panel while the workflow
 runs. Its only purpose is that message: it is not a Popup, not an Assert, and
 not an Output Page, so it never adds columns to your data, CSV, or charts.</p>
@@ -200,12 +278,13 @@ Double: 6000
 </code></pre>
 <p>Because the fields are resolved when the step runs, a Show Message inside a For
 or While loop always reports the current iteration, never a previous one.</p>
-<h3 id="67-string-process-and-byte-process">6.7 String Process and Byte Process</h3>
+<h2 id="string-process-and-byte-process">String Process and Byte Process</h2>
 <p>Both are Workflow steps with no Tool Instance requirement. Each data parameter
 can use Fixed value, Variable, or Previous step result. They do not provide
 inline Calculation, Elapsed time, or Timestamp sources. Their result is available
 as Value (JSON Pointer <code>/value</code>) to later steps. Neither step changes the source
 variable or creates an Output column.</p>
+<h3 id="edit-fixed-strings">Edit fixed strings</h3>
 <p>In Process Fixed value string fields, Enter inserts LF. The visible escape
 <code>\r</code> represents CR, <code>\n</code> represents LF, and <code>\\</code> represents a literal
 backslash. Other backslash sequences remain literal. A loaded CRLF is shown
@@ -219,6 +298,7 @@ The stored Template and Process values remain ordinary JSON strings; the
 <p>Each input and output string is limited to 1 MiB (1,048,576 UTF-8 bytes).
 Exceeding this limit fails the step; data is not truncated. This limit does not
 change existing Variable, Serial RX, or Capture Dataset limits.</p>
+<h3 id="string-operations">String operations</h3>
 <p><strong>String Process</strong> operates on Unicode code points, not UTF-8 bytes. Indexes
 start at zero, and searches are case-sensitive.</p>
 <table>
@@ -285,6 +365,7 @@ start at zero, and searches are case-sensitive.</p>
 <p>Empty search strings, out-of-range indexes, wrong types, and invalid or
 non-finite number conversions and nonzero numbers that underflow to zero fail the step. For example, Substring of
 <code>STATUS:PASS</code> at Start Index 7 and Length 4 returns <code>PASS</code>.</p>
+<h3 id="byte-operations">Byte operations</h3>
 <p><strong>Byte Process</strong> operates on raw bytes represented by Hex Strings. Hex input
 accepts either letter case and whitespace between complete byte pairs. Hex
 output is uppercase without spaces; an unspaced Hex String represents at most
@@ -359,7 +440,7 @@ is 3300; a later Calculation can divide it by 1000 to obtain 3.3.
 For <code>1234</code>, MSB First returns 4660 and LSB First returns 13330.</p>
 <p>These steps process the data they receive. They do not assemble Serial RX
 events into frames, pair TX with RX, or change Serial Send capabilities.</p>
-<h3 id="68-array-process">6.8 Array Process</h3>
+<h2 id="array-process">Array Process</h2>
 <p>Array Process is a Workflow Step independent of FG/BG Interaction. Select an
 existing Array from <strong>Variable</strong> or <strong>Previous step result</strong>, for example
 Get Buffer Data <code>/data</code>. Fixed Value Array editing is not supported.
@@ -372,6 +453,25 @@ To process a batch, set i=0, repeat While i is less than the batch count,
 use Get Item with Index i, process the item, and increment i with Calculation.
 There is no added global Array size limit. Existing String and Byte Process
 string limits still apply when those Steps receive an extracted string.</p>
+<table>
+<thead>
+<tr>
+<th>Array Process operation</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Length</td>
+<td>Item count; 0 for an empty array</td>
+</tr>
+<tr>
+<td>Get Item</td>
+<td>The element at a zero-based index</td>
+</tr>
+</tbody>
+</table>
+<p>Example: Length of [10, 20, 30] is 3; Get Item with Index = 1 returns 20.</p>
   </main>
   <script>
     (() => {

@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Background Streaming 與 CSV</title>
+  <title>背景擷取與 CSV</title>
   <script>
     (() => {
       const query = new URLSearchParams(location.search).get('theme');
@@ -24,36 +24,126 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html" aria-current="page">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html" aria-current="page">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
-<h1>Background Streaming 與 CSV</h1>
-<h2 id="background-streaming">Background Streaming</h2>
-<p>在 <strong>Tool Setup</strong> 中，Meters 或 Scopes Instance 都可勾選
+<h1>背景擷取與 CSV</h1>
+<h2 id="背景擷取的基本概念">背景擷取的基本概念</h2>
+<p>當前景工作流程正在做其他事時，背景 Worker 可以持續量測或接收資料。Worker、Capture、Live Monitor 與 Data Buffer 是不同功能。</p>
+<pre><code class="language-text">Background Worker（持續取得資料）
+    +-- Capture -&gt; Dataset -&gt; Output Data / 匯出
+    +-- Live Monitor -&gt; 即時監看（有限資料）
+    +-- Data Buffer -&gt; 前景流程取用
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Worker</td>
+<td>啟動及停止背景資料來源</td>
+</tr>
+<tr>
+<td>Capture</td>
+<td>將資料記錄為一組獨立 Dataset</td>
+</tr>
+<tr>
+<td>Live Monitor</td>
+<td>即時查看最近資料，不是完整記錄</td>
+</tr>
+<tr>
+<td>Data Buffer</td>
+<td>選用的前景／背景資料交換區</td>
+</tr>
+</tbody>
+</table>
+<p>Capture OFF 不等於 Worker OFF。關閉 Capture 時，Worker 及 Monitor 仍可繼續。</p>
+<h3 id="各工具支援的背景功能">各工具支援的背景功能</h3>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>Meters</th>
+<th>Scopes</th>
+<th>Serial</th>
+<th>Powers / Wavegen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>背景來源</td>
+<td>支援</td>
+<td>數值量測</td>
+<td>RX</td>
+<td>不支援</td>
+</tr>
+<tr>
+<td>Capture / Monitor</td>
+<td>支援</td>
+<td>支援</td>
+<td>支援</td>
+<td>不支援</td>
+</tr>
+<tr>
+<td>BG Command</td>
+<td>Software Simple</td>
+<td>不支援</td>
+<td>Send / Send File</td>
+<td>不支援</td>
+</tr>
+<tr>
+<td>Get Latest / Wait Next</td>
+<td>支援</td>
+<td>支援</td>
+<td>支援</td>
+<td>不支援</td>
+</tr>
+<tr>
+<td>數值背景圖表</td>
+<td>支援</td>
+<td>支援</td>
+<td>不支援</td>
+<td>不支援</td>
+</tr>
+</tbody>
+</table>
+<p>Serial 的設定及通訊範例請參閱 <a href="steps-serial.zh-TW.html">Serial 步驟</a>。</p>
+<h3 id="啟用及設定背景來源">啟用及設定背景來源</h3>
+<p>在 <strong>Tool Setup</strong> 中，Meters、Scopes 或 Serial 實例可勾選
 <strong>Enable Background Streaming</strong>。Meters 提供六種背景量測模式；
 Scopes Background 支援唯讀的數值 Measure Cycle，不包含 Screenshot 或
 Waveform Capture。Powers 和 Wavegen 仍不支援 Background。
 背景 Instance 不可同時供前景 Tool Action 使用。切換用途時會保留既有步驟，
 請在執行前處理畫面提示的衝突；取消 Background 後，須選擇 Single 才能用於
 前景 Measure。同一次執行中的兩個 Instance 不可共用同一個 Live Resource。</p>
+<h3 id="scopes量測週期">Scopes：量測週期</h3>
 <p>來源可選 <strong>Finite</strong> 或 <strong>Infinite</strong>。Scopes 的 Finite <strong>Cycles</strong> 是完整量測
 Cycle 數量，每個 Cycle 可包含多個 Channel／Item 組合；Infinite 持續執行，
 直到 Worker OFF 或 Stop Workflow。<strong>Measure interval (seconds)</strong> 預設 1 秒，
@@ -61,6 +151,7 @@ Cycle 數量，每個 Cycle 可包含多個 Channel／Item 組合；Infinite 持
 <strong>Measurements</strong> 新增或移除量測項目，依 Scopes capabilities 為每個項目
 選擇 <strong>Channel</strong> 與 <strong>Item</strong>；每項有內部穩定 ID。Cycle 內的項目依序讀取，
 不是同時量測。最終機型／項目／參數支援由 Scopes Tool 驗證。</p>
+<h3 id="meters筆數及觸發">Meters：筆數及觸發</h3>
 <p>Meters 的有限 Simple 模式設定 <strong>Max Samples</strong>；
 有限 Custom 模式設定 <strong>Trigger Count</strong>，每次觸發取得 <strong>Sample Count</strong> 筆。
 無限 Custom 必須明確勾選 <strong>Allow Buffer Overflow Risk</strong>。背景無限擷取
@@ -75,10 +166,39 @@ Software Simple 可勾選 <strong>Trigger with BG Command</strong>，改由 Work
 <p><strong>External</strong> 與 <strong>External Custom</strong> 在 Live 使用接入的實體觸發訊號；
 Simulation 會對支援的型號自動產生虛擬觸發，例如 34461A。34460A 不支援 External。
 Slope 與 Delay 設定會交給工具處理；Simulation 不驗證實體觸發時序。</p>
+<h3 id="選用即時監看">選用即時監看</h3>
 <p><strong>Live Monitor</strong> 可選，預設不勾選。Scopes Monitor 可用 <strong>Measurement</strong>
 選擇單一數值欄位繪圖，且獨立於 Capture；無效讀值不會當成 0 繪製。
-<strong>5.1 Meters Setup</strong> 的 Allow Risk 警告
+<a href="guide-tool-setup.zh-TW.html">Meters 量測設定</a> 的 Allow Risk 警告
 適用於背景 Custom 模式。Stop 無法恢復遺失的讀值；停止後請核對擷取筆數與資料品質。</p>
+<h2 id="背景步驟與執行順序">背景步驟與執行順序</h2>
+<table>
+<thead>
+<tr>
+<th>步驟</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Worker ON</td>
+<td>啟動資料來源；可選同時 Capture ON</td>
+</tr>
+<tr>
+<td>Capture ON</td>
+<td>開始一組新的 Dataset</td>
+</tr>
+<tr>
+<td>Capture OFF</td>
+<td>完成該 Dataset，不停止 Worker</td>
+</tr>
+<tr>
+<td>Worker OFF</td>
+<td>停止並釋放來源；可選同時 Capture OFF</td>
+</tr>
+</tbody>
+</table>
+<p>例如：Worker ON（同時 Capture ON）→ Wait → Capture OFF → Worker OFF（取消同時 Capture OFF）。有限來源必須遵守設定筆數；若需要提早結束，使用 Stop Workflow。</p>
 <p>加入以下 Workflow Actions，再於 Step Properties 選擇 Background：</p>
 <ul>
 <li><strong>Worker ON</strong>：執行到該 Step 才啟動來源。Scopes 會先啟動等待狀態的
@@ -91,6 +211,7 @@ Slope 與 Delay 設定會交給工具處理；Simulation 不驗證實體觸發�
   Capture OFF，請取消勾選。有限來源尚未達到設定筆數就執行 Worker OFF，
   會使執行失敗；若要提早結束並保留部分資料，請使用 <strong>停止工作流程（Stop Workflow）</strong>。</li>
 </ul>
+<h3 id="有限來源與停止限制">有限來源與停止限制</h3>
 <p>重複 ON/OFF 會造成 Step Error。有限來源自然結束時會接收尾端資料並完成
 Dataset。之後第一次 Capture OFF 是確認自動收尾，第一次 Worker OFF 是釋放
 來源；第二次明確 OFF 才會失敗。已結束的來源不能再 Capture ON，必須先
@@ -99,11 +220,13 @@ Worker OFF 再重新 Worker ON。所有 Run 結束路徑（包含失敗）都會
 <p>選用的 FG/BG Data Buffer 與 Capture、Live Monitor 獨立。固定容量、
 FIFO／Ring 模式、Overflow 與讀取規則請見
 <a href="steps-background.zh-TW.html">Background 互動步驟</a>。</p>
+<h2 id="查看背景資料">查看背景資料</h2>
 <p><strong>輸出（Output）</strong> 同頁包含 <strong>圖表（Charts）</strong>、有啟用 Monitor 才顯示的 <strong>即時監視器（Live Monitors）</strong>、<strong>前景輸出（Foreground Output）</strong>、<strong>背景輸出（Background Output）</strong>，各自可收合。
 只有 Background 的 Run 也能使用 Charts 與 Background Output。該次 Last Run 有
 Background Binding 才顯示 Background Output；之後修改 Draft 不會隱藏既有結果。
 Background Output 的 Background／Capture Dataset 選擇控制其 Summary、Output Data 與匯出，
 與每張圖的選擇互相獨立。</p>
+<h3 id="建立背景圖表">建立背景圖表</h3>
 <p>在 <strong>圖表（Charts）</strong> 的 <strong>Chart settings</strong> 中，先選擇 <strong>Ground</strong>（Foreground 或 Background），
 再透過 <strong>頁面（Page）</strong> 選擇前景 Output Page 或背景資料來源，最後按 <strong>新增圖表（+ Add Chart）</strong>。
 每張圖表以不同顏色的 Foreground／Background 標籤與 Page／Background ID 顯示來源。
@@ -113,12 +236,15 @@ Background 圖表集中顯示。每張 Background Chart 有 <strong>Export PNG</
 主要提供 <strong>Capture Dataset</strong> 與 <strong>X-axis data</strong>（Elapsed Time／Timestamp／Sample Index）；
 Scopes 另外保留 <strong>Measurement</strong>。Background 來源在建立 Chart 時指定，
 若不再存在於目前 Draft 或 Last Run，可透過 <strong>Reassign source</strong> 選擇兩者皆有效的來源。
-選擇後立即套用，Chart 卡片仍顯示來源標籤與 <strong>Data summary</strong>。每張 Scopes Chart 只繪製單一欄位。若要比較不同項目，請使用多張 Chart，
-不要把不同單位混用同一條 Y 軸。Background 圖表可全部移除至零張。
-Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。
-Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
+選擇後立即套用，Chart 卡片仍顯示來源標籤與 <strong>Data summary</strong>。</p>
+<p>每張 Scopes Chart 只繪製單一欄位。若要比較不同項目，請使用多張 Chart，
+不要把不同單位混用同一條 Y 軸。</p>
+<p>Background 圖表可全部移除至零張。</p>
+<p>Settings 支援 Line、XY Scatter、Column、Area、Bar；執行中只有 Line 即時更新。</p>
+<p>Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Background 最新的 Dataset，
 之後保持選擇，不因新增 Dataset 自動跳換；新 Run 會重新選取。沒有 Dataset 時顯示等待資料，
 不以 Monitor Samples 替代。</p>
+<h3 id="圖表的資料量縮放與原始值">圖表的資料量、縮放與原始值</h3>
 <p>Background X 軸使用實際的 Elapsed Time（秒）、Timestamp 或 Sample Index；Hover 顯示
 實際繪製 Sample。抽樣時 Line／Area 保留峰值、谷值與端點；Scatter／Column／Bar 顯示代表性觀測值。
 <strong>Data summary</strong> 以 Total samples、In range、Plotted 顯示資料筆數及既有抽樣狀態。Line／Area／Column 的 Zoom
@@ -128,22 +254,26 @@ Foreground 保留原有所有圖型。每張圖首次有資料時預選該 Backg
 <p>Last Run 圖表在目前 Workflow 移除 Binding 後仍可查看與修改顯示設定，不會重建或改寫 Draft Binding。
 若啟用 <strong>將圖表儲存於範本（Save charts with template）</strong>，而圖表引用的 Background 已不在 Draft，Template Save
 會被阻止並指出需修正的圖表。可移除該圖、選擇有效來源，或關閉保存圖表設定。</p>
+<h3 id="即時監看與資料品質">即時監看與資料品質</h3>
 <p>Setup 啟用 <strong>Live Monitor</strong> 後，<strong>即時監視器（Live Monitors）</strong> 會在 Charts 下方獨立顯示，
 使用與 Charts 相同的外框與內部卡片樣式，兩區可各自收合；沒有啟用 Monitor 時整區隱藏。
 每張 Monitor 使用精簡的 <strong>Monitor info</strong> 說明：數值 Monitor 為最新 1,000 筆 Worker Samples
-的緩衝上限，Serial RX 則為最近的有限長度 Bytes；兩者皆獨立於 Capture。
-數值 Monitor 保留原本 Line 外觀、Hover 與 Zoom，Capture OFF 時仍可更新；Worker OFF 後停止更新，
+的緩衝上限，Serial RX 則為最近的有限長度 Bytes；兩者皆獨立於 Capture。</p>
+<p>數值 Monitor 保留原本 Line 外觀、Hover 與 Zoom，Capture OFF 時仍可更新；Worker OFF 後停止更新，
 新 Worker Runtime 會清空 Buffer。它沒有 Chart Settings、Add／Remove、Saved Chart、PNG、
-Dataset、Summary、CSV 或 XLSX，也不占圖表額度。Background Output 的 Summary 對 Meters
+Dataset、Summary、CSV 或 XLSX，也不占圖表額度。</p>
+<p>Background Output 的 Summary 對 Meters
 顯示 Dataset 筆數、最小／最大／平均值、狀態與品質；Scopes 則依 <strong>Measurement</strong>
 分別顯示有效／無效數量與有效值的最小／最大／平均值。Scopes 的 Output Data 會顯示
-選定的多個量測欄位，無效值留空，並可將滑鼠移到欄位上查看無效原因。
-<strong>Output Data</strong> 每頁 100 筆。
+選定的多個量測欄位，無效值留空，並可將滑鼠移到欄位上查看無效原因。</p>
+<p><strong>Output Data</strong> 每頁 100 筆。
 <code>no_loss_detected</code> 代表 Tool 的證據範圍，並非零遺失保證。</p>
+<h3 id="資料保留與取用">資料保留與取用</h3>
 <p>Capture 邊界依接收事件的處理順序，不代表硬體採樣時刻。完整 Samples 保留於
 本次 Run 的記憶體；新 Run 或 <strong>清除上次執行（Clear Last Run）</strong> 會釋放，沒有 History 或 Recovery
 Store。Capture Dataset 的 Samples 不會直接提供給 Workflow Variables、Calculation、
 Assert 或 ResultRows；需透過 FG/BG Interaction Steps 取得背景資料。</p>
+<h2 id="背景-csv-與手動匯出">背景 CSV 與手動匯出</h2>
 <p><strong>CSV Export → Stream Background CSV during Capture</strong> 與前景 CSV 獨立。
 可選 All Backgrounds 或單一 Background，並各自選擇輸出資料夾；預設
 <code>&lt;application folder&gt;/data</code>。Scopes 的 <strong>Scopes CSV columns</strong> 可在 Run 前選擇
@@ -159,7 +289,7 @@ XLSX，包含失敗 Run 已收到的部分資料。若選取 Scopes Dataset，�
 每檔預設 300,000 筆，<strong>Samples per XLSX file</strong> 可調整為 1 到 1,048,575。
 較大的 Dataset 會分檔而不截斷。檔名避免覆寫 Streaming 或先前 Manual 檔案。
 Capture OFF 與 Run 結束都不會自動執行 Manual Export。</p>
-<h2 id="9-streaming-csv">9. Streaming CSV</h2>
+<h2 id="前景-streaming-csv">前景 Streaming CSV</h2>
 <p>Streaming CSV 在 Workflow 區域的 <strong>CSV Export</strong> panel 設定，和 run 完成後再做的
 manual export 不同。此區塊在程式啟動時預設收合，點擊標題可展開或收合；收合只會
 隱藏控制項，不會改變其設定值。</p>

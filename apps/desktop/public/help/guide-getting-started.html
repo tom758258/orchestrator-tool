@@ -24,81 +24,167 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html" aria-current="page">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Getting Started</h1>
-<h2 id="1-overview">1. Overview</h2>
-<p>Orchestrator Tool Desktop coordinates independent external tools through a
-reusable Template. You can configure Tool Types, create logical Tool
-Instances, build an ordered Workflow, and run it in Simulation or Live mode.
-After a run, Desktop shows committed Results, Output Pages, Charts, and Data,
-and can export the available results.</p>
-<p>Desktop is the main workflow operation interface. External tools remain
-separate programs and distributions; they are not bundled into
-orchestrator-tool.</p>
-<h2 id="2-requirements">2. Requirements</h2>
-<ul>
-<li>The application is Windows-first.</li>
-<li>It uses the system Microsoft Edge WebView2 Runtime. If no usable WebView2
-  Runtime is detected, Desktop shows a native warning before creating the
-  Tauri WebView and can open Microsoft's official download page; the application
-  window is not created. If the availability check passes but the main
-  Tauri/WebView window still cannot initialize, Desktop shows a native startup
-  error with the underlying Tauri detail and exits. The application does not
-  download or install WebView2 automatically.</li>
-<li>Meters, Powers, Scopes, Serial, and Wavegen are independent external tool
-  distributions. Install and maintain those tools separately, then configure
-  their actual executable paths in Desktop.</li>
-</ul>
-<p>This guide does not assume an installer or package deployment flow for the
-external tools.</p>
-<h2 id="3-main-desktop-areas">3. Main Desktop areas</h2>
-<p>The Desktop tabs are:</p>
-<ul>
-<li><strong>Tools</strong> — configure each Tool Type's executable path and inspect its
-  availability and compatibility.</li>
-<li><strong>Setup</strong> — create Tool Instances, edit their per-instance setup, and save
-  or clear local Live Resources where supported.</li>
-<li><strong>Workflow</strong> — edit the ordered steps, validate the Template, run
-  Simulation or Live mode, request a graceful Stop, and configure CSV
-  streaming.</li>
-<li><strong>Output</strong> — inspect the Last Run, execution results, Output Pages, Charts,
-  Summary, Output Data, and manual exports.</li>
-</ul>
-<p>The top-right controls provide <strong>Appearance</strong>, <strong>Language</strong>, and <strong>Help</strong>.
-<strong>New Template</strong>, <strong>Open Template</strong>, and <strong>Save Template</strong> are grouped under
-<strong>Template</strong> on the left of the next row, while <strong>Execution Mode</strong> remains on
-the right. Help opens the bundled offline Desktop User Guide in a separate
-application window.</p>
-<p>The global <strong>Execution Mode</strong> selector controls the whole Desktop execution,
-not individual Tool Instances. Desktop starts in <strong>Simulation</strong>, and New
-Template or Open Template resets it to Simulation. The prominent
-<strong>SIMULATION · NO HARDWARE I/O</strong> or <strong>LIVE · REAL HARDWARE</strong> label and the same
-badge on every Tool Instance show the current target. The selector is locked
-while a Workflow or manual external operation is active. Execution Mode is
-session state; it is not saved in a Template or local configuration.</p>
-<p>All Tool Instances show this badge. The badge
-does not add runtime support for Wavegen. Scopes supports the selected
-Workflow actions described below.</p>
+<h2 id="what-orchestrator-tool-does">What Orchestrator Tool does</h2>
+<p>Orchestrator Tool runs reusable test and measurement workflows. You choose the instruments, arrange the steps, and inspect or export the results. The separate external tools handle communication with the instruments.</p>
+<pre><code class="language-text">Orchestrator Tool (Desktop)
+        |
+        +-- Meters Tool  --&gt; digital multimeter
+        +-- Powers Tool  --&gt; power supply
+        +-- Scopes Tool  --&gt; oscilloscope
+        +-- Serial Tool  --&gt; UART / TCP device
+</code></pre>
+<p>This is a conceptual diagram for Live mode. Simulation uses the tools' simulators instead. Wavegen is a separate project; Workflow execution with Wavegen is not supported yet.</p>
+<h2 id="what-you-need">What you need</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td>Use the Windows Desktop release and extract it to a folder.</td>
+</tr>
+<tr>
+<td>Microsoft Edge WebView2 Runtime</td>
+<td>Install the system runtime if it is missing.</td>
+</tr>
+<tr>
+<td>External tool EXEs</td>
+<td>Obtain the tools you need separately. See <a href="guide-external-tools.html">Configure External Tools</a>.</td>
+</tr>
+<tr>
+<td>Physical instruments</td>
+<td>Not needed for the Simulation tutorial. Required for Live operation with the relevant connections and supported devices.</td>
+</tr>
+</tbody>
+</table>
+<p>The application does not install WebView2 or external tools. If WebView2 is missing, the startup warning offers the official download page and the Desktop window is not created. If the check passes but the window still cannot initialize, Desktop shows a startup error with technical details and exits. Keep those details if you need help.</p>
+<h2 id="find-your-way-around">Find your way around</h2>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What you do there</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tools</td>
+<td>Set the external tool EXE paths; check availability and compatibility.</td>
+</tr>
+<tr>
+<td>Setup</td>
+<td>Add named Tool Instances, configure instruments and save local Live Resources where supported.</td>
+</tr>
+<tr>
+<td>Workflow</td>
+<td>Add and arrange steps, validate, run or stop, and configure CSV streaming.</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>Inspect the latest run, messages, charts, summary, data and export results.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Appearance</strong>, <strong>Language</strong>, and <strong>Help</strong> are at the upper right. The <strong>Template</strong> controls (New, Open and Save) are on the left of the next row; <strong>Execution Mode</strong> is on the right. Help opens this offline guide in a separate application window.</p>
+<h2 id="key-terms">Key terms</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tool Type</td>
+<td>Instrument category, such as Meters. Configure its EXE path once.</td>
+</tr>
+<tr>
+<td>Tool Instance</td>
+<td>A named set of instrument settings used by a workflow. A type can have multiple instances.</td>
+</tr>
+<tr>
+<td>Step</td>
+<td>An action in a workflow, such as measuring, waiting or outputting data.</td>
+</tr>
+<tr>
+<td>Template</td>
+<td>Reusable tool settings and workflow steps, without local EXE paths or measurement results.</td>
+</tr>
+<tr>
+<td>Worker</td>
+<td>An external tool process started by Orchestrator to perform instrument operations; no manual launch is needed.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="your-first-simulation">Your first Simulation</h2>
+<p>Start with one simulated multimeter measurement. You do not need an actual meter or VISA connection for this example.</p>
+<ol>
+<li>Extract Orchestrator Tool and a compatible Meters Tool release into separate folders. Open <code>Orchestrator Tool.exe</code>.</li>
+<li>In <strong>Tools</strong>, select <strong>Meters</strong>, choose <strong>Add Tool</strong>, and select <code>meters-tool.exe</code>. Confirm availability and compatibility.</li>
+<li>In <strong>Setup</strong>, add one Meters Tool Instance. Select <strong>DC Voltage</strong>, use Auto range and keep Background Streaming off. Use a supported NPLC and Auto Zero setting. Foreground uses Single measurement.</li>
+<li>In <strong>Workflow</strong>, choose the <strong>Meter Measure</strong> step in the Steps palette and press <strong>Add Step</strong>. Select the Meters instance in Properties. Add an <strong>Output</strong> step after Meter Measure.</li>
+<li>In Output Properties, choose a name (for example, <code>Voltage</code>) and a Page (for example, <code>Results</code>). Choose <strong>Previous step result</strong>, select the preceding Meter Measure step and its <strong>Value</strong> result.</li>
+<li>Keep <strong>Simulation</strong> selected. Use <strong>Validate</strong> to check the template, then <strong>Run Simulation</strong>.</li>
+<li>Open the <strong>Output</strong> tab. Check the execution status and the Results page: the Output column contains a simulated reading. The value is simulator data, not an actual voltage.</li>
+<li>When the run has ended, you can export the row as CSV or XLSX. Use <strong>Save Template</strong> to save the reusable workflow, not the measurement itself.</li>
+</ol>
+<pre><code class="language-text">Tools -&gt; Setup -&gt; Workflow -&gt; Run Simulation -&gt; Output
+                                           -&gt; Save Template
+</code></pre>
+<p>If an instrument category is unavailable, check whether you added the matching Tool Instance. If a run fails, read its error and see <a href="guide-troubleshooting.html">Troubleshooting and Safety</a>.</p>
+<h2 id="choose-the-execution-mode">Choose the execution mode</h2>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simulation</td>
+<td>Test the workflow without physical hardware I/O. Default at startup and after New or Open Template.</td>
+</tr>
+<tr>
+<td>Live</td>
+<td>Operate real hardware after saving resources and confirming the run.</td>
+</tr>
+</tbody>
+</table>
+<p>One mode applies to the entire execution, not to individual Tool Instances. The mode label and the label on each instance show <strong>SIMULATION · NO HARDWARE I/O</strong> or <strong>LIVE · REAL HARDWARE</strong>. The selector is locked while a workflow or manual external operation is active. The choice is temporary; it is not saved in a Template or local configuration. A badge does not indicate that Wavegen execution is supported.</p>
+<p>For real instruments, read <a href="guide-execution.html">Run Simulation and Live</a> and its safety requirements before changing the mode.</p>
   </main>
   <script>
     (() => {

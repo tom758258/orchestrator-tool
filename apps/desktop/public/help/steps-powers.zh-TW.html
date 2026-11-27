@@ -24,29 +24,65 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html" aria-current="page">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Powers 步驟</h1>
-<h4 id="power-set-output">Power Set Output</h4>
+<h2 id="電源供應器步驟總覽">電源供應器步驟總覽</h2>
+<table>
+<thead>
+<tr>
+<th>步驟</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Power Set Output</td>
+<td>設定電壓或電流限制，不會開啟輸出</td>
+</tr>
+<tr>
+<td>Power Output ON</td>
+<td>開啟選定通道輸出</td>
+</tr>
+<tr>
+<td>Power Output OFF</td>
+<td>關閉選定通道輸出</td>
+</tr>
+<tr>
+<td>Power Measure</td>
+<td>讀取實際電壓及電流</td>
+</tr>
+<tr>
+<td>Power Protection Status</td>
+<td>讀取保護觸發狀態，不會清除</td>
+</tr>
+</tbody>
+</table>
+<h3 id="選擇通道">選擇通道</h3>
 <p><strong>Power Set Output</strong>、<strong>Power Output ON</strong>、
 <strong>Power Output OFF</strong>、<strong>Power Measure</strong>，以及 <strong>Power Protection Status</strong> 的 <strong>Specific channel</strong>
 共用 Channel 下拉選單。選單僅列出目標 instance 的 capabilities 已確認支援的
@@ -58,6 +94,7 @@
 無法確認，儲存及重新載入時也會保留。既有 Channel binding 顯示為
 <strong>Bound channel (preserved)</strong>。只有明確選擇支援的固定通道，才會取代原通道值
 或其 binding；capabilities 不會自動改寫它。</p>
+<h2 id="power-set-output">Power Set Output</h2>
 <p>加入 <strong>Power Set Output</strong> 可設定通道的 Voltage、Current Limit，或同時設定兩者。
 Channel 為必填；兩個設定值至少須選取一項。使用 <strong>Set Voltage</strong> 與
 <strong>Set Current Limit</strong> 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
@@ -69,14 +106,17 @@ Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 變數解析後仍必須是數值，否則 Powers action validation 會失敗。
 <strong>Current Limit</strong> 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
 電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 <strong>Power Output ON</strong>。</p>
-<h4 id="power-measure">Power Measure</h4>
+<h2 id="power-output-on-off">Power Output ON / OFF</h2>
+<p>選擇目標 Powers 實例與支援的 Channel。ON 開啟該通道輸出，OFF 關閉。設定電壓或電流限制不會自動開啟輸出。真實硬體操作須先確認接線與安全限制，並完成 Live 確認。</p>
+<p>模擬範例：Power Set Output → Power Output ON → Power Measure → Power Output OFF。真實硬體須依設備限制選擇安全設定值，流程結束後的 Safe-Off 仍會執行。</p>
+<h2 id="power-measure">Power Measure</h2>
 <p>加入 <strong>Power Measure</strong> 可對指定通道量測一次實際 Voltage（V）與 Current（A）。
 此唯讀步驟使用固定 Channel 下拉選單，不會啟用輸出或修改 setpoints。
 後續 Output、Assert、Calculation 可透過 Step Output 選取 <strong>Voltage</strong> 或
 <strong>Current</strong>；數值 JSON Pointer 分別為 <code>/data/measurements/voltage</code> 與
 <code>/data/measurements/current</code>。此功能僅供 Foreground Workflow 使用，不啟動
 Background Streaming。若沒有新增 Output step，量測結果不會自動成為 Result column。</p>
-<h4 id="power-protection-status">Power Protection Status</h4>
+<h2 id="power-protection-status">Power Protection Status</h2>
 <p>加入 <strong>Power Protection Status</strong> 可讀取 protection trip 狀態，不會改變儀器設定。
 Channel 可選 <strong>All</strong>，或選擇 <strong>Specific channel</strong> 後從 Channel 下拉選單指定通道。
 主動從 All 切換至 Specific 時，會選取第一個支援的通道。capabilities 不可用或

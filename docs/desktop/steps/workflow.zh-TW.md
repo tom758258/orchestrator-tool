@@ -2,7 +2,23 @@
 
 <!-- help-source -->
 
-### 6.2 For
+## 基本步驟
+
+| 步驟 | 設定與用途 | 範例 |
+| --- | --- | --- |
+| Wait | 等待指定時間（毫秒） | 500 ms 等待半秒 |
+| Set Variable | 指定名稱及值來源，建立或更新變數 | x = 5 |
+| Assert | 比較左右值；條件不成立時流程失敗 | 比較量測值是否大於 0 |
+| Output | 選擇名稱、Page、值來源，將結果加入資料表 | Voltage = Measure 的量測值 |
+
+這些步驟不需要 Tool Instance；只有引用儀器步驟結果時才需要相關的量測。Assert 可提供失敗訊息。請參閱[輸入值與資料流](input-values.zh-TW.md)了解可用的值來源及比較規則。
+
+## For：依指定範圍重複
+
+```text
+範例：Start = 1, Stop = 3, Step = 1
+i = 1 -> Body -> i = 2 -> Body -> i = 3 -> Body -> 結束
+```
 
 For step 具有 **Start**、**Stop**、**Step**、loop variable 與 body。
 
@@ -15,7 +31,17 @@ For step 具有 **Start**、**Stop**、**Step**、loop variable 與 body。
 For ranges 使用 exact decimal range semantics，而不是 floating-point tolerance。
 Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了湊整而額外執行一次。
 
-### 6.3 While
+## While：條件成立時重複
+
+```text
+檢查條件 -- 否 --> 結束
+    |
+    是
+    v
+  執行 Body
+    |
+    +----> 回到條件檢查（遵守次數上限）
+```
 
 While condition 會在每次 iteration 前判斷。Iteration limit 可以是：
 
@@ -25,6 +51,8 @@ While condition 會在每次 iteration 前判斷。Iteration limit 可以是：
 若 condition 一開始就是 false，body 執行 0 次。Unlimited While 可位於
 root 或沒有 For／While 祖先的 If 分支內。Body 不可為空，可包含 finite nested
 loops，但不可再包含另一個 Unlimited While。
+
+### 模擬量測筆數限制
 
 Software Meters **Measure** 位於 Unlimited While，且 Simulation 無法預先推導
 來源大小時，**執行模擬（Run Simulation）** 會顯示 Sample 警告。每個受影響 Instance 的
@@ -37,12 +65,30 @@ Measure 不會套用這個 Simulation 上限。
 前景 Meters 在 Simulation 與 Live 都只使用 Single。若要每次取得一批讀值，
 或使用 Immediate、External 觸發，請將該 Instance 設為 Background。
 
+## If / Else：條件判斷
+
+```text
+            條件
+          /      \
+       成立      不成立
+       THEN       ELSE
+          \      /
+          繼續流程
+```
+
 If step 每次只判斷一次 condition，只執行 THEN 或 ELSE。選取 If 後可
 指定新增 Steps 的分支，也可獨立拖曳及貼上。分支新建的 Variables 與
 Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Output
 沿用外層 Page Row Scope，未執行的分支欄位保持空白，If 不額外新增 Row。
 
-### 6.4 Stop Workflow 與迴圈 Stop
+## 停止工作流程與停止迴圈
+
+| 操作 | 效果 |
+| --- | --- |
+| Stop Workflow | 停止整次工作流程，等待必要的安全收尾 |
+| Stop / Stop Loop ID | 完成當前迴圈的有效資料後退出指定迴圈，外層流程可繼續 |
+
+### 停止整次工作流程
 
 Simulation 或 Live 顯示 Running 時，即可按 **停止工作流程（Stop Workflow）**，包含啟動期間
 及沒有迴圈的 Workflow。此操作會停止整個 Workflow：
@@ -66,6 +112,8 @@ Background Dataset 的完整性與品質，分別依實際資料及 Worker 證�
 沒有啟用 Capture 的 Worker 停止時不會建立 Dataset。缺少終止證據、Sample
 缺漏、Overflow 與 CSV 錯誤仍屬失敗。
 
+### 只停止指定迴圈
+
 獨立的 **Stop** / **Stop <Loop ID>** 控制項維持原有的迴圈停止行為：
 
 1. 目前最內層迭代會繼續執行到成功提交資料的時點。
@@ -75,7 +123,7 @@ Background Dataset 的完整性與品質，分別依實際資料及 Worker 證�
 迭代失敗優先於迴圈 Stop。迴圈 Stop 本身不會將整個 Run 標為 Stopped；
 最終狀態仍依一般 Workflow 成功規則判定。
 
-### 6.5 Output Pages
+## Output Pages：資料分頁
 
 Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的 columns；
 不同 Pages 是獨立 datasets，nested loop 也可以擁有自己的 Page。
@@ -88,7 +136,7 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 與 Assert 正常引用。只有所屬流程區段或迴圈次數成功結束，才會保存該次 Output 列；
 後續步驟失敗時，尚未保存的列會捨棄。背景讀值獨立記錄於 Capture Dataset。
 
-### 6.6 Show Message
+## Show Message：顯示訊息
 
 **Show Message** step 會在 Workflow 執行時將文字寫入 Messages Panel。它唯一的用途
 就是輸出訊息：不是 Popup、不是 Assert，也不是 Output Page，因此不會為你的資料、CSV
@@ -104,7 +152,7 @@ Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的
 - **輸出（Output）** field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
   目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
   Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
-  其他 step。Show Message 的 Output 必須是單一數值。若參考
+  其他 step。Show Message 的 Output 必須是單一純量（數值、文字、Boolean 或 null）。若參考
   的值不是單一數字、文字、Boolean 或 null，該 step 會明確報錯，不會寫出部分訊息。
 - **Newline** 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。
@@ -129,12 +177,14 @@ Double: 6000
 因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
 目前的 iteration，不會取用上一輪的值。
 
-### 6.7 String Process 與 Byte Process
+## String Process 與 Byte Process
 
 這兩個 Workflow Step 不需要 Tool Instance。每個資料參數均可使用 Fixed value、
 Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time 或 Timestamp。
 結果可由後續 Step 選擇 Value（JSON Pointer `/value`）取得。不修改來源 Variable，
 也不自動建立 Output 欄位。
+
+### 編輯固定字串
 
 Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 `\r` 表示 CR、
 `\n` 表示 LF、`\\` 表示原本的反斜線，其他反斜線組合保持文字原樣。
@@ -147,6 +197,8 @@ Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 `\r` �
 每個輸入與輸出字串最多為 1 MiB（1,048,576 個 UTF-8 Bytes）。超出限制時 Step
 執行失敗，不會自動截斷資料。此限制不改變既有 Variable、Serial RX 或 Capture Dataset
 的容量限制。
+
+### 文字處理
 
 **String Process** 以 Unicode code point 而非 UTF-8 Bytes 計算文字。索引從 0 開始，
 搜尋區分大小寫。
@@ -166,6 +218,8 @@ Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 `\r` �
 
 空 Search String、索引超出範圍、型態錯誤、無效或非有限數值轉換，以及非零數值下溢為零，均使 Step 失敗。
 例如 `STATUS:PASS` 使用 Substring，Start Index 7、Length 4，回傳 `PASS`。
+
+### 位元組處理
 
 **Byte Process** 處理 Hex String 所代表的原始 Bytes。Hex 輸入接受大小寫與完整 Byte
 之間的空白；Hex 輸出統一大寫且不含空白。無空白的 Hex String 在字串上限內最多
@@ -197,7 +251,7 @@ Byte Count 2、MSB First、Unsigned；`/value` 為 3300，後續 Calculation 除
 這些 Step 只處理已取得的資料，不組裝 Serial RX 封包、不配對 TX／RX，
 也不改變 Serial Send 能力。
 
-### 6.8 Array Process
+## Array Process：陣列處理
 
 Array Process 是獨立於 FG/BG Interaction 的 Workflow Step。從
 **Variable** 或 **Previous step result** 選取既有 Array，例如
@@ -209,3 +263,11 @@ Get Buffer Data 的 `/data`；不提供 Fixed Value Array 編輯器。
 逐筆處理時可設定 i=0，以 While 判斷 i 小於取得筆數，使用 Get Item 的 Index i，
 處理該筆後以 Calculation 將 i 加 1。不新增全域 Array 大小限制；
 取出的字串交給 String／Byte Process 時仍適用原有字串限制。
+
+
+| Array Process 操作 | 結果 |
+| --- | --- |
+| Length | 組數；空陣列為 0 |
+| Get Item | 從 0 開始的索引所對應的元素 |
+
+範例：陣列 [10, 20, 30] 的 Length 為 3；Get Item 的 Index = 1 回傳 20。

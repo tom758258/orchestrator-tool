@@ -2,17 +2,29 @@
 
 <!-- help-source -->
 
-### 6.1 Input values 與 data flow
+## 選擇輸入值來源
 
-Editor 目前的 InputValue 選項是：
+| 來源 | 用途 | 範例 |
+| --- | --- | --- |
+| Fixed value | 直接輸入固定值 | 3.3 |
+| Variable | 使用工作流程的變數 | voltage |
+| Previous step result | 使用較早且可引用的步驟結果 | Measure 量測值 |
+| Calculation | 四則運算、比較或取整 | voltage × 2 |
+| Elapsed time | 執行期間經過的時間 | 10.5 秒 |
+| Timestamp | 執行期間的日期時間 | 2026-10-12T23:24:10.123+08:00 |
 
-- **Fixed value** — literal value。
-- **Variable** — Workflow variable 的目前值。
-- **Previous step result** — 較早且可見的 step result。目前 UI 會提供先前
-  Tool Actions、BG Get Latest／Wait Next／Get Command Result／Get Buffer Data／Get Buffer Status，以及 String Process／Byte Process／Array Process 的 results。
-- **Calculation** — 四則運算／比較使用左右兩個 operand；Round、Floor、Ceil、Trunc 僅使用一個 operand（Round 的 0.5 中點遠離零、Trunc 朝零捨去小數）。
-- **Elapsed time** — runtime elapsed-time value。
-- **Timestamp** — runtime timestamp value。
+Previous step result 提供較早的 Tool Action、BG Get Latest／Wait Next／Get Command Result／Get Buffer Data／Get Buffer Status，以及 String／Byte／Array Process 結果。通常在下拉選單選擇結果名稱即可，特殊欄位才需要自訂 JSON Pointer（資料路徑）。
+
+Calculation 的四則運算與比較使用兩個運算元；Round、Floor、Ceil、Trunc 使用一個。Round 的 0.5 中點遠離零；Trunc 朝零捨去小數。
+
+```text
+Measure -> Set Variable: voltage -> Output: voltage
+  3.3 V           3.3                   3.3
+```
+
+這是資料流示意，並非實際量測結果。
+
+## 資料型態與比較
 
 Set Variable 會建立或更新 variables。Fixed value 支援 Number、String、Boolean、Null。
 Boolean 使用 True／False 選項；Null 不需額外輸入。String 的 "true" 與 "null" 是文字，
@@ -24,6 +36,8 @@ Equality 不進行型別轉換，字串區分大小寫；arithmetic 與大小比
 缺少的 Variable 或 Result Path 是錯誤，不是 Null。
 Calculation 不是任意 nested expression tree。
 
+## 經過時間及日期時間
+
 Output 的 **Elapsed time** 來源提供 **Time Format**：**Seconds**（預設）、
 **Minutes:Seconds**、**Hours:Minutes:Seconds** 與 **Days (Decimal)**。分鐘與小時
 可累積超過 60 分鐘與 24 小時；Output Data 的秒數顯示三位小數，十進位天數顯示
@@ -34,6 +48,8 @@ Output 的 **Elapsed time** 來源提供 **Time Format**：**Seconds**（預設�
 完整 UTC+08:00 日期時間，跨午夜也不會丟失日期。設定屬於各個 Output，Template
 儲存／載入及 Step 複製／貼上會保留；切換 Value Source 時清除舊時間設定。
 Set Variable 與 Tool Action 的時間來源維持原有行為。
+
+## 將結果加入資料表
 
 只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。

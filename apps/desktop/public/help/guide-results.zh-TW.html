@@ -24,29 +24,64 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html" aria-current="page">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>執行結果</h1>
-<h2 id="10-run-results">10. Run Results</h2>
+<h2 id="輸出頁籤導覽">輸出頁籤導覽</h2>
+<table>
+<thead>
+<tr>
+<th>區域</th>
+<th>可以查看什麼</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Last Run Execution Results</td>
+<td>步驟執行狀態及錯誤</td>
+</tr>
+<tr>
+<td>Messages</td>
+<td>Show Message 文字訊息</td>
+</tr>
+<tr>
+<td>Charts / Live Monitors</td>
+<td>圖表及即時監看</td>
+</tr>
+<tr>
+<td>Foreground Output</td>
+<td>前景的 Output Page、統計及資料</td>
+</tr>
+<tr>
+<td>Background Output</td>
+<td>背景 Capture Dataset、統計及資料</td>
+</tr>
+</tbody>
+</table>
 <p>Run 後，Output 區域目前可顯示以下 visible sections：</p>
 <ul>
 <li><strong>Last Run Execution Results</strong> — execution statuses 與 progress results；大量
@@ -58,7 +93,10 @@
 <li><strong>Summary</strong> — 適用時顯示 numeric Count、Min、Max 與 Avg。</li>
 <li><strong>Output Data</strong> — 所選 Page 的 committed rows，以 latest first 顯示。</li>
 </ul>
-<h3 id="101-last-run">10.1 Last Run</h3>
+<h2 id="last-run最近一次執行">Last Run：最近一次執行</h2>
+<blockquote>
+<p><strong>注意：</strong> Orchestrator 只保留最近一次執行的資料，不是測試紀錄管理系統。要長期保存量測資料，請在開始新執行或離開程式前匯出。</p>
+</blockquote>
 <p>Desktop 只在 memory 中保留一個 <strong>Last Run</strong>，沒有 Run History、database 或 SQL
 storage。</p>
 <p>Run 開始時 Desktop 會保存該次 run 的 Workflow snapshot。之後修改目前 Workflow
@@ -69,7 +107,7 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 被呈現為 real-hardware success。</p>
 <p>若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
 停止後可以 manual export。</p>
-<h3 id="102-收合結果面板">10.2 收合結果面板</h3>
+<h2 id="查看及收合結果面板">查看及收合結果面板</h2>
 <p>Foreground Output 的 Source 卡片提供 Output Page 下拉選單、目前頁數與操作說明；切換後會更新 Summary、Output Data 及所選 Page 的匯出範圍。Background Output 的 Source 卡片提供 Background、Capture Dataset 選擇及 Worker 狀態。兩區的匯出選項都集中在 Output Data 下方的 Export settings。</p>
 <p>Background 數值 Summary 與 Output Data 使用和 Foreground 相同的表格樣式，並共用 Auto、Fixed、Raw 的 Number display 設定；這些設定不改變儲存資料或匯出精度。Background Summary 只顯示 Dataset 已有的統計，Scopes 保留 Valid／Invalid，Serial RX 則顯示事件與 Bytes 數量。Background 仍使用每頁 100 筆資料，不與 Foreground Output Page 混用。</p>
 <p>Background Source 的 Background 與 Capture Dataset 下拉選單在寬視窗並排，窄視窗則自動換行。Dataset 超過 100 筆才顯示分頁按鈕，並沿用專案標準按鈕樣式。Foreground Export settings 會依目前選項說明將選擇檔案或資料夾；Background Export settings 固定選擇目的資料夾，匯出完整的所選或全部 Datasets，不只目前顯示的資料列。Background 匯出按鈕依所選格式顯示名稱。</p>
@@ -84,11 +122,42 @@ Charts 收合時仍顯示 <strong>將圖表儲存於範本（Save charts with te
 資料、不會停止 run，也不會清除結果。重新展開後會回到原本的結果清單位置。</p>
 <p><strong>Last Run Execution Results</strong> 收合後仍保留標題、Execution Mode badge 與 execution
 數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。</p>
+<h3 id="如何閱讀錯誤訊息">如何閱讀錯誤訊息</h3>
 <p>Failed run 與 failed execution record 會先顯示簡短、較容易理解的錯誤說明。原始錯誤仍保留在
 <strong>Technical details</strong> 下方供除錯使用。這層說明只在 failure 出現；successful 與 cancelled
 execution record 維持既有 compact display。Instrument-specific 的 SCPI/VISA 細節會原樣
 保留，不由 Desktop 猜測或重新解讀。</p>
-<h3 id="103-messages">10.3 Messages</h3>
+<h2 id="messages流程訊息">Messages：流程訊息</h2>
+<table>
+<thead>
+<tr>
+<th>設定或限制</th>
+<th>行為</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Message 1 / 2 / 3</td>
+<td>三個獨立頁籤</td>
+</tr>
+<tr>
+<td>排列順序</td>
+<td>舊訊息在上，最新在下</td>
+</tr>
+<tr>
+<td>保留數量</td>
+<td>每頁籤最近 1,000 筆；摘要仍顯示總數</td>
+</tr>
+<tr>
+<td>單則字數</td>
+<td>最多 4,096 字元，超過會截短</td>
+</tr>
+<tr>
+<td>匯出</td>
+<td>不提供</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Messages</strong> 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：<strong>Message
 1</strong>、<strong>Message 2</strong> 與 <strong>Message 3</strong>，由 step 選擇要寫入哪一個。每個 tab 依 workflow
 產生的順序顯示訊息，<strong>舊訊息在上、最新訊息在下</strong>，因此 loop 的輸出可以由上往下閱讀。

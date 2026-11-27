@@ -2,7 +2,27 @@
 
 <!-- help-source -->
 
-### FG/BG Interaction
+## Foreground/background interaction (FG/BG Interaction)
+
+Foreground runs ordered workflow steps; Background can acquire data while the foreground runs other steps. Interaction steps let the foreground access background data or dispatch supported commands.
+
+```text
+Setup: Enable Background Streaming
+    -> Workflow: Enable FG/BG Interaction
+    -> Worker ON
+    -> BG Command (optional) / Get Latest / Wait Next / Buffer
+    -> Worker OFF
+```
+
+| Interaction step | Purpose |
+| --- | --- |
+| BG Command | Dispatch a supported background command |
+| Get Latest | Immediately read the latest event |
+| Wait Next | Wait for the first subsequent event |
+| Get Command Result | Obtain the specified BG Command result |
+| Get Buffer Data / Status | Read buffered data or check status (requires Enable Buffer) |
+
+### Enable interaction
 
 The **FG/BG Interaction** settings panel is at the bottom of the Workflow
 sidebar, below **Chart Options**, and starts collapsed. Without a Background
@@ -12,8 +32,9 @@ to unlock interaction Steps. Removing the last unreferenced Background binding
 disables Interaction and Buffer but retains the command capacity value. **Max Active Command Status**
 defaults to **4096** and accepts **1–65536**. It is shared across Backgrounds
 for commands still being tracked, not cumulative commands in a Run. All
-settings, including the required Buffer settings, are saved with the Template. Version 0.3.0 requires the current
-Template format; older Templates without these settings cannot be loaded.
+settings, including the required Buffer settings, are saved with the Template. Older Templates missing these required settings cannot be loaded; see [Templates and Preferences](../guide/templates-and-settings.md).
+
+### Run interaction steps
 
 First enable Background Streaming for the Tool Instance in Setup, then add
 **Worker ON** before interaction Steps. Interaction does not start a Worker
@@ -44,6 +65,8 @@ Scopes numeric cycles and Serial RX events. Command/Result is unavailable for
 Custom batches and Scopes. Serial Command/Result supports TX only; Latest/Next
 continue to return RX events. Powers and Wavegen do not support Background.
 
+### Timeout and command limits
+
 **Step timeout (ms)** is optional; blank uses the action timeout. One deadline
 covers the whole Step. Each Background can retain one requested result; consume
 it before sending another command whose result is needed. Busy or capacity
@@ -54,6 +77,8 @@ result remains reserved until its enclosing Loop iteration ends, or until Run
 end for a command outside Loops. Consume it before sending another command
 whose result is needed in the same scope.
 
+### Stop and cleanup
+
 Normal Run end waits for outstanding commands with one action timeout. Worker OFF
 waits for required commands within its own deadline. Unread results add no wait;
 existing finite sample-count and capture-quality rules still apply. Stop Workflow
@@ -63,7 +88,20 @@ confirmed, the same resource remains blocked even if you switch to timer
 triggering or Foreground use. Verify the external tool is stopped before
 restarting the application; restarting alone does not verify shutdown.
 
-### Data Buffer (optional)
+## Data Buffer (optional)
+
+```text
+Illustration with capacity 4 (not the actual limit)
+FIFO: [1][2][3][4] + 5 -> [1][2][3][4], drop 5
+Ring: [1][2][3][4] + 5 -> [2][3][4][5], remove 1
+```
+
+| Overflow Policy | When capacity is insufficient |
+| --- | --- |
+| Fail Run (default) | Fail the run and clean up |
+| Continue | Keep running and retain loss status |
+
+Buffer is independent of Capture and Live Monitor. Actual capacity is at most 1,024 events and 16 MiB per Worker.
 
 In the same FG/BG Interaction panel, enable **Enable Buffer** after enabling
 FG/BG Interaction. It defaults to OFF. Select FIFO or Ring Buffer and Overflow
@@ -80,6 +118,8 @@ a fatal event-processing error from the same event or an earlier failure.
 Capture, Latest, Next and Command Result are separate; Buffer loss is not
 itself Capture loss.
 
+### Read and inspect the buffer
+
 - **Get Buffer Data**: select a Background, Peek or Pop, Count or ALL. Count
   accepts 1–1024 as Fixed Value, Variable or Previous step result. Returns
   immediately, oldest first, up to Count (or all present); if empty, count is
@@ -88,6 +128,8 @@ itself Capture loss.
   the selection. Peek and a later Pop do not guarantee identical data.
 - **Get Buffer Status**: select a Background. Reads status without reading or
   removing events. Neither Buffer Step waits for data or has a Step timeout.
+
+### Result fields
 
 Get Buffer Data returns `/count` (actual read count), `/data` (complete native
 events as Array) and `/status/...` (snapshot after reading). Get Buffer Status
@@ -113,4 +155,3 @@ FG Array remains subject to its normal Step Output or Variable scope.
 Use Array Process Length or Get Item with `/data` to process the batch.
 Serial RX events are not necessarily complete packets; no packet reassembly
 or automatic TX/RX matching is provided.
-

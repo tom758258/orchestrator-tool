@@ -2,12 +2,47 @@
 
 <!-- help-source -->
 
-### 10.4 Charts
+## Choose a chart
 
-Charts use Apache ECharts with a Canvas renderer. A Foreground chart belongs to one
+1. In Output, expand Charts.
+2. Under Chart settings, select Ground (Foreground or Background) and the Page/background source, then **+ Add Chart**.
+3. Choose the data to plot; use Settings → General to choose a chart type and Apply.
+4. Only Line updates during a run; other types wait for execution to finish.
+
+The table describes the available types. All types support foreground numeric outputs; background numeric charts require a supported source (Meters/Scopes, not Serial RX).
+
+<div class="help-chart-grid">
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Line"><title>Line</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Line</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="XY Scatter"><title>XY Scatter</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><circle cx="20" cy="48" r="2.5" fill="currentColor"/><circle cx="30" cy="41" r="2.5" fill="currentColor"/><circle cx="38" cy="49" r="2.5" fill="currentColor"/><circle cx="50" cy="30" r="2.5" fill="currentColor"/><circle cx="62" cy="38" r="2.5" fill="currentColor"/><circle cx="72" cy="22" r="2.5" fill="currentColor"/><circle cx="90" cy="26" r="2.5" fill="currentColor"/><circle cx="101" cy="10" r="2.5" fill="currentColor"/></svg><figcaption>XY Scatter</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Column"><title>Column</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="19" y="42" width="9" height="15" fill="currentColor" opacity=".75"/><rect x="32" y="28" width="9" height="29" fill="currentColor" opacity=".75"/><rect x="45" y="37" width="9" height="20" fill="currentColor" opacity=".75"/><rect x="58" y="14" width="9" height="43" fill="currentColor" opacity=".75"/><rect x="71" y="32" width="9" height="25" fill="currentColor" opacity=".75"/><rect x="84" y="21" width="9" height="36" fill="currentColor" opacity=".75"/><rect x="97" y="10" width="9" height="47" fill="currentColor" opacity=".75"/></svg><figcaption>Column</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Area"><title>Area</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M15 57V46L30 27L47 35L63 15L80 29L98 8L109 16V57Z" fill="currentColor" opacity=".25"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Area</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Bar"><title>Bar</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="15" y="12" width="35" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="22" width="74" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="32" width="53" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="42" width="87" height="7" fill="currentColor" opacity=".75"/></svg><figcaption>Bar</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Combo"><title>Combo</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="19" y="43" width="9" height="14" fill="currentColor" opacity=".75"/><rect x="32" y="27" width="9" height="30" fill="currentColor" opacity=".75"/><rect x="45" y="40" width="9" height="17" fill="currentColor" opacity=".75"/><rect x="58" y="18" width="9" height="39" fill="currentColor" opacity=".75"/><rect x="71" y="31" width="9" height="26" fill="currentColor" opacity=".75"/><rect x="84" y="24" width="9" height="33" fill="currentColor" opacity=".75"/><rect x="97" y="13" width="9" height="44" fill="currentColor" opacity=".75"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Combo</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Histogram"><title>Histogram</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><g fill="currentColor" opacity=".75"><rect x="18" y="49" width="12" height="8"/><rect x="30" y="37" width="12" height="20"/><rect x="42" y="16" width="12" height="41"/><rect x="54" y="8" width="12" height="49"/><rect x="66" y="24" width="12" height="33"/><rect x="78" y="41" width="12" height="16"/><rect x="90" y="50" width="12" height="7"/></g></svg><figcaption>Histogram</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Box &amp; Whisker"><title>Box &amp; Whisker</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M25 14V50M21 14H29M21 50H29M60 8V45M56 8H64M56 45H64M95 21V55M91 21H99M91 55H99" stroke="currentColor" fill="none"/><rect x="17" y="23" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M17 30H33" stroke="currentColor"/><rect x="52" y="25" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M52 32H68" stroke="currentColor"/><rect x="87" y="27" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M87 34H103" stroke="currentColor"/><circle cx="95" cy="11" r="2.5" fill="currentColor"/></svg><figcaption>Box &amp; Whisker</figcaption></figure>
+</div>
+
+The figures illustrate chart types, not measured data.
+
+| Type | Purpose | Live updates during run | Zoom | Background |
+| --- | --- | --- | --- | --- |
+| Line | Trend across iterations | ✓ | ✓ | ✓ |
+| XY Scatter | Relationship between X and Y | — | — | ✓ |
+| Column | Vertical bars | — | ✓ | ✓ |
+| Area | Filled trend | — | ✓ | ✓ |
+| Bar | Horizontal bars | — | — | ✓ |
+| Combo | Mix column and line series | — | ✓ | — |
+| Histogram | Distribution of values | — | — | — |
+| Box & Whisker | Spread and outliers | — | — | — |
+
+### Chart count and sources
+
+A Foreground chart belongs to one
 Output Page and can plot numeric Outputs from that Page. Session-only and saved Foreground and
 Background Charts share a maximum of eight. Live Monitor and Background bindings
 without a Chart configuration do not count toward this limit.
+
+## Save chart settings
 
 Charts are session-only by default. The Charts heading includes **Save charts
 with template**, which is off by default. Enable it when the current chart
@@ -29,12 +64,25 @@ state, dialog state, or export destinations/paths. The Workflow **Chart
 Options** described below remain session options even when Charts are saved
 with the Template.
 
+## Workflow Chart Options
+
+| Option | Purpose | Takes effect |
+| --- | --- | --- |
+| Preserve Significant Changes | Keep extra significant changes when downsampling | Next run |
+| Show Significant Change Markers | Mark representative points meeting the threshold | Next run |
+| Fit Data | Fit automatic Y-axis to the data range | Next run |
+| Show All Raw Data (per-chart Settings) | Show all loaded data in the visible range | Immediately |
+
+The first three apply to Line, default off and are not saved in the Template; the last belongs to each chart.
+
 Chart Options sits in the narrow Workflow sidebar immediately below
 **CSV Export**. The outer **Chart Options** panel, its **Sampling** section, and
 its **Y-axis** section can each be expanded or collapsed independently.
 **Chart Options** starts collapsed when the application opens; **Sampling** and
 **Y-axis** each start expanded inside it. Collapsing a section only hides its
 controls and does not change their values.
+
+### Advanced: downsampling and significant changes
 
 The **Sampling** section applies to both Simulation and Live Line Charts.
 **Preserve Significant Changes** is **off** by default, and the positive finite
@@ -64,6 +112,8 @@ A blank, zero, negative or non-finite percentage blocks Run when Preserve
 Significant Changes is enabled; Simulation and Live use the same parser. Zero to
 nonzero counts as 100%, and zero to zero counts as 0%.
 
+### Fit the Y-axis to data
+
 The **Y-axis** section contains **Fit Data**, which is **off** by default and
 applies to Simulation and Live Line Charts. With Fit Data off, the automatic
 Y-axis keeps the existing behavior and may include zero. With Fit Data on, the
@@ -77,6 +127,8 @@ Last Run. They are Desktop session options, not Template data. Changing these
 controls after RUN does not change the current Last Run chart; start a new run
 to use the new settings.
 
+### Show raw data and performance warning
+
 For a Line Chart, **Chart Settings → General → Show All Raw Data** (off by
 default) bypasses plotted-point downsampling and draws every loaded raw sample
 in the visible X range, including the two neighboring clipping samples when
@@ -87,6 +139,8 @@ Desktop interface or make it temporarily unresponsive, especially during Live.
 None of these display options modify committed Raw Data, CSV/XLSX exports or
 non-Line charts.
 
+## Detailed chart settings
+
 Only **Line** supports live updates while execution is running. After execution stops, any run
 with committed numeric rows, including a failed run, can select **Line**,
 **XY Scatter**, **Column**, **Area**, **Bar**, **Combo**, **Histogram**, or
@@ -94,6 +148,16 @@ with committed numeric rows, including a failed run, can select **Line**,
 Iteration trend; Area fills below the line; Column uses vertical grouped bars;
 Bar uses horizontal grouped bars; and XY Scatter compares numeric X and Y
 values.
+
+### Settings tabs
+
+| Tab | Main purpose |
+| --- | --- |
+| General | Type, title and general options |
+| Series | Series colors, lines and markers |
+| Axes | Axis settings and zoom |
+| Analysis | Statistical analysis options |
+| Export | PNG background |
 
 Chart Settings has five tabs: **General**, **Series**, **Axes**, **Analysis**,
 and **Export**. Series contains per-Output **Auto** or **Custom color**, Line
@@ -111,14 +175,18 @@ automatic colors.
 Histogram. When switching to Histogram with multiple Outputs selected,
 **Apply** keeps the first selected Output.
 
+### XY Scatter and Combo
+
 A chart panel can select multiple **Outputs** to compare numeric series.
 Scatter **X source** can be Iteration, any numeric Output, or a Timestamp Output, and an Output used
 only as Scatter X does not need to be selected as a Y series. **Display** can
 show Markers, Lines, or Lines + markers. Scatter **Marker size** and **Line
 width** accept positive finite numbers and apply to the modes that show them.
+
 Scatter keeps raw X/Y pairs in original row order, including nonmonotonic X
 values; Lines connect those pairs in that order. Timestamp X uses the full date/time
 as an absolute millisecond coordinate, so it remains continuous across midnight.
+
 X labels and hover use that Output's Include Date / Include UTC Offset options in
 fixed UTC+08:00, independent of the computer timezone. Timestamp is excluded from
 Y series, Summary, Histogram, and other measurement statistics. Elapsed X retains
@@ -127,10 +195,13 @@ values follow the Output's Time Format. In Chart Settings, X-axis **Minimum**,
 **Maximum**, and **Major unit** always use raw seconds, including when labels show
 minutes, hours, or decimal days. Scatter hover uses screen-space
 proximity; line displays may be selected through a visible segment but always
-report an actual raw row rather than an interpolated measurement. Combo
-requires at least two selected Outputs; each Output can use Column, Line, or
+report an actual raw row rather than an interpolated measurement.
+
+Combo requires at least two selected Outputs; each Output can use Column, Line, or
 Line + markers rendering and the Left Y or Right Y axis. The two Y axes are
 configured independently, and Combo supports Iteration X-axis zoom.
+
+### Histogram and Box & Whisker
 
 Histogram uses exactly one numeric Output. **Bins** can use Auto, Count from
 1 to 200, or a positive Width. Auto uses the Sturges rule; a Width that would
@@ -145,6 +216,8 @@ count and that bin's actual width to match the Count axis. With automatic Std
 Dev, fewer than two samples or zero variance omits the curve while keeping the
 Histogram usable.
 
+### Advanced: large datasets and hover
+
 For large datasets, Line and Area decimate only the visible Iteration range,
 and Combo applies the same viewport decimation to both Line styles. Column and
 Combo Column series keep every raw row in the visible range; Scatter and Bar
@@ -158,6 +231,8 @@ values; Scatter hover reports the nearest actual raw XY row. Bar, Histogram,
 and Box & Whisker do not provide hover inspection. Iteration is the Page row
 sequence; Charts and CSV are
 chronological, while **Output Data** is displayed latest first.
+
+### Title, legend and axes
 
 **Settings** can configure the chart title, **Show legend**, **Legend position**
 (Top, Bottom, Left, or Right), X/Y axis titles, minimum,
@@ -175,6 +250,8 @@ draft and closes it. Clicking the backdrop or pressing Esc does not close
 Settings, so the draft remains available. **Show legend** displays a legend even
 for a single series; turning it off hides the legend at every position.
 
+## Zoom and pan
+
 Line, Area, Column, and Combo can enable **Settings → Axes → Zoom → Enable zoom**.
 Use the mouse wheel to zoom the X axis and drag inside the chart to pan.
 **Show zoom slider** controls the bottom slider without clearing the current
@@ -186,6 +263,8 @@ Maximum, disabling zoom, or switching to a chart type without zoom resets the
 manual viewport. Scatter, Bar, Histogram, and Box & Whisker do not expose
 Zoom controls.
 
+## Export PNG
+
 Each chart has an individual **Export PNG** action. The subtle chart boundary
 marks the exported chart surface: title, legend, axes, plot, and current zoom
 range are included; Output selection controls, chart action buttons, zoom slider,
@@ -193,22 +272,27 @@ and Reset Zoom are excluded. **Settings → Export → Background** can use Ligh
 or Dark independently of the Application theme. Custom series colors and the
 Normal curve are included in either background.
 
+## During runs, template changes and clearing results
+
 Chart configuration survives Page/tab changes and subsequent Simulation or
 Live runs, subject to Page/Output compatibility. Non-Line panels stay in their
 original Page and order while running, display **Waiting for run to finish**,
 and hide the plot. Their Output selection and Export PNG remain disabled;
 Settings and Remove remain available. Every Chart can be removed, including
 the final Foreground or Background Chart.
+
 During execution, Chart type allows keeping the current type or switching a
 non-Line chart to Line, even before the first row arrives. Line cannot switch
 to a non-Line type until execution stops. After Apply, Line uses the current
 run's data and updates live. Panels that remain non-Line do not load live chart
 data and automatically update from the new run's committed rows when execution
 stops; no refresh is needed.
+
 Panels stay visible and non-Line panels enter Waiting as soon as the run starts,
 even before its first progress update. Until the new run's data is available,
 Line displays **Waiting for run data** without showing the previous run's plot
 or loading chart data. It then updates live, and **+ Add Chart** still creates a Line chart.
+
 **Open Template** replaces the current Chart configuration with the Template's
 saved Charts. If it has no saved Charts, no persisted Chart configuration is
 restored and **Save charts with template** is off. After opening a Template
@@ -218,4 +302,3 @@ clears the Chart configuration. **Clear Last Run** removes Last Run data and
 clears session Charts when **Save charts with template** is off; when it is on,
 the Chart configuration is retained. Chart settings become Template data only
 when **Save charts with template** is enabled.
-

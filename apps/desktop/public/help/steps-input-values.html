@@ -24,40 +24,82 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html" aria-current="page">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html" aria-current="page">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Input Values and Data Flow</h1>
-<h3 id="61-input-values-and-data-flow">6.1 Input values and data flow</h3>
-<p>The current InputValue choices in the editor are:</p>
-<ul>
-<li><strong>Fixed value</strong> — a literal value.</li>
-<li><strong>Variable</strong> — the current value of a workflow variable.</li>
-<li><strong>Previous step result</strong> — a result from an earlier visible step. The current
-  UI offers results from prior Tool Actions, BG Get Latest / Wait Next / Get Command Result / Get Buffer Data / Get Buffer Status,
-  and String Process / Byte Process / Array Process steps.</li>
-<li><strong>Calculation</strong> — two operands for arithmetic/comparison, or one operand for Round, Floor, Ceil, and Trunc (Round half values away from zero; Trunc toward zero).</li>
-<li><strong>Elapsed time</strong> — a runtime elapsed-time value.</li>
-<li><strong>Timestamp</strong> — a runtime timestamp value.</li>
-</ul>
+<h2 id="choose-a-value-source">Choose a value source</h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Purpose</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fixed value</td>
+<td>Enter a literal value</td>
+<td>3.3</td>
+</tr>
+<tr>
+<td>Variable</td>
+<td>Use a workflow variable</td>
+<td>voltage</td>
+</tr>
+<tr>
+<td>Previous step result</td>
+<td>Use an earlier visible step's result</td>
+<td>Measure reading</td>
+</tr>
+<tr>
+<td>Calculation</td>
+<td>Arithmetic, comparison or rounding</td>
+<td>voltage × 2</td>
+</tr>
+<tr>
+<td>Elapsed time</td>
+<td>Elapsed run time</td>
+<td>10.5 seconds</td>
+</tr>
+<tr>
+<td>Timestamp</td>
+<td>Date and time during the run</td>
+<td>2026-10-12T23:24:10.123+08:00</td>
+</tr>
+</tbody>
+</table>
+<p>Previous step result offers earlier Tool Actions, BG Get Latest / Wait Next / Get Command Result / Get Buffer Data / Get Buffer Status, and String / Byte / Array Process results. Usually choose a named result from the dropdown; use the custom JSON Pointer (data path) only for other fields.</p>
+<p>Calculation uses two operands for arithmetic/comparison and one for Round, Floor, Ceil and Trunc. Round half values away from zero; Trunc removes fractions toward zero.</p>
+<pre><code class="language-text">Measure -&gt; Set Variable: voltage -&gt; Output: voltage
+  3.3 V           3.3                   3.3
+</code></pre>
+<p>This is an example of data flow, not an actual measurement.</p>
+<h2 id="data-types-and-comparisons">Data types and comparisons</h2>
 <p>Set Variable steps create or update variables. Fixed value supports Number,
 String, Boolean, and Null. Boolean uses the True / False selection; Null needs
 no value field. String "true" and "null" are text, not Boolean or Null. A Previous step result can
@@ -68,6 +110,7 @@ Number, String, Boolean, and Null. Equality compares JSON values without type
 coercion, with case-sensitive strings; arithmetic and ordering comparisons require
 numbers. A missing variable or result path is an error, not Null. A Calculation
 is not an arbitrary nested expression tree.</p>
+<h2 id="elapsed-time-and-timestamps">Elapsed time and timestamps</h2>
 <p>For an Output with <strong>Elapsed time</strong>, <strong>Time Format</strong> offers <strong>Seconds</strong> (default),
 <strong>Minutes:Seconds</strong>, <strong>Hours:Minutes:Seconds</strong>, and <strong>Days (Decimal)</strong>. Minutes
 and hours accumulate beyond 60 minutes and 24 hours. Output Data shows three
@@ -79,6 +122,7 @@ hide its portion. This affects display only; the full date/time remains stored
 in fixed UTC+08:00, including across midnight. These settings belong to each
 Output and survive Template save/load and step copy/paste. Changing Value Source
 clears the old time settings. Set Variable and Tool Action time sources are unchanged.</p>
+<h2 id="include-values-in-output-data">Include values in output data</h2>
 <p>An Output step is what creates a ResultRow column. Values used as inputs do
 not become result columns merely because they were referenced.</p>
 <p>An Array returned by a Step can be stored as a Variable and used by Array Process;

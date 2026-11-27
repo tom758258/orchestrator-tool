@@ -2,7 +2,15 @@
 
 <!-- help-source -->
 
-## 10. Run Results
+## 輸出頁籤導覽
+
+| 區域 | 可以查看什麼 |
+| --- | --- |
+| Last Run Execution Results | 步驟執行狀態及錯誤 |
+| Messages | Show Message 文字訊息 |
+| Charts / Live Monitors | 圖表及即時監看 |
+| Foreground Output | 前景的 Output Page、統計及資料 |
+| Background Output | 背景 Capture Dataset、統計及資料 |
 
 Run 後，Output 區域目前可顯示以下 visible sections：
 
@@ -15,7 +23,9 @@ Run 後，Output 區域目前可顯示以下 visible sections：
 - **Summary** — 適用時顯示 numeric Count、Min、Max 與 Avg。
 - **Output Data** — 所選 Page 的 committed rows，以 latest first 顯示。
 
-### 10.1 Last Run
+## Last Run：最近一次執行
+
+> **注意：** Orchestrator 只保留最近一次執行的資料，不是測試紀錄管理系統。要長期保存量測資料，請在開始新執行或離開程式前匯出。
 
 Desktop 只在 memory 中保留一個 **Last Run**，沒有 Run History、database 或 SQL
 storage。
@@ -31,7 +41,7 @@ Last Run 的 Simulation 或 Live badge 不會跟著改變，因此 simulated suc
 若 run 沒有完整成功，committed rows 仍會作為 partial results 保留；execution
 停止後可以 manual export。
 
-### 10.2 收合結果面板
+## 查看及收合結果面板
 
 Foreground Output 的 Source 卡片提供 Output Page 下拉選單、目前頁數與操作說明；切換後會更新 Summary、Output Data 及所選 Page 的匯出範圍。Background Output 的 Source 卡片提供 Background、Capture Dataset 選擇及 Worker 狀態。兩區的匯出選項都集中在 Output Data 下方的 Export settings。
 
@@ -54,12 +64,22 @@ Charts 收合時仍顯示 **將圖表儲存於範本（Save charts with template
 **Last Run Execution Results** 收合後仍保留標題、Execution Mode badge 與 execution
 數量摘要；execution 清單與 Newer / Older 分頁會隱藏，直到再次展開。
 
+### 如何閱讀錯誤訊息
+
 Failed run 與 failed execution record 會先顯示簡短、較容易理解的錯誤說明。原始錯誤仍保留在
 **Technical details** 下方供除錯使用。這層說明只在 failure 出現；successful 與 cancelled
 execution record 維持既有 compact display。Instrument-specific 的 SCPI/VISA 細節會原樣
 保留，不由 Desktop 猜測或重新解讀。
 
-### 10.3 Messages
+## Messages：流程訊息
+
+| 設定或限制 | 行為 |
+| --- | --- |
+| Message 1 / 2 / 3 | 三個獨立頁籤 |
+| 排列順序 | 舊訊息在上，最新在下 |
+| 保留數量 | 每頁籤最近 1,000 筆；摘要仍顯示總數 |
+| 單則字數 | 最多 4,096 字元，超過會截短 |
+| 匯出 | 不提供 |
 
 **Messages** 收集 Show Message step 寫入的文字。它有三個互相獨立的 tab：**Message
 1**、**Message 2** 與 **Message 3**，由 step 選擇要寫入哪一個。每個 tab 依 workflow
@@ -77,4 +97,3 @@ execution record 維持既有 compact display。Instrument-specific 的 SCPI/VIS
 訊息屬於產生它的那一次 run。run 正常結束、失敗或 graceful stop 都會保留當輪已產生的
 訊息。開始新一輪 run 會清空上一輪的訊息。**清除上次執行（Clear Last Run）**、New Template 與 Open
 Template 都會一併清除訊息。訊息不會存檔，也無法 export。
-

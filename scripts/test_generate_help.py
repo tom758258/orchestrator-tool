@@ -29,7 +29,10 @@ class HelpGenerationTests(unittest.TestCase):
                 main, fragments = slice_chapters(intro, chapters)
                 self.assertIn("<h1 ", main)
                 self.assertEqual(len(fragments), len(chapters))
-                self.assertTrue(all("<h" in fragment for fragment in fragments))
+                self.assertTrue(all(fragment.startswith("<h2 ") for fragment in fragments))
+                for stem, _, _ in TOPICS:
+                    suffix = ".zh-TW.md" if lang == "zh-TW" else ".md"
+                    self.assertIn(f"]({stem}{suffix})", landing)
 
     def test_local_links_and_language_are_validated(self):
         for lang in LOCALES:

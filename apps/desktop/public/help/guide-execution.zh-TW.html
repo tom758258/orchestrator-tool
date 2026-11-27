@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simulation 與 Live 執行</title>
+  <title>模擬與真實硬體執行</title>
   <script>
     (() => {
       const query = new URLSearchParams(location.search).get('theme');
@@ -24,29 +24,85 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html" aria-current="page">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html" aria-current="page">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
-<h1>Simulation 與 Live 執行</h1>
-<h2 id="7-run-simulation">7. Run Simulation</h2>
+<h1>模擬與真實硬體執行</h1>
+<h2 id="模擬與真實硬體有什麼不同">模擬與真實硬體有什麼不同？</h2>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>Simulation</th>
+<th>Live</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用途</td>
+<td>不操作實體硬體，測試流程</td>
+<td>操作實際設備</td>
+</tr>
+<tr>
+<td>外部工具執行檔</td>
+<td>必須</td>
+<td>必須</td>
+</tr>
+<tr>
+<td>實體儀器及連線</td>
+<td>不需要</td>
+<td>必須</td>
+</tr>
+<tr>
+<td>已儲存 Live Resource</td>
+<td>不需要</td>
+<td>必須</td>
+</tr>
+<tr>
+<td>執行確認</td>
+<td>不需要 Live 確認</td>
+<td>必須</td>
+</tr>
+<tr>
+<td>啟動預設</td>
+<td>是</td>
+<td>否</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>注意：</strong> 模擬成功只表示模擬流程通過，不代表真實儀器及接線已驗證。</p>
+</blockquote>
+<h2 id="執行模擬">執行模擬</h2>
+<ol>
+<li>在 Tools 設定流程使用的執行檔。</li>
+<li>在 Setup 及 Workflow 完成設定。</li>
+<li>選擇 Simulation，必要時按 Validate。</li>
+<li>按 Run Simulation，查看 Output。</li>
+</ol>
 <p>執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
 manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
 使用 Validate；run 啟動時也會驗證 Template。</p>
@@ -56,21 +112,55 @@ Simulation 不需要 Live Resources，會使用 external Workers 的 simulate co
 powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
 Live hardware validation。無法推導數量的 Simple Software 來源會顯示本次執行的
 Sample 警告；Custom 模式僅供 Background 使用。</p>
-<h2 id="8-run-live">8. Run Live</h2>
+<h2 id="執行真實硬體">執行真實硬體</h2>
+<blockquote>
+<p><strong>警告：</strong> Live 會操作實體設備。請確認儀器型號、接線、電壓／電流限制與安全要求，再確認執行。</p>
+</blockquote>
+<ol>
+<li>在 Setup 儲存流程使用的各實例連線，確認沒有重複位址或未儲存的變更。</li>
+<li>選擇 Live，等待適用的 Live Preflight 檢查。</li>
+<li>修正錯誤，使用 Validate 檢查範本。</li>
+<li>按 Run Live，確認畫面列出的設備及警告，再開始執行。</li>
+</ol>
+<h3 id="live-preflight-狀態">Live Preflight 狀態</h3>
+<table>
+<thead>
+<tr>
+<th>狀態</th>
+<th>意義</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Checking</td>
+<td>檢查中，暫時不能執行</td>
+</tr>
+<tr>
+<td>Passed</td>
+<td>可進入 Live 確認，並不保證執行成功</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>顯示不相容原因，修正及重新檢查前不能執行</td>
+</tr>
+</tbody>
+</table>
 <p>在 Execution Mode 選擇 <strong>真實硬體（Live）</strong> 後，同一個 Run control 會變成 <strong>執行真實硬體（Run Live）</strong>。
 Desktop 會自動依每個 referenced instance 已保存的型號 Capability，檢查 Powers 與
 Scopes 的 Workflow 固定參數及 Setup。<strong>Live Preflight: Checking</strong> 表示檢查中，
 此時不能 Run；<strong>Passed</strong> 才能進入既有的 Live confirmation 流程。<strong>Failed</strong> 會以
 紅色顯示已發現的不相容設定，修正並重新檢查成功前不能 Run。無法取得必要 Capability
 或 Model ID 也會阻擋 Live；未使用的 instance 與未使用的選用 Capability 欄位不會阻擋。</p>
+<h3 id="哪些變更會重新檢查">哪些變更會重新檢查？</h3>
 <p>更換 Template、修改 Workflow 參數或 Setup、保存 Resource／型號，或更換 Powers／Scopes
 executable，都會使舊結果失效並重新檢查。Resource 或 identity draft 變更必須先保存。
-For／While 內的固定值也會檢查，但不執行迴圈；被 binding 覆蓋的值仍由 Worker 在執行時
+For／While／If 內的固定值也會檢查，但不執行迴圈；被 binding 覆蓋的值仍由 Worker 在執行時
 驗證。Preflight 不會修改 Template 或自動替換成支援的通道。自動檢查不驗證
 Workflow 引用或作用域；完整 Template 驗證只在 Validate 或 Run 執行。Simulation 不受影響。</p>
 <p>後端在啟動 Worker、建立 Powers write authorization 或替換 Last Run 前，會再次檢查
 當次已保存的設定。Preflight 拒絕執行時會保留原 Last Run、結果與 Output，並顯示為
 Preflight failure，不會呈現成已執行 Workflow 的 failure。</p>
+<h3 id="執行前確認">執行前確認</h3>
 <p>開始 Live 前，Desktop 會：</p>
 <ul>
 <li>確認 referenced Tool Instances；</li>
@@ -88,7 +178,10 @@ Preflight failure，不會呈現成已執行 Workflow 的 failure。</p>
 Preflight 使用已保存的 canonical model ID。Scopes 使用原樣保存的 Resource；
 未知 identity 不會被替換成其他型號。
 Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。</p>
-<h3 id="81-powers-actions-與-cleanup">8.1 Powers actions 與 cleanup</h3>
+<h2 id="powers執行後的安全收尾">Powers：執行後的安全收尾</h2>
+<pre><code class="language-text">流程完成／失敗 -&gt; Safe-Off（已啟動的 Powers）
+                -&gt; 關閉 Worker -&gt; 結果
+</code></pre>
 <p>Powers Live actions 包括設定值，以及 <code>output-on</code> 與 <code>output-off</code> actions。Live
 Powers write authorization 只存在於該次 Live run 的 runtime。</p>
 <p>Run 結束時，以及 Workflow failure 或後續 Worker startup failure path，orchestrator

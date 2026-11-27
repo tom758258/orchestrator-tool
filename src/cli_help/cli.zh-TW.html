@@ -57,7 +57,32 @@
 </code></pre>
 <p>如果 EXE 已加入 <code>PATH</code>，可省略 <code>.\</code>，直接使用 <code>orchestrator-tool</code>。在開發專案根目錄也可使用 <code>cargo run --locked -- &lt;arguments&gt;</code>。</p>
 <p><code>doctor</code> 彙整外部 EXE 的可用性；<code>tools list</code> 顯示各註冊工具的狀態與路徑。這兩個指令都不會啟動 Workflow，也不代表已驗證實體儀器通訊。</p>
+<h3 id="常用指令">常用指令</h3>
+<table>
+<thead>
+<tr><th>指令</th><th>用途</th></tr>
+</thead>
+<tbody>
+<tr><td>--help / --version</td><td>查閱語法及版本</td></tr>
+<tr><td>doctor</td><td>環境及外部執行檔狀態</td></tr>
+<tr><td>tools list</td><td>列出工具及設定路徑</td></tr>
+<tr><td>tools inspect</td><td>檢查工具識別資訊與相容性</td></tr>
+<tr><td>tools worker-check</td><td>支援工具的模擬診斷（Meters、Powers）</td></tr>
+</tbody>
+</table>
 <h2 id="2-指定工具-exe">2. 指定工具 EXE</h2>
+<table>
+<thead>
+<tr><th>工具</th><th>選擇的執行檔</th></tr>
+</thead>
+<tbody>
+<tr><td>Meters</td><td>meters-tool.exe</td></tr>
+<tr><td>Powers</td><td>powers-tool.exe</td></tr>
+<tr><td>Scopes</td><td>scopes-tool.exe</td></tr>
+<tr><td>Serial</td><td>serial-tool.exe</td></tr>
+</tbody>
+</table>
+<p>選擇 CLI／Worker，而不是名稱含空格的 Desktop EXE、WebUI Launcher 或私用 Host。Meters、Powers、Scopes 的 onedir 發行包請完整解壓縮並保留 EXE 旁的 <code>_internal</code> 及其他檔案。Serial 的 Windows 發行包則提供兩個獨立 EXE。Wavegen 目前未提供獨立 Windows 發行包的建置方式；請勿將它視為已完成工作流程整合。</p>
 <p>沒有 <code>--config</code> 時，CLI 使用空設定。若要檢查已安裝工具，可以建立 <code>orchestrator.toml</code>，例如：</p>
 <pre><code class="language-toml">[tools]
 meters = &quot;C:/Example/Meters/meters-tool.exe&quot;

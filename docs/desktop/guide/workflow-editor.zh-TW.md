@@ -2,19 +2,37 @@
 
 <!-- help-source -->
 
-## 6. Workflow Editor
+## 編輯工作流程
 
-Workflow editor 用來建立有順序的 steps。目前的 step types 是：
+| 區域 | 用途 |
+| --- | --- |
+| 步驟（Steps） | 選擇要加入的步驟 |
+| 序列（Sequence） | 查看執行順序、選取及移動 |
+| 屬性（Properties） | 設定選取步驟的參數 |
+| Workflow summary | 驗證、執行、停止與錯誤訊息 |
 
-- **Assert** — 檢查 condition，不成立時使 Workflow failure。
-- **Set Variable** — 建立或更新 Workflow variable。
-- **輸出（Output）** — 將值發布為 final workflow result column，不控制 Powers output。
-- **Wait** — 等待指定時間。
-- **Tool Action** — 對設定好的 Tool Instance 執行 action，例如 Powers set、
-  output action 或 Meters measurement。
-- **For** — 依 exact decimal range 重複執行 body。
-- **While** — 在 condition 為 true 時重複執行 body。
-- **If / Else** — 依 comparison 執行 THEN 或 ELSE，ELSE 可為空。
+### 步驟分類與功能索引
+
+| 分類 | 步驟 |
+| --- | --- |
+| Workflow | For、While、If / Else、Set Variable、Output、Wait、Assert、Show Message、String Process、Byte Process、Array Process |
+| Background Workflow | Worker ON / OFF、Capture ON / OFF |
+| FG/BG Interaction | BG Command、Get Latest、Wait Next、Get Command Result、Get Buffer Data、Get Buffer Status |
+| Meters | 電表量測（Meter Measure） |
+| Powers | Power Set Output、Power Output ON / OFF、Power Measure、Power Protection Status |
+| Scopes | Channel Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position、Edge Trigger、Single Wait、Measure、Capture、Screenshot、AutoScale |
+| Serial | Send、Send File、Receive、Query |
+
+各步驟的用途及限制見對應章節。Output 是輸出資料欄位，不是電源供應器的 Power Output ON。
+
+### 分類何時可以使用？
+
+| 分類 | 解鎖條件 |
+| --- | --- |
+| Workflow | 永遠可用 |
+| Background Workflow | Setup 有背景設定 |
+| FG/BG Interaction | 有背景設定且啟用 FG/BG Interaction |
+| 儀器分類 | 範本含對應工具實例 |
 
 **步驟（Steps）** 分類在各群組內維持原本順序：**工作流程（Workflow）**、
 **Background Workflow**、**FG/BG Interaction**、**Meters**、**Powers**、
@@ -35,10 +53,14 @@ Template 後，不可用分類區塊重新收合。UI 收合狀態不會儲存�
 **Scopes File Output** 維持獨立面板及自己的展開／收合狀態，
 並採用相同的 Scopes Tool Instance 鎖定條件。
 
+### 編輯與重新命名
+
 Steps 可以放在 root workflow、loop body 或 If 分支中。使用 step properties 編輯選取的
 step；需要先檢查目前 Template 時可使用 Validate，Simulation 與 Live 在 run
 啟動時也會驗證 Template，因此先按 Validate 有用，但不是獨立的 run 必要條件。
 在屬性（Properties）的步驟 ID 旁按鉛筆可重新命名；按 Enter 或儲存套用，按 Esc 或取消放棄。ID 只能使用小寫英文字母、數字及區段間的單一連字號，且在整個 Workflow 中不可重複。重新命名會同步更新其他步驟對該 ID 的引用；Workflow 忙碌時不可編輯。
+
+### 新增步驟
 
 在 **步驟（Steps）** 中，滑鼠停留於可用的 Step 按鈕上，可透過原生
 提示視窗查看該步驟的簡短功能說明。點擊 Step 類型只會選取，不會立即加入
@@ -56,11 +78,15 @@ Workflow。**已選取的步驟（Selected Step）** 與 **新增步驟（Add St
 不會新增 Step。新增成功後會選取新 Step，在 **屬性（Properties）** 顯示設定，
 並清除 Palette 類型選取。Workflow 編輯忙碌時不可拖曳新增。
 
+### 工作流程控制項
+
 **驗證（Validate）**、**執行模擬／執行真實硬體（Run Simulation / Run Live）**、**停止工作流程（Stop Workflow）** 與 active loop 的 **Stop** 控制項
 位於 Workflow summary 右上方，與 **Template**、**步驟（Steps）** 資訊並排。驗證、
 執行中、Stop 與 run 失敗回饋顯示在控制項下方、Builder 上方，並可在該處
 查看詳細 run 錯誤。視窗較窄時控制項會換行。**清除工作流程（Clear Workflow）** 仍位於
 **序列（Sequence）** header。
+
+### 顯示密度及收合
 
 **清除工作流程（Clear Workflow）** 右側的 **步驟顯示密度（Step Display Density）** 下拉選單提供
 **精簡（Compact）**、**標準（Standard）**（預設）及 **寬鬆（Comfortable）**。顯示密度儲存在本機，
@@ -72,6 +98,8 @@ Workflow。**已選取的步驟（Selected Step）** 與 **新增步驟（Add St
 選取、驗證警告、執行失敗提示。切換頁籤會保留目前收合狀態；新建或開啟 Template
 會全部展開。拖曳到收合的容器前須先展開；使用 **新增步驟（Add Step）** 成功新增後會展開目標。
 
+### 編輯後的錯誤訊息
+
 修改 Workflow steps、Tool Setup 的執行設定，或 Background Binding／Setup 時，
 Workflow summary 會立即隱藏上次 run failure 或 Live 啟動錯誤。即使沒有修改，
 按下 **驗證（Validate）** 也會立即隱藏這些回饋。驗證會顯示自己的結果；**有效（Valid）** 不保證
@@ -81,6 +109,8 @@ run 一定成功。新的 run 若失敗，仍會顯示該次錯誤與 **Technica
 這些操作會保留 Last Run 原本的狀態、診斷、Execution Results、已提交的 Output
 rows、Background datasets 與 partial export 能力。Failed Last Run 在 **輸出（Output）**
 中仍維持 Failed。Live Preflight failure 維持獨立回饋，表示 Live run 尚未開始。
+
+### 選取及移動步驟
 
 在 **序列（Sequence）** 點擊 step 可單選；**Ctrl+Click** 加入或移除個別 step，
 **Shift+Click** 從選取起點選取連續範圍。多選只限同一 sibling list：root
@@ -99,21 +129,23 @@ Editor 禁止將控制區塊放入自己或其子孫，以及超過八層 If／F
 該方向邊界時會停用。已選取 step 的 **Delete** 按鈕會刪除整個 selection；
 未選取 step 的 Delete 按鈕只刪除該 step。刪除 Loop 也會刪除其 Body。
 
-焦點位於 Workflow editor 時：
+### 快捷鍵
 
-- **Ctrl+C** 複製選取的 steps。
-- **Ctrl+X** 剪下選取的 steps 到應用程式內部 Clipboard。首次貼上若無 ID 衝突，
-  保留原 ID 與內部引用；後續重複貼上或首次已有 ID 衝突時，沿用 Copy／Paste
-  的 ID 重配與唯一 Output Name 規則。Output Name 或 Page 衝突也沿用既有 Paste 規則。
-- **Ctrl+V** 貼到最後一個選取 step 後；未選取時貼到 Root 最後。貼上的 steps
-  會成為新 selection。
-- **Delete** 鍵刪除目前 selection；沒有選取 step 時不動作。
-- **Ctrl+A** 全選 active step 的直接 siblings；沒有選取時全選 Root steps，
-  不會同時選取巢狀 Loop Body 內的子 steps。
+| 快捷鍵 | 功能 |
+| --- | --- |
+| Ctrl+C | 複製選取步驟 |
+| Ctrl+X | 剪下至程式內部剪貼簿 |
+| Ctrl+V | 貼到最後一個選取步驟後；未選取時貼到 Root 最後 |
+| Delete | 刪除選取步驟；未選取時不動作 |
+| Ctrl+A | 全選目前同層步驟；未選取時全選 Root，不含巢狀 Body |
+
+剪下後首次貼上若無 ID 衝突，保留原 ID 與內部引用。重複貼上或有衝突時，沿用 ID 重配及唯一 Output Name 規則；Output Name 或 Page 衝突也依既有規則處理。貼上後選取新增步驟。
 
 內部 Clipboard 在本次 application session 內保留。input、textarea、select 與
 可編輯文字保留原生快捷鍵。Workflow busy 時仍可選取與 Copy，但 Drag、Up／Down、
 Cut、Delete 與 Paste 會停用。
+
+### 驗證與引用範圍
 
 **驗證（Validate）**、**執行模擬（Run Simulation）** 與 **執行真實硬體（Run Live）** 使用相同的 Core Template 驗證。
 失敗時保留整體錯誤訊息；若錯誤能可靠定位 Step，該卡片會有紅框與警告圖示，
@@ -123,4 +155,3 @@ Cut、Delete 與 Paste 會停用。
 For 變數不能在 Body 外使用，除非該外層作用域原本已有該變數值。
 在 Loop 內新建的一般變數限該次迭代使用；更新繼承變數的值則會保留。
 驗證會檢出可靜態確定無法取得的變數，需要實際值才能判斷的錯誤仍由執行期處理。
-

@@ -24,29 +24,65 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html" aria-current="page">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html" aria-current="page">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Powers Steps</h1>
-<h4 id="power-set-output">Power Set Output</h4>
+<h2 id="power-supply-steps-at-a-glance">Power supply steps at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Power Set Output</td>
+<td>Set voltage and/or current limit without enabling output</td>
+</tr>
+<tr>
+<td>Power Output ON</td>
+<td>Enable the selected channel output</td>
+</tr>
+<tr>
+<td>Power Output OFF</td>
+<td>Disable the selected channel output</td>
+</tr>
+<tr>
+<td>Power Measure</td>
+<td>Read actual voltage and current</td>
+</tr>
+<tr>
+<td>Power Protection Status</td>
+<td>Read protection trip status without clearing it</td>
+</tr>
+</tbody>
+</table>
+<h3 id="select-a-channel">Select a channel</h3>
 <p>The Channel dropdown is shared by <strong>Power Set Output</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, <strong>Power Measure</strong>, and the <strong>Specific channel</strong>
 selection in <strong>Power Protection Status</strong>. It lists only channels confirmed by
 the target instance's capabilities as <strong>CH1</strong>, <strong>CH2</strong>, etc. Simulation uses the
@@ -59,6 +95,7 @@ outside the supported list remain visible as unsupported or unconfirmed and
 are preserved when saving and reloading. Existing Channel bindings are shown
 as <strong>Bound channel (preserved)</strong>. Selecting a supported fixed channel explicitly
 replaces the saved channel or its binding; capabilities never change it automatically.</p>
+<h2 id="power-set-output">Power Set Output</h2>
 <p>Add <strong>Power Set Output</strong> to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
 <strong>Set Voltage</strong> and <strong>Set Current Limit</strong> to include or remove each setpoint;
@@ -71,7 +108,10 @@ calculations are unavailable for setpoints. Templates enforce these restrictions
 Resolved variables must still be numeric or Powers action validation fails. <strong>Current Limit</strong> is the power supply output
 current-limit setpoint, expressed in A, not a forced output current. This step
 only configures the setpoints. Use <strong>Power Output ON</strong> separately to enable the output.</p>
-<h4 id="power-measure">Power Measure</h4>
+<h2 id="power-output-on-off">Power Output ON / OFF</h2>
+<p>Select the target Powers instance and a supported Channel. ON enables the output; OFF disables it. Setting voltage or current limit does not enable output. Live operation requires confirmation; check wiring and safety limits first.</p>
+<p>Simulation example: Power Set Output → Power Output ON → Power Measure → Power Output OFF. For real hardware, choose settings within equipment limits. Run-level Safe-Off still applies.</p>
+<h2 id="power-measure">Power Measure</h2>
 <p>Add <strong>Power Measure</strong> to read the selected channel's actual Voltage (V) and
 Current (A) once. It uses the fixed Channel dropdown without enabling the
 output or changing setpoints. After it completes, later Output, Assert, and
@@ -79,7 +119,7 @@ Calculation steps can select <strong>Voltage</strong> or <strong>Current</strong
 The numeric pointers are <code>/data/measurements/voltage</code> and
 <code>/data/measurements/current</code>. It is foreground-only; readings do not create
 a Result column unless you add an Output step.</p>
-<h4 id="power-protection-status">Power Protection Status</h4>
+<h2 id="power-protection-status">Power Protection Status</h2>
 <p>Add <strong>Power Protection Status</strong> to read protection trip state without changing
 instrument settings. Select <strong>All</strong> channels or <strong>Specific channel</strong> and choose
 from the Channel dropdown. Switching from All to Specific selects the first

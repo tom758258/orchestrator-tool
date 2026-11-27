@@ -24,39 +24,82 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html" aria-current="page">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>輸入值與資料流</h1>
-<h3 id="61-input-values-與-data-flow">6.1 Input values 與 data flow</h3>
-<p>Editor 目前的 InputValue 選項是：</p>
-<ul>
-<li><strong>Fixed value</strong> — literal value。</li>
-<li><strong>Variable</strong> — Workflow variable 的目前值。</li>
-<li><strong>Previous step result</strong> — 較早且可見的 step result。目前 UI 會提供先前
-  Tool Actions、BG Get Latest／Wait Next／Get Command Result／Get Buffer Data／Get Buffer Status，以及 String Process／Byte Process／Array Process 的 results。</li>
-<li><strong>Calculation</strong> — 四則運算／比較使用左右兩個 operand；Round、Floor、Ceil、Trunc 僅使用一個 operand（Round 的 0.5 中點遠離零、Trunc 朝零捨去小數）。</li>
-<li><strong>Elapsed time</strong> — runtime elapsed-time value。</li>
-<li><strong>Timestamp</strong> — runtime timestamp value。</li>
-</ul>
+<h2 id="選擇輸入值來源">選擇輸入值來源</h2>
+<table>
+<thead>
+<tr>
+<th>來源</th>
+<th>用途</th>
+<th>範例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fixed value</td>
+<td>直接輸入固定值</td>
+<td>3.3</td>
+</tr>
+<tr>
+<td>Variable</td>
+<td>使用工作流程的變數</td>
+<td>voltage</td>
+</tr>
+<tr>
+<td>Previous step result</td>
+<td>使用較早且可引用的步驟結果</td>
+<td>Measure 量測值</td>
+</tr>
+<tr>
+<td>Calculation</td>
+<td>四則運算、比較或取整</td>
+<td>voltage × 2</td>
+</tr>
+<tr>
+<td>Elapsed time</td>
+<td>執行期間經過的時間</td>
+<td>10.5 秒</td>
+</tr>
+<tr>
+<td>Timestamp</td>
+<td>執行期間的日期時間</td>
+<td>2026-10-12T23:24:10.123+08:00</td>
+</tr>
+</tbody>
+</table>
+<p>Previous step result 提供較早的 Tool Action、BG Get Latest／Wait Next／Get Command Result／Get Buffer Data／Get Buffer Status，以及 String／Byte／Array Process 結果。通常在下拉選單選擇結果名稱即可，特殊欄位才需要自訂 JSON Pointer（資料路徑）。</p>
+<p>Calculation 的四則運算與比較使用兩個運算元；Round、Floor、Ceil、Trunc 使用一個。Round 的 0.5 中點遠離零；Trunc 朝零捨去小數。</p>
+<pre><code class="language-text">Measure -&gt; Set Variable: voltage -&gt; Output: voltage
+  3.3 V           3.3                   3.3
+</code></pre>
+<p>這是資料流示意，並非實際量測結果。</p>
+<h2 id="資料型態與比較">資料型態與比較</h2>
 <p>Set Variable 會建立或更新 variables。Fixed value 支援 Number、String、Boolean、Null。
 Boolean 使用 True／False 選項；Null 不需額外輸入。String 的 "true" 與 "null" 是文字，
 並非 Boolean 或 Null。Previous step result 只能引用目前 lexical
@@ -66,6 +109,7 @@ Assert、While 與 If 的 Fixed value 皆可選 Number、String、Boolean、Null
 Equality 不進行型別轉換，字串區分大小寫；arithmetic 與大小比較僅接受數值。
 缺少的 Variable 或 Result Path 是錯誤，不是 Null。
 Calculation 不是任意 nested expression tree。</p>
+<h2 id="經過時間及日期時間">經過時間及日期時間</h2>
 <p>Output 的 <strong>Elapsed time</strong> 來源提供 <strong>Time Format</strong>：<strong>Seconds</strong>（預設）、
 <strong>Minutes:Seconds</strong>、<strong>Hours:Minutes:Seconds</strong> 與 <strong>Days (Decimal)</strong>。分鐘與小時
 可累積超過 60 分鐘與 24 小時；Output Data 的秒數顯示三位小數，十進位天數顯示
@@ -75,6 +119,7 @@ Calculation 不是任意 nested expression tree。</p>
 完整 UTC+08:00 日期時間，跨午夜也不會丟失日期。設定屬於各個 Output，Template
 儲存／載入及 Step 複製／貼上會保留；切換 Value Source 時清除舊時間設定。
 Set Variable 與 Tool Action 的時間來源維持原有行為。</p>
+<h2 id="將結果加入資料表">將結果加入資料表</h2>
 <p>只有 Output step 會建立 ResultRow column；Input value 被引用本身不會使它成為
 result column。</p>
 <p>Get Buffer Data、Get Buffer Status 與 Array Process 的結果也可選為 Previous step result。

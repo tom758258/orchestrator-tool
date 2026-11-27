@@ -24,33 +24,63 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html" aria-current="page">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Tool Setup and Instances</h1>
-<h2 id="5-setup-and-tool-instances">5. Setup and Tool Instances</h2>
-<p>A Tool Instance is a logical, named instance stored in the Template. A
-Template can contain multiple instances of the same Tool Type, and each
-instance has its own setup values. Tool setup is part of the Template;
-machine-specific executable paths and Live Resources are not.</p>
+<h2 id="understand-tool-instances">Understand Tool Instances</h2>
+<p>A Tool Instance is a named set of instrument settings in a Template. A Template can contain multiple instances of the same Tool Type, such as two Meters instances for voltage and current.</p>
+<table>
+<thead>
+<tr>
+<th>Information</th>
+<th>Storage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Instance and instrument setup</td>
+<td>Template</td>
+</tr>
+<tr>
+<td>Executable path</td>
+<td>Local computer, shared by Tool Type</td>
+</tr>
+<tr>
+<td>Live Resource</td>
+<td>Local computer, per instance</td>
+</tr>
+</tbody>
+</table>
+<h3 id="setup-sections">Setup sections</h3>
+<pre><code class="language-text">Tool Instance
+  +-- Tool-specific setup
+  +-- Background Streaming (initially collapsed)
+  +-- Live Device (initially expanded)
+</code></pre>
 <p>Each instance has its own bordered card and starts expanded. Use <strong>+ / −</strong> to
 collapse or expand it. <strong>Tool Instance Summary</strong>, above Add Tool Instance, counts
 instances by Tool Type, including types not configured locally. Unused types
@@ -66,6 +96,7 @@ Use Worker and Capture actions to control background streaming and data recordin
 collapsing an outer instance. Successful <strong>New Template</strong> or <strong>Open Template</strong>
 restores the default states, including External Tools cards. These UI states
 are not saved in the Template or local settings.</p>
+<h3 id="add-and-name-an-instance">Add and name an instance</h3>
 <p><strong>Add Tool Instance</strong> has a <strong>Tool type (select from list)</strong> dropdown that offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
 instance is disabled. Existing instances remain visible when their Tool Type
@@ -84,44 +115,88 @@ not change Workflow references, Simulation/Live mode, or saved Live Resources.
 Wavegen names can be saved even though its runtime actions are not yet supported.</p>
 <p>Numeric fields use direct typing and native ArrowUp / ArrowDown stepping;
 spinner buttons are hidden.</p>
-<h3 id="51-meters-setup">5.1 Meters Setup</h3>
+<h2 id="meters-measurement-setup">Meters measurement setup</h2>
 <p>Meters <strong>Measurement Setup</strong> starts expanded; use <strong>− / +</strong> to hide or show its
 measurement and trigger settings without hiding Background Streaming or Live
 Device. These settings apply to Foreground or Background as supported by the
 selected mode. The current Setup controls:</p>
-<ul>
-<li>Measurement: <strong>DC Voltage</strong> or <strong>DC Current</strong>.</li>
-<li>Range Mode: <strong>Auto</strong> or <strong>Manual</strong>.</li>
-<li>Manual Range: a fixed list of choices supplied from the configured meters
-  tool's capabilities. It is not an arbitrary text value.</li>
-<li>NPLC: the currently exposed standard choices are <code>0.02</code>, <code>0.2</code>, <code>1</code>, <code>10</code>,
-  and <code>100</code>.</li>
-<li>Auto Zero: <strong>On</strong>, <strong>Off</strong>, or <strong>Once</strong>.</li>
-<li>Choose whether to <strong>Enable Background Streaming</strong> before selecting its mode.
-  Foreground uses <strong>Single</strong>: each Measure triggers and returns one reading.</li>
-<li>Background offers <strong>Software</strong>, <strong>Immediate</strong>, <strong>External</strong>, <strong>Software Custom</strong>,
-  <strong>Immediate Custom</strong>, and <strong>External Custom</strong>. Unsupported model modes are disabled
-  when model capabilities are available.</li>
-<li>Background Custom modes expose <strong>Sample Count</strong>, optional <strong>Buffer Drain Size</strong>,
-  and <strong>Allow Buffer Overflow Risk</strong>. Set <strong>Trigger Count</strong> under Background;
-  Simple modes instead use <strong>Max Samples</strong>. Known reading-memory limits are shown.
-  Planned readings above capacity show <strong>Reading memory exceeded</strong> and require
-  explicit acceptance of the overflow risk.</li>
-<li>External modes expose optional <strong>Hardware Trigger Slope</strong> and <strong>Hardware Trigger
-  Delay (s)</strong>. Leave them unspecified to use the tool defaults.</li>
-<li>For DC Voltage, DCV Input Impedance: <strong>Not specified</strong>, <strong>Default</strong>,
-  <strong>10 MΩ</strong>, or <strong>Auto</strong>.</li>
-<li>For DC Current, Current Terminal: <strong>Not specified</strong>, <strong>3 A terminal</strong>, or
-  <strong>10 A terminal</strong>.</li>
-<li>VM Comp Slope for DC Voltage and DC Current: <strong>Not specified</strong>,
-  <strong>Positive</strong>, or <strong>Negative</strong>. Not specified leaves the instrument's
-  existing VM Comp setting unchanged.</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Choices and purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Measurement</td>
+<td>DC Voltage or DC Current</td>
+</tr>
+<tr>
+<td>Range Mode</td>
+<td>Auto or Manual</td>
+</tr>
+<tr>
+<td>Manual Range</td>
+<td>Fixed choices supplied by the tool, not arbitrary text</td>
+</tr>
+<tr>
+<td>NPLC</td>
+<td>0.02, 0.2, 1, 10, 100; measurement integration time</td>
+</tr>
+<tr>
+<td>Auto Zero</td>
+<td>On, Off, Once</td>
+</tr>
+<tr>
+<td>DCV Input Impedance</td>
+<td>Voltage: Not specified, Default, 10 MΩ, Auto</td>
+</tr>
+<tr>
+<td>Current Terminal</td>
+<td>Current: Not specified, 3 A terminal, 10 A terminal</td>
+</tr>
+<tr>
+<td>VM Comp Slope</td>
+<td>Voltage/current: Not specified, Positive, Negative; unspecified keeps the current setting</td>
+</tr>
+</tbody>
+</table>
+<h3 id="measurement-and-trigger-modes">Measurement and trigger modes</h3>
+<p>Choose whether to enable Background Streaming first. Foreground uses Single, one reading per Measure.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Settings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single (foreground)</td>
+<td>One trigger per Measure</td>
+</tr>
+<tr>
+<td>Software, Immediate, External (background Simple)</td>
+<td>Finite sources use Max Samples</td>
+</tr>
+<tr>
+<td>Software Custom, Immediate Custom, External Custom (background)</td>
+<td>Sample Count, optional Buffer Drain Size, Allow Buffer Overflow Risk; finite sources use Trigger Count</td>
+</tr>
+<tr>
+<td>External / External Custom</td>
+<td>Optional Hardware Trigger Slope and Hardware Trigger Delay (s); unspecified uses tool defaults</td>
+</tr>
+</tbody>
+</table>
+<p>Unsupported modes are disabled when model capabilities are available. Known reading-memory limits are shown. Planned readings above capacity display Reading memory exceeded and require explicit risk acceptance.</p>
 <p>Measurement fields stay visible; inapplicable fields are disabled. The external
 meters-tool remains authoritative for the actual model capability and numeric
 limits. Desktop does not replace its capability database. In Simulation,
 capability choices come from the meter simulator profile rather than a saved
 Live meter identity. Live uses the saved identity when available.</p>
+<h3 id="warning-custom-acquisition-can-lose-data">Warning: Custom acquisition can lose data</h3>
 <p>In a Custom mode, selecting <strong>Allow Buffer Overflow Risk</strong> explicitly accepts
 possible unrecoverable data loss. <strong>High Buffer Overflow Risk Accepted</strong> appears
 whenever it is selected, even below the memory limit or before capabilities are
@@ -142,15 +217,37 @@ and <strong>Data Integrity</strong> together. Allow Risk does not ensure overflo
 is active, and Meters Setup has no separate monitoring control. Without
 monitoring results, absence of a detected overflow is not evidence of no data
 loss.</p>
-<h3 id="52-live-resources">5.2 Live Resources</h3>
-<p>A Live Resource is bound to a Tool Instance and is stored in the machine-local
-Desktop configuration. It is not carried in a Template. Optional last-known
-identity information is also stored locally for display; that cached identity
-is not a current connection check.</p>
-<p>The current Desktop supports resource discovery for <strong>Meters</strong>, <strong>Powers</strong>, and <strong>Scopes</strong>.
-Do not expect discovery for unsupported Tool Types. Use the resource controls
-in Setup to list available resources, choose one, <strong>Save Resource</strong>, or
-<strong>Clear Resource</strong>.</p>
+<h2 id="configure-live-resources">Configure Live Resources</h2>
+<p>A Live Resource is the real device address for an instance, stored locally. Last-known model and serial information is not a current connection check.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Specify the connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Meters, Powers, Scopes</td>
+<td>Select VISA Backend, then List Resources or enter manually</td>
+</tr>
+<tr>
+<td>Serial</td>
+<td>UART COM Port or TCP Host / Port; see <a href="steps-serial.html">Serial steps</a></td>
+</tr>
+<tr>
+<td>Wavegen</td>
+<td>Workflow execution is not supported</td>
+</tr>
+</tbody>
+</table>
+<ol>
+<li>Expand Live Device.</li>
+<li>Choose the applicable backend or transport.</li>
+<li>List or enter the address and check the device information.</li>
+<li>Select <strong>Save Resource</strong>; use Clear Resource to remove the saved connection.</li>
+</ol>
+<h3 id="visa-backend-and-unsaved-settings">VISA Backend and unsaved settings</h3>
 <p>Each supported instance has its own <strong>VISA Backend</strong>: <strong>System VISA</strong> (the
 default, including older configurations) or <strong>PyVISA-py (@py)</strong>. Choose the
 backend before <strong>List Resources</strong>. Changing it immediately clears that
@@ -167,6 +264,7 @@ or connection fails with an error; Desktop does not switch backends automaticall
 not require or use them, but you may list, edit, and save one for a future Live
 run without switching Execution Mode. Desktop does not create a fake simulator
 resource in local configuration.</p>
+<h3 id="model-identity-and-capabilities">Model identity and capabilities</h3>
 <p>Powers discovery may provide a canonical model ID. Desktop saves it with the
 last-known local resource identity and queries <code>powers-tool capabilities
 --model</code> offline to show available protection controls and channels. The Setup
@@ -176,7 +274,7 @@ Resource to enable new protection settings. In Simulation, Desktop queries
 powers-tool for the existing Powers simulator model, so Protection Setup does
 not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.</p>
-<h4 id="read-drain-errors">Read &amp; Drain Errors</h4>
+<h3 id="read-drain-errors">Read &amp; Drain Errors</h3>
 <p>Open <strong>Live Device</strong> in a Powers, Meters, or Scopes instance and select
 <strong>Read &amp; Drain Errors</strong> in <strong>Error Queue</strong>. Meters requires a CLI with the
 <code>read-errors</code> command. Desktop checks the CLI and any known saved Meters model
@@ -192,14 +290,35 @@ save a discovered Scopes resource so Desktop can verify model support.</p>
 </ul>
 <p>All instances' buttons are disabled from Workflow start through stopping and
 cleanup. The diagnostic is manual and its results are shown only in Setup.</p>
-<p>The result shows the original error codes and messages in read order. <strong>Queue
-Empty</strong> means the first read confirmed an empty queue. <strong>Drained</strong> means error
-entries were read and the queue was then confirmed empty. <strong>Not Fully Drained</strong>
-means the 20-read limit was reached before confirming an empty queue. <strong>Failed</strong>
-shows the failure and retains entries already returned by the Tool. If the
-connection fails during a read, the instrument may have removed an entry before
-returning its reply.</p>
-<h3 id="53-powers-protection-setup">5.3 Powers Protection Setup</h3>
+<p>The result lists original error codes and messages in read order.</p>
+<table>
+<thead>
+<tr>
+<th>Result</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Queue Empty</td>
+<td>First read confirms empty</td>
+</tr>
+<tr>
+<td>Drained</td>
+<td>Entries were read and queue confirmed empty</td>
+</tr>
+<tr>
+<td>Not Fully Drained</td>
+<td>20-read limit reached without confirming empty</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>Shows the failure and preserves returned entries</td>
+</tr>
+</tbody>
+</table>
+<p>A connection failure during a read may mean the instrument removed an entry before returning it.</p>
+<h2 id="powers-protection-setup">Powers protection setup</h2>
 <p>Protection Setup is optional. Within a Powers Tool Instance, use <strong>+</strong> beside
 <strong>Protection Setup</strong> to expand the group, which starts collapsed. Protection
 fields and the Device area, including Device Status, Refresh Status, Protection
@@ -217,6 +336,34 @@ together with any channels already configured in the Template. Each row shows OV
 OCP Delay, and OCP Delay Trigger. Unsupported controls remain visible but are
 disabled. Existing unsupported values are displayed with a warning and preserved
 when saving; the external tool still validates actual model support and limits.</p>
+<h3 id="protection-fields">Protection fields</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OVP Voltage</td>
+<td>Overvoltage protection setting</td>
+</tr>
+<tr>
+<td>OCP</td>
+<td>Overcurrent protection setting</td>
+</tr>
+<tr>
+<td>OCP Delay</td>
+<td>Overcurrent protection delay</td>
+</tr>
+<tr>
+<td>OCP Delay Trigger</td>
+<td>Condition for triggering that delay</td>
+</tr>
+</tbody>
+</table>
+<h3 id="clear-and-save-settings">Clear and save settings</h3>
 <p>An empty numeric field or <strong>Unchanged</strong> leaves that instrument setting unchanged
 and is not stored in the Template. Only configured channels and fields are saved.
 Existing Protection Setup opens with the checkbox checked. Clearing the last
@@ -227,6 +374,7 @@ Channel rows stay visible according to capabilities; there are no Add Channel
 or Remove Channel controls. Protection Setup and Device Status tables show
 plain channel numbers under <strong>Channel</strong>; confirmations and clear plans use
 <strong>Channel 1</strong>. Workflow Sequence compact summaries retain <strong>CH1</strong>.</p>
+<h3 id="protection-setup-execution-order">Protection setup execution order</h3>
 <p>In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
 when status is clear, then starts Workflow steps. A reported trip blocks the
@@ -235,6 +383,7 @@ In Simulation these operations use powers-tool's simulate/planning contract,
 so they validate sequencing without real hardware I/O. To fail a Workflow on
 a trip detected during execution, add a <strong>Power Protection Status</strong> step
 followed by <strong>Assert</strong>.</p>
+<h3 id="live-safety-checks">Live safety checks</h3>
 <p>Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
 run. Live confirmation displays each referenced instance and Tool Type, saved
@@ -244,7 +393,7 @@ again.</p>
 <p>For a DC Current measurement using the <strong>10 A terminal</strong>, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
 terminal.</p>
-<h3 id="54-device-status">5.4 Device Status</h3>
+<h2 id="powers-device-status-and-clearing-protection">Powers device status and clearing protection</h2>
 <p>Expand Protection Setup to show the <strong>Device</strong> area and <strong>Device Status</strong>.
 <strong>Live Device</strong> / Live Resource controls remain below it in both Simulation and
 Live modes, including when Protection Setup is collapsed. The execution mode
@@ -264,6 +413,7 @@ a successful Refresh displays the actual returned channels and makes reported
 trip channels eligible for Clear Protection under the usual rules.
 Switching Execution Mode clears stale values back to <strong>—</strong>
 and shows the channels known for the selected mode.</p>
+<h3 id="simulation-generate-a-clear-plan">Simulation: generate a clear plan</h3>
 <p>In Simulation, Refresh Status starts the configured powers-tool simulate
 Worker and does not require a saved Live Resource. <strong>Generate Clear Plan...</strong>
 is available for every simulator-supported channel, even when status is not
@@ -273,6 +423,7 @@ status. The result is shown as <strong>PLAN GENERATED · SIMULATION</strong> and
 I/O</strong>. <strong>Show Plan</strong> presents the target channel, Safe-Off first, protection clear,
 outputs remaining OFF, and no hardware I/O as a short operator preview. It does
 not display raw JSON or instrument commands. No real protection latch was changed.</p>
+<h3 id="live-refresh-and-clear-protection">Live: refresh and clear protection</h3>
 <p>In Live, Refresh Status uses a temporary Powers connection and the saved Live
 Resource and backend. Unsaved Live Resource or backend changes must be saved before Refresh Status or
 Clear Protection can be used. Device Status prompts you to save the Live Resource
@@ -292,7 +443,7 @@ that state and a warning rather than hiding it or automatically changing it.</p>
 manual external operation is active. If remote clear is unsupported for the model,
 clear the protection latch from the instrument front panel and then use
 <strong>Refresh Status</strong>.</p>
-<h3 id="55-scopes-setup">5.5 Scopes Setup</h3>
+<h2 id="scopes-acquisition-and-channel-setup">Scopes acquisition and channel setup</h2>
 <p>Scopes Setup is optional. New instances start with all settings <strong>Unchanged</strong>.
 <strong>Acquisition Setup</strong> and <strong>Channel Configuration</strong> start collapsed; use each
 heading's <strong>+ / −</strong> independently. Collapsing preserves settings, and Live
@@ -302,6 +453,26 @@ Count is editable only with Average. Channel rows provide Input Coupling,
 Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit
 settings are saved, applied, and read back. Blank values and Unchanged send no
 commands.</p>
+<h3 id="setup-fields">Setup fields</h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Acquisition Setup</td>
+<td>Acquisition Type, Average Count (Average only)</td>
+</tr>
+<tr>
+<td>Channel Configuration</td>
+<td>Input Coupling, Probe Ratio, Bandwidth Limit, Waveform Invert, Channel Units</td>
+</tr>
+</tbody>
+</table>
+<h3 id="model-support-readback-and-errors">Model support, readback and errors</h3>
 <p>The controls use offline Scopes capabilities. Simulation uses Scopes' default
 Keysight DSOX4024A profile. Live uses the canonical model ID saved with the
 selected Resource. Unknown or unavailable capability information disables new

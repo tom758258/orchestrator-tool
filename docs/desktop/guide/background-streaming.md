@@ -2,10 +2,41 @@
 
 <!-- help-source -->
 
-## Background Streaming
+## Background acquisition basics
 
-In **Tool Setup**, select **Enable Background Streaming** for a Meters
-or Scopes Tool Instance. Meters offers six acquisition modes. Scopes Background
+A Background Worker can keep measuring or receiving data while the foreground workflow runs other steps. Worker, Capture, Live Monitor and Data Buffer serve different purposes.
+
+```text
+Background Worker (acquires data continuously)
+    +-- Capture -> Dataset -> Output Data / Export
+    +-- Live Monitor -> Current view (limited data)
+    +-- Data Buffer -> Foreground workflow access
+```
+
+| Feature | Purpose |
+| --- | --- |
+| Worker | Start and stop the data source |
+| Capture | Record data in a separate dataset |
+| Live Monitor | Inspect recent data; not a complete record |
+| Data Buffer | Optional exchange of foreground/background data |
+
+Capture OFF is not Worker OFF. The Worker and Monitor may continue after Capture OFF.
+
+### Supported background features
+
+| Feature | Meters | Scopes | Serial | Powers / Wavegen |
+| --- | --- | --- | --- | --- |
+| Background source | Supported | Numeric measurements | RX | No |
+| Capture / Monitor | Yes | Yes | Yes | No |
+| BG Command | Software Simple | No | Send / Send File | No |
+| Get Latest / Wait Next | Yes | Yes | Yes | No |
+| Numeric background charts | Yes | Yes | No | No |
+
+For Serial settings and communication examples, see [Serial steps](../steps/serial.md).
+
+### Enable and configure a background source
+
+In **Tool Setup**, select **Enable Background Streaming** for a Meters, Scopes, or Serial Tool Instance. Meters offers six acquisition modes. Scopes Background
 captures read-only numeric Measure cycles, not screenshots or waveforms.
 Powers and Wavegen do not support Background.
 A Background instance cannot also be used by foreground Tool actions. Existing
@@ -13,6 +44,8 @@ steps are retained when switching roles; resolve the displayed conflict before
 running. Turning off Background while another mode is selected requires choosing
 Single before using foreground Measure. Two instances cannot share one Live
 resource in a run.
+
+### Scopes: measurement cycles
 
 Choose **Finite** or **Infinite**. For Scopes, Finite **Cycles** counts
 complete measurement cycles, each containing all selected Channel/Item pairs;
@@ -22,6 +55,8 @@ sample rate. In **Measurements**, add or remove rows and select each **Channel**
 and **Item** from the Scopes capabilities. Each row has an internal stable
 Measurement ID. Individual measurements in a cycle are read sequentially.
 Scopes validates supported items and channel/model parameters when starting.
+
+### Meters: sample counts and triggers
 
 For Meters, Finite Simple modes use **Max Samples**; finite
 Custom modes use **Trigger Count**, with **Sample Count** readings per trigger.
@@ -35,6 +70,7 @@ before the next trigger. This is a delay between completed measurements, not a
 fixed sampling frequency. Capture OFF leaves triggering and optional Live Monitor
 running. Worker OFF, Stop Workflow, source completion or failure stops triggering.
 A rejected trigger or measurement timeout fails the run and preserves available data.
+
 For Software Simple, **Trigger with BG Command** replaces this timer with
 Workflow commands; enable FG/BG Interaction in Workflow before using it.
 
@@ -43,11 +79,24 @@ Simulation generates virtual triggers on supported models, including 34461A;
 34460A does not support External. Slope and delay settings are passed to the tool.
 Simulation does not verify physical trigger timing.
 
+### Optional Live Monitor
+
 **Live Monitor** is optional and starts unchecked. For Scopes, the Monitor has a
 **Measurement** selector and plots one numeric field at a time, independently
 of Capture; an invalid reading is not plotted as zero. The Allow Risk warning in
-**5.1 Meters Setup** applies to Custom Background sources. Lost readings cannot
+[Meters measurement setup](tool-setup.md) applies to Custom Background sources. Lost readings cannot
 be recovered by Stop; check captured counts and data quality after stopping.
+
+## Background steps and execution order
+
+| Step | Purpose |
+| --- | --- |
+| Worker ON | Start the source; optionally start Capture too |
+| Capture ON | Start a new dataset |
+| Capture OFF | Finish the dataset without stopping the Worker |
+| Worker OFF | Stop and release the source; optionally stop Capture too |
+
+Example: Worker ON (Capture ON enabled) → Wait → Capture OFF → Worker OFF (simultaneous Capture OFF disabled). Respect the configured finite count; use Stop Workflow if you need to end early.
 
 Add these Workflow actions and select the Background in Step Properties:
 
@@ -63,6 +112,8 @@ Add these Workflow actions and select the Background in Step Properties:
   source before its configured count is reached fails the run; use **Stop Workflow**
   to end the run early and retain a partial Dataset.
 
+### Finite sources and stop limits
+
 Repeated ON/OFF is a Step error. A finite source automatically retains its tail
 and finishes its Dataset. The first subsequent Capture OFF acknowledges that
 automatic finish; the first Worker OFF releases the source. A second explicit
@@ -73,6 +124,8 @@ while preserving the existing Powers Safe-Off behavior.
 The optional FG/BG Data Buffer is independent of Capture and Live Monitor. See
 [Background Interaction Steps](../steps/background.md) for its fixed capacity,
 FIFO/Ring modes, overflow and read rules.
+
+## Inspect background data
 
 **Output** contains **Charts**, optional **Live Monitors**, **Foreground Output**,
 and **Background Output** as separate expandable sections. Background-only runs can use
@@ -87,27 +140,35 @@ Background numeric Summary and Output Data use the same styled tables as Foregro
 
 Background Source places Background and Capture Dataset side by side when space permits and wraps them on narrow windows. Pagination controls appear only for Datasets exceeding 100 rows and use the standard action-button style. Foreground Export settings explains whether the selected option opens a file or folder picker; Background Export settings always selects a destination folder and exports the complete selected or all Datasets, not just the visible rows. The Background export button shows the chosen format.
 
+### Create background charts
+
 In **Charts**, use **Chart settings** to choose **Ground** (Foreground or Background),
 then **Page** (a Foreground Output Page or Background source), and select **Add Chart**.
 Each Chart displays a colored Foreground or Background source label and its Page or
 Background ID. The **Save charts with template** option and shared chart count appear
 at the top-right of Charts. All Foreground Pages and Background Charts appear together in Chart number order, regardless of source.
+
 Each Background Chart offers **Export PNG**, **Settings**, **Source settings**, and **Remove**.
 **Source settings** shows the selected Background as read-only and offers
 **Capture Dataset** and **X-axis data** (Elapsed Time, Timestamp or Sample Index).
 Scopes adds a **Measurement** selector. The Background source is chosen when the
 Chart is created; when unavailable in the current Draft or Last Run, use
 **Reassign source** to select a valid Background present in both. Changes apply
-immediately, and the Chart card retains its source badge and **Data summary**. Each Scopes Chart selects
+immediately, and the Chart card retains its source badge and **Data summary**.
+
+Each Scopes Chart selects
 one Measurement field; use
 multiple Charts to plot different measurements rather than combining different
 units on one axis.
+
 Background Charts can be removed down to zero. Choose Line, XY Scatter, Column,
 Area or Bar in Settings; only Line updates during a run. Foreground retains all
 its existing chart types. Each Chart initially selects the latest available
 Dataset for its Background and then keeps that selection, even if newer Datasets
 arrive. Each new run chooses afresh. With no Dataset, the Chart waits for captured
 data and never substitutes Monitor samples.
+
+### Chart sample count, zoom and raw data
 
 Background X uses actual Elapsed Time in seconds, Timestamp, or Sample Index.
 Hover identifies an actual displayed sample. Line/Area retain peaks, troughs and
@@ -124,27 +185,36 @@ With **Save charts with template** enabled, a Chart referring to a Background
 missing from the Draft prevents Template Save and identifies the Chart to fix.
 Remove that Chart, select a valid source, or turn off saving Charts.
 
+### Live Monitors and data quality
+
 When enabled in Setup, **Live Monitors** appears immediately below Charts as a
 separate expandable framed section with matching inner cards. Charts and
 Live Monitors collapse independently; without any enabled Monitor, the section
 is hidden. Each monitor has a compact **Monitor info** section: numeric monitors
 describe the latest-1,000-Worker-sample buffer, while Serial RX monitors describe
 their bounded-byte buffer. Both operate independently of Capture. Numeric
+
 monitors retain Line appearance, Hover and Zoom, and continue updating while
 Capture is OFF. Worker OFF stops updates; restarting a Worker clears its
 Monitor. It has no Chart Settings, Add/Remove, saved Chart, PNG, Dataset, Summary,
-CSV or XLSX, and consumes no Chart slot. Summary in Background Output shows Dataset
+CSV or XLSX, and consumes no Chart slot.
+
+Summary in Background Output shows Dataset
 count/min/max/average, status and quality for Meters. For Scopes, it shows
 valid/invalid counts and min/max/average **per Measurement field**. The Scopes
 Output Data table displays the selected fields and leaves invalid values blank,
 with the reason available on hover. **Output Data** uses pages of 100 rows.
 `no_loss_detected` describes the Tool's evidence, not a zero-loss guarantee.
 
+### Data retention and access
+
 Capture boundaries follow received event processing, not hardware sample time.
 Full captured samples stay in memory for the current run. A new run or **Clear
 Last Run** releases them; there is no history or recovery store.
 Capture Dataset samples do not directly feed Workflow variables, calculations,
 assertions or ResultRows; use FG/BG Interaction Steps to obtain Background data.
+
+## Background CSV and manual export
 
 **CSV Export → Stream Background CSV during Capture** is independent of
 foreground CSV. Choose All Backgrounds or one Background and its output folder.
@@ -166,7 +236,7 @@ XLSX file** from 1 to 1,048,575. Larger Datasets split into new files without
 truncation. Export names avoid overwriting streaming or previous manual files.
 No Capture OFF or run completion automatically performs manual export.
 
-## 9. Streaming CSV
+## Foreground Streaming CSV
 
 Streaming CSV is configured in the Workflow area's **CSV Export** panel. It
 is different from exporting a completed run later. The panel starts collapsed
@@ -200,4 +270,3 @@ Streaming behavior:
   or Stop Workflow / loop Stop.
 - Streaming does not produce XLSX files.
 - Streaming settings are locked while the run is active.
-

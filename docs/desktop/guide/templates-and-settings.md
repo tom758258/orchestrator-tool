@@ -2,44 +2,35 @@
 
 <!-- help-source -->
 
-## 12. Templates and local machine settings
+## Create, open and save templates
 
-When the application starts, it creates a blank `Untitled` draft. There is no
-separate `New` button in the current UI.
+The application starts with a blank Untitled template. Use **New Template** to create a new one, **Open Template** to load an existing one, and **Save Template** to save the current template.
 
-- **Open Template** loads an existing Template.
-- **Save Template** writes the current Template.
+## What is saved?
 
-A Template contains:
+| Data | Storage |
+| --- | --- |
+| Template name, Tool Instances, Tool Setup, Workflow | Template |
+| FG/BG Interaction and Data Buffer settings | Template (required even when disabled) |
+| Chart definitions/settings | Optional; only with Save charts with template |
+| External tool EXE paths | Local computer |
+| Live Resources, VISA Backend and last-known device identity | Local computer |
+| Language, appearance, Step Display Density | Local preferences |
+| Simulation/Live mode, Last Run, Run ID and results | Temporary |
+| Data Buffer contents and status | Temporary |
+| Unsaved Charts, interactive zoom/pan | Temporary |
+| Workflow Chart Options (Sampling, Preserve Significant Changes, Show Significant Change Markers, Fit Data) | Temporary |
+| Loading/error state, dialogs, export destinations, Powers runtime authorization | Not saved in templates |
 
-- Template name
-- Tool Instances
-- Tool setup
-- Workflow
-- Optional saved Chart definitions/settings, only when **Save charts with
-  template** is enabled
+### Move a template to another computer
 
-A Template does not contain:
+If you send a Template from computer A to computer B, your colleague receives the instances, instrument settings and workflow. They must configure the EXE paths and any Live Resources for their own computer. Templates do not carry measured data; export results separately.
 
-- executable paths;
-- Live Resources or last-known resource identity;
-- Simulation/Live mode;
-- Last Run, Run IDs, or committed results;
-- session-only Chart state that was not selected for saving;
-- the current interactive zoom/pan viewport;
-- Workflow Chart Options (Sampling, Preserve Significant Changes, Show
-  Significant Change Markers, and Fit Data);
-- loading/error UI state, dialog state, or export destinations/paths; or
-- runtime Powers authorization.
+### Older template compatibility
 
-This separation keeps Templates portable while keeping executable paths,
-resources, and other machine/runtime state local to the Desktop installation.
+The current template requires explicit FG/BG Buffer settings even when disabled. Older templates missing the required settings are rejected; no migration or automatic defaults are provided.
 
-The current Template requires explicit FG/BG Buffer settings, even when disabled.
-Older Templates missing them are rejected; no migration or automatic defaults
-are provided. Buffer runtime contents and status are not saved.
-
-## 13. Language and appearance
+## Language and appearance
 
 The globe button near **Appearance** shows **English** or **繁體中文**. Click it
 once to switch the entire Desktop immediately without losing your edits, run, or
@@ -57,4 +48,3 @@ The guide retains its chapter navigation and has no separate language selector.
 The **Appearance** control supports **System**, **Light**, and **Dark**. The
 theme choice is a Desktop preference. It is not part of the Template
 contract.
-

@@ -2,12 +2,24 @@
 
 <!-- help-source -->
 
-## 5. Setup and Tool Instances
+## Understand Tool Instances
 
-A Tool Instance is a logical, named instance stored in the Template. A
-Template can contain multiple instances of the same Tool Type, and each
-instance has its own setup values. Tool setup is part of the Template;
-machine-specific executable paths and Live Resources are not.
+A Tool Instance is a named set of instrument settings in a Template. A Template can contain multiple instances of the same Tool Type, such as two Meters instances for voltage and current.
+
+| Information | Storage |
+| --- | --- |
+| Instance and instrument setup | Template |
+| Executable path | Local computer, shared by Tool Type |
+| Live Resource | Local computer, per instance |
+
+### Setup sections
+
+```text
+Tool Instance
+  +-- Tool-specific setup
+  +-- Background Streaming (initially collapsed)
+  +-- Live Device (initially expanded)
+```
 
 Each instance has its own bordered card and starts expanded. Use **+ / −** to
 collapse or expand it. **Tool Instance Summary**, above Add Tool Instance, counts
@@ -26,6 +38,8 @@ Group and card expansion states persist while editing, switching tabs, or
 collapsing an outer instance. Successful **New Template** or **Open Template**
 restores the default states, including External Tools cards. These UI states
 are not saved in the Template or local settings.
+
+### Add and name an instance
 
 **Add Tool Instance** has a **Tool type (select from list)** dropdown that offers only Tool Types configured in Tools, including
 those with a Missing or Error status. With no configured Tool Type, adding an
@@ -48,45 +62,44 @@ Wavegen names can be saved even though its runtime actions are not yet supported
 Numeric fields use direct typing and native ArrowUp / ArrowDown stepping;
 spinner buttons are hidden.
 
-### 5.1 Meters Setup
+## Meters measurement setup
 
 Meters **Measurement Setup** starts expanded; use **− / +** to hide or show its
 measurement and trigger settings without hiding Background Streaming or Live
 Device. These settings apply to Foreground or Background as supported by the
 selected mode. The current Setup controls:
 
-- Measurement: **DC Voltage** or **DC Current**.
-- Range Mode: **Auto** or **Manual**.
-- Manual Range: a fixed list of choices supplied from the configured meters
-  tool's capabilities. It is not an arbitrary text value.
-- NPLC: the currently exposed standard choices are `0.02`, `0.2`, `1`, `10`,
-  and `100`.
-- Auto Zero: **On**, **Off**, or **Once**.
-- Choose whether to **Enable Background Streaming** before selecting its mode.
-  Foreground uses **Single**: each Measure triggers and returns one reading.
-- Background offers **Software**, **Immediate**, **External**, **Software Custom**,
-  **Immediate Custom**, and **External Custom**. Unsupported model modes are disabled
-  when model capabilities are available.
-- Background Custom modes expose **Sample Count**, optional **Buffer Drain Size**,
-  and **Allow Buffer Overflow Risk**. Set **Trigger Count** under Background;
-  Simple modes instead use **Max Samples**. Known reading-memory limits are shown.
-  Planned readings above capacity show **Reading memory exceeded** and require
-  explicit acceptance of the overflow risk.
-- External modes expose optional **Hardware Trigger Slope** and **Hardware Trigger
-  Delay (s)**. Leave them unspecified to use the tool defaults.
-- For DC Voltage, DCV Input Impedance: **Not specified**, **Default**,
-  **10 MΩ**, or **Auto**.
-- For DC Current, Current Terminal: **Not specified**, **3 A terminal**, or
-  **10 A terminal**.
-- VM Comp Slope for DC Voltage and DC Current: **Not specified**,
-  **Positive**, or **Negative**. Not specified leaves the instrument's
-  existing VM Comp setting unchanged.
+| Field | Choices and purpose |
+| --- | --- |
+| Measurement | DC Voltage or DC Current |
+| Range Mode | Auto or Manual |
+| Manual Range | Fixed choices supplied by the tool, not arbitrary text |
+| NPLC | 0.02, 0.2, 1, 10, 100; measurement integration time |
+| Auto Zero | On, Off, Once |
+| DCV Input Impedance | Voltage: Not specified, Default, 10 MΩ, Auto |
+| Current Terminal | Current: Not specified, 3 A terminal, 10 A terminal |
+| VM Comp Slope | Voltage/current: Not specified, Positive, Negative; unspecified keeps the current setting |
+
+### Measurement and trigger modes
+
+Choose whether to enable Background Streaming first. Foreground uses Single, one reading per Measure.
+
+| Mode | Settings |
+| --- | --- |
+| Single (foreground) | One trigger per Measure |
+| Software, Immediate, External (background Simple) | Finite sources use Max Samples |
+| Software Custom, Immediate Custom, External Custom (background) | Sample Count, optional Buffer Drain Size, Allow Buffer Overflow Risk; finite sources use Trigger Count |
+| External / External Custom | Optional Hardware Trigger Slope and Hardware Trigger Delay (s); unspecified uses tool defaults |
+
+Unsupported modes are disabled when model capabilities are available. Known reading-memory limits are shown. Planned readings above capacity display Reading memory exceeded and require explicit risk acceptance.
 
 Measurement fields stay visible; inapplicable fields are disabled. The external
 meters-tool remains authoritative for the actual model capability and numeric
 limits. Desktop does not replace its capability database. In Simulation,
 capability choices come from the meter simulator profile rather than a saved
 Live meter identity. Live uses the saved identity when available.
+
+### Warning: Custom acquisition can lose data
 
 In a Custom mode, selecting **Allow Buffer Overflow Risk** explicitly accepts
 possible unrecoverable data loss. **High Buffer Overflow Risk Accepted** appears
@@ -111,17 +124,22 @@ is active, and Meters Setup has no separate monitoring control. Without
 monitoring results, absence of a detected overflow is not evidence of no data
 loss.
 
-### 5.2 Live Resources
+## Configure Live Resources
 
-A Live Resource is bound to a Tool Instance and is stored in the machine-local
-Desktop configuration. It is not carried in a Template. Optional last-known
-identity information is also stored locally for display; that cached identity
-is not a current connection check.
+A Live Resource is the real device address for an instance, stored locally. Last-known model and serial information is not a current connection check.
 
-The current Desktop supports resource discovery for **Meters**, **Powers**, and **Scopes**.
-Do not expect discovery for unsupported Tool Types. Use the resource controls
-in Setup to list available resources, choose one, **Save Resource**, or
-**Clear Resource**.
+| Tool | Specify the connection |
+| --- | --- |
+| Meters, Powers, Scopes | Select VISA Backend, then List Resources or enter manually |
+| Serial | UART COM Port or TCP Host / Port; see [Serial steps](../steps/serial.md) |
+| Wavegen | Workflow execution is not supported |
+
+1. Expand Live Device.
+2. Choose the applicable backend or transport.
+3. List or enter the address and check the device information.
+4. Select **Save Resource**; use Clear Resource to remove the saved connection.
+
+### VISA Backend and unsaved settings
 
 Each supported instance has its own **VISA Backend**: **System VISA** (the
 default, including older configurations) or **PyVISA-py (@py)**. Choose the
@@ -142,6 +160,8 @@ not require or use them, but you may list, edit, and save one for a future Live
 run without switching Execution Mode. Desktop does not create a fake simulator
 resource in local configuration.
 
+### Model identity and capabilities
+
 Powers discovery may provide a canonical model ID. Desktop saves it with the
 last-known local resource identity and queries `powers-tool capabilities
 --model` offline to show available protection controls and channels. The Setup
@@ -152,7 +172,7 @@ powers-tool for the existing Powers simulator model, so Protection Setup does
 not require discovery or a saved resource. Existing Template settings remain
 visible when the current model does not support them.
 
-#### Read & Drain Errors
+### Read & Drain Errors
 
 Open **Live Device** in a Powers, Meters, or Scopes instance and select
 **Read & Drain Errors** in **Error Queue**. Meters requires a CLI with the
@@ -170,15 +190,18 @@ save a discovered Scopes resource so Desktop can verify model support.
 All instances' buttons are disabled from Workflow start through stopping and
 cleanup. The diagnostic is manual and its results are shown only in Setup.
 
-The result shows the original error codes and messages in read order. **Queue
-Empty** means the first read confirmed an empty queue. **Drained** means error
-entries were read and the queue was then confirmed empty. **Not Fully Drained**
-means the 20-read limit was reached before confirming an empty queue. **Failed**
-shows the failure and retains entries already returned by the Tool. If the
-connection fails during a read, the instrument may have removed an entry before
-returning its reply.
+The result lists original error codes and messages in read order.
 
-### 5.3 Powers Protection Setup
+| Result | Meaning |
+| --- | --- |
+| Queue Empty | First read confirms empty |
+| Drained | Entries were read and queue confirmed empty |
+| Not Fully Drained | 20-read limit reached without confirming empty |
+| Failed | Shows the failure and preserves returned entries |
+
+A connection failure during a read may mean the instrument removed an entry before returning it.
+
+## Powers protection setup
 
 Protection Setup is optional. Within a Powers Tool Instance, use **+** beside
 **Protection Setup** to expand the group, which starts collapsed. Protection
@@ -198,6 +221,17 @@ OCP Delay, and OCP Delay Trigger. Unsupported controls remain visible but are
 disabled. Existing unsupported values are displayed with a warning and preserved
 when saving; the external tool still validates actual model support and limits.
 
+### Protection fields
+
+| Field | Purpose |
+| --- | --- |
+| OVP Voltage | Overvoltage protection setting |
+| OCP | Overcurrent protection setting |
+| OCP Delay | Overcurrent protection delay |
+| OCP Delay Trigger | Condition for triggering that delay |
+
+### Clear and save settings
+
 An empty numeric field or **Unchanged** leaves that instrument setting unchanged
 and is not stored in the Template. Only configured channels and fields are saved.
 Existing Protection Setup opens with the checkbox checked. Clearing the last
@@ -209,6 +243,8 @@ or Remove Channel controls. Protection Setup and Device Status tables show
 plain channel numbers under **Channel**; confirmations and clear plans use
 **Channel 1**. Workflow Sequence compact summaries retain **CH1**.
 
+### Protection setup execution order
+
 In both modes, a referenced Powers instance with Protection Setup requests
 Safe-Off, reads Protection Status, applies settings one channel at a time only
 when status is clear, then starts Workflow steps. A reported trip blocks the
@@ -217,6 +253,8 @@ In Simulation these operations use powers-tool's simulate/planning contract,
 so they validate sequencing without real hardware I/O. To fail a Workflow on
 a trip detected during execution, add a **Power Protection Status** step
 followed by **Assert**.
+
+### Live safety checks
 
 Before a Live run, every referenced supported Tool Instance must have a
 non-empty saved resource. Two referenced instances may not use the same resource in one
@@ -229,7 +267,7 @@ For a DC Current measurement using the **10 A terminal**, Live confirmation
 also asks you to verify that the physical leads are connected to the 10 A
 terminal.
 
-### 5.4 Device Status
+## Powers device status and clearing protection
 
 Expand Protection Setup to show the **Device** area and **Device Status**.
 **Live Device** / Live Resource controls remain below it in both Simulation and
@@ -251,6 +289,8 @@ trip channels eligible for Clear Protection under the usual rules.
 Switching Execution Mode clears stale values back to **—**
 and shows the channels known for the selected mode.
 
+### Simulation: generate a clear plan
+
 In Simulation, Refresh Status starts the configured powers-tool simulate
 Worker and does not require a saved Live Resource. **Generate Clear Plan...**
 is available for every simulator-supported channel, even when status is not
@@ -260,6 +300,8 @@ status. The result is shown as **PLAN GENERATED · SIMULATION** and **NO HARDWAR
 I/O**. **Show Plan** presents the target channel, Safe-Off first, protection clear,
 outputs remaining OFF, and no hardware I/O as a short operator preview. It does
 not display raw JSON or instrument commands. No real protection latch was changed.
+
+### Live: refresh and clear protection
 
 In Live, Refresh Status uses a temporary Powers connection and the saved Live
 Resource and backend. Unsaved Live Resource or backend changes must be saved before Refresh Status or
@@ -283,7 +325,7 @@ manual external operation is active. If remote clear is unsupported for the mode
 clear the protection latch from the instrument front panel and then use
 **Refresh Status**.
 
-### 5.5 Scopes Setup
+## Scopes acquisition and channel setup
 
 Scopes Setup is optional. New instances start with all settings **Unchanged**.
 **Acquisition Setup** and **Channel Configuration** start collapsed; use each
@@ -294,6 +336,15 @@ Count is editable only with Average. Channel rows provide Input Coupling,
 Probe Ratio, Bandwidth Limit, Waveform Invert, and Channel Units. Only explicit
 settings are saved, applied, and read back. Blank values and Unchanged send no
 commands.
+
+### Setup fields
+
+| Section | Fields |
+| --- | --- |
+| Acquisition Setup | Acquisition Type, Average Count (Average only) |
+| Channel Configuration | Input Coupling, Probe Ratio, Bandwidth Limit, Waveform Invert, Channel Units |
+
+### Model support, readback and errors
 
 The controls use offline Scopes capabilities. Simulation uses Scopes' default
 Keysight DSOX4024A profile. Live uses the canonical model ID saved with the
@@ -306,4 +357,3 @@ identifies the instance and, for channel settings, the channel. Workflow steps
 start only after Setup succeeds. For example, if you set Channel 2 Waveform
 Invert to On and leave the other settings Unchanged, Setup verifies Channel 2
 inversion before the Workflow starts.
-
