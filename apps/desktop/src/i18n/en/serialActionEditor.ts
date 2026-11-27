@@ -31,8 +31,6 @@ export default {
   "serialActionEditor.maxBytes11048576": "Max RX Bytes (1–1048576)",
   "serialActionEditor.failOnReadTimeout": "Fail on Read Timeout",
   "serialActionEditor.failOnReadTimeoutHelp": "Reported Session partial RX is not repeated, but OS/device RX is not cleared. Later Receive/Query Steps may read delayed data. Other errors still fail.",
-  "serialActionEditor.receiveReadHelp": "Max RX Bytes is a limit, not a required length. Receive reads once and does not wait to fill the limit.",
-  "serialActionEditor.queryReadHelp": "Max RX Bytes is a limit, not a required length. Query reads until the configured RX delimiter.",
   "serialActionEditor.textSourceTypes": "TX Data accepts a String or Number according to TX Format. Text transmission requires a String; Timestamp is an ISO-8601 String, while Elapsed Time is a Number and cannot be sent directly as text.",
   "serialActionEditor.hexSourceTypes": "Single Byte transmission requires a Number and sends only its lowest byte. Elapsed Time is seconds (Number); Timestamp and RX Data (Hex String) are Strings and cannot be sent as one byte.",
   "serialActionEditor.tXSource": "TX Data Source",

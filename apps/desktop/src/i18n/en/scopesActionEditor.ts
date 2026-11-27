@@ -9,7 +9,6 @@ export default {
   "scopesActionEditor.notSupportedByTheCurrentModel": "not supported by the current model.",
   "scopesActionEditor.supportCannotBeConfirmed": "support cannot be confirmed.",
   "scopesActionEditor.select": "Select ",
-  "scopesActionEditor.vpP": "Vp-p",
   "scopesActionEditor.optionsAreUnavailable": " options are unavailable.",
   "scopesActionEditor.isInvalidOrUnconfirmedSelectASupportedFixedValue": " is invalid or unconfirmed. Select a supported fixed value.",
   "scopesActionEditor.noSupportedChannelsWereReturnedForTheCurrentModel": "No supported channels were returned for the current model.",

@@ -1,8 +1,8 @@
 export default {
   "failurePresentation.thisCheckDidNotPass": "此檢查未通過。",
-  "failurePresentation.reviewTheExpectedConditionAndTheValueUsedBy": "請檢查預期條件與此檢查使用的數值。",
+  "failurePresentation.reviewTheExpectedConditionAndTheValueUsedBy": "請檢查預期條件與此檢查使用的值。",
   "failurePresentation.thisCheckCouldNotBeEvaluated": "無法評估此檢查。",
-  "failurePresentation.reviewTheTechnicalDetailsAndTheValuesUsedBy": "請檢查技術詳細資料與此檢查使用的數值。",
+  "failurePresentation.reviewTheTechnicalDetailsAndTheValuesUsedBy": "請檢查技術詳細資料與此檢查使用的值。",
   "failurePresentation.theRunFailedWhilePerformingSafetyCleanup": "執行在安全清理期間失敗。",
   "failurePresentation.reviewTheTechnicalDetailsBeforeRunningAgainAnyEarlier": "再次執行前請檢查技術詳細資料。先前的工作流程失敗會保留在同一診斷中。",
   "failurePresentation.theExternalToolCouldNotStart": "外部工具無法啟動。",

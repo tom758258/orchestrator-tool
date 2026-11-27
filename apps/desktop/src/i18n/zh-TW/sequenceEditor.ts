@@ -48,7 +48,7 @@ export default {
   "sequenceEditor.powerADUTWaitForSettlingMeasureItThen": "為待測物供電，等待穩定後量測，再關閉電源。",
   "sequenceEditor.reuseAVariable": "重複使用變數",
   "sequenceEditor.setVariablePowerSetOutput": "設定變數 → 設定電源輸出",
-  "sequenceEditor.defineAValueOnceAndReuseItInA": "定義一次數值，在後續步驟重複使用。",
+  "sequenceEditor.defineAValueOnceAndReuseItInA": "先定義一個值，再於後續步驟重複使用。",
   "sequenceEditor.body": "迴圈內部",
   "sequenceEditor.rootWorkflow": "根層工作流程",
   "sequenceEditor.expand": "展開",

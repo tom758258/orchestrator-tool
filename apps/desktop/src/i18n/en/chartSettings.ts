@@ -86,7 +86,6 @@ export default {
   "chartSettings.cancel": "Cancel",
   "chartSettings.apply": "Apply",
   "chartSettings.onlyLineOrTheCurrentChartTypeCanBe": "Only Line or the current chart type can be used while a run is in progress.",
-  "chartSettings.binsLabel": "{mode} bins",
   "chartSettings.tab.General": "General",
   "chartSettings.tab.Series": "Series",
   "chartSettings.tab.Axes": "Axes",

@@ -3,7 +3,7 @@ export default {
   "inputValueEditor.replaceWithStringFixedValue": "改為字串固定值",
   "inputValueEditor.result": "結果",
   "inputValueEditor.selectStepFirst": "請先選擇步驟",
-  "inputValueEditor.noEarlierResults": "目前沒有可引用的先前步驟。",
+  "inputValueEditor.noEarlierResults": "目前沒有可供引用的先前步驟結果。",
   "inputValueEditor.customPointer": "自訂指標…",
   "inputValueEditor.jSONPointer": "JSON Pointer",
   "inputValueEditor.useAJSONPointerSuchAsValueLeaveEmpty": "使用 JSON Pointer，例如 /value。留白表示完整結果。",

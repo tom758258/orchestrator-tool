@@ -86,7 +86,6 @@ export default {
   "chartSettings.cancel": "取消",
   "chartSettings.apply": "套用",
   "chartSettings.onlyLineOrTheCurrentChartTypeCanBe": "執行期間只能使用折線圖或目前的圖表類型。",
-  "chartSettings.binsLabel": "{mode}分箱",
   "chartSettings.tab.General": "一般",
   "chartSettings.tab.Series": "資料系列",
   "chartSettings.tab.Axes": "座標軸",
