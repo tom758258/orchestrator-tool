@@ -31,6 +31,23 @@ D3 modules - ISC and BSD-3-Clause, as declared per package
     https://github.com/tauri-apps/tauri
     https://github.com/tauri-apps/plugins-workspace
 
+Frontend build runtime notices
+------------------------------
+Vite 8.2.2 and Rolldown 1.2.5 - MIT
+    https://github.com/vitejs/vite/tree/v8.2.2
+    https://github.com/rolldown/rolldown/tree/v1.2.5
+Although these are npm devDependencies, HTML-entry builds can include
+their modulepreload polyfill and generated interop helpers. Collect their
+package-supplied notices alongside the frontend runtime dependencies.
+The Rolldown modulepreload polyfill is based on es-module-shims by Guy
+Bedford (MIT). Its license text, copied from the locked Rolldown version's
+upstream polyfill README, is included at:
+    licenses/rolldown-1.2.5/LICENSE-modulepreload-polyfill
+Upstream source:
+    https://github.com/rolldown/rolldown/blob/v1.2.5/crates/rolldown_plugin_vite_module_preload_polyfill/README.md
+Review runtime contributors and update the upstream copy when changing
+the locked frontend build tooling.
+
 Rust and npm dependency notices
 -------------------------------
 Core/CLI and Desktop use Rust dependencies including Clap, Serde, chrono,
@@ -44,10 +61,11 @@ licenses/DEPENDENCIES.txt identifies the collected packages, their declared
 license metadata, exact source archive locations where available and the
 copied files' directories. The Rust collection follows the Windows x64
 normal/build dependency graphs of both Cargo packages; npm collection
-uses installed non-dev lock entries. This intentionally conservative
-collection can include build-only inputs and is not a complete analysis
-of the final linked or tree-shaken binaries. Check any package without
-collected notice files against its upstream source before distribution.
+uses installed non-dev lock entries plus Vite and Rolldown. This
+intentionally conservative collection can include build-only inputs and
+is not a complete analysis of the final linked or tree-shaken binaries.
+Empty package notice files are omitted and flagged in the index. Check
+any missing or empty notice against its upstream source before distribution.
 The project uses the locked upstream dependencies; source for registry
 packages is available from the exact package archive locations in the index.
 This notice is not a substitute for the applicable upstream license terms.

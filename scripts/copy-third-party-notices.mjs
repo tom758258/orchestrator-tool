@@ -33,12 +33,17 @@ function copyNotices(source, destination, declaredFile) {
     }
     files.add(rel);
   }
+  const empty = [];
   for (const rel of [...files].sort()) {
+    if (statSync(join(source, rel)).size === 0) {
+      empty.push(rel.split(sep).join('/'));
+      continue;
+    }
     const target = join(destination, rel);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(source, rel), target);
   }
-  return files.size;
+  return { count: files.size - empty.length, empty };
 }
 
 function rustPackages(manifest) {
@@ -66,18 +71,34 @@ function rustPackages(manifest) {
 mkdirSync(output, { recursive: true });
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.txt']) copyFileSync(join(root, name), join(output, name));
 cpSync(join(root, 'licenses'), licenses, { recursive: true });
+for (const rel of [
+  'echarts-6.1.0/LICENSE',
+  'echarts-6.1.0/NOTICE',
+  'echarts-6.1.0/licenses/LICENSE-d3',
+  'rolldown-1.2.5/LICENSE-modulepreload-polyfill',
+]) {
+  const path = join(licenses, rel);
+  if (!existsSync(path) || !statSync(path).isFile() || statSync(path).size === 0) {
+    throw new Error(`Missing or empty required upstream notice: ${rel}`);
+  }
+}
 
 const index = [
   'Orchestrator Tool - Collected third-party notices',
-  'Windows x64 Cargo normal/build dependency graphs and installed npm non-dev lock entries.',
+  'Windows x64 Cargo normal/build dependency graphs, installed npm non-dev lock entries, and Vite/Rolldown runtime contributors.',
   'This conservative collection can include build-only inputs and is not a list of linked binary contents.',
-  'Review any missing packaged notice against upstream before distributing.',
+  'Review any missing or empty packaged notice against upstream before distributing.',
   '',
 ];
-function record(name, declaredLicense, source, destination, count) {
+function record(name, declaredLicense, source, destination, { count, empty }) {
   const path = relative(licenses, destination).split(sep).join('/');
   index.push(name, `  Declared license: ${declaredLicense || 'not declared'}`, `  Source: ${source}`,
-    `  Notice files: ${count ? `${path}/ (${count})` : 'NONE FOUND - review upstream'}`, '');
+    `  Notice files: ${count ? `${path}/ (${count})` : 'NONE FOUND - review upstream'}`);
+  for (const rel of empty) {
+    index.push(`  Empty notice omitted: ${rel} - review upstream`);
+    console.warn(`Empty packaged notice omitted: ${name}: ${rel}; review upstream.`);
+  }
+  index.push('');
   if (!count) console.warn(`No packaged notice files found: ${name}; review upstream.`);
 }
 
@@ -87,22 +108,25 @@ for (const manifest of ['Cargo.toml', 'apps/desktop/src-tauri/Cargo.toml']) {
 }
 for (const pkg of [...crates.values()].sort((a, b) => a.id.localeCompare(b.id))) {
   const destination = join(licenses, 'rust', `${pkg.name}-${pkg.version}`);
-  const count = copyNotices(dirname(pkg.manifest_path), destination, pkg.license_file);
+  const notices = copyNotices(dirname(pkg.manifest_path), destination, pkg.license_file);
   const source = pkg.source === 'registry+https://github.com/rust-lang/crates.io-index'
     ? `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download` : pkg.source;
-  record(`Rust ${pkg.name} ${pkg.version}`, pkg.license || (pkg.license_file ? 'see declared license file' : null), source, destination, count);
+  record(`Rust ${pkg.name} ${pkg.version}`, pkg.license || (pkg.license_file ? 'see declared license file' : null), source, destination, notices);
 }
 
 const desktop = join(root, 'apps/desktop');
 const lock = JSON.parse(readFileSync(join(desktop, 'package-lock.json'), 'utf8'));
+// HTML-entry builds can embed the Vite modulepreload polyfill and Rolldown
+// interop helpers even though the tools are devDependencies.
+const runtimeContributors = new Set(['node_modules/vite', 'node_modules/rolldown']);
 for (const [path, pkg] of Object.entries(lock.packages).sort(([a], [b]) => a.localeCompare(b))) {
-  if (!path || pkg.dev) continue;
+  if (!path || (pkg.dev && !runtimeContributors.has(path))) continue;
   const installed = join(desktop, path);
   if (pkg.optional && !existsSync(installed)) continue;
   const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
   if (manifest.version !== pkg.version) throw new Error(`Installed npm version differs from lock: ${path}`);
   const destination = join(licenses, 'npm', path.replace(/^node_modules\//, ''));
-  const count = copyNotices(installed, destination);
-  record(`npm ${manifest.name} ${pkg.version}`, pkg.license || manifest.license, pkg.resolved || 'see package-lock.json', destination, count);
+  const notices = copyNotices(installed, destination);
+  record(`npm ${manifest.name} ${pkg.version}`, pkg.license || manifest.license, pkg.resolved || 'see package-lock.json', destination, notices);
 }
 writeFileSync(join(licenses, 'DEPENDENCIES.txt'), index.join('\n') + '\n', 'utf8');
