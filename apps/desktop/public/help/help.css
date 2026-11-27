@@ -40,7 +40,7 @@ body {
   background: var(--bg-body);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
-  line-height: 1.65;
+  line-height: 1.75;
 }
 
 .help-sidebar {
@@ -82,22 +82,30 @@ body {
 .help-content {
   flex: 1;
   min-width: 0;
-  max-width: 1040px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 3rem 3.5rem 5rem;
+  padding: 2.5rem 3rem 5rem;
   overflow-wrap: anywhere;
 }
 
 h1 { font-size: 1.95rem; margin: 0 0 1.5rem; }
 h2 {
   font-size: 1.55rem;
-  margin: 3rem 0 1.25rem;
+  margin: 2.4rem 0 1rem;
   padding-bottom: 0.45rem;
   border-bottom: 1px solid var(--border-color);
   scroll-margin-top: 1.5rem;
 }
 h3 { font-size: 1.22rem; margin: 2rem 0 1rem; scroll-margin-top: 1.5rem; }
-p, ul, ol, blockquote { margin: 0 0 1.15rem; color: var(--text-muted); }
+p, ul, ol, blockquote { margin: 0 0 1.15rem; color: var(--text-main); }
+li + li { margin-top: 0.3rem; }
+blockquote { border-left: 3px solid var(--accent); background: var(--bg-sidebar); padding: 0.75rem 1rem; border-radius: 0 6px 6px 0; }
+blockquote > :last-child { margin-bottom: 0; }
+.help-page-group { margin-top: 0.8rem; padding: 0.2rem 0.6rem; color: var(--text-main); font-weight: 650; font-size: 0.83rem; }
+.help-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
+.help-chart-grid figure { margin: 0; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; text-align: center; }
+.help-chart-grid svg { display: block; width: 100%; height: auto; color: var(--accent); }
+.help-chart-grid figcaption { font-size: 0.88rem; font-weight: 600; margin-top: 0.35rem; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -111,13 +119,14 @@ table {
   font-size: 0.93rem;
 }
 th, td {
-  min-width: 7.5rem;
+  min-width: 5.5rem;
   padding: 0.68rem 0.85rem;
   text-align: left;
   vertical-align: top;
   border: 1px solid var(--border-color);
 }
 th { color: var(--text-main); background: var(--bg-sidebar); }
+tbody tr:nth-child(even) { background: var(--bg-sidebar); }
 
 code {
   font-family: "Cascadia Code", "Fira Code", Consolas, "SF Mono", Menlo, monospace;
@@ -141,6 +150,8 @@ pre {
   line-height: 1.5;
 }
 pre code { color: #f8fafc; background: transparent; padding: 0; }
+pre:has(> code.language-text) { background: var(--bg-sidebar); border: 1px solid var(--border-color); }
+pre > code.language-text { color: var(--text-main); }
 
 @media (max-width: 800px) {
   body { display: block; }

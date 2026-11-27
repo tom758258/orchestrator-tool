@@ -24,29 +24,69 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html" aria-current="page">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Output Data and Export</h1>
-<h3 id="105-data-and-summary">10.5 Data and Summary</h3>
+<h2 id="data-and-statistics">Data and statistics</h2>
+<table>
+<thead>
+<tr>
+<th>Statistic</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Count</td>
+<td>Number of samples</td>
+</tr>
+<tr>
+<td>Min / Max</td>
+<td>Minimum / maximum</td>
+</tr>
+<tr>
+<td>Avg</td>
+<td>Average</td>
+</tr>
+<tr>
+<td>Range</td>
+<td>Max − Min</td>
+</tr>
+<tr>
+<td>Std Dev</td>
+<td>Sample standard deviation</td>
+</tr>
+<tr>
+<td>2σ / 3σ</td>
+<td>Twice / three times the standard deviation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="display-precision">Display precision</h3>
 <p><strong>Output Data</strong> is built from committed ResultRows. Large tables use
 virtualization for display, but the rows remain available for charts and
 export.</p>
@@ -57,6 +97,7 @@ string. Changes apply immediately and carry across Run Pages for the current
 Desktop session. Count stays an integer, and Elapsed Time/Timestamp formats take
 priority. These settings do not change stored values, statistics, Charts, exports,
 or templates.</p>
+<h3 id="statistic-selection-and-limits">Statistic selection and limits</h3>
 <p><strong>Summary</strong> shows Count, Min, Max, and Avg by default. <strong>Columns ▾</strong> independently
 controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std Dev
 is the sample standard deviation, calculated as <code>sqrt(M2 / (n - 1))</code>; 2σ and 3σ
@@ -68,7 +109,42 @@ Count remains an integer, and missing statistics remain <code>—</code>. Format
 display only; the underlying statistics retain their original precision in seconds.
 Column choices are temporary presentation settings. If a Page has no numeric
 Outputs, there is no numeric summary to show.</p>
-<h2 id="11-manual-export">11. Manual export</h2>
+<h2 id="manual-export">Manual export</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>When and why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Streaming CSV</td>
+<td>Write data continuously during a run</td>
+</tr>
+<tr>
+<td>Manual CSV</td>
+<td>Export data after execution</td>
+</tr>
+<tr>
+<td>Manual XLSX</td>
+<td>Export an Excel workbook after execution</td>
+</tr>
+<tr>
+<td>PNG</td>
+<td>Export an available chart image</td>
+</tr>
+<tr>
+<td>BIN</td>
+<td>Export raw Serial Background RX bytes</td>
+</tr>
+<tr>
+<td>Save Template</td>
+<td>Save workflow settings, not measured data</td>
+</tr>
+</tbody>
+</table>
+<h3 id="export-scope-and-format">Export scope and format</h3>
 <p>Manual export is available from the Output area after the run is no longer
 active and the selected export scope contains committed Output rows. Failed or
 incomplete runs keep their failure/incomplete status and export those committed
@@ -77,13 +153,28 @@ rows as partial results.</p>
 switch between <strong>CSV</strong> and <strong>XLSX</strong> during the current session; this choice is not
 saved. Streaming CSV behavior is unchanged.</p>
 <p>Choose <strong>Run Page</strong> or <strong>All Run Pages</strong>, then choose <strong>CSV</strong> or <strong>XLSX</strong>:</p>
-<ul>
-<li><strong>Run Page / CSV</strong> — exports the selected Page as one CSV file.</li>
-<li><strong>Run Page / XLSX</strong> — exports the selected Page as one worksheet.</li>
-<li><strong>All Run Pages / CSV</strong> — creates one CSV file per Page in the selected
-  destination folder.</li>
-<li><strong>All Run Pages / XLSX</strong> — creates one workbook with one worksheet per Page.</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>CSV</th>
+<th>XLSX</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run Page</td>
+<td>One CSV for the selected Page</td>
+<td>One worksheet for the selected Page</td>
+</tr>
+<tr>
+<td>All Run Pages</td>
+<td>One CSV per Page in the chosen folder</td>
+<td>One workbook with a worksheet per Page</td>
+</tr>
+</tbody>
+</table>
+<h3 id="excel-time-and-storage-precision">Excel time and storage precision</h3>
 <p>All XLSX time formats use numeric cells suitable for calculations and plotting.
 Elapsed <strong>Seconds</strong> stores seconds; the other three formats store seconds / 86400
 (Excel days). Timestamp stores the complete date/time serial even when Date is
@@ -100,6 +191,7 @@ Boolean cells, null becomes Blank, and arrays/objects remain compact JSON Text.
 Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
 unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.</p>
+<h3 id="data-from-failed-or-stopped-runs">Data from failed or stopped runs</h3>
 <p>Loop Stop is not itself a failure. Stop Workflow produces a stopped run when
 cleanup succeeds. After execution stops, rows already committed before a
 failure or incomplete termination remain

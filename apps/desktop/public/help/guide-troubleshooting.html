@@ -24,29 +24,72 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html" aria-current="page">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html" aria-current="page">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Troubleshooting and Safety</h1>
-<h2 id="14-common-problems">14. Common problems</h2>
+<h2 id="common-problems-at-a-glance">Common problems at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>First check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tool not configured or EXE rejected</td>
+<td>Correct CLI/Worker EXE, version and compatibility</td>
+</tr>
+<tr>
+<td>Missing / Not a file</td>
+<td>Whether the executable moved</td>
+</tr>
+<tr>
+<td>Live Resource missing/unsaved/duplicate</td>
+<td>Setup address and Save Resource</td>
+</tr>
+<tr>
+<td>Simulation asks for sample count</td>
+<td>Meters SIM Max Samples</td>
+</tr>
+<tr>
+<td>Export unavailable</td>
+<td>Run ended and exportable data exists</td>
+</tr>
+<tr>
+<td>Streaming CSV failed</td>
+<td>Error details and destination folder</td>
+</tr>
+<tr>
+<td>Application cannot start</td>
+<td>WebView2 Runtime and startup details</td>
+</tr>
+</tbody>
+</table>
 <h3 id="tool-shows-not-configured">Tool shows Not configured</h3>
 <p>In <strong>Tools</strong>, select the Tool Type under <strong>Select tool to add</strong> and use <strong>Add Tool</strong> to
 configure the correct external executable.</p>
@@ -85,7 +128,7 @@ download page, install or repair the system runtime, then restart the
 application. If a Startup failed dialog appears after the availability check,
 keep its Details text for diagnosis and make sure Windows is supported and
 WebView2 is installed and up to date.</p>
-<h2 id="15-safety-notes">15. Safety notes</h2>
+<h2 id="safety-notes">Safety notes</h2>
 <ul>
 <li>Live mode can affect connected hardware.</li>
 <li>Verify every Live Resource before confirmation.</li>

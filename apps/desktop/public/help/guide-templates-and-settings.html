@@ -24,63 +24,95 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html" aria-current="page">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Templates and Preferences</h1>
-<h2 id="12-templates-and-local-machine-settings">12. Templates and local machine settings</h2>
-<p>When the application starts, it creates a blank <code>Untitled</code> draft. There is no
-separate <code>New</code> button in the current UI.</p>
-<ul>
-<li><strong>Open Template</strong> loads an existing Template.</li>
-<li><strong>Save Template</strong> writes the current Template.</li>
-</ul>
-<p>A Template contains:</p>
-<ul>
-<li>Template name</li>
-<li>Tool Instances</li>
-<li>Tool setup</li>
-<li>Workflow</li>
-<li>Optional saved Chart definitions/settings, only when <strong>Save charts with
-  template</strong> is enabled</li>
-</ul>
-<p>A Template does not contain:</p>
-<ul>
-<li>executable paths;</li>
-<li>Live Resources or last-known resource identity;</li>
-<li>Simulation/Live mode;</li>
-<li>Last Run, Run IDs, or committed results;</li>
-<li>session-only Chart state that was not selected for saving;</li>
-<li>the current interactive zoom/pan viewport;</li>
-<li>Workflow Chart Options (Sampling, Preserve Significant Changes, Show
-  Significant Change Markers, and Fit Data);</li>
-<li>loading/error UI state, dialog state, or export destinations/paths; or</li>
-<li>runtime Powers authorization.</li>
-</ul>
-<p>This separation keeps Templates portable while keeping executable paths,
-resources, and other machine/runtime state local to the Desktop installation.</p>
-<p>The current Template requires explicit FG/BG Buffer settings, even when disabled.
-Older Templates missing them are rejected; no migration or automatic defaults
-are provided. Buffer runtime contents and status are not saved.</p>
-<h2 id="13-language-and-appearance">13. Language and appearance</h2>
+<h2 id="create-open-and-save-templates">Create, open and save templates</h2>
+<p>The application starts with a blank Untitled template. Use <strong>New Template</strong> to create a new one, <strong>Open Template</strong> to load an existing one, and <strong>Save Template</strong> to save the current template.</p>
+<h2 id="what-is-saved">What is saved?</h2>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Storage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Template name, Tool Instances, Tool Setup, Workflow</td>
+<td>Template</td>
+</tr>
+<tr>
+<td>FG/BG Interaction and Data Buffer settings</td>
+<td>Template (required even when disabled)</td>
+</tr>
+<tr>
+<td>Chart definitions/settings</td>
+<td>Optional; only with Save charts with template</td>
+</tr>
+<tr>
+<td>External tool EXE paths</td>
+<td>Local computer</td>
+</tr>
+<tr>
+<td>Live Resources, VISA Backend and last-known device identity</td>
+<td>Local computer</td>
+</tr>
+<tr>
+<td>Language, appearance, Step Display Density</td>
+<td>Local preferences</td>
+</tr>
+<tr>
+<td>Simulation/Live mode, Last Run, Run ID and results</td>
+<td>Temporary</td>
+</tr>
+<tr>
+<td>Data Buffer contents and status</td>
+<td>Temporary</td>
+</tr>
+<tr>
+<td>Unsaved Charts, interactive zoom/pan</td>
+<td>Temporary</td>
+</tr>
+<tr>
+<td>Workflow Chart Options (Sampling, Preserve Significant Changes, Show Significant Change Markers, Fit Data)</td>
+<td>Temporary</td>
+</tr>
+<tr>
+<td>Loading/error state, dialogs, export destinations, Powers runtime authorization</td>
+<td>Not saved in templates</td>
+</tr>
+</tbody>
+</table>
+<h3 id="move-a-template-to-another-computer">Move a template to another computer</h3>
+<p>If you send a Template from computer A to computer B, your colleague receives the instances, instrument settings and workflow. They must configure the EXE paths and any Live Resources for their own computer. Templates do not carry measured data; export results separately.</p>
+<h3 id="older-template-compatibility">Older template compatibility</h3>
+<p>The current template requires explicit FG/BG Buffer settings even when disabled. Older templates missing the required settings are rejected; no migration or automatic defaults are provided.</p>
+<h2 id="language-and-appearance">Language and appearance</h2>
 <p>The globe button near <strong>Appearance</strong> shows <strong>English</strong> or <strong>繁體中文</strong>. Click it
 once to switch the entire Desktop immediately without losing your edits, run, or
 results. Your choice is remembered on this computer. On first launch, Traditional

@@ -24,31 +24,34 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html" aria-current="page">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1 id="orchestrator-tool-desktop-使用者指南">Orchestrator Tool Desktop 使用者指南</h1>
-<p>本指南描述目前 Orchestrator Tool Desktop 已實作且可使用的行為，讀者是
-需要設定 external tools、建立 reusable Template、執行 Workflow，以及檢視或
-匯出結果的 operator 與 engineer。</p>
+<p>本指南從第一次使用開始，介紹如何準備外部工具、建立範本與工作流程、執行測試，以及查看和匯出結果。不需要先了解程式內部架構。</p>
 <h2 id="選擇操作介面">選擇操作介面</h2>
 <p>Windows 發行包提供兩個使用者操作入口：</p>
 <table>
@@ -60,29 +63,39 @@
 <tr><td><code>Orchestrator Tool.exe</code></td><td>Desktop：建立及執行 Workflow、查看與匯出結果。</td></tr>
 </tbody>
 </table>
-<p>本指南介紹 Desktop。執行 <code>Orchestrator Tool.exe</code> 後，可按右上角 <strong>Help</strong> 開啟離線指南；CLI 的說明可在 Windows PowerShell 輸入 <code>.\orchestrator-tool.exe user-guide --lang zh-TW</code>。這兩個 EXE 由 Windows 建置流程放在同一個 <code>dist/windows-x64/</code> 資料夾；外部工具 EXE 須另外安裝。</p>
+<p>一般使用者請直接開啟 <code>Orchestrator Tool.exe</code>，不需要先啟動 CLI。執行 <code>Orchestrator Tool.exe</code> 後，可按右上角 <strong>Help</strong> 開啟離線指南；CLI 的說明可在 Windows PowerShell 輸入 <code>.\orchestrator-tool.exe user-guide --lang zh-TW</code>。這兩個 EXE 由 Windows 建置流程放在同一個 <code>dist/windows-x64/</code> 資料夾；外部工具 EXE 須另外安裝。</p>
 <h2 id="使用指南章節">使用指南章節</h2>
+<p>建議新手依序閱讀「第一次使用」，完成一次模擬後再查閱進階功能。</p>
+<h3 id="第一次使用">第一次使用</h3>
 <ul>
 <li><a href="guide-getting-started.zh-TW.html">快速開始</a></li>
 <li><a href="guide-external-tools.zh-TW.html">設定外部工具</a></li>
 <li><a href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>，含手動讀取錯誤佇列</li>
 <li><a href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a></li>
-<li><a href="steps-input-values.zh-TW.html">輸入值與資料流</a></li>
-<li><a href="steps-powers.zh-TW.html">Powers 步驟</a></li>
-<li><a href="steps-workflow.zh-TW.html">Workflow 步驟</a>，含 String Process、Byte Process 固定字串編輯及 Array Process</li>
-<li><a href="steps-scopes.zh-TW.html">Scopes 動作</a></li>
-<li><a href="steps-background.zh-TW.html">Background 互動步驟（含選用 Data Buffer）</a></li>
 <li><a href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a></li>
+</ul>
+<h3 id="基本操作與步驟參考">基本操作與步驟參考</h3>
+<ul>
+<li><a href="steps-input-values.zh-TW.html">輸入值與資料流</a></li>
+<li><a href="steps-workflow.zh-TW.html">Workflow 步驟</a>，含 String Process、Byte Process 固定字串編輯及 Array Process</li>
+<li><a href="steps-meters.zh-TW.html">Meters 步驟</a></li>
+<li><a href="steps-powers.zh-TW.html">Powers 步驟</a></li>
+<li><a href="steps-scopes.zh-TW.html">Scopes 動作</a></li>
+<li><a href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></li>
+</ul>
+<h3 id="進階擷取">進階擷取</h3>
+<ul>
 <li><a href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a></li>
+<li><a href="steps-background.zh-TW.html">Background 互動步驟（含選用 Data Buffer）</a></li>
+</ul>
+<h3 id="結果範本與疑難排解">結果、範本與疑難排解</h3>
+<ul>
 <li><a href="guide-results.zh-TW.html">執行結果</a></li>
 <li><a href="guide-charts.zh-TW.html">圖表</a></li>
 <li><a href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a></li>
 <li><a href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a></li>
 <li><a href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></li>
-<li><a href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></li>
 </ul>
-<h2 id="step-reference">Step Reference</h2>
-<p>從上述 <strong>Workflow Steps、Input Values、Powers、Scopes、Background、Serial</strong> 章節查閱目前已實作的 Step 設定與限制。每個 Step 的範例會在有實際內容時獨立擴充。</p>
   </main>
   <script>
     (() => {

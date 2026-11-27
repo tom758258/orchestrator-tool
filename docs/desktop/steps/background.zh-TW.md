@@ -2,7 +2,30 @@
 
 <!-- help-source -->
 
-### FG/BG Interaction
+## 前景／背景互動（FG/BG Interaction）
+
+前景（Foreground）是依順序執行的工作流程；背景（Background）可在前景執行其他步驟時持續取得資料。互動步驟讓前景取用背景資料或派送支援的命令。
+
+```text
+Setup: Enable Background Streaming
+    -> Workflow: Enable FG/BG Interaction
+    -> Worker ON
+    -> BG Command（選用） / Get Latest / Wait Next / Buffer
+    -> Worker OFF
+```
+
+| 互動步驟 | 主要參數 | 結果／失敗條件 |
+| --- | --- | --- |
+| BG Command | 背景來源、命令、Wait for Completion | 派送支援命令；本身無資料輸出。拒絕、忙碌或命令失敗會使流程失敗。 |
+| Get Latest | 背景來源 | 取得最新原生事件；不存在或無效即失敗。 |
+| Wait Next | 背景來源、選用逾時 | 取得之後第一筆事件；首筆無效、來源已結束或逾時即失敗。 |
+| Get Command Result | 先前的 Source BG Command Step、選用逾時 | 取得該次命令原生結果；未執行來源或結果未能取得即失敗。 |
+| Get Buffer Data | 背景來源、Peek／Pop、Count／ALL | 取得事件陣列及筆數；選取資料有無效事件時整批失敗且不消耗。 |
+| Get Buffer Status | 背景來源 | 取得容量及遺失狀態，不消耗資料。 |
+
+模擬範例：Meters Software Simple 啟用 Trigger with BG Command，加入 Worker ON → BG Command → Get Command Result → Output（選取 `/value`）。選用 Capture；停止來源前遵守背景筆數與收尾規則，詳見[背景擷取](../guide/background-streaming.zh-TW.md)。Buffer 步驟需另啟用 Enable Buffer。
+
+### 啟用設定
 
 Workflow 左側最下方、**Chart Options** 下方的 **FG/BG Interaction**
 設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
@@ -11,7 +34,9 @@ Workflow 左側最下方、**Chart Options** 下方的 **FG/BG Interaction**
 Step 引用的 Background Binding 時會關閉 Interaction 與 Buffer，但保留命令容量數值。
 **Max Active Command Status** 預設 **4096**，範圍 **1–65536**，限制同一
 Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。這些設定（含必填 Buffer 設定）都會隨
-Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。
+Template 儲存。缺少必要設定的舊範本無法載入；請參閱[範本與偏好設定](../guide/templates-and-settings.zh-TW.md)。
+
+### 執行互動步驟
 
 先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
 **Worker ON**。啟用 Interaction 不會自動啟動 Worker；Capture 可以保持 OFF。
@@ -36,12 +61,16 @@ Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值�
 事件。Custom 批次與 Scopes 不提供 Command／Result；Serial Command／Result
 僅支援 TX，Latest／Next 仍取得 RX。Powers 與 Wavegen 不支援 Background。
 
+### 逾時及命令限制
+
 **Step timeout (ms)** 可留白以使用 action timeout；整個 Step 共用一個期限。
 每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
 命令。Busy 或容量不足會直接失敗，不會排入佇列。已接受的命令稍後失敗時，Run
 仍會失敗並開始清理，先前成功的派送 Step 不會改寫。無法確認派送結果時不會重送。
 若 IF 跳過 Get Command Result，結果仍保留至所在 Loop 當次迭代結束；Loop 外的
 命令則保留至 Run 結束。在同一範圍派送另一筆需要結果的命令前，請先取用該結果。
+
+### 停止及安全收尾
 
 正常 Run 結束時，以一個 action timeout 等待尚未完成的命令；Worker OFF 在
 自己的期限內等待必要命令與關閉。未讀結果不增加等待，既有有限筆數與擷取品質
@@ -50,7 +79,20 @@ Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值�
 或 Foreground 仍會被阻擋。重新啟動應用程式前，請先確認外部工具已停止；
 重新啟動本身不代表已驗證關閉。
 
-### Data Buffer（選用）
+## Data Buffer（選用）
+
+```text
+容量 4 組的示意（非實際上限）
+FIFO: [1][2][3][4] + 5 -> [1][2][3][4]，捨棄 5
+Ring: [1][2][3][4] + 5 -> [2][3][4][5]，移除 1
+```
+
+| Overflow Policy | 容量不足時 |
+| --- | --- |
+| Fail Run（預設） | 使流程失敗並收尾 |
+| Continue | 繼續執行，保留資料遺失狀態 |
+
+Buffer 與 Capture、Live Monitor 獨立。實際容量為每個 Worker 最多 1,024 組且不超過 16 MiB。
 
 在同一個 FG/BG Interaction 面板啟用 **Enable Buffer（啟用 Buffer）**，
 預設 OFF，必須先啟用 FG/BG Interaction。選擇 FIFO／Ring Buffer 及
@@ -64,6 +106,8 @@ Continue 保留遺失狀態供 IF／ELSE 判斷。Buffer Overflow 不會取代�
 Event 的致命處理錯誤或先前的失敗原因。Capture、Latest、Next 與 Command
 Result 獨立；Buffer 遺失不等於 Capture 遺失。
 
+### 讀取及查看 Buffer
+
 - **Get Buffer Data**：選擇 Background、Peek／Pop、Count／ALL。Count
   支援 Fixed Value、Variable、Previous step result，範圍 1～1024 整數。
   由最舊開始立即回傳，資料不足回傳現有數量，空 Buffer 回傳 count 0 與空 Array。
@@ -71,6 +115,8 @@ Result 獨立；Buffer 遺失不等於 Capture 遺失。
   失敗，整批不消耗。Peek 與後續 Pop 不保證取得相同資料。
 - **Get Buffer Status**：只選擇 Background，查詢狀態、不讀取或移除 Event。
   兩個 Buffer Step 均不等待資料累積，沒有 Step timeout。
+
+### 回傳結果
 
 Get Buffer Data 回傳 `/count`（實際取得數量）、`/data`（完整原生 Event
 Array）與 `/status/...`（操作後快照）。Get Buffer Status 在根層級回傳同一組
@@ -94,4 +140,3 @@ Worker ON 初始化空 Buffer；Source Ended 保留資料直到 Worker OFF 才�
 
 使用 Array Process Length 或 Get Item 操作 `/data`。Serial RX Event
 不保證為完整封包；不提供封包組裝或 TX/RX 自動配對。
-

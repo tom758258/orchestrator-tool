@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workflow 步驟</title>
+  <title>工作流程步驟</title>
   <script>
     (() => {
       const query = new URLSearchParams(location.search).get('theme');
@@ -24,29 +24,70 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html" aria-current="page">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html" aria-current="page">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
-<h1>Workflow 步驟</h1>
-<h3 id="62-for">6.2 For</h3>
+<h1>工作流程步驟</h1>
+<h2 id="基本步驟">基本步驟</h2>
+<table>
+<thead>
+<tr>
+<th>步驟</th>
+<th>設定與用途</th>
+<th>範例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wait</td>
+<td>等待指定時間（毫秒）</td>
+<td>500 ms 等待半秒</td>
+</tr>
+<tr>
+<td>Set Variable</td>
+<td>指定名稱及值來源，建立或更新變數</td>
+<td>x = 5</td>
+</tr>
+<tr>
+<td>Assert</td>
+<td>比較左右值；條件不成立時流程失敗</td>
+<td>比較量測值是否大於 0</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>選擇名稱、Page、值來源，將結果加入資料表</td>
+<td>Voltage = Measure 的量測值</td>
+</tr>
+</tbody>
+</table>
+<p>這些步驟不需要 Tool Instance；只有引用儀器步驟結果時才需要相關的量測。Assert 可提供失敗訊息。請參閱<a href="steps-input-values.zh-TW.html">輸入值與資料流</a>了解可用的值來源及比較規則。</p>
+<h2 id="for依指定範圍重複">For：依指定範圍重複</h2>
+<pre><code class="language-text">範例：Start = 1, Stop = 3, Step = 1
+i = 1 -&gt; Body -&gt; i = 2 -&gt; Body -&gt; i = 3 -&gt; Body -&gt; 結束
+</code></pre>
 <p>For step 具有 <strong>Start</strong>、<strong>Stop</strong>、<strong>Step</strong>、loop variable 與 body。</p>
 <ul>
 <li>當 step grid 能到達 Stop 時，Stop 會包含在執行範圍內。</li>
@@ -57,7 +98,15 @@
 </ul>
 <p>For ranges 使用 exact decimal range semantics，而不是 floating-point tolerance。
 Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了湊整而額外執行一次。</p>
-<h3 id="63-while">6.3 While</h3>
+<h2 id="while條件成立時重複">While：條件成立時重複</h2>
+<pre><code class="language-text">檢查條件 -- 否 --&gt; 結束
+    |
+    是
+    v
+  執行 Body
+    |
+    +----&gt; 回到條件檢查（遵守次數上限）
+</code></pre>
 <p>While condition 會在每次 iteration 前判斷。Iteration limit 可以是：</p>
 <ul>
 <li>正的 finite <code>max_iterations</code>；或</li>
@@ -66,6 +115,7 @@ Range 依設定的 step 評估；若 Stop 無法由 step 到達，不會為了�
 <p>若 condition 一開始就是 false，body 執行 0 次。Unlimited While 可位於
 root 或沒有 For／While 祖先的 If 分支內。Body 不可為空，可包含 finite nested
 loops，但不可再包含另一個 Unlimited While。</p>
+<h3 id="模擬量測筆數限制">模擬量測筆數限制</h3>
 <p>Software Meters <strong>Measure</strong> 位於 Unlimited While，且 Simulation 無法預先推導
 來源大小時，<strong>執行模擬（Run Simulation）</strong> 會顯示 Sample 警告。每個受影響 Instance 的
 <strong>SIM Max Samples</strong> 預設 1,000，可輸入 1 到 1,000,000 的整數或按 Cancel。
@@ -75,11 +125,38 @@ Measure，該 Step 會失敗並執行 Cleanup，不會重啟 Worker。Live Softw
 Measure 不會套用這個 Simulation 上限。</p>
 <p>前景 Meters 在 Simulation 與 Live 都只使用 Single。若要每次取得一批讀值，
 或使用 Immediate、External 觸發，請將該 Instance 設為 Background。</p>
+<h2 id="if-else條件判斷">If / Else：條件判斷</h2>
+<pre><code class="language-text">            條件
+          /      \
+       成立      不成立
+       THEN       ELSE
+          \      /
+          繼續流程
+</code></pre>
 <p>If step 每次只判斷一次 condition，只執行 THEN 或 ELSE。選取 If 後可
 指定新增 Steps 的分支，也可獨立拖曳及貼上。分支新建的 Variables 與
 Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Output
 沿用外層 Page Row Scope，未執行的分支欄位保持空白，If 不額外新增 Row。</p>
-<h3 id="64-stop-workflow-與迴圈-stop">6.4 Stop Workflow 與迴圈 Stop</h3>
+<h2 id="停止工作流程與停止迴圈">停止工作流程與停止迴圈</h2>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stop Workflow</td>
+<td>停止整次工作流程，等待必要的安全收尾</td>
+</tr>
+<tr>
+<td>Stop / Stop Loop ID</td>
+<td>完成當前迴圈的有效資料後退出指定迴圈，外層流程可繼續</td>
+</tr>
+</tbody>
+</table>
+<h3 id="停止整次工作流程">停止整次工作流程</h3>
 <p>Simulation 或 Live 顯示 Running 時，即可按 <strong>停止工作流程（Stop Workflow）</strong>，包含啟動期間
 及沒有迴圈的 Workflow。此操作會停止整個 Workflow：</p>
 <ol>
@@ -100,6 +177,7 @@ Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Ou
 先前已完成的 Capture 不會因後續刻意提早停止而被改為 incomplete。
 沒有啟用 Capture 的 Worker 停止時不會建立 Dataset。缺少終止證據、Sample
 缺漏、Overflow 與 CSV 錯誤仍屬失敗。</p>
+<h3 id="只停止指定迴圈">只停止指定迴圈</h3>
 <p>獨立的 <strong>Stop</strong> / <strong>Stop <Loop ID></strong> 控制項維持原有的迴圈停止行為：</p>
 <ol>
 <li>目前最內層迭代會繼續執行到成功提交資料的時點。</li>
@@ -108,7 +186,7 @@ Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Ou
 </ol>
 <p>迭代失敗優先於迴圈 Stop。迴圈 Stop 本身不會將整個 Run 標為 Stopped；
 最終狀態仍依一般 Workflow 成功規則判定。</p>
-<h3 id="65-output-pages">6.5 Output Pages</h3>
+<h2 id="output-pages資料分頁">Output Pages：資料分頁</h2>
 <p>Output step 有 name 與 Page。同一 Page 的 Outputs 形成一個 dataset 的 columns；
 不同 Pages 是獨立 datasets，nested loop 也可以擁有自己的 Page。</p>
 <p>每個 Page 綁定一個固定的 owning lexical loop path。不同 lexical loop paths 不可
@@ -117,7 +195,7 @@ Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Ou
 <p>前景每次 Meters Measure 提供一筆讀值，可供 Output、Calculation、Set Variable
 與 Assert 正常引用。只有所屬流程區段或迴圈次數成功結束，才會保存該次 Output 列；
 後續步驟失敗時，尚未保存的列會捨棄。背景讀值獨立記錄於 Capture Dataset。</p>
-<h3 id="66-show-message">6.6 Show Message</h3>
+<h2 id="show-message顯示訊息">Show Message：顯示訊息</h2>
 <p><strong>Show Message</strong> step 會在 Workflow 執行時將文字寫入 Messages Panel。它唯一的用途
 就是輸出訊息：不是 Popup、不是 Assert，也不是 Output Page，因此不會為你的資料、CSV
 或 Charts 增加欄位。</p>
@@ -132,7 +210,7 @@ Step Outputs 不會外露；更新既有 Variable 的值則會保留。分支 Ou
 <li><strong>輸出（Output）</strong> field 顯示某個 Output step 的值。下拉選單顯示 Output 名稱，且只提供位於
   目前 step 之前、在當前 loop scope 內可見的 Outputs。驗證時也會確認該 step 確實是
   Output，因此引用較早的 Wait、Set Variable 或 Show Message 會被拒絕，且不會自動改選
-  其他 step。Show Message 的 Output 必須是單一數值。若參考
+  其他 step。Show Message 的 Output 必須是單一純量（數值、文字、Boolean 或 null）。若參考
   的值不是單一數字、文字、Boolean 或 null，該 step 會明確報錯，不會寫出部分訊息。</li>
 <li><strong>Newline</strong> 會在該 field 之後換行。每則訊息結尾一定會自行換行，因此兩個 Show
   Message step 不會黏成同一行，最後一個 field 也因此不需要 Newline checkbox。</li>
@@ -181,11 +259,12 @@ Double: 6000
 </code></pre>
 <p>因為 Fields 會在 step 執行當下解析，位於 For 或 While loop 內的 Show Message 一律顯示
 目前的 iteration，不會取用上一輪的值。</p>
-<h3 id="67-string-process-與-byte-process">6.7 String Process 與 Byte Process</h3>
+<h2 id="string-process-與-byte-process">String Process 與 Byte Process</h2>
 <p>這兩個 Workflow Step 不需要 Tool Instance。每個資料參數均可使用 Fixed value、
 Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time 或 Timestamp。
 結果可由後續 Step 選擇 Value（JSON Pointer <code>/value</code>）取得。不修改來源 Variable，
 也不自動建立 Output 欄位。</p>
+<h3 id="編輯固定字串">編輯固定字串</h3>
 <p>Process 的 Fixed value 字串欄位中，Enter 輸入 LF；畫面上的 <code>\r</code> 表示 CR、
 <code>\n</code> 表示 LF、<code>\\</code> 表示原本的反斜線，其他反斜線組合保持文字原樣。
 載入的 CRLF 顯示為 <code>\r</code> 加上一個換行，避免 CR 與 LF 被無聲合併或遺失。
@@ -196,6 +275,7 @@ Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time �
 <p>每個輸入與輸出字串最多為 1 MiB（1,048,576 個 UTF-8 Bytes）。超出限制時 Step
 執行失敗，不會自動截斷資料。此限制不改變既有 Variable、Serial RX 或 Capture Dataset
 的容量限制。</p>
+<h3 id="文字處理">文字處理</h3>
 <p><strong>String Process</strong> 以 Unicode code point 而非 UTF-8 Bytes 計算文字。索引從 0 開始，
 搜尋區分大小寫。</p>
 <table>
@@ -261,6 +341,7 @@ Variable 或 Previous step result，不提供內嵌 Calculation、Elapsed time �
 </table>
 <p>空 Search String、索引超出範圍、型態錯誤、無效或非有限數值轉換，以及非零數值下溢為零，均使 Step 失敗。
 例如 <code>STATUS:PASS</code> 使用 Substring，Start Index 7、Length 4，回傳 <code>PASS</code>。</p>
+<h3 id="位元組處理">位元組處理</h3>
 <p><strong>Byte Process</strong> 處理 Hex String 所代表的原始 Bytes。Hex 輸入接受大小寫與完整 Byte
 之間的空白；Hex 輸出統一大寫且不含空白。無空白的 Hex String 在字串上限內最多
 可表示 524,288 個原始 Bytes。Byte 索引從 0 開始。</p>
@@ -331,7 +412,7 @@ Byte Count 2、MSB First、Unsigned；<code>/value</code> 為 3300，後續 Calc
 1000 可得到 3.3。對 <code>1234</code>，MSB First 回傳 4660，LSB First 回傳 13330。</p>
 <p>這些 Step 只處理已取得的資料，不組裝 Serial RX 封包、不配對 TX／RX，
 也不改變 Serial Send 能力。</p>
-<h3 id="68-array-process">6.8 Array Process</h3>
+<h2 id="array-process陣列處理">Array Process：陣列處理</h2>
 <p>Array Process 是獨立於 FG/BG Interaction 的 Workflow Step。從
 <strong>Variable</strong> 或 <strong>Previous step result</strong> 選取既有 Array，例如
 Get Buffer Data 的 <code>/data</code>；不提供 Fixed Value Array 編輯器。
@@ -342,6 +423,25 @@ Get Buffer Data 的 <code>/data</code>；不提供 Fixed Value Array 編輯器�
 逐筆處理時可設定 i=0，以 While 判斷 i 小於取得筆數，使用 Get Item 的 Index i，
 處理該筆後以 Calculation 將 i 加 1。不新增全域 Array 大小限制；
 取出的字串交給 String／Byte Process 時仍適用原有字串限制。</p>
+<table>
+<thead>
+<tr>
+<th>Array Process 操作</th>
+<th>結果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Length</td>
+<td>組數；空陣列為 0</td>
+</tr>
+<tr>
+<td>Get Item</td>
+<td>從 0 開始的索引所對應的元素</td>
+</tr>
+</tbody>
+</table>
+<p>範例：陣列 [10, 20, 30] 的 Length 為 3；Get Item 的 Index = 1 回傳 20。</p>
   </main>
   <script>
     (() => {

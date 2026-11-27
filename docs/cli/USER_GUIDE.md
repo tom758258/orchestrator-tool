@@ -38,7 +38,26 @@ If the executable is on `PATH`, use `orchestrator-tool` without `.\`. In a devel
 
 `doctor` summarizes external executable availability; `tools list` shows each registered tool's resolved status and path. Neither starts a workflow or verifies physical instrument communication.
 
+### Common commands
+
+| Command | Purpose |
+| --- | --- |
+| --help / --version | Command syntax and version |
+| doctor | Environment and external EXE status |
+| tools list | Tool list and configured paths |
+| tools inspect | Tool identity and compatibility checks |
+| tools worker-check | Supported Worker simulation diagnostics (Meters, Powers) |
+
 ## 2. Point the CLI to tool executables
+
+| Tool | EXE to select |
+| --- | --- |
+| Meters | meters-tool.exe |
+| Powers | powers-tool.exe |
+| Scopes | scopes-tool.exe |
+| Serial | serial-tool.exe |
+
+Select the CLI/Worker, not the Desktop EXE with spaces in its name, WebUI Launcher, or private Host. Extract Meters, Powers and Scopes onedir packages completely and retain the adjacent `_internal` directory and other files. Serial's Windows package instead contains two standalone EXEs. Wavegen does not currently document a standalone Windows release build; do not assume completed Workflow integration.
 
 Without a `--config` option, the CLI uses an empty configuration. Create a TOML file if you want to check installed tools, for example `orchestrator.toml`:
 

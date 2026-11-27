@@ -2,7 +2,27 @@
 
 <!-- help-source -->
 
-## 7. Run Simulation
+## Simulation or Live?
+
+| Item | Simulation | Live |
+| --- | --- | --- |
+| Purpose | Test the workflow without hardware I/O | Operate actual equipment |
+| External tool EXEs | Only for tools referenced by the workflow | Only for tools referenced by the workflow |
+| Physical equipment and connection | Not needed | Required for referenced external tools |
+| Saved Live Resource | Not needed | Required for referenced external tools |
+| Confirmation | No Live confirmation | Required |
+| Startup default | Yes | No |
+
+A workflow using only built-in steps such as Wait, Set Variable and Output needs no external tool EXE or physical instrument.
+
+> **Note:** Simulation success verifies the simulated workflow, not actual instruments or wiring.
+
+## Run Simulation
+
+1. Configure all referenced tool EXEs in Tools.
+2. Complete Setup and Workflow.
+3. Select Simulation; use Validate if desired.
+4. Press Run Simulation and inspect Output.
 
 Before Simulation, configure every referenced external executable and ensure
 its manifest and Worker compatibility checks can succeed. You can use
@@ -17,7 +37,22 @@ for simulation or planning; this is orchestration validation, not Live hardware
 validation. Indeterminate Simple Software sources show the run-only sample
 warning described above. Custom modes are available only in Background.
 
-## 8. Run Live
+## Run Live
+
+> **Warning:** Live operates physical equipment. Verify the model, wiring, voltage/current limits and safety requirements before confirming.
+
+1. Save the resources of referenced instances in Setup; verify there are no duplicate addresses or unsaved changes.
+2. Select Live and wait for the applicable Live Preflight.
+3. Correct errors and use Validate to check the template.
+4. Press Run Live, verify the devices and warnings in the confirmation, then start.
+
+### Live Preflight status
+
+| Status | Meaning |
+| --- | --- |
+| Checking | Check in progress; Run unavailable |
+| Passed | Live confirmation is available, not a guarantee of run success |
+| Failed | Incompatibility shown; correct and recheck before running |
 
 Select **Live** in Execution Mode; the same Run control becomes **Run Live**.
 Desktop automatically checks fixed Powers and Scopes Workflow parameters and
@@ -27,6 +62,8 @@ Live confirmation flow. **Failed** shows the known incompatibilities in red and
 blocks Run until corrected and checked successfully. Required capabilities or
 model IDs that cannot be obtained also block Live. Unused instances and unused
 optional capability fields do not block it.
+
+### What triggers another check?
 
 Changing the Template, Workflow parameters, Setup, saved Resource/model, or
 Powers/Scopes executable invalidates the previous result and triggers another
@@ -41,6 +78,8 @@ The backend checks the current saved settings again before starting Workers,
 creating Powers write authorization, or replacing Last Run. A rejected
 Preflight leaves the previous Last Run, results, and Output intact and is shown
 as a Preflight failure, rather than a completed Workflow failure.
+
+### Before confirming Live
 
 Before starting Live, Desktop:
 
@@ -61,7 +100,12 @@ Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact
 unknown identities fail without a fallback. Wavegen runtime execution remains
 unsupported. Scopes Shutdown does not reset or restore instrument settings.
 
-### 8.1 Powers actions and cleanup
+## Powers actions and safe cleanup
+
+```text
+Run ends / fails -> Safe-Off (started Powers instances)
+                 -> Worker shutdown -> Result
+```
 
 Powers Live actions include setting values and the `output-on` and
 `output-off` actions. Live Powers write authorization exists only for the
@@ -77,4 +121,3 @@ a best-effort basis.
 An explicit Powers `output-off` Tool Action does not replace the run-level
 cleanup. Simulation follows the same cleanup position by sending simulated
 Safe-Off through powers-tool; it does not claim that real outputs were changed.
-

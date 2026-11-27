@@ -24,60 +24,95 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html" aria-current="page">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>範本與偏好設定</h1>
-<h2 id="12-templates-與-local-machine-settings">12. Templates 與 local machine settings</h2>
-<p>Application 啟動時會建立 blank <code>Untitled</code> draft。目前 UI 沒有獨立的 <code>New</code> button。</p>
-<ul>
-<li><strong>開啟範本（Open Template）</strong> 載入既有 Template。</li>
-<li><strong>儲存範本（Save Template）</strong> 保存目前 Template。</li>
-</ul>
-<p>Template 會保存：</p>
-<ul>
-<li>Template name</li>
-<li>Tool Instances</li>
-<li>Tool setup</li>
-<li>Workflow</li>
-<li>可選的 saved Chart definitions/settings，僅在 <strong>將圖表儲存於範本（Save charts with template）</strong>
-  啟用時保存</li>
-</ul>
-<p>Template 不會保存：</p>
-<ul>
-<li>executable paths；</li>
-<li>Live Resources 或 last-known resource identity；</li>
-<li>Simulation/Live mode；</li>
-<li>Last Run、Run ID 或 committed results；</li>
-<li>未選擇保存的 session-only Chart state；</li>
-<li>目前互動操作產生的 zoom／pan viewport；</li>
-<li>Workflow Chart Options（Sampling、Preserve Significant Changes、Show
-  Significant Change Markers 與 Fit Data）；</li>
-<li>loading/error UI state、dialog state 或 export destination/path；或</li>
-<li>runtime Powers authorization。</li>
-</ul>
-<p>這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他
-machine/runtime state 保留在 Desktop local configuration。</p>
-<p>目前 Template 必須明確保存 FG/BG Buffer 設定，即使停用亦同。缺少欄位的舊範本會被拒絕，不提供轉換或自動補值。Buffer 執行期間的資料及狀態不會保存。</p>
-<h2 id="13-語言與外觀">13. 語言與外觀</h2>
+<h2 id="新增開啟與儲存範本">新增、開啟與儲存範本</h2>
+<p>啟動程式時會建立空白 Untitled 範本。使用主畫面的 <strong>新增範本（New Template）</strong> 建立新範本、<strong>開啟範本（Open Template）</strong> 載入既有範本、<strong>儲存範本（Save Template）</strong> 保存目前範本。</p>
+<h2 id="哪些資料會保存">哪些資料會保存？</h2>
+<table>
+<thead>
+<tr>
+<th>資料</th>
+<th>保存位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>範本名稱、Tool Instances、Tool Setup、Workflow</td>
+<td>範本</td>
+</tr>
+<tr>
+<td>FG/BG Interaction 及 Data Buffer 設定</td>
+<td>範本（即使停用也需保存必要設定）</td>
+</tr>
+<tr>
+<td>Chart definitions / settings</td>
+<td>選用；勾選 Save charts with template 才保存</td>
+</tr>
+<tr>
+<td>外部工具 EXE 路徑</td>
+<td>本機</td>
+</tr>
+<tr>
+<td>Live Resource、VISA Backend、上次識別的設備資訊</td>
+<td>本機</td>
+</tr>
+<tr>
+<td>語言、外觀、Step Display Density</td>
+<td>本機偏好</td>
+</tr>
+<tr>
+<td>Simulation / Live 模式、Last Run、Run ID、已取得的結果</td>
+<td>暫時保留</td>
+</tr>
+<tr>
+<td>Data Buffer 的資料及狀態</td>
+<td>暫時保留</td>
+</tr>
+<tr>
+<td>未選擇保存的圖表、Zoom／Pan 位置</td>
+<td>暫時保留</td>
+</tr>
+<tr>
+<td>Workflow Chart Options（Sampling、Preserve Significant Changes、Show Significant Change Markers、Fit Data）</td>
+<td>暫時保留</td>
+</tr>
+<tr>
+<td>載入／錯誤狀態、對話框、匯出路徑、Powers 執行授權</td>
+<td>不隨範本保存</td>
+</tr>
+</tbody>
+</table>
+<h3 id="將範本交給其他電腦">將範本交給其他電腦</h3>
+<p>例如把 A 電腦的範本交給 B 電腦，同事可直接使用工具實例、儀器設定及工作流程，但需要在自己的電腦重新設定執行檔路徑，以及真實硬體模式所需的 Live Resource。範本不會帶走量測結果；請另外匯出資料。</p>
+<h3 id="舊範本的相容性">舊範本的相容性</h3>
+<p>目前範本必須明確包含 FG/BG Buffer 設定，即使停用亦同。缺少必要設定的舊範本會被拒絕，不提供轉換或自動補值。</p>
+<h2 id="語言與外觀">語言與外觀</h2>
 <p>「外觀（Appearance）」旁的地球按鈕顯示 <strong>English</strong> 或 <strong>繁體中文</strong>，按一下
 即可立即切換整個 Desktop 的語言，並保留編輯內容、執行狀態與結果。選擇會記住在
 這部電腦。首次啟動時，繁體中文 WebView 語言（<code>zh-TW</code> 或 <code>zh-Hant</code>）使用繁體中文，

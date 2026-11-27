@@ -2,20 +2,21 @@
 
 <!-- help-source -->
 
-## 10. Run Results
+## Navigate the Output tab
 
-After a run, the Output area can show the following visible sections:
+| Area | What to inspect |
+| --- | --- |
+| Last Run Execution Results | Step status and errors |
+| Messages | Text from Show Message |
+| Charts / Live Monitors | Charts and current monitor view |
+| Foreground Output | Output Pages, statistics and data |
+| Background Output | Captured datasets, statistics and data |
 
-- **Last Run Execution Results** — execution statuses and progress results,
-  shown latest first when the result list is paged.
-- **Messages** — text written by Show Message steps during the run.
-- **Last Run** — the current run's Output Pages and result workspace.
-- **Charts** — all Foreground and Background chart panels.
-- **Live Monitors** — enabled monitors in their own section below Charts.
-- **Summary** — numeric Count, Min, Max, and Avg values when applicable.
-- **Output Data** — committed rows for the selected Page, shown latest first.
+Last Run is the current result workspace. Execution records and committed rows appear newest first; Messages appear in production order. Enabled Live Monitors appear below Charts.
 
-### 10.1 Last Run
+## Last Run: the most recent execution
+
+> **Note:** Orchestrator retains the latest run, not a test-record database. Export measurement data before starting a new run or leaving the application if you need to retain it.
 
 Desktop keeps one **Last Run** in memory. It does not provide Run History, a
 database, or SQL storage.
@@ -32,7 +33,16 @@ a simulated success is never presented as a real-hardware success.
 If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.
 
-### 10.2 Collapsing the result panels
+## Inspect and collapse result panels
+
+| Area | Selection and export |
+| --- | --- |
+| Foreground Output | Source selects an Output Page and updates Summary, Output Data and export scope. |
+| Background Output | Source selects Background and Capture Dataset, with Worker status. Pages contain 100 rows; paging appears only when needed. |
+
+Both sections put export controls in Export settings below Output Data. Foreground chooses a file or folder according to scope; Background always chooses a destination folder and exports the full selected or all datasets, not just the visible rows. Its export button names the chosen format.
+
+Both share Auto, Fixed and Raw number display settings without changing stored data or export precision. Background statistics show only available dataset values; Scopes retains Valid/Invalid, while Serial RX shows event and byte counts. Foreground pages and background datasets are selected separately.
 
 Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent `− / +`
@@ -40,10 +50,7 @@ controls. All start expanded. Collapsing hides content without clearing settings
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.
 
-Charts, optional Live Monitors, Foreground Output and Background Output share
-matching rounded frames with their titles and collapse buttons in the top border.
-Each collapses independently and keeps its frame and title visible. Charts also
-keeps **Save charts with template** and its chart count visible when collapsed.
+When Charts is collapsed, **Save charts with template** and the chart count remain visible.
 
 **Last Run Execution Results** and **Messages** each have a `+ / −` control on
 the right of their heading. Both start expanded, and each collapses on its own
@@ -55,13 +62,23 @@ When **Last Run Execution Results** is collapsed it keeps its heading, the
 Execution Mode badge, and the execution count summary. The execution list and
 its Newer / Older paging are hidden until it is expanded.
 
+### Read error feedback
+
 Failed runs and failed execution records show a short plain-language explanation
 first. The original error remains visible under **Technical details** for
 debugging. This extra explanation appears only for failures; successful and
 cancelled execution records keep the existing compact display. Instrument-specific
 SCPI/VISA details are preserved rather than reinterpreted by Desktop.
 
-### 10.3 Messages
+## Messages
+
+| Setting or limit | Behavior |
+| --- | --- |
+| Message 1 / 2 / 3 | Three independent tabs |
+| Order | Oldest at top, newest below |
+| Retention | Most recent 1,000 per tab; summary shows the total count |
+| Message length | Up to 4,096 characters; longer values are truncated |
+| Export | Not available |
 
 **Messages** collects the text written by Show Message steps. It has three
 independent tabs, **Message 1**, **Message 2**, and **Message 3**, and a step
@@ -86,4 +103,3 @@ or is stopped keeps the messages it already produced. Starting a new run clears
 the previous run's messages. **Clear Last Run**, a new Template, and opening a
 Template all clear them with the rest of the Last Run. Messages are not saved to
 disk and cannot be exported.
-

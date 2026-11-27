@@ -24,32 +24,127 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html" aria-current="page">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>圖表</h1>
-<h3 id="104-charts">10.4 Charts</h3>
-<p>Charts 使用 Apache ECharts 的 Canvas renderer。每個 Foreground chart 屬於一個 Output Page，
+<h2 id="選擇圖表">選擇圖表</h2>
+<ol>
+<li>在 <strong>輸出（Output）</strong> 展開 <strong>圖表（Charts）</strong>。</li>
+<li>在 <strong>圖表設定（Chart settings）</strong> 選擇 <strong>前景／背景（Ground）</strong>、<strong>頁面（Page）</strong> 或背景來源，按 <strong>+ 新增圖表（+ Add Chart）</strong>。</li>
+<li>選擇要繪製的資料；使用 <strong>設定（Settings）→ 一般（General）</strong> 選擇圖型，再套用（Apply）。</li>
+<li>執行中只有 Line 即時更新；其他圖型等待流程結束。</li>
+</ol>
+<p>以下是各圖型用途及支援功能。所有圖型都支援前景數值輸出；背景數值圖表僅適用支援的來源（Meters／Scopes，不含 Serial RX）。</p>
+<div class="help-chart-grid">
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Line"><title>Line</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Line</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="XY Scatter"><title>XY Scatter</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><circle cx="20" cy="48" r="2.5" fill="currentColor"/><circle cx="30" cy="41" r="2.5" fill="currentColor"/><circle cx="38" cy="49" r="2.5" fill="currentColor"/><circle cx="50" cy="30" r="2.5" fill="currentColor"/><circle cx="62" cy="38" r="2.5" fill="currentColor"/><circle cx="72" cy="22" r="2.5" fill="currentColor"/><circle cx="90" cy="26" r="2.5" fill="currentColor"/><circle cx="101" cy="10" r="2.5" fill="currentColor"/></svg><figcaption>XY Scatter</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Column"><title>Column</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="19" y="42" width="9" height="15" fill="currentColor" opacity=".75"/><rect x="32" y="28" width="9" height="29" fill="currentColor" opacity=".75"/><rect x="45" y="37" width="9" height="20" fill="currentColor" opacity=".75"/><rect x="58" y="14" width="9" height="43" fill="currentColor" opacity=".75"/><rect x="71" y="32" width="9" height="25" fill="currentColor" opacity=".75"/><rect x="84" y="21" width="9" height="36" fill="currentColor" opacity=".75"/><rect x="97" y="10" width="9" height="47" fill="currentColor" opacity=".75"/></svg><figcaption>Column</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Area"><title>Area</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M15 57V46L30 27L47 35L63 15L80 29L98 8L109 16V57Z" fill="currentColor" opacity=".25"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Area</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Bar"><title>Bar</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="15" y="12" width="35" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="22" width="74" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="32" width="53" height="7" fill="currentColor" opacity=".75"/><rect x="15" y="42" width="87" height="7" fill="currentColor" opacity=".75"/></svg><figcaption>Bar</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Combo"><title>Combo</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><rect x="19" y="43" width="9" height="14" fill="currentColor" opacity=".75"/><rect x="32" y="27" width="9" height="30" fill="currentColor" opacity=".75"/><rect x="45" y="40" width="9" height="17" fill="currentColor" opacity=".75"/><rect x="58" y="18" width="9" height="39" fill="currentColor" opacity=".75"/><rect x="71" y="31" width="9" height="26" fill="currentColor" opacity=".75"/><rect x="84" y="24" width="9" height="33" fill="currentColor" opacity=".75"/><rect x="97" y="13" width="9" height="44" fill="currentColor" opacity=".75"/><path d="M15 46L30 27L47 35L63 15L80 29L98 8L109 16" fill="none" stroke="currentColor" stroke-width="2"/></svg><figcaption>Combo</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Histogram"><title>Histogram</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><g fill="currentColor" opacity=".75"><rect x="18" y="49" width="12" height="8"/><rect x="30" y="37" width="12" height="20"/><rect x="42" y="16" width="12" height="41"/><rect x="54" y="8" width="12" height="49"/><rect x="66" y="24" width="12" height="33"/><rect x="78" y="41" width="12" height="16"/><rect x="90" y="50" width="12" height="7"/></g></svg><figcaption>Histogram</figcaption></figure>
+<figure><svg viewBox="0 0 120 64" role="img" aria-label="Box &amp; Whisker"><title>Box &amp; Whisker</title><path d="M12 5V57H112" fill="none" stroke="currentColor" opacity=".6"/><path d="M25 14V50M21 14H29M21 50H29M60 8V45M56 8H64M56 45H64M95 21V55M91 21H99M91 55H99" stroke="currentColor" fill="none"/><rect x="17" y="23" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M17 30H33" stroke="currentColor"/><rect x="52" y="25" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M52 32H68" stroke="currentColor"/><rect x="87" y="27" width="16" height="18" stroke="currentColor" fill="var(--bg-body)"/><path d="M87 34H103" stroke="currentColor"/><circle cx="95" cy="11" r="2.5" fill="currentColor"/></svg><figcaption>Box &amp; Whisker</figcaption></figure>
+</div>
+
+<p>以上圖形只是類型示意，並非實際量測。</p>
+<table>
+<thead>
+<tr>
+<th>圖型</th>
+<th>用途</th>
+<th>執行中即時更新</th>
+<th>Zoom</th>
+<th>Background</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Line</td>
+<td>依次數觀察變化</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>XY Scatter</td>
+<td>比較 X / Y 的關係</td>
+<td>—</td>
+<td>—</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Column</td>
+<td>直向長條比較</td>
+<td>—</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Area</td>
+<td>填色顯示變化趨勢</td>
+<td>—</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Bar</td>
+<td>水平長條比較</td>
+<td>—</td>
+<td>—</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Combo</td>
+<td>混合長條與折線</td>
+<td>—</td>
+<td>✓</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Histogram</td>
+<td>數值分布</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Box &amp; Whisker</td>
+<td>分布範圍與離群值</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="圖表數量及來源">圖表數量及來源</h3>
+<p>每個 Foreground chart 屬於一個 Output Page，
 可繪製該 Page 的 numeric Outputs。Session-only 與已保存的 Foreground／Background Charts 共用
 最多 8 張額度。Foreground／Background Charts 依顯示的 Chart 編號排列，不會因來源不同而分組。Live Monitor 與沒有 Chart 設定的 Background Binding 不計入此限制。</p>
+<h2 id="保存圖表設定">保存圖表設定</h2>
 <p>Charts 預設只屬於目前 session。Charts 標題列新增 <strong>將圖表儲存於範本（Save charts with template）</strong>，
 預設不勾選；當目前的 chart panels 與 Chart Settings 需要隨 Template 還原時再勾選。
 開啟含有 saved Foreground 或 Background Chart 設定的 Template 時，checkbox
@@ -64,10 +159,44 @@
 zoom／pan 位置、loading/error UI state、dialog state 或 export destination/path。
 下方 Workflow 的 <strong>Chart Options</strong> 即使勾選本選項，仍然只屬於
 session，不會寫入 Template。</p>
+<h2 id="workflow-chart-options">Workflow Chart Options</h2>
+<table>
+<thead>
+<tr>
+<th>選項</th>
+<th>功能</th>
+<th>何時生效</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Preserve Significant Changes</td>
+<td>降採樣時額外保留明顯變化</td>
+<td>下一次 Run</td>
+</tr>
+<tr>
+<td>Show Significant Change Markers</td>
+<td>標示符合門檻的代表點</td>
+<td>下一次 Run</td>
+</tr>
+<tr>
+<td>Fit Data</td>
+<td>自動 Y 軸貼近資料範圍</td>
+<td>下一次 Run</td>
+</tr>
+<tr>
+<td>Show All Raw Data（每張圖的 Settings）</td>
+<td>顯示可視範圍的全部已載入資料</td>
+<td>立即生效</td>
+</tr>
+</tbody>
+</table>
+<p>前三項只適用 Line，預設關閉，不保存於範本；最後一項是圖表自己的設定。</p>
 <p>Chart Options 位於 Workflow 左側窄欄的 <strong>CSV Export</strong> 正下方。最外層
 <strong>Chart Options</strong>、其中的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 都能彼此獨立展開或收合。
 程式啟動時，<strong>Chart Options</strong> 預設收合，內部的 <strong>Sampling</strong> 與 <strong>Y-axis</strong> 各自
 預設展開。收合只會隱藏控制項，不會改變其設定值。</p>
+<h3 id="進階降採樣及明顯變化">進階：降採樣及明顯變化</h3>
 <p><strong>Sampling</strong> 區塊可用於 Simulation 與 Live Line Chart。
 <strong>Preserve Significant Changes</strong> 預設關閉，Change Threshold (%) 預設為 <strong>5%</strong>，
 啟用時必須是有限且大於 0 的百分比。不論是否啟用，原本每個 pixel bucket 的
@@ -86,6 +215,7 @@ Output 的既有 Marker 尺寸、形狀、填色與邊框，不必先選 Line + 
 沿用目前各 Output 的設定及 PNG 匯出方式。</p>
 <p>門檻為空白、0、負數或非有限數字時，若 Preserve Significant Changes 已啟用，
 Simulation 與 Live 都會停用 Run。0 變成非 0 視為 100%，0 變成 0 視為 0%。</p>
+<h3 id="y-軸縮放fit-data">Y 軸縮放（Fit Data）</h3>
 <p><strong>Y-axis</strong> 區塊提供 <strong>Fit Data</strong>，預設關閉，並可用於 Simulation 與 Live Line
 Chart。Fit Data 關閉時，Auto Y-axis 維持目前行為，範圍可能包含 0；開啟後，
 Auto Y-axis 會依繪圖資料範圍縮放，不再強制把 0 納入顯示，因此較容易觀察帶有
@@ -94,18 +224,51 @@ offset 的小幅變化。Chart Settings 中手動指定的 Y-axis <strong>Minimu
 <p>Sampling 控制項與 Fit Data 都會在 RUN 開始時建立快照，Last Run 沿用該次設定。
 它們都是 Desktop session 選項，不寫入 Template。RUN 後修改這些控制項不會立即
 改變目前的 Last Run 圖形；需重新執行才會套用新的設定。</p>
+<h3 id="顯示原始資料與效能警告">顯示原始資料與效能警告</h3>
 <p>Line Chart 可在 <strong>Chart Settings → General → Show All Raw Data</strong>（預設關閉）
 繞過繪圖降採樣，顯示 X 軸可見範圍內所有已載入 Raw Data（如有資料，另含兩端
 各一筆裁切銜接點）；每張 Chart 獨立設定，立即生效，不需要重新 RUN。
 若該 RUN 啟用專用 Marker，仍可顯示異常標示。顯示全部資料可能降低 Desktop
 繪圖效能，尤其 LIVE 執行中可能導致畫面卡頓或暫時無回應。
 上述顯示選項不修改原始結果、CSV/XLSX 匯出，也不影響非 Line Chart。</p>
+<h2 id="各圖型的詳細設定">各圖型的詳細設定</h2>
 <p>Execution 執行中只有 <strong>Line</strong> 支援即時更新。Execution 停止後，只要有 committed
 numeric rows，即使 run 失敗，也可在 <strong>Settings → General → Chart type</strong> 選擇
 <strong>Line</strong>、<strong>XY Scatter</strong>、<strong>Column</strong>、<strong>Area</strong>、<strong>Bar</strong>、<strong>Combo</strong>、<strong>Histogram</strong>
 或 <strong>Box &amp; Whisker</strong>。Line 顯示 Iteration 趨勢；Area 在折線下填色；Column
 使用垂直分組長條；Bar 使用水平分組長條；XY Scatter 用來比較數值 X 與 Y
 的關係。</p>
+<h3 id="設定頁籤">設定頁籤</h3>
+<table>
+<thead>
+<tr>
+<th>頁籤</th>
+<th>主要用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>General</td>
+<td>圖型、標題及一般選項</td>
+</tr>
+<tr>
+<td>Series</td>
+<td>資料系列顏色、線條與標記</td>
+</tr>
+<tr>
+<td>Axes</td>
+<td>座標軸及縮放</td>
+</tr>
+<tr>
+<td>Analysis</td>
+<td>統計分析選項</td>
+</tr>
+<tr>
+<td>Export</td>
+<td>PNG 背景設定</td>
+</tr>
+</tbody>
+</table>
 <p>Chart Settings 有五個 tabs：<strong>一般（General）</strong>、<strong>資料系列（Series）</strong>、<strong>座標軸（Axes）</strong>、<strong>分析（Analysis）</strong>
 與 <strong>Export</strong>。Series 包含各 Output 的 <strong>Auto</strong>／<strong>Custom color</strong>、Line 樣式、
 Scatter 設定，以及 Combo 的 Type／Axis。每個 Line Output 可選 <strong>Line</strong> 或
@@ -118,6 +281,7 @@ series color，也可改為獨立的 custom color。Legend 會反映實際的 li
 樣式；Area 仍不顯示 markers。Box &amp; Whisker 維持自動配色。</p>
 <p><strong>General → Chart type</strong> 也會在選擇 Combo 或 Histogram 時顯示 Output 數量提示。
 若原本選取多個 Outputs 後切換成 Histogram，<strong>Apply</strong> 會保留第一個已選取的 Output。</p>
+<h3 id="xy-scatter-與-combo">XY Scatter 與 Combo</h3>
 <p>在 chart panel 勾選多個 <strong>Outputs</strong>，即可比較多個 numeric series。Scatter 的
 <strong>X source</strong> 可選 Iteration、任一 numeric Output 或 Timestamp Output；只作為 Scatter X 的 Output
 不必同時勾選為 Y series。<strong>Display</strong> 可選 Markers、Lines 或 Lines + markers；
@@ -129,11 +293,13 @@ Lines 依該順序連線。Timestamp X 使用完整日期時間轉成的絕對�
 Summary、Histogram 或其他量測統計。Elapsed X 一律使用原始秒數，X 軸標籤與
 Tooltip 的 X 值則依該 Output 的 Time Format 顯示。Chart Settings 的 X-axis
 <strong>Minimum</strong>、<strong>Maximum</strong> 與 <strong>Major unit</strong> 一律輸入原始秒數，即使標籤顯示
-分鐘、小時或十進位天數也相同。
-Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
-但只會回報實際 raw row，不會為 hover 內插不存在的量測值。Combo 至少需要兩個
+分鐘、小時或十進位天數也相同。</p>
+<p>Scatter hover 依畫面距離判定；line 顯示可透過可見線段命中，
+但只會回報實際 raw row，不會為 hover 內插不存在的量測值。</p>
+<p>Combo 至少需要兩個
 Outputs；每個 Output 可選 Column、Line 或 Line + markers，並指定 Left Y 或
 Right Y。左右 Y 軸可分別設定，Combo 支援 Iteration X 軸縮放。</p>
+<h3 id="histogram-與-box-whisker">Histogram 與 Box &amp; Whisker</h3>
 <p>Histogram 一次只使用一個 numeric Output。<strong>Bins</strong> 可選 Auto、Count（1–200）
 或 Width（正數）；Auto 使用 Sturges rule。Width 若會產生超過 200 個 bins，
 會顯示錯誤。Box &amp; Whisker 會對每個選取的 Output 顯示一個 box，並可顯示或隱藏 outlier points。這兩種
@@ -144,6 +310,7 @@ chart cache。<strong>Analysis → Show normal curve</strong> 可在 Histogram �
 每個 bin 中心的 normal PDF 會乘上 sample count 與該 bin 的實際 width，
 以對齊 Count 軸。使用自動 Std Dev 時，少於兩筆 samples 或零變異資料
 會省略曲線，Histogram 仍可使用。</p>
+<h3 id="進階大型資料集及游標值">進階：大型資料集及游標值</h3>
 <p>大型資料集下，Line 與 Area 只會對目前可見的 Iteration 範圍做繪圖
 decimation，Combo 的兩種 Line 樣式也使用相同的 viewport decimation。Column 與
 Combo 的 Column series 會保留可見範圍內的每筆 raw row；Scatter 與 Bar 保留
@@ -156,6 +323,7 @@ ResultRows。Line、Area、Column 與 Combo
 XY row。Bar、Histogram 與 Box &amp; Whisker 不提供 hover inspection。Iteration 是
 Page 的 row sequence；Chart 與 CSV 按 chronological 順序，<strong>Output Data</strong> 則以 latest
 first 顯示。</p>
+<h3 id="標題圖例與座標軸">標題、圖例與座標軸</h3>
 <p><strong>設定（Settings）</strong> 可設定圖表標題、<strong>Show legend</strong>、<strong>Legend position</strong>（Top、Bottom、
 Left、Right），以及 X/Y axis 的標題、最小值、最大值、
 主要刻度間距、labels、tick marks 和 major gridlines。數值欄位留白代表 Auto；
@@ -167,6 +335,7 @@ numeric 設定不會阻擋 Apply；合法的 inactive 值會保留，非法值�
 <p><strong>Apply</strong> 會套用有效設定並關閉視窗；<strong>Cancel</strong> 會捨棄草稿並關閉視窗。點擊
 背景或按 Esc 不會關閉 Settings，因此草稿會保留。<strong>Show legend</strong> 開啟時即使只有
 一個 series 也會顯示 legend；關閉後無論位置為何都不顯示。</p>
+<h2 id="zoom縮放及平移">Zoom：縮放及平移</h2>
 <p>Line、Area、Column 與 Combo 可在 <strong>Settings → Axes → Zoom → Enable zoom</strong> 開啟縮放。
 使用滑鼠滾輪可縮放 X 軸，並可在圖內拖曳平移。<strong>Show zoom slider</strong> 可控制底部
 縮放列是否顯示；隱藏後不會清除目前範圍，滾輪與拖曳仍可使用。按
@@ -175,29 +344,31 @@ numeric 設定不會阻擋 Apply；合法的 inactive 值會保留，非法值�
 修改 X Axis 的 Minimum 或 Maximum 並套用、關閉 zoom，或切換到不支援 zoom
 的圖型時，都會重設 manual viewport。Scatter、Bar、Histogram 與
 Box &amp; Whisker 不提供 Zoom 控制。</p>
+<h2 id="匯出-png">匯出 PNG</h2>
 <p>每個 chart 都有個別的 <strong>Export PNG</strong> 操作。低調的圖表邊界標示匯出的 chart
 surface：包含圖表標題、legend、axes、plot 與目前 zoom range；不包含 Output
 選取控制項、chart action buttons、zoom slider 與 Reset Zoom。
 <strong>Settings → Export → Background</strong> 可選 Light 或 Dark，並與 Application theme
 分開設定。兩種背景都會保留自訂 series 顏色與 Normal curve。</p>
+<h2 id="執行中切換範本及清除結果">執行中、切換範本及清除結果</h2>
 <p>Chart configuration 在切換 Page/tab 與後續 Simulation 或 Live run 時仍會保留，
 並沿用 Page/Output 相容性規則。執行中非 Line panels 保持原本 Page 與排序，
 顯示 <strong>Waiting for run to finish</strong> 並隱藏 plot；Output selection 與 Export PNG
-仍停用，Settings 與 Remove 可操作，每張圖都可移除，包含最後一張 Foreground 或 Background Chart。
-執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
-第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。
-Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels
+仍停用，Settings 與 Remove 可操作，每張圖都可移除，包含最後一張 Foreground 或 Background Chart。</p>
+<p>執行中 Chart type 只允許維持原類型，或將非 Line 改為 Line，即使尚未收到
+第一筆資料也可以切換。Line 必須等 execution 停止後才能改為非 Line。</p>
+<p>Apply 後，Line 使用目前 run 的資料並即時更新。仍為非 Line 的 panels
 不會載入即時 chart data，execution 停止後
 自動使用新 run 的 committed rows 更新，不需手動 refresh。Run 開始時 panels
-就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。
-新 run 的資料尚未可用時，Line 顯示 <strong>Waiting for run data</strong>，不顯示上一 run
-的 plot，也不載入 chart data；資料可用後才開始即時更新。
-<strong>+ Add Chart</strong> 仍建立 Line chart。<strong>開啟範本（Open Template）</strong> 會以該 Template 的 saved
+就保持可見，非 Line 立即進入 Waiting，即使第一個 progress update 尚未抵達。</p>
+<p>新 run 的資料尚未可用時，Line 顯示 <strong>Waiting for run data</strong>，不顯示上一 run
+的 plot，也不載入 chart data；資料可用後才開始即時更新。</p>
+<p><strong>+ Add Chart</strong> 仍建立 Line chart。<strong>開啟範本（Open Template）</strong> 會以該 Template 的 saved
 Charts 取代目前的 Chart configuration；若沒有 saved Charts，則不會還原 persisted
 Chart configuration，且 <strong>將圖表儲存於範本（Save charts with template）</strong> 為未勾選。開啟含 saved Charts
 的 Template 後，可直接 Run Simulation，以還原的 definitions 與設定顯示新結果，
-不需重新設定 Chart。建立新的 blank Template 會清除 Chart configuration。
-<strong>清除上次執行（Clear Last Run）</strong> 會清除 Last Run data；<strong>將圖表儲存於範本（Save charts with template）</strong> 未勾選時，
+不需重新設定 Chart。建立新的 blank Template 會清除 Chart configuration。</p>
+<p><strong>清除上次執行（Clear Last Run）</strong> 會清除 Last Run data；<strong>將圖表儲存於範本（Save charts with template）</strong> 未勾選時，
 也會清除 session Charts，勾選時則保留 Chart configuration。只有啟用
 <strong>將圖表儲存於範本（Save charts with template）</strong> 時，Chart settings 才會成為 Template data。</p>
   </main>

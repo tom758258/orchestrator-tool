@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Background 互動步驟</title>
+  <title>前景／背景互動步驟</title>
   <script>
     (() => {
       const query = new URLSearchParams(location.search).get('theme');
@@ -24,29 +24,84 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html" aria-current="page">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html" aria-current="page">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
-<h1>Background 互動步驟</h1>
-<h3 id="fgbg-interaction">FG/BG Interaction</h3>
+<h1>前景／背景互動步驟</h1>
+<h2 id="前景背景互動fgbg-interaction">前景／背景互動（FG/BG Interaction）</h2>
+<p>前景（Foreground）是依順序執行的工作流程；背景（Background）可在前景執行其他步驟時持續取得資料。互動步驟讓前景取用背景資料或派送支援的命令。</p>
+<pre><code class="language-text">Setup: Enable Background Streaming
+    -&gt; Workflow: Enable FG/BG Interaction
+    -&gt; Worker ON
+    -&gt; BG Command（選用） / Get Latest / Wait Next / Buffer
+    -&gt; Worker OFF
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>互動步驟</th>
+<th>主要參數</th>
+<th>結果／失敗條件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BG Command</td>
+<td>背景來源、命令、Wait for Completion</td>
+<td>派送支援命令；本身無資料輸出。拒絕、忙碌或命令失敗會使流程失敗。</td>
+</tr>
+<tr>
+<td>Get Latest</td>
+<td>背景來源</td>
+<td>取得最新原生事件；不存在或無效即失敗。</td>
+</tr>
+<tr>
+<td>Wait Next</td>
+<td>背景來源、選用逾時</td>
+<td>取得之後第一筆事件；首筆無效、來源已結束或逾時即失敗。</td>
+</tr>
+<tr>
+<td>Get Command Result</td>
+<td>先前的 Source BG Command Step、選用逾時</td>
+<td>取得該次命令原生結果；未執行來源或結果未能取得即失敗。</td>
+</tr>
+<tr>
+<td>Get Buffer Data</td>
+<td>背景來源、Peek／Pop、Count／ALL</td>
+<td>取得事件陣列及筆數；選取資料有無效事件時整批失敗且不消耗。</td>
+</tr>
+<tr>
+<td>Get Buffer Status</td>
+<td>背景來源</td>
+<td>取得容量及遺失狀態，不消耗資料。</td>
+</tr>
+</tbody>
+</table>
+<p>模擬範例：Meters Software Simple 啟用 Trigger with BG Command，加入 Worker ON → BG Command → Get Command Result → Output（選取 <code>/value</code>）。選用 Capture；停止來源前遵守背景筆數與收尾規則，詳見<a href="guide-background-streaming.zh-TW.html">背景擷取</a>。Buffer 步驟需另啟用 Enable Buffer。</p>
+<h3 id="啟用設定">啟用設定</h3>
 <p>Workflow 左側最下方、<strong>Chart Options</strong> 下方的 <strong>FG/BG Interaction</strong>
 設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；
 在 Setup 啟用 Background Streaming 後，才能展開並勾選
@@ -54,7 +109,8 @@
 Step 引用的 Background Binding 時會關閉 Interaction 與 Buffer，但保留命令容量數值。
 <strong>Max Active Command Status</strong> 預設 <strong>4096</strong>，範圍 <strong>1–65536</strong>，限制同一
 Run 所有 Background 仍需追蹤的命令數，不限制累計命令數。這些設定（含必填 Buffer 設定）都會隨
-Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本無法載入。</p>
+Template 儲存。缺少必要設定的舊範本無法載入；請參閱<a href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>。</p>
+<h3 id="執行互動步驟">執行互動步驟</h3>
 <p>先在 Setup 為 Tool Instance 啟用 Background Streaming，再於互動 Steps 前加入
 <strong>Worker ON</strong>。啟用 Interaction 不會自動啟動 Worker；Capture 可以保持 OFF。</p>
 <ul>
@@ -77,19 +133,44 @@ Template 儲存。0.3.0 要求新版 Template；缺少這些設定的舊範本�
 Step 在內部配對該次命令。Latest／Next 也支援既有 Scopes 數值週期與 Serial RX
 事件。Custom 批次與 Scopes 不提供 Command／Result；Serial Command／Result
 僅支援 TX，Latest／Next 仍取得 RX。Powers 與 Wavegen 不支援 Background。</p>
+<h3 id="逾時及命令限制">逾時及命令限制</h3>
 <p><strong>Step timeout (ms)</strong> 可留白以使用 action timeout；整個 Step 共用一個期限。
 每個 Background 最多保留一筆待取結果，請先取用結果，再派送另一個需要結果的
 命令。Busy 或容量不足會直接失敗，不會排入佇列。已接受的命令稍後失敗時，Run
 仍會失敗並開始清理，先前成功的派送 Step 不會改寫。無法確認派送結果時不會重送。
 若 IF 跳過 Get Command Result，結果仍保留至所在 Loop 當次迭代結束；Loop 外的
 命令則保留至 Run 結束。在同一範圍派送另一筆需要結果的命令前，請先取用該結果。</p>
+<h3 id="停止及安全收尾">停止及安全收尾</h3>
 <p>正常 Run 結束時，以一個 action timeout 等待尚未完成的命令；Worker OFF 在
 自己的期限內等待必要命令與關閉。未讀結果不增加等待，既有有限筆數與擷取品質
 規則仍適用。Stop Workflow 採合作式清理，不額外等待普通命令。Worker OFF 後
 重新 ON 會使舊資料與結果引用失效。若無法確認關閉，同一資源即使改用計時觸發
 或 Foreground 仍會被阻擋。重新啟動應用程式前，請先確認外部工具已停止；
 重新啟動本身不代表已驗證關閉。</p>
-<h3 id="data-buffer選用">Data Buffer（選用）</h3>
+<h2 id="data-buffer選用">Data Buffer（選用）</h2>
+<pre><code class="language-text">容量 4 組的示意（非實際上限）
+FIFO: [1][2][3][4] + 5 -&gt; [1][2][3][4]，捨棄 5
+Ring: [1][2][3][4] + 5 -&gt; [2][3][4][5]，移除 1
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Overflow Policy</th>
+<th>容量不足時</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fail Run（預設）</td>
+<td>使流程失敗並收尾</td>
+</tr>
+<tr>
+<td>Continue</td>
+<td>繼續執行，保留資料遺失狀態</td>
+</tr>
+</tbody>
+</table>
+<p>Buffer 與 Capture、Live Monitor 獨立。實際容量為每個 Worker 最多 1,024 組且不超過 16 MiB。</p>
 <p>在同一個 FG/BG Interaction 面板啟用 <strong>Enable Buffer（啟用 Buffer）</strong>，
 預設 OFF，必須先啟用 FG/BG Interaction。選擇 FIFO／Ring Buffer 及
 Overflow Policy（預設 Fail Run，或 Continue）。所有 Background 共用設定，
@@ -101,6 +182,7 @@ Ring Buffer 依序移除最舊資料直到空間足夠。單筆超限時拒絕�
 Continue 保留遺失狀態供 IF／ELSE 判斷。Buffer Overflow 不會取代同一筆
 Event 的致命處理錯誤或先前的失敗原因。Capture、Latest、Next 與 Command
 Result 獨立；Buffer 遺失不等於 Capture 遺失。</p>
+<h3 id="讀取及查看-buffer">讀取及查看 Buffer</h3>
 <ul>
 <li><strong>Get Buffer Data</strong>：選擇 Background、Peek／Pop、Count／ALL。Count
   支援 Fixed Value、Variable、Previous step result，範圍 1～1024 整數。
@@ -110,6 +192,7 @@ Result 獨立；Buffer 遺失不等於 Capture 遺失。</p>
 <li><strong>Get Buffer Status</strong>：只選擇 Background，查詢狀態、不讀取或移除 Event。
   兩個 Buffer Step 均不等待資料累積，沒有 Step timeout。</li>
 </ul>
+<h3 id="回傳結果">回傳結果</h3>
 <p>Get Buffer Data 回傳 <code>/count</code>（實際取得數量）、<code>/data</code>（完整原生 Event
 Array）與 <code>/status/...</code>（操作後快照）。Get Buffer Status 在根層級回傳同一組
 狀態欄位。可於 IF／ELSE、Assert、Output 或其他 Step 引用。</p>

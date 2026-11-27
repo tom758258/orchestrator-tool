@@ -2,7 +2,18 @@
 
 <!-- help-source -->
 
-### 10.5 Data 與 Summary
+## 資料與統計
+
+| 統計欄位 | 意義 |
+| --- | --- |
+| Count | 資料筆數 |
+| Min / Max | 最小值／最大值 |
+| Avg | 平均值 |
+| Range | Max − Min |
+| Std Dev | 樣本標準差 |
+| 2σ / 3σ | 標準差的兩倍／三倍 |
+
+### 顯示精度
 
 **Output Data** 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。
@@ -12,6 +23,8 @@
 **Raw** 顯示原本 JavaScript Number 的字串。切換立即生效，且可在目前 Desktop
 使用期間跨 Run Page 沿用。Count 維持整數，Elapsed Time／Timestamp 格式優先。
 這些設定不會改變儲存值、統計結果、Charts、匯出內容或 Template。
+
+### 統計欄位選擇及限制
 
 **Summary** 預設顯示 Count、Min、Max 與 Avg。**Columns ▾** 可分別控制這些欄位，
 以及 Range（Max − Min）、Std Dev（σ）、2σ 與 3σ。Std Dev 為樣本標準差，
@@ -23,7 +36,18 @@ Output Time Format 顯示，與 Output Data 和 Scatter X 一致。Count 維持�
 欄位選擇僅為暫時的 presentation 設定。若 Page 沒有 numeric Outputs，則不會
 顯示 numeric summary。
 
-## 11. Manual export
+## 手動匯出
+
+| 方式 | 使用時機及用途 |
+| --- | --- |
+| Streaming CSV | 執行中持續寫入資料 |
+| Manual CSV | 執行結束後匯出資料 |
+| Manual XLSX | 執行結束後匯出 Excel 活頁簿 |
+| PNG | 匯出可用圖表的圖片 |
+| BIN | Serial Background RX 原始位元組 |
+| Save Template | 保存流程設定，不是量測結果 |
+
+### 匯出範圍及格式
 
 Manual export 會在 run 不再 active，且目前 export scope 存在 committed Output
 rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete 狀態，
@@ -34,10 +58,12 @@ rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete
 
 選擇 **Run Page** 或 **All Run Pages**，再選 **CSV** 或 **XLSX**：
 
-- **Run Page / CSV** — 將選取的 Page 匯出為一份 CSV。
-- **Run Page / XLSX** — 將選取的 Page 匯出為一個 worksheet。
-- **All Run Pages / CSV** — 在指定 destination folder 中為每個 Page 建立一份 CSV。
-- **All Run Pages / XLSX** — 建立一個 workbook，每個 Page 一個 worksheet。
+| 範圍 | CSV | XLSX |
+| --- | --- | --- |
+| Run Page | 所選 Page 一份 CSV | 所選 Page 一個工作表 |
+| All Run Pages | 指定資料夾中每個 Page 各一份 CSV | 一個活頁簿，每個 Page 一個工作表 |
+
+### Excel 時間與儲存精度
 
 所有 XLSX 時間格式都是可計算與繪圖的數值儲存格。Elapsed **Seconds** 儲存秒數；
 其他三種格式儲存秒數 / 86400（Excel 天數）。Timestamp 即使隱藏 Date，也保留
@@ -53,8 +79,9 @@ Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。�
 或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV
 files。
 
+### 失敗或提早停止的資料
+
 迴圈 Stop 本身不是 failure。Stop Workflow 在清理成功後會產生 Stopped 結果。
 Execution 停止後，failure 或
 incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged
 狀態、尚未通過 owning scope commit point 的 rows 不會被匯出。
-

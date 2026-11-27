@@ -24,41 +24,69 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html" aria-current="page">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Run Results</h1>
-<h2 id="10-run-results">10. Run Results</h2>
-<p>After a run, the Output area can show the following visible sections:</p>
-<ul>
-<li><strong>Last Run Execution Results</strong> — execution statuses and progress results,
-  shown latest first when the result list is paged.</li>
-<li><strong>Messages</strong> — text written by Show Message steps during the run.</li>
-<li><strong>Last Run</strong> — the current run's Output Pages and result workspace.</li>
-<li><strong>Charts</strong> — all Foreground and Background chart panels.</li>
-<li><strong>Live Monitors</strong> — enabled monitors in their own section below Charts.</li>
-<li><strong>Summary</strong> — numeric Count, Min, Max, and Avg values when applicable.</li>
-<li><strong>Output Data</strong> — committed rows for the selected Page, shown latest first.</li>
-</ul>
-<h3 id="101-last-run">10.1 Last Run</h3>
+<h2 id="navigate-the-output-tab">Navigate the Output tab</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>What to inspect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Last Run Execution Results</td>
+<td>Step status and errors</td>
+</tr>
+<tr>
+<td>Messages</td>
+<td>Text from Show Message</td>
+</tr>
+<tr>
+<td>Charts / Live Monitors</td>
+<td>Charts and current monitor view</td>
+</tr>
+<tr>
+<td>Foreground Output</td>
+<td>Output Pages, statistics and data</td>
+</tr>
+<tr>
+<td>Background Output</td>
+<td>Captured datasets, statistics and data</td>
+</tr>
+</tbody>
+</table>
+<p>Last Run is the current result workspace. Execution records and committed rows appear newest first; Messages appear in production order. Enabled Live Monitors appear below Charts.</p>
+<h2 id="last-run-the-most-recent-execution">Last Run: the most recent execution</h2>
+<blockquote>
+<p><strong>Note:</strong> Orchestrator retains the latest run, not a test-record database. Export measurement data before starting a new run or leaving the application if you need to retain it.</p>
+</blockquote>
 <p>Desktop keeps one <strong>Last Run</strong> in memory. It does not provide Run History, a
 database, or SQL storage.</p>
 <p>At run start, Desktop saves a Workflow snapshot for that run. Editing the
@@ -70,16 +98,33 @@ Simulation or Live badge does not change when the current selector changes, so
 a simulated success is never presented as a real-hardware success.</p>
 <p>If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.</p>
-<h3 id="102-collapsing-the-result-panels">10.2 Collapsing the result panels</h3>
+<h2 id="inspect-and-collapse-result-panels">Inspect and collapse result panels</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Selection and export</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Foreground Output</td>
+<td>Source selects an Output Page and updates Summary, Output Data and export scope.</td>
+</tr>
+<tr>
+<td>Background Output</td>
+<td>Source selects Background and Capture Dataset, with Worker status. Pages contain 100 rows; paging appears only when needed.</td>
+</tr>
+</tbody>
+</table>
+<p>Both sections put export controls in Export settings below Output Data. Foreground chooses a file or folder according to scope; Background always chooses a destination folder and exports the full selected or all datasets, not just the visible rows. Its export button names the chosen format.</p>
+<p>Both share Auto, Fixed and Raw number display settings without changing stored data or export precision. Background statistics show only available dataset values; Scopes retains Valid/Invalid, while Serial RX shows event and byte counts. Foreground pages and background datasets are selected separately.</p>
 <p>Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent <code>− / +</code>
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.</p>
-<p>Charts, optional Live Monitors, Foreground Output and Background Output share
-matching rounded frames with their titles and collapse buttons in the top border.
-Each collapses independently and keeps its frame and title visible. Charts also
-keeps <strong>Save charts with template</strong> and its chart count visible when collapsed.</p>
+<p>When Charts is collapsed, <strong>Save charts with template</strong> and the chart count remain visible.</p>
 <p><strong>Last Run Execution Results</strong> and <strong>Messages</strong> each have a <code>+ / −</code> control on
 the right of their heading. Both start expanded, and each collapses on its own
 without affecting the other. Collapsing changes what is displayed only: it
@@ -88,12 +133,43 @@ restores the same position in the result list.</p>
 <p>When <strong>Last Run Execution Results</strong> is collapsed it keeps its heading, the
 Execution Mode badge, and the execution count summary. The execution list and
 its Newer / Older paging are hidden until it is expanded.</p>
+<h3 id="read-error-feedback">Read error feedback</h3>
 <p>Failed runs and failed execution records show a short plain-language explanation
 first. The original error remains visible under <strong>Technical details</strong> for
 debugging. This extra explanation appears only for failures; successful and
 cancelled execution records keep the existing compact display. Instrument-specific
 SCPI/VISA details are preserved rather than reinterpreted by Desktop.</p>
-<h3 id="103-messages">10.3 Messages</h3>
+<h2 id="messages">Messages</h2>
+<table>
+<thead>
+<tr>
+<th>Setting or limit</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Message 1 / 2 / 3</td>
+<td>Three independent tabs</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>Oldest at top, newest below</td>
+</tr>
+<tr>
+<td>Retention</td>
+<td>Most recent 1,000 per tab; summary shows the total count</td>
+</tr>
+<tr>
+<td>Message length</td>
+<td>Up to 4,096 characters; longer values are truncated</td>
+</tr>
+<tr>
+<td>Export</td>
+<td>Not available</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Messages</strong> collects the text written by Show Message steps. It has three
 independent tabs, <strong>Message 1</strong>, <strong>Message 2</strong>, and <strong>Message 3</strong>, and a step
 chooses which one it writes to. Each tab lists its messages in the order the

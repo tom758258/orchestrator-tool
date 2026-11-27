@@ -24,29 +24,86 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html" aria-current="page">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Run Simulation and Live</h1>
-<h2 id="7-run-simulation">7. Run Simulation</h2>
+<h2 id="simulation-or-live">Simulation or Live?</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Simulation</th>
+<th>Live</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Purpose</td>
+<td>Test the workflow without hardware I/O</td>
+<td>Operate actual equipment</td>
+</tr>
+<tr>
+<td>External tool EXEs</td>
+<td>Only for tools referenced by the workflow</td>
+<td>Only for tools referenced by the workflow</td>
+</tr>
+<tr>
+<td>Physical equipment and connection</td>
+<td>Not needed</td>
+<td>Required for referenced external tools</td>
+</tr>
+<tr>
+<td>Saved Live Resource</td>
+<td>Not needed</td>
+<td>Required for referenced external tools</td>
+</tr>
+<tr>
+<td>Confirmation</td>
+<td>No Live confirmation</td>
+<td>Required</td>
+</tr>
+<tr>
+<td>Startup default</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>A workflow using only built-in steps such as Wait, Set Variable and Output needs no external tool EXE or physical instrument.</p>
+<blockquote>
+<p><strong>Note:</strong> Simulation success verifies the simulated workflow, not actual instruments or wiring.</p>
+</blockquote>
+<h2 id="run-simulation">Run Simulation</h2>
+<ol>
+<li>Configure all referenced tool EXEs in Tools.</li>
+<li>Complete Setup and Workflow.</li>
+<li>Select Simulation; use Validate if desired.</li>
+<li>Press Run Simulation and inspect Output.</li>
+</ol>
 <p>Before Simulation, configure every referenced external executable and ensure
 its manifest and Worker compatibility checks can succeed. You can use
 Validate first for an explicit Template check; the run also validates the
@@ -58,7 +115,39 @@ For Powers, Protection Setup and final Safe-Off are still sent to powers-tool
 for simulation or planning; this is orchestration validation, not Live hardware
 validation. Indeterminate Simple Software sources show the run-only sample
 warning described above. Custom modes are available only in Background.</p>
-<h2 id="8-run-live">8. Run Live</h2>
+<h2 id="run-live">Run Live</h2>
+<blockquote>
+<p><strong>Warning:</strong> Live operates physical equipment. Verify the model, wiring, voltage/current limits and safety requirements before confirming.</p>
+</blockquote>
+<ol>
+<li>Save the resources of referenced instances in Setup; verify there are no duplicate addresses or unsaved changes.</li>
+<li>Select Live and wait for the applicable Live Preflight.</li>
+<li>Correct errors and use Validate to check the template.</li>
+<li>Press Run Live, verify the devices and warnings in the confirmation, then start.</li>
+</ol>
+<h3 id="live-preflight-status">Live Preflight status</h3>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Checking</td>
+<td>Check in progress; Run unavailable</td>
+</tr>
+<tr>
+<td>Passed</td>
+<td>Live confirmation is available, not a guarantee of run success</td>
+</tr>
+<tr>
+<td>Failed</td>
+<td>Incompatibility shown; correct and recheck before running</td>
+</tr>
+</tbody>
+</table>
 <p>Select <strong>Live</strong> in Execution Mode; the same Run control becomes <strong>Run Live</strong>.
 Desktop automatically checks fixed Powers and Scopes Workflow parameters and
 Setup against each referenced instance's saved model capabilities. <strong>Live
@@ -67,6 +156,7 @@ Live confirmation flow. <strong>Failed</strong> shows the known incompatibilitie
 blocks Run until corrected and checked successfully. Required capabilities or
 model IDs that cannot be obtained also block Live. Unused instances and unused
 optional capability fields do not block it.</p>
+<h3 id="what-triggers-another-check">What triggers another check?</h3>
 <p>Changing the Template, Workflow parameters, Setup, saved Resource/model, or
 Powers/Scopes executable invalidates the previous result and triggers another
 check. Save any Resource or identity draft changes first. Fixed values inside
@@ -79,6 +169,7 @@ Simulation is unaffected.</p>
 creating Powers write authorization, or replacing Last Run. A rejected
 Preflight leaves the previous Last Run, results, and Output intact and is shown
 as a Preflight failure, rather than a completed Workflow failure.</p>
+<h3 id="before-confirming-live">Before confirming Live</h3>
 <p>Before starting Live, Desktop:</p>
 <ul>
 <li>checks the referenced Tool Instances;</li>
@@ -96,7 +187,10 @@ be rejected and require a new confirmation.</p>
 Powers and Scopes preflight use saved canonical model IDs. Scopes uses the exact saved Resource;
 unknown identities fail without a fallback. Wavegen runtime execution remains
 unsupported. Scopes Shutdown does not reset or restore instrument settings.</p>
-<h3 id="81-powers-actions-and-cleanup">8.1 Powers actions and cleanup</h3>
+<h2 id="powers-actions-and-safe-cleanup">Powers actions and safe cleanup</h2>
+<pre><code class="language-text">Run ends / fails -&gt; Safe-Off (started Powers instances)
+                 -&gt; Worker shutdown -&gt; Result
+</code></pre>
 <p>Powers Live actions include setting values and the <code>output-on</code> and
 <code>output-off</code> actions. Live Powers write authorization exists only for the
 runtime of the Live run.</p>

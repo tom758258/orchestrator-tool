@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<!-- Generated file. Do not edit directly. -->
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meters 步驟</title>
+  <script>
+    (() => {
+      const query = new URLSearchParams(location.search).get('theme');
+      const preference = ['system', 'light', 'dark'].includes(query) ? query : 'system';
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const update = () => {
+        document.documentElement.dataset.theme = preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : preference;
+      };
+      update();
+      if (preference === 'system') media.addEventListener('change', update);
+    })();
+  </script>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <aside class="help-sidebar">
+    <div class="help-sidebar-title">Orchestrator Help</div>
+    <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
+<a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
+<a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
+<a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html" aria-current="page">Meters 步驟</a>
+<a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
+<a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
+<a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
+<a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
+<a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
+<a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
+    <div id="toc-title">Contents</div>
+    <nav id="toc" aria-labelledby="toc-title"></nav>
+  </aside>
+  <main class="help-content" id="help-content">
+<h1>Meters 步驟</h1>
+<h2 id="電表量測meter-measure單次量測">電表量測（Meter Measure）：單次量測</h2>
+<p>電表量測步驟對指定的 Meters 工具實例觸發一次量測，並取得一筆讀值。在 Setup 設定量測種類及範圍，不需在每個步驟重複設定。</p>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前置條件</td>
+<td>Tools 已設定相容的 meters-tool.exe；Setup 有 Meters 實例</td>
+</tr>
+<tr>
+<td>目標</td>
+<td>選擇要使用的實例</td>
+</tr>
+<tr>
+<td>量測設定</td>
+<td>DC Voltage 或 DC Current 等設定取自該實例</td>
+</tr>
+<tr>
+<td>量測模式</td>
+<td>前景 Single；背景使用 Background Streaming</td>
+</tr>
+<tr>
+<td>結果</td>
+<td>一筆量測資料；在 Previous step result 選擇 Value（數值）或 Unit（單位）</td>
+</tr>
+<tr>
+<td>失敗條件</td>
+<td>量測或 Worker 失敗時，查看步驟錯誤；不會自動產生 Output 欄</td>
+</tr>
+</tbody>
+</table>
+<h2 id="將讀值保存成資料欄">將讀值保存成資料欄</h2>
+<ol>
+<li>在 Setup 新增 Meters 實例，關閉 Background Streaming。</li>
+<li>在 Workflow 加入電表量測（Meter Measure），選擇實例。</li>
+<li>加入 Output，Value Source 選擇 Previous step result。</li>
+<li>選擇電表量測步驟及數值（Value）結果，執行 Simulation。</li>
+<li>從 Output 頁籤查看該欄資料。</li>
+</ol>
+<p>電表量測步驟本身不會建立 Output 欄。若步驟失敗，請查看錯誤訊息；若需要多筆連續量測、Immediate 或 External 觸發，請閱讀<a href="guide-background-streaming.zh-TW.html">背景擷取</a>。同一實例不能同時用於前景及背景操作。</p>
+<p>儀器參數及資料遺失風險請參閱 <a href="guide-tool-setup.zh-TW.html">Tool Setup</a>。</p>
+  </main>
+  <script>
+    (() => {
+      if (document.documentElement.lang === 'zh-TW') {
+        document.getElementById('toc-title').textContent = '章節導覽';
+        document.querySelector('.help-sidebar-title').textContent = 'Orchestrator 使用說明';
+      }
+      const theme = new URLSearchParams(location.search).get('theme');
+      if (['system', 'light', 'dark'].includes(theme)) {
+        document.querySelectorAll('a.help-page, #help-content a[href$=".html"]').forEach(link => {
+          const url = new URL(link.getAttribute('href'), location.href);
+          url.searchParams.set('theme', theme);
+          link.href = url.href;
+        });
+      }
+      const headings = [...document.querySelectorAll('#help-content h2[id], #help-content h3[id]')];
+      const toc = document.getElementById('toc');
+      const links = headings.map(heading => {
+        const link = document.createElement('a');
+        link.href = '#' + heading.id;
+        link.textContent = heading.textContent;
+        if (heading.tagName === 'H3') link.className = 'level-3';
+        toc.appendChild(link);
+        return link;
+      });
+      let scheduled = false;
+      function updateActiveSection() {
+        scheduled = false;
+        let active = 0;
+        headings.forEach((heading, index) => {
+          if (heading.getBoundingClientRect().top <= 48) active = index;
+        });
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) {
+          active = headings.length - 1;
+        }
+        links.forEach((link, index) => {
+          link.classList.toggle('active', index === active);
+          if (index === active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+      function scheduleUpdate() {
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      window.addEventListener('load', scheduleUpdate);
+      updateActiveSection();
+    })();
+  </script>
+</body>
+</html>

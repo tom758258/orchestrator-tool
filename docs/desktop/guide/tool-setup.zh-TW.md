@@ -2,77 +2,84 @@
 
 <!-- help-source -->
 
-## 5. Setup 與 Tool Instances
+## 認識工具實例
 
-Tool Instance 是保存於 Template 中的 logical、具名稱的 instance。一個
-Template 可以有多個相同 Tool Type 的 instances，每個 instance 有自己的
-setup values。Tool setup 屬於 Template；machine-specific executable paths 與
-Live Resources 不屬於 Template。
+工具實例（Tool Instance）是範本中具名的一組儀器設定。你可以在同一份範本建立多個同類型實例，例如兩個 Meters 分別量測電壓與電流。
 
-每個 instance 使用獨立邊框卡片，預設展開，可用 **+ / −** 收合或展開。
-Add Tool Instance 上方的 **Tool Instance Summary** 依 Tool Type 統計 instance
-數量，包含未在本機配置的類型。未使用的類型不顯示，沒有 instance 時隱藏整個摘要。
+| 資料 | 保存位置 |
+| --- | --- |
+| 工具實例、各實例的儀器設定 | 範本 |
+| 執行檔路徑 | 本機，同類型共用 |
+| 實體儀器連線（Live Resource） | 本機，各實例獨立 |
 
-每個 instance 內依序排列 Tool 原有設定、**Background Streaming**、**Live Device**，
-Background Streaming 前後各有分隔線。兩區皆可用 **− / +** 獨立收合；Background
-Streaming 預設收合，Live Device 預設展開。展開 Background Streaming 並勾選
-**Enable Background Streaming** 後顯示支援的 Background 選項。不支援的 Tool Type
-維持停用核取方塊並顯示原因。
-使用 Worker 與 Capture 動作控制串流及資料記錄。
+### 設定區塊
 
-編輯、切換頁籤或收合外層 instance 時，群組與卡片的展開／收合狀態會保留。
-成功執行 **新增範本（New Template）** 或 **開啟範本（Open Template）** 後恢復預設狀態，包含 External
-Tools cards。這些 UI 狀態不會寫入 Template 或本機設定。
+```text
+Tool Instance
+  +-- 工具專屬設定
+  +-- Background Streaming（預設收合）
+  +-- Live Device（預設展開）
+```
 
-**新增工具實例（Add Tool Instance）** 透過 **工具類型（可下拉選擇）** 提供在 Tools 已配置的 Tool Type，包括 Missing 或 Error
-狀態。沒有已配置的 Tool Type 時，新增 instance 會停用。既有 instances 即使
-對應 Tool Type 未在本機配置，仍會顯示並附上警告；重新配置後警告會消失。
+每個工具實例預設展開，可用 **+ / −** 獨立收合。新增工具實例上方的 **Tool Instance Summary** 按工具類型統計實例數（包含未在本機設定的類型）；沒有實例時隱藏。
 
-展開任一 Tool Instance，即可編輯 **Display Name
-(optional)**。留空會使用預設 instance ID。名稱可包含中文、英文、數字與空格，
-不同 instances 也可使用相同名稱。Setup 標題與 Workflow Target 選項會立即更新；
-原始 **Instance ID** 仍會顯示，收合時也能辨識。Target 選項會保留可用的型號與
-序號資訊。Sequence 原本顯示 target 的摘要會顯示名稱與 ID；action 與參數摘要
-維持原有格式。名稱隨 Template 保存並於載入時還原；離開欄位或保存時會去除
-前後空白。清空或只輸入空白會恢復顯示 ID。忙碌時無法編輯名稱。修改名稱不會
-改變 Workflow 引用、Simulation／Live 模式或已保存的 Live Resources。
-Wavegen 即使尚未支援 runtime actions，仍可保存名稱。
+**Background Streaming**（背景擷取）與 **Live Device**（即時裝置）可獨立收合。勾選 Enable Background Streaming 後顯示適用設定；不支援的工具類型會停用並提示原因。使用 Worker 與 Capture 步驟控制資料來源及記錄。
 
-數值欄位使用直接輸入及原生 ArrowUp / ArrowDown stepping；spinner 按鈕隱藏。
+編輯、切換頁籤或收合外層卡片時，展開狀態會保留。成功新增或開啟範本後，卡片與設定區塊恢復預設狀態，包含 External Tools。收合狀態不寫入範本或本機設定。
 
-### 5.1 Meters Setup
+### 新增及命名實例
+
+1. 在 **工具（Tools）** 設定所需外部工具。
+2. 在 **設定（Setup）** 的 **工具類型** 下拉選單選擇類型，再按 **新增工具實例（Add Tool Instance）**。
+3. 展開實例，可編輯 **顯示名稱（選填）（Display Name (optional)）**。留空使用原始 Instance ID。
+
+已設定執行檔的類型即使為 Missing 或 Error 仍可新增實例；沒有任何已設定類型時新增按鈕停用。既有實例若缺少本機工具設定仍保留並顯示警告；重新設定後警告消失。
+
+| 名稱規則 | 行為 |
+| --- | --- |
+| 允許值 | 中文、英文、數字、空格；不同實例可同名 |
+| 留空或全空白 | 顯示原始 Instance ID；離開欄位或保存時去除前後空白 |
+| 顯示位置 | Setup 標題、Workflow Target 及序列目標摘要即時更新；保留 ID、可用的型號及序號資訊 |
+| 保存與執行 | 隨範本保存；忙碌時不可編輯。名稱不改變流程引用、執行模式或實體連線；Wavegen 尚未支援執行仍可保存名稱 |
+
+數值欄位可直接輸入，或用上下方向鍵調整。
+
+## Meters：量測設定
 
 Meters 的 **Measurement Setup** 預設展開，可用 **− / +** 隱藏或顯示量測與觸發
 設定，不影響 Background Streaming 或 Live Device。這些設定依所選模式供 Foreground
 或 Background 使用。目前提供：
 
-- Measurement：**DC Voltage** 或 **DC Current**。
-- Range Mode：**Auto** 或 **Manual**。
-- Manual Range：由已設定的 meters tool capability 提供的固定選項，不是任意
-  文字值。
-- NPLC：目前 UI 暴露的標準選項為 `0.02`、`0.2`、`1`、`10` 與 `100`。
-- Auto Zero：**On**、**Off** 或 **Once**。
-- 先選擇是否 **Enable Background Streaming**。前景只使用 **Single**，
-  每次 Measure 觸發一次量測並取得一筆讀值。
-- 背景可選 **Software**、**Immediate**、**External**、**Software Custom**、
-  **Immediate Custom** 與 **External Custom**。取得型號能力後，不支援的模式無法選取。
-- 背景 Custom 模式提供 **Sample Count**、可選的 **Buffer Drain Size** 與
-  **Allow Buffer Overflow Risk**。在 Background 設定 **Trigger Count**；
-  Simple 模式則設定 **Max Samples**。已知的讀值記憶體容量會顯示於畫面。
-  預期筆數超過容量時會顯示 **Reading memory exceeded**，須明確接受溢位風險。
-- External 模式另提供可選的 **Hardware Trigger Slope** 與 **Hardware Trigger
-  Delay (s)**；未指定時沿用工具預設值。
-- DC Voltage 的 DCV Input Impedance：**Not specified**、**Default**、
-  **10 MΩ** 或 **Auto**。
-- DC Current 的 Current Terminal：**Not specified**、**3 A terminal** 或
-  **10 A terminal**。
-- DC Voltage 與 DC Current 的 VM Comp Slope：**Not specified**、**Positive**
-  或 **Negative**。Not specified 會保留 instrument 現有的 VM Comp 設定。
+| 欄位 | 選項及用途 |
+| --- | --- |
+| Measurement | DC Voltage（直流電壓）、DC Current（直流電流） |
+| Range Mode | Auto、Manual |
+| Manual Range | 依工具支援能力提供固定選項，不可任意輸入 |
+| NPLC | 0.02、0.2、1、10、100；量測積分時間 |
+| Auto Zero | On、Off、Once |
+| DCV Input Impedance | 直流電壓：Not specified、Default、10 MΩ、Auto |
+| Current Terminal | 直流電流：Not specified、3 A terminal、10 A terminal |
+| VM Comp Slope | 直流電壓／電流：Not specified、Positive、Negative；未指定保留原設定 |
+
+### 量測及觸發模式
+
+先選擇是否啟用 Background Streaming。前景只能使用 Single，每次 Measure 取得一筆讀值。
+
+| 模式 | 設定 |
+| --- | --- |
+| Single（前景） | 每次 Measure 觸發一次 |
+| Software、Immediate、External（背景 Simple） | 有限筆數使用 Max Samples |
+| Software Custom、Immediate Custom、External Custom（背景） | Sample Count、選用 Buffer Drain Size、Allow Buffer Overflow Risk；有限來源使用 Trigger Count |
+| External / External Custom | 選用 Hardware Trigger Slope 與 Hardware Trigger Delay (s)；未指定使用工具預設 |
+
+取得型號支援能力後，不支援的模式會停用。已知的讀值記憶體容量會顯示；預期筆數超過容量時顯示 Reading memory exceeded，須明確接受溢位風險。
 
 Measurement 欄位會固定顯示；不適用的欄位會 disabled。實際 model capability 與 numeric
 limits 仍由 external meters-tool 最終驗證；Desktop 不會重新建立它的
 capability database。Simulation 會使用 meter simulator profile 的 capability，
 不會受已保存的 Live meter identity 影響；Live 才使用已保存的 identity。
+
+### 警告：Custom 量測可能遺失資料
 
 在 Custom 模式勾選 **Allow Buffer Overflow Risk**，表示明確接受可能無法恢復的
 資料遺失。勾選後即會顯示 **High Buffer Overflow Risk Accepted**，即使預期筆數
@@ -91,42 +98,38 @@ Stop 無法恢復已遺失的資料。這些警告適用於 Simulation 與 Live�
 Allow Risk 不保證已啟用 Overflow Monitoring，Meters Setup 也沒有獨立的監測
 控制項。沒有監測結果時，未偵測到 Overflow 不能作為沒有資料遺失的證據。
 
-### 5.2 Live Resources
+## 設定實體儀器連線
 
-Live Resource 綁定到 Tool Instance，並保存於 machine-local Desktop
-configuration，不會隨 Template 攜帶。可選的 last-known identity information
-也保存在 local state 中供 UI 顯示；這些 cached identity 資訊不代表目前的
-connection state 已被即時確認。
+實體儀器連線（Live Resource）是各實例實際要連接的設備位址，只儲存在本機。上次保存的型號及序號不代表現在已連線。
 
-目前 Desktop 支援 **Meters**、**Powers** 與 **Scopes** 的 resource discovery。不要把
-unsupported Tool Type 當成支援 discovery。請在 Setup 使用 resource controls
-列出可用 resources、選擇 resource、**儲存資源（Save Resource）** 或 **清除資源（Clear Resource）**。
+| 工具 | 如何指定連線 |
+| --- | --- |
+| Meters、Powers、Scopes | 選擇 VISA Backend，再 List Resources 或手動輸入 |
+| Serial | UART 的 COM Port 或 TCP 的 Host / Port；詳見 [Serial 步驟](../steps/serial.zh-TW.md) |
+| Wavegen | 尚不支援工作流程執行 |
 
-每個支援的 instance 都有獨立的 **VISA Backend**：**System VISA**（預設值，
-包含舊版設定）或 **PyVISA-py (@py)**。先選擇 backend，再按 **List Resources**。
-切換時會立即清空該 instance 的 resource 與 identity 草稿、discovery 結果與錯誤，
-以及舊的 Powers Device Status，不影響其他 instances。按下 **儲存資源（Save Resource）** 前，
-已保存的本機設定維持不變；按下後才一起保存 backend、resource 與 identity。
-切換後請重新列出或手動輸入 resource，再保存；不同 backend 的地址不會自動轉換或
-比對。未保存的變更會阻擋 Live run，並使先前的 Live Preflight 結果失效。
+1. 展開實例的 Live Device。
+2. 選擇適用的後端或通訊方式。
+3. 列出或輸入位址，確認儀器資訊。
+4. 按 **儲存資源（Save Resource）**；若要移除連線設定，使用 Clear Resource。
 
-Backend 屬於本機設定，不會寫入 Template，也不影響 Simulation。若選定的 backend
-無法使用，discovery 或連線會明確報錯，不會自動改用其他 backend。
+### VISA Backend 與未儲存的設定
 
-Live Resource 永遠代表 machine-local real hardware。Simulation 不要求也不使用
-Live Resource，但仍可為未來的 Live run 執行 List、編輯與 Save Resource，且不會
-因此切換 Execution Mode。Desktop 不會在 local configuration 建立假的 simulator
-resource。
+每個支援 VISA 的工具實例可獨立選擇 **System VISA**（預設，包含舊版設定）或 **PyVISA-py (@py)**，再按 **List Resources**。
 
-Powers discovery 可能提供 canonical model ID。Desktop 將它保存在本機的
-last-known resource identity，並以離線的 `powers-tool capabilities --model`
-查詢可用的保護功能與通道。Setup 畫面不會為此連線儀器。若沒有 model ID 或
-capability，Live 模式下請選擇並保存受支援的 Live Resource，才能新增保護設定。
-Simulation 會針對既有 Powers simulator model 向 powers-tool 查詢 capability，
-因此不需 discovery 或 saved resource 即可設定 Protection Setup。當目前 model
-不支援時，Template 中既有設定仍會顯示。
+- 切換後端會清除該實例的連線位址與設備識別草稿、探索結果、錯誤及舊 Powers Device Status，不影響其他實例。
+- 重新列出或輸入連線位址後，按 **儲存資源（Save Resource）** 才會一起保存後端、位址與設備資訊。不同後端的位址不會自動轉換或比對。
+- 未儲存變更會阻擋 Live 並使先前的 Live Preflight 失效。後端不可用時會明確報錯，不會自動替換。
 
-#### 讀取並排空錯誤佇列（Read & Drain Errors）
+後端及實體連線屬本機設定，不寫入範本。Simulation 不要求也不使用實體連線；仍可為未來的 Live 執行列出、編輯及保存連線，不會因此切換執行模式或建立假的模擬資源。
+
+### 型號與支援功能
+
+Powers 的設備探索可能提供標準型號識別碼（canonical model ID）。程式將它保存在本機，透過離線能力查詢取得支援的通道與保護功能；此查詢不會連線儀器。
+
+Live 若缺少型號識別或能力資訊，請選擇並儲存受支援的資源後再新增保護設定。Simulation 使用 Powers 模擬器型號的能力，不需要探索或儲存連線。切換至不支援的型號時，範本既有設定仍會顯示。
+
+### 讀取並排空錯誤佇列（Read & Drain Errors）
 
 展開 Powers、Meters 或 Scopes 實例的 **即時裝置（Live Device）**，在
 **錯誤佇列** 按下 **讀取並排空錯誤佇列**。Meters 需要支援 `read-errors` 命令的 CLI。
@@ -142,27 +145,33 @@ Desktop 會離線檢查 CLI 及已知的 Meters 保存型號。若在同一路�
 從 Workflow 啟動到停止與收尾完成，所有實例的按鈕都會停用。此診斷須手動操作，
 結果僅顯示於 Setup。
 
-結果依讀取順序顯示原始錯誤代碼和訊息。**佇列原已為空** 表示第一次讀取即確認
-佇列為空。**已確認排空** 表示已讀取錯誤項目並確認佇列為空。**尚未確認排空**
-表示已達 20 次讀取上限，仍未確認佇列為空。**失敗** 會顯示失敗原因並保留 Tool
-已回傳的項目。如果讀取途中連線失敗，儀器有可能在回傳項目之前就已移除該項目。
+結果依讀取順序顯示原始錯誤代碼及訊息。
 
-### 5.3 Powers Protection Setup
+| 結果 | 意義 |
+| --- | --- |
+| 佇列原已為空 | 第一次讀取即確認為空 |
+| 已確認排空 | 已讀取項目並確認佇列為空 |
+| 尚未確認排空 | 達 20 次讀取上限，仍未確認為空 |
+| 失敗 | 顯示原因並保留已回傳的項目 |
 
-Protection Setup 為選用設定。在 Powers Tool Instance 內，按 **Protection Setup**
-旁的 **+** 展開預設收合的群組。Protection 欄位與 Device 區域一起展開／收合，
-包含 Device Status、Refresh Status、Protection Summary、各通道保護狀態與
-清除操作，以及相關提示與操作結果。Live Device、VISA Backend、Live Resource、
-Resource Discovery 控制項與提示，以及 Remove Tool Instance 與其 Workflow 引用
-限制提示都保持可見。收合會保留保護設定、runtime 狀態與操作結果，
-不會讀取或操作儀器。勾選
-**Use Protection Setup** 後即可編輯支援的欄位。整個 instance 共用一個核取方塊；
-新的 instance 預設未勾選，所有欄位停用。單純勾選不會將任何 protection data
-或核取方塊狀態寫入 Template。powers-tool 回報的所有通道，以及 Template 已設定
-的通道，都會以對齊的固定列顯示。
-每列提供 OVP Voltage、OCP、OCP Delay 與 OCP Delay Trigger。不支援的控制項
-仍會顯示，但會停用。既有的不支援值會顯示提示並保留，保存時不會移除；
-實際型號的支援能力與限制仍由 external tool 驗證。
+連線若在讀取途中失敗，儀器可能已移除項目，但尚未回傳。
+
+## Powers：保護設定
+
+保護設定（Protection Setup）為選用功能，預設收合。展開後可查看保護欄位、Device Status、Refresh Status、Protection Summary、各通道狀態及清除操作；收合不會讀取或操作儀器，也不會清除設定及操作結果。下方 Live Device、後端、資源探索及移除實例相關控制項仍可見。
+
+勾選 **Use Protection Setup** 後才能編輯支援欄位；每個實例共用一個核取方塊，新實例預設未勾選。只勾選而未指定值，不會寫入保護資料或勾選狀態。表格列出工具回報的通道及範本既有通道；不支援欄位仍顯示但停用，既有不支援值會提示並保留。實際型號能力與限制由外部工具驗證。
+
+### 保護設定欄位
+
+| 欄位 | 意義 |
+| --- | --- |
+| OVP Voltage (V) | 過電壓保護門檻；輸入型號支援的電壓值。 |
+| OCP | 過電流保護：On／Off。 |
+| OCP Delay (s) | 過電流保護延遲秒數；依型號限制。 |
+| OCP Delay Trigger | 延遲起算條件：Setting Change（設定變更）或 CC Transition（進入定電流），依型號支援。 |
+
+### 清除與儲存設定
 
 數值欄位留白或選擇 **Unchanged** 表示保留儀器原有設定，不會寫入 Template。
 只保存有設定的通道與欄位。開啟既有 Protection Setup 時，核取方塊會自動勾選。
@@ -173,69 +182,50 @@ channel 的控制項。Protection Setup 與 Device Status 表格的 **Channel** 
 通道數字；確認訊息與 clear plan 使用 **Channel 1**。Workflow Sequence 的 compact
 summary 保留 **CH1**。
 
-兩種 mode 下，有 Protection Setup 且被 Workflow 引用的 Powers instance 都會
-先執行 Safe-Off、讀取 Protection Status，在 status clear 時逐通道套用設定，
-之後才開始 Workflow。回報的 trip 會阻止執行；Orchestrator 絕不自動清除。
-Final Safe-Off 仍會執行。Simulation 透過 powers-tool simulate/planning contract
-執行這些操作，用來驗證 sequencing，不會進行真實 hardware I/O。若執行期間
-偵測 trip 時也應讓 Workflow 失敗，請加入 **Power Protection Status** 與
-**Assert**。
+### 保護設定執行順序
 
-執行 Live 前，每個被 referenced 的 supported Tool Instance 都必須有已保存且
-非空的 resource。同一次 run 中，不同 referenced instances 不可使用相同
-resource。Live confirmation 會顯示每個 referenced instance 與 Tool Type、
-已保存的 backend 與 resource，以及可用的 last-known identity。若 confirmation 後
-backend 或 resource 改變，run 會被拒絕，必須重新確認。
+兩種執行模式都對流程引用且有保護設定的 Powers 實例依序執行：
 
-若 DC Current 使用 **10 A terminal**，Live confirmation 也會要求確認實體
-導線確實接在 10 A terminal。
+1. Safe-Off（關閉輸出）。
+2. 讀取 Protection Status；若回報保護觸發，阻止執行且不自動清除。
+3. 狀態正常時逐通道套用保護設定，才開始工作流程。
+4. 流程結束仍執行最終 Safe-Off。
 
-### 5.4 Device Status
+Simulation 只透過 powers-tool 模擬或規劃上述順序，不進行真實硬體 I/O。若希望執行期間偵測到保護觸發也使流程失敗，請使用 **Power Protection Status** 與 **Assert**。
 
-展開 Protection Setup 後即可看到 **Device** 區域與 **Device Status**。
-**Live Device** / Live Resource 控制項位於下方，在 Simulation 與 Live 模式中
-都保持可見，不受 Protection Setup 收合影響。執行模式 Badge 顯示於 Tool Instance 標題。
-Device Status 只屬於 runtime，不會保存到 Template。
-開啟 Setup 不會連線 Worker，也沒有 background polling。單一 **Protection Summary**
-panel 集中顯示 aggregate Protection、OVP 與 OCP；讀取 status 前，這些值與各通道
-的值都顯示 **—**，讀取後依回報顯示 CLEAR / OK 或 TRIPPED。通道列包含離線
-model capability、Template 既有設定，以及成功 **Refresh Status** 實際回傳的通道；
-Refresh 也會更新各列的值。Simulation 使用
-simulator 通道，不需要 saved Live Resource。Live 使用已保存的 model identity
-建立通道列，不會為此連線 hardware；capability 不可用時，仍保留已設定通道，
-Refresh 前不會猜測其他通道。即使沒有已保存的 model identity，成功 Refresh 後
-仍會顯示實際回傳的通道，回報 trip 的通道依原本規則可使用 Clear Protection。
-切換 Execution Mode 會將舊值清除為 **—**，並顯示所選
-mode 已知的通道。
+### 真實硬體安全檢查
 
-Simulation 的 Refresh Status 會啟動 configured powers-tool simulate Worker，
-不需要 saved Live Resource。每個 simulator 支援的 channel 都提供
-**Generate Clear Plan...**，不要求 channel 已 trip。確認後，Orchestrator 會送出
-simulated Safe-Off All 與選定 channel 的 `clear-protection`，接著直接 shutdown，
-不會 reread status。結果會顯示 **PLAN GENERATED · SIMULATION**、
-**NO HARDWARE I/O**。**Show Plan** 以簡短的操作預覽呈現目標通道、先執行
-Safe-Off、清除 protection、output 保持 OFF 與沒有 hardware I/O。不會顯示 raw JSON
-或儀器指令；沒有真實 protection latch 被改變。
+Live 前，每個被流程引用的受支援工具實例都必須有已儲存且非空的連線資源。同次執行不可由不同引用實例共用同一資源。確認視窗列出實例、工具類型、後端、連線位址及可用設備資訊；若確認後後端或位址改變，必須重新確認。
 
-Live 的 Refresh Status 會使用已保存的 backend 與 Live Resource 建立 temporary
-Powers connection。Live Resource 或 backend draft 尚未保存時，必須先 Save Resource，才能使用
-Refresh Status 或 Clear Protection。尚未保存 resource 或有未保存的 draft changes 時，
-Device Status 會提示使用者在下方的 Live Resource 區域保存。
+Meters 直流電流使用 **10 A terminal** 時，還須確認實體導線接在 10 A 端子。
 
-每個通道列都有固定的 Action 欄。沒有操作執行中時，simulator 支援的通道可使用
-**Generate Clear Plan...**。Live 的 **Clear Protection...** 一直顯示，但在 Refresh
-Status 前或通道未回報 OVP／OCP trip 時停用。回報 trip 且沒有 Workflow 或 manual
-operation 執行中時才啟用，而且一定需要明確確認。Orchestrator 會先 Safe-Off All，
-只清除選取 channel 的
-protection latch，之後重新讀取完整 status。Clear Protection 不會修正造成 trip
-的原因，也絕不會重新開啟 output。若 latch 仍為 tripped，UI 會顯示尚未解除；
-若 reread 回報 output 仍為 ON，Desktop 會照實顯示並警告，不會隱藏或自動改變。
+## Powers：狀態與清除保護
 
-Workflow 或另一個 manual external operation 執行期間，Refresh Status 與 Clear
-Protection 都不可使用。若該型號不支援 remote clear，請從儀器 front panel
-清除 protection latch，再使用 **Refresh Status**。
+展開 Protection Setup 可查看 **Device Status**。它只在執行期間保留，不寫入範本；開啟 Setup 不會連線 Worker 或進行背景輪詢。Live Device 位於下方，兩種模式均保持可見。
 
-### 5.5 Scopes Setup
+- **Protection Summary** 集中顯示整體保護、OVP、OCP；讀取前皆為 **—**，之後依回報顯示 CLEAR / OK 或 TRIPPED。
+- 通道列來自離線能力、範本既有設定與成功 **Refresh Status** 的回傳；重新整理也更新各列狀態。
+- Simulation 使用模擬器通道，不需儲存連線；Live 依已保存的型號資訊建立通道列，不會因此連線儀器。能力不明時保留已設定通道，不猜測其他通道。即使無型號資訊，成功重新整理後也會顯示實際回傳通道，符合條件的保護觸發通道可使用 Clear Protection。
+- 切換模式會清除舊狀態為 **—**，並顯示新模式已知的通道。
+
+### 模擬：產生清除計畫
+
+在 Simulation 按 Refresh Status，會啟動已設定的 powers-tool 模擬 Worker，不需 Live Resource。沒有操作執行中時，每個模擬器支援的通道皆可使用 **Generate Clear Plan...**，不要求保護已觸發。
+
+確認後，程式送出模擬 Safe-Off All 及所選通道的 `clear-protection`，直接關閉 Worker，不重新讀取狀態。結果顯示 **PLAN GENERATED · SIMULATION** 與 **NO HARDWARE I/O**。**Show Plan** 顯示目標通道、先關閉輸出、清除保護、輸出維持關閉及無硬體 I/O；不顯示原始 JSON 或儀器指令，也不會改變真實保護狀態。
+
+### 真實硬體：讀取及清除保護
+
+1. 儲存後端及 Live Resource。若尚未儲存或有草稿，Device Status 會提示；此時不能讀取或清除。
+2. 按 **Refresh Status**，使用已儲存的設定暫時連線 Powers。
+3. 只有回報 OVP／OCP 觸發且沒有其他作業執行時，該通道的 **Clear Protection...** 才可用；操作前必須明確確認。
+4. 程式先 Safe-Off All，只清除所選通道的保護鎖定，再重新讀取完整狀態。
+
+清除保護不會排除觸發原因，也不會重新開啟輸出。若保護仍觸發，畫面會顯示尚未解除；若回讀顯示輸出仍開啟，程式會顯示警告，不隱藏或自動改變。
+
+流程或其他手動外部操作執行期間，Refresh Status 與 Clear Protection 不可用。型號若不支援遠端清除，請依儀器安全規則從面板清除，再按 Refresh Status。
+
+## Scopes：示波器設定
 
 Scopes Setup 為選用設定。新的 instance 所有欄位都是 **Unchanged**。
 **Acquisition Setup** 與 **Channel Configuration** 預設收合，可分別使用標題旁的
@@ -246,6 +236,22 @@ Scopes Setup 為選用設定。新的 instance 所有欄位都是 **Unchanged**�
 Limit、Waveform Invert 與 Channel Units。只保存、套用及回讀明確指定的值；留白或選擇
 Unchanged 不會送出命令。
 
+### 設定項目對照
+
+| 欄位 | 用途及可用值 |
+| --- | --- |
+| Acquisition Type | 擷取方式：Normal、Average、High Resolution、Peak。依型號支援。 |
+| Average Count | 平均次數；僅 Average 可編輯，必須是型號支援的整數。 |
+| Input Coupling | 輸入耦合：AC 或 DC。 |
+| Probe Ratio | 探棒衰減倍率；依實際探棒及型號限制輸入數值。 |
+| Bandwidth Limit | 頻寬限制：On／Off。 |
+| Waveform Invert | 波形反相：On／Off。 |
+| Channel Units | 通道單位：Volt 或 Amp。 |
+
+Acquisition Setup 包含前兩項；Channel Configuration 按通道設定其餘欄位。所有欄位預設不變更（Unchanged／留白），只有明確指定的值才保存並送至儀器。實際支援範圍由工具提供。
+
+### 型號、回讀確認及錯誤
+
 控制項使用 Scopes 提供的離線 capabilities。Simulation 使用 Scopes 預設的
 Keysight DSOX4024A profile；Live 使用所選 Resource 一起保存的 canonical model ID。
 資訊未知或不可取得時，會停用新的設定並顯示原因。不支援的欄位仍顯示但反灰；
@@ -255,3 +261,19 @@ Keysight DSOX4024A profile；Live 使用所選 Resource 一起保存的 canonica
 例如將通道 2 的 Waveform Invert 設為 On，其餘維持 Unchanged，Setup 會先回讀確認通道 2
 已反相，再開始 Workflow。
 
+## Serial：通訊設定
+
+在 Communication Setup 選擇 UART（COM Port）或 TCP Client。通訊參數保存於範本，COM Port 或 TCP Host／Port 則在 Live Device 保存於本機。
+
+| 介面 | 欄位 | 用途及選項 |
+| --- | --- | --- |
+| UART | Baud Rate | 傳輸速率，正整數；新實例預設 115200，須與設備一致。 |
+| UART | Data Bits | 每字元資料位元數：5、6、7、8，預設 8。 |
+| UART | Parity | 同位檢查：None（預設）、Odd、Even。 |
+| UART | Stop Bits | 停止位元數：1（預設）、2。 |
+| UART | Flow Control | 流量控制：None（預設）、Software、Hardware。 |
+| UART | Timeout (ms) | I/O 逾時毫秒數，非負整數，預設 1000。 |
+| TCP | Connect Timeout (ms) | 建立連線的逾時，正整數；預設顯示 3000。 |
+| TCP | I/O Timeout (ms) | 通訊 I/O 逾時，正整數；預設顯示 1000。 |
+
+UART 參數應與設備一致；TCP 不提供探索，模擬不需要 Host 或 Port。詳細接收完成條件及逾時規則見 [Serial 步驟](../steps/serial.zh-TW.md)。

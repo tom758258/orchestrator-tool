@@ -2,7 +2,23 @@
 
 <!-- help-source -->
 
-### 6.2 For
+## Basic workflow steps
+
+| Step | Settings and purpose | Example |
+| --- | --- | --- |
+| Wait | Wait a specified duration in milliseconds | 500 ms waits half a second |
+| Set Variable | Name and value source; create or update a variable | x = 5 |
+| Assert | Compare two values; fail the workflow if false | Check whether a reading is greater than 0 |
+| Output | Name, Page and value source; add a result column | Voltage = Measure reading |
+
+These steps do not require a Tool Instance; using an instrument result requires the corresponding earlier measurement. Assert can provide a failure message. See [Input Values](input-values.md) for sources and comparison rules.
+
+## For: repeat over a range
+
+```text
+Example: Start = 1, Stop = 3, Step = 1
+i = 1 -> Body -> i = 2 -> Body -> i = 3 -> Body -> Done
+```
 
 Configure a For step with **Start**, **Stop**, **Step**, a loop variable, and a
 body.
@@ -17,7 +33,17 @@ For ranges use exact decimal range semantics rather than floating-point
 tolerance. The range is evaluated according to the configured step, so a Stop
 value that is not reachable is not rounded into an extra iteration.
 
-### 6.3 While
+## While: repeat while a condition is true
+
+```text
+Check condition -- false --> Done
+    |
+    true
+    v
+  Run Body
+    |
+    +----> Check again (respect iteration limit)
+```
 
 A While condition is evaluated before each iteration. Its iteration limit can
 be:
@@ -29,6 +55,8 @@ If the condition is initially false, the body executes zero times. An
 Unlimited While is allowed at root or inside If branches without For or
 While ancestors. Its body must be non-empty and may contain finite nested
 loops. It may not contain another Unlimited While.
+
+### Simulation sample limit
 
 If Software Meters **Measure** is inside an Unlimited While and Simulation
 cannot determine the source size, **Run Simulation** shows a sample warning.
@@ -42,6 +70,17 @@ Worker is not restarted. A Live Software Measure does not receive this SIM bound
 Foreground Meters uses Single in both Simulation and Live. To collect batches
 or use Immediate or External triggering, enable Background for that instance.
 
+## If / Else: select a branch
+
+```text
+           Condition
+          /         \
+        true       false
+        THEN        ELSE
+          \         /
+             Next
+```
+
 An If step evaluates its condition once and executes only its THEN or ELSE
 body. Select an If step and choose which branch receives new palette steps;
 drag and paste steps into either branch independently. Branch-local Variables
@@ -50,7 +89,14 @@ remain available later. Outputs in either branch use the enclosing Page row
 scope, with unexecuted branch columns left empty. If does not create an
 additional row.
 
-### 6.4 Stop Workflow and loop Stop
+## Stop a workflow or a loop
+
+| Control | Effect |
+| --- | --- |
+| Stop Workflow | Stop the entire run and wait for required safe cleanup |
+| Stop / Stop Loop ID | Exit the selected loop after its current iteration commits; the outer workflow may continue |
+
+### Stop the entire workflow
 
 **Stop Workflow** is available whenever Simulation or Live shows Running,
 including startup and workflows without loops. It stops the entire workflow:
@@ -78,6 +124,8 @@ previously completed Captures are not made incomplete by a later intentional
 shortfall. Stopping a Worker without an active Capture creates no Dataset.
 Missing termination evidence, sample gaps, overflow, and CSV errors remain failures.
 
+### Stop only the selected loop
+
 The separate **Stop** / **Stop <Loop ID>** controls keep their graceful loop behavior:
 
 1. The active innermost iteration continues until its successful commit point.
@@ -87,7 +135,7 @@ The separate **Stop** / **Stop <Loop ID>** controls keep their graceful loop beh
 An iteration failure takes precedence over loop Stop. Loop Stop alone does not
 mark the whole run Stopped; its final status follows normal workflow success rules.
 
-### 6.5 Output Pages
+## Output Pages
 
 An Output step has a name and a Page. Outputs on the same Page form columns in
 one dataset. Different Pages are independent datasets, and a nested loop can
@@ -103,7 +151,7 @@ variables and assertions may use that sample normally. Output rows are committed
 only when their owning scope or iteration succeeds; a later failure discards
 uncommitted rows. Background samples are recorded separately in Capture Datasets.
 
-### 6.6 Show Message
+## Show Message
 
 A **Show Message** step writes text to the Messages Panel while the workflow
 runs. Its only purpose is that message: it is not a Popup, not an Assert, and
@@ -148,13 +196,15 @@ Double: 6000
 Because the fields are resolved when the step runs, a Show Message inside a For
 or While loop always reports the current iteration, never a previous one.
 
-### 6.7 String Process and Byte Process
+## String Process and Byte Process
 
 Both are Workflow steps with no Tool Instance requirement. Each data parameter
 can use Fixed value, Variable, or Previous step result. They do not provide
 inline Calculation, Elapsed time, or Timestamp sources. Their result is available
 as Value (JSON Pointer `/value`) to later steps. Neither step changes the source
 variable or creates an Output column.
+
+### Edit fixed strings
 
 In Process Fixed value string fields, Enter inserts LF. The visible escape
 `\r` represents CR, `\n` represents LF, and `\\` represents a literal
@@ -170,6 +220,8 @@ The stored Template and Process values remain ordinary JSON strings; the
 Each input and output string is limited to 1 MiB (1,048,576 UTF-8 bytes).
 Exceeding this limit fails the step; data is not truncated. This limit does not
 change existing Variable, Serial RX, or Capture Dataset limits.
+
+### String operations
 
 **String Process** operates on Unicode code points, not UTF-8 bytes. Indexes
 start at zero, and searches are case-sensitive.
@@ -190,6 +242,8 @@ start at zero, and searches are case-sensitive.
 Empty search strings, out-of-range indexes, wrong types, and invalid or
 non-finite number conversions and nonzero numbers that underflow to zero fail the step. For example, Substring of
 `STATUS:PASS` at Start Index 7 and Length 4 returns `PASS`.
+
+### Byte operations
 
 **Byte Process** operates on raw bytes represented by Hex Strings. Hex input
 accepts either letter case and whitespace between complete byte pairs. Hex
@@ -225,7 +279,7 @@ For `1234`, MSB First returns 4660 and LSB First returns 13330.
 These steps process the data they receive. They do not assemble Serial RX
 events into frames, pair TX with RX, or change Serial Send capabilities.
 
-### 6.8 Array Process
+## Array Process
 
 Array Process is a Workflow Step independent of FG/BG Interaction. Select an
 existing Array from **Variable** or **Previous step result**, for example
@@ -239,3 +293,11 @@ To process a batch, set i=0, repeat While i is less than the batch count,
 use Get Item with Index i, process the item, and increment i with Calculation.
 There is no added global Array size limit. Existing String and Byte Process
 string limits still apply when those Steps receive an extracted string.
+
+
+| Array Process operation | Result |
+| --- | --- |
+| Length | Item count; 0 for an empty array |
+| Get Item | The element at a zero-based index |
+
+Example: Length of [10, 20, 30] is 3; Get Item with Index = 1 returns 20.

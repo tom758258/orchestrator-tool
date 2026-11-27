@@ -24,56 +24,232 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html" aria-current="page">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>Configure External Tools</h1>
-<h2 id="4-configure-external-tools">4. Configure external Tools</h2>
-<p>Executable paths belong to a Tool Type. They are shared by all Tool Instances
-of that type; an individual Tool Instance does not store its own executable
-path.</p>
-<p>In <strong>Tools</strong>, select an unconfigured Tool Type under <strong>Select tool to add</strong>, choose
-<strong>Add Tool</strong>, and select the actual executable supplied by the external tool
-distribution. Desktop validates the executable's manifest
-and Worker compatibility for the expected Tool Type before saving the path. A
-path with the wrong Tool ID or incompatible Worker is rejected, and an
-existing valid path is not replaced by the invalid selection. Canceling the
-picker leaves configuration unchanged. Use <strong>Change Path...</strong> on a Tool card
-to replace its path, or <strong>Remove Tool</strong> to remove only its local executable
-configuration. Removing a Tool does not change Template instances or Workflow
-steps; the Tool Type returns to the Add candidates.</p>
-<p>Each External Tools card starts collapsed, with its Tool name and executable
-status visible. Use <strong>+ / −</strong> to show or hide details and Change Path / Remove
-Tool actions independently. Refresh and tab changes preserve the card's state.</p>
-<p>Cards show only Tool Types with configured executable paths, including paths
-that are <strong>Missing</strong>, <strong>Not a file</strong>, or have compatibility or manifest errors.
-Unconfigured Tool Types appear in the Add candidates. If none are configured,
-Tools shows <strong>No external tools configured.</strong>; if all are configured, Add is
-disabled. Cards report availability, compatibility, and an explanation when
-one is available. Desktop does not search <code>PATH</code>, the
-Windows registry, or arbitrary folders, and does not silently fall back to a
-different executable.</p>
-<p>If an external tool is distributed by PyInstaller in <code>onedir</code> form, select
-the real executable inside that distribution. Orchestrator Tool does not move
-or copy the executable or its <code>_internal</code> directory.</p>
+<h2 id="choose-the-right-executable">Choose the right executable</h2>
+<p>External tools are separate programs. Orchestrator stores a path to each one and starts its CLI/Worker when needed. It does not bundle, install, or start the standalone Desktop or WebUI for you.</p>
+<table>
+<thead>
+<tr>
+<th>Tool Type</th>
+<th>Purpose</th>
+<th>EXE to select in Tools</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/tom758258/meters-tool">Meters</a></td>
+<td>Digital multimeter</td>
+<td><code>meters-tool.exe</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/tom758258/powers-tool">Powers</a></td>
+<td>Power supply</td>
+<td><code>powers-tool.exe</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/tom758258/scopes-tool">Scopes</a></td>
+<td>Oscilloscope</td>
+<td><code>scopes-tool.exe</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/tom758258/serial-tool">Serial</a></td>
+<td>UART / TCP communication</td>
+<td><code>serial-tool.exe</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/tom758258/wavegen-tool">Wavegen</a></td>
+<td>Waveform generator</td>
+<td>Workflow execution not supported yet. The separate project currently documents a Python CLI, not a standalone Windows release.</td>
+</tr>
+</tbody>
+</table>
+<p>Choose only tools you need. Consult each project's release instructions for compatible versions and supported instruments. The file name alone is not proof of compatibility.</p>
+<h3 id="why-there-are-several-exes">Why there are several EXEs</h3>
+<p>The Meters, Powers and Scopes Windows packages can include multiple executables. Select only the CLI/Worker EXE in Tools; keep the other files in the original distribution.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Select this CLI/Worker</th>
+<th>Other interface and helper EXEs (do not select)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Meters</td>
+<td><code>meters-tool.exe</code></td>
+<td><code>Meters Tool.exe</code>, <code>meters-tool-webui-launcher.exe</code>, <code>meters-tool-webui-host.exe</code></td>
+</tr>
+<tr>
+<td>Powers</td>
+<td><code>powers-tool.exe</code></td>
+<td><code>Powers Tool.exe</code>, <code>powers-tool-webui-launcher.exe</code>, <code>powers-tool-webui-host.exe</code></td>
+</tr>
+<tr>
+<td>Scopes</td>
+<td><code>scopes-tool.exe</code></td>
+<td><code>Scopes Tool.exe</code>, <code>scopes-tool-webui-launcher.exe</code>, <code>scopes-tool-webui-host.exe</code></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>File category</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Desktop (e.g. <code>Meters Tool.exe</code>)</td>
+<td>Standalone graphical interface</td>
+</tr>
+<tr>
+<td>WebUI Launcher</td>
+<td>Opens the browser interface</td>
+</tr>
+<tr>
+<td>WebUI Host</td>
+<td>Private Desktop helper</td>
+</tr>
+<tr>
+<td><code>_internal/</code></td>
+<td>Shared Python runtime and dependencies</td>
+</tr>
+</tbody>
+</table>
+<p>Serial uses a different Windows package: <code>Serial Tool.exe</code> is its standalone Desktop; <code>serial-tool.exe</code> is its CLI/Worker. The package contains two standalone EXEs and notices, rather than the Python onedir layout.</p>
+<h2 id="extract-and-keep-the-full-package">Extract and keep the full package</h2>
+<p>For a PyInstaller <code>onedir</code> package, the EXE needs the adjacent runtime directory. Extract the entire ZIP, keep all files and folders together, and select the CLI EXE in its original folder. Do not copy only the EXE into Orchestrator's directory. You do not need to open the external tool's Desktop or WebUI first.</p>
+<p>Example folder layout (not a required location or an exhaustive file list):</p>
+<pre><code class="language-text">D:/InstrumentTools/
+  Orchestrator/
+    Orchestrator Tool.exe
+    orchestrator-tool.exe
+  Meters/
+    Meters Tool.exe
+    meters-tool.exe              &lt;-- SELECT THIS
+    meters-tool-webui-launcher.exe
+    meters-tool-webui-host.exe
+    _internal/                   &lt;-- KEEP WITH THE EXE
+    resources/
+    ...
+  Serial/
+    Serial Tool.exe
+    serial-tool.exe              &lt;-- SELECT THIS
+    ...
+</code></pre>
+<p>Powers and Scopes follow the same Python package principle as Meters. Orchestrator does not move or copy the EXE or its <code>_internal</code> directory. If you move a complete package later, use Change Path to update its location.</p>
+<h2 id="add-a-tool">Add a tool</h2>
+<ol>
+<li>Open the <strong>Tools</strong> tab.</li>
+<li>Under <strong>Select tool to add</strong>, select an unconfigured Tool Type.</li>
+<li>Choose <strong>Add Tool</strong> and select the corresponding CLI/Worker EXE.</li>
+<li>Check its availability and compatibility. Desktop checks the executable's manifest (tool identity and supported interface information) and Worker compatibility before saving the path.</li>
+<li>Go to <strong>Setup</strong> to add the Tool Instance you want to use.</li>
+</ol>
+<p>A wrong Tool ID or incompatible Worker is rejected. A rejected selection does not replace an existing valid path. Canceling the file picker leaves configuration unchanged.</p>
+<h2 id="understand-the-status">Understand the status</h2>
+<table>
+<thead>
+<tr>
+<th>Status or situation</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EXE available</td>
+<td>The configured file can be found</td>
+<td>Check compatibility too; this is not a hardware test.</td>
+</tr>
+<tr>
+<td>Missing</td>
+<td>The saved file path no longer exists</td>
+<td>Choose Change Path and select the actual EXE.</td>
+</tr>
+<tr>
+<td>Not a file</td>
+<td>The path is not a file</td>
+<td>Select the correct EXE.</td>
+</tr>
+<tr>
+<td>Manifest or compatibility error</td>
+<td>Identity or interface checks failed</td>
+<td>Check the selected EXE and tool version; read the reported reason.</td>
+</tr>
+<tr>
+<td>No external tools configured.</td>
+<td>No path has been saved</td>
+<td>Use Add Tool.</td>
+</tr>
+</tbody>
+</table>
+<p>Cards show only configured Tool Types, even when the saved path has errors. Unconfigured types appear in the Add candidates; Add is disabled when all are configured. Desktop does not search <code>PATH</code>, Windows registry or arbitrary folders, or silently choose a different executable.</p>
+<h2 id="manage-configured-tools">Manage configured tools</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Change Path...</td>
+<td>Replace the saved executable path after validation.</td>
+</tr>
+<tr>
+<td>Remove Tool</td>
+<td>Remove only the local executable setting; the type returns to the Add list.</td>
+</tr>
+<tr>
+<td>Refresh</td>
+<td>Check the current tool status again.</td>
+</tr>
+<tr>
+<td>+ / −</td>
+<td>Show or hide card details and actions.</td>
+</tr>
+</tbody>
+</table>
+<p>Cards start collapsed, showing the tool name and executable status. Refresh and tab changes preserve the card state. Removing a tool does not delete its files, Template instances or Workflow steps.</p>
+<h2 id="one-path-multiple-tool-instances">One path, multiple Tool Instances</h2>
+<p>Configure the executable once per Tool Type in Tools. Each named Tool Instance in Setup has its own settings and, when supported, its own saved Live Resource.</p>
+<pre><code class="language-text">Tools: Meters -&gt; meters-tool.exe
+                  |
+                  +-- Setup: Meter A (DC Voltage)
+                  |
+                  +-- Setup: Meter B (DC Current)
+</code></pre>
+<p>Both instances use the same EXE; an instance does not store a separate executable path. The path belongs to this computer, not the reusable Template.</p>
   </main>
   <script>
     (() => {

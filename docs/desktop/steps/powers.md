@@ -2,7 +2,19 @@
 
 <!-- help-source -->
 
-#### Power Set Output
+## Power supply steps at a glance
+
+| Step | Main parameters | Result / purpose |
+| --- | --- | --- |
+| Power Set Output | Channel, Voltage (V)/Current Limit (A), at least one | Set voltage or current limit without enabling output. |
+| Power Output ON | Channel | Enable the selected channel output. |
+| Power Output OFF | Channel | Disable the selected channel output. |
+| Power Measure | Channel | Return Voltage and Current without changing settings. |
+| Power Protection Status | All or Specific channel | Return three protection trip Booleans without clearing protection. |
+
+Select the target Powers instance first. Invalid parameters, unsupported model operations or Worker errors fail the step. A reported trip is not itself a failed status step; use the Assert example below if a trip should fail the workflow.
+
+### Select a channel
 
 The Channel dropdown is shared by **Power Set Output**, **Power Output ON**, **Power Output OFF**, **Power Measure**, and the **Specific channel**
 selection in **Power Protection Status**. It lists only channels confirmed by
@@ -18,6 +30,8 @@ are preserved when saving and reloading. Existing Channel bindings are shown
 as **Bound channel (preserved)**. Selecting a supported fixed channel explicitly
 replaces the saved channel or its binding; capabilities never change it automatically.
 
+## Power Set Output
+
 Add **Power Set Output** to set a channel's Voltage, Current Limit, or both.
 Channel is required; at least one of the two setpoints must be selected. Use
 **Set Voltage** and **Set Current Limit** to include or remove each setpoint;
@@ -31,7 +45,13 @@ Resolved variables must still be numeric or Powers action validation fails. **Cu
 current-limit setpoint, expressed in A, not a forced output current. This step
 only configures the setpoints. Use **Power Output ON** separately to enable the output.
 
-#### Power Measure
+## Power Output ON / OFF
+
+Select the target Powers instance and a supported Channel. ON enables the output; OFF disables it. Setting voltage or current limit does not enable output. Live operation requires confirmation; check wiring and safety limits first.
+
+Simulation example: Power Set Output → Power Output ON → Power Measure → Power Output OFF. For real hardware, choose settings within equipment limits. Run-level Safe-Off still applies.
+
+## Power Measure
 
 Add **Power Measure** to read the selected channel's actual Voltage (V) and
 Current (A) once. It uses the fixed Channel dropdown without enabling the
@@ -41,7 +61,7 @@ The numeric pointers are `/data/measurements/voltage` and
 `/data/measurements/current`. It is foreground-only; readings do not create
 a Result column unless you add an Output step.
 
-#### Power Protection Status
+## Power Protection Status
 
 Add **Power Protection Status** to read protection trip state without changing
 instrument settings. Select **All** channels or **Specific channel** and choose
@@ -58,4 +78,3 @@ Status. Select **Previous step result → Protection Tripped** on the left,
 not stop the Workflow, clear protection, or modify the power supply.
 
 For IF/ELSE, the three Protection Status result fields are Boolean: true means the corresponding protection has tripped, and false means it has not. Choose Boolean on the other side of the comparison; selecting a result does not change the other operand.
-

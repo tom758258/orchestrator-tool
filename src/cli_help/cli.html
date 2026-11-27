@@ -57,7 +57,32 @@
 </code></pre>
 <p>If the executable is on <code>PATH</code>, use <code>orchestrator-tool</code> without <code>.\</code>. In a development checkout, the equivalent entry point is <code>cargo run --locked -- &lt;arguments&gt;</code> from the repository root.</p>
 <p><code>doctor</code> summarizes external executable availability; <code>tools list</code> shows each registered tool's resolved status and path. Neither starts a workflow or verifies physical instrument communication.</p>
+<h3 id="common-commands">Common commands</h3>
+<table>
+<thead>
+<tr><th>Command</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>--help / --version</td><td>Command syntax and version</td></tr>
+<tr><td>doctor</td><td>Environment and external EXE status</td></tr>
+<tr><td>tools list</td><td>Tool list and configured paths</td></tr>
+<tr><td>tools inspect</td><td>Tool identity and compatibility checks</td></tr>
+<tr><td>tools worker-check</td><td>Supported Worker simulation diagnostics (Meters, Powers)</td></tr>
+</tbody>
+</table>
 <h2 id="2-point-the-cli-to-tool-executables">2. Point the CLI to tool executables</h2>
+<table>
+<thead>
+<tr><th>Tool</th><th>EXE to select</th></tr>
+</thead>
+<tbody>
+<tr><td>Meters</td><td>meters-tool.exe</td></tr>
+<tr><td>Powers</td><td>powers-tool.exe</td></tr>
+<tr><td>Scopes</td><td>scopes-tool.exe</td></tr>
+<tr><td>Serial</td><td>serial-tool.exe</td></tr>
+</tbody>
+</table>
+<p>Select the CLI/Worker, not the Desktop EXE with spaces in its name, WebUI Launcher, or private Host. Extract Meters, Powers and Scopes onedir packages completely and retain the adjacent <code>_internal</code> directory and other files. Serial's Windows package instead contains two standalone EXEs. Wavegen does not currently document a standalone Windows release build; do not assume completed Workflow integration.</p>
 <p>Without a <code>--config</code> option, the CLI uses an empty configuration. Create a TOML file if you want to check installed tools, for example <code>orchestrator.toml</code>:</p>
 <pre><code class="language-toml">[tools]
 meters = &quot;C:/Example/Meters/meters-tool.exe&quot;

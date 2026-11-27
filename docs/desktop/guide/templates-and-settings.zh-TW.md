@@ -2,41 +2,35 @@
 
 <!-- help-source -->
 
-## 12. Templates 與 local machine settings
+## 新增、開啟與儲存範本
 
-Application 啟動時會建立 blank `Untitled` draft。目前 UI 沒有獨立的 `New` button。
+啟動程式時會建立空白 Untitled 範本。使用主畫面的 **新增範本（New Template）** 建立新範本、**開啟範本（Open Template）** 載入既有範本、**儲存範本（Save Template）** 保存目前範本。
 
-- **開啟範本（Open Template）** 載入既有 Template。
-- **儲存範本（Save Template）** 保存目前 Template。
+## 哪些資料會保存？
 
-Template 會保存：
+| 資料 | 保存位置 |
+| --- | --- |
+| 範本名稱、Tool Instances、Tool Setup、Workflow | 範本 |
+| FG/BG Interaction 及 Data Buffer 設定 | 範本（即使停用也需保存必要設定） |
+| Chart definitions / settings | 選用；勾選 Save charts with template 才保存 |
+| 外部工具 EXE 路徑 | 本機 |
+| Live Resource、VISA Backend、上次識別的設備資訊 | 本機 |
+| 語言、外觀、Step Display Density | 本機偏好 |
+| Simulation / Live 模式、Last Run、Run ID、已取得的結果 | 暫時保留 |
+| Data Buffer 的資料及狀態 | 暫時保留 |
+| 未選擇保存的圖表、Zoom／Pan 位置 | 暫時保留 |
+| Workflow Chart Options（Sampling、Preserve Significant Changes、Show Significant Change Markers、Fit Data） | 暫時保留 |
+| 載入／錯誤狀態、對話框、匯出路徑、Powers 執行授權 | 不隨範本保存 |
 
-- Template name
-- Tool Instances
-- Tool setup
-- Workflow
-- 可選的 saved Chart definitions/settings，僅在 **將圖表儲存於範本（Save charts with template）**
-  啟用時保存
+### 將範本交給其他電腦
 
-Template 不會保存：
+例如把 A 電腦的範本交給 B 電腦，同事可直接使用工具實例、儀器設定及工作流程，但需要在自己的電腦重新設定執行檔路徑，以及真實硬體模式所需的 Live Resource。範本不會帶走量測結果；請另外匯出資料。
 
-- executable paths；
-- Live Resources 或 last-known resource identity；
-- Simulation/Live mode；
-- Last Run、Run ID 或 committed results；
-- 未選擇保存的 session-only Chart state；
-- 目前互動操作產生的 zoom／pan viewport；
-- Workflow Chart Options（Sampling、Preserve Significant Changes、Show
-  Significant Change Markers 與 Fit Data）；
-- loading/error UI state、dialog state 或 export destination/path；或
-- runtime Powers authorization。
+### 舊範本的相容性
 
-這個分離讓 Template 保持 portable，同時將 executable paths、resources 及其他
-machine/runtime state 保留在 Desktop local configuration。
+目前範本必須明確包含 FG/BG Buffer 設定，即使停用亦同。缺少必要設定的舊範本會被拒絕，不提供轉換或自動補值。
 
-目前 Template 必須明確保存 FG/BG Buffer 設定，即使停用亦同。缺少欄位的舊範本會被拒絕，不提供轉換或自動補值。Buffer 執行期間的資料及狀態不會保存。
-
-## 13. 語言與外觀
+## 語言與外觀
 
 「外觀（Appearance）」旁的地球按鈕顯示 **English** 或 **繁體中文**，按一下
 即可立即切換整個 Desktop 的語言，並保留編輯內容、執行狀態與結果。選擇會記住在
@@ -52,4 +46,3 @@ machine/runtime state 保留在 Desktop local configuration。
 
 **外觀（Appearance）** 支援 **系統（System）**、**淺色（Light）** 與 **深色（Dark）**。Theme choice 是 Desktop
 preference，不屬於 Template contract。
-

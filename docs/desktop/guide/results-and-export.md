@@ -2,7 +2,18 @@
 
 <!-- help-source -->
 
-### 10.5 Data and Summary
+## Data and statistics
+
+| Statistic | Meaning |
+| --- | --- |
+| Count | Number of samples |
+| Min / Max | Minimum / maximum |
+| Avg | Average |
+| Range | Max − Min |
+| Std Dev | Sample standard deviation |
+| 2σ / 3σ | Twice / three times the standard deviation |
+
+### Display precision
 
 **Output Data** is built from committed ResultRows. Large tables use
 virtualization for display, but the rows remain available for charts and
@@ -16,6 +27,8 @@ Desktop session. Count stays an integer, and Elapsed Time/Timestamp formats take
 priority. These settings do not change stored values, statistics, Charts, exports,
 or templates.
 
+### Statistic selection and limits
+
 **Summary** shows Count, Min, Max, and Avg by default. **Columns ▾** independently
 controls these columns plus Range (Max − Min), Std Dev (σ), 2σ, and 3σ. Std Dev
 is the sample standard deviation, calculated as `sqrt(M2 / (n - 1))`; 2σ and 3σ
@@ -28,7 +41,18 @@ display only; the underlying statistics retain their original precision in secon
 Column choices are temporary presentation settings. If a Page has no numeric
 Outputs, there is no numeric summary to show.
 
-## 11. Manual export
+## Manual export
+
+| Method | When and why |
+| --- | --- |
+| Streaming CSV | Write data continuously during a run |
+| Manual CSV | Export data after execution |
+| Manual XLSX | Export an Excel workbook after execution |
+| PNG | Export an available chart image |
+| BIN | Export raw Serial Background RX bytes |
+| Save Template | Save workflow settings, not measured data |
+
+### Export scope and format
 
 Manual export is available from the Output area after the run is no longer
 active and the selected export scope contains committed Output rows. Failed or
@@ -41,11 +65,12 @@ saved. Streaming CSV behavior is unchanged.
 
 Choose **Run Page** or **All Run Pages**, then choose **CSV** or **XLSX**:
 
-- **Run Page / CSV** — exports the selected Page as one CSV file.
-- **Run Page / XLSX** — exports the selected Page as one worksheet.
-- **All Run Pages / CSV** — creates one CSV file per Page in the selected
-  destination folder.
-- **All Run Pages / XLSX** — creates one workbook with one worksheet per Page.
+| Scope | CSV | XLSX |
+| --- | --- | --- |
+| Run Page | One CSV for the selected Page | One worksheet for the selected Page |
+| All Run Pages | One CSV per Page in the chosen folder | One workbook with a worksheet per Page |
+
+### Excel time and storage precision
 
 All XLSX time formats use numeric cells suitable for calculations and plotting.
 Elapsed **Seconds** stores seconds; the other three formats store seconds / 86400
@@ -65,9 +90,10 @@ Export preserves stored results; it cannot recover precision already lost when
 JSON was parsed. Exports do not add formulas or embedded charts. CSV output is
 unchanged, and All-Pages CSV export does not overwrite existing Page CSV files.
 
+### Data from failed or stopped runs
+
 Loop Stop is not itself a failure. Stop Workflow produces a stopped run when
 cleanup succeeds. After execution stops, rows already committed before a
 failure or incomplete termination remain
 eligible for manual export. Rows still staged by a failed or stopped owning
 scope are not exported.
-

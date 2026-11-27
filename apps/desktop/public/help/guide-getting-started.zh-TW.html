@@ -24,72 +24,167 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html" aria-current="page">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>快速開始</h1>
-<h2 id="1-overview">1. Overview</h2>
-<p>Orchestrator Tool Desktop 透過 reusable Template 協調獨立的 external tools。
-你可以設定 Tool Type、建立 logical Tool Instance、編排有順序的 Workflow，
-並以 Simulation 或 Live mode 執行。Run 完成後，Desktop 會顯示 committed
-Results、Output Pages、Charts 與 Data，並可匯出目前可用的結果。</p>
-<p>Desktop 是主要的 Workflow 操作介面。External tools 仍是獨立的程式與
-distribution，不包含在 orchestrator-tool 內。</p>
-<h2 id="2-requirements">2. Requirements</h2>
-<ul>
-<li>Application 以 Windows 為優先平台。</li>
-<li>Application 使用系統的 Microsoft Edge WebView2 Runtime。若未偵測到可用的
-  WebView2 Runtime，Desktop 會在建立 Tauri WebView 前顯示 native warning，並可
-  開啟 Microsoft 官方下載頁；application window 不會建立。若 availability check
-  已通過但 main Tauri/WebView window 仍無法初始化，Desktop 會顯示包含實際 Tauri
-  error detail 的 native startup error 並結束。Application 不會自動下載或安裝
-  WebView2。</li>
-<li>Meters、Powers、Scopes、Serial 與 Wavegen 是獨立的 external tool distributions。
-  請分別安裝與維護，再於 Desktop 設定實際 executable path。</li>
-</ul>
-<p>本指南不假設目前存在 external tool 的 installer 或 package deployment 流程。</p>
-<h2 id="3-main-desktop-areas">3. Main Desktop areas</h2>
-<p>Desktop 目前的 tabs 是：</p>
-<ul>
-<li><strong>工具（Tools）</strong> — 設定各 Tool Type 的 executable path，檢查 availability 與
-  compatibility。</li>
-<li><strong>設定（Setup）</strong> — 建立 Tool Instance、編輯各 instance 的 setup，並在支援時
-  保存或清除 local Live Resource。</li>
-<li><strong>工作流程（Workflow）</strong> — 編輯有順序的 steps、驗證 Template、執行 Simulation 或
-  Live、要求 graceful Stop，以及設定 CSV streaming。</li>
-<li><strong>輸出（Output）</strong> — 檢視 Last Run、execution results、Output Pages、Charts、
-  Summary、Output Data，並進行 manual export。</li>
-</ul>
-<p>畫面右上角依序提供 <strong>外觀</strong>、<strong>語言</strong> 與 <strong>說明</strong>。下一列左側的
-<strong>Template／範本</strong> 集中 <strong>新增範本</strong>、<strong>開啟範本</strong> 與 <strong>儲存範本</strong>；
-<strong>執行模式</strong> 維持在右側。點擊 <strong>使用說明</strong> 會在獨立的應用程式視窗開啟
-內建的離線 Desktop 使用指南。</p>
-<p>全域 <strong>執行模式（Execution Mode）</strong> selector 控制整次 Desktop execution，不是各 Tool Instance
-各自選擇。Desktop 啟動時預設為 <strong>模擬（Simulation）</strong>，New Template 或 Open Template
-後也會回到 Simulation。醒目的 <strong>模擬 · 無硬體 I/O（SIMULATION · NO HARDWARE I/O）</strong> 或
-<strong>真實硬體 · 實際硬體操作（LIVE · REAL HARDWARE）</strong> 標示，以及每個 Tool Instance 上相同的 badge，會顯示
-目前 target。Workflow 或 manual external operation 執行期間 selector 會鎖定。
-Execution Mode 只屬於 session state，不會保存到 Template 或 local configuration。</p>
-<p>所有 Tool Instances 都會顯示此 badge。Badge 不代表新增
-Wavegen runtime 支援；Scopes 支援下方列出的 Workflow actions。</p>
+<h2 id="認識-orchestrator-tool">認識 Orchestrator Tool</h2>
+<p>Orchestrator Tool 用來建立並執行可重複使用的測試與量測流程。你可以選擇儀器、安排操作步驟，再查看或匯出結果。與儀器通訊的工作由各個獨立的外部工具負責。</p>
+<pre><code class="language-text">Orchestrator Tool（圖形介面）
+        |
+        +-- Meters Tool  --&gt; 數位電表
+        +-- Powers Tool  --&gt; 電源供應器
+        +-- Scopes Tool  --&gt; 示波器
+        +-- Serial Tool  --&gt; UART / TCP 設備
+</code></pre>
+<p>上圖為真實硬體模式的概念示意。模擬模式則使用各工具的模擬器。Wavegen 是另一個獨立專案，目前尚不支援在 Orchestrator 的工作流程中執行。</p>
+<h2 id="使用前的準備">使用前的準備</h2>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>如何準備</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td>取得 Windows Desktop 發行包並完整解壓縮。</td>
+</tr>
+<tr>
+<td>Microsoft Edge WebView2 Runtime</td>
+<td>若尚未安裝，請安裝系統執行環境。</td>
+</tr>
+<tr>
+<td>外部工具 EXE</td>
+<td>依需求另外取得，請參閱<a href="guide-external-tools.zh-TW.html">設定外部工具</a>。</td>
+</tr>
+<tr>
+<td>實體儀器</td>
+<td>本章的模擬教學不需要；真實硬體操作才需要受支援的儀器與連線。</td>
+</tr>
+</tbody>
+</table>
+<p>程式不會自動安裝 WebView2 或外部工具。若缺少 WebView2，啟動警告可開啟 Microsoft 官方下載頁，主視窗不會建立。若檢查通過但仍無法開啟主視窗，程式會顯示含技術細節的啟動錯誤並結束；請保留詳細訊息供排查。</p>
+<h2 id="主畫面導覽">主畫面導覽</h2>
+<table>
+<thead>
+<tr>
+<th>頁籤</th>
+<th>可以做什麼</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>工具（Tools）</td>
+<td>設定外部工具的執行檔，確認檔案是否可用及相容。</td>
+</tr>
+<tr>
+<td>設定（Setup）</td>
+<td>新增工具實例、設定儀器參數，並在支援時儲存本機的實體儀器連線。</td>
+</tr>
+<tr>
+<td>工作流程（Workflow）</td>
+<td>新增及排列步驟、驗證範本、執行或停止流程、設定即時 CSV。</td>
+</tr>
+<tr>
+<td>輸出（Output）</td>
+<td>查看最近一次執行、訊息、圖表、統計、資料及匯出結果。</td>
+</tr>
+</tbody>
+</table>
+<p>右上方有 <strong>外觀</strong>、<strong>語言</strong> 與 <strong>使用說明</strong>。下一列左側是 <strong>範本（Template）</strong> 的新增、開啟與儲存按鈕；右側是 <strong>執行模式（Execution Mode）</strong>。使用說明會在獨立視窗離線開啟。</p>
+<h2 id="先認識幾個名詞">先認識幾個名詞</h2>
+<table>
+<thead>
+<tr>
+<th>名詞</th>
+<th>簡單說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tool Type（工具類型）</td>
+<td>儀器種類，例如 Meters。每種工具類型只需設定一次執行檔路徑。</td>
+</tr>
+<tr>
+<td>Tool Instance（工具實例）</td>
+<td>工作流程使用的一組具名工具設定，可以有多個相同類型的實例。</td>
+</tr>
+<tr>
+<td>Step（步驟）</td>
+<td>工作流程中的一個動作，例如量測、等待或輸出資料。</td>
+</tr>
+<tr>
+<td>Template（範本）</td>
+<td>可儲存、再次使用的工具設定與工作流程，不包含本機執行檔路徑或量測結果。</td>
+</tr>
+<tr>
+<td>Worker</td>
+<td>由 Orchestrator 啟動的外部工具程序，負責執行儀器操作，不需要手動啟動。</td>
+</tr>
+</tbody>
+</table>
+<h2 id="第一次執行模擬">第一次執行模擬</h2>
+<p>先試著完成一次模擬電壓量測。這個範例不需要實體電表或 VISA 連線。</p>
+<ol>
+<li>將 Orchestrator Tool 及相容的 Meters Tool 發行包分別完整解壓縮。開啟 <code>Orchestrator Tool.exe</code>。</li>
+<li>在 <strong>工具（Tools）</strong> 選擇 Meters，按 <strong>加入工具（Add Tool）</strong>，選取 <code>meters-tool.exe</code>，確認檔案可用且相容。</li>
+<li>在 <strong>設定（Setup）</strong> 按 <strong>新增工具實例（Add Tool Instance）</strong> 加入 Meters。選擇 <strong>直流電壓（DC Voltage）</strong>、自動量程（Auto），保持背景擷取關閉。NPLC 設為 1、自動歸零（Auto Zero）設為開啟（On）（新實例的預設值）；前景量測使用單次（Single）。其他選用欄位保持預設，不需要設定 Live Device。</li>
+<li>在 <strong>工作流程（Workflow）</strong> 左側步驟清單選擇 Meters 的 <strong>電表量測（Meter Measure）</strong>，按 <strong>新增步驟（Add Step）</strong>。在屬性選擇剛新增的 Meters 實例，再於後方新增 <strong>輸出（Output）</strong> 步驟。</li>
+<li>在 Output 屬性設定名稱（例如 <code>Voltage</code>）與 Page（例如 <code>Results</code>），來源選擇 <strong>Previous step result</strong>，指定前面的電表量測步驟，再選擇 <strong>數值（Value）</strong> 結果。</li>
+<li>保持 <strong>模擬（Simulation）</strong> 模式，按 <strong>驗證（Validate）</strong> 檢查範本，再按 <strong>執行模擬（Run Simulation）</strong>。</li>
+<li>開啟 <strong>輸出（Output）</strong> 頁籤，確認執行成功，並在前景輸出（Foreground Output）選取 Results 頁面：應有一筆資料，Voltage 欄為數值。實際數值依模擬器而定，不是實體儀器電壓。</li>
+<li>執行結束後可將資料匯出成 CSV 或 XLSX。使用 <strong>儲存範本（Save Template）</strong> 保存可重複使用的流程，而不是量測結果。</li>
+</ol>
+<pre><code class="language-text">工具 -&gt; 設定 -&gt; 工作流程 -&gt; 執行模擬 -&gt; 輸出
+                                    -&gt; 儲存範本
+</code></pre>
+<p>若儀器步驟分類無法使用，請先確認是否新增對應的工具實例。若執行失敗，請閱讀錯誤訊息並參閱<a href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>。</p>
+<h2 id="選擇執行模式">選擇執行模式</h2>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>意義</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模擬（Simulation）</td>
+<td>不操作實體硬體，測試流程是否正確；啟動程式、新增或開啟範本時的預設模式。</td>
+</tr>
+<tr>
+<td>真實硬體（Live）</td>
+<td>儲存儀器連線設定並確認後，操作真實設備。</td>
+</tr>
+</tbody>
+</table>
+<p>執行模式適用於整次操作，不是由各個工具實例分別選擇。畫面及每張工具實例卡片均顯示 <strong>模擬 · 無硬體 I/O（SIMULATION · NO HARDWARE I/O）</strong> 或 <strong>真實硬體 · 實際硬體操作（LIVE · REAL HARDWARE）</strong>。工作流程或手動外部操作期間無法切換模式。模式是暫時設定，不會寫入範本或本機設定。標示不代表 Wavegen 已支援執行。</p>
+<p>操作實體儀器前，請先閱讀<a href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>及安全注意事項。</p>
   </main>
   <script>
     (() => {

@@ -24,29 +24,69 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.zh-TW.html">首頁</a>
+<div class="help-page-group">第一次使用</div>
 <a class="help-page" href="guide-getting-started.zh-TW.html">快速開始</a>
 <a class="help-page" href="guide-external-tools.zh-TW.html">設定外部工具</a>
-<a class="help-page" href="guide-tool-setup.zh-TW.html">Tool Setup 與 Instance</a>
-<a class="help-page" href="guide-workflow-editor.zh-TW.html">Workflow 編輯器</a>
+<a class="help-page" href="guide-tool-setup.zh-TW.html">工具設定與實例</a>
+<a class="help-page" href="guide-workflow-editor.zh-TW.html">工作流程編輯器</a>
+<a class="help-page" href="guide-execution.zh-TW.html">模擬與真實硬體執行</a>
+<div class="help-page-group">基本操作與步驟參考</div>
 <a class="help-page" href="steps-input-values.zh-TW.html">輸入值與資料流</a>
+<a class="help-page" href="steps-workflow.zh-TW.html">工作流程步驟</a>
+<a class="help-page" href="steps-meters.zh-TW.html">Meters 步驟</a>
 <a class="help-page" href="steps-powers.zh-TW.html">Powers 步驟</a>
-<a class="help-page" href="steps-workflow.zh-TW.html">Workflow 步驟</a>
 <a class="help-page" href="steps-scopes.zh-TW.html">Scopes 動作</a>
-<a class="help-page" href="steps-background.zh-TW.html">Background 互動步驟</a>
-<a class="help-page" href="guide-execution.zh-TW.html">Simulation 與 Live 執行</a>
-<a class="help-page" href="guide-background-streaming.zh-TW.html">Background Streaming 與 CSV</a>
+<a class="help-page" href="steps-serial.zh-TW.html">Serial 通訊步驟</a>
+<div class="help-page-group">進階擷取</div>
+<a class="help-page" href="guide-background-streaming.zh-TW.html">背景擷取與 CSV</a>
+<a class="help-page" href="steps-background.zh-TW.html">前景／背景互動步驟</a>
+<div class="help-page-group">結果、範本與疑難排解</div>
 <a class="help-page" href="guide-results.zh-TW.html">執行結果</a>
 <a class="help-page" href="guide-charts.zh-TW.html">圖表</a>
 <a class="help-page" href="guide-results-and-export.zh-TW.html" aria-current="page">輸出資料與匯出</a>
 <a class="help-page" href="guide-templates-and-settings.zh-TW.html">範本與偏好設定</a>
-<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a>
-<a class="help-page" href="steps-serial.zh-TW.html">Serial Background RX 與動作</a></div>
+<a class="help-page" href="guide-troubleshooting.zh-TW.html">常見問題與安全</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1>輸出資料與匯出</h1>
-<h3 id="105-data-與-summary">10.5 Data 與 Summary</h3>
+<h2 id="資料與統計">資料與統計</h2>
+<table>
+<thead>
+<tr>
+<th>統計欄位</th>
+<th>意義</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Count</td>
+<td>資料筆數</td>
+</tr>
+<tr>
+<td>Min / Max</td>
+<td>最小值／最大值</td>
+</tr>
+<tr>
+<td>Avg</td>
+<td>平均值</td>
+</tr>
+<tr>
+<td>Range</td>
+<td>Max − Min</td>
+</tr>
+<tr>
+<td>Std Dev</td>
+<td>樣本標準差</td>
+</tr>
+<tr>
+<td>2σ / 3σ</td>
+<td>標準差的兩倍／三倍</td>
+</tr>
+</tbody>
+</table>
+<h3 id="顯示精度">顯示精度</h3>
 <p><strong>Output Data</strong> 使用 committed ResultRows。大型 table 會使用 virtualization 顯示，
 但 rows 仍保留，可供 charts 與 export 使用。</p>
 <p><strong>Number display</strong> 讓 Summary 與 Output Data 共用一組設定。<strong>Auto</strong>（預設）
@@ -54,6 +94,7 @@
 <strong>Raw</strong> 顯示原本 JavaScript Number 的字串。切換立即生效，且可在目前 Desktop
 使用期間跨 Run Page 沿用。Count 維持整數，Elapsed Time／Timestamp 格式優先。
 這些設定不會改變儲存值、統計結果、Charts、匯出內容或 Template。</p>
+<h3 id="統計欄位選擇及限制">統計欄位選擇及限制</h3>
 <p><strong>Summary</strong> 預設顯示 Count、Min、Max 與 Avg。<strong>Columns ▾</strong> 可分別控制這些欄位，
 以及 Range（Max − Min）、Std Dev（σ）、2σ 與 3σ。Std Dev 為樣本標準差，
 計算式為 <code>sqrt(M2 / (n - 1))</code>；2σ 與 3σ 為其倍數。只有一筆 sample 時，
@@ -63,19 +104,70 @@ Output Time Format 顯示，與 Output Data 和 Scatter X 一致。Count 維持�
 缺少的統計值維持 <code>—</code>。格式化僅影響顯示，底層統計仍保留原始秒數與精度。
 欄位選擇僅為暫時的 presentation 設定。若 Page 沒有 numeric Outputs，則不會
 顯示 numeric summary。</p>
-<h2 id="11-manual-export">11. Manual export</h2>
+<h2 id="手動匯出">手動匯出</h2>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>使用時機及用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Streaming CSV</td>
+<td>執行中持續寫入資料</td>
+</tr>
+<tr>
+<td>Manual CSV</td>
+<td>執行結束後匯出資料</td>
+</tr>
+<tr>
+<td>Manual XLSX</td>
+<td>執行結束後匯出 Excel 活頁簿</td>
+</tr>
+<tr>
+<td>PNG</td>
+<td>匯出可用圖表的圖片</td>
+</tr>
+<tr>
+<td>BIN</td>
+<td>Serial Background RX 原始位元組</td>
+</tr>
+<tr>
+<td>Save Template</td>
+<td>保存流程設定，不是量測結果</td>
+</tr>
+</tbody>
+</table>
+<h3 id="匯出範圍及格式">匯出範圍及格式</h3>
 <p>Manual export 會在 run 不再 active，且目前 export scope 存在 committed Output
 rows 時提供。Failed 或 incomplete run 仍維持原本的 failure/incomplete 狀態，
 但可把已 committed rows 作為 partial results 匯出。</p>
 <p>每次啟動 Application 時，manual export 預設為 <strong>XLSX</strong>。你可以在當次使用期間
 切換 <strong>CSV</strong> 與 <strong>XLSX</strong>，此選擇不會保存。Streaming CSV 行為維持不變。</p>
 <p>選擇 <strong>Run Page</strong> 或 <strong>All Run Pages</strong>，再選 <strong>CSV</strong> 或 <strong>XLSX</strong>：</p>
-<ul>
-<li><strong>Run Page / CSV</strong> — 將選取的 Page 匯出為一份 CSV。</li>
-<li><strong>Run Page / XLSX</strong> — 將選取的 Page 匯出為一個 worksheet。</li>
-<li><strong>All Run Pages / CSV</strong> — 在指定 destination folder 中為每個 Page 建立一份 CSV。</li>
-<li><strong>All Run Pages / XLSX</strong> — 建立一個 workbook，每個 Page 一個 worksheet。</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>範圍</th>
+<th>CSV</th>
+<th>XLSX</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run Page</td>
+<td>所選 Page 一份 CSV</td>
+<td>所選 Page 一個工作表</td>
+</tr>
+<tr>
+<td>All Run Pages</td>
+<td>指定資料夾中每個 Page 各一份 CSV</td>
+<td>一個活頁簿，每個 Page 一個工作表</td>
+</tr>
+</tbody>
+</table>
+<h3 id="excel-時間與儲存精度">Excel 時間與儲存精度</h3>
 <p>所有 XLSX 時間格式都是可計算與繪圖的數值儲存格。Elapsed <strong>Seconds</strong> 儲存秒數；
 其他三種格式儲存秒數 / 86400（Excel 天數）。Timestamp 即使隱藏 Date，也保留
 完整日期時間序號；<code>T</code> 與 <code>+08:00</code> 是固定顯示文字。Excel 天數相減後乘以 86400
@@ -88,6 +180,7 @@ Boolean cells，null 寫為 Blank，Array／Object 保留為 compact JSON Text�
 Export 保留已儲存結果，無法還原 JSON 解析時已遺失的精度。匯出不會加入 formulas
 或 embedded charts。CSV 輸出維持不變，All-Pages CSV export 不會覆寫既有 Page CSV
 files。</p>
+<h3 id="失敗或提早停止的資料">失敗或提早停止的資料</h3>
 <p>迴圈 Stop 本身不是 failure。Stop Workflow 在清理成功後會產生 Stopped 結果。
 Execution 停止後，failure 或
 incomplete termination 之前已 committed 的 rows 仍可 manual export；仍處於 staged

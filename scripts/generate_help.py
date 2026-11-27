@@ -17,22 +17,30 @@ CLI = ROOT / "src/cli_help"
 TOPICS = (
     ("guide/getting-started", "Getting Started", "快速開始"),
     ("guide/external-tools", "Configure External Tools", "設定外部工具"),
-    ("guide/tool-setup", "Tool Setup and Instances", "Tool Setup 與 Instance"),
-    ("guide/workflow-editor", "Workflow Editor", "Workflow 編輯器"),
+    ("guide/tool-setup", "Tool Setup and Instances", "工具設定與實例"),
+    ("guide/workflow-editor", "Workflow Editor", "工作流程編輯器"),
+    ("guide/execution", "Run Simulation and Live", "模擬與真實硬體執行"),
     ("steps/input-values", "Input Values and Data Flow", "輸入值與資料流"),
+    ("steps/workflow", "Workflow Steps", "工作流程步驟"),
+    ("steps/meters", "Meters Steps", "Meters 步驟"),
     ("steps/powers", "Powers Steps", "Powers 步驟"),
-    ("steps/workflow", "Workflow Steps", "Workflow 步驟"),
     ("steps/scopes", "Scopes Actions", "Scopes 動作"),
-    ("steps/background", "Background Interaction Steps", "Background 互動步驟"),
-    ("guide/execution", "Run Simulation and Live", "Simulation 與 Live 執行"),
-    ("guide/background-streaming", "Background Streaming and Streaming CSV", "Background Streaming 與 CSV"),
+    ("steps/serial", "Serial Background RX and Actions", "Serial 通訊步驟"),
+    ("guide/background-streaming", "Background Streaming and Streaming CSV", "背景擷取與 CSV"),
+    ("steps/background", "Background Interaction Steps", "前景／背景互動步驟"),
     ("guide/results", "Run Results", "執行結果"),
     ("guide/charts", "Charts", "圖表"),
     ("guide/results-and-export", "Output Data and Export", "輸出資料與匯出"),
     ("guide/templates-and-settings", "Templates and Preferences", "範本與偏好設定"),
     ("guide/troubleshooting", "Troubleshooting and Safety", "常見問題與安全"),
-    ("steps/serial", "Serial Background RX and Actions", "Serial Background RX 與動作"),
 )
+NAV_GROUPS = {
+    "guide/getting-started": ("First use", "第一次使用"),
+    "steps/input-values": ("Basic operations and step reference", "基本操作與步驟參考"),
+    "guide/background-streaming": ("Advanced acquisition", "進階擷取"),
+    "guide/results": ("Results, templates and troubleshooting", "結果、範本與疑難排解"),
+}
+
 LOCALES = ("en", "zh-TW")
 WARNING = "<!-- Generated file. Do not edit directly. -->"
 INTRO_MARK = "<!-- help-navigation -->\n\n"
@@ -90,7 +98,7 @@ def markdown_html(source):
 
 def slice_chapters(intro, chapters):
     # Rendering the old complete document before splitting preserves its anchors.
-    rendered = markdown_html(intro + "".join(chapters))
+    rendered = markdown_html(intro + "\n\n".join(chapters))
     heads = list(re.finditer(r'<h([1-6]) id="[^"]+">(.+?)</h\1>', rendered, re.S))
     positions = []
     cursor = 0
@@ -205,6 +213,9 @@ def sidebar(lang, active):
     pages = [("index", "Home", "首頁", "desktop")] + list(TOPICS)
     parts = []
     for stem, en, zh, *extra in pages:
+        if stem in NAV_GROUPS:
+            group = NAV_GROUPS[stem][1 if lang == "zh-TW" else 0]
+            parts.append('<div class="help-page-group">' + escape(group) + "</div>")
         ident = extra[0] if extra else stem
         name = filename(ident, lang)
         label = zh if lang == "zh-TW" else en

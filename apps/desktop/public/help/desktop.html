@@ -24,32 +24,34 @@
   <aside class="help-sidebar">
     <div class="help-sidebar-title">Orchestrator Help</div>
     <div class="help-page-nav"><a class="help-page" href="desktop.html" aria-current="page">Home</a>
+<div class="help-page-group">First use</div>
 <a class="help-page" href="guide-getting-started.html">Getting Started</a>
 <a class="help-page" href="guide-external-tools.html">Configure External Tools</a>
 <a class="help-page" href="guide-tool-setup.html">Tool Setup and Instances</a>
 <a class="help-page" href="guide-workflow-editor.html">Workflow Editor</a>
-<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
-<a class="help-page" href="steps-powers.html">Powers Steps</a>
-<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
-<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
-<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
 <a class="help-page" href="guide-execution.html">Run Simulation and Live</a>
+<div class="help-page-group">Basic operations and step reference</div>
+<a class="help-page" href="steps-input-values.html">Input Values and Data Flow</a>
+<a class="help-page" href="steps-workflow.html">Workflow Steps</a>
+<a class="help-page" href="steps-meters.html">Meters Steps</a>
+<a class="help-page" href="steps-powers.html">Powers Steps</a>
+<a class="help-page" href="steps-scopes.html">Scopes Actions</a>
+<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a>
+<div class="help-page-group">Advanced acquisition</div>
 <a class="help-page" href="guide-background-streaming.html">Background Streaming and Streaming CSV</a>
+<a class="help-page" href="steps-background.html">Background Interaction Steps</a>
+<div class="help-page-group">Results, templates and troubleshooting</div>
 <a class="help-page" href="guide-results.html">Run Results</a>
 <a class="help-page" href="guide-charts.html">Charts</a>
 <a class="help-page" href="guide-results-and-export.html">Output Data and Export</a>
 <a class="help-page" href="guide-templates-and-settings.html">Templates and Preferences</a>
-<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a>
-<a class="help-page" href="steps-serial.html">Serial Background RX and Actions</a></div>
+<a class="help-page" href="guide-troubleshooting.html">Troubleshooting and Safety</a></div>
     <div id="toc-title">Contents</div>
     <nav id="toc" aria-labelledby="toc-title"></nav>
   </aside>
   <main class="help-content" id="help-content">
 <h1 id="orchestrator-tool-desktop-user-guide">Orchestrator Tool Desktop User Guide</h1>
-<p>This guide describes the Desktop behavior currently available in
-Orchestrator Tool. It is written for operators and engineers who configure
-external tools, build reusable Templates, run workflows, and inspect or export
-their results.</p>
+<p>Start here if you are new to Orchestrator Tool. Learn to prepare external tools, build reusable workflows, run them and inspect or export results. You do not need to know the internal architecture.</p>
 <h2 id="choose-your-interface">Choose Your Interface</h2>
 <p>The Windows release provides two user-facing executables:</p>
 <table>
@@ -61,29 +63,39 @@ their results.</p>
 <tr><td><code>Orchestrator Tool.exe</code></td><td>Desktop: author and run Workflows; inspect and export results.</td></tr>
 </tbody>
 </table>
-<p>This guide covers Desktop. Start <code>Orchestrator Tool.exe</code> and select <strong>Help</strong> in the upper-right corner for offline guidance. To open the CLI guide from Windows PowerShell, use <code>.\orchestrator-tool.exe user-guide --lang en</code>. The Windows build places both programs in <code>dist/windows-x64/</code>; install external Tool EXEs separately.</p>
+<p>For ordinary operation, open <code>Orchestrator Tool.exe</code>; there is no need to start the CLI first. Start <code>Orchestrator Tool.exe</code> and select <strong>Help</strong> in the upper-right corner for offline guidance. To open the CLI guide from Windows PowerShell, use <code>.\orchestrator-tool.exe user-guide --lang en</code>. The Windows build places both programs in <code>dist/windows-x64/</code>; install external Tool EXEs separately.</p>
 <h2 id="guide-chapters">Guide Chapters</h2>
+<p>Follow First use in order, complete a Simulation, then use the other sections as references.</p>
+<h3 id="first-use">First use</h3>
 <ul>
 <li><a href="guide-getting-started.html">Getting Started</a></li>
 <li><a href="guide-external-tools.html">Configure External Tools</a></li>
 <li><a href="guide-tool-setup.html">Tool Setup and Instances</a>, including manual Error Queue diagnostics</li>
 <li><a href="guide-workflow-editor.html">Workflow Editor</a></li>
-<li><a href="steps-input-values.html">Input Values and Data Flow</a></li>
-<li><a href="steps-powers.html">Powers Steps</a></li>
-<li><a href="steps-workflow.html">Workflow Steps</a>, including String Process, Byte Process fixed-string editing, and Array Process</li>
-<li><a href="steps-scopes.html">Scopes Actions</a></li>
-<li><a href="steps-background.html">Background Interaction Steps (including optional Data Buffer)</a></li>
 <li><a href="guide-execution.html">Run Simulation and Live</a></li>
+</ul>
+<h3 id="basic-operations-and-step-reference">Basic operations and step reference</h3>
+<ul>
+<li><a href="steps-input-values.html">Input Values and Data Flow</a></li>
+<li><a href="steps-workflow.html">Workflow Steps</a>, including String Process, Byte Process fixed-string editing, and Array Process</li>
+<li><a href="steps-meters.html">Meters Steps</a></li>
+<li><a href="steps-powers.html">Powers Steps</a></li>
+<li><a href="steps-scopes.html">Scopes Actions</a></li>
+<li><a href="steps-serial.html">Serial Background RX and Actions</a></li>
+</ul>
+<h3 id="advanced-acquisition">Advanced acquisition</h3>
+<ul>
 <li><a href="guide-background-streaming.html">Background Streaming and Streaming CSV</a></li>
+<li><a href="steps-background.html">Background Interaction Steps (including optional Data Buffer)</a></li>
+</ul>
+<h3 id="results-templates-and-troubleshooting">Results, templates and troubleshooting</h3>
+<ul>
 <li><a href="guide-results.html">Run Results</a></li>
 <li><a href="guide-charts.html">Charts</a></li>
 <li><a href="guide-results-and-export.html">Output Data and Export</a></li>
 <li><a href="guide-templates-and-settings.html">Templates and Preferences</a></li>
 <li><a href="guide-troubleshooting.html">Troubleshooting and Safety</a></li>
-<li><a href="steps-serial.html">Serial Background RX and Actions</a></li>
 </ul>
-<h2 id="step-reference">Step Reference</h2>
-<p>See <strong>Workflow Steps, Input Values, Powers, Scopes, Background and Serial</strong> above for the implemented Step parameters and limits. Detailed per-Step examples can be added to their own pages when available.</p>
   </main>
   <script>
     (() => {

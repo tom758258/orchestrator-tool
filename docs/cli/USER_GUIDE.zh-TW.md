@@ -38,7 +38,26 @@ Windows 發行版包含兩個 EXE：
 
 `doctor` 彙整外部 EXE 的可用性；`tools list` 顯示各註冊工具的狀態與路徑。這兩個指令都不會啟動 Workflow，也不代表已驗證實體儀器通訊。
 
+### 常用指令
+
+| 指令 | 用途 |
+| --- | --- |
+| --help / --version | 查閱語法及版本 |
+| doctor | 環境及外部執行檔狀態 |
+| tools list | 列出工具及設定路徑 |
+| tools inspect | 檢查工具識別資訊與相容性 |
+| tools worker-check | 支援工具的模擬診斷（Meters、Powers） |
+
 ## 2. 指定工具 EXE
+
+| 工具 | 選擇的執行檔 |
+| --- | --- |
+| Meters | meters-tool.exe |
+| Powers | powers-tool.exe |
+| Scopes | scopes-tool.exe |
+| Serial | serial-tool.exe |
+
+選擇 CLI／Worker，而不是名稱含空格的 Desktop EXE、WebUI Launcher 或私用 Host。Meters、Powers、Scopes 的 onedir 發行包請完整解壓縮並保留 EXE 旁的 `_internal` 及其他檔案。Serial 的 Windows 發行包則提供兩個獨立 EXE。Wavegen 目前未提供獨立 Windows 發行包的建置方式；請勿將它視為已完成工作流程整合。
 
 沒有 `--config` 時，CLI 使用空設定。若要檢查已安裝工具，可以建立 `orchestrator.toml`，例如：
 

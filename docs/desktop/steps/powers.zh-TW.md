@@ -2,7 +2,19 @@
 
 <!-- help-source -->
 
-#### Power Set Output
+## 電源供應器步驟總覽
+
+| 步驟 | 主要參數 | 結果／用途 |
+| --- | --- | --- |
+| Power Set Output | Channel、Voltage (V)／Current Limit (A)，至少一項 | 設定電壓或電流限制，不會開啟輸出。 |
+| Power Output ON | Channel | 開啟選定通道輸出。 |
+| Power Output OFF | Channel | 關閉選定通道輸出。 |
+| Power Measure | Channel | 回傳 Voltage、Current；不改設定。 |
+| Power Protection Status | All 或 Specific channel | 回傳三個保護觸發 Boolean；不清除。 |
+
+各步驟先選擇目標 Powers 實例。參數不合法、型號不支援或 Worker 回報錯誤會使步驟失敗；保護狀態本身不等於步驟失敗，若要在觸發時停止流程，使用下文的 Assert 範例。
+
+### 選擇通道
 
 **Power Set Output**、**Power Output ON**、
 **Power Output OFF**、**Power Measure**，以及 **Power Protection Status** 的 **Specific channel**
@@ -17,6 +29,8 @@
 **Bound channel (preserved)**。只有明確選擇支援的固定通道，才會取代原通道值
 或其 binding；capabilities 不會自動改寫它。
 
+## Power Set Output
+
 加入 **Power Set Output** 可設定通道的 Voltage、Current Limit，或同時設定兩者。
 Channel 為必填；兩個設定值至少須選取一項。使用 **Set Voltage** 與
 **Set Current Limit** 核取方塊加入或移除設定值；取消勾選會維持儀器該項設定不變。
@@ -29,7 +43,13 @@ Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 **Current Limit** 是電源供應器的輸出電流限制設定值，單位為 A，並非強制輸出的
 電流值。此步驟僅設定 setpoints；需要啟用輸出時，另加 **Power Output ON**。
 
-#### Power Measure
+## Power Output ON / OFF
+
+選擇目標 Powers 實例與支援的 Channel。ON 開啟該通道輸出，OFF 關閉。設定電壓或電流限制不會自動開啟輸出。真實硬體操作須先確認接線與安全限制，並完成 Live 確認。
+
+模擬範例：Power Set Output → Power Output ON → Power Measure → Power Output OFF。真實硬體須依設備限制選擇安全設定值，流程結束後的 Safe-Off 仍會執行。
+
+## Power Measure
 
 加入 **Power Measure** 可對指定通道量測一次實際 Voltage（V）與 Current（A）。
 此唯讀步驟使用固定 Channel 下拉選單，不會啟用輸出或修改 setpoints。
@@ -38,7 +58,7 @@ Elapsed time、Timestamp 或比較計算；Template 也會驗證這些限制。
 `/data/measurements/current`。此功能僅供 Foreground Workflow 使用，不啟動
 Background Streaming。若沒有新增 Output step，量測結果不會自動成為 Result column。
 
-#### Power Protection Status
+## Power Protection Status
 
 加入 **Power Protection Status** 可讀取 protection trip 狀態，不會改變儀器設定。
 Channel 可選 **All**，或選擇 **Specific channel** 後從 Channel 下拉選單指定通道。
@@ -55,4 +75,3 @@ protection 任一觸發，Protection Tripped 即為 true。實際型號支援由
 供應器。
 
 在 IF／ELSE 中，三個 Protection Status 結果都是 Boolean：true 代表對應保護已觸發，false 代表未觸發。比較的另一側請選 Boolean；選取 Result 欄位不會自動修改比較值。
-
