@@ -1,174 +1,249 @@
+[繁體中文](README.zh-TW.md)
+
 # Orchestrator Tool
 
-Orchestrator Tool is a Windows-first desktop application and Rust core for
-coordinating independent external tools through reusable workflow templates.
-The Desktop application is the primary workflow operation interface; the CLI
-is an engineering and diagnostic interface.
+Orchestrator Tool is a Windows-first, Rust-based workflow execution tool for
+coordinating independent external tools through reusable Templates. It provides
+a shared Core, an engineering and diagnostic CLI, and a Tauri 2 Desktop
+application. Desktop is the primary interface for workflow authoring and
+execution; CLI does not edit or run workflows.
 
-Core is kept platform-neutral where practical. External tools such as Meters,
-Powers, Scopes, and Wavegen remain separate projects and distributions.
+Orchestrator coordinates external programs, not instrument drivers or
+device-specific VISA/SCPI logic. It is an execution tool, not a persistent
+test-record or run-history database.
 
 ## Features
 
-- Define reusable Templates containing Tool Setup and an ordered Workflow.
-- Execute sequential workflows with Tool Actions, expressions, Outputs,
-  Output Pages, For, and While.
-- Run supported Powers, Meters, Scopes, and Serial workflows in Simulation or Live mode.
-- Inspect committed results, progress, Output Pages, charts, and exports in
-  the Desktop application.
-- Discover configured external tools and run bounded Worker diagnostics from
-  the CLI.
+- Create, validate, open and save reusable Templates with Tool Setup and
+  ordered Workflows; use multiple Tool Instances, including instances of the
+  same Tool Type.
+- Compose Tool Actions, expressions, If, For, While, Output Pages, and
+  String, Byte and Array processing.
+- Run supported Meters, Powers, Scopes and Serial workflows in Simulation or
+  Live mode; inspect progress and stop a run.
+- Use supported Meters, Scopes and Serial Background Streaming, capture,
+  interaction and optional Data Buffer features within their tool-specific limits.
+- Inspect committed results, statistics, charts and Output Pages; export
+  available data as CSV or XLSX, stream supported capture data to CSV, and
+  export committed partial results from failed or incomplete runs.
+- Optionally save chart definitions with the Template; keep runtime results,
+  external EXE paths and Live Resources separate from portable Templates.
+- Configure external tools, inspect status, manifests and Worker compatibility,
+  and run bounded Meters and Powers Worker Simulation diagnostics from CLI.
+- Use English or Traditional Chinese Desktop UI, System/Light/Dark appearance,
+  and bilingual offline Help in both Desktop and CLI.
 
-Scopes reads back explicitly configured Acquisition Type, Average Count,
-Channel Coupling, Probe Ratio, Bandwidth Limit, Channel Invert, and Channel Units
-in Tool Setup. It also verifies Channel Display, Channel Scale, Channel Offset,
-Horizontal Scale, Horizontal Position, and Edge Trigger in Workflow. Set and
-Query each use the existing timeout. A failed or missing readback or a mismatch
-fails Setup before Workflow starts or fails the affected Step. TDS2024B and
-TBS1052B use an absolute ±0.05 V tolerance for Edge Trigger Level, which can
-allow a large relative difference for settings close to zero. See the
-[Scopes integration contract](docs/contracts/scopes-integration.md#settings-readback).
+Wavegen is registered but does not yet support Workflow execution. External
+tools remain separate projects and distributions. Simulation does not perform
+physical instrument I/O; Live requires explicitly configured resources and
+operator confirmation. Supported Scopes settings are read back and verified;
+failed or mismatched readback fails the affected Setup or Step. See the
+[Scopes integration contract](docs/contracts/scopes-integration.md#settings-readback)
+and [Template Format](docs/contracts/template-schema.md) for exact behavior.
 
-The exact Template and execution contract is documented in
-[Template Format](docs/contracts/template-schema.md). Architecture-level
-process, Worker, result, chart, and export data flow is described in
-[Architecture Overview](docs/architecture/overview.md).
+## Components
 
-## Architecture
+- **Core** (`src/lib.rs`): Template validation, Workflow execution, local
+  configuration, external process and Worker lifecycle, adapters and results.
+- **CLI** (`src/main.rs`): command discovery, tool inspection, configuration
+  diagnostics and supported Worker checks over Core; not a workflow runner.
+- **Desktop** (`apps/desktop`): React/TypeScript frontend and Tauri 2 Rust
+  application for Tool Setup, Workflow editing, execution, results and export.
 
-- **Core** (src/lib.rs) owns workflow and Template semantics, validation,
-  execution, configuration, process/Worker lifecycle, result data, and shared
-  external-tool adapters.
-- **CLI** (src/main.rs) uses Core for command discovery, tool inspection,
-  environment diagnostics, and focused Powers/Meters Worker checks. It does
-  not provide a workflow run command.
-- **Desktop** (apps/desktop) is the Tauri 2 application for setup, workflow
-  editing, Template load/save, Simulation and Live runs, progress, results,
-  charts, and export.
-
-Tauri commands are an application boundary; orchestration behavior remains in
-Core. The ownership and lifecycle details are in
-[Architecture Overview](docs/architecture/overview.md).
+Core and CLI share the root Cargo package. Desktop depends on Core directly;
+Tauri commands remain the application boundary. See
+[Architecture Overview](docs/architecture/overview.md) and
+[External Tool Boundary](docs/architecture/external-tool-boundary.md).
 
 ## Project Structure
 
-    src/lib.rs                         Core library
-    src/main.rs                        Engineering and diagnostic CLI
-    apps/desktop                       Tauri frontend
-    apps/desktop/src-tauri              Tauri application crate
-    tests                               Integration tests
-    docs/core                           Core engineering docs
-    docs/cli                            CLI reference and user guide
-    docs/desktop                        Desktop engineering docs and user guide
-    docs/architecture                   Architecture references
-    docs/contracts                      Durable contract references
-    Cargo.toml                          Core and CLI package metadata
-    LICENSE                             MIT License
+```text
+src/
+  lib.rs                    # Shared Rust Core
+  main.rs                   # Engineering and diagnostic CLI
+apps/desktop/
+  src/                      # React / TypeScript frontend
+  src-tauri/                # Tauri application crate
+docs/
+  core/ cli/ desktop/       # Component references and user guides
+  architecture/ contracts/  # Architecture and formal contracts
+  help/                     # Offline Help maintenance
+scripts/                    # Build and Help maintenance
+tests/                      # Integration tests
+.github/workflows/          # CI and manual Windows build
+Cargo.toml
+Cargo.lock
+```
 
-## Development / Quick Start
+## Key Dependencies
 
-Run the Rust package checks from the repository root:
+| Component | Purpose |
+| --- | --- |
+| Rust, Clap | Core and CLI |
+| Serde, serde_json, TOML | Template data and local configuration |
+| ureq, rust_decimal | Worker HTTP communication and decimal calculations |
+| csv, rust_xlsxwriter | CSV and XLSX export |
+| Tauri 2, React, TypeScript, Vite | Desktop application and frontend |
+| React Flow (@xyflow/react), Apache ECharts | Workflow editor and charts |
+| Microsoft Edge WebView2 Runtime | System-provided Windows Desktop runtime |
 
-    cargo build --locked
-    cargo test --locked
-    cargo fmt --all --check
-    cargo clippy --locked --all-targets --all-features -- -D warnings
+Exact resolved dependencies are in [Cargo.lock](Cargo.lock),
+[Desktop Cargo.lock](apps/desktop/src-tauri/Cargo.lock) and
+[package-lock.json](apps/desktop/package-lock.json). See the
+[third-party notices](THIRD_PARTY_NOTICES.txt) for licensing and distribution.
+Python is used only to maintain and verify offline Help; normal Desktop builds
+and users do not need Python.
 
-### First-time setup
+## Install
 
-On a fresh clone, navigate to the Desktop application and install npm dependencies:
+For a prebuilt Windows x64 package, extract the entire distribution, including
+license and notice files. No installer is required. Desktop requires the
+system [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/);
+the application does not bundle or install it. Install external tools separately
+as needed by the Workflow. Select their CLI/Worker executable and preserve the
+complete external distribution, including any adjacent runtime files. See
+[Configure External Tools](docs/desktop/guide/external-tools.md).
 
-    cd apps\desktop
-    npm.cmd ci
+Source development requires stable Rust supporting edition 2024, Node.js/npm
+(Node.js 24 is used by CI) and Tauri 2 platform prerequisites. From the
+repository root, install frontend dependencies on first setup or after
+lockfile changes:
 
-* Run this only on a fresh clone or when `package.json` / `package-lock.json` changes.
-* Do not run this every time you start development.
-* No separate installation step is required for Rust crate dependencies. Cargo resolves them from the Rust project manifests when the Desktop application is built or run.
+```powershell
+cd apps\desktop
+npm.cmd ci
+```
 
-### Normal Desktop development
+Cargo resolves Rust dependencies using the existing manifests and lockfiles.
 
-To run the complete Tauri Desktop application:
+## Quick Start
 
-    cd apps\desktop
-    npm.cmd run tauri dev
+### Windows application
 
-* This command starts both the Vite development server and the Tauri Desktop application together.
-* Vite is launched automatically via `beforeDevCommand` defined in `tauri.conf.json`.
-* You do not need to run `npm.cmd run dev` manually or open two terminals.
+Run `Orchestrator Tool.exe` to edit and run workflows; no separate CLI startup
+is required. Follow the first Simulation tutorial in the
+[Desktop User Guide](docs/desktop/USER_GUIDE.md), or select **Help** in Desktop.
 
-Use this for regular development, including Tauri features, backend commands, and workflow execution.
+From PowerShell in the distribution directory, inspect the CLI:
 
-### Frontend-only development
+```powershell
+.\orchestrator-tool.exe --help
+.\orchestrator-tool.exe --version
+.\orchestrator-tool.exe doctor
+.\orchestrator-tool.exe tools list
+.\orchestrator-tool.exe user-guide --lang en
+```
 
-For frontend work that does not require Tauri-backed application state or native commands:
+These commands do not run a workflow or verify hardware. CLI does not
+automatically read Desktop settings; use `--config` with an existing TOML file
+for configured EXEs. See the [CLI User Guide](docs/cli/USER_GUIDE.md).
 
-    cd apps\desktop
-    npm.cmd run dev
+### Source development
 
-* This starts only the Vite development server without the Tauri backend.
-* Open `http://localhost:5173` in a browser if needed.
-* The complete Desktop workflow experience is not available in a regular browser because it depends on Tauri commands.
+From the repository root, inspect the CLI with `cargo run --locked -- --help`.
+After the Install step, launch the full Desktop from the repository root:
 
-### Validation
+```powershell
+cd apps\desktop
+npm.cmd run tauri dev
+```
 
-Common frontend checks from `apps/desktop`:
+Tauri starts Vite automatically. For frontend-only work, `npm.cmd run dev`
+(from `apps/desktop`) starts only Vite, without native Tauri workflow operations.
 
-    npm.cmd test
-    npm.cmd run typecheck
-    npm.cmd run build
+## Build
 
-Python is used only to generate and validate Desktop offline Help; normal
-Desktop builds and Desktop users do not need it. Developers changing Help
-should see [Desktop offline Help](docs/help/README.md). A virtual environment
-is recommended but optional.
+From the repository root in Windows PowerShell:
 
-### Windows release build (no installer)
+```powershell
+.\scripts\build-all.ps1
+```
 
-On Windows, run `./scripts/build-all.ps1` from PowerShell in the repository root to build the release CLI and Desktop executables. The script uses the tracked dependency lockfiles, checks CLI startup, and places `orchestrator-tool.exe` (diagnostics) and `Orchestrator Tool.exe` (Desktop) in `dist/windows-x64/`.
+The script builds the locked CLI and Desktop, checks CLI startup and stages the
+Windows x64 distribution without an installer:
 
-The **Build Windows CLI and Desktop** GitHub Actions workflow runs on demand and uploads both EXEs with the short Git commit SHA in the artifact name. Automatic CI runs on pull requests and pushes to `main` on Linux and Windows. Desktop runtime still requires WebView2; a successful build does not certify GUI or hardware behavior.
+```text
+dist/windows-x64/
+  Orchestrator Tool.exe
+  orchestrator-tool.exe
+  LICENSE
+  THIRD_PARTY_NOTICES.txt
+  licenses/
+```
 
-### WebView2 runtime
+The notice directory includes upstream ECharts notices and collected package
+notice files with a dependency/source index (`licenses/DEPENDENCIES.txt`).
+Keep these accompanying files with the EXEs and review the index before
+distribution.
 
-The Desktop uses the system Microsoft Edge WebView2 Runtime on Windows. It
-must be installed before creating a Tauri window. The application does not
-download or install a WebView2 runtime automatically. See the
-[official WebView2 page](https://developer.microsoft.com/microsoft-edge/webview2/)
-for the prerequisite.
+The existing **Build Windows CLI and Desktop** GitHub Actions workflow runs on
+demand and uploads the distribution with the short Git commit SHA in the
+artifact name. It does not create a release or tag. A successful build is not
+a GUI or hardware test.
 
-## Desktop
+## Test
 
-Desktop is the primary interface for authoring Templates, running Workflows and inspecting results. See [Desktop README](docs/desktop/README.md) for development and ownership, and [Desktop User Guide](docs/desktop/USER_GUIDE.md) for operations.
+From the repository root, the Core/CLI baseline is:
 
-## CLI
+```powershell
+cargo fmt --all --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked
+cargo build --locked
+```
 
-The CLI covers engineering setup and external-tool diagnostics, not Workflow runs. See [CLI README](docs/cli/README.md) for commands and flags, and [CLI User Guide](docs/cli/USER_GUIDE.md) for PowerShell walkthroughs.
+From `apps/desktop`, after installing frontend dependencies:
+
+```powershell
+npm.cmd test
+npm.cmd run typecheck
+npm.cmd run build
+```
+
+Select focused checks first; see [AGENTS.md](AGENTS.md) for Tauri checks and
+[Testing Guidelines](docs/testing-guidelines.md) for test ownership and evidence
+boundaries. Existing CI runs on Linux and Windows for pull requests and pushes
+to `main`. Default tests are hardware-free. Automated tests, fake Workers,
+real Tool Simulation, Windows builds, GUI checks and Live hardware validation
+are distinct forms of evidence.
 
 ## Documentation
 
-- [Core README](docs/core/README.md) — shared Rust library ownership and modules.
-- [CLI README](docs/cli/README.md) / [CLI User Guide](docs/cli/USER_GUIDE.md) — command reference and operation.
-- [Desktop README](docs/desktop/README.md) / [Desktop User Guide](docs/desktop/USER_GUIDE.md) — implementation and UI operation.
-- [Architecture Overview](docs/architecture/overview.md) / [External Tool Boundary](docs/architecture/external-tool-boundary.md) — system architecture and external-tool boundaries.
-- [Template Format](docs/contracts/template-schema.md) — normative Template and Workflow rules.
-- [Contributing](docs/CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) — contribution and validation rules.
-- [Traditional Chinese entry point](README.zh-TW.md).
+- [Desktop User Guide](docs/desktop/USER_GUIDE.md)
+- [CLI User Guide](docs/cli/USER_GUIDE.md)
+- [Core README](docs/core/README.md)
+- [CLI README](docs/cli/README.md)
+- [Desktop README](docs/desktop/README.md)
+- [Architecture Overview](docs/architecture/overview.md)
+- [External Tool Boundary](docs/architecture/external-tool-boundary.md)
+- [Template Format](docs/contracts/template-schema.md) and [Contracts](docs/contracts/)
+- [Testing Guidelines](docs/testing-guidelines.md)
+- [Offline Help Maintenance](docs/help/README.md)
+- [Changelog](CHANGELOG.md)
 
 ## Contributing
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for development setup,
-baseline commands, ownership boundaries, testing expectations, safety-sensitive
-changes, documentation guidance, and the pull request checklist.
+Read [Contributing](docs/CONTRIBUTING.md), [AGENTS.md](AGENTS.md), applicable
+[Testing Guidelines](docs/testing-guidelines.md) and contracts. Keep changes
+focused, preserve component and safety boundaries, and report what was and was
+not verified. Live validation requires separate authorization and applicable
+external tool safety requirements.
 
 ## License and Disclaimer
 
-Orchestrator Tool is released under the [MIT License](LICENSE).
+Copyright (c) 2026 tom758258. Orchestrator Tool is licensed under the
+[MIT License](LICENSE). Third-party components retain their respective license
+terms; see [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 
-Orchestrator Tool is an independent project. Meters, Powers, Scopes, Wavegen,
-and related external programs are separate projects and distributions. This
-repository does not bundle or redistribute those tools and does not claim
-affiliation, sponsorship, or endorsement by their maintainers or vendors.
-Their names and trademarks, if any, remain with their respective owners.
+The Orchestrator Tool application icon was generated with OpenAI image generation in ChatGPT, then reviewed and selected by the project maintainer.
 
-Live operation can affect connected hardware. Follow the applicable external
-tool and instrument safety requirements before using Live mode.
+Orchestrator Tool is an independent, unofficial project. It does not claim
+affiliation, sponsorship or endorsement by instrument manufacturers or
+third-party vendors. Meters, Powers, Scopes, Serial, Wavegen and other external
+tools remain separate projects and distributions; this repository does not
+bundle or redistribute them. Third-party names and trademarks belong to their
+respective owners. Users must comply with applicable software, driver,
+instrument and documentation license terms.
+
+Live operation can affect connected hardware. Follow applicable external tool
+and instrument safety requirements. No warranty is provided under the MIT License.

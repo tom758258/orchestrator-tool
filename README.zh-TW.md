@@ -1,171 +1,230 @@
+[English](README.md)
+
 # Orchestrator Tool
 
-Orchestrator Tool 是一個以 Windows 為優先、由 Desktop application 與 Rust
-Core 組成的 external tools orchestrator，透過可重複使用的 Workflow
-Template 協調獨立的外部工具。Desktop 是主要的 Workflow 操作介面；CLI
-則是工程與診斷介面。
+Orchestrator Tool 是一個以 Windows 為優先、使用 Rust 開發的工作流程執行工具，
+透過可重複使用的 Template 協調獨立外部工具。專案包含共用 Core、工程與診斷 CLI，
+以及 Tauri 2 Desktop 應用程式。Desktop 是編輯與執行 Workflow 的主要介面；
+CLI 不提供 Workflow 編輯或執行功能。
 
-Core 在可行的範圍內維持 platform-neutral。Meters、Powers、Scopes、
-Wavegen 等 external tools 仍是獨立專案與獨立 distribution。
+Orchestrator 負責協調外部程式，不負責儀器驅動程式或設備專屬的 VISA／SCPI 邏輯。
+本專案是執行工具，不是持久化的測試紀錄或 Run History 資料庫。
 
-## Features
+## 主要功能
 
-- 建立包含 Tool Setup 與有順序 Workflow 的 reusable Template。
-- 執行包含 Tool Action、Expression、Output、Output Page、For 與 While
-  的 sequential workflow。
-- 以 Simulation 或 Live mode 執行目前支援的 Powers、Meters、Scopes 與 Serial workflow。
-- 在 Desktop 中檢視 committed results、progress、Output Page、chart 與
-  export；run 結束後，failed/incomplete run 已 committed 的資料也可作為 partial
-  results 匯出。
-- 透過 CLI 進行 external tool discovery、設定檢查與 bounded Worker
-  diagnostics。
+- 建立、驗證、開啟及儲存包含 Tool Setup 與依序執行 Workflow 的可重複使用 Template；
+  支援多個 Tool Instance，包括同一 Tool Type 的不同 Instance。
+- 組合 Tool Action、運算式、If、For、While、Output Page，以及 String、Byte、Array Process。
+- 以 Simulation 或 Live 模式執行支援的 Meters、Powers、Scopes 與 Serial Workflow，
+  檢視執行進度並停止 Run。
+- 在各工具支援範圍內，使用 Meters、Scopes、Serial 的 Background Streaming、
+  Capture、Interaction 及選用的 Data Buffer。
+- 檢視已提交的結果、統計資料、圖表與 Output Page；將可用資料匯出為 CSV 或 XLSX，
+  將支援的擷取資料串流寫入 CSV，並匯出失敗或未完成 Run 的已提交部分結果。
+- 選擇是否將圖表定義與 Template 一起儲存；執行結果、外部 EXE 路徑及 Live Resource
+  不會保存於可攜式 Template。
+- 設定外部工具，檢查狀態、Manifest 與 Worker 相容性；透過 CLI 執行有時間界線的
+  Meters、Powers Worker Simulation 診斷。
+- Desktop 支援英文與繁體中文介面、System／Light／Dark 外觀；
+  Desktop 與 CLI 均提供雙語離線 Help。
 
-Scopes 會回讀 Tool Setup 中明確指定的 Acquisition Type、Average Count、Channel Coupling、
-Probe Ratio、Bandwidth Limit、Channel Invert 與 Channel Units。Workflow 會驗證 Channel
-Display、Channel Scale、Channel Offset、Horizontal Scale、Horizontal Position 與 Edge Trigger。
-Set 與 Query 各自使用既有 Timeout。回讀失敗、缺少資料或不符合設定時，Setup 會在 Workflow
-啟動前失敗，或由受影響的設定 Step 回報失敗。TDS2024B 與 TBS1052B 的 Edge Trigger Level
-採用 ±0.05 V 絕對容差，設定值接近零時可能容許較大的相對差距。詳細規則請見
-[Scopes 整合契約](docs/contracts/scopes-integration.md#settings-readback)。
+Wavegen 已列入工具 Registry，但尚不支援 Workflow 執行。各外部工具仍是獨立專案與
+發行套件。Simulation 不進行實體儀器 I/O；Live 需要明確設定的資源及操作者確認。
+支援的 Scopes 設定會進行讀回驗證；讀回失敗或不符設定時，受影響的 Setup 或 Step
+會失敗。完整行為請參閱 [Scopes 整合契約](docs/contracts/scopes-integration.md#settings-readback)
+及 [Template Format](docs/contracts/template-schema.md)。
 
-完整的 Template 與 execution contract 請見
-[Template Format](docs/contracts/template-schema.md)。Process、Worker、
-result、chart 與 export data flow 的 architecture-level 說明請見
-[Architecture Overview](docs/architecture/overview.md)。
+## 元件分工
 
-## Architecture
+- **Core**（`src/lib.rs`）：Template 驗證、Workflow 執行、本機設定、
+  外部 Process／Worker 生命週期、工具整合及結果。
+- **CLI**（`src/main.rs`）：透過 Core 提供指令探索、工具檢查、設定診斷及支援的
+  Worker 檢查；不負責執行 Workflow。
+- **Desktop**（`apps/desktop`）：React／TypeScript 前端與 Tauri 2 Rust 應用程式，
+  負責 Tool Setup、Workflow 編輯與執行、結果及匯出。
 
-- **Core**（src/lib.rs）負責 Workflow 與 Template semantics、validation、
-  execution、configuration、process/Worker lifecycle、result data，以及
-  shared external-tool adapters。
-- **CLI**（src/main.rs）透過 Core 提供 command discovery、tool inspection、
-  environment diagnostics，以及 Powers/Meters Worker checks。CLI 不提供
-  workflow run command。
-- **Desktop**（apps/desktop）是 Tauri 2 application，負責 setup、workflow
-  editing、Template load/save、Simulation 與 Live run、progress、results、
-  charts 與 export。
+Core 與 CLI 共用根目錄的 Cargo Package。Desktop 直接依賴 Core；
+Tauri Commands 維持應用程式邊界。參閱 [Architecture Overview](docs/architecture/overview.md)
+及 [External Tool Boundary](docs/architecture/external-tool-boundary.md)。
 
-Tauri commands 是 application boundary；orchestration behavior 仍由 Core
-負責。元件 ownership 與 lifecycle 詳情請見
-[Architecture Overview](docs/architecture/overview.md)。
+## 專案結構
 
-## Project Structure
+```text
+src/
+  lib.rs                    # 共用 Rust Core
+  main.rs                   # 工程與診斷 CLI
+apps/desktop/
+  src/                      # React / TypeScript 前端
+  src-tauri/                # Tauri 應用程式 Crate
+docs/
+  core/ cli/ desktop/       # 元件參考文件與使用者指南
+  architecture/ contracts/  # 架構與正式契約
+  help/                     # 離線 Help 維護
+scripts/                    # 建置與 Help 維護
+tests/                      # 整合測試
+.github/workflows/          # CI 與手動 Windows 建置
+Cargo.toml
+Cargo.lock
+```
 
-    src/lib.rs                         Core library
-    src/main.rs                        Engineering / diagnostic CLI
-    apps/desktop                       Tauri frontend
-    apps/desktop/src-tauri              Tauri application crate
-    tests                               Integration tests
-    docs/core                           Core 技術文件
-    docs/cli                            CLI 指令參考與使用者指南
-    docs/desktop                        Desktop 技術文件與使用者指南
-    docs/architecture                   Architecture references
-    docs/contracts                      Durable contract references
-    Cargo.toml                          Core 與 CLI package metadata
-    LICENSE                             MIT License
+## 主要相依技術
 
-## Development / Quick Start
+| 元件 | 用途 |
+| --- | --- |
+| Rust、Clap | Core 與 CLI |
+| Serde、serde_json、TOML | Template 資料與本機設定 |
+| ureq、rust_decimal | Worker HTTP 通訊及十進位數值運算 |
+| csv、rust_xlsxwriter | CSV 與 XLSX 匯出 |
+| Tauri 2、React、TypeScript、Vite | Desktop 應用程式及前端 |
+| React Flow（@xyflow/react）、Apache ECharts | Workflow 編輯器與圖表 |
+| Microsoft Edge WebView2 Runtime | Windows 系統提供的 Desktop 執行環境 |
 
-在 repository root 執行 Rust package checks：
+確切的相依套件版本見 [Cargo.lock](Cargo.lock)、
+[Desktop Cargo.lock](apps/desktop/src-tauri/Cargo.lock) 及
+[package-lock.json](apps/desktop/package-lock.json)。
+發行與授權資訊請參閱 [第三方授權聲明](THIRD_PARTY_NOTICES.txt)。
+Python 僅用於維護與驗證離線 Help，一般 Desktop 建置與使用者不需要 Python。
 
-    cargo build --locked
-    cargo test --locked
-    cargo fmt --all --check
-    cargo clippy --locked --all-targets --all-features -- -D warnings
+## 安裝
 
-### First-time setup
+若使用預先建置的 Windows x64 套件，請完整解壓縮，包括授權與聲明文件，
+不需要安裝程式。Desktop 需要系統的
+[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)；
+應用程式不包含或自動安裝此執行環境。依 Workflow 需求另外安裝外部工具，
+選擇其 CLI／Worker 執行檔，並保留完整外部工具發行套件及相鄰的執行期檔案。
+參閱 [設定外部工具](docs/desktop/guide/external-tools.zh-TW.md)。
 
-第一次 clone repository 時，前往 Desktop application 目錄並安裝 npm dependencies：
+從原始碼開發需使用支援 edition 2024 的 stable Rust、Node.js／npm（CI 使用
+Node.js 24），以及 Tauri 2 對應平台的必要環境。首次設定或 Lockfile 變更時，
+從 Repository 根目錄安裝前端依賴：
 
-    cd apps\desktop
-    npm.cmd ci
+```powershell
+cd apps\desktop
+npm.cmd ci
+```
 
-* 這僅在第一次 clone 或 `package.json` / `package-lock.json` 變更時執行。
-* 不需要每一次開發前都執行。
-* Rust crate dependencies 無需另行安裝步驟。Cargo 會在 Desktop application 編譯或執行時從 Rust 專案 manifest 中解析依賴。
+Rust 依賴由 Cargo 依既有 Manifest 與 Lockfile 解析。
 
-### Normal Desktop development
+## 快速開始
 
-執行完整的 Tauri Desktop application：
+### Windows 應用程式
 
-    cd apps\desktop
-    npm.cmd run tauri dev
+執行 `Orchestrator Tool.exe` 即可編輯及執行 Workflow，不需要先啟動 CLI。
+初次使用請依照 [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md) 的
+首次 Simulation 教學；也可在 Desktop 選擇 **Help** 開啟離線說明。
 
-* 這個指令會同時啟動 Vite development server 與 Tauri Desktop application。
-* Vite 會透過 `tauri.conf.json` 中定義的 `beforeDevCommand` 自動啟動。
-* 不需要手動執行 `npm.cmd run dev` 或在兩個 terminal 中同時開啟。
+在發行套件目錄開啟 PowerShell，查看 CLI：
 
-使用於 regular development，包括 Tauri features、backend commands、與 workflow execution。
+```powershell
+.\orchestrator-tool.exe --help
+.\orchestrator-tool.exe --version
+.\orchestrator-tool.exe doctor
+.\orchestrator-tool.exe tools list
+.\orchestrator-tool.exe user-guide --lang zh-TW
+```
 
-### Frontend-only development
+這些指令不會執行 Workflow 或驗證硬體。CLI 不會自動讀取 Desktop 設定；
+使用 `--config` 指定已存在的 TOML 檔以檢查已設定的 EXE。
+參閱 [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md)。
 
-若要進行不依賴 Tauri application state 或 native commands 的前端工作：
+### 從原始碼開發
 
-    cd apps\desktop
-    npm.cmd run dev
+從 Repository 根目錄可執行 `cargo run --locked -- --help` 查看 CLI。
+完成安裝步驟後，從 Repository 根目錄啟動完整 Desktop：
 
-* 只會啟動 Vite development server，不包含 Tauri backend。
-* 如有需要，請在 browser 開啟 `http://localhost:5173`。
-* 一般 browser 無法使用完整的 Desktop workflow 功能，因為這些功能依賴 Tauri commands。
+```powershell
+cd apps\desktop
+npm.cmd run tauri dev
+```
 
-### Validation
+Tauri 會自動啟動 Vite。只進行前端開發時，可在 `apps/desktop` 執行
+`npm.cmd run dev`，此模式僅啟動 Vite，不具備原生 Tauri Workflow 操作功能。
 
-來自 `apps/desktop` 的 frontend checks：
+## 建置
 
-    npm.cmd test
-    npm.cmd run typecheck
-    npm.cmd run build
+在 Windows PowerShell 中，從 Repository 根目錄執行：
 
-Python 僅用於產生與驗證 Desktop 離線 Help；一般 Desktop build 與 Desktop
-使用者不需要安裝 Python。修改 Help 的開發者請參閱
-[Desktop 離線 Help](docs/help/README.md)。建議使用 venv，但不強制。
+```powershell
+.\scripts\build-all.ps1
+```
 
-### Windows Release Build（不含 Installer）
+腳本依 Lockfile 建置 CLI 與 Desktop、檢查 CLI 啟動，並準備不含安裝程式的
+Windows x64 發行套件：
 
-在 Windows 的 Repository 根目錄使用 PowerShell 執行 `./scripts/build-all.ps1`，即可建立 Release 模式的 CLI 與 Desktop 執行檔。腳本使用既有依賴鎖定檔、檢查 CLI 基本啟動，並將 `orchestrator-tool.exe`（工程診斷）及 `Orchestrator Tool.exe`（Desktop）放在 `dist/windows-x64/`。
+```text
+dist/windows-x64/
+  Orchestrator Tool.exe
+  orchestrator-tool.exe
+  LICENSE
+  THIRD_PARTY_NOTICES.txt
+  licenses/
+```
 
-GitHub Actions 的 **Build Windows CLI and Desktop** 可手動觸發，Artifact 包含兩個 EXE，名稱帶有 Git Commit 短 SHA。PR 與推送至 `main` 時，CI 會自動於 Linux、Windows 驗證。Desktop 執行仍需要 WebView2；建置成功不代表 GUI 或實體儀器驗證完成。
+授權目錄包含 ECharts 上游聲明、蒐集的相依套件授權文件，以及套件與來源索引
+（`licenses/DEPENDENCIES.txt`）。請將這些文件與 EXE 一併保留，散布前應審查索引。
 
-### WebView2 runtime
+現有 GitHub Actions **Build Windows CLI and Desktop** 可手動觸發，並上傳
+發行套件，Artifact 名稱包含 Git Commit 短 SHA。不會建立 Release 或 Tag。
+建置成功不代表 GUI 或硬體測試通過。
 
-Desktop 在 Windows 上使用系統的 Microsoft Edge WebView2 Runtime。建立
-Tauri window 前必須先安裝它；application 不會自動下載或安裝 WebView2
-Runtime。必要條件請參閱
-[Microsoft 官方 WebView2 頁面](https://developer.microsoft.com/microsoft-edge/webview2/)。
+## 測試
 
-## Desktop
+Core／CLI 基準檢查從 Repository 根目錄執行：
 
-Desktop 是建立 Template、執行 Workflow 及檢視結果的主要介面。實作與開發方式見 [Desktop README](docs/desktop/README.zh-TW.md)；實際操作見 [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)。
+```powershell
+cargo fmt --all --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked
+cargo build --locked
+```
 
-## CLI
+安裝前端依賴後，從 `apps/desktop` 執行：
 
-CLI 用於工程設定與外部工具診斷，不提供 Workflow Run。指令與參數請見 [CLI README](docs/cli/README.zh-TW.md)；Windows PowerShell 操作流程請見 [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md)。
+```powershell
+npm.cmd test
+npm.cmd run typecheck
+npm.cmd run build
+```
 
-## Documentation
+優先執行與修改相關的聚焦檢查。Tauri 檢查請參閱 [AGENTS.md](AGENTS.md)；
+測試分工及驗證證據的界線請參閱 [Testing Guidelines](docs/testing-guidelines.md)。
+現有 CI 在 Pull Request 與推送至 `main` 時於 Linux、Windows 執行。
+預設測試不需要實體硬體。自動化測試、Fake Worker、實際 Tool Simulation、
+Windows 建置、GUI 檢查及 Live 硬體驗證屬於不同種類的證據。
 
-- [Core README](docs/core/README.zh-TW.md) — 共用 Rust Library 的職責與模組。
-- [CLI README](docs/cli/README.zh-TW.md) / [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md) — 指令參考與實際操作。
-- [Desktop README](docs/desktop/README.zh-TW.md) / [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md) — 技術架構與畫面操作。
-- [Architecture Overview](docs/architecture/overview.md) / [External Tool Boundary](docs/architecture/external-tool-boundary.md) — 系統架構及外部工具邊界。
-- [Template Format](docs/contracts/template-schema.md) — Template／Workflow 的正式規格。
-- [Contributing](docs/CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) — 開發與驗證原則。
-- [English entry point](README.md)。
+## 文件導覽
 
-## Contributing
+- [Desktop 使用者指南](docs/desktop/USER_GUIDE.zh-TW.md)
+- [CLI 使用者指南](docs/cli/USER_GUIDE.zh-TW.md)
+- [Core README](docs/core/README.zh-TW.md)
+- [CLI README](docs/cli/README.zh-TW.md)
+- [Desktop README](docs/desktop/README.zh-TW.md)
+- [Architecture Overview](docs/architecture/overview.md)
+- [External Tool Boundary](docs/architecture/external-tool-boundary.md)
+- [Template Format](docs/contracts/template-schema.md) 與 [Contracts](docs/contracts/)
+- [Testing Guidelines](docs/testing-guidelines.md)
+- [離線 Help 維護](docs/help/README.md)
+- [Changelog](CHANGELOG.md)
 
-請參閱 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)，了解 development setup、
-baseline commands、ownership boundaries、testing expectations、安全敏感變更、
-documentation guidance 與 pull request checklist。
+## 參與開發
 
-## License and Disclaimer
+請先閱讀 [Contributing](docs/CONTRIBUTING.md)、[AGENTS.md](AGENTS.md) 及適用的
+[Testing Guidelines](docs/testing-guidelines.md) 與正式契約。
+保持修改聚焦，維持元件與安全邊界，記錄已驗證及未驗證的項目。
+Live 驗證需要另外取得授權，並遵守適用的外部工具安全要求。
 
-Orchestrator Tool 採用 [MIT License](LICENSE)。
+## 授權與免責聲明
 
-Orchestrator Tool 是 independent project。Meters、Powers、Scopes、Wavegen
-以及相關 external programs 都是 separate projects 與 distributions。本
-repository 不 bundle 或 redistribute 這些工具，也不宣稱與其 maintainers
-或 vendors 有 affiliation、sponsorship 或 endorsement。相關名稱與
-trademarks（如有）仍歸其各自所有者所有。
+Copyright (c) 2026 tom758258。Orchestrator Tool 採用 [MIT License](LICENSE)
+授權。第三方元件仍適用各自的授權條款，參閱
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
 
-Live mode 可能影響連接中的硬體；使用前請遵循適用的 external tool 與
-instrument safety requirements。
+Orchestrator Tool 的應用程式圖示使用 ChatGPT 中的 OpenAI 圖像生成功能製作，並由專案維護者審查及挑選。
+
+Orchestrator Tool 為獨立且非官方的專案，不宣稱與儀器製造商或第三方供應商有
+隸屬、贊助或背書關係。Meters、Powers、Scopes、Serial、Wavegen 及其他外部工具均為
+獨立專案與發行套件，本 Repository 不包含或重新散布這些工具。第三方名稱與商標歸
+各自所有者所有。使用者應遵守適用的軟體、驅動程式、儀器及文件授權條款。
+
+Live 操作可能影響已連接的硬體。請遵循適用的外部工具及儀器安全要求。
+本專案依 MIT License 提供，不附帶任何保證。

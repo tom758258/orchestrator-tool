@@ -1,0 +1,66 @@
+Orchestrator Tool - Third-Party Notices
+
+Orchestrator Tool itself is licensed under the MIT License (see LICENSE).
+Third-party components retain their own copyright and license terms.
+
+Apache ECharts 6.1.0
+--------------------
+License: Apache License, Version 2.0 (Apache-2.0).
+Upstream source: https://github.com/apache/echarts/tree/6.1.0
+The exact upstream LICENSE and NOTICE are included at:
+    licenses/echarts-6.1.0/LICENSE
+    licenses/echarts-6.1.0/NOTICE
+ECharts includes D3-derived subcomponents with separate BSD-3-Clause terms;
+the referenced upstream license is included at:
+    licenses/echarts-6.1.0/licenses/LICENSE-d3
+These files must be preserved with the distributed application. Review and
+update the upstream copies when changing the locked ECharts version.
+
+Other principal frontend components
+-----------------------------------
+React, React DOM and scheduler - MIT
+    https://github.com/facebook/react
+React Flow (@xyflow/react and @xyflow/system) - MIT
+    https://github.com/xyflow/xyflow
+ZRender - BSD-3-Clause
+    https://github.com/ecomfe/zrender
+D3 modules - ISC and BSD-3-Clause, as declared per package
+    https://github.com/d3/d3
+@tauri-apps/api - Apache-2.0 OR MIT
+@tauri-apps/plugin-dialog - MIT OR Apache-2.0
+    https://github.com/tauri-apps/tauri
+    https://github.com/tauri-apps/plugins-workspace
+
+Rust and npm dependency notices
+-------------------------------
+Core/CLI and Desktop use Rust dependencies including Clap, Serde, chrono,
+csv, rust_decimal, rust_xlsxwriter, TOML, ureq, Tauri and Tauri plugins.
+The exact versions and dependency graphs are tracked in Cargo.lock,
+apps/desktop/src-tauri/Cargo.lock and apps/desktop/package-lock.json.
+
+The Windows build copies package-supplied copyright, license and notice
+files into licenses/rust/ and licenses/npm/. The accompanying
+licenses/DEPENDENCIES.txt identifies the collected packages, their declared
+license metadata, exact source archive locations where available and the
+copied files' directories. The Rust collection follows the Windows x64
+normal/build dependency graphs of both Cargo packages; npm collection
+uses installed non-dev lock entries. This intentionally conservative
+collection can include build-only inputs and is not a complete analysis
+of the final linked or tree-shaken binaries. Check any package without
+collected notice files against its upstream source before distribution.
+The project uses the locked upstream dependencies; source for registry
+packages is available from the exact package archive locations in the index.
+This notice is not a substitute for the applicable upstream license terms.
+
+Distribution boundary
+---------------------
+Microsoft Edge WebView2 Runtime is supplied by the Windows system and is
+not bundled. Node.js/npm, Rust tooling, Python Help tooling and frontend
+build-only tools such as lightningcss (MPL-2.0 in the npm lockfile) are not
+shipped as separate components in the Windows distribution.
+
+External tools such as Meters, Powers, Scopes, Serial and Wavegen are
+separate programs and distributions; their own license terms and notices
+apply. They are not bundled by Orchestrator Tool. Preserve LICENSE, this
+notice and the accompanying licenses directory when distributing the EXEs.
+Third-party names and trademarks belong to their respective owners.

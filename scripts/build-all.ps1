@@ -47,19 +47,23 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "CLI --version failed (exit $LASTEXITCODE)." }
 
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    Write-Host "Collecting distribution license notices..."
+    & node (Join-Path $repoRoot "scripts\copy-third-party-notices.mjs") $outputDir
+    if ($LASTEXITCODE -ne 0) { throw "License notice collection failed (exit $LASTEXITCODE)." }
+
     Copy-Item -LiteralPath $cliExe -Destination (Join-Path $outputDir "orchestrator-tool.exe")
     Copy-Item -LiteralPath $desktopExe -Destination (Join-Path $outputDir "Orchestrator Tool.exe")
 
-    foreach ($name in @("orchestrator-tool.exe", "Orchestrator Tool.exe")) {
+    foreach ($name in @("orchestrator-tool.exe", "Orchestrator Tool.exe", "LICENSE", "THIRD_PARTY_NOTICES.txt", "licenses/DEPENDENCIES.txt")) {
         $outputExe = Join-Path $outputDir $name
         if (-not (Test-Path -LiteralPath $outputExe -PathType Leaf)) {
-            throw "Output EXE not found: $outputExe"
+            throw "Distribution file not found: $outputExe"
         }
         if ((Get-Item -LiteralPath $outputExe).Length -le 0) {
-            throw "Output EXE is empty: $outputExe"
+            throw "Distribution file is empty: $outputExe"
         }
     }
-    Write-Host "Windows CLI and Desktop EXEs: $outputDir"
+    Write-Host "Windows CLI and Desktop distribution: $outputDir"
 }
 finally {
     Pop-Location
