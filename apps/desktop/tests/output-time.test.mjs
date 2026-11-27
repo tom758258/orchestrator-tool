@@ -1,4 +1,3 @@
-import { english } from './presentation-fixture.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { changeOutputValue, DEFAULT_NUMERIC_DISPLAY_FORMAT, formatNumber, formatElapsedTime, formatOutputValue, formatTimestamp, formatTimestampMillis } from '../src/outputTime.ts'

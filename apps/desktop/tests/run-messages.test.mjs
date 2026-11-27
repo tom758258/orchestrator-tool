@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MESSAGE_TARGET_LABELS, limitMessageText, visibleMessageWindow, composeMessageText } from '../src/workflow.ts'
+import { limitMessageText, visibleMessageWindow, composeMessageText } from '../src/workflow.ts'
 
 const page = (runId, target, messages) => ({ runId, target, messages })
 const counts = (...entries) => entries.map(([target, total, revision]) => ({ target, total, revision }))
@@ -81,8 +81,7 @@ test('R05 the frontend limits String fields by Unicode character, not UTF-16 uni
   assert.ok(!/[\uD800-\uDFFF]/.test(cut.replace(/[\u{1F600}-\u{1F64F}]/gu, '')))
 })
 
-test('R08 the message preview keeps the record terminator and target labels', () => {
+test('R08 the message preview keeps the record terminator', () => {
   // The Message Preview still ends with exactly one newline, like a real record.
   assert.equal(composeMessageText([{ kind: 'text', text: 'a', newline: false }], () => undefined), 'a\n')
-  assert.deepEqual(Object.values(MESSAGE_TARGET_LABELS), ['Message 1', 'Message 2', 'Message 3'])
 })

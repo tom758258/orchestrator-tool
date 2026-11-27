@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n/I18nProvider'
 import { useEffect, useState, type ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { executionModeLabel, type ExecutionMode } from '../executionMode'
+import type { ExecutionMode } from '../executionMode'
 import { protectionChannelNumbers, updatePowersProtectionSetting } from '../powersProtectionSetup'
 import type { PowersProtectionChannel, PowersSetup } from './types'
 

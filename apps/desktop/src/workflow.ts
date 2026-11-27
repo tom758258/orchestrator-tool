@@ -37,9 +37,6 @@ type AssertStep = {
 
 export type MessageTargetWire = 'message-1' | 'message-2' | 'message-3'
 export const MESSAGE_TARGETS: MessageTargetWire[] = ['message-1', 'message-2', 'message-3']
-export const MESSAGE_TARGET_LABELS: Record<MessageTargetWire, string> = {
-  'message-1': 'Message 1', 'message-2': 'Message 2', 'message-3': 'Message 3',
-}
 export const MAX_MESSAGE_FIELDS = 10
 export const MAX_MESSAGE_TEXT_CHARS = 256
 
@@ -76,7 +73,6 @@ export type InteractionOperation =
   | { kind: 'wait-next' }
   | { kind: 'get-command-result'; source_step: string }
 export type InteractionStep = { type: 'bg-interaction'; id: string; background_id: string; operation: InteractionOperation; timeout_ms: number | null }
-export const INTERACTION_LABELS = { command: 'BG Command', 'get-latest': 'Get Latest', 'wait-next': 'Wait Next', 'get-command-result': 'Get Command Result', 'get-buffer-data': 'Get Buffer Data', 'get-buffer-status': 'Get Buffer Status' }
 
 export type BackgroundAction = 'worker-on' | 'worker-off' | 'capture-on' | 'capture-off'
 export type BackgroundStep = { type: 'background'; id: string; background_id: string; action: BackgroundAction; capture: boolean }

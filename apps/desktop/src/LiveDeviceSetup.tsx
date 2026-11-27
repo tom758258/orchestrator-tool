@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useI18n } from './i18n/I18nProvider'
 import ErrorQueueSetup, { type ErrorQueueSetupProps } from './ErrorQueueSetup'
-import { deviceName, formatResourceCandidate, tcpEndpointParts, formatTcpEndpoint, type ResourceIdentity, type LiveResourceCandidate, type VisaBackend } from './resourceFormatting'
+import { deviceName, formatResourceCandidate, tcpEndpointParts, type ResourceIdentity, type LiveResourceCandidate, type VisaBackend } from './resourceFormatting'
 import type { ExecutionMode } from './executionMode'
 import type { ToolInstance } from './toolSetup/types'
 

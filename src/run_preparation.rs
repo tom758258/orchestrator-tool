@@ -70,6 +70,19 @@ fn measure_count(steps: &[Step], target: &ToolInstanceId) -> Result<Option<usize
     })
 }
 
+fn validate_supported_tool(instance: &crate::tool_instance::ToolInstance) -> Result<(), String> {
+    if !matches!(
+        instance.tool.as_str(),
+        "powers" | "meters" | "scopes" | "serial"
+    ) {
+        return Err(format!(
+            "unsupported tool {} for instance {}",
+            instance.tool, instance.id
+        ));
+    }
+    Ok(())
+}
+
 /// Checks that every selected resource still matches the operator confirmation.
 pub fn validate_confirmed_live_resources(
     template: &Template,
@@ -79,15 +92,7 @@ pub fn validate_confirmed_live_resources(
 ) -> Result<(), String> {
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(
-            instance.tool.as_str(),
-            "powers" | "meters" | "scopes" | "serial"
-        ) {
-            return Err(format!(
-                "unsupported tool {} for instance {}",
-                instance.tool, instance.id
-            ));
-        }
+        validate_supported_tool(instance)?;
         let current = config.live_resource(&instance.id);
         let confirmed = confirmed_resources
             .get(instance.id.as_str())
@@ -219,15 +224,7 @@ pub fn prepare_worker_launch_specs_with_simulation(
     let mut launch_specs = HashMap::new();
     let instances = template.referenced_tool_instances();
     for instance in &instances {
-        if !matches!(
-            instance.tool.as_str(),
-            "powers" | "meters" | "scopes" | "serial"
-        ) {
-            return Err(format!(
-                "unsupported tool {} for instance {}",
-                instance.tool, instance.id
-            ));
-        }
+        validate_supported_tool(instance)?;
     }
     if execution_mode == ExecutionMode::Live {
         validate_live_resources(template, config)?;

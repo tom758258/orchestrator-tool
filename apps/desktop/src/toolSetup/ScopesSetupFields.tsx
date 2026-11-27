@@ -4,7 +4,7 @@ import { scopesChannelNumbers, updateScopesAcquisition, updateScopesChannel } fr
 import type { ScopesCapabilities, ScopesSetup, ScopesChannel } from '../scopesSetup'
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { executionModeLabel, type ExecutionMode } from '../executionMode'
+import type { ExecutionMode } from '../executionMode'
 
 export default function ScopesSetupFields({ value, onChange, modelId, executionMode, scopesExecutableKey }: {
   value: ScopesSetup; onChange: (value: ScopesSetup) => void

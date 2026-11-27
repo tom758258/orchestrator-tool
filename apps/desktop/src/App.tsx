@@ -43,7 +43,6 @@ import type { WorkflowStep, ToolActionStep, WorkflowRunEventDto, StepExecutionDt
 import type { PowerSetpoint } from './powerSetpoint'
 import { DEFAULT_EXECUTION_MODE, executionModeLabel, manualOperationRequiresSavedResource, workflowRunCommand } from './executionMode'
 import type { ExecutionMode } from './executionMode'
-export type { WorkflowStep } from './workflow'
 
 type ToolStatus = {
   tool_id: string
