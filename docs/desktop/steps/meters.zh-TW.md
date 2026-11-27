@@ -12,7 +12,8 @@
 | 目標 | 選擇要使用的實例 |
 | 量測設定 | DC Voltage 或 DC Current 等設定取自該實例 |
 | 量測模式 | 前景 Single；背景使用 Background Streaming |
-| 結果 | 一筆量測資料，可在 Previous step result 選取常用欄位 |
+| 結果 | 一筆量測資料；在 Previous step result 選擇 Value（數值）或 Unit（單位） |
+| 失敗條件 | 量測或 Worker 失敗時，查看步驟錯誤；不會自動產生 Output 欄 |
 
 ## 將讀值保存成資料欄
 

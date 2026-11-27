@@ -4,13 +4,15 @@
 
 ## Power supply steps at a glance
 
-| Step | Purpose |
-| --- | --- |
-| Power Set Output | Set voltage and/or current limit without enabling output |
-| Power Output ON | Enable the selected channel output |
-| Power Output OFF | Disable the selected channel output |
-| Power Measure | Read actual voltage and current |
-| Power Protection Status | Read protection trip status without clearing it |
+| Step | Main parameters | Result / purpose |
+| --- | --- | --- |
+| Power Set Output | Channel, Voltage (V)/Current Limit (A), at least one | Set voltage or current limit without enabling output. |
+| Power Output ON | Channel | Enable the selected channel output. |
+| Power Output OFF | Channel | Disable the selected channel output. |
+| Power Measure | Channel | Return Voltage and Current without changing settings. |
+| Power Protection Status | All or Specific channel | Return three protection trip Booleans without clearing protection. |
+
+Select the target Powers instance first. Invalid parameters, unsupported model operations or Worker errors fail the step. A reported trip is not itself a failed status step; use the Assert example below if a trip should fail the workflow.
 
 ### Select a channel
 

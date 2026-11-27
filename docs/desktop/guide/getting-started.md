@@ -55,11 +55,11 @@ Start with one simulated multimeter measurement. You do not need an actual meter
 
 1. Extract Orchestrator Tool and a compatible Meters Tool release into separate folders. Open `Orchestrator Tool.exe`.
 2. In **Tools**, select **Meters**, choose **Add Tool**, and select `meters-tool.exe`. Confirm availability and compatibility.
-3. In **Setup**, add one Meters Tool Instance. Select **DC Voltage**, use Auto range and keep Background Streaming off. Use a supported NPLC and Auto Zero setting. Foreground uses Single measurement.
+3. In **Setup**, add one Meters Tool Instance. Select **DC Voltage**, use Auto range and keep Background Streaming off. Keep the new-instance defaults of NPLC = 1 and Auto Zero = On. Foreground uses Single measurement. Leave the remaining optional settings at their defaults; no Live Device is needed.
 4. In **Workflow**, choose the **Meter Measure** step in the Steps palette and press **Add Step**. Select the Meters instance in Properties. Add an **Output** step after Meter Measure.
 5. In Output Properties, choose a name (for example, `Voltage`) and a Page (for example, `Results`). Choose **Previous step result**, select the preceding Meter Measure step and its **Value** result.
 6. Keep **Simulation** selected. Use **Validate** to check the template, then **Run Simulation**.
-7. Open the **Output** tab. Check the execution status and the Results page: the Output column contains a simulated reading. The value is simulator data, not an actual voltage.
+7. Open the **Output** tab. Confirm the run succeeded. In Foreground Output, select Results: expect one row with a numeric Voltage value. The exact value depends on the simulator; it is not an actual voltage.
 8. When the run has ended, you can export the row as CSV or XLSX. Use **Save Template** to save the reusable workflow, not the measurement itself.
 
 ```text

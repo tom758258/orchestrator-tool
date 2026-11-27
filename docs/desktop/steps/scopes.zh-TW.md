@@ -4,19 +4,21 @@
 
 ## Scopes 步驟總覽
 
-| 步驟 | 用途 |
-| --- | --- |
-| Channel Display | 開啟或關閉指定通道顯示 |
-| Channel Scale / Offset | 設定垂直刻度（V/div）及偏移（V） |
-| Horizontal Scale / Position | 設定水平刻度（s/div）及位置（s） |
-| Edge Trigger | 設定觸發來源、斜率及電壓 |
-| Single Wait | 啟動單次擷取並等待觸發 |
-| Measure | 讀取數值量測結果 |
-| Capture | 將波形儲存為 CSV 及 metadata JSON |
-| Screenshot | 將示波器畫面儲存為圖片 |
-| AutoScale | 自動調整顯示；僅支援指定 Keysight 型號 |
+| 步驟 | 主要參數 | 結果／操作範例 |
+| --- | --- | --- |
+| Channel Display | Channel、On／Off | 設定並回讀確認通道顯示；例如開啟 CH1。 |
+| Channel Scale | Channel、V/div | 設定垂直刻度並回讀；例如 CH1、1 V/div。 |
+| Channel Offset | Channel、V | 設定垂直偏移並回讀；例如 CH1、0 V。 |
+| Horizontal Scale | s/div | 設定時間刻度並回讀；例如 0.001 s/div。 |
+| Horizontal Position | s | 設定水平位置並回讀；例如 0 s。 |
+| Edge Trigger | Source Channel、Slope、Level | 設定並回讀觸發條件；例如 CH1、Positive、0 V。 |
+| Single Wait | Trigger Timeout、Poll Interval | 回傳觸發結果；逾時可由 Timed Out 判斷。 |
+| Measure | Channel、Measurement Item | 回傳 Value、Unit、Channel、Item、Valid；例如 CH1、Vp-p。 |
+| Capture | Channels、Points | 儲存波形 CSV 和 metadata JSON；例如選 CH1 與支援的取樣點數。 |
+| Screenshot | Image Format | 儲存示波器畫面；例如選支援的 PNG。 |
+| AutoScale | Source Channels、Acquire Mode、Channels Mode（選用） | 等待自動調整完成；僅支援指定 Keysight 型號。 |
 
-先在 Setup 新增 Scopes 實例，再於各步驟選擇目標。以下說明參數及限制。
+上述設定值只是模擬操作示例，不是實體儀器的推薦值。先選擇目標 Scopes 實例；通道、型號支援及參數限制見下文。設定步驟回讀不符會失敗；儀器或 Worker 錯誤也會使步驟失敗。Single Wait 的正常逾時及 Measure 的有效性例外另見各節。
 
 ### 設定值來源
 

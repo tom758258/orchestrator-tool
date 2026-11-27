@@ -14,13 +14,16 @@ Setup: Enable Background Streaming
     -> Worker OFF
 ```
 
-| 互動步驟 | 用途 |
-| --- | --- |
-| BG Command | 對支援的背景來源派送命令 |
-| Get Latest | 立即取最新事件 |
-| Wait Next | 等待之後到達的第一筆事件 |
-| Get Command Result | 取得指定 BG Command 的結果 |
-| Get Buffer Data / Status | 取用緩衝資料或檢查狀態（需 Enable Buffer） |
+| 互動步驟 | 主要參數 | 結果／失敗條件 |
+| --- | --- | --- |
+| BG Command | 背景來源、命令、Wait for Completion | 派送支援命令；本身無資料輸出。拒絕、忙碌或命令失敗會使流程失敗。 |
+| Get Latest | 背景來源 | 取得最新原生事件；不存在或無效即失敗。 |
+| Wait Next | 背景來源、選用逾時 | 取得之後第一筆事件；首筆無效、來源已結束或逾時即失敗。 |
+| Get Command Result | 先前的 Source BG Command Step、選用逾時 | 取得該次命令原生結果；未執行來源或結果未能取得即失敗。 |
+| Get Buffer Data | 背景來源、Peek／Pop、Count／ALL | 取得事件陣列及筆數；選取資料有無效事件時整批失敗且不消耗。 |
+| Get Buffer Status | 背景來源 | 取得容量及遺失狀態，不消耗資料。 |
+
+模擬範例：Meters Software Simple 啟用 Trigger with BG Command，加入 Worker ON → BG Command → Get Command Result → Output（選取 `/value`）。選用 Capture；停止來源前遵守背景筆數與收尾規則，詳見[背景擷取](../guide/background-streaming.zh-TW.md)。Buffer 步驟需另啟用 Enable Buffer。
 
 ### 啟用設定
 

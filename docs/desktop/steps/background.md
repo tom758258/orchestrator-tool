@@ -14,13 +14,16 @@ Setup: Enable Background Streaming
     -> Worker OFF
 ```
 
-| Interaction step | Purpose |
-| --- | --- |
-| BG Command | Dispatch a supported background command |
-| Get Latest | Immediately read the latest event |
-| Wait Next | Wait for the first subsequent event |
-| Get Command Result | Obtain the specified BG Command result |
-| Get Buffer Data / Status | Read buffered data or check status (requires Enable Buffer) |
+| Interaction step | Main parameters | Result / failure condition |
+| --- | --- | --- |
+| BG Command | Background source, command, Wait for Completion | Dispatch a supported command; no data output. Rejection, busy or command failure fails the run. |
+| Get Latest | Background source | Latest native event; missing or invalid data fails the step. |
+| Wait Next | Background source, optional timeout | First subsequent event; invalid first event, ended source or timeout fails the step. |
+| Get Command Result | Earlier Source BG Command Step, optional timeout | Native result of that invocation; skipped source or unavailable result fails the step. |
+| Get Buffer Data | Background source, Peek/Pop, Count/ALL | Array and count; invalid selected event fails the whole batch without consuming it. |
+| Get Buffer Status | Background source | Capacity and loss status without consuming data. |
+
+Simulation example: for Meters Software Simple, enable Trigger with BG Command, then add Worker ON → BG Command → Get Command Result → Output (select `/value`). Capture is optional; follow the source count and cleanup rules in [Background Streaming](../guide/background-streaming.md) before stopping the source. Buffer steps additionally require Enable Buffer.
 
 ### Enable interaction
 

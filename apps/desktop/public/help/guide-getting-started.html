@@ -153,11 +153,11 @@
 <ol>
 <li>Extract Orchestrator Tool and a compatible Meters Tool release into separate folders. Open <code>Orchestrator Tool.exe</code>.</li>
 <li>In <strong>Tools</strong>, select <strong>Meters</strong>, choose <strong>Add Tool</strong>, and select <code>meters-tool.exe</code>. Confirm availability and compatibility.</li>
-<li>In <strong>Setup</strong>, add one Meters Tool Instance. Select <strong>DC Voltage</strong>, use Auto range and keep Background Streaming off. Use a supported NPLC and Auto Zero setting. Foreground uses Single measurement.</li>
+<li>In <strong>Setup</strong>, add one Meters Tool Instance. Select <strong>DC Voltage</strong>, use Auto range and keep Background Streaming off. Keep the new-instance defaults of NPLC = 1 and Auto Zero = On. Foreground uses Single measurement. Leave the remaining optional settings at their defaults; no Live Device is needed.</li>
 <li>In <strong>Workflow</strong>, choose the <strong>Meter Measure</strong> step in the Steps palette and press <strong>Add Step</strong>. Select the Meters instance in Properties. Add an <strong>Output</strong> step after Meter Measure.</li>
 <li>In Output Properties, choose a name (for example, <code>Voltage</code>) and a Page (for example, <code>Results</code>). Choose <strong>Previous step result</strong>, select the preceding Meter Measure step and its <strong>Value</strong> result.</li>
 <li>Keep <strong>Simulation</strong> selected. Use <strong>Validate</strong> to check the template, then <strong>Run Simulation</strong>.</li>
-<li>Open the <strong>Output</strong> tab. Check the execution status and the Results page: the Output column contains a simulated reading. The value is simulator data, not an actual voltage.</li>
+<li>Open the <strong>Output</strong> tab. Confirm the run succeeded. In Foreground Output, select Results: expect one row with a numeric Voltage value. The exact value depends on the simulator; it is not an actual voltage.</li>
 <li>When the run has ended, you can export the row as CSV or XLSX. Use <strong>Save Template</strong> to save the reusable workflow, not the measurement itself.</li>
 </ol>
 <pre><code class="language-text">Tools -&gt; Setup -&gt; Workflow -&gt; Run Simulation -&gt; Output

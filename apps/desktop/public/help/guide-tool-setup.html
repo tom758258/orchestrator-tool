@@ -346,20 +346,20 @@ when saving; the external tool still validates actual model support and limits.<
 </thead>
 <tbody>
 <tr>
-<td>OVP Voltage</td>
-<td>Overvoltage protection setting</td>
+<td>OVP Voltage (V)</td>
+<td>Overvoltage protection threshold; enter a supported voltage.</td>
 </tr>
 <tr>
 <td>OCP</td>
-<td>Overcurrent protection setting</td>
+<td>Overcurrent protection: On or Off.</td>
 </tr>
 <tr>
-<td>OCP Delay</td>
-<td>Overcurrent protection delay</td>
+<td>OCP Delay (s)</td>
+<td>Protection delay in seconds; subject to model limits.</td>
 </tr>
 <tr>
 <td>OCP Delay Trigger</td>
-<td>Condition for triggering that delay</td>
+<td>Start the delay on Setting Change or CC Transition, as supported by the model.</td>
 </tr>
 </tbody>
 </table>
@@ -457,21 +457,42 @@ commands.</p>
 <table>
 <thead>
 <tr>
-<th>Section</th>
-<th>Fields</th>
+<th>Field</th>
+<th>Purpose and choices</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Acquisition Setup</td>
-<td>Acquisition Type, Average Count (Average only)</td>
+<td>Acquisition Type</td>
+<td>Acquisition mode: Normal, Average, High Resolution, Peak; subject to model support.</td>
 </tr>
 <tr>
-<td>Channel Configuration</td>
-<td>Input Coupling, Probe Ratio, Bandwidth Limit, Waveform Invert, Channel Units</td>
+<td>Average Count</td>
+<td>Number of acquisitions to average; editable only in Average and must be a supported integer.</td>
+</tr>
+<tr>
+<td>Input Coupling</td>
+<td>Input coupling: AC or DC.</td>
+</tr>
+<tr>
+<td>Probe Ratio</td>
+<td>Probe attenuation ratio; enter the value appropriate for the probe and supported by the model.</td>
+</tr>
+<tr>
+<td>Bandwidth Limit</td>
+<td>Bandwidth limiting: On or Off.</td>
+</tr>
+<tr>
+<td>Waveform Invert</td>
+<td>Waveform inversion: On or Off.</td>
+</tr>
+<tr>
+<td>Channel Units</td>
+<td>Channel units: Volt or Amp.</td>
 </tr>
 </tbody>
 </table>
+<p>Acquisition Setup contains the first two fields; Channel Configuration sets the remaining fields per channel. All fields default to Unchanged or blank; only explicitly selected values are saved and sent to the instrument. The tool supplies the actual supported limits.</p>
 <h3 id="model-support-readback-and-errors">Model support, readback and errors</h3>
 <p>The controls use offline Scopes capabilities. Simulation uses Scopes' default
 Keysight DSOX4024A profile. Live uses the canonical model ID saved with the
@@ -484,6 +505,60 @@ identifies the instance and, for channel settings, the channel. Workflow steps
 start only after Setup succeeds. For example, if you set Channel 2 Waveform
 Invert to On and leave the other settings Unchanged, Setup verifies Channel 2
 inversion before the Workflow starts.</p>
+<h2 id="serial-communication-setup">Serial communication setup</h2>
+<p>Choose UART (COM Port) or TCP Client in Communication Setup. Communication settings belong to the Template; COM Port or TCP Host/Port is stored locally in Live Device.</p>
+<table>
+<thead>
+<tr>
+<th>Interface</th>
+<th>Field</th>
+<th>Purpose and choices</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UART</td>
+<td>Baud Rate</td>
+<td>Positive integer transmission rate; new instance: 115200. Match the device.</td>
+</tr>
+<tr>
+<td>UART</td>
+<td>Data Bits</td>
+<td>Bits per character: 5, 6, 7, 8; default 8.</td>
+</tr>
+<tr>
+<td>UART</td>
+<td>Parity</td>
+<td>None (default), Odd or Even parity checking.</td>
+</tr>
+<tr>
+<td>UART</td>
+<td>Stop Bits</td>
+<td>1 (default) or 2 stop bits.</td>
+</tr>
+<tr>
+<td>UART</td>
+<td>Flow Control</td>
+<td>None (default), Software or Hardware.</td>
+</tr>
+<tr>
+<td>UART</td>
+<td>Timeout (ms)</td>
+<td>Non-negative integer I/O timeout in milliseconds; default 1000.</td>
+</tr>
+<tr>
+<td>TCP</td>
+<td>Connect Timeout (ms)</td>
+<td>Positive integer connection timeout; displayed default 3000.</td>
+</tr>
+<tr>
+<td>TCP</td>
+<td>I/O Timeout (ms)</td>
+<td>Positive integer communication I/O timeout; displayed default 1000.</td>
+</tr>
+</tbody>
+</table>
+<p>Match UART settings to the device. TCP has no discovery; Simulation needs no Host or Port. See <a href="steps-serial.html">Serial steps</a> for RX completion and timeout rules.</p>
   </main>
   <script>
     (() => {

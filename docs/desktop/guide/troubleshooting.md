@@ -14,8 +14,6 @@
 | Streaming CSV failed | Error details and destination folder |
 | Application cannot start | WebView2 Runtime and startup details |
 
-### Detailed troubleshooting
-
 ### Tool shows Not configured
 
 In **Tools**, select the Tool Type under **Select tool to add** and use **Add Tool** to

@@ -153,11 +153,11 @@
 <ol>
 <li>將 Orchestrator Tool 及相容的 Meters Tool 發行包分別完整解壓縮。開啟 <code>Orchestrator Tool.exe</code>。</li>
 <li>在 <strong>工具（Tools）</strong> 選擇 Meters，按 <strong>加入工具（Add Tool）</strong>，選取 <code>meters-tool.exe</code>，確認檔案可用且相容。</li>
-<li>在 <strong>設定（Setup）</strong> 新增一個 Meters 工具實例。量測選擇 <strong>DC Voltage</strong>、範圍選擇 Auto、保持 Background Streaming 關閉。選擇支援的 NPLC 與 Auto Zero 設定；前景量測使用 Single。</li>
+<li>在 <strong>設定（Setup）</strong> 按 <strong>新增工具實例（Add Tool Instance）</strong> 加入 Meters。選擇 <strong>直流電壓（DC Voltage）</strong>、自動量程（Auto），保持背景擷取關閉。NPLC 設為 1、自動歸零（Auto Zero）設為開啟（On）（新實例的預設值）；前景量測使用單次（Single）。其他選用欄位保持預設，不需要設定 Live Device。</li>
 <li>在 <strong>工作流程（Workflow）</strong> 左側步驟清單選擇 Meters 的 <strong>電表量測（Meter Measure）</strong>，按 <strong>新增步驟（Add Step）</strong>。在屬性選擇剛新增的 Meters 實例，再於後方新增 <strong>輸出（Output）</strong> 步驟。</li>
 <li>在 Output 屬性設定名稱（例如 <code>Voltage</code>）與 Page（例如 <code>Results</code>），來源選擇 <strong>Previous step result</strong>，指定前面的電表量測步驟，再選擇 <strong>數值（Value）</strong> 結果。</li>
 <li>保持 <strong>模擬（Simulation）</strong> 模式，按 <strong>驗證（Validate）</strong> 檢查範本，再按 <strong>執行模擬（Run Simulation）</strong>。</li>
-<li>開啟 <strong>輸出（Output）</strong> 頁籤，查看執行狀態及 Results 頁面的 Voltage 欄位。此數值來自模擬器，並非真實電壓。</li>
+<li>開啟 <strong>輸出（Output）</strong> 頁籤，確認執行成功，並在前景輸出（Foreground Output）選取 Results 頁面：應有一筆資料，Voltage 欄為數值。實際數值依模擬器而定，不是實體儀器電壓。</li>
 <li>執行結束後可將資料匯出成 CSV 或 XLSX。使用 <strong>儲存範本（Save Template）</strong> 保存可重複使用的流程，而不是量測結果。</li>
 </ol>
 <pre><code class="language-text">工具 -&gt; 設定 -&gt; 工作流程 -&gt; 執行模擬 -&gt; 輸出

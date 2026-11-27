@@ -105,25 +105,30 @@
 <thead>
 <tr>
 <th>步驟</th>
-<th>用途</th>
+<th>主要參數</th>
+<th>結果與限制</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Send</td>
-<td>發送 UTF-8 文字或一個 Byte</td>
+<td>TX 格式與資料</td>
+<td>發送文字或單一 Byte；不接收回覆。</td>
 </tr>
 <tr>
 <td>Send File</td>
-<td>發送原始檔案內容</td>
+<td>檔案絕對路徑</td>
+<td>發送檔案原始內容；缺檔會阻擋執行或使步驟失敗。</td>
 </tr>
 <tr>
 <td>Receive</td>
-<td>只接收資料，不發送</td>
+<td>RX 完成模式、長度／標記／間隔</td>
+<td>回傳收到的資料；不發送。</td>
 </tr>
 <tr>
 <td>Query</td>
-<td>先發送，再接收</td>
+<td>TX 資料及 RX 完成條件</td>
+<td>先發送再接收；不支援 Single Read。</td>
 </tr>
 </tbody>
 </table>

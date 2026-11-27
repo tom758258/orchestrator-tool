@@ -68,18 +68,18 @@
 </tr>
 <tr>
 <td>External tool EXEs</td>
-<td>Required</td>
-<td>Required</td>
+<td>Only for tools referenced by the workflow</td>
+<td>Only for tools referenced by the workflow</td>
 </tr>
 <tr>
 <td>Physical equipment and connection</td>
 <td>Not needed</td>
-<td>Required</td>
+<td>Required for referenced external tools</td>
 </tr>
 <tr>
 <td>Saved Live Resource</td>
 <td>Not needed</td>
-<td>Required</td>
+<td>Required for referenced external tools</td>
 </tr>
 <tr>
 <td>Confirmation</td>
@@ -93,6 +93,7 @@
 </tr>
 </tbody>
 </table>
+<p>A workflow using only built-in steps such as Wait, Set Variable and Output needs no external tool EXE or physical instrument.</p>
 <blockquote>
 <p><strong>Note:</strong> Simulation success verifies the simulated workflow, not actual instruments or wiring.</p>
 </blockquote>

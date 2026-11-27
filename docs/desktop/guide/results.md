@@ -12,16 +12,7 @@
 | Foreground Output | Output Pages, statistics and data |
 | Background Output | Captured datasets, statistics and data |
 
-After a run, the Output area can show the following visible sections:
-
-- **Last Run Execution Results** — execution statuses and progress results,
-  shown latest first when the result list is paged.
-- **Messages** — text written by Show Message steps during the run.
-- **Last Run** — the current run's Output Pages and result workspace.
-- **Charts** — all Foreground and Background chart panels.
-- **Live Monitors** — enabled monitors in their own section below Charts.
-- **Summary** — numeric Count, Min, Max, and Avg values when applicable.
-- **Output Data** — committed rows for the selected Page, shown latest first.
+Last Run is the current result workspace. Execution records and committed rows appear newest first; Messages appear in production order. Enabled Live Monitors appear below Charts.
 
 ## Last Run: the most recent execution
 
@@ -44,16 +35,22 @@ results and can be manually exported after execution stops.
 
 ## Inspect and collapse result panels
 
+| Area | Selection and export |
+| --- | --- |
+| Foreground Output | Source selects an Output Page and updates Summary, Output Data and export scope. |
+| Background Output | Source selects Background and Capture Dataset, with Worker status. Pages contain 100 rows; paging appears only when needed. |
+
+Both sections put export controls in Export settings below Output Data. Foreground chooses a file or folder according to scope; Background always chooses a destination folder and exports the full selected or all datasets, not just the visible rows. Its export button names the chosen format.
+
+Both share Auto, Fixed and Raw number display settings without changing stored data or export precision. Background statistics show only available dataset values; Scopes retains Valid/Invalid, while Serial RX shows event and byte counts. Foreground pages and background datasets are selected separately.
+
 Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent `− / +`
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.
 
-Charts, optional Live Monitors, Foreground Output and Background Output share
-matching rounded frames with their titles and collapse buttons in the top border.
-Each collapses independently and keeps its frame and title visible. Charts also
-keeps **Save charts with template** and its chart count visible when collapsed.
+When Charts is collapsed, **Save charts with template** and the chart count remain visible.
 
 **Last Run Execution Results** and **Messages** each have a `+ / −` control on
 the right of their heading. Both start expanded, and each collapses on its own

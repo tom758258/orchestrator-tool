@@ -4,13 +4,15 @@
 
 ## 電源供應器步驟總覽
 
-| 步驟 | 用途 |
-| --- | --- |
-| Power Set Output | 設定電壓或電流限制，不會開啟輸出 |
-| Power Output ON | 開啟選定通道輸出 |
-| Power Output OFF | 關閉選定通道輸出 |
-| Power Measure | 讀取實際電壓及電流 |
-| Power Protection Status | 讀取保護觸發狀態，不會清除 |
+| 步驟 | 主要參數 | 結果／用途 |
+| --- | --- | --- |
+| Power Set Output | Channel、Voltage (V)／Current Limit (A)，至少一項 | 設定電壓或電流限制，不會開啟輸出。 |
+| Power Output ON | Channel | 開啟選定通道輸出。 |
+| Power Output OFF | Channel | 關閉選定通道輸出。 |
+| Power Measure | Channel | 回傳 Voltage、Current；不改設定。 |
+| Power Protection Status | All 或 Specific channel | 回傳三個保護觸發 Boolean；不清除。 |
+
+各步驟先選擇目標 Powers 實例。參數不合法、型號不支援或 Worker 回報錯誤會使步驟失敗；保護狀態本身不等於步驟失敗，若要在觸發時停止流程，使用下文的 Assert 範例。
 
 ### 選擇通道
 

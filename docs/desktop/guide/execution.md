@@ -7,11 +7,13 @@
 | Item | Simulation | Live |
 | --- | --- | --- |
 | Purpose | Test the workflow without hardware I/O | Operate actual equipment |
-| External tool EXEs | Required | Required |
-| Physical equipment and connection | Not needed | Required |
-| Saved Live Resource | Not needed | Required |
+| External tool EXEs | Only for tools referenced by the workflow | Only for tools referenced by the workflow |
+| Physical equipment and connection | Not needed | Required for referenced external tools |
+| Saved Live Resource | Not needed | Required for referenced external tools |
 | Confirmation | No Live confirmation | Required |
 | Startup default | Yes | No |
+
+A workflow using only built-in steps such as Wait, Set Variable and Output needs no external tool EXE or physical instrument.
 
 > **Note:** Simulation success verifies the simulated workflow, not actual instruments or wiring.
 

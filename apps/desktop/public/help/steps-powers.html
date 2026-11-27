@@ -56,32 +56,39 @@
 <thead>
 <tr>
 <th>Step</th>
-<th>Purpose</th>
+<th>Main parameters</th>
+<th>Result / purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Power Set Output</td>
-<td>Set voltage and/or current limit without enabling output</td>
+<td>Channel, Voltage (V)/Current Limit (A), at least one</td>
+<td>Set voltage or current limit without enabling output.</td>
 </tr>
 <tr>
 <td>Power Output ON</td>
-<td>Enable the selected channel output</td>
+<td>Channel</td>
+<td>Enable the selected channel output.</td>
 </tr>
 <tr>
 <td>Power Output OFF</td>
-<td>Disable the selected channel output</td>
+<td>Channel</td>
+<td>Disable the selected channel output.</td>
 </tr>
 <tr>
 <td>Power Measure</td>
-<td>Read actual voltage and current</td>
+<td>Channel</td>
+<td>Return Voltage and Current without changing settings.</td>
 </tr>
 <tr>
 <td>Power Protection Status</td>
-<td>Read protection trip status without clearing it</td>
+<td>All or Specific channel</td>
+<td>Return three protection trip Booleans without clearing protection.</td>
 </tr>
 </tbody>
 </table>
+<p>Select the target Powers instance first. Invalid parameters, unsupported model operations or Worker errors fail the step. A reported trip is not itself a failed status step; use the Assert example below if a trip should fail the workflow.</p>
 <h3 id="select-a-channel">Select a channel</h3>
 <p>The Channel dropdown is shared by <strong>Power Set Output</strong>, <strong>Power Output ON</strong>, <strong>Power Output OFF</strong>, <strong>Power Measure</strong>, and the <strong>Specific channel</strong>
 selection in <strong>Power Protection Status</strong>. It lists only channels confirmed by

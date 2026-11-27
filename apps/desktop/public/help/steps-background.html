@@ -63,32 +63,44 @@
 <thead>
 <tr>
 <th>Interaction step</th>
-<th>Purpose</th>
+<th>Main parameters</th>
+<th>Result / failure condition</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>BG Command</td>
-<td>Dispatch a supported background command</td>
+<td>Background source, command, Wait for Completion</td>
+<td>Dispatch a supported command; no data output. Rejection, busy or command failure fails the run.</td>
 </tr>
 <tr>
 <td>Get Latest</td>
-<td>Immediately read the latest event</td>
+<td>Background source</td>
+<td>Latest native event; missing or invalid data fails the step.</td>
 </tr>
 <tr>
 <td>Wait Next</td>
-<td>Wait for the first subsequent event</td>
+<td>Background source, optional timeout</td>
+<td>First subsequent event; invalid first event, ended source or timeout fails the step.</td>
 </tr>
 <tr>
 <td>Get Command Result</td>
-<td>Obtain the specified BG Command result</td>
+<td>Earlier Source BG Command Step, optional timeout</td>
+<td>Native result of that invocation; skipped source or unavailable result fails the step.</td>
 </tr>
 <tr>
-<td>Get Buffer Data / Status</td>
-<td>Read buffered data or check status (requires Enable Buffer)</td>
+<td>Get Buffer Data</td>
+<td>Background source, Peek/Pop, Count/ALL</td>
+<td>Array and count; invalid selected event fails the whole batch without consuming it.</td>
+</tr>
+<tr>
+<td>Get Buffer Status</td>
+<td>Background source</td>
+<td>Capacity and loss status without consuming data.</td>
 </tr>
 </tbody>
 </table>
+<p>Simulation example: for Meters Software Simple, enable Trigger with BG Command, then add Worker ON → BG Command → Get Command Result → Output (select <code>/value</code>). Capture is optional; follow the source count and cleanup rules in <a href="guide-background-streaming.html">Background Streaming</a> before stopping the source. Buffer steps additionally require Enable Buffer.</p>
 <h3 id="enable-interaction">Enable interaction</h3>
 <p>The <strong>FG/BG Interaction</strong> settings panel is at the bottom of the Workflow
 sidebar, below <strong>Chart Options</strong>, and starts collapsed. Without a Background

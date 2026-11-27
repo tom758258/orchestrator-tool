@@ -56,49 +56,69 @@
 <thead>
 <tr>
 <th>步驟</th>
-<th>用途</th>
+<th>主要參數</th>
+<th>結果／操作範例</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Channel Display</td>
-<td>開啟或關閉指定通道顯示</td>
+<td>Channel、On／Off</td>
+<td>設定並回讀確認通道顯示；例如開啟 CH1。</td>
 </tr>
 <tr>
-<td>Channel Scale / Offset</td>
-<td>設定垂直刻度（V/div）及偏移（V）</td>
+<td>Channel Scale</td>
+<td>Channel、V/div</td>
+<td>設定垂直刻度並回讀；例如 CH1、1 V/div。</td>
 </tr>
 <tr>
-<td>Horizontal Scale / Position</td>
-<td>設定水平刻度（s/div）及位置（s）</td>
+<td>Channel Offset</td>
+<td>Channel、V</td>
+<td>設定垂直偏移並回讀；例如 CH1、0 V。</td>
+</tr>
+<tr>
+<td>Horizontal Scale</td>
+<td>s/div</td>
+<td>設定時間刻度並回讀；例如 0.001 s/div。</td>
+</tr>
+<tr>
+<td>Horizontal Position</td>
+<td>s</td>
+<td>設定水平位置並回讀；例如 0 s。</td>
 </tr>
 <tr>
 <td>Edge Trigger</td>
-<td>設定觸發來源、斜率及電壓</td>
+<td>Source Channel、Slope、Level</td>
+<td>設定並回讀觸發條件；例如 CH1、Positive、0 V。</td>
 </tr>
 <tr>
 <td>Single Wait</td>
-<td>啟動單次擷取並等待觸發</td>
+<td>Trigger Timeout、Poll Interval</td>
+<td>回傳觸發結果；逾時可由 Timed Out 判斷。</td>
 </tr>
 <tr>
 <td>Measure</td>
-<td>讀取數值量測結果</td>
+<td>Channel、Measurement Item</td>
+<td>回傳 Value、Unit、Channel、Item、Valid；例如 CH1、Vp-p。</td>
 </tr>
 <tr>
 <td>Capture</td>
-<td>將波形儲存為 CSV 及 metadata JSON</td>
+<td>Channels、Points</td>
+<td>儲存波形 CSV 和 metadata JSON；例如選 CH1 與支援的取樣點數。</td>
 </tr>
 <tr>
 <td>Screenshot</td>
-<td>將示波器畫面儲存為圖片</td>
+<td>Image Format</td>
+<td>儲存示波器畫面；例如選支援的 PNG。</td>
 </tr>
 <tr>
 <td>AutoScale</td>
-<td>自動調整顯示；僅支援指定 Keysight 型號</td>
+<td>Source Channels、Acquire Mode、Channels Mode（選用）</td>
+<td>等待自動調整完成；僅支援指定 Keysight 型號。</td>
 </tr>
 </tbody>
 </table>
-<p>先在 Setup 新增 Scopes 實例，再於各步驟選擇目標。以下說明參數及限制。</p>
+<p>上述設定值只是模擬操作示例，不是實體儀器的推薦值。先選擇目標 Scopes 實例；通道、型號支援及參數限制見下文。設定步驟回讀不符會失敗；儀器或 Worker 錯誤也會使步驟失敗。Single Wait 的正常逾時及 Measure 的有效性例外另見各節。</p>
 <h3 id="設定值來源">設定值來源</h3>
 <p>Scopes 群組提供 Channel Display、Channel Scale、Channel Offset、Horizontal Scale（示波器水平軸刻度）、
 Horizontal Position（示波器水平軸位置）、Edge Trigger、Measure、Capture、Screenshot 與 AutoScale。

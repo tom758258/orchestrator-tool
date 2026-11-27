@@ -56,49 +56,69 @@
 <thead>
 <tr>
 <th>Step</th>
-<th>Purpose</th>
+<th>Main parameters</th>
+<th>Result / example</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Channel Display</td>
-<td>Enable or disable a channel display</td>
+<td>Channel, On/Off</td>
+<td>Set and verify display; e.g. enable CH1.</td>
 </tr>
 <tr>
-<td>Channel Scale / Offset</td>
-<td>Set vertical scale (V/div) and offset (V)</td>
+<td>Channel Scale</td>
+<td>Channel, V/div</td>
+<td>Set and verify vertical scale; e.g. CH1, 1 V/div.</td>
 </tr>
 <tr>
-<td>Horizontal Scale / Position</td>
-<td>Set horizontal scale (s/div) and position (s)</td>
+<td>Channel Offset</td>
+<td>Channel, V</td>
+<td>Set and verify offset; e.g. CH1, 0 V.</td>
+</tr>
+<tr>
+<td>Horizontal Scale</td>
+<td>s/div</td>
+<td>Set and verify time scale; e.g. 0.001 s/div.</td>
+</tr>
+<tr>
+<td>Horizontal Position</td>
+<td>s</td>
+<td>Set and verify position; e.g. 0 s.</td>
 </tr>
 <tr>
 <td>Edge Trigger</td>
-<td>Set trigger source, slope and level</td>
+<td>Source Channel, Slope, Level</td>
+<td>Set and verify trigger; e.g. CH1, Positive, 0 V.</td>
 </tr>
 <tr>
 <td>Single Wait</td>
-<td>Start one acquisition and wait for triggering</td>
+<td>Trigger Timeout, Poll Interval</td>
+<td>Trigger outcome; inspect Timed Out for a timeout.</td>
 </tr>
 <tr>
 <td>Measure</td>
-<td>Read a numeric measurement</td>
+<td>Channel, Measurement Item</td>
+<td>Value, Unit, Channel, Item, Valid; e.g. CH1, Vp-p.</td>
 </tr>
 <tr>
 <td>Capture</td>
-<td>Save waveform CSV and metadata JSON</td>
+<td>Channels, Points</td>
+<td>Save waveform CSV and metadata JSON; e.g. CH1 and a supported point count.</td>
 </tr>
 <tr>
 <td>Screenshot</td>
-<td>Save an instrument image</td>
+<td>Image Format</td>
+<td>Save instrument image; e.g. supported PNG.</td>
 </tr>
 <tr>
 <td>AutoScale</td>
-<td>Automatically adjust display; specified Keysight models only</td>
+<td>Optional Source Channels, Acquire Mode, Channels Mode</td>
+<td>Wait for automatic adjustment; specified Keysight models only.</td>
 </tr>
 </tbody>
 </table>
-<p>Add a Scopes instance in Setup, then select the target in each step. Parameters and limits follow.</p>
+<p>Example setpoints are for illustrating Simulation, not recommendations for physical equipment. Select the target Scopes instance first; see the following sections for channel and model limits. Set/readback mismatches fail the step, as do instrument or Worker errors. See Single Wait and Measure for the normal timeout and invalid-measurement exceptions.</p>
 <h3 id="setpoint-sources">Setpoint sources</h3>
 <p>The Scopes group offers Channel Display, Channel Scale, Channel Offset,
 Horizontal Scale, Horizontal Position, Edge Trigger, Measure, Capture, Screenshot, and

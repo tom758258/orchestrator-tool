@@ -7,11 +7,13 @@
 | 項目 | Simulation | Live |
 | --- | --- | --- |
 | 用途 | 不操作實體硬體，測試流程 | 操作實際設備 |
-| 外部工具執行檔 | 必須 | 必須 |
-| 實體儀器及連線 | 不需要 | 必須 |
-| 已儲存 Live Resource | 不需要 | 必須 |
+| 外部工具執行檔 | 僅需流程引用的工具 | 僅需流程引用的工具 |
+| 實體儀器及連線 | 不需要 | 使用外部工具時需要對應設備 |
+| 已儲存 Live Resource | 不需要 | 使用外部工具時需要對應連線 |
 | 執行確認 | 不需要 Live 確認 | 必須 |
 | 啟動預設 | 是 | 否 |
+
+只使用等待、變數、運算、輸出等內建步驟的流程，不需要設定外部工具或實體儀器。
 
 > **注意：** 模擬成功只表示模擬流程通過，不代表真實儀器及接線已驗證。
 
@@ -22,16 +24,9 @@
 3. 選擇 Simulation，必要時按 Validate。
 4. 按 Run Simulation，查看 Output。
 
-執行 Simulation 前，先為每個 referenced external executable 完成設定，並確認
-manifest 與 Worker compatibility checks 通過。需要明確檢查 Template 時可先
-使用 Validate；run 啟動時也會驗證 Template。
+流程若引用外部工具，先確認對應執行檔的 Manifest 與 Worker 相容性檢查成功。按 Validate 可預先檢查範本；開始執行時也會驗證。
 
-在 Execution Mode 選擇 **模擬（Simulation）**，並使用唯一的 **執行模擬（Run Simulation）** button。
-Simulation 不需要 Live Resources，會使用 external Workers 的 simulate contract，
-不應操作實體 hardware。Powers Protection Setup 與 final Safe-Off 仍會送到
-powers-tool 進行 simulation 或 planning；這是 orchestration validation，不是
-Live hardware validation。無法推導數量的 Simple Software 來源會顯示本次執行的
-Sample 警告；Custom 模式僅供 Background 使用。
+Simulation 不使用 Live Resource，透過外部 Worker 的模擬介面執行，不應操作實體硬體。Powers 保護設定與最終 Safe-Off 仍交由 powers-tool 模擬或規劃，用來驗證協調順序，不代表真實硬體已驗證。若 Simple Software 來源的量測筆數無法預先推導，會提示本次執行的樣本數；Custom 僅供背景擷取。
 
 ## 執行真實硬體
 
@@ -71,24 +66,13 @@ Preflight failure，不會呈現成已執行 Workflow 的 failure。
 
 ### 執行前確認
 
-開始 Live 前，Desktop 會：
+開始 Live 前，程式確認流程引用的工具實例、已保存的實體連線與後端；連線位址、後端或設備資訊有未保存變更時會拒絕執行。
 
-- 確認 referenced Tool Instances；
-- 取得已保存的 Live Resources 與 backends；
-- 拒絕尚未保存的 Live Resource、backend 或 identity draft changes；
-- 顯示列出每個 referenced instance、Tool Type、backend、resource 與可用 identity 的 Live confirmation；
-- 提醒 Live mode 可能改變 Powers outputs；以及
-- 對適用的 Meters setup 額外顯示 10 A terminal warning。
+確認視窗列出每個引用實例、工具類型、後端、資源位址與可用設備資訊，提醒 Powers 輸出可能改變。若 Meters 使用 10 A 端子，另有接線警告。
 
-請在確認前檢查畫面中的 resources 與連接中的 hardware。Run 會再次驗證 backend
-與 resource 仍與確認時完全相同。Backend 或 resource 改變，或 resource 重複使用，
-都會使 Live execution 被拒絕，並要求
-重新確認。
+請確認位址和實際設備相符。執行前會再次比對後端與位址是否與確認時完全一致；若改變或有資源重複使用，會拒絕執行並要求重新確認。
 
-目前支援 Live 的 external tools 是 Powers、Meters、Scopes 與 Serial。Powers 與 Scopes 的
-Preflight 使用已保存的 canonical model ID。Scopes 使用原樣保存的 Resource；
-未知 identity 不會被替換成其他型號。
-Wavegen runtime execution 仍不支援。Scopes Shutdown 不會 reset 或 restore 儀器設定。
+目前支援 Live 的外部工具為 Powers、Meters、Scopes、Serial。Powers 與 Scopes 的預檢使用已保存的標準型號識別碼。Scopes 使用原樣保存的連線位址；未知設備不會自動替換為其他型號。Wavegen 尚未支援執行；Scopes 關閉 Worker 時不重設或還原儀器設定。
 
 ## Powers：執行後的安全收尾
 

@@ -52,27 +52,7 @@
   <main class="help-content" id="help-content">
 <h1>Serial Background RX and Actions</h1>
 <h2 id="serial-communication-basics">Serial communication basics</h2>
-<p>TX means transmit, RX means receive. ### UART and TCP</p>
-<table>
-<thead>
-<tr>
-<th>Transport</th>
-<th>Live connection</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>UART</td>
-<td>COM Port and serial settings</td>
-</tr>
-<tr>
-<td>TCP Client</td>
-<td>Host, Port and TCP timeout; no TCP discovery</td>
-</tr>
-</tbody>
-</table>
-<p>Use Save Resource for the local connection address.</p>
-<p>Serial supports UART (COM Port) and raw TCP Client. It does not decode device protocols or assemble RX events into complete packets.</p>
+<p>TX means transmit, RX means receive. Serial supports UART (COM Port) and raw TCP Client. It does not decode device protocols or assemble RX events into complete packets.</p>
 <table>
 <thead>
 <tr>
@@ -93,6 +73,26 @@
 </table>
 <h2 id="background-rx-and-communication-setup">Background RX and communication setup</h2>
 <p>Register <code>serial-tool.exe</code> in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Enable Background Streaming. Background Simulation uses Serial Tool's <code>periodic-rx-v1</code> to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use <code>loopback-v1</code>. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.</p>
+<h3 id="uart-and-tcp">UART and TCP</h3>
+<table>
+<thead>
+<tr>
+<th>Transport</th>
+<th>Live connection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UART</td>
+<td>COM Port and serial settings</td>
+</tr>
+<tr>
+<td>TCP Client</td>
+<td>Host, Port and TCP timeout; no TCP discovery</td>
+</tr>
+</tbody>
+</table>
+<p>Use Save Resource for the local connection address.</p>
 <p>Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in <strong>Communication Setup</strong>, which starts expanded. Use <strong>− / +</strong> to hide or show Transport and its UART or TCP settings; Background Streaming and Live Device stay visible. UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.</p>
 <h3 id="start-receiving-capture-and-inspect">Start receiving, capture and inspect</h3>
 <p>Worker ON and Worker OFF control the continuous RX source. Capture ON and Capture OFF create separate Datasets without stopping the source. Each RX event produces one Output Data row containing all bytes received in that event; read boundaries are not protocol frames. The optional RX-only Live Monitor continues while Capture is OFF.</p>
@@ -105,25 +105,30 @@
 <thead>
 <tr>
 <th>Step</th>
-<th>Purpose</th>
+<th>Main parameters</th>
+<th>Result and limits</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Send</td>
-<td>Send UTF-8 text or a single byte</td>
+<td>TX format and data</td>
+<td>Sends text or one byte; no receive.</td>
 </tr>
 <tr>
 <td>Send File</td>
-<td>Send unchanged file contents</td>
+<td>Absolute file path</td>
+<td>Sends unchanged file contents; missing file blocks startup or fails the step.</td>
 </tr>
 <tr>
 <td>Receive</td>
-<td>Receive without sending</td>
+<td>RX completion mode, length/delimiter/gap</td>
+<td>Returns received data; no TX.</td>
 </tr>
 <tr>
 <td>Query</td>
-<td>Send, then receive</td>
+<td>TX data and RX completion condition</td>
+<td>Sends then receives; Single Read is unavailable.</td>
 </tr>
 </tbody>
 </table>

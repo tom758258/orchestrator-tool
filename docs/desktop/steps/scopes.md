@@ -4,19 +4,21 @@
 
 ## Scopes actions at a glance
 
-| Step | Purpose |
-| --- | --- |
-| Channel Display | Enable or disable a channel display |
-| Channel Scale / Offset | Set vertical scale (V/div) and offset (V) |
-| Horizontal Scale / Position | Set horizontal scale (s/div) and position (s) |
-| Edge Trigger | Set trigger source, slope and level |
-| Single Wait | Start one acquisition and wait for triggering |
-| Measure | Read a numeric measurement |
-| Capture | Save waveform CSV and metadata JSON |
-| Screenshot | Save an instrument image |
-| AutoScale | Automatically adjust display; specified Keysight models only |
+| Step | Main parameters | Result / example |
+| --- | --- | --- |
+| Channel Display | Channel, On/Off | Set and verify display; e.g. enable CH1. |
+| Channel Scale | Channel, V/div | Set and verify vertical scale; e.g. CH1, 1 V/div. |
+| Channel Offset | Channel, V | Set and verify offset; e.g. CH1, 0 V. |
+| Horizontal Scale | s/div | Set and verify time scale; e.g. 0.001 s/div. |
+| Horizontal Position | s | Set and verify position; e.g. 0 s. |
+| Edge Trigger | Source Channel, Slope, Level | Set and verify trigger; e.g. CH1, Positive, 0 V. |
+| Single Wait | Trigger Timeout, Poll Interval | Trigger outcome; inspect Timed Out for a timeout. |
+| Measure | Channel, Measurement Item | Value, Unit, Channel, Item, Valid; e.g. CH1, Vp-p. |
+| Capture | Channels, Points | Save waveform CSV and metadata JSON; e.g. CH1 and a supported point count. |
+| Screenshot | Image Format | Save instrument image; e.g. supported PNG. |
+| AutoScale | Optional Source Channels, Acquire Mode, Channels Mode | Wait for automatic adjustment; specified Keysight models only. |
 
-Add a Scopes instance in Setup, then select the target in each step. Parameters and limits follow.
+Example setpoints are for illustrating Simulation, not recommendations for physical equipment. Select the target Scopes instance first; see the following sections for channel and model limits. Set/readback mismatches fail the step, as do instrument or Worker errors. See Single Wait and Measure for the normal timeout and invalid-measurement exceptions.
 
 ### Setpoint sources
 

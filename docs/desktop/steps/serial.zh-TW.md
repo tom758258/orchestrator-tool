@@ -40,12 +40,12 @@ Steps Palette 將 Background Worker ON/OFF 與 Background Capture ON/OFF 獨立�
 
 ## 前景通訊步驟
 
-| 步驟 | 用途 |
-| --- | --- |
-| Send | 發送 UTF-8 文字或一個 Byte |
-| Send File | 發送原始檔案內容 |
-| Receive | 只接收資料，不發送 |
-| Query | 先發送，再接收 |
+| 步驟 | 主要參數 | 結果與限制 |
+| --- | --- | --- |
+| Send | TX 格式與資料 | 發送文字或單一 Byte；不接收回覆。 |
+| Send File | 檔案絕對路徑 | 發送檔案原始內容；缺檔會阻擋執行或使步驟失敗。 |
+| Receive | RX 完成模式、長度／標記／間隔 | 回傳收到的資料；不發送。 |
+| Query | TX 資料及 RX 完成條件 | 先發送再接收；不支援 Single Read。 |
 
 範例：使用 UART Simulation 的 loopback-v1 測試 Query，TX Text 輸入 OK，RX Fixed Length 設為 2 Bytes；預期讀回相同文字（需啟用 RX Text）。這是模擬資料，並非真實 MCU 回覆。
 

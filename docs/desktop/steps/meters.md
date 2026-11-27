@@ -12,7 +12,8 @@ Meter Measure triggers a single measurement for the selected Meters Tool Instanc
 | Target | Select the instance to use |
 | Settings | DC Voltage or DC Current and other settings from that instance |
 | Mode | Foreground Single; use Background Streaming for background operation |
-| Result | One measurement; choose common result fields in Previous step result |
+| Result | One measurement; choose Value or Unit in Previous step result |
+| Failure | Inspect the step error if measurement or Worker execution fails; no automatic Output column is created |
 
 ## Save the reading as a data column
 

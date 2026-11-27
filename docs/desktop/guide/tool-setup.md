@@ -225,10 +225,10 @@ when saving; the external tool still validates actual model support and limits.
 
 | Field | Purpose |
 | --- | --- |
-| OVP Voltage | Overvoltage protection setting |
-| OCP | Overcurrent protection setting |
-| OCP Delay | Overcurrent protection delay |
-| OCP Delay Trigger | Condition for triggering that delay |
+| OVP Voltage (V) | Overvoltage protection threshold; enter a supported voltage. |
+| OCP | Overcurrent protection: On or Off. |
+| OCP Delay (s) | Protection delay in seconds; subject to model limits. |
+| OCP Delay Trigger | Start the delay on Setting Change or CC Transition, as supported by the model. |
 
 ### Clear and save settings
 
@@ -339,10 +339,17 @@ commands.
 
 ### Setup fields
 
-| Section | Fields |
+| Field | Purpose and choices |
 | --- | --- |
-| Acquisition Setup | Acquisition Type, Average Count (Average only) |
-| Channel Configuration | Input Coupling, Probe Ratio, Bandwidth Limit, Waveform Invert, Channel Units |
+| Acquisition Type | Acquisition mode: Normal, Average, High Resolution, Peak; subject to model support. |
+| Average Count | Number of acquisitions to average; editable only in Average and must be a supported integer. |
+| Input Coupling | Input coupling: AC or DC. |
+| Probe Ratio | Probe attenuation ratio; enter the value appropriate for the probe and supported by the model. |
+| Bandwidth Limit | Bandwidth limiting: On or Off. |
+| Waveform Invert | Waveform inversion: On or Off. |
+| Channel Units | Channel units: Volt or Amp. |
+
+Acquisition Setup contains the first two fields; Channel Configuration sets the remaining fields per channel. All fields default to Unchanged or blank; only explicitly selected values are saved and sent to the instrument. The tool supplies the actual supported limits.
 
 ### Model support, readback and errors
 
@@ -357,3 +364,20 @@ identifies the instance and, for channel settings, the channel. Workflow steps
 start only after Setup succeeds. For example, if you set Channel 2 Waveform
 Invert to On and leave the other settings Unchanged, Setup verifies Channel 2
 inversion before the Workflow starts.
+
+## Serial communication setup
+
+Choose UART (COM Port) or TCP Client in Communication Setup. Communication settings belong to the Template; COM Port or TCP Host/Port is stored locally in Live Device.
+
+| Interface | Field | Purpose and choices |
+| --- | --- | --- |
+| UART | Baud Rate | Positive integer transmission rate; new instance: 115200. Match the device. |
+| UART | Data Bits | Bits per character: 5, 6, 7, 8; default 8. |
+| UART | Parity | None (default), Odd or Even parity checking. |
+| UART | Stop Bits | 1 (default) or 2 stop bits. |
+| UART | Flow Control | None (default), Software or Hardware. |
+| UART | Timeout (ms) | Non-negative integer I/O timeout in milliseconds; default 1000. |
+| TCP | Connect Timeout (ms) | Positive integer connection timeout; displayed default 3000. |
+| TCP | I/O Timeout (ms) | Positive integer communication I/O timeout; displayed default 1000. |
+
+Match UART settings to the device. TCP has no discovery; Simulation needs no Host or Port. See [Serial steps](../steps/serial.md) for RX completion and timeout rules.

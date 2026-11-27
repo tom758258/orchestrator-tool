@@ -63,32 +63,44 @@
 <thead>
 <tr>
 <th>互動步驟</th>
-<th>用途</th>
+<th>主要參數</th>
+<th>結果／失敗條件</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>BG Command</td>
-<td>對支援的背景來源派送命令</td>
+<td>背景來源、命令、Wait for Completion</td>
+<td>派送支援命令；本身無資料輸出。拒絕、忙碌或命令失敗會使流程失敗。</td>
 </tr>
 <tr>
 <td>Get Latest</td>
-<td>立即取最新事件</td>
+<td>背景來源</td>
+<td>取得最新原生事件；不存在或無效即失敗。</td>
 </tr>
 <tr>
 <td>Wait Next</td>
-<td>等待之後到達的第一筆事件</td>
+<td>背景來源、選用逾時</td>
+<td>取得之後第一筆事件；首筆無效、來源已結束或逾時即失敗。</td>
 </tr>
 <tr>
 <td>Get Command Result</td>
-<td>取得指定 BG Command 的結果</td>
+<td>先前的 Source BG Command Step、選用逾時</td>
+<td>取得該次命令原生結果；未執行來源或結果未能取得即失敗。</td>
 </tr>
 <tr>
-<td>Get Buffer Data / Status</td>
-<td>取用緩衝資料或檢查狀態（需 Enable Buffer）</td>
+<td>Get Buffer Data</td>
+<td>背景來源、Peek／Pop、Count／ALL</td>
+<td>取得事件陣列及筆數；選取資料有無效事件時整批失敗且不消耗。</td>
+</tr>
+<tr>
+<td>Get Buffer Status</td>
+<td>背景來源</td>
+<td>取得容量及遺失狀態，不消耗資料。</td>
 </tr>
 </tbody>
 </table>
+<p>模擬範例：Meters Software Simple 啟用 Trigger with BG Command，加入 Worker ON → BG Command → Get Command Result → Output（選取 <code>/value</code>）。選用 Capture；停止來源前遵守背景筆數與收尾規則，詳見<a href="guide-background-streaming.zh-TW.html">背景擷取</a>。Buffer 步驟需另啟用 Enable Buffer。</p>
 <h3 id="啟用設定">啟用設定</h3>
 <p>Workflow 左側最下方、<strong>Chart Options</strong> 下方的 <strong>FG/BG Interaction</strong>
 設定面板預設收合。沒有 Background Binding 時面板鎖定、隱藏設定內容；

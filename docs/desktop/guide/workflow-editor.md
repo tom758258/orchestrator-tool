@@ -74,7 +74,7 @@ insert into the location shown by **ADDING STEP TO**. After insertion the
 palette selection clears, while the inserted Workflow step remains selected
 for editing. **Set Target to Root** switches the destination without inserting
 a step. Creating or opening a Template also clears the palette selection.
-All Step Palette buttons use a consistent single-line height. Long labels are shortened or truncated; their native tooltip preserves the full name and action description.
+Hover over a shortened step name to see its full name and description.
 
 Alternatively, drag a Step type from **Steps** into **Sequence** to insert it at the
 drop position, independently of the **ADDING STEP TO** target. Drop before or

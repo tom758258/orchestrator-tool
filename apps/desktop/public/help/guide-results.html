@@ -82,17 +82,7 @@
 </tr>
 </tbody>
 </table>
-<p>After a run, the Output area can show the following visible sections:</p>
-<ul>
-<li><strong>Last Run Execution Results</strong> — execution statuses and progress results,
-  shown latest first when the result list is paged.</li>
-<li><strong>Messages</strong> — text written by Show Message steps during the run.</li>
-<li><strong>Last Run</strong> — the current run's Output Pages and result workspace.</li>
-<li><strong>Charts</strong> — all Foreground and Background chart panels.</li>
-<li><strong>Live Monitors</strong> — enabled monitors in their own section below Charts.</li>
-<li><strong>Summary</strong> — numeric Count, Min, Max, and Avg values when applicable.</li>
-<li><strong>Output Data</strong> — committed rows for the selected Page, shown latest first.</li>
-</ul>
+<p>Last Run is the current result workspace. Execution records and committed rows appear newest first; Messages appear in production order. Enabled Live Monitors appear below Charts.</p>
 <h2 id="last-run-the-most-recent-execution">Last Run: the most recent execution</h2>
 <blockquote>
 <p><strong>Note:</strong> Orchestrator retains the latest run, not a test-record database. Export measurement data before starting a new run or leaving the application if you need to retain it.</p>
@@ -109,15 +99,32 @@ a simulated success is never presented as a real-hardware success.</p>
 <p>If a run did not fully complete, committed rows remain available as partial
 results and can be manually exported after execution stops.</p>
 <h2 id="inspect-and-collapse-result-panels">Inspect and collapse result panels</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Selection and export</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Foreground Output</td>
+<td>Source selects an Output Page and updates Summary, Output Data and export scope.</td>
+</tr>
+<tr>
+<td>Background Output</td>
+<td>Source selects Background and Capture Dataset, with Worker status. Pages contain 100 rows; paging appears only when needed.</td>
+</tr>
+</tbody>
+</table>
+<p>Both sections put export controls in Export settings below Output Data. Foreground chooses a file or folder according to scope; Background always chooses a destination folder and exports the full selected or all datasets, not just the visible rows. Its export button names the chosen format.</p>
+<p>Both share Auto, Fixed and Raw number display settings without changing stored data or export precision. Background statistics show only available dataset values; Scopes retains Valid/Invalid, while Serial RX shows event and byte counts. Foreground pages and background datasets are selected separately.</p>
 <p>Charts, optional Live Monitors, Foreground Output and Background Output, each Chart and Live Monitor,
 and both Output sections' Summary and Output Data have independent <code>− / +</code>
 controls. All start expanded. Collapsing hides content without clearing settings,
 removing Charts, stopping Capture or pausing Monitor reception. Collapse state
 is not saved with Templates.</p>
-<p>Charts, optional Live Monitors, Foreground Output and Background Output share
-matching rounded frames with their titles and collapse buttons in the top border.
-Each collapses independently and keeps its frame and title visible. Charts also
-keeps <strong>Save charts with template</strong> and its chart count visible when collapsed.</p>
+<p>When Charts is collapsed, <strong>Save charts with template</strong> and the chart count remain visible.</p>
 <p><strong>Last Run Execution Results</strong> and <strong>Messages</strong> each have a <code>+ / −</code> control on
 the right of their heading. Both start expanded, and each collapses on its own
 without affecting the other. Collapsing changes what is displayed only: it

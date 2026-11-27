@@ -56,32 +56,39 @@
 <thead>
 <tr>
 <th>步驟</th>
-<th>用途</th>
+<th>主要參數</th>
+<th>結果／用途</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Power Set Output</td>
-<td>設定電壓或電流限制，不會開啟輸出</td>
+<td>Channel、Voltage (V)／Current Limit (A)，至少一項</td>
+<td>設定電壓或電流限制，不會開啟輸出。</td>
 </tr>
 <tr>
 <td>Power Output ON</td>
-<td>開啟選定通道輸出</td>
+<td>Channel</td>
+<td>開啟選定通道輸出。</td>
 </tr>
 <tr>
 <td>Power Output OFF</td>
-<td>關閉選定通道輸出</td>
+<td>Channel</td>
+<td>關閉選定通道輸出。</td>
 </tr>
 <tr>
 <td>Power Measure</td>
-<td>讀取實際電壓及電流</td>
+<td>Channel</td>
+<td>回傳 Voltage、Current；不改設定。</td>
 </tr>
 <tr>
 <td>Power Protection Status</td>
-<td>讀取保護觸發狀態，不會清除</td>
+<td>All 或 Specific channel</td>
+<td>回傳三個保護觸發 Boolean；不清除。</td>
 </tr>
 </tbody>
 </table>
+<p>各步驟先選擇目標 Powers 實例。參數不合法、型號不支援或 Worker 回報錯誤會使步驟失敗；保護狀態本身不等於步驟失敗，若要在觸發時停止流程，使用下文的 Assert 範例。</p>
 <h3 id="選擇通道">選擇通道</h3>
 <p><strong>Power Set Output</strong>、<strong>Power Output ON</strong>、
 <strong>Power Output OFF</strong>、<strong>Power Measure</strong>，以及 <strong>Power Protection Status</strong> 的 <strong>Specific channel</strong>

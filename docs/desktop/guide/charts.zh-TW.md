@@ -4,9 +4,9 @@
 
 ## 選擇圖表
 
-1. 在 Output 展開 Charts。
-2. 在 Chart settings 選擇 Ground（Foreground 或 Background）及 Page／背景來源，按 **+ Add Chart**。
-3. 選擇要繪製的資料；使用 Settings → General 選擇圖型並 Apply。
+1. 在 **輸出（Output）** 展開 **圖表（Charts）**。
+2. 在 **圖表設定（Chart settings）** 選擇 **前景／背景（Ground）**、**頁面（Page）** 或背景來源，按 **+ 新增圖表（+ Add Chart）**。
+3. 選擇要繪製的資料；使用 **設定（Settings）→ 一般（General）** 選擇圖型，再套用（Apply）。
 4. 執行中只有 Line 即時更新；其他圖型等待流程結束。
 
 以下是各圖型用途及支援功能。所有圖型都支援前景數值輸出；背景數值圖表僅適用支援的來源（Meters／Scopes，不含 Serial RX）。

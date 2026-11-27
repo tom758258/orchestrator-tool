@@ -4,16 +4,7 @@
 
 ## Serial communication basics
 
-TX means transmit, RX means receive. ### UART and TCP
-
-| Transport | Live connection |
-| --- | --- |
-| UART | COM Port and serial settings |
-| TCP Client | Host, Port and TCP timeout; no TCP discovery |
-
-Use Save Resource for the local connection address.
-
-Serial supports UART (COM Port) and raw TCP Client. It does not decode device protocols or assemble RX events into complete packets.
+TX means transmit, RX means receive. Serial supports UART (COM Port) and raw TCP Client. It does not decode device protocols or assemble RX events into complete packets.
 
 | Mode | Purpose |
 | --- | --- |
@@ -23,6 +14,15 @@ Serial supports UART (COM Port) and raw TCP Client. It does not decode device pr
 ## Background RX and communication setup
 
 Register `serial-tool.exe` in Tools. In Setup, add a Serial Tool Instance, set the serial line parameters, and select Enable Background Streaming. Background Simulation uses Serial Tool's `periodic-rx-v1` to generate RX without TX (approximately one 4-byte counter every 100 ms). Foreground Simulation continues to use `loopback-v1`. Live uses a saved COM Port or TCP endpoint and requires explicit confirmation.
+
+### UART and TCP
+
+| Transport | Live connection |
+| --- | --- |
+| UART | COM Port and serial settings |
+| TCP Client | Host, Port and TCP timeout; no TCP discovery |
+
+Use Save Resource for the local connection address.
 
 Serial supports UART (COM Port) and raw TCP Client in the same Tool Instance. Choose Transport in **Communication Setup**, which starts expanded. Use **− / +** to hide or show Transport and its UART or TCP settings; Background Streaming and Live Device stay visible. UART and TCP timeout settings are both retained in the Template when switching. For TCP Live, enter TCP Host and TCP Port under Live Device and Save Resource. COM ports and TCP endpoints are stored locally, not in Templates. TCP Simulation needs no host or device port, and TCP has no List Ports discovery.
 
@@ -40,12 +40,12 @@ The Steps palette groups Background Worker ON/OFF and Background Capture ON/OFF 
 
 ## Foreground communication steps
 
-| Step | Purpose |
-| --- | --- |
-| Send | Send UTF-8 text or a single byte |
-| Send File | Send unchanged file contents |
-| Receive | Receive without sending |
-| Query | Send, then receive |
+| Step | Main parameters | Result and limits |
+| --- | --- | --- |
+| Send | TX format and data | Sends text or one byte; no receive. |
+| Send File | Absolute file path | Sends unchanged file contents; missing file blocks startup or fails the step. |
+| Receive | RX completion mode, length/delimiter/gap | Returns received data; no TX. |
+| Query | TX data and RX completion condition | Sends then receives; Single Read is unavailable. |
 
 Example: use UART Simulation with loopback-v1, Query TX Text OK, and RX Fixed Length of 2 bytes. Expect the same text if RX Text is enabled. This is simulated data, not a real MCU reply.
 

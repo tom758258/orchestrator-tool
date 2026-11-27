@@ -14,67 +14,51 @@
 | CSV 失敗 | 錯誤詳情與輸出資料夾 |
 | 無法開啟程式 | WebView2 Runtime 及啟動錯誤詳情 |
 
-### 詳細排查方法
-
 ### 工具尚未設定
 
-在 **工具（Tools）** 的 **選擇要加入的工具（Select tool to add）** 選擇 Tool Type，再使用 **加入工具（Add Tool）** 配置正確的
-external executable。
+在 **工具（Tools）** 的 **選擇要加入的工具（Select tool to add）** 選擇工具類型，再按 **加入工具（Add Tool）** 指定正確的執行檔。
 
 ### 執行檔被拒絕
 
-Executable 可能有錯誤的 manifest Tool ID，或 Worker 不相容。請選擇符合預期
-Tool Type 的 executable。
+執行檔的 Manifest 可能回報錯誤的工具識別碼（Tool ID），或 Worker 介面不相容。請選擇對應工具的 CLI／Worker 執行檔，確認版本。
 
 ### 執行檔不存在或不是檔案
 
-已保存的 path 不存在，或不是一個 file。請使用 **變更路徑…（Change Path...）** 選擇目前的
-executable；Desktop 不會靜默搜尋替代檔案。
+已儲存的路徑不存在，或指向的不是檔案。按 **變更路徑…（Change Path...）** 選擇目前的執行檔；程式不會自行搜尋替代檔案。
 
 ### 未設定 Live Resource
 
-在 **設定（Setup）** 為 referenced Tool Instance 選擇或輸入 resource，並在執行 Live 前
-保存。
+在 **設定（Setup）** 為工作流程使用的工具實例選擇或輸入實體連線位址，並在真實硬體執行前儲存。
 
 ### 實體連線設定尚未儲存
 
-使用 **儲存資源（Save Resource）**，再重新開始 Live，讓 confirmation 使用已保存的 backend、
-resource 與 identity。切換 backend 會清空草稿，請重新列出或輸入 resource 再保存。
+按 **儲存資源（Save Resource）** 後重新開始 Live，讓確認視窗使用已保存的後端、位址與設備識別資訊。切換後端會清空草稿，請重新列出或輸入位址再儲存。
 
 ### 實體連線重複
 
-同一次 Live run 中，不同 referenced Tool Instances 不可指向相同 resource。請
-指定不同 resources。
+同一次 Live 執行中，工作流程引用的不同工具實例不可指向同一個連線資源。請分別指定不同資源。
 
 ### 模擬要求 Meters 量測筆數
 
-填寫每個 Instance 的 SIM Max Samples，或按 Cancel；這不會改變 Unlimited
-While。Custom 模式僅供 Background 使用。
+填寫各實例的 SIM Max Samples，或按 Cancel 取消。這不會改變無限 While 迴圈的條件；Custom 模式僅供背景擷取使用。
 
 ### 無法手動匯出
 
-Manual export 需要 run 已經結束，且目前 export scope 存在 committed rows。Run
-仍 active 時 export 會維持 disabled。Failed 或 incomplete run 可以把已 committed
-rows 作為 partial results 匯出；若選取範圍為 zero-row，仍不提供 export。
+先確認流程已結束，且所選匯出範圍有已提交的資料列。失敗或未完整結束的流程仍可匯出已提交的部分結果；執行中或選取範圍沒有資料列時不可匯出。
 
 ### 即時 CSV 寫入失敗
 
-CSV 建立、寫入或最後 flush 失敗會使 Run Failed 並執行安全 Cleanup。
-Committed rows、已收到的 Background Samples 與部分 CSV 仍可查看及手動匯出。
+CSV 建立、寫入或最後寫入緩衝資料失敗，會使流程失敗並執行安全收尾。已提交的資料列、收到的背景樣本及部分 CSV 仍可查看及手動匯出。
 
 ### 缺少 WebView2
 
-使用 native warning 的 Yes 開啟 Microsoft 官方 WebView2 下載頁，安裝或修復系統
-Runtime 後重新啟動 application。若 availability check 通過後仍出現 Startup failed
-對話框，請保留 Details 內容供診斷，並確認 Windows 受支援且 WebView2 已安裝並更新。
+在啟動警告按 Yes 開啟 Microsoft 官方下載頁，安裝或修復 WebView2 Runtime 後重新啟動程式。如果檢查通過後仍顯示 Startup failed，請保留 Details 的錯誤資訊，確認 Windows 受支援且 WebView2 已安裝並更新。
 
 ## 安全注意事項
 
-- Live mode 可能影響連接中的 hardware。
-- 在 confirmation 前確認每個 Live Resource。
-- Powers output writes 需要 Live confirmation 與 runtime authorization。
-- Run-level Powers `safe-off` 是 cleanup behavior，不取代 external tool 或 instrument
-  的 safety requirements。
-- Meters DC Current 使用 10 A terminal 時，確認 physical lead connection 後再
-  確認 Live。
-- External tools 仍負責 instrument-specific limits 與 safety behavior。
+- 真實硬體（Live）模式可能影響已連線的設備。
+- 確認執行前，逐一核對實體連線資源。
+- Powers 的輸出寫入需要 Live 確認及該次執行的授權。
+- 流程層級的 Powers `safe-off` 是安全收尾措施，不能取代外部工具或儀器本身的安全要求。
+- Meters 使用 10 A 端子量測直流電流時，確認實體導線接對端子後再確認 Live。
+- 儀器專屬的限制與安全行為仍由各外部工具負責。
