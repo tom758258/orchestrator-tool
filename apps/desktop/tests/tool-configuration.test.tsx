@@ -1,37 +1,26 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { isInaccessible } from '@testing-library/dom'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { confirm, open, save } from '@tauri-apps/plugin-dialog'
 import App from '../src/App'
 import ScopesActionEditor from '../src/ScopesActionEditor'
-import ProcessEditor from '../src/ProcessEditor'
-import { useState } from 'react'
-import InputValueEditor, { ExpressionOperandEditor } from '../src/InputValueEditor'
+import { ExpressionOperandEditor } from '../src/InputValueEditor'
 import { I18nProvider } from '../src/i18n/I18nProvider'
-import type { WorkflowDraft } from '../src/templateDraft'
 import type { ExpressionOperandWire } from '../src/inputValue'
 import ToolSetupEditor from '../src/ToolSetupEditor'
 import type { ToolInstance } from '../src/toolSetup/types'
 import BackgroundSetup from '../src/BackgroundSetup'
-import type { BackgroundConfig, ProcessStep, ToolActionStep, WorkflowStep } from '../src/workflow'
+import type { BackgroundConfig, ToolActionStep, WorkflowStep } from '../src/workflow'
 import { addBackgroundChartPanel, chartPanelToSavedChart } from '../src/chartPanels'
+import { createToolConfigurationFixture } from './support/toolConfigurationFixture'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), Channel: class {} }))
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: async () => '0.2.0' }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setTheme: async () => {} }) }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ confirm: vi.fn(), open: vi.fn(), save: vi.fn() }))
 
-const original: WorkflowDraft = { name: 'Setup test', tool_instances: [
-  { id: 'powers-1', tool: 'powers', setup: { protection: { channels: [{ channel: 1, ocp: 'on' }] } } },
-  { id: 'scopes-1', tool: 'scopes', setup: { acquisition: { acquisition_type: 'average', average_count: 16 },
-    channels: [{ channel: 4, invert: true }] } },
-  { id: 'wavegen-1', tool: 'wavegen', setup: {} },
-], workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
-const empty: WorkflowDraft = { ...original, tool_instances: [] }
-const backgroundMeter: ToolInstance = { id: 'meters-1', tool: 'meters', setup: { trigger_mode: 'immediate-custom',
-  measurement: 'voltage-dc', range_mode: 'auto', manual_range: null, nplc: 1, auto_zero: 'on', dcv_input_impedance: null, current_terminal: null } }
-
+const { state, original, empty, backgroundMeter, toolStatus, click, tab, calls, savedDraft, serialBackgroundDraft } = createToolConfigurationFixture()
 
 test('Scope Single Wait shows fixed integer inputs without force or capability queries', () => {
   let step: ToolActionStep = { type: 'tool-action', id: 'trigger', target: 'scopes-1',
@@ -154,79 +143,10 @@ test.each(['root', 'nested', 'unreferenced'])('Background binding removal respec
   }
   else expect(onChange).not.toHaveBeenCalled()
 })
-const toolStatus = (tool_id: string) => ({ tool_id, executable_status: 'available', compatibility: 'compatible',
-  source: 'configured', path: `${tool_id}.exe`, tool_version: '1.0', worker_schema_versions: [3], reason: null })
-let tools: ReturnType<typeof toolStatus>[]
-let newDraft: WorkflowDraft
-let loadedDraft: WorkflowDraft
-let loadError: boolean
-let backends: Record<string, 'system' | '@py'>
-let identities: Record<string, { manufacturer: string | null; model: string | null; model_id: string | null; serial: string | null; identity: string | null }>
-let resources: Record<string, string>
 
-beforeEach(() => {
-  vi.clearAllMocks()
-  tools = ['meters', 'powers', 'scopes', 'wavegen'].map(toolStatus)
-  newDraft = structuredClone(original)
-  loadedDraft = structuredClone(original)
-  loadError = false
-  resources = {}
-  backends = {}
-  identities = {}
-  vi.mocked(confirm).mockResolvedValue(true)
-  vi.mocked(open).mockResolvedValue('template.json')
-  vi.mocked(save).mockResolvedValue('saved.json')
-  vi.mocked(invoke).mockImplementation(async (command, args) => {
-    const params = args as Record<string, unknown>
-    switch (command) {
-      case 'create_workflow_draft': return JSON.stringify(newDraft)
-      case 'load_workflow_template':
-        if (loadError) throw new Error('Cannot load Template')
-        return JSON.stringify(loadedDraft)
-      case 'get_tool_status': return [...tools]
-      case 'get_live_resources': return { ...resources }
-      case 'get_live_resource_identities': return { ...identities }
-      case 'get_live_backends': return { ...backends }
-      case 'list_live_resources': return [{ resource: `USB::${params.toolId}::${params.backend}`, manufacturer: 'Vendor', model: 'Model', model_id: 'canonical-model', serial: '123', identity: 'Vendor,Model,123,1' }]
-      case 'get_powers_capabilities': return { channels: params.modelId === 'saved-model' ? [1, 3] : [1], protection_features: {
-        ovp_voltage: true, ocp: true, ocp_delay: false, ocp_delay_triggers: [],
-      } }
-      case 'get_scopes_capabilities': return { analog_channels: params.modelId === 'saved-scope' ? 4 : 2,
-        acquisition_modes: ['normal', 'average'], average_counts: [4, 16, 64] }
-      case 'get_meters_capabilities': return { trigger_modes: ['software'], limits: {
-        sample_count: { max: 1000 }, buffer_drain_size: { max: 1000 }, trigger_count: { max: 1000 },
-      }, reading_memory_limit: 1000, measurements: [
-        { measurement_name: 'voltage-dc', range_values: params.model === 'Saved Meter' ? [30] : [10] },
-      ] }
-      case 'check_live_preflight': return []
-      case 'check_serial_send_files': return []
-      case 'refresh_powers_status': return { protection_tripped: params.executionMode === 'live', over_voltage_tripped: params.executionMode === 'live',
-        over_current_tripped: false, channels: [{ channel: 1, output_enabled: false,
-          over_voltage_tripped: params.executionMode === 'live', over_current_tripped: false }] }
-      case 'clear_powers_protection': return { mode: params.executionMode, status: {
-        protection_tripped: false, over_voltage_tripped: false, over_current_tripped: false, channels: [],
-      } }
-      case 'set_live_resource':
-        resources[String(params.instanceId)] = String(params.resource)
-        backends[String(params.instanceId)] = params.backend as 'system' | '@py'
-        if (params.identity) identities[String(params.instanceId)] = params.identity as typeof identities[string]
-        else delete identities[String(params.instanceId)]
-        return
-      case 'set_tool_executable': tools = tools.map(tool => tool.tool_id === params.toolId
-        ? { ...tool, path: String(params.path) } : tool); return
-      case 'reset_tool_executable': tools = tools.filter(tool => tool.tool_id !== params.toolId); return
-      case 'save_workflow_template': case 'validate_workflow_draft': return params.templateJson
-      default: throw new Error(`Unexpected command: ${command}`)
-    }
-  })
-})
-
-const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }))
-const tab = (name: string) => fireEvent.click(screen.getByRole('tab', { name }))
 const instance = (id: string) => within(screen.getByRole('button', {
   name: new RegExp(`^(?:Expand|Collapse) ${id}$`),
 }).closest('fieldset')!)
-const calls = () => vi.mocked(invoke).mock.calls
 
 test('all Tool instances place Background Streaming between tool setup and Live Device', () => {
   const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
@@ -255,15 +175,15 @@ test('all Tool instances place Background Streaming between tool setup and Live 
 })
 
 test('Setup groups preserve settings through collapse and tabs, and reset on New Template', async () => {
-  tools.push(toolStatus('serial'))
+  state.tools.push(toolStatus('serial'))
   const instances: ToolInstance[] = [backgroundMeter, { id: 'serial-1', tool: 'serial', setup: {
     transport: 'tcp', baud: 9600, data_bits: 7, parity: 'even', stop_bits: 2,
     flow_control: 'none', timeout_ms: 1000, connect_timeout_ms: 3000, io_timeout_ms: 2500,
   } }]
-  newDraft = { ...original, tool_instances: instances, backgrounds: [
+  state.newDraft = { ...original, tool_instances: instances, backgrounds: [
     { id: 'background-1', tool_instance_id: 'meters-1', live_monitor: true, limit_count: 10 },
   ] }
-  loadedDraft = structuredClone(newDraft)
+  state.loadedDraft = structuredClone(state.newDraft)
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
   tab('Setup')
@@ -298,7 +218,7 @@ test('Setup groups preserve settings through collapse and tabs, and reset on New
   }
   const saved = await savedDraft()
   expect(saved.tool_instances).toEqual(instances)
-  expect(saved.backgrounds).toEqual(newDraft.backgrounds)
+  expect(saved.backgrounds).toEqual(state.newDraft.backgrounds)
   const previous = instance('meters-1').getByRole('button', { name: 'Expand Measurement Setup' })
   click('New Template')
   await waitFor(() => expect(previous.isConnected).toBe(false))
@@ -329,12 +249,12 @@ async function mount() {
 }
 
 test('Error Queue uses the selected mode and saved address, and shows partial errors', async () => {
-  newDraft = { ...original, tool_instances: [...original.tool_instances, backgroundMeter] }
-  resources['powers-1'] = 'USB::SAVED'
-  resources['scopes-1'] = 'USB::SCOPE'
-  resources['meters-1'] = 'USB::METER'
-  identities['scopes-1'] = { model_id: 'unsupported-scope', model: null, manufacturer: null, serial: null, identity: null }
-  identities['meters-1'] = { model_id: 'unsupported-meter', model: null, manufacturer: null, serial: null, identity: null }
+  state.newDraft = { ...original, tool_instances: [...original.tool_instances, backgroundMeter] }
+  state.resources['powers-1'] = 'USB::SAVED'
+  state.resources['scopes-1'] = 'USB::SCOPE'
+  state.resources['meters-1'] = 'USB::METER'
+  state.identities['scopes-1'] = { model_id: 'unsupported-scope', model: null, manufacturer: null, serial: null, identity: null }
+  state.identities['meters-1'] = { model_id: 'unsupported-meter', model: null, manufacturer: null, serial: null, identity: null }
   let meterCliSupportsErrorQueue = false
   const existing = vi.mocked(invoke).getMockImplementation()!
   vi.mocked(invoke).mockImplementation(async (command, args) => {
@@ -391,15 +311,9 @@ test('Error Queue uses the selected mode and saved address, and shows partial er
   expect(instance('powers-1').getByRole('cell', { name: 'Undefined header, channel 1' })).toBeTruthy()
   expect(instance('powers-1').getByRole('status').textContent).toBe('Queue Status Failed')
 }, 15000)
-async function savedDraft() {
-  click('Save Template')
-  await screen.findByText('Template saved.')
-  const args = calls().filter(([command]) => command === 'save_workflow_template').at(-1)![1] as { templateJson: string }
-  return JSON.parse(args.templateJson)
-}
 
 test('Interaction panel and Step category follow Background binding and opt-in', async () => {
-  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }], backgrounds: [],
+  state.newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }], backgrounds: [],
     workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
   render(<App />)
   await screen.findByRole('button', { name: 'Expand meters details' })
@@ -447,7 +361,7 @@ test('Interaction panel and Step category follow Background binding and opt-in',
 })
 
 test('Workflow saves interaction settings and command/result references through the editor', async () => {
-  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
+  state.newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
     workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
   render(<App />)
@@ -471,20 +385,9 @@ test('Workflow saves interaction settings and command/result references through 
   expect(get.operation).toEqual({ kind: 'get-command-result', source_step: command.id })
 })
 
-const serialBackgroundDraft: WorkflowDraft = { name: 'Serial interaction', tool_instances: [
-  { id: 'serial-1', tool: 'serial', setup: { transport: 'serial', baud: 115200,
-    data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000 } },
-], backgrounds: [{ id: 'serial-bg', tool_instance_id: 'serial-1', live_monitor: false, limit_count: null }],
-workflow: { interaction: { enabled: true, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [
-  { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null,
-    operation: { kind: 'command', command: 'serial-send', wait_for_completion: true,
-      arguments: { tx_format: 'text', tx_value: 'START' } } },
-  { type: 'wait', id: 'other', duration_ms: 1 },
-] } }
-
 test('Serial command drafts survive Step selection and stay out of saved/replaced Templates', async () => {
-  tools.push(toolStatus('serial'))
-  newDraft = structuredClone(serialBackgroundDraft)
+  state.tools.push(toolStatus('serial'))
+  state.newDraft = structuredClone(serialBackgroundDraft)
   render(<App />)
   await screen.findByRole('button', { name: 'Expand serial details' })
   tab('Workflow')
@@ -503,8 +406,8 @@ test('Serial command drafts survive Step selection and stay out of saved/replace
     command: 'serial-send-file', wait_for_completion: true, arguments: { path: '/tmp/payload.bin' } } }
   expect(await savedDraft()).toEqual(expected)
 
-  newDraft = expected
-  loadedDraft = expected
+  state.newDraft = expected
+  state.loadedDraft = expected
   for (const action of ['New Template', 'Open Template']) {
     const previous = screen.getByLabelText('Absolute File Path (Worker-local)')
     click(action)
@@ -518,12 +421,12 @@ test('Serial command drafts survive Step selection and stay out of saved/replace
 })
 
 test('Serial timeout controls and Assert String literals persist through Workflow save/open', async () => {
-  tools.push(toolStatus('serial'))
+  state.tools.push(toolStatus('serial'))
   const serial: ToolInstance = { id: 'serial-1', tool: 'serial', setup: {
     transport: 'serial', baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1,
     flow_control: 'none', timeout_ms: 1000,
   } }
-  newDraft = { name: 'Serial timeout editor', tool_instances: [serial],
+  state.newDraft = { name: 'Serial timeout editor', tool_instances: [serial],
     workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [
       { type: 'tool-action', id: 'query-1', target: 'serial-1', action: 'query',
         arguments: { tx_format: 'text', tx_value: 'REA', delimiter_format: 'hex',
@@ -601,7 +504,7 @@ test('Serial timeout controls and Assert String literals persist through Workflo
   expect(assertion.left).toEqual({ source: 'step-output', step_id: 'query-1', pointer: '/partial_rx_hex' })
   expect(assertion.right).toEqual({ source: 'literal', value: '524541' })
 
-  loadedDraft = saved
+  state.loadedDraft = saved
   click('Open Template')
   await screen.findByText('Template loaded.')
   click('Step 1: Serial Query, query-1')
@@ -624,7 +527,7 @@ test('opening a nested BG Send File Template displays the shared nonblocking fil
   const file = { type: 'bg-interaction', id: 'file', background_id: 'serial-bg', timeout_ms: null,
     operation: { kind: 'command', command: 'serial-send-file', wait_for_completion: true,
       arguments: { path: '/tmp/missing-bg-payload.bin' } } } as const
-  loadedDraft = { ...structuredClone(serialBackgroundDraft), workflow: {
+  state.loadedDraft = { ...structuredClone(serialBackgroundDraft), workflow: {
     ...serialBackgroundDraft.workflow, steps: [
       { type: 'for', id: 'loop', variable: 'i', range: { start: '0', stop: '1', step: '1' }, steps: [file] },
     ],
@@ -638,8 +541,8 @@ test('opening a nested BG Send File Template displays the shared nonblocking fil
   tab('Workflow')
   click('Open Template')
   await screen.findByText(text => text.includes(fileError))
-  expect(invoke).toHaveBeenCalledWith('check_serial_send_files', { templateJson: JSON.stringify(loadedDraft) })
-  expect(await savedDraft()).toEqual(loadedDraft)
+  expect(invoke).toHaveBeenCalledWith('check_serial_send_files', { templateJson: JSON.stringify(state.loadedDraft) })
+  expect(await savedDraft()).toEqual(state.loadedDraft)
 })
 
 test.each(['simulate', 'live'] as const)('Meters overflow warning follows Allow Risk and known capacity in %s', async executionMode => {
@@ -766,7 +669,7 @@ test('Meters role controls six Background modes without deleting existing steps'
 test('loading a Template with Background Charts and accepted overflow risk preserves setup and X axis on save', async () => {
   const panel = addBackgroundChartPanel([], 'background-1')[0]
   panel.source!.x_axis = 'timestamp'
-  loadedDraft = { ...empty, tool_instances: [{ ...backgroundMeter,
+  state.loadedDraft = { ...empty, tool_instances: [{ ...backgroundMeter,
     setup: { ...backgroundMeter.setup, allow_buffer_overflow_risk: true } }], backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1',
     live_monitor: true, limit_count: 10 }], output_views: { charts: [chartPanelToSavedChart(panel)] } }
   await mount()
@@ -774,7 +677,7 @@ test('loading a Template with Background Charts and accepted overflow risk prese
   await screen.findByText('Template loaded.')
   expect(instance('meters-1').getByText('High Buffer Overflow Risk Accepted')).toBeTruthy()
   const saved = await savedDraft()
-  expect(saved).toEqual(loadedDraft)
+  expect(saved).toEqual(state.loadedDraft)
 })
 const summaryCounts = () => Array.from(screen.getByRole('region', { name: 'Tool Instance Summary' })
   .querySelectorAll('dl > div')).map(node => [node.querySelector('dt')!.textContent, node.querySelector('dd')!.textContent])
@@ -900,7 +803,7 @@ test.each(['New Template', 'Open Template'])('%s resets a preserved Average Coun
 })
 
 test('summary follows Template instances and add/remove; replacement resets even matching IDs without clearing Template data', async () => {
-  tools = tools.filter(tool => tool.tool_id !== 'wavegen')
+  state.tools = state.tools.filter(tool => tool.tool_id !== 'wavegen')
   await mount()
   expect(summaryCounts()).toEqual([['Powers', '1'], ['Scopes', '1'], ['Wavegen', '1']])
   fireEvent.change(screen.getByRole('combobox', { name: 'Tool type' }), { target: { value: 'powers' } })
@@ -919,11 +822,11 @@ test('summary follows Template instances and add/remove; replacement resets even
   vi.mocked(open).mockResolvedValueOnce(null)
   click('Open Template')
   await waitFor(() => expect((screen.getByRole('button', { name: 'Open Template' }) as HTMLButtonElement).disabled).toBe(false))
-  loadError = true
+  state.loadError = true
   click('Open Template')
   await screen.findByText(/Cannot load Template/)
   expect(instance('powers-1').getByRole('button', { name: 'Collapse Protection Setup' })).toBeTruthy()
-  loadError = false
+  state.loadError = false
   click('Open Template')
   await screen.findByText('Template loaded.')
   expect(instance('powers-1').getByRole('button', { name: 'Expand Protection Setup' })).toBeTruthy()
@@ -931,7 +834,7 @@ test('summary follows Template instances and add/remove; replacement resets even
   expect(instance('scopes-1').getByRole('button', { name: 'Expand Channel Configuration' })).toBeTruthy()
   expect(instance('wavegen-1').getByRole('button', { name: 'Collapse wavegen-1' })).toBeTruthy()
   expect(await savedDraft()).toEqual(original)
-  loadedDraft = structuredClone(empty)
+  state.loadedDraft = structuredClone(empty)
   click('Open Template')
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Tool Instance Summary' })).toBeNull())
   click('New Template')
@@ -958,7 +861,7 @@ test('External Tools keep status visible and independent state across refresh/ta
   expect(screen.getByRole('button', { name: 'Collapse powers details' })).toBeTruthy()
   click('Remove Tool')
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Collapse powers details' })).toBeNull())
-  tools.push(toolStatus('powers'))
+  state.tools.push(toolStatus('powers'))
   click('Refresh')
   await screen.findByRole('button', { name: 'Expand powers details' })
   for (const action of ['Open Template', 'New Template']) {
@@ -969,7 +872,7 @@ test('External Tools keep status visible and independent state across refresh/ta
 })
 
 test('Protection Setup hides Device status and results while preserving resource controls and mode badges in Simulation and Live', async () => {
-  newDraft.workflow.steps = [{ type: 'tool-action', id: 'power-off', target: 'powers-1',
+  state.newDraft.workflow.steps = [{ type: 'tool-action', id: 'power-off', target: 'powers-1',
     action: 'output-off', arguments: { channel: 1 } }]
   await mount()
   const power = instance('powers-1')
@@ -1047,25 +950,25 @@ test('Protection Setup hides Device status and results while preserving resource
   fireEvent.click(power.getByRole('button', { name: 'Collapse Protection Setup' }))
   fireEvent.click(power.getByRole('button', { name: 'Expand Protection Setup' }))
   expect((power.getByRole('checkbox', { name: 'Use Protection Setup' }) as HTMLInputElement).checked).toBe(true)
-  expect(await savedDraft()).toEqual(newDraft)
+  expect(await savedDraft()).toEqual(state.newDraft)
 })
 
 test('VISA backend drafts clear only their instance, save with Resource, and appear in Live confirmation', async () => {
-  newDraft.tool_instances.push({ id: 'powers-2', tool: 'powers', setup: {} })
-  newDraft.tool_instances.push({ id: 'meters-1', tool: 'meters', setup: {
+  state.newDraft.tool_instances.push({ id: 'powers-2', tool: 'powers', setup: {} })
+  state.newDraft.tool_instances.push({ id: 'meters-1', tool: 'meters', setup: {
     measurement: 'voltage-dc', range_mode: 'manual', manual_range: 30, nplc: 1,
     auto_zero: 'on', dcv_input_impedance: null, current_terminal: null,
   } })
-  newDraft.workflow.steps = ['powers-1', 'powers-2'].map((target, index) => ({
+  state.newDraft.workflow.steps = ['powers-1', 'powers-2'].map((target, index) => ({
     type: 'tool-action', id: `off-${index}`, target, action: 'output-off', arguments: { channel: 1 },
   }))
-  newDraft.workflow.steps.push({ type: 'tool-action', id: 'scope-scale', target: 'scopes-1',
+  state.newDraft.workflow.steps.push({ type: 'tool-action', id: 'scope-scale', target: 'scopes-1',
     action: 'channel-scale', arguments: { channel: 4, volts_per_division: 2 } })
-  resources = { 'powers-1': 'USB::saved-py', 'powers-2': 'USB::saved-system' }
-  backends = { 'powers-1': '@py' }
-  identities = { 'powers-1': { manufacturer: 'Saved Vendor', model: 'Saved Model', model_id: 'saved-model', serial: 'old-serial', identity: null } }
-  identities['scopes-1'] = { ...identities['powers-1'], model: 'Saved Scope', model_id: 'saved-scope' }
-  identities['meters-1'] = { ...identities['powers-1'], model: 'Saved Meter', model_id: 'saved-meter' }
+  state.resources = { 'powers-1': 'USB::saved-py', 'powers-2': 'USB::saved-system' }
+  state.backends = { 'powers-1': '@py' }
+  state.identities = { 'powers-1': { manufacturer: 'Saved Vendor', model: 'Saved Model', model_id: 'saved-model', serial: 'old-serial', identity: null } }
+  state.identities['scopes-1'] = { ...state.identities['powers-1'], model: 'Saved Scope', model_id: 'saved-scope' }
+  state.identities['meters-1'] = { ...state.identities['powers-1'], model: 'Saved Meter', model_id: 'saved-meter' }
   await mount()
   const first = instance('powers-1')
   const second = instance('powers-2')
@@ -1094,10 +997,10 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect(first.queryByText('Saved Vendor Saved Model')).toBeNull()
   expect(first.queryByRole('combobox', { name: 'Discovered Resources' })).toBeNull()
   expect((first.getByRole('button', { name: 'Clear Protection...' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(resources['powers-1']).toBe('USB::saved-py')
-  expect(backends['powers-1']).toBe('@py')
+  expect(state.resources['powers-1']).toBe('USB::saved-py')
+  expect(state.backends['powers-1']).toBe('@py')
   expect(calls().some(([command]) => command === 'set_live_resource')).toBe(false)
-  expect(identities['powers-1'].model_id).toBe('saved-model')
+  expect(state.identities['powers-1'].model_id).toBe('saved-model')
   expect(first.queryByRole('rowheader', { name: '3' })).toBeNull()
   tab('Workflow')
   expect((workflow().getByRole('combobox', { name: 'Channel' }) as HTMLSelectElement).disabled).toBe(true)
@@ -1131,7 +1034,7 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   await waitFor(() => expect(meter.getByRole('combobox', { name: 'Manual Range (V)' })
     .querySelector('option[value="10"]')).not.toBeNull())
   expect((meter.getByRole('combobox', { name: 'Manual Range (V)' }) as HTMLSelectElement).value).toBe('30')
-  expect(await savedDraft()).toEqual(newDraft)
+  expect(await savedDraft()).toEqual(state.newDraft)
   // Restore the other instances through Discovery/Save before checking Live confirmation.
   for (const controls of [scope, meter]) {
     fireEvent.click(controls.getByRole('button', { name: 'List Resources' }))
@@ -1148,14 +1051,14 @@ test('VISA backend drafts clear only their instance, save with Resource, and app
   expect(first.queryByRole('option', { name: /USB::powers::@py/ })).toBeNull()
   fireEvent.change(second.getByRole('textbox', { name: 'Live Resource' }), { target: { value: 'manual::second' } })
   fireEvent.click(first.getByRole('button', { name: 'Save Resource' }))
-  await waitFor(() => expect(resources['powers-1']).toBe('USB::powers::system'))
+  await waitFor(() => expect(state.resources['powers-1']).toBe('USB::powers::system'))
   await waitFor(() => expect((first.getByRole('button', { name: 'Save Resource' }) as HTMLButtonElement).disabled).toBe(false))
-  expect(backends['powers-1']).toBe('system')
-  expect(identities['powers-1'].model_id).toBe('canonical-model')
+  expect(state.backends['powers-1']).toBe('system')
+  expect(state.identities['powers-1'].model_id).toBe('canonical-model')
   expect((second.getByRole('textbox', { name: 'Live Resource' }) as HTMLInputElement).value).toBe('manual::second')
-  expect(backends['powers-2']).toBeUndefined()
+  expect(state.backends['powers-2']).toBeUndefined()
   fireEvent.click(second.getByRole('button', { name: 'Save Resource' }))
-  await waitFor(() => expect(backends['powers-2']).toBe('@py'))
+  await waitFor(() => expect(state.backends['powers-2']).toBe('@py'))
   tab('Workflow')
   await waitFor(() => expect((screen.getByRole('button', { name: 'Run Live' }) as HTMLButtonElement).disabled).toBe(false))
   vi.mocked(confirm).mockResolvedValueOnce(false)
@@ -1209,8 +1112,8 @@ test('Serial Transport preserves UART and TCP setup values across switching', ()
 })
 
 test('Serial TCP Live Device saves Host and Port without COM discovery', async () => {
-  tools.push(toolStatus('serial'))
-  newDraft = { ...original, tool_instances: [...original.tool_instances, {
+  state.tools.push(toolStatus('serial'))
+  state.newDraft = { ...original, tool_instances: [...original.tool_instances, {
     id: 'serial-1', tool: 'serial', setup: {
       transport: 'tcp', baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1,
       flow_control: 'none', timeout_ms: 1000,
@@ -1222,97 +1125,10 @@ test('Serial TCP Live Device saves Host and Port without COM discovery', async (
   fireEvent.change(serial.getByRole('textbox', { name: 'TCP Host' }), { target: { value: 'device.local' } })
   fireEvent.change(serial.getByRole('spinbutton', { name: 'TCP Port' }), { target: { value: '5025' } })
   fireEvent.click(serial.getByRole('button', { name: 'Save Resource' }))
-  await waitFor(() => expect(resources['serial-1']).toBe('device.local:5025'))
+  await waitFor(() => expect(state.resources['serial-1']).toBe('device.local:5025'))
   expect(calls().some(([command, args]) => command === 'set_live_resource'
     && (args as { instanceId: string }).instanceId === 'serial-1')).toBe(true)
 })
-
-test('Step ID editor rejects invalid names, supports cancel, and updates BG Command references on save', async () => {
-  const command: WorkflowStep = { type: 'bg-interaction', id: 'send', background_id: 'background-1', timeout_ms: null,
-    operation: { kind: 'command', command: 'software-trigger', wait_for_completion: false } }
-  const result: WorkflowStep = { type: 'bg-interaction', id: 'get', background_id: 'background-1', timeout_ms: null,
-    operation: { kind: 'get-command-result', source_step: 'send' } }
-  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
-    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1, command_trigger: true }],
-    workflow: { interaction: { enabled: true, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [command, result] } }
-  render(<App />)
-  await screen.findByRole('button', { name: 'Expand meters details' })
-  tab('Workflow')
-  fireEvent.click(screen.getByRole('button', { name: /Step 1.*send/ }))
-  click('Edit Step ID')
-  const idField = screen.getByRole('textbox', { name: 'Step ID' }) as HTMLInputElement
-  fireEvent.change(idField, { target: { value: 'Invalid ID' } })
-  click('Save Step ID')
-  expect(screen.getByText('Use lowercase letters, digits, and single hyphens between segments.')).toBeTruthy()
-  fireEvent.change(idField, { target: { value: 'get' } })
-  click('Save Step ID')
-  expect(screen.getByText('Step ID must be unique across the entire Workflow.')).toBeTruthy()
-  fireEvent.change(idField, { target: { value: 'temporary-id' } })
-  fireEvent.keyDown(idField, { key: 'Escape' })
-  expect(screen.queryByRole('textbox', { name: 'Step ID' })).toBeNull()
-  expect(screen.getByRole('button', { name: /Step 1.*send/ }).getAttribute('aria-pressed')).toBe('true')
-  click('Edit Step ID')
-  const changed = screen.getByRole('textbox', { name: 'Step ID' })
-  fireEvent.change(changed, { target: { value: 'send-renamed' } })
-  fireEvent.keyDown(changed, { key: 'Enter' })
-  expect(screen.getByRole('button', { name: /Step 1.*send-renamed/ }).getAttribute('aria-pressed')).toBe('true')
-  fireEvent.click(screen.getByRole('button', { name: /Step 2.*get/ }))
-  expect((screen.getByLabelText('Source BG Command Step') as HTMLSelectElement).value).toBe('send-renamed')
-  const saved = await savedDraft()
-  expect(saved.workflow.steps[0].id).toBe('send-renamed')
-  expect(saved.workflow.steps[1].operation.source_step).toBe('send-renamed')
-})
-
-test('Step ID rename updates a saved Serial BG Send binding when switching commands back', async () => {
-  tools.push(toolStatus('serial'))
-  const source: WorkflowStep = { type: 'bg-interaction', id: 'latest', background_id: 'serial-bg',
-    timeout_ms: null, operation: { kind: 'get-latest' } }
-  const command: WorkflowStep = { type: 'bg-interaction', id: 'send', background_id: 'serial-bg', timeout_ms: null,
-    operation: { kind: 'command', command: 'serial-send', wait_for_completion: true,
-      arguments: { tx_format: 'text', tx_value: 'unchanged' },
-      bindings: { tx_value: { source: 'step-output', step_id: 'latest', pointer: '/value' } } } }
-  newDraft = { ...structuredClone(serialBackgroundDraft),
-    workflow: { ...serialBackgroundDraft.workflow, steps: [source, command] } }
-  render(<App />)
-  await screen.findByRole('button', { name: 'Expand serial details' })
-  tab('Workflow')
-  fireEvent.click(screen.getByRole('button', { name: /Step 2.*send/ }))
-  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send-file' } })
-  fireEvent.click(screen.getByRole('button', { name: /Step 1.*latest/ }))
-  click('Edit Step ID')
-  fireEvent.change(screen.getByRole('textbox', { name: 'Step ID' }), { target: { value: 'latest-new' } })
-  click('Save Step ID')
-  fireEvent.click(screen.getByRole('button', { name: /Step 2.*send/ }))
-  fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'serial-send' } })
-  const saved = await savedDraft()
-  expect(saved.workflow.steps[0].id).toBe('latest-new')
-  const operation = saved.workflow.steps[1].operation
-  expect(operation.bindings.tx_value).toEqual({ source: 'step-output', step_id: 'latest-new', pointer: '/value' })
-  expect(operation.arguments.tx_value).toBe('unchanged')
-})
-
-test('numeric setpoint UI restricts sources and forwards a selected variable', () => {
-  const onChange = vi.fn()
-  render(<InputValueEditor value={{ source: 'literal', value: 2 }} onChange={onChange}
-    numericSetpoint earlierSteps={[]} earlierVariables={['threshold']}
-    instances={original.tool_instances} disabled={false} stepLabel={step => step.id} />)
-  const source = screen.getByRole('combobox', { name: 'Value Source' })
-  const values = Array.from(source.querySelectorAll('option')).map(option => option.value)
-  expect(values).not.toContain('elapsed-time')
-  expect(values).not.toContain('timestamp')
-  fireEvent.change(source, { target: { value: 'variable' } })
-  expect(onChange).toHaveBeenCalledWith({ source: 'variable', variable: 'threshold' })
-})
-
-test('operand UI accepts String literals only when explicitly allowed', () => {
-  const onChange = vi.fn()
-  render(<ExpressionOperandEditor side="Left" value={{ source: 'literal', value: 0 }}
-    allowStringLiteral onChange={onChange} earlierSteps={[]} earlierVariables={[]}
-    instances={original.tool_instances} disabled={false} stepLabel={step => step.id} />)
-  fireEvent.change(screen.getByRole('combobox', { name: 'Value Type' }), { target: { value: 'string' } })
-  expect(onChange).toHaveBeenCalledWith({ source: 'literal', value: '' })
-})
-
 
 test('Scopes Screenshot preserves unsupported saved formats until explicit replacement', async () => {
   const step: ToolActionStep = { type: 'tool-action', id: 'image', target: 'scopes-1',
@@ -1406,7 +1222,7 @@ test('Scopes Channel rejects unconfirmed saved choices without overwriting numer
 })
 
 test('Powers Step editor selects confirmed channels without rewriting saved bindings', async () => {
-  newDraft.workflow.steps = [{ type: 'tool-action', id: 'set-power', target: 'powers-1',
+  state.newDraft.workflow.steps = [{ type: 'tool-action', id: 'set-power', target: 'powers-1',
     action: 'set-output', arguments: { channel: 99, voltage: 0, current: 0.25 },
     bindings: { current: { source: 'variable', variable: 'limit' } } },
     { type: 'tool-action', id: 'bound-only', target: 'powers-1', action: 'set-output',
@@ -1419,7 +1235,7 @@ test('Powers Step editor selects confirmed channels without rewriting saved bind
   await waitFor(() => expect(channel.disabled).toBe(false))
   expect(channel.value).toBe('99')
   expect((channel.querySelector('option[value="99"]') as HTMLOptionElement).disabled).toBe(true)
-  expect((await savedDraft()).workflow.steps).toEqual(newDraft.workflow.steps)
+  expect((await savedDraft()).workflow.steps).toEqual(state.newDraft.workflow.steps)
   fireEvent.change(channel, { target: { value: '1' } })
   const saved = await savedDraft()
   expect(saved.workflow.steps[0].arguments).toEqual({ channel: 1, voltage: 0, current: 0.25 })
@@ -1443,11 +1259,11 @@ test('Powers Step editor selects confirmed channels without rewriting saved bind
   fireEvent.click(workflow.getByRole('button', { name: /Step 2: Power Set Output, bound-only/ }))
   expect(results().queryByText('Voltage')).toBeNull()
   expect(results().getByText('Current Limit')).toBeTruthy()
-  expect((await savedDraft()).workflow.steps[1]).toEqual(newDraft.workflow.steps[1])
+  expect((await savedDraft()).workflow.steps[1]).toEqual(state.newDraft.workflow.steps[1])
 })
 
 test('Buffer settings and Steps save the current contract with Array input references', async () => {
-  newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
+  state.newDraft = { ...original, tool_instances: [{ ...backgroundMeter, setup: { ...backgroundMeter.setup, trigger_mode: 'software' } }],
     backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-1', live_monitor: false, limit_count: 1 }],
     workflow: { interaction: { enabled: false, max_active_command_status: 4096, buffer: { enabled: false, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] } }
   render(<App />)
@@ -1495,114 +1311,3 @@ test('Buffer settings and Steps save the current contract with Array input refer
 
 // This is an operator-facing requirement: every available Step must explain
 // its purpose in Properties, using the same description as the Palette.
-test('all 42 Workflow presets show their Palette description in Properties', async () => {
-  tools = [...tools, toolStatus('serial')]
-  newDraft = {
-    ...original,
-    tool_instances: [...original.tool_instances,
-      { ...backgroundMeter, id: 'meters-bg', setup: { ...backgroundMeter.setup, trigger_mode: 'software' } },
-      { ...backgroundMeter, id: 'meters-fg', setup: { ...backgroundMeter.setup, trigger_mode: 'immediate' } },
-      { id: 'serial-1', tool: 'serial', setup: { transport: 'serial', baud: 115200, data_bits: 8, parity: 'none', stop_bits: 1, flow_control: 'none', timeout_ms: 1000 } }],
-    backgrounds: [{ id: 'background-1', tool_instance_id: 'meters-bg', live_monitor: false, limit_count: 1 }],
-    workflow: { interaction: { enabled: true, max_active_command_status: 4096,
-      buffer: { enabled: true, mode: 'fifo', overflow_policy: 'fail-run' } }, steps: [] },
-  }
-  render(<I18nProvider initialLanguage="en"><App /></I18nProvider>)
-  await screen.findByRole('button', { name: 'Expand meters details' })
-  tab('Workflow')
-  const categories = within(screen.getByRole('region', { name: 'Step categories' }))
-  const presets = categories.getAllByRole('button').filter(button => button.hasAttribute('aria-pressed'))
-  expect(presets).toHaveLength(42)
-  const properties = within(screen.getByRole('region', { name: 'Properties' }))
-  for (const preset of presets) {
-    const description = preset.getAttribute('title')?.split('\n')[1] ?? ''
-    expect(description).toBeTruthy()
-    expect(description).not.toMatch(/^steps\.hint\./)
-    const root = screen.queryByRole('button', { name: 'Set Target to Root' })
-    if (root) fireEvent.click(root)
-    fireEvent.click(preset)
-    click('Add Step')
-    expect(properties.getAllByText(description)).toHaveLength(1)
-    if (preset.getAttribute('title')?.split('\n')[0] === 'Scope Single Wait') {
-      expect(description).toMatch(/start a single acquisition.*wait for its trigger/i)
-    }
-    if (preset.getAttribute('title')?.split('\n')[0] === 'Show Message') {
-      expect(description).toMatch(/does not create an Output Page, a Popup, or an Assert/i)
-    }
-    if (preset.getAttribute('title')?.split('\n')[0] === 'Power Protection Status') {
-      const results = within(properties.getByRole('group', { name: 'Common result fields' }))
-      expect(results.getByText('Protection Tripped')).toBeTruthy()
-      expect(results.queryByText('/protection_tripped')).toBeNull()
-      expect(results.getByText(/Boolean.*true.*false.*no trip reported/)).toBeTruthy()
-    }
-  }
-  fireEvent.click(screen.getByRole('button', { name: /Step .*?, serial-query-1$/ }))
-  expect(properties.getByRole('heading', { name: 'Serial Query' })).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Switch language to 繁體中文' }))
-  const localized = within(screen.getByRole('region', { name: '屬性' }))
-  const description = screen.getByRole('button', { name: 'Serial 查詢' }).getAttribute('title')?.split('\n')[1] ?? ''
-  expect(localized.getByRole('heading', { name: 'Serial 查詢 (Serial Query)' })).toBeTruthy()
-  expect(localized.getAllByText(description)).toHaveLength(1)
-  localStorage.removeItem('orchestrator-tool.locale')
-}, 30000)
-
-test('all 21 Process operations show contextual help and a result type', () => {
-  const literal = { source: 'literal' as const, value: '' }
-  const initial: ProcessStep[] = [
-    { type: 'string-process', id: 'string', operation: 'length', arguments: { input: literal } },
-    { type: 'byte-process', id: 'byte', operation: { kind: 'byte-length' }, arguments: { input: literal } },
-    { type: 'array-process', id: 'array', operation: 'length', arguments: {
-      input: { source: 'step-output', step_id: '', pointer: '' } } },
-  ]
-  function Editor({ initialStep }: { initialStep: ProcessStep }) {
-    const [step, setStep] = useState(initialStep)
-    return <ProcessEditor step={step} onChange={setStep} earlierSteps={[]} earlierVariables={[]}
-      instances={[]} backgrounds={[]} stepLabel={step => step.id} disabled={false} />
-  }
-  const resultTypes: Record<ProcessStep['type'], Record<string, string>> = {
-    'string-process': { length: 'Number', substring: 'String', concat: 'String', contains: 'Boolean',
-      'index-of': 'Number', replace: 'String', trim: 'String', 'to-upper-case': 'String',
-      'to-lower-case': 'String', 'to-number': 'Number' },
-    'byte-process': { 'byte-length': 'Number', 'get-byte': 'Number', 'get-bytes': 'Hex String',
-      concat: 'Hex String', contains: 'Boolean', 'hex-to-number': 'Number',
-      'number-to-hex': 'Hex String', 'hex-to-text': 'String / Null', 'text-to-hex': 'Hex String' },
-    'array-process': { length: 'Number', 'get-item': 'JSON' },
-  }
-  let count = 0
-  for (const initialStep of initial) {
-    const view = render(<Editor initialStep={initialStep} />)
-    const operation = screen.getByRole('combobox', { name: 'Operation' }) as HTMLSelectElement
-    if (initialStep.type === 'array-process') {
-      expect((screen.getByLabelText('Result') as HTMLSelectElement).disabled).toBe(true)
-      expect(screen.getByText('No earlier result-producing steps are available.')).toBeTruthy()
-      expect(screen.queryByLabelText('JSON Pointer')).toBeNull()
-      expect(screen.queryByText(/Reference preserved:/)).toBeNull()
-    }
-    const values = Array.from(operation.options, option => option.value)
-    const descriptions = new Set<string>()
-    for (const value of values) {
-      fireEvent.change(operation, { target: { value } })
-      const id = operation.getAttribute('aria-describedby')!
-      const description = document.getElementById(id)?.textContent ?? ''
-      expect(description).toBeTruthy()
-      expect(description).not.toMatch(/^process\.help\./)
-      descriptions.add(description)
-      expect(resultTypes[initialStep.type][value]).toBeTruthy()
-      expect(screen.getByText(`Value · ${resultTypes[initialStep.type][value]}`)).toBeTruthy()
-      if (initialStep.type === 'byte-process' && value === 'hex-to-number') {
-        const order = screen.getByRole('combobox', { name: 'Byte Order' })
-        const format = screen.getByRole('combobox', { name: 'Number Format' })
-        expect(screen.getByRole('combobox', { name: 'Byte Order', description: /Most significant byte first/ })).toBeTruthy()
-        expect(screen.getByRole('combobox', { name: 'Number Format', description: /Unsigned integer/ })).toBeTruthy()
-        fireEvent.change(order, { target: { value: 'lsb-first' } })
-        fireEvent.change(format, { target: { value: 'signed' } })
-        expect(screen.getByRole('combobox', { name: 'Byte Order', description: /Least significant byte first/ })).toBeTruthy()
-        expect(screen.getByRole('combobox', { name: 'Number Format', description: /Signed integer/ })).toBeTruthy()
-      }
-      count += 1
-    }
-    expect(descriptions.size).toBe(values.length)
-    view.unmount()
-  }
-  expect(count).toBe(21)
-})
