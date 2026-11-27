@@ -56,7 +56,8 @@ The exact versions and dependency graphs are tracked in Cargo.lock,
 apps/desktop/src-tauri/Cargo.lock and apps/desktop/package-lock.json.
 
 The Windows build copies package-supplied copyright, license and notice
-files into licenses/rust/ and licenses/npm/. The accompanying
+files into licenses/rust/ and licenses/npm/ and includes the version-specific
+supplemental Rust notices described below. The accompanying
 licenses/DEPENDENCIES.txt identifies the collected packages, their declared
 license metadata, exact source archive locations where available and the
 copied files' directories. The Rust collection follows the Windows x64
@@ -64,11 +65,64 @@ normal/build dependency graphs of both Cargo packages; npm collection
 uses installed non-dev lock entries plus Vite and Rolldown. This
 intentionally conservative collection can include build-only inputs and
 is not a complete analysis of the final linked or tree-shaken binaries.
-Empty package notice files are omitted and flagged in the index. Check
-any missing or empty notice against its upstream source before distribution.
+Empty package notice files are omitted and flagged in the index. Supplemental
+upstream files are recorded separately in each package's index entry and are
+counted alongside package-supplied notices. Check any remaining missing or
+empty notice against its upstream source before distribution.
 The project uses the locked upstream dependencies; source for registry
 packages is available from the exact package archive locations in the index.
 This notice is not a substitute for the applicable upstream license terms.
+
+Supplemental Rust notices
+-------------------------
+Some locked crates do not include their workspace's license files in the
+published package. Preserve the following version-specific copies under
+licenses/rust/<crate>-<version>/upstream/. The collection is conservative:
+it also includes build-time inputs, without asserting that all are linked
+into either EXE. Review and update these copies when the locked versions
+change.
+
+alloc-stdlib 0.2.4 - BSD-3-Clause (upstream LICENSE)
+    https://github.com/dropbox/rust-alloc-no-stdlib/tree/0.2.4
+defmt-parser 1.0.0 - MIT OR Apache-2.0 (workspace LICENSE-MIT and LICENSE-APACHE)
+    https://github.com/knurling-rs/defmt/tree/10e0d605a8edc21a7bf4f10bec91cf0ef757815b
+tauri-plugin 2.6.3 - Apache-2.0 OR MIT (workspace licenses)
+    https://github.com/tauri-apps/tauri/tree/tauri-plugin-v2.6.3
+
+selectors 0.36.1 - Mozilla Public License 2.0 (MPL-2.0)
+    https://github.com/servo/stylo/tree/v0.15.0/selectors
+    licenses/rust/selectors-0.36.1/upstream/LICENSE-MPL-2.0.txt
+The upstream source files refer to the MPL-2.0; the included license text
+is from the SPDX license list v3.26.0:
+    https://github.com/spdx/license-list-data/blob/v3.26.0/text/MPL-2.0.txt
+Orchestrator uses the unmodified locked registry crate. Recipients may
+obtain the corresponding Source Code Form for this component, including
+its original license notices, under the MPL-2.0 at:
+    https://crates.io/api/v1/crates/selectors/0.36.1/download
+The MPL applies to its covered files, not to the independent MIT-licensed
+Orchestrator source code as a whole.
+
+unic-char-property, unic-char-range, unic-common, unic-ucd-ident and
+unic-ucd-version (all 0.9.0) - MIT OR Apache-2.0.
+    https://github.com/open-i18n/rust-unic/tree/v0.9.0
+Preserve the project's LICENSE-MIT, LICENSE-APACHE, COPYRIGHT.md and
+AUTHORS for each crate. Source notices also identify copyright 2017-2019
+The UNIC Project Developers. The UCD crates use Unicode 10.0.0 data;
+preserve the original UCD ReadMe (copyright 2017 Unicode, Inc.) as
+NOTICE-Unicode-10.0.0.txt and the Unicode-DFS-2016 license text.
+    https://github.com/open-i18n/data-unicode-ucd/tree/2a2044479b3c4915ef4213adf1dfd6236dba24c8
+    https://github.com/spdx/license-list-data/blob/v3.26.0/text/Unicode-DFS-2016.txt
+    https://www.unicode.org/copyright.html
+
+webview2-com 0.38.2, webview2-com-sys 0.38.2 and webview2-com-macros
+0.8.1 - MIT (workspace LICENSE)
+    https://github.com/wravery/webview2-rs/tree/b74dc5e2b394044bea5191052868ce7a106c202c
+The MSVC build statically links the WebView2 SDK loader from the bindings
+crate, separately from the system WebView2 Runtime. Preserve Microsoft's
+BSD-style license for Microsoft.Web.WebView2 SDK 1.0.3650.58, reproduced
+from the package's license page at:
+    https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3650.58/License
+    licenses/rust/webview2-com-sys-0.38.2/upstream/LICENSE-WebView2-SDK.txt
 
 Distribution boundary
 ---------------------

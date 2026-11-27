@@ -34,6 +34,7 @@ function copyNotices(source, destination, declaredFile) {
     files.add(rel);
   }
   const empty = [];
+  const copied = new Set();
   for (const rel of [...files].sort()) {
     if (statSync(join(source, rel)).size === 0) {
       empty.push(rel.split(sep).join('/'));
@@ -42,8 +43,9 @@ function copyNotices(source, destination, declaredFile) {
     const target = join(destination, rel);
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(source, rel), target);
+    copied.add(rel);
   }
-  return { count: files.size - empty.length, empty };
+  return { count: copied.size, empty, copied };
 }
 
 function rustPackages(manifest) {
@@ -87,13 +89,15 @@ const index = [
   'Orchestrator Tool - Collected third-party notices',
   'Windows x64 Cargo normal/build dependency graphs, installed npm non-dev lock entries, and Vite/Rolldown runtime contributors.',
   'This conservative collection can include build-only inputs and is not a list of linked binary contents.',
-  'Review any missing or empty packaged notice against upstream before distributing.',
+  'Version-specific supplemental Rust notices are included from the repository; see THIRD_PARTY_NOTICES.txt.',
+  'Review any missing or empty notice against upstream before distributing.',
   '',
 ];
-function record(name, declaredLicense, source, destination, { count, empty }) {
+function record(name, declaredLicense, source, destination, { count, empty, supplemental = 0 }) {
   const path = relative(licenses, destination).split(sep).join('/');
   index.push(name, `  Declared license: ${declaredLicense || 'not declared'}`, `  Source: ${source}`,
     `  Notice files: ${count ? `${path}/ (${count})` : 'NONE FOUND - review upstream'}`);
+  if (supplemental) index.push(`  Supplemental upstream notices: ${path}/upstream/ (${supplemental})`);
   for (const rel of empty) {
     index.push(`  Empty notice omitted: ${rel} - review upstream`);
     console.warn(`Empty packaged notice omitted: ${name}: ${rel}; review upstream.`);
@@ -109,6 +113,26 @@ for (const manifest of ['Cargo.toml', 'apps/desktop/src-tauri/Cargo.toml']) {
 for (const pkg of [...crates.values()].sort((a, b) => a.id.localeCompare(b.id))) {
   const destination = join(licenses, 'rust', `${pkg.name}-${pkg.version}`);
   const notices = copyNotices(dirname(pkg.manifest_path), destination, pkg.license_file);
+  // Root licenses/ was already staged. Count verified, version-specific upstream
+  // files alongside crate-supplied notices without masking empty package files.
+  const upstream = join(root, 'licenses', 'rust', `${pkg.name}-${pkg.version}`, 'upstream');
+  if (existsSync(upstream)) {
+    const files = readdirSync(upstream, { withFileTypes: true });
+    if (!files.length) throw new Error(`Empty supplemental notice directory: ${pkg.name} ${pkg.version}`);
+    for (const file of files) {
+      const rel = join('upstream', file.name);
+      const original = join(upstream, file.name);
+      const staged = join(destination, rel);
+      if (!file.isFile() || statSync(original).size === 0 ||
+          !existsSync(staged) || !statSync(staged).isFile() ||
+          !readFileSync(original).equals(readFileSync(staged))) {
+        throw new Error(`Invalid supplemental notice: ${pkg.name} ${pkg.version}/${file.name}`);
+      }
+      notices.copied.add(rel);
+    }
+    notices.count = notices.copied.size;
+    notices.supplemental = files.length;
+  }
   const source = pkg.source === 'registry+https://github.com/rust-lang/crates.io-index'
     ? `https://crates.io/api/v1/crates/${pkg.name}/${pkg.version}/download` : pkg.source;
   record(`Rust ${pkg.name} ${pkg.version}`, pkg.license || (pkg.license_file ? 'see declared license file' : null), source, destination, notices);
